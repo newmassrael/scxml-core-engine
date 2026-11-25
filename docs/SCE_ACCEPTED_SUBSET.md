@@ -4566,14 +4566,18 @@ machines.
 
 Rust holds a string variable in a `SceString<N>`, its bound in its type
 (docs/adr/0086, section 7.4), and writes one through that type's checked
-constructor — `SceString::<N>::from_text(&"busy".to_string())?`, a read of another
-variable copied the same way — so a text past the bound fails the assignment as
-any other failure does; a string handed to a host action stays borrowed (`&str`).
-C++ holds it in an `SCE::Forge::OwnedText<N>` (docs/adr/0086, section 7.4), written
-through the runtime's checked construction
+constructor — `SceString::<N>::from_text(&value)?` — so a text past the bound
+fails the assignment as any other failure does; a string handed to a host action
+stays borrowed (`&str`). A text whose most bytes the build proves are within the
+bound (a literal of that length or less, a variable or a field of no larger
+bound, a join or a conditional of such) cannot fail the store, and is written
+through the constructor that takes the proof, `SceString::<N>::within::<L>(&value)`,
+with no `?` (docs/adr/0133). C++ holds it in an `SCE::Forge::OwnedText<N>`
+(docs/adr/0086, section 7.4), written through the runtime's checked construction
 (`SCE::Forge::Checked::held<OwnedText<N>>(sce_failure_, value)`), which records the
-capacity failure past the bound, and lent to a host as the `const std::string &`
-it holds. Kotlin has one `String` for both.
+capacity failure past the bound, or, for a text proven within it, through
+`SCE::Forge::Proven::held<OwnedText<N>>(value)`, which records none; it is lent to
+a host as the `const std::string &` it holds. Kotlin has one `String` for both.
 
 **Generated send ids.** A `<send>` with an `idlocation` has the machine generate
 its id (§scxml-6.2.4), and the document keeps it in a variable a later `<cancel
@@ -4863,10 +4867,16 @@ was handed. The fixture holds it: `watcher` is handed 7, `bump` makes the field 
 while it runs, and a restored machine's new `watcher` is handed 8.
 
 **Integer operations.** A machine receives the failures of what it runs
-(SCE_FORGE.md §3.4.1): every integer operation is checked at its own width —
-the operands' type, not the comparison or the variable it feeds — and so is a
-call of an imported algorithm that declares `may-fail`, which is therefore
-admitted here. A failure never wraps and never panics; it is
+(SCE_FORGE.md §3.4.1): every integer operation that can fail is checked at its
+own width — the operands' type, not the comparison or the variable it feeds —
+and so is a call of an imported algorithm that declares `may-fail`, which is
+therefore admitted here. An operation the build proves cannot fail, every value
+it reads holding any value of its declared type and a condition of the same
+expression narrowing what its branch reads, is not checked and raises nothing
+(docs/adr/0133): `count / 2 + 1` and `n > 0 ? n - 1 : 0` on a `uint8` are
+total, `count + 1` is not. A statement whose every operation and store is proven
+so has no error path in any backend's code, and the internal queue bound counts
+none for it. A failure never wraps and never panics; it is
 `error.execution` (W3C SCXML 5.10) on the internal queue, when the document
 declares that event, and in its place: an `<assign>`, `<log>`,
 `<sce:append>` or host action whose expression fails does nothing; a
@@ -5598,11 +5608,15 @@ the record is declared, as `scxml/static-datamodel-rule`, by every backend, and 
 default stands in for it. The field starts at a string literal of at most that many
 UTF-8 bytes (`<sce:set name="label" expr="'a'"/>`), since the machine is built with
 no error to raise. A value written to it past the bound — an `<assign
-location="last.label">` of a literal, of a string variable or of a payload field, or
-a payload taken whole into the record (`<assign location="last" expr="_event.data"/>`,
-`<sce:append target="labels" expr="_event.data"/>`) — fails as any assignment does:
+location="last.label">` of a literal, of a string variable or of a payload field
+whose bound is past the field's — fails as any assignment does:
 nothing is written, `error.execution` is raised and the block ends (§scxml-4.9), so
-the record and the list are left as they were; a saved state that
+the record is left as it was. A payload taken whole into a record of its own schema
+(`<assign location="last" expr="_event.data"/>`, `<sce:append target="labels"
+expr="_event.data"/>`) carries texts of the record's own bounds, since a payload
+whose text is past its schema's bound is refused where it is read (docs/adr/0086,
+section 4.4), so its texts are copied with nothing to fail (docs/adr/0133); a saved
+state that
 claims a longer one is refused when read, naming the field. The bound counts UTF-8
 bytes, not characters. `scenarios/static_record_string.json` holds this on every
 backend: Rust, Kotlin, Go, Python, C++ and C11.
