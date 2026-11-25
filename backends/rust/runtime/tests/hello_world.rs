@@ -472,6 +472,39 @@ fn a_written_transition_is_named_by_its_source_and_its_place_in_it() {
     );
 }
 
+// ──────────────────────────────────────────────
+// A machine's own values by number
+//
+// The engine holds a state, an event and a history as the numbers the tables
+// give them. A number past the policy's values is a generator fault, and its
+// read stops at the one cold call a row read past its table stops at, rather
+// than at a bounds check of its own.
+// ──────────────────────────────────────────────
+
+#[test]
+fn a_number_inside_the_values_reads_its_value() {
+    assert_eq!(HwPolicy::state_of(StateId(2)), HwState::Done);
+    assert_eq!(HwPolicy::event_of(EventId(3)), HwEvent::End);
+}
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn a_state_number_past_the_states_stops_at_the_row_read() {
+    HwPolicy::state_of(StateId(3));
+}
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn an_event_number_past_the_events_stops_at_the_row_read() {
+    HwPolicy::event_of(EventId(4));
+}
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn a_history_number_in_a_document_with_none_stops_at_the_row_read() {
+    HwPolicy::history_of(HistoryId(0));
+}
+
 #[cfg(feature = "transition-observer")]
 mod transition_observer {
     use super::{HwEvent, HwPolicy, HwState};

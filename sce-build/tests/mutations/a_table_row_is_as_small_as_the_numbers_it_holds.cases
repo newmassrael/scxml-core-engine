@@ -29,8 +29,8 @@ PY
 
 mutation_case "a list in the pool is read one target short" <<'PY'
 edit("backends/rust/runtime/src/helpers/tables.rs",
-     r'''                &self.targets[position + 1..position + 1 + len]''',
-     r'''                &self.targets[position + 1..position + len]''')
+     r'''        .and_then(|head| pool.get(first..first + usize::from(count(head))))''',
+     r'''        .and_then(|head| pool.get(first..first + usize::from(count(head)).saturating_sub(1)))''')
 PY
 
 mutation_case "a state's kind is read from the wrong bits" <<'PY'

@@ -719,10 +719,7 @@ impl DocumentTables<'_> {
             return core::slice::from_ref(targets);
         }
         match targets.list_position() {
-            Some(position) => {
-                let len = usize::from(self.targets[position].0);
-                &self.targets[position + 1..position + 1 + len]
-            }
+            Some(position) => listed(self.targets, position, |count| count.0),
             None => &[],
         }
     }
@@ -743,8 +740,7 @@ impl DocumentTables<'_> {
         else {
             return &[];
         };
-        let len = usize::from(self.entry_paths[position].0);
-        &self.entry_paths[position + 1..position + 1 + len]
+        listed(self.entry_paths, position, |count| count.0)
     }
 
     /// A written transition as the emitted transition table names its row: its
@@ -761,7 +757,9 @@ impl DocumentTables<'_> {
     /// transition or a history's default the answer means nothing.
     pub fn position_in_source(&self, transition: TransitionId) -> Option<(StateId, u32)> {
         let source = self.transition(transition).source()?;
-        let first = self.transitions[..transition.index()]
+        let first = self
+            .transitions
+            .get(..transition.index())?
             .iter()
             .rposition(|row| row.source() != Some(source))
             .map_or(0, |other| other + 1);
@@ -816,7 +814,7 @@ impl DocumentTables<'_> {
             // this state.
             let mut children = 0;
             for child in self.children(id) {
-                let child_row = &self.states[child.index()];
+                let child_row = self.state(child);
                 if child_row.parent() != Some(id)
                     || child_row.last_descendant < child
                     || child_row.last_descendant > row.last_descendant
@@ -875,7 +873,10 @@ impl DocumentTables<'_> {
         }
         // The error events are named events of the machine, so none is the
         // null event; ascending, so none repeats.
-        let ascending = self.error_events.windows(2).all(|pair| pair[0] < pair[1]);
+        let ascending = self
+            .error_events
+            .windows(2)
+            .all(|pair| matches!(pair, [low, high] if low < high));
         let named = !self.error_events.contains(&self.null_event);
         if !ascending || !named {
             return Err(TablesFault::Dangling);
@@ -995,14 +996,34 @@ impl DocumentTables<'_> {
     }
 }
 
+/// The list at `position` of a pool whose lists are each their length
+/// (`count` reads it off the first entry) followed by their entries: the
+/// targets of a transition with more than one, an entry path. A list that runs
+/// past the pool is a generator fault [`DocumentTables::check`] refuses, and
+/// stops at [`row_missing`] as a row read past its table does; the pool is
+/// read through `get`, so no bounds check of its own formats an index.
+#[inline]
+fn listed<'p, T>(pool: &'p [T], position: usize, count: impl FnOnce(&T) -> u16) -> &'p [T] {
+    let first = position + 1;
+    match pool
+        .get(position)
+        .and_then(|head| pool.get(first..first + usize::from(count(head))))
+    {
+        Some(list) => list,
+        None => row_missing(),
+    }
+}
+
 /// A row read past the end of its table: the generator wrote an id the tables
 /// do not hold, which [`DocumentTables::check`] refuses. No formatted message
 /// and no argument, so every read of a row shares this one call and a
 /// bare-metal image does not carry the formatting machinery for a branch a
-/// correct generator never reaches.
+/// correct generator never reaches. The policy's reads of its own values by
+/// number ([`StatePolicy::state_of`](crate::StatePolicy::state_of) and its
+/// kin) stop here too.
 #[cold]
 #[inline(never)]
-fn row_missing() -> ! {
+pub(crate) fn row_missing() -> ! {
     panic!("a document's tables name a row they do not hold: sce-codegen wrote them wrong")
 }
 
@@ -1025,5 +1046,44 @@ impl Iterator for Children<'_> {
         let child = StateId(self.next);
         self.next = self.tables.state(child).last_descendant.0 + 1;
         Some(child)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A list of the pool is its length followed by its entries, read where a
+    /// row names it, and the length-zero list is empty.
+    #[test]
+    fn a_listed_pool_entry_is_its_length_and_the_entries_after_it() {
+        let pool = [
+            EntryStep::count(2),
+            EntryStep::new(StateId(1), false),
+            EntryStep::new(StateId(2), true),
+            EntryStep::count(0),
+        ];
+        let first = listed(&pool, 0, |count| count.0);
+        assert_eq!(first, &pool[1..3]);
+        assert_eq!(first[1].state(), StateId(2));
+        assert!(first[1].by_default());
+        assert!(listed(&pool, 3, |count| count.0).is_empty());
+    }
+
+    /// A list whose length runs past the pool stops at the one cold call a row
+    /// read past its table stops at, not at a bounds check of its own.
+    #[test]
+    #[should_panic(expected = "a document's tables name a row they do not hold")]
+    fn a_list_past_the_pool_stops_at_the_row_read() {
+        let pool = [EntryStep::count(3), EntryStep::new(StateId(1), false)];
+        listed(&pool, 0, |count| count.0);
+    }
+
+    /// A list named past the end of the pool stops in the same place.
+    #[test]
+    #[should_panic(expected = "a document's tables name a row they do not hold")]
+    fn a_list_named_past_the_pool_stops_at_the_row_read() {
+        let pool = [EntryStep::count(0)];
+        listed(&pool, 1, |count| count.0);
     }
 }

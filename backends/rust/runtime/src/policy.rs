@@ -462,21 +462,35 @@ pub trait StatePolicy: Sized + 'static {
     }
 
     /// The state numbered `id`.
+    ///
+    /// The engine holds a state as the number its tables give it, so a number
+    /// past `STATES` is a generator fault, which stops at the one cold call
+    /// every row read past its table shares: the read is a compare and a
+    /// branch, with no bounds check that formats the index.
     fn state_of(id: StateId) -> Self::State {
-        Self::STATES[id.index()]
+        match Self::STATES.get(id.index()) {
+            Some(state) => *state,
+            None => crate::helpers::tables::row_missing(),
+        }
     }
 
     /// The event numbered `id`: where a behaviour hook, which is handed the
     /// number (docs/adr/0123), needs the event as this machine's own value, to
     /// read its name or a typed payload.
     fn event_of(id: EventId) -> Self::Event {
-        Self::EVENTS[id.index()]
+        match Self::EVENTS.get(id.index()) {
+            Some(event) => *event,
+            None => crate::helpers::tables::row_missing(),
+        }
     }
 
     /// The `<history>` numbered `id`: where a behaviour hook, which is handed
     /// the number (docs/adr/0123), needs it as this machine's own value.
     fn history_of(id: HistoryId) -> Self::History {
-        Self::HISTORIES[id.index()]
+        match Self::HISTORIES.get(id.index()) {
+            Some(history) => *history,
+            None => crate::helpers::tables::row_missing(),
+        }
     }
 
     /// Whether `state` is a `<final>` state (§scxml-3.7).
