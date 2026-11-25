@@ -634,37 +634,47 @@ impl CodecZenohResponseWire {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohResponseSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohResponseOverrides) -> Result<(), K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
-        let _p_header_n_0: bool = src.suffix().is_some();
-        let _p_header_z_0: bool = src.extensions().is_some();
-        let _n_d_suffix_len_0: usize = match src.suffix() {
-            Some(_v) => _v.len(),
-            None => 0,
-        };
-        let _f_d_suffix_len: Option<usize> = if src.suffix().is_some() { Some(_n_d_suffix_len_0) } else { None };
-        let _d_suffix_len: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_suffix_len.unwrap_or(0));
-        let mut _c_header: u8 = (((src.header() & !0x20) | (u8::from(_p_header_n_0) << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
-        if let Some(_o) = over.header_m {
-            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
-        }
-        w.write_u8(_c_header)?;
-        w.write_vle_u64(src.request_id())?;
-        w.write_vle_u32(src.key_id())?;
-        if (_c_header & 0x20) != 0 {
-            w.write_vle_u64(_d_suffix_len)?;
-        }
-        if let Some(_v) = src.suffix() {
-            w.write_bytes(_v.into_inner().as_bytes())?;
-        }
-        if let Some(_v) = src.extensions() {
-            for (_i, _e) in _v.enumerate() {
-                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
-            }
-        }
+        Self::write_envelope(src.header(), src.request_id(), src.key_id(), src.suffix(), src.extensions(), w, over)?;
         match src.body() {
             CodecZenohResponseVariantSource::CodecZenohReply(_b) => super::codec_zenoh_reply::CodecZenohReplyWire::write_source(_b, w)?,
             CodecZenohResponseVariantSource::CodecZenohErr(_b) => super::codec_zenoh_err::CodecZenohErrWire::write_source(_b, w)?,
             CodecZenohResponseVariantSource::Default { body: _b, .. } => super::codec_zenoh_reply::CodecZenohReplyWire::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+
+    /// The writes [`Self::write_source_in`] makes before the body of the arm
+    /// `src` holds, over the fields they read, each handed in as `src`
+    /// returned it: one copy for the values whose fields have these types,
+    /// whatever arm each holds (docs/adr/0126).
+    #[inline(never)]
+    fn write_envelope<K: SceSink>(_s_header: u8, _s_request_id: u64, _s_key_id: u32, _s_suffix: Option<::sce_forge_runtime::codec::Text<'_, 65535>>, _s_extensions: Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>>, w: &mut K, over: &CodecZenohResponseOverrides) -> Result<(), K::Error> {
+        let _k_extensions: usize = _s_extensions.clone().map_or(0, |_l| _l.len());
+        let _p_header_n_0: bool = _s_suffix.is_some();
+        let _p_header_z_0: bool = _s_extensions.clone().is_some();
+        let _n_d_suffix_len_0: usize = match _s_suffix {
+            Some(_v) => _v.len(),
+            None => 0,
+        };
+        let _f_d_suffix_len: Option<usize> = if _s_suffix.is_some() { Some(_n_d_suffix_len_0) } else { None };
+        let _d_suffix_len: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_suffix_len.unwrap_or(0));
+        let mut _c_header: u8 = (((_s_header & !0x20) | (u8::from(_p_header_n_0) << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
+        if let Some(_o) = over.header_m {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        w.write_u8(_c_header)?;
+        w.write_vle_u64(_s_request_id)?;
+        w.write_vle_u32(_s_key_id)?;
+        if (_c_header & 0x20) != 0 {
+            w.write_vle_u64(_d_suffix_len)?;
+        }
+        if let Some(_v) = _s_suffix {
+            w.write_bytes(_v.into_inner().as_bytes())?;
+        }
+        if let Some(_v) = _s_extensions.clone() {
+            for (_i, _e) in _v.enumerate() {
+                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+            }
         }
         Ok(())
     }

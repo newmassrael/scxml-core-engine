@@ -597,27 +597,37 @@ impl CodecZenohRequestWire {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohRequestSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohRequestOverrides) -> Result<(), K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
-        let _n_d_header_n_0: usize = usize::from(super::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(src.keyexpr()));
-        let _p_header_z_0: bool = src.extensions().is_some();
-        let _v_header_n: u8 = _n_d_header_n_0 as u8;
-        let mut _c_header: u8 = (((src.header() & !0x20) | (_v_header_n << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
-        if let Some(_o) = over.header_m {
-            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
-        }
-        w.write_u8(_c_header)?;
-        w.write_vle_u64(src.rid())?;
-        super::codec_zenoh_wireexpr::CodecZenohWireexprWire::write_source(src.keyexpr(), w)?;
-        if let Some(_v) = src.extensions() {
-            for (_i, _e) in _v.enumerate() {
-                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
-            }
-        }
+        Self::write_envelope(src.header(), src.rid(), src.keyexpr(), src.extensions(), w, over)?;
         match src.body() {
             CodecZenohRequestVariantSource::CodecZenohMsgPut(_b) => super::codec_zenoh_msg_put::CodecZenohMsgPutWire::write_source(_b, w)?,
             CodecZenohRequestVariantSource::CodecZenohMsgDel(_b) => super::codec_zenoh_msg_del::CodecZenohMsgDelWire::write_source(_b, w)?,
             CodecZenohRequestVariantSource::CodecZenohQuery(_b) => super::codec_zenoh_query::CodecZenohQueryWire::write_source(_b, w)?,
             CodecZenohRequestVariantSource::Default { body: _b, .. } => super::codec_zenoh_query::CodecZenohQueryWire::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+
+    /// The writes [`Self::write_source_in`] makes before the body of the arm
+    /// `src` holds, over the fields they read, each handed in as `src`
+    /// returned it: one copy for the values whose fields have these types,
+    /// whatever arm each holds (docs/adr/0126).
+    #[inline(never)]
+    fn write_envelope<K: SceSink>(_s_header: u8, _s_rid: u64, _s_keyexpr: &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource, _s_extensions: Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>>, w: &mut K, over: &CodecZenohRequestOverrides) -> Result<(), K::Error> {
+        let _k_extensions: usize = _s_extensions.clone().map_or(0, |_l| _l.len());
+        let _n_d_header_n_0: usize = usize::from(super::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(_s_keyexpr));
+        let _p_header_z_0: bool = _s_extensions.clone().is_some();
+        let _v_header_n: u8 = _n_d_header_n_0 as u8;
+        let mut _c_header: u8 = (((_s_header & !0x20) | (_v_header_n << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
+        if let Some(_o) = over.header_m {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        w.write_u8(_c_header)?;
+        w.write_vle_u64(_s_rid)?;
+        super::codec_zenoh_wireexpr::CodecZenohWireexprWire::write_source(_s_keyexpr, w)?;
+        if let Some(_v) = _s_extensions.clone() {
+            for (_i, _e) in _v.enumerate() {
+                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+            }
         }
         Ok(())
     }

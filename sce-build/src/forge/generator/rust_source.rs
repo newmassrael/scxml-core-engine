@@ -31,6 +31,7 @@ use crate::forge::encode_plan::{
     EntryId, Guard, HandedFrom, Law, ListWrite, Measured, Narrow, Number, NumberInto, Offset,
     ParentTag, PresenceFlag, Value, Write,
 };
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 pub(super) mod cbor;
@@ -121,6 +122,13 @@ pub(super) fn count_function(trait_name: &str, params: &str, args: &str, may_fai
 /// `render_codec` gives it under the same name.
 pub(super) fn unknown_tag_type(struct_name: &str) -> String {
     format!("{struct_name}UnknownTag")
+}
+
+/// The parameter a codec's `write_envelope` holds the field read by `accessor`
+/// in (docs/adr/0126): beside the codec's own locals, each of which starts with
+/// an underscore and a letter of its kind.
+fn envelope_param(accessor: &str) -> String {
+    format!("_s_{accessor}")
 }
 
 /// The attribute of a function that writes, for [`Input::inline_encode`].
@@ -1578,6 +1586,11 @@ struct Plan<'a> {
     encode: EncodePlan<'a>,
     /// `{Struct}Source`.
     trait_name: String,
+    /// While the writes before a variant's body are printed as a function of
+    /// their own (`write_envelope`, docs/adr/0126), the accessors of the fields
+    /// they read, each of which is then a parameter of that function and not a
+    /// read of the source. `None` while the source is read.
+    envelope_reads: RefCell<Option<BTreeSet<String>>>,
 }
 
 /// Whether `m` has a source interface, given whether each codec it imports has
@@ -2018,6 +2031,7 @@ impl<'a> Plan<'a> {
             input,
             encode: EncodePlan::of(input.m, input.imports),
             trait_name: format!("{}Source", input.struct_name),
+            envelope_reads: RefCell::new(None),
         })
     }
 
@@ -2976,7 +2990,27 @@ impl<'a> Plan<'a> {
                 local
             }
         } else {
-            format!("src.{}()", self.accessor(field))
+            self.source_read(field)
+        }
+    }
+
+    /// The read of `field`, a field the source presents by an accessor of its
+    /// own: the accessor, or, while the writes before a variant's body are
+    /// printed apart, the parameter that holds what it returned (docs/adr/0126).
+    /// A list is an iterator, so each read of the parameter takes a copy of it,
+    /// as each call of the accessor makes a new one.
+    fn source_read(&self, field: &CodecField) -> String {
+        let accessor = self.accessor(field);
+        let mut reads = self.envelope_reads.borrow_mut();
+        let Some(reads) = reads.as_mut() else {
+            return format!("src.{accessor}()");
+        };
+        let param = envelope_param(&accessor);
+        reads.insert(accessor);
+        if field.is_repeat() || field.is_tlv_chain() {
+            format!("{param}.clone()")
+        } else {
+            param
         }
     }
 
@@ -4690,7 +4724,13 @@ impl<'a> Plan<'a> {
     // ── the encode ───────────────────────────────────────────────────
 
     fn encode_impl(&self) -> String {
-        let write = self.write_functions(&self.write_body());
+        // A codec whose writes before its variant's body are read off its
+        // fields alone prints them as a function of their own (docs/adr/0126).
+        let (body, envelope) = match self.envelope_at() {
+            Some(at) => self.write_apart(at),
+            None => (self.write_body(), String::new()),
+        };
+        let write = self.write_functions(&body);
         // A list or an embedded body is written by the codec it holds, which
         // can refuse a value after this codec has written bytes. The same write
         // into a sink that only counts finds that refusal first, so the
@@ -4743,7 +4783,7 @@ impl<'a> Plan<'a> {
              \x20   }}\n\n\
              {inputs}\
              {tag_of}\
-             {write}\n\
+             {write}{envelope}\n\
              {count}\
              }}\n\
              {measure}",
@@ -4904,9 +4944,17 @@ impl<'a> Plan<'a> {
     /// The statements of `write_source`: the derived values, then the wire.
     fn write_body(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
+        self.write_wire(&self.encode.program, &mut lines);
+        indent(&lines, 8)
+    }
+
+    /// The derived values, then the writes of `program`, then the success: the
+    /// whole encode, or the writes before a variant's body that
+    /// [`Self::write_apart`] prints as a function of their own.
+    fn write_wire(&self, program: &[Write<'_>], lines: &mut Vec<String>) {
         // Each group's elements, as the side the value holds says them
         // (docs/adr/0065 §6 R4b).
-        self.group_bindings(&mut lines);
+        self.group_bindings(lines);
         // An input the value says is read off it, under the name a gate reads
         // it by; a codec that does not test it has nothing to read
         // (docs/adr/0065 §6 R4a).
@@ -4917,8 +4965,8 @@ impl<'a> Plan<'a> {
                 self.said_input(&said.input.name, "src")
             ));
         }
-        let derived = self.derivations(&mut lines);
-        self.gate_checks(&derived, &mut lines);
+        let derived = self.derivations(lines);
+        self.gate_checks(&derived, lines);
         for input in self.given_inputs() {
             // A codec that does not test its input still takes it.
             lines.push(format!("let _ = {};", Self::input_name(input)));
@@ -4928,12 +4976,12 @@ impl<'a> Plan<'a> {
             // codec, and nothing is read or written.
             lines.push("let _ = (src, w);".to_string());
             lines.push("Ok(())".to_string());
-            return indent(&lines, 8);
+            return;
         }
-        for write in &self.encode.program {
+        for write in program {
             match write {
-                Write::Byte { pieces, .. } => self.byte(pieces, &derived, &mut lines),
-                Write::Whole(field) => self.whole(field, &derived, &mut lines),
+                Write::Byte { pieces, .. } => self.byte(pieces, &derived, lines),
+                Write::Whole(field) => self.whole(field, &derived, lines),
                 Write::Tail { field, pad } => {
                     if *pad {
                         lines.push(format!(
@@ -4945,13 +4993,113 @@ impl<'a> Plan<'a> {
                     lines.push(format!("w.write_bytes({})?;", self.bytes_of(field, &value)));
                 }
                 Write::Streamed { field, guard, list } => {
-                    self.streamed(field, *guard, list.as_ref(), &derived, &mut lines)
+                    self.streamed(field, *guard, list.as_ref(), &derived, lines)
                 }
-                Write::Variant => self.write_variant(&derived, &mut lines),
+                Write::Variant => self.write_variant(&derived, lines),
             }
         }
         lines.push("Ok(())".to_string());
-        indent(&lines, 8)
+    }
+
+    /// The place of the variant's body in the program where the writes before
+    /// it are printed as a function of their own ([`EncodePlan::envelope`],
+    /// docs/adr/0126). A codec that lowers its source to its parts writes the
+    /// wire from that one form already (`write_parts_in`).
+    fn envelope_at(&self) -> Option<usize> {
+        if self.lowers_to_parts() {
+            return None;
+        }
+        self.encode.envelope()
+    }
+
+    /// The statements of `write_source` (`write_source_in` where a parent may
+    /// set a flag) of a codec whose writes before its variant's body, `at` in
+    /// the program, are read off its fields alone, and the function they are
+    /// printed as, `write_envelope` (docs/adr/0126).
+    ///
+    /// `write_source` is copied for each type of value it is handed: written
+    /// whole, each copy holds every write of the frame's head, the same
+    /// instructions for every arm a parent's values hold. Here it reads each
+    /// field the head reads once, hands what the accessor returned to
+    /// `write_envelope`, whose type parameters are the types of those fields
+    /// and not the value's, and writes the body of the arm it holds. Values
+    /// whose fields are of one type, whatever arm each holds, share one copy of
+    /// the head. A list is handed as the iterator its accessor returns, and each
+    /// read takes a copy of it ([`Self::source_read`]). It costs a call and its
+    /// arguments for each frame; inlined where the build asks every write
+    /// inlined (`--inline-encode`), it costs nothing and shares nothing.
+    fn write_apart(&self, at: usize) -> (String, String) {
+        *self.envelope_reads.borrow_mut() = Some(BTreeSet::new());
+        let mut head: Vec<String> = Vec::new();
+        self.write_wire(&self.encode.program[..at], &mut head);
+        let reads = self.envelope_reads.take().unwrap_or_default();
+        let fields: Vec<&CodecField> = self
+            .m()
+            .fields
+            .iter()
+            .filter(|field| reads.contains(&self.accessor(field)))
+            .collect();
+        let params: String = fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "{}: {}, ",
+                    envelope_param(&self.accessor(field)),
+                    self.accessor_type(field)
+                )
+            })
+            .collect();
+        let args: String = fields
+            .iter()
+            .map(|field| format!("src.{}(), ", self.accessor(field)))
+            .collect();
+        let overridden = !self.overridable().is_empty();
+        let (writer, over_param, over_arg) = if overridden {
+            (
+                "write_source_in",
+                format!(", over: &{}", self.overrides_name()),
+                ", over",
+            )
+        } else {
+            ("write_source", String::new(), "")
+        };
+        let input_args = self.input_args();
+        let mut lines = vec![format!(
+            "Self::write_envelope({args}w{input_args}{over_arg})?;"
+        )];
+        // Nothing an arm is handed is derived (`EncodePlan::envelope`), so the
+        // body reads no local of the head.
+        self.write_variant(&Derived::default(), &mut lines);
+        lines.push("Ok(())".to_string());
+        // Every field the head reads is a parameter, beside the sink, the flag
+        // inputs and the flags a parent sets; clippy counts past seven.
+        let arity = fields.len() + 1 + self.given_inputs().count() + usize::from(overridden);
+        let allow = if arity > 7 {
+            "\x20   #[allow(clippy::too_many_arguments)]\n"
+        } else {
+            ""
+        };
+        let mark = if self.input.inline_encode {
+            "#[inline(always)]"
+        } else {
+            "#[inline(never)]"
+        };
+        let input_params = self.input_params();
+        let result = self.write_result("K");
+        let body = indent(&head, 8);
+        let function = format!(
+            "\n\
+             \x20   /// The writes [`Self::{writer}`] makes before the body of the arm\n\
+             \x20   /// `src` holds, over the fields they read, each handed in as `src`\n\
+             \x20   /// returned it: one copy for the values whose fields have these types,\n\
+             \x20   /// whatever arm each holds (docs/adr/0126).\n\
+             {allow}\
+             \x20   {mark}\n\
+             \x20   fn write_envelope<K: SceSink>({params}w: &mut K{input_params}{over_param}) -> {result} {{\n\
+             {body}\
+             \x20   }}\n"
+        );
+        (indent(&lines, 8), function)
     }
 
     /// The suffix: the body of the arm the value holds.
@@ -5999,7 +6147,7 @@ impl Derived {
             // The carrier as the source presents it, each derived bit-range
             // replaced in turn. `compound` is whether `value` needs parentheses
             // to be the left operand of the next `&`.
-            let mut value = format!("src.{}()", plan.accessor(carrier));
+            let mut value = plan.source_read(carrier);
             let mut compound = false;
             // Flags that are a number only while there is content to measure.
             let mut optional: Vec<(&DerivedFlag, &FlagDef)> = Vec::new();

@@ -791,6 +791,53 @@ impl<'m> EncodePlan<'m> {
         presented_alone(self.model, &self.roles, field)
     }
 
+    /// The place in [`Self::program`] of the body of the arm the value holds,
+    /// where everything written before it is read off the value's fields alone
+    /// (docs/adr/0126): the body is the last write and not the first, and
+    /// nothing derived, checked or written before it, nor anything an arm is
+    /// handed, reads which arm the value holds. A printer whose encode is copied
+    /// for each type of value writes those writes once, over the fields, apart
+    /// from the body.
+    ///
+    /// `None` where the codec has no variant, writes nothing before its body or
+    /// something after it, or reads the arm before the body: a tag or a flag an
+    /// arm says held in a field, a group, an input the value says read by a
+    /// gate, a check of an arm, or bits of a carrier an arm is handed.
+    pub fn envelope(&self) -> Option<usize> {
+        let at = self
+            .program
+            .iter()
+            .position(|write| matches!(write, Write::Variant))?;
+        if at == 0 || at + 1 != self.program.len() {
+            return None;
+        }
+        let derives_from_arm = self.derivations.iter().any(|derived| match &derived.by {
+            Derive::VariantTag | Derive::ArmFlag { .. } => true,
+            Derive::Number(number) => number
+                .measures
+                .iter()
+                .any(|measure| matches!(measure.of, Measured::ArmSays { .. })),
+            Derive::ParentTag(_) | Derive::Presence(_) | Derive::ChainContinuation => false,
+        });
+        let checks_an_arm = self
+            .input_checks
+            .iter()
+            .any(|check| matches!(check.site, CheckSite::Arm { .. }));
+        let hands_an_arm_bits = self.arms.iter().any(|arm| {
+            self.handed.get(arm.codec).is_some_and(|handed| {
+                handed
+                    .iter()
+                    .any(|h| matches!(h.from, Some(HandedFrom::Carrier { .. })))
+            })
+        });
+        let reads_arm = derives_from_arm
+            || checks_an_arm
+            || hands_an_arm_bits
+            || !self.roles.groups.is_empty()
+            || self.said.iter().any(|said| said.read);
+        (!reads_arm).then_some(at)
+    }
+
     /// The clauses of the gate `gate`, a gate of this codec, in the order its
     /// author joined them.
     ///
