@@ -266,14 +266,18 @@ Before, from `backends/rust/probes/nostd-footprint/footprint.budget` at the pare
 
 | | before | after |
 |---|---|---|
-| one more machine, with the macrostep report (`MACHINE_BYTES`) | 862 | to be measured |
-| one more machine, without it (`MACHINE_BYTES_NO_DIAGNOSTICS`) | 854 | to be measured |
-| one more machine, two plain documents (`MACHINE_BYTES_PLAIN`) | 926 | to be measured |
-| shared core, with the report / without / plain | 7,890 / 7,782 / 5,584 | to be measured |
-| worst-case stack / plain / a root's own frame | 952 / 760 / 64 | to be measured |
+| one more machine, with the macrostep report (`MACHINE_BYTES`) | 862 | 868 |
+| one more machine, without it (`MACHINE_BYTES_NO_DIAGNOSTICS`) | 854 | 860 |
+| one more machine, two plain documents (`MACHINE_BYTES_PLAIN`) | 926 | 932 |
+| shared core, with the report / without / plain | 7,890 / 7,782 / 5,584 | 7,890 / 7,782 / 5,584 |
+| worst-case stack / plain / a root's own frame | 952 / 760 / 64 | read by the nostd-mcu gate at the landing |
 
 The probe's machines carry no typed payload, so their `EventData` is `()`: what they pay is the turn's `lend` and
-`current` and the count where an external event is taken.
+`current` and the count where an external event is taken, 6 bytes for each machine; the shared core does not move.
+Measured on one build machine with the gate's own arithmetic (`.text` plus `.rodata` of the probe staticlib, the
+image of two machines minus the image of one), before and after in one run; the images of two machines are 40,
+40 and 40 bytes larger (210,705 / 210,519 / 207,804). The build machines carry no `thumbv6m` standard library, so
+the gate's stack step was not run there.
 
 ## Order of the changes
 
