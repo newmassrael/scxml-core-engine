@@ -438,12 +438,17 @@ impl<'a> SceCursor<'a> {
 
     /// Borrow the next `n` bytes without advancing. Returns
     /// `NeedMoreBytes` when the cursor's tail is shorter than `n`.
+    ///
+    /// Read through `get`, as [`Self::peek_array`] is: the tail and then its
+    /// first `n` bytes, two comparisons, and the one answer to a short tail is
+    /// this refusal. A range index would keep a bounds check whose panic
+    /// formats the range, a path no cursor takes, since `pos` never passes
+    /// the end of the input.
     pub fn peek_slice(&self, n: usize) -> Result<&'a [u8], CodecError> {
-        if self.remaining() < n {
-            Err(CodecError::NeedMoreBytes)
-        } else {
-            Ok(&self.buf[self.pos..self.pos + n])
-        }
+        self.buf
+            .get(self.pos..)
+            .and_then(|tail| tail.get(..n))
+            .ok_or(CodecError::NeedMoreBytes)
     }
 
     /// The next `N` bytes as an array, without advancing. Returns
@@ -694,8 +699,13 @@ impl<'a> $name<'a> {
     /// Consume the sink and return the prefix of the original buffer
     /// containing the bytes written. Callers use this to recover the
     /// exact-size view for downstream syscalls (e.g. `send(2)`).
+    ///
+    /// Every write moves the position only after it found its bytes inside
+    /// the buffer, so the prefix is always there. It is read through
+    /// `get_mut`, so the sink has no range index whose panic formats the
+    /// range; the empty prefix stands where the type admits one that is not.
     pub fn into_written(self) -> &'a mut [u8] {
-        &mut self.buf[..self.pos]
+        self.buf.get_mut(..self.pos).unwrap_or_default()
     }
 }
 
@@ -1341,6 +1351,24 @@ mod tests {
         let buf = [1, 2];
         let c = SceCursor::new(&buf);
         assert_eq!(c.peek_slice(3), Err(CodecError::NeedMoreBytes));
+    }
+
+    /// A count no tail holds is the refusal, at every offset, the end of the
+    /// input included: the read of the tail's first `n` bytes has no sum of
+    /// the offset and the count to overflow.
+    #[test]
+    fn a_peek_of_more_than_any_tail_needs_more_bytes() {
+        let buf = [1, 2, 3];
+        for start in 0..=buf.len() {
+            let mut c = SceCursor::new(&buf);
+            c.advance(start).unwrap();
+            assert_eq!(c.peek_slice(usize::MAX), Err(CodecError::NeedMoreBytes));
+            assert_eq!(
+                c.peek_slice(buf.len() - start + 1),
+                Err(CodecError::NeedMoreBytes)
+            );
+            assert_eq!(c.peek_slice(buf.len() - start), Ok(&buf[start..]));
+        }
     }
 
     #[test]
