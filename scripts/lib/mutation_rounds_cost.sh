@@ -35,7 +35,16 @@
 
 # `setup per-case`, in minutes, by runner; the worst measured, rounded UP:
 #
-#   ctest   35  45   The round builds only the closure of the executables its
+#   ctest   88  62   Measured on run 45318713297 (2026-11-24, 15 ctest jobs):
+#                    `a_static_cpp_payload_bytes_are_held_within_their_bounds_
+#                    ctest` spent 87.9 minutes before its baseline and three
+#                    cases in 186, 62 each, and took 274 against the 170 the
+#                    row before promised it; `parallel_current_state_is_atomic`
+#                    read 41.4 of setup and 56.3 a case (154 against 125). The
+#                    setup is the heaviest closure a ctest casefile selects,
+#                    `static_datamodel_generated_cpp_test`, as it was below.
+#                    It was 35 45 before that, measured as follows.
+#                    The round builds only the closure of the executables its
 #                    tests run (`scripts/mutate`, 2026-10-24). The first
 #                    measurement of that, on run 40054201618, read 84 and 69
 #                    minutes of setup and 55 and 47 a case: but the closure was
@@ -53,7 +62,13 @@
 #                    held_within_its_bound_ctest`: setup 32, two cases in
 #                    88 minutes. That is the heaviest target a ctest casefile
 #                    selects, `static_datamodel_generated_cpp_test`.
-#   *       15  20   The setup is unchanged. A case is 20: on run 44911860395
+#   *       17  24   On run 45318713297 (2026-11-24) `a_static_rust_record_
+#                    string_field_is_held_within_its_bound_rust` took 63
+#                    minutes against the 55 it was promised, setup 15.3 and two
+#                    cases in 47, 23.9 each; the worst cargo setup of that
+#                    run was 16.2, `a_group_key_follows_only_what_the_log_
+#                    names_rust`. It was 15 20 before that, as follows.
+#                    The setup is unchanged. A case is 20: on run 44911860395
 #                    (2026-11-21) `a_c11_slot_holds_the_done_data_a_machine_
 #                    writes` took 109 minutes against the 100 that 17 promised
 #                    it, setup 13 (job start to baseline) and five cases in 96,
@@ -74,8 +89,8 @@
 #                    and its row is replaced by what that reads.
 mutation_rounds_cost() {
     case "$1" in
-        ctest) printf '35 45\n' ;;
-        *) printf '15 20\n' ;;
+        ctest) printf '88 62\n' ;;
+        *) printf '17 24\n' ;;
     esac
 }
 
