@@ -253,9 +253,15 @@ jobs:
     # a cache of that is neither restorable nor honest about what it holds.
     # `CMAKE_PREFIX_PATH` and `LD_LIBRARY_PATH` below are what make a private
     # prefix visible to `find_package` and to the tests that then link it.
-    - name: Cache mesh transport SDKs
+    #
+    # Restored and saved as two steps, and saved as soon as the SDKs are built:
+    # `actions/cache` saves in the job's post step only after a job that
+    # succeeded, and from 2026-11-21 no job of this lane succeeded, so every run
+    # built the three SDKs again (7 minutes in job 138540727626, its cache "not
+    # found" for a key unchanged since the run before).
+    - name: Restore the mesh transport SDKs
       id: transports
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.local/sce-mesh-transports
         key: mesh-transports-${{ runner.os }}-${{ hashFiles('scripts/install_mesh_transports.sh') }}
@@ -263,6 +269,13 @@ jobs:
     - name: Build and install the mesh transport SDKs
       if: steps.transports.outputs.cache-hit != 'true'
       run: scripts/install_mesh_transports.sh "$HOME/.local/sce-mesh-transports"
+
+    - name: Save the mesh transport SDKs
+      if: steps.transports.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.local/sce-mesh-transports
+        key: ${{ steps.transports.outputs.cache-primary-key }}
 
     - name: Put the transport prefix on the CMake and loader paths
       run: |
@@ -297,25 +310,8 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
-    # The installed SDK, cached under the release scripts/install_emsdk.sh pins
-    # (the registry holds the release below to it): a lane that downloaded it on
-    # every run failed when the download did (run 45496827881, a name lookup), and
-    # the jobs that build with it share the one entry.
-    - name: Cache Emscripten (emsdk)
-      id: emsdk-cache
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: emsdk
-        key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
-
-    - name: Setup Emscripten (emsdk)
-      if: steps.emsdk-cache.outputs.cache-hit != 'true'
-      run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        # The release this lane was last green on; `latest` moved to 7.0.0.
-        ./emsdk install 6.0.13
-        ./emsdk activate 6.0.13
+    # No emscripten here: this job builds the native tree, and nothing it
+    # configures or runs reads emsdk (the WebAssembly job below installs it).
 
     - name: Cache CMake Build
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -333,8 +329,15 @@ jobs:
     # older than the documents and is asked again; what the restore brings is
     # the list of the plans the last run asked, which the configure asks in one
     # parallel batch at its start instead of one by one.
-    - name: Cache the generator's configure-time plans
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    #
+    # Restored and saved as two steps for the reason the transport SDKs are:
+    # the save in a post step waits on a job that succeeds, so the restore had
+    # found nothing on every run since 2026-11-21. The configure fills the
+    # directory before the build starts, so a run that ends at its ceiling still
+    # leaves the next one the list.
+    - name: Restore the generator's configure-time plans
+      id: plans
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: build/sce-codegen-plans
         key: ${{ runner.os }}-sce-codegen-plans-cpp-suite-${{ hashFiles('sce-build/src/**', 'tools/codegen/templates/**', 'cmake/**', '**/CMakeLists.txt', 'resources/**', 'integration_resources/**', 'tests/mesh/**') }}
@@ -375,6 +378,15 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-ccache-cpp-suite-
 
+    # Counted from zero for this build, so the statistics read after the gate
+    # are this run's: how many compiles the cache answered, how many it missed
+    # and why (a new command line, a preprocessed source that differs, a call
+    # it cannot cache). The configuration it runs with is printed beside them.
+    - name: Start the compiler cache's count
+      run: |
+        ccache --zero-stats
+        ccache --show-config
+
     # Configure, build and run are one gate, so the check has one spelling for
     # this lane and for the pre-push hook. The gate asserts that its half and
     # the C11 arm's half add up to every registered case, so a case that
@@ -383,6 +395,47 @@ jobs:
       run: |
         ulimit -c unlimited
         scripts/gate cpp-suite
+
+    - name: Report what the compiler cache answered
+      if: always()
+      run: ccache --show-stats --verbose
+
+    # The gate reports the build's time when the build ends; a job cancelled
+    # inside the build never gets there, and ninja's step log still holds every
+    # step that finished.
+    - name: Report where a cancelled build's time went
+      if: cancelled()
+      run: python3 scripts/lib/build_time_report.py build
+
+    # The logs a reading of the job's time needs, whatever its end.
+    - name: Upload the suite's logs
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: cpp-suite-logs
+        path: |
+          build/sce_gate_build.cpp-suite.log
+          build/sce_gate_configure.log
+          build/.ninja_log
+          build/Testing/Temporary/LastTest.log
+        retention-days: 30
+        if-no-files-found: warn
+        include-hidden-files: true
+
+    - name: Save the generator's configure-time plans
+      id: plans-save
+      if: always() && steps.plans.outputs.cache-hit != 'true' && steps.plans.outputs.cache-primary-key != ''
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: build/sce-codegen-plans
+        key: ${{ steps.plans.outputs.cache-primary-key }}
+
+    - name: Keep only this lane's newest plans
+      if: always() && steps.plans-save.outcome == 'success'
+      uses: ./.github/actions/keep-one-cache
+      with:
+        prefix: ${{ runner.os }}-sce-codegen-plans-cpp-suite-
+        keep: ${{ steps.plans.outputs.cache-primary-key }}
 
     - name: Save ccache
       id: ccache-save

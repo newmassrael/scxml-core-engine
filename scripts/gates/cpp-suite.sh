@@ -42,14 +42,25 @@ BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 # them is the one that clears them.
 sce_prune_ctest_temporaries "$BUILD_DIR"
 
+# Where the build's time went, after it ended either way (the steps it
+# finished, the slowest of them, and the targets they belong to). Read, never
+# judged: a report that cannot be read says so and decides nothing.
+report_build_time() {
+    python3 scripts/lib/build_time_report.py "$BUILD_DIR" >&2 \
+        || sce_gate_step "the build-time report could not be read from $BUILD_DIR/.ninja_log"
+}
+
 # The default target, not a named one. These cases span the engine, the mesh
 # transports and the fixtures, and a target list here would be the same
 # list-shaped defect this gate exists to remove: a case whose target nobody
 # added would be registered, skipped by the build, and then reported by ctest
 # as a missing executable rather than as an untested one.
 sce_gate_step "building the main tree"
-sce_gate_build "$BUILD_DIR" \
-    || sce_gate_fail "main tree build"
+if ! sce_gate_build "$BUILD_DIR"; then
+    report_build_time
+    sce_gate_fail "main tree build"
+fi
+report_build_time
 
 # The debug-info layout is a property of the binaries, not of CMakeLists.txt,
 # and this is the only gate that has both a configured tree and the built
