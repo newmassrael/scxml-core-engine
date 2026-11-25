@@ -1793,23 +1793,23 @@ impl StatePolicy for RequestLifePolicy {
     // and refused in the lift's words.
     fn admit_event_data(
         event_data: Self::EventData<'_>,
-    ) -> ::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {
+    ) -> ::core::result::Result<(), ::sce_rust_runtime::LentBreach> {
         match event_data {
             RequestLifeEventData::Claim(ev) => {
-                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("holder", ev.holder.len(), 64)?;
             }
             RequestLifeEventData::Fail(ev) => {
-                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("holder", ev.holder.len(), 64)?;
             }
             RequestLifeEventData::Heartbeat(ev) => {
-                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("holder", ev.holder.len(), 64)?;
             }
             RequestLifeEventData::Publish(ev) => {
-                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
-                ::sce_rust_runtime::event_payload::lent_within("bundle", ev.bundle.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("bundle", ev.bundle.len(), 64)?;
             }
             RequestLifeEventData::Write(ev) => {
-                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::LentBreach::within("holder", ev.holder.len(), 64)?;
             }
             _ => {}
         }
