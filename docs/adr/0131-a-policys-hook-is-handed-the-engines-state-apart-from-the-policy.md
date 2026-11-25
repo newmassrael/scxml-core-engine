@@ -122,3 +122,17 @@ state, as `Engine::send_to_target` already did:
 
 ## Measured
 
+2026-11-25, `thumbv7em-none-eabihf`, `opt-level = "s"`, rustc 1.100.0, the nostd-mcu gate's
+figures (`backends/rust/probes/nostd-footprint/footprint.budget`): the split changes no figure.
+
+| | one more machine | shared core | worst-case stack |
+|---|---|---|---|
+| diagnostics on | 1,462 -> 1,462 B | 8,504 -> 8,504 B | 984 -> 984 B |
+| diagnostics off | 1,454 -> 1,454 B | 8,396 -> 8,396 B | 984 -> 984 B |
+| two machines without `<history>` or `<parallel>` | 932 -> 932 B | 2,906 -> 2,906 B | 560 -> 560 B |
+
+Under Miri (the pinned nightly of `scripts/lib/queue_sanitizer.sh`),
+`a_hook_borrows_the_policy_and_the_engine_state_apart` (4 tests) and `hello_world` (18 tests) run
+with no undefined behaviour reported; before the split, the path `Engine::initialize` ->
+`enter_state` -> `with_policy` was reported by a consumer's Miri run as a retag of a tag that no
+longer exists.
