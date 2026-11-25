@@ -17,10 +17,10 @@
        initial="waiting"
        datamodel="sce-static"
        name="statechart_lent_payload">
-  <sce:import kind="event-schema" src="schema_note.scxml" as="Note"/>
-  <sce:import kind="event-schema" src="schema_frame.scxml" as="Frame"/>
-  <sce:import kind="event-schema" src="schema_tally.scxml" as="Tally"/>
-  <sce:import kind="algorithm" src="algorithm_tally_amount.scxml" as="AmountOf"/>
+  <sce:import kind="event-schema" src="lent_note.scxml" as="Note"/>
+  <sce:import kind="event-schema" src="lent_frame.scxml" as="Frame"/>
+  <sce:import kind="event-schema" src="lent_tally.scxml" as="Tally"/>
+  <sce:import kind="algorithm" src="lent_tally_amount.scxml" as="AmountOf"/>
   <datamodel>
     <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>

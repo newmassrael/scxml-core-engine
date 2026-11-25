@@ -5,9 +5,9 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm"
-       name="tally_amount"
+       name="lent_tally_amount"
        version="1.0">
-  <sce:import kind="event-schema" src="schema_tally.scxml" as="Tally"/>
+  <sce:import kind="event-schema" src="lent_tally.scxml" as="Tally"/>
   <sce:signature>
     <sce:param name="tally" type="record:Tally"/>
     <sce:return type="uint32"/>

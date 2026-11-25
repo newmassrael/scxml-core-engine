@@ -4,14 +4,15 @@
 // docs/adr/0124: the data of an event is read the same way and held to one
 // contract whether a queue owns it or a host lends it for one call.
 //
-// The machine under `src/integration/lent_payload/` is generated from
+// The machine under `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/lent_payload/statechart_lent_payload.scxml` by the
-// crate's build script (tree `rust-integration`), so it is really type-checked:
+// crate's build script (tree `rust-static-datamodel`), with every document it
+// imports, so it is really type-checked:
 // a guard reads a text of at most eight bytes, content reads a byte string of at
 // most eight, and content hands a payload whole to an imported algorithm.
 
 use sce_rust_runtime::{Engine, StatePolicy};
-use sce_rust_tests::integration::lent_payload::statechart_lent_payload_sm::{
+use sce_rust_tests::integration::static_datamodel::statechart_lent_payload_sm::{
     StatechartLentPayloadEvent, StatechartLentPayloadEventData,
     StatechartLentPayloadFrameReceivedPayload, StatechartLentPayloadFrameReceivedRef,
     StatechartLentPayloadInject, StatechartLentPayloadNoteReceivedRef, StatechartLentPayloadPolicy,
