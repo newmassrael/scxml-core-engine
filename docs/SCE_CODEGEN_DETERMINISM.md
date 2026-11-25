@@ -269,10 +269,16 @@ nothing against the ceiling and a cyclic layout never approaches the bound.
 
 `sce-codegen verify-generator` answers whether this binary was built from
 the sources of a given checkout, and with no `--root` it resolves that
-checkout in this order: `--workspace-root` → `$SCE_WORKSPACE_ROOT` →
-`CARGO_MANIFEST_DIR/..` → walk up from the working directory. A vendored
-or relocated build should pass `--workspace-root` rather than rely on the
-walk.
+checkout in this order: `--workspace-root` → `$SCE_WORKSPACE_ROOT` → the
+first checkout above the working directory, above the package Cargo runs the
+binary for (`CARGO_MANIFEST_DIR` in the run's environment), or above the
+binary's own directory (`sce-build/src/source_tree.rs`). The template tree,
+the schemas and the conformance registry are found by the same search. No
+layer reads where the binary was compiled: a path fixed at compile time is
+the build machine's, and a binary that carried it differed in its bytes by
+the checkout it was built in, so no cache could hand one machine's build to
+another. A vendored or relocated build should pass `--workspace-root`
+rather than rely on the search.
 
 The flag no longer affects generated output: it located the tree the
 header's `template-hash` was computed over, and that line is retired (§3).
@@ -280,8 +286,12 @@ header's `template-hash` was computed over, and that line is retired (§3).
 *Tests:* `workspace_root_explicit_flag_resolves_the_workspace`,
 `workspace_root_env_var_resolves_the_workspace`,
 `workspace_root_invalid_explicit_flag_warns_and_falls_through`,
-`workspace_root_compile_time_fallback_resolves_for_vendored_layout`
-(`sce-build/tests/cli_meta_and_workspace_root.rs`).
+`workspace_root_is_found_from_the_package_cargo_runs`,
+`with_no_root_named_a_run_inside_a_checkout_works_in_it`,
+`with_no_root_named_a_run_works_in_the_checkout_of_the_package_cargo_runs`,
+`with_no_root_named_a_binary_placed_in_a_checkout_works_in_it`
+(`sce-build/tests/cli_meta_and_workspace_root.rs`); the search itself,
+`sce-build/src/source_tree.rs`.
 
 ---
 

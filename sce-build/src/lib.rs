@@ -353,6 +353,10 @@ pub mod send_id_bound;
 /// so the pseudocode review surface can show `0x1a` where the model
 /// holds `26`. See [`source_literal`].
 pub mod source_literal;
+/// Where the SCE source tree a run works in is, found from where the run
+/// starts and never from where the generator was compiled. See
+/// [`source_tree::find`].
+pub mod source_tree;
 /// Which standard-library units (Go packages, C++ headers) a piece of
 /// generated source reaches for, read off the program text with literals and
 /// comments skipped, so that the import block of a generated file is decided in
@@ -12506,25 +12510,23 @@ impl From<TemplatesNotFound> for forge::error::GenerateError {
 
 /// Locate the base template directory (contains rust/, kotlin/, actions/).
 ///
-/// The one search: `SCE_TEMPLATE_DIR`, then the source tree this binary was
-/// built from, then `tools/codegen/templates` under the working directory.
+/// The one search: `SCE_TEMPLATE_DIR`, then `tools/codegen/templates` of the
+/// tree the run works in ([`source_tree::find`]). Never the tree the binary
+/// was compiled in: that path is the build machine's, and a binary that
+/// carried it differed in its bytes by where it was built.
 pub fn locate_template_base() -> Result<std::path::PathBuf, TemplatesNotFound> {
-    // `CARGO_MANIFEST_DIR` is baked at compile time and may point at a stale
-    // source tree on install targets. Silent-wrong output is only possible if
-    // the exact source-tree path happens to exist on the install target, an
-    // edge case the `SCE_TEMPLATE_DIR` override remains the authoritative
-    // escape hatch for.
-    let candidates = [
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates"),
-        std::path::PathBuf::from("tools/codegen/templates"),
-    ];
-    search_template_base(std::env::var_os("SCE_TEMPLATE_DIR").as_deref(), &candidates)
+    search_template_base(
+        std::env::var_os("SCE_TEMPLATE_DIR").as_deref(),
+        &source_tree::search_starts(),
+    )
 }
 
-/// [`locate_template_base`] over what it reads from its environment.
+/// [`locate_template_base`] over what it reads from its environment: the
+/// directory `SCE_TEMPLATE_DIR` names, if any, and the directories the search
+/// for a tree climbs from.
 fn search_template_base(
     named: Option<&std::ffi::OsStr>,
-    candidates: &[std::path::PathBuf],
+    starts: &[std::path::PathBuf],
 ) -> Result<std::path::PathBuf, TemplatesNotFound> {
     if let Some(dir) = named {
         let p = Path::new(dir);
@@ -12545,16 +12547,18 @@ fn search_template_base(
         }
         return Ok(p.to_path_buf());
     }
-    if let Some(found) = candidates.iter().find(|candidate| candidate.exists()) {
-        return Ok(found.clone());
+    let templates = Path::new(generator_witness::RUN_TIME_TREE);
+    if let Some(root) = source_tree::find_from(templates, starts) {
+        return Ok(root.join(templates));
     }
-    let looked: Vec<String> = candidates
+    let looked: Vec<String> = starts
         .iter()
-        .map(|candidate| format!("'{}'", candidate.display()))
+        .map(|start| format!("'{}'", start.display()))
         .collect();
     Err(TemplatesNotFound {
         detail: format!(
-            "Cannot find the Jinja2 templates (looked in {})",
+            "Cannot find the Jinja2 templates (no {} in or above {})",
+            templates.display(),
             looked.join(", ")
         ),
     })
@@ -12578,19 +12582,24 @@ mod tests {
     use super::*;
 
     /// The one search: the named directory alone when one is named, then the
-    /// first candidate there is, else where it looked.
+    /// template tree of the first tree a start climbs to, else where it
+    /// looked.
     #[test]
     fn the_template_search_names_where_it_looked() {
-        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the crate's checkout")
+            .to_path_buf();
+        let inside = checkout.join("sce-build/src");
         let absent = PathBuf::from("/nonexistent/sce-templates");
-        let found = search_template_base(None, &[absent.clone(), here.clone()]);
-        assert_eq!(found, Ok(here.clone()));
+        let found = search_template_base(None, &[absent.clone(), inside.clone()]);
+        assert_eq!(found, Ok(checkout.join("tools/codegen/templates")));
         let none = search_template_base(None, std::slice::from_ref(&absent)).expect_err("no tree");
         assert!(
             none.to_string().contains("/nonexistent/sce-templates"),
             "{none}"
         );
-        let named = search_template_base(Some(absent.as_os_str()), &[here])
+        let named = search_template_base(Some(absent.as_os_str()), &[inside])
             .expect_err("a named directory is the only place looked");
         assert!(
             named.to_string().contains("SCE_TEMPLATE_DIR names"),

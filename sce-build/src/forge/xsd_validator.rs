@@ -159,9 +159,9 @@ impl std::fmt::Display for XsdErrors {
 ///
 /// Resolution order:
 /// 1. `SCE_SCHEMAS_DIR` environment variable (for tests / overrides)
-/// 2. `CARGO_MANIFEST_DIR/../schemas/sce-forge.xsd` (development checkout)
-/// 3. `schemas/sce-forge.xsd` relative to current working directory
-///    (running from project root)
+/// 2. `schemas/sce-forge.xsd` of the tree the run works in
+///    ([`crate::source_tree::find`]), never of the tree the binary was
+///    compiled in
 ///
 /// Returns `None` if the schema file cannot be located. Callers may
 /// treat this as a non-fatal "validation skipped" condition — see
@@ -174,16 +174,8 @@ pub fn find_schema_path() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let candidate = crate_dir.join("../schemas/sce-forge.xsd");
-    if candidate.exists() {
-        return Some(candidate);
-    }
-    let candidate = Path::new("schemas/sce-forge.xsd");
-    if candidate.exists() {
-        return Some(candidate.to_path_buf());
-    }
-    None
+    let schema = Path::new("schemas/sce-forge.xsd");
+    crate::source_tree::find(schema).map(|root| root.join(schema))
 }
 
 /// Cache the resolved schema path so we resolve filesystem paths once per
@@ -585,7 +577,8 @@ mod tests {
 </scxml>"#;
 
     fn schema() -> PathBuf {
-        find_schema_path().expect("schemas/sce-forge.xsd must be reachable from CARGO_MANIFEST_DIR")
+        find_schema_path()
+            .expect("schemas/sce-forge.xsd must be reachable from the tree the test runs in")
     }
 
     /// The one violation `document` has, as (line, col, message).
