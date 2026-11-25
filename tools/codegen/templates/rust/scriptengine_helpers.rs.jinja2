@@ -37,7 +37,7 @@
     // which every constructor bound when the policy was built
     // (docs/adr/0045). A step that fails releases what the steps before it
     // made and is the error, so the start is refused with nothing half done.
-    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) -> Result<(), sce_rust_runtime::ScriptSessionFailure> {
+    fn do_initialize_data_model(&mut self, engine: &mut ::sce_rust_runtime::EngineState<Self>) -> Result<(), sce_rust_runtime::ScriptSessionFailure> {
         if self.script_engine_initialized {
             return Ok(());
         }
@@ -126,7 +126,7 @@
     }
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
-    fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+    fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>) -> bool {
         self.evaluate_guard_raising(cond, engine, "a <transition> cond failed to evaluate")
             .unwrap_or(false)
     }
@@ -136,7 +136,7 @@
     // `cond_failed`: the <if> still selects on `false`, and is then the
     // element whose processing raised, so its block ends after it.
     #[allow(dead_code)]
-    fn evaluate_if_cond(&mut self, cond: &str, engine: &mut Engine<Self>, cond_failed: &mut bool) -> bool {
+    fn evaluate_if_cond(&mut self, cond: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>, cond_failed: &mut bool) -> bool {
         let result = self.evaluate_guard_raising(cond, engine, "an <if> cond failed to evaluate");
         *cond_failed = *cond_failed || result.is_none();
         result.unwrap_or(false)
@@ -144,7 +144,7 @@
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `None` says so, where a bare `false` could not.
-    fn evaluate_guard_raising(&mut self, cond: &str, engine: &mut Engine<Self>, reason: &str) -> Option<bool> {
+    fn evaluate_guard_raising(&mut self, cond: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>, reason: &str) -> Option<bool> {
         self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();

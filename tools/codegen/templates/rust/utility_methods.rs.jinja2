@@ -23,7 +23,7 @@
     // under a script. In() is asked inside executable content as well as in
     // guards — `<if cond="In('s')">` in an <onentry> runs halfway through a
     // microstep — and sees the configuration as it stands at that point.
-    fn publish_in_predicate_states(&self, engine: &Engine<Self>) {
+    fn publish_in_predicate_states(&self, engine: &::sce_rust_runtime::EngineState<Self>) {
         if let Some(ref shared) = self.in_predicate_states {
             let mut states = shared.lock().unwrap();
             states.clear();

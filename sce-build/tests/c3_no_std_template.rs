@@ -344,7 +344,7 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
             "fn execute_exit_actions(\n        &mut self,\n        \
              state: ::sce_rust_runtime::StateId,\n        \
              sce_event_data: Self::EventData<'_>,\n        \
-             engine: &mut sce_rust_runtime::Engine<Self>,\n    ) {",
+             engine: &mut sce_rust_runtime::EngineState<Self>,\n    ) {",
         ] {
             assert!(
                 code.contains(expected),
