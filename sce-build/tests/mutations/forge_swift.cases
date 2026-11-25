@@ -15,7 +15,8 @@ mutation_tests -p sce-build --features cli \
     --test gate_registry_contract --test ci_supersession_policy
 mutation_runtime_targets scripts/gates/forge-swift.sh \
     .github/workflows/swift-backend.yml \
-    tools/git-hooks/gate_registry.py
+    tools/git-hooks/gate_registry.py \
+    tools/git-hooks/gates/forge-swift.py
 
 # ── The lane stops being reachable ─────────────────────────────────
 #
@@ -25,9 +26,9 @@ mutation_runtime_targets scripts/gates/forge-swift.sh \
 # it.
 
 mutation_case "the Swift Forge gate loses the workflow that runs it" <<'PY'
-edit("tools/git-hooks/gate_registry.py",
-     '"forge-swift": {\n        "workflows": ["swift-backend.yml"],',
-     '"forge-swift": {\n        "workflows": [],')
+edit("tools/git-hooks/gates/forge-swift.py",
+     '{\n    "workflows": ["swift-backend.yml"],',
+     '{\n    "workflows": [],')
 PY
 
 # ── The population stops being floored ─────────────────────────────

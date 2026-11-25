@@ -1078,10 +1078,31 @@ fn every_unfilterable_gate_runs_in_a_workflow_without_a_path_filter() {
 fn the_pre_push_hook_runs_every_unfilterable_gate() {
     // Half one: the gate registry maps the carrying workflow, which is
     // how the selector derives "run this stage always" — an unfiltered
-    // workflow yields the catch-all trigger.
+    // workflow yields the catch-all trigger. A gate names its workflows in
+    // its own entry, a file per gate beside the registry, so the registry
+    // and every entry are read together.
     let selector_path = repo_root().join("tools/git-hooks/gate_registry.py");
-    let selector = fs::read_to_string(&selector_path)
+    let entries_dir = repo_root().join("tools/git-hooks/gates");
+    let mut selector = fs::read_to_string(&selector_path)
         .unwrap_or_else(|e| panic!("read {}: {}", selector_path.display(), e));
+    let mut entries: Vec<PathBuf> = fs::read_dir(&entries_dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", entries_dir.display(), e))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "py"))
+        .collect();
+    assert!(
+        !entries.is_empty(),
+        "no gate entries under {} — this half would read the registry alone",
+        entries_dir.display()
+    );
+    entries.sort();
+    for path in entries {
+        selector.push('\n');
+        selector.push_str(
+            &fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e)),
+        );
+    }
 
     let mut carriers: BTreeSet<String> = BTreeSet::new();
     for gate in UNFILTERABLE_GATES {
@@ -1098,10 +1119,10 @@ fn the_pre_push_hook_runs_every_unfilterable_gate() {
         unmapped.is_empty(),
         "workflow(s) carrying a tree-wide gate are absent from the pre-push \
          gate registry, so the hook skips a gate CI runs on every push: {:?}\n\
-         Add a gate in {} mapping the workflow; its missing `paths:` filter \
-         makes the stage unconditional, which is the intent.",
+         Add a gate (an entry in {}) mapping the workflow; its missing \
+         `paths:` filter makes the stage unconditional, which is the intent.",
         unmapped,
-        selector_path.display()
+        entries_dir.display()
     );
 
     // Half two: a registered gate that runs nothing is a table entry, not a

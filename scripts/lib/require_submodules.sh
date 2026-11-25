@@ -29,10 +29,10 @@
 #
 # So the requirement is per-gate, and CI already records it: a workflow
 # either says `submodules: recursive` or it does not. That is the SSOT, and
-# this reads it through the registry's `workflows` field. A list of gate
-# names here would be a second copy of a declaration that already exists,
-# free to drift the moment a workflow changes its mind — the same rule
-# `mutation-cases` and `mutation-rounds` follow for their own triggers.
+# this reads it through the `workflows` field of each gate's entry. A list
+# of gate names here would be a second copy of a declaration that already
+# exists, free to drift the moment a workflow changes its mind — the same
+# rule `mutation-cases` and `mutation-rounds` follow for their own triggers.
 #
 # ── The declaration is per JOB, not per file ──────────────────────
 #
@@ -82,8 +82,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-REGISTRY="$REPO_ROOT/tools/git-hooks/gate_registry.py"
-WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
+TABLE="$REPO_ROOT/tools/git-hooks/gate_table.py"
 
 MODE="refuse"
 if [[ "${1:-}" == "--which" ]]; then
@@ -96,117 +95,13 @@ fi
 # Which of the named gates mirror a workflow that asks CI for submodules.
 # In --which mode one slug a line; otherwise `slug<TAB>scope`, the scope being
 # `*` (every submodule) or the paths of those the gate's inputs reach.
-mapfile -t NEEDING < <(python3 - "$REGISTRY" "$WORKFLOW_DIR" "$REPO_ROOT" "$MODE" "$@" <<'PYEOF'
-import runpy
-import sys
-from pathlib import Path
-
-import re
-
-mod = runpy.run_path(sys.argv[1])
-workflow_dir = Path(sys.argv[2])
-repo_root = Path(sys.argv[3])
-mode = sys.argv[4]
-
-
-def declares_submodules(text):
-    """True if this YAML really asks `actions/checkout` for submodules.
-
-    Comment lines are stripped FIRST. `tree-hygiene.yml` explains its own
-    exemption in the words it is exempt from — "No `submodules: recursive`:
-    the gate skips third_party/" — and a substring search reads that comment
-    as the opposite of what it says. Measured 2026-08-24: it put both gates
-    mirroring that workflow on the wrong side of this answer.
-    """
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        code = stripped.split("#", 1)[0]
-        if code.startswith("submodules:") and "recursive" in code:
-            return True
-    return False
-
-
-def jobs_of(text):
-    """`(job name, job body)` for each job in a workflow.
-
-    A job is a two-space key under `jobs:`, which is the whole grammar this
-    needs — the answer being derived is one step's `with:` value, and a YAML
-    parser is not in the standard library. A file whose shape this cannot
-    read yields no jobs, and the caller falls back to the file's answer.
-    """
-    out, name, body = [], None, []
-    in_jobs = False
-    for line in text.splitlines():
-        if line.startswith("jobs:"):
-            in_jobs = True
-            continue
-        if not in_jobs:
-            continue
-        header = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-        if header:
-            if name is not None:
-                out.append((name, "\n".join(body)))
-            name, body = header.group(1), []
-            continue
-        body.append(line)
-    if name is not None:
-        out.append((name, "\n".join(body)))
-    return out
-
-
-def runs_slug(body, slug):
-    """Does this job body invoke `scripts/gate <slug>`?
-
-    The trailing boundary is load-bearing: without it `w3c-python` matches
-    the job running `scripts/gate w3c-python-bindings`, and the two jobs
-    check out differently.
-    """
-    return re.search(r"\bgate\s+" + re.escape(slug) + r"(?![\w.-])", body) is not None
-
-
-submodules = None
-for slug in sys.argv[5:]:
-    entry = mod["GATES"].get(slug)
-    if not entry:
-        continue
-    texts = []
-    for workflow in entry.get("workflows", []):
-        path = workflow_dir / workflow
-        if path.is_file():
-            texts.append(path.read_text(encoding="utf-8"))
-
-    running = [body for text in texts for _, body in jobs_of(text) if runs_slug(body, slug)]
-    if running:
-        # The job that runs it is the one whose checkout it has to mirror.
-        needs = any(declares_submodules(body) for body in running)
-    else:
-        # No job names it — fall back to the file, which refuses rather than
-        # guessing that a gate it cannot place needs nothing.
-        needs = any(declares_submodules(text) for text in texts)
-    if not needs:
-        continue
-    if mode == "which":
-        print(slug)
-        continue
-    # The key's own reading of the entry (`gate_inputs`): a gate keyed on its
-    # triggers reaches what they and its builds' reads name. Derived for this
-    # gate alone: the unit's copy holds its inputs and no other gate's, so
-    # deriving every gate's would read files outside them (`gate_triggers`).
-    own = entry.get("inputs")
-    if own == mod["INPUTS_ARE_TRIGGERS"]:
-        own = mod["gate_inputs"](slug, None,
-                                 mod["gate_triggers"](repo_root, [slug]),
-                                 mod["gate_reads"](repo_root, [slug]))
-    if own is None:
-        print(f"{slug}\t*")
-        continue
-    if submodules is None:
-        submodules = mod["submodule_paths"](repo_root)
-    print(f"{slug}\t" + " ".join(mod["submodules_reached"](own, submodules)))
-PYEOF
-)
+# Answered from the gates' own entries (`submodule_needs` in gate_table.py),
+# so a unit's run reads those and not the registry.
+WHICH=()
+if [[ "$MODE" == "which" ]]; then
+    WHICH=(--which)
+fi
+mapfile -t NEEDING < <(python3 -I "$TABLE" submodules ${WHICH[@]+"${WHICH[@]}"} "$@")
 
 if [[ "$MODE" == "which" ]]; then
     (( ${#NEEDING[@]} )) && printf '%s\n' "${NEEDING[@]}"

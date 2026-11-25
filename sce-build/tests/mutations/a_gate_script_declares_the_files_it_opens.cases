@@ -50,7 +50,8 @@ mutation_tests -p sce-build --features cli --test gate_registry_contract
 # INCONCLUSIVE with "the mutation never reached the code under test", which
 # is the harness's binary-hash check doing exactly its job on a file the
 # binary never contained.
-mutation_runtime_targets tools/git-hooks/gate_registry.py
+mutation_runtime_targets tools/git-hooks/gate_registry.py \
+    tools/git-hooks/gates/w3c-kotlin.py tools/git-hooks/gates/mutation-rounds.py
 
 # ── The defect itself, one declaration at a time ───────────────────
 #
@@ -66,10 +67,10 @@ mutation_runtime_targets tools/git-hooks/gate_registry.py
 # matches the list its script opens.
 
 mutation_case "a gate stops declaring the list its script opens" <<'PY'
-edit("tools/git-hooks/gate_registry.py",
-     '                  "sce/include/scripting/*.lua", "tests/ecmascript/**",\n'
-     '                  "tests/ecmascript/kotlin_frontend_refusals.json",\n',
-     '                  "sce/include/scripting/*.lua",\n')
+edit("tools/git-hooks/gates/w3c-kotlin.py",
+     '              "sce/include/scripting/*.lua", "tests/ecmascript/**",\n'
+     '              "tests/ecmascript/kotlin_frontend_refusals.json",\n',
+     '              "sce/include/scripting/*.lua",\n')
 PY
 
 # The same, for a gate that inherits its workflow's filter instead of
@@ -79,9 +80,9 @@ PY
 # at without editing YAML it does not declare.
 
 mutation_case "the harness a lane runs is no longer one of its inputs" <<'PY'
-edit("tools/git-hooks/gate_registry.py",
-     '        "extra": ["scripts/mutate", ',
-     '        "extra": [')
+edit("tools/git-hooks/gates/mutation-rounds.py",
+     '    "extra": ["scripts/mutate", ',
+     '    "extra": [')
 PY
 
 # ── Prose is not an input ──────────────────────────────────────────

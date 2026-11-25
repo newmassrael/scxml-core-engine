@@ -35,23 +35,19 @@
 mutation_tests -p sce-build --test gate_registry_contract
 mutation_targets sce-build/tests/gate_registry_contract.rs
 # Read at run time, and EXECUTED: the case runs the script and judges its exit
-# status, so a change to it is invisible to a rebuild check.
-mutation_runtime_targets scripts/gate
+# status, so a change to it is invisible to a rebuild check. The resolver the
+# runner asks is the gate table's (`gate_table.py order`), run the same way.
+mutation_runtime_targets scripts/gate tools/git-hooks/gate_table.py
 
 mutation_case "the resolver's refusal is swallowed and the empty order exits 0" <<'PY'
 edit("scripts/gate",
-     '''        if ! ORDER_TEXT="$(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF\'''',
-     '''        mapfile -t ORDER < <(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF\'''')
-edit("scripts/gate",
-     '''PYEOF
-)"; then
+     '''        if ! ORDER_TEXT="$(python3 -I "$TABLE" order "${SLUGS[@]}")"; then
             exit 2
         fi
         while IFS= read -r _slug; do
             [[ -n "$_slug" ]] && ORDER+=("$_slug")
         done <<<"$ORDER_TEXT"''',
-     '''PYEOF
-)''')
+     '''        mapfile -t ORDER < <(python3 -I "$TABLE" order "${SLUGS[@]}")''')
 # The guard alone, up to its `fi`: what follows it in the branch (the
 # change set handed to named gates) is not part of the defect.
 edit("scripts/gate",
@@ -65,7 +61,7 @@ edit("scripts/gate",
 PY
 
 mutation_case "the resolver refuses without saying which slug it did not know" <<'PY'
-edit("scripts/gate",
-     '    print("gate: unknown slug(s): " + ", ".join(sorted(unknown)), file=sys.stderr)',
-     '    print("gate: cannot resolve", file=sys.stderr)')
+edit("tools/git-hooks/gate_table.py",
+     '        print("gate: unknown slug(s): " + ", ".join(sorted(unknown)), file=sys.stderr)',
+     '        print("gate: cannot resolve", file=sys.stderr)')
 PY

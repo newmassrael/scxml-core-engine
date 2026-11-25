@@ -50,11 +50,56 @@ import ast
 import importlib.util
 import json
 import pathlib
-import posixpath
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
+
+
+def _gate_table() -> types.ModuleType:
+    """`gate_table.py`: the entries' reader, and the derivations a gate's run
+    shares with this file ("One file per gate" there).
+
+    Compiled from its source and kept under the name it gives itself, the
+    three steps its `sibling` takes for every other module, which cannot
+    load the module that defines it. Not imported, for the reason `sibling`
+    gives: an import reads and writes `__pycache__/`.
+    """
+    if "gate_table" not in sys.modules:
+        path = Path(__file__).resolve().with_name("gate_table.py")
+        module = types.ModuleType("gate_table")
+        module.__file__ = str(path)
+        sys.modules["gate_table"] = module
+        exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"),
+             module.__dict__)
+    return sys.modules["gate_table"]
+
+
+gate_table = _gate_table()
+trigger_globs = gate_table.sibling("trigger_globs")
+
+from gate_table import (  # noqa: E402  (loaded by path, above)
+    INPUTS_ARE_TRIGGERS,
+    glob_to_regex,
+    submodule_paths,
+    submodules_reached,
+)
+from trigger_globs import (  # noqa: E402
+    BUILT_INPUTS,
+    GENERATOR_WITNESS,
+    MAIN_TREE_CONFIGURE,
+    built_inputs,
+    built_reads,
+    cargo_build_targets,
+    cargo_path_deps,
+    cargo_workspace_manifests,
+    enrolled_globs,
+    generator_witness_globs,
+    tracked_paths,
+    workflow_paths,
+)
+
 
 # ── Gate table ────────────────────────────────────────────────────
 #
@@ -65,7 +110,7 @@ from pathlib import Path
 # `builds` names what the gate builds that other gates build alike (the main
 # CMake tree, the generator); what each of those reads is derived once, in
 # `BUILT_INPUTS`, and joins the trigger of every gate that names it (see
-# "What a build reads" below GATES).
+# "What a build reads" in trigger_globs.py).
 #
 # `cost_s` is wall-clock seconds, MEASURED by `scripts/gate --measure --all`
 # on a warm tree, not estimated. Warm is the right basis: a push happens on
@@ -599,45 +644,9 @@ PEAK_MEASURED: dict[str, str] = {
                        "killed at 5.2 and 7.8 GB in a landing (2026-11-20)",
 }
 
-# `parallelism` is how many processes one run of the gate's OWN script can keep
-# busy; a unit asks bx for the largest figure among the gates it runs
-# (`parallelism` on a plan line, bx RFC 0004 section 6, named `cores` before bx
-# RFC 0081 4.8 renamed it). It is the upper end of the job slots a unit is
-# given in its batch: its own jobserver and `BX_GRANT_CORES` (bx RFC 0062,
-# 4.5), which `scripts/lib/sce_build_jobs.sh` hands to the builds. Admission
-# counts no cores (bx RFC 0081): a busy machine shares its cores by weight, and
-# the figure caps what the unit's builds start, not what it may take from
-# another run. bx does not learn a unit's figure (bx RFC 0062, 7), so the figure
-# here is the whole of what the unit is given. A unit that named none
-# was given one slot. MEASURED 2026-11-21: in a landing whose units named
-# none, a unit's run was given one core and used 1.3 on average, one unit was
-# still running after 7547s, and the landing's judge reached its four-hour
-# deadline three times without a verdict.
-#
-# Every figure is the one of its class, as `peak_gb`'s are until a run is
-# read: `PARALLELISM_COMPILE` for a gate that compiles, `PARALLELISM_SCRIPT` for a script
-# that runs built tools over the tree. Eight is the core count of the smallest
-# build machines the fleet has: a compiling unit is given all of one of those
-# and a share of a larger one. A tree build parallelises past eight, but a
-# floor above a machine's cores is capped there, and on a busy machine the
-# floor is a weight the kernel shares, not cores taken from another run.
-PARALLELISM_COMPILE = 8
-PARALLELISM_SCRIPT = 1
-
-# A gate whose entry says `"inputs": INPUTS_ARE_TRIGGERS` is keyed on its
-# trigger globs (`gate_triggers`): the same derivation that decides whether a
-# change selects the gate decides which changes its kept pass outlives (ADR
-# 0120, D2). A gate a change does not select is one the change cannot affect,
-# so a key over the same globs is that claim restated, and bx tests it: a run
-# in the copy that reads outside the globs is "could not measure" (bx RFC 0020
-# 5.2), which is also a file the selection was missing. A gate takes the value
-# once `bx --checks prepush --learn <slug>` has shown its reads inside its
-# triggers; until then it keeps `None` and costs nothing it did not cost.
-# A gate that names a shared build (`builds`) is keyed as well on what cargo
-# reads for that build without compiling it (`gate_reads`, "What a build
-# reads that does not select it"), which changes no verdict and so selects
-# nothing.
-INPUTS_ARE_TRIGGERS = "triggers"
+# `parallelism` and `inputs` take their marks from `gate_table.py`, where
+# their reasons are written: `PARALLELISM_COMPILE`, `PARALLELISM_SCRIPT` and
+# `INPUTS_ARE_TRIGGERS` are the names an entry may use for a value.
 
 # Every unit names this, so a machine runs one gate of a set at a time. The
 # gates were written for a runner that ran them one after another in one
@@ -779,2489 +788,12 @@ IMAGE_INSTALLS_RUST = re.compile(
     r"|\brustc\b|\bcargo\b")
 CONTAINER_RUNNER_MARKS = ('--rust "$release"', '.local/rust/$release:ro')
 
-GATES: dict[str, dict] = {
-    # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
-    # Triggered by its own sources, and forced on by its dependents.
-    "codegen-build": {
-        # What a cargo build of the generator reads, derived (see "What a
-        # build reads"): the workspace manifests, `sce-build` and its path
-        # dependencies, the generator witness and its compiled-in files.
-        "builds": ["sce-codegen"],
-        "no_ci_reason": "not a check — it produces the binary other gates "
-                        "run. CI builds it per workflow that needs it "
-                        "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
-                        "counts those steps), so there is no verdict here "
-                        "for a workflow to mirror.",
-        # Stays local however expensive it gets: `drop_ci_only` removes a
-        # gate without rescuing its dependents, so a `ci_only` dependency
-        # would leave the gates that execute its binary with nothing to run.
-        #
-        # A CONDITIONAL cost, and the reason `cost_s_no_op` exists.
-        #
-        # Reached through `deps` on a tree whose `sce-build/**` has not
-        # moved, cargo finds nothing to do: six runs on 2026-09-02 read
-        # 0.099 0.100 0.087 [0.153] 0.107 0.111, the bracketed one queued
-        # behind the cargo lock and discarded. That is `cost_s_no_op`.
-        #
-        # Selected by its OWN triggers, it rebuilds, and those triggers are
-        # exactly `sce-build/**` and the manifests below. Three runs after
-        # `touch sce-build/src/lib.rs` read 7.254 7.960 7.136 — one crate
-        # recompiling. A `Cargo.lock` move rebuilds the dependency tree
-        # instead, and this gate's own script records that at 24.6s "in a
-        # tree those gates had already warmed". The budget bounds the WORST
-        # case, so `cost_s` is that one.
-        #
-        # ⚠ 25 is pace-normalised — quoted from that script, not timed here.
-        # `cargo clean` would be needed to reproduce it and this machine's
-        # target/ is shared with sibling sessions. That is why this slug is
-        # back in PACE_NORMALISED after a round that wrongly emptied it:
-        # declaring the 0.111 alone left PUSH_BUDGET_S blind to tens of
-        # seconds on precisely the pushes that select this gate.
-        "cost_s": 25,
-        "cost_s_no_op": 0.111,
-        "summary": "build target/debug/sce-codegen",
-        "cache": True,
-        # Keyed on its triggers, which are what the build compiles, and on
-        # what cargo reads beside them to load the workspace and fingerprint
-        # the generator's build script (`gate_reads`, "What a build reads
-        # that does not select it"). Read off `bx --checks prepush --learn`
-        # of `forge-c11` and `forge-cpp` (2026-11-24), whose units run it.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The NL→IR closure ledger, measured against the tree it describes.
-    #
-    # `docs/SCE_NL_IR_CLOSURE.md` is a denominator — the closed list of what
-    # remains on SCE's side of the specification→IR path, written before and
-    # independently of whatever closes its rows. This gate is what keeps it
-    # from becoming prose: it measures every row and fails when the recorded
-    # status disagrees with the tree IN EITHER DIRECTION. A row recorded
-    # closed that the tree contradicts is a false green; a row recorded open
-    # that the tree has closed is a stale denominator.
-    #
-    # ⚠ It does NOT fail for unfinished work. The `closure:` line on stdout
-    # carries that answer, and the exit status carries whether the record is
-    # honest. Collapsing the two would make the gate unrunnable in the push
-    # path for as long as any row is open, which is the whole of its useful
-    # life.
-    #
-    # Catch-all trigger, for the endpoint-SSOT lane's reason: a row can close
-    # in a template, a header, a CMake list, a Rust module or the visualizer,
-    # and a `paths:` list narrowed to what anyone remembers misses the one
-    # nobody thought of. Affordable — grep, one short Python pass, the two
-    # syntax-only compiles row S3 asks the AOT registrar with, and three runs
-    # of `sce-codegen requirement-closure` over manifests row G4 writes. The
-    # runs behind that number are in the measurement-date map.
-    #
-    # ⚠ WARM, and for row G4 warm now means more than a filled page cache: the
-    # binary must be current. The shared locator rebuilds one built from other
-    # sources — deliberately, because asking a stale binary answers about a
-    # tree that no longer exists — so a push whose own change touched
-    # `sce-build/src/` pays that build here if nothing else has paid it yet.
-    # Measured 2026-09-15: 1.33 1.31 1.33s with the binary current, and 12.9s
-    # on the run that rebuilt it. The warm figure is the one declared, on the
-    # basis this table's header already gives: a push happens on a tree the
-    # developer has just built, and a cold build is paid once.
-    "nl-ir-closure": {
-        "workflows": ["nl-ir-closure.yml"],
-        "runner_workflow": True,
-        # Rows G2-G4 run `sce-codegen` through `sce_gate_codegen`. Without
-        # this edge the gate sorted ahead of the build on its 1.3s and paid
-        # for it: 288s on 2026-09-24, the push after `sce-build`'s dev
-        # profile changed. The self-test now derives the edge from the script.
-        "deps": ["codegen-build"],
-        "cost_s": 1.3,
-        "summary": "the NL→IR closure ledger vs the tree it describes",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # Guards the clang degraded-AST regression in the manifest emitter.
-    # Its own lane in the embed workflow rather than a step in the smoke
-    # job: it needs clang and a second, and the smoke build takes seven
-    # minutes. Until that lane existed the emitter was outside every CI
-    # trigger — `embed-vendor-smoke.yml` filtered on package/verify but
-    # not on `emit_embed_manifest.sh` — so this ran at push time and
-    # nowhere else, which `--no-verify` skips.
-    "embed-manifest-failfast": {
-        "workflows": ["embed-vendor-smoke.yml"],
-        "runner_workflow": True,
-        "cost_s": 0,
-        "summary": "emit_embed_manifest fail-fast case",
-        # Kept only from a landing unit, where the skip below cannot pass, and
-        # a landing's unit goes only to a machine with clang-19 installed.
-        "cache": True,
-        "kept_only_from_a_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
-                                "skips and exits 0 on a machine without "
-                                "clang++-19",
-        "packages": ["clang-19"],
-        # Read by `check learn` (2026-11-24, bx 340e9f9e): the fail-fast case,
-        # the emitter it drives and the two Python modules the emitter runs.
-        # The run lists `scripts/`. The case writes its header tree under a
-        # temporary directory, so nothing of `sce/include` is read.
-        "inputs": [
-            "scripts/",
-            "scripts/_embed_manifest_filter.py",
-            "scripts/embed_manifest.py",
-            "scripts/emit_embed_manifest.sh",
-            "scripts/test_emit_manifest_fail_fast.sh",
-        ],
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # Whether embed/MANIFEST.json was emitted from the inputs it is committed
-    # with, against its stamp embed/MANIFEST.inputs (scripts/embed_manifest.py).
-    # `embed-vendor` checks the content and is CI-only at 311s, so until this
-    # gate a header edit reached the push and the CI run before anything said
-    # the manifest had not moved with it; five of eight manifest commits in
-    # October and November 2026 were repairs made after the fact. This one is
-    # a list of git object ids against another, under a second, so it runs at
-    # the push. The pre-commit hook runs the same comparison over the index;
-    # this is its backstop for a commit made with the hook skipped.
-    "embed-manifest-stamp": {
-        "workflows": ["embed-vendor-smoke.yml"],
-        "runner_workflow": True,
-        "cost_s": 0,
-        "summary": "embed manifest emitted from the inputs it is committed with",
-        # Reads HEAD's objects (`check --rev HEAD`, `git show`) and the
-        # commit each submodule is at, so the unit carries HEAD's id
-        # (`commits`). The plan also keeps no verdict for a tree that differs
-        # from HEAD (`plan_units`).
-        "cache": True,
-        "inputs": None,
-        "commits": ["HEAD"],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # `roadmap_marker_gate` reads every tracked file and
-    # `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
-    # declares no `paths:` filter — no glob list is both correct and
-    # narrower than the tree. That missing filter is what makes this gate
-    # unconditional, derived the same way every other workflow-backed
-    # trigger is rather than hand-set to "always".
-    "tree-hygiene": {
-        "workflows": ["tree-hygiene.yml"],
-        "runner_workflow": True,
-        # 193s measured 2026-08-22, against a declared 13 — the single
-        # largest gate a push could run, and it runs on EVERY push because
-        # its workflow is unfiltered. The old number was not a lie about the
-        # work, it was fifteen times out of date, which is the failure mode a
-        # hand-written cost has and the reason `--measure` exists.
-        "ci_only": "193s measured, on every push, because a tree-wide gate "
-                   "has no path filter to narrow it. Nothing else in the "
-                   "budget comes close. tree-hygiene.yml is unfiltered too, "
-                   "so CI is OFFERED exactly the pushes this would have "
-                   "run — and whether it JUDGES them is a property of that "
-                   "workflow, not of this delegation. It failed to on "
-                   "2026-09-02: ten consecutive pushes cancelled, the "
-                   "repair of the lane's own red among them. The repair is "
-                   "cancel-in-progress: false there, held by "
-                   "`ci_supersession_policy`, which measures this lane "
-                   "against a "
-                   "17.6 min median gap between pushes to main — not by "
-                   "spacing the pushes. That test now holds every prose "
-                   "copy of the gap to its constant, this one included.",
-        "cost_s": 193,
-        "summary": "tree-wide marker + trigger + parity gates",
-        # Reads HEAD's history: `lowering_decision_ledger` asks git whether
-        # each pinned commit is an object, an ancestor of HEAD and holds the
-        # paths it names, and `hook_ci_parity` adds a worktree of HEAD. One
-        # tree can sit on histories that answer differently, so the unit
-        # carries HEAD's id (`commits`). Its other targets read the tracked
-        # tree or fixture repositories of their own, and the tools they skip
-        # without (the pinned mnemosyne-cli, cmake) are ones bx.toml requires.
-        "cache": True,
-        "inputs": None,
-        "commits": ["HEAD"],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # Rides the same unfiltered workflow, for the same reason in a different
-    # alphabet: what this gate reads is the union of every `mutation_targets`
-    # declaration inside `sce-build/tests/mutations/*.cases`, which today
-    # spans `sce/`, `sce-build/`, `backends/`, generator templates, a
-    # CMakeLists, two workflows and a gate script. A `paths:` list restating
-    # that union would be a second copy of a declaration the casefiles
-    # already carry, stale the first time a case names a new file.
-    "mutation-cases": {
-        "workflows": ["tree-hygiene.yml"],
-        "runner_workflow": True,
-        "ci_only": "168s checking 500 cases across 72 casefiles, and it is "
-                   "ALWAYS-ON — its workflow is unfiltered, so every push paid "
-                   "it. Declared 33s until it was measured in a run of its "
-                   "own: that reading came from a full sweep where earlier "
-                   "gates had warmed everything, and a push runs a subset "
-                   "where each gate pays its own warm-up. tree-hygiene.yml is "
-                   "unfiltered too, so CI runs it on every push regardless.",
-        "cost_s": 168,
-        "summary": "every mutation casefile still applies",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The other half of the same corpus: whether a case still turns its suite
-    # red, which only a build can answer.
-    #
-    # `ci_only`, and the number is the reason. Measured on the first push
-    # whose change set reached its casefiles: 877s, eight rounds, against 4s
-    # on a push that reached none. No value of `cost_s` describes both, and a
-    # push length that swings by a quarter of an hour on what the author
-    # happened to edit is one somebody eventually bypasses. The trade is
-    # stated rather than hidden: a red now arrives one round later.
-    #
-    # Its workflow declares no `paths:` filter, and the gate narrows inside
-    # itself — the same arrangement `mutation-cases` has, for the same reason.
-    # What decides a round is the union of every `mutation_targets`
-    # declaration in the casefiles, and a filter restating that union would be
-    # a second copy of it. The first draft got this wrong in a way worth
-    # recording: it triggered on `sce-build/tests/mutations/**`, so a change
-    # to a declared TARGET — the case the gate exists for — selected nothing,
-    # while a change to a casefile selected a gate with no round to run. The
-    # two conditions were nearly exclusive and the session that landed it
-    # happened to satisfy both.
-    #
-    # No `deps`, though the first draft named `workspace-tests` and
-    # `cpp-suite`: a round's cost is dominated by its baseline build and those
-    # two have already paid it, which is a reason to want them first and not a
-    # dependency. `deps` here means a gate whose OUTPUT this one executes, and
-    # a round builds whatever it needs itself.
-    "mutation-rounds": {
-        "workflows": ["mutation-rounds.yml"],
-        # Its ctest casefiles run in the main tree, which it configures
-        # (scripts/prepare_ctest_tree.sh) where none is.
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "the workflow is unfiltered so CI starts it on every push; "
-                   "what actually decides a round is the casefiles' own "
-                   "`mutation_targets`, which the gate reads at run time. "
-                   "There is no glob list that is both correct and narrower "
-                   "than the tree.",
-        # No `local: ["**"]`, and the first draft's is why the note above the
-        # `narrows` branch in `gate_triggers` exists. A catch-all makes a gate
-        # always-on, and rule 3 then holds it out of the classifiers so it
-        # cannot mark any path as understood. The one path that needed marking
-        # was this lane's own workflow file: with the catch-all it matched
-        # nothing, so editing it was unclassified and bought the full suite —
-        # measured on the commit that introduced it, 30 gates for a 3-file
-        # change. Without the catch-all, `narrows` leaves the gate exactly one
-        # trigger, its workflow file, which is what classifies the edit. CI is
-        # unaffected either way: the workflow declares no `paths:` and CI does
-        # not read this table.
-        "ci_only": "measured 877s when the change set reached its casefiles "
-                   "and 4s when it did not; a push that swings by a quarter "
-                   "of an hour on what the author edited is one that gets "
-                   "bypassed. Runs in CI, where the cost is not the "
-                   "developer's wait, at the price of a red arriving one "
-                   "round later.",
-        "audited_after_landing": "one build and one test run per mutation case "
-                                 "its change set reaches, so its cost has no "
-                                 "bound in the tree; mutation-rounds.yml "
-                                 "shards it and the weekly sweep runs the "
-                                 "corpus whole",
-        # The harness itself. The gate invokes `scripts/mutate` twice — once
-        # to ask a casefile what it declares, once to run the round — so an
-        # edit to it changes every verdict this lane produces. It was not
-        # declared, and `--ci-owed` therefore did not name this lane for a
-        # commit that changed nothing else (`script-read-coverage`).
-        #
-        # The cost model, because the gate sizes every job from it and judges
-        # every job's duration against it: an edit to a runner's row changes
-        # how many jobs the lane schedules and which of them turn red.
-        #
-        # And the lockfile: a change to it moves every tree a `<tree>:<path>`
-        # target names (docs/adr/0097), so it selects the rounds that mutate one.
-        #
-        # And the script a landing configures `build/` with for the ctest
-        # casefiles (the gate runs it itself there, rather than refusing).
-        #
-        # And the two readings of a ctest tree the harness shares with the C++
-        # suite's shards: the commands a configured tree registers, and the
-        # fixtures whose setup builds the whole tree.
-        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock",
-                  "scripts/prepare_ctest_tree.sh",
-                  "scripts/lib/ctest_registered_commands.cmake",
-                  "scripts/lib/ctest_shards.py"],
-        "cost_s": 877,
-        "summary": "changed mutation targets still turn their suites red",
-        "cache": False,
-        "no_cache_reason": "reads the clock and git refs: it judges each round's "
-                           "duration against the cost model (`date +%s`), and with "
-                           "no change set it takes its base from the upstream ref",
-        "inputs": None,
-        # It picks casefiles by the change set, so a run away from the push's
-        # checkout is handed the range (`scripts/gate --change-set`): that
-        # checkout's upstream says nothing about the push (see `commits` above).
-        # A landing runs none (`audited_after_landing`).
-        "commits": ["CHANGES"],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "clippy": {
-        "workflows": ["clippy-check.yml"],
-        "runner_workflow": True,
-        # Lint is the fastest feedback a Rust change can get. It was measured
-        # at 15s, 42s and 82s in one afternoon on this machine, which is also
-        # the clearest single illustration of why the numbers here cannot be
-        # trusted to a factor of two.
-        #
-        # ⚠ Local, not `ci_only`. It was moved out of the push when the push
-        # was something a developer waited for. Since the landing queue
-        # judges every item with this hook on the build fleet (bx RFC 0024),
-        # a gate left out of the push is a gate left out of the merge queue:
-        # on 2026-11-20 item 290 landed two `explicit_auto_deref` errors and
-        # main stayed red until item 298. With `cache: True` a kept pass
-        # costs nothing, and 82s fits the ceiling beside the local set.
-        "cost_s": 82,
-        "summary": "cargo clippy --workspace --all-targets",
-        # The lint set moves with each stable release, which is why the plan
-        # names the release in every unit's argv: a new one is a new key.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # Shares clippy's workflow because it shares clippy's inputs: the
-    # declarations clippy measures its lints against are the ones this keeps
-    # true. Not the warm figure this table asks for: 451s is the first run on
-    # a build machine that had none of the six toolchains, so it installed
-    # every one and built every package cold, the state a CI runner is always
-    # in. The six builds alone read 21, 16, 4.5, 60, 8 and 14 seconds.
-    "rust-version": {
-        "workflows": ["clippy-check.yml"],
-        "runner_workflow": True,
-        "ci_only": "451s cold, six toolchains installed. clippy-check.yml "
-                   "runs it beside clippy.",
-        "cost_s": 451,
-        "summary": "every package builds with the Rust it declares",
-        # Each toolchain it installs is the version a tracked manifest declares.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "nostd-mcu": {
-        "workflows": ["sce-rust-runtime-no-std.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        # 9s, timed alone on a warm tree on 2026-09-02 and no longer a
-        # normalised figure. Nine consecutive runs read 22 22 13 7 7 6 9 9 7:
-        # the first three were still filling caches, and the settled band is
-        # 6-9s. 9 is the worse of the last pair, which is the rule the budget
-        # header sets ("the WORSE of two `--measure` runs") so that the
-        # ceiling holds on unlucky pushes rather than lucky ones.
-        "cost_s": 9,
-        "summary": "no_std MCU build + clippy + probes; std runtime without http-send",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # Mirrors doc-check.yml. The numbered table mapped this to
-    # sce-rust-runtime-no-std.yml while the gate's own comment named
-    # doc-check.yml; the two share the `backends/rust/runtime/**` trigger,
-    # so the mismatch never showed as a missed run except for edits to
-    # doc-check.yml itself.
-    "rustdoc-links": {
-        "workflows": ["doc-check.yml"],
-        "runner_workflow": True,
-        "cost_s": 4,
-        "summary": "cargo doc broken intra-doc links, both profiles",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "embed-vendor": {
-        "workflows": ["embed-vendor-smoke.yml"],
-        # The reason this lane kept its own copy — "it also calls a sibling
-        # gate, so its steps are a superset" — did not hold: the sibling
-        # (`embed-manifest-failfast`) runs in a SEPARATE job of the same
-        # workflow, and this job restated the three scripts verbatim.
-        "runner_workflow": True,
-        "extra": ["sce/include/**", "embed/MANIFEST.json",
-                  "backends/cpp/forge-runtime/include/**",
-                  "scripts/smoke_bazel_consumer.sh", "scripts/sce_repo.bzl",
-                  "scripts/lib/bazel_pins.sh", "tests/bazel_consumer/**"],
-        # The most expensive gate in the set: three scratch-directory builds,
-        # one of which packages embed/ from scratch and builds a consumer
-        # against it.
-        "ci_only": "311s, and on its own it is more than the whole push "
-                   "budget of 300s. Three scratch-directory builds, one of "
-                   "which packages embed/ from scratch and builds a consumer "
-                   "against it — none of that gets cheaper on a warm tree, "
-                   "because the scratch directories are the point.",
-        "cost_s": 311,
-        "summary": "embed manifest drift + payload lag + consumer smoke",
-        # The Bazel consumer's versions are pinned in the tree
-        # (`scripts/lib/bazel_pins.sh`), and a machine without bazel ends the
-        # smoke "could not measure" (exit 3) rather than passing.
-        # `package_embed.sh` writes `git describe` into the package's VERSION
-        # file, which no step compares, so the gate reads no commit.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
-    # NOT listed: it has no `paths:` filter (it runs on every CI push) and
-    # it drives the C++ ctest suite, which this hook does not mirror at all.
-    # Mapping it here would make its catch-all the trigger for the hook's
-    # longest gate and, worse, would classify every path — defeating the
-    # unclassified-forces-FULL rule that keeps this file honest.
-    # `extra` covers inputs the workflow filter misses because they are
-    # `include_str!`-ed into the suite rather than compiled: the acceptance
-    # doc, the wire schemas, and the forge-AST export schema.
-    "workspace-tests": {
-        "workflows": ["rust-workspace-tests.yml"],
-        # Run whole it is the longest unit of a landing after cpp-suite-wasm
-        # (1363 s), and its script already runs one shard of itself when
-        # SCE_WORKSPACE_SHARD names `k/N`, as the lane's four jobs do. A plan
-        # makes one unit per shard of the lane's count (`shard_count`).
-        "shard_env": "SCE_WORKSPACE_SHARD",
-        # The lane's one difference — `--no-fail-fast`, so a run nobody can
-        # iterate on reports every failure — was a reporting choice by its own
-        # description, which made it a switch rather than a reason to keep two
-        # spellings. The gate reads `SCE_GATE_NO_FAIL_FAST` and the lane sets
-        # it.
-        "runner_workflow": True,
-        # ⚠ `.github/workflows/**` is deliberately NOT here, though the suite
-        # reads every file in that directory at run time
-        # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).
-        # `extra` is the HOOK's trigger list as well as the CI-coverage one,
-        # and adding it classified every workflow path — which broke
-        # `unfiltered-workflow-self`: editing a workflow that declares no
-        # `paths:` of its own is meant to be unclassified and buy the full run,
-        # and a `ci_only` gate cannot take that job because the hook is never
-        # offered it. The path would have read as known and selected nothing.
-        #
-        # The coverage the suite needs is one-directional and belongs on the
-        # other side: `rust-workspace-tests.yml` lists `.github/workflows/**`
-        # in its `paths:`, so the lane starts for a workflow edit. A workflow
-        # filter WIDER than its gate's triggers is what `ci-only-coverage`
-        # allows; the reverse is what it refuses.
-        # `tests/json_text/**` and `tests/durations/**` are tables the runtime's
-        # and sce-build's unit tests read at run time — every engine is held to
-        # them — so an edit to a table alone has to start the suite that reads it.
-        "extra": [
-            # What spreads the suite over the lane's shards
-            # (`SCE_WORKSPACE_SHARD`), which the gate script runs.
-            "scripts/lib/workspace_shards.py",
-            "docs/SCE_ACCEPTED_SUBSET.md",
-            "schemas/**",
-            "apis/**",
-            "tests/json_text/**",
-            "tests/durations/**",
-            "tests/document_stem/**",
-            "tests/external_event_budget/**",
-            "tests/scripting/**",
-            # The shared Mesh-target predicate table the build reads.
-            "tests/mesh/**",
-            # The server suite (docs/adr/0107, D10), a workspace member outside
-            # `backends/rust/**`.
-            "tests/server/**",
-            # The policy documents `forge_conformance` compiles into its
-            # per-language run tests.
-            "tests/forge/resources/**",
-            # The forge conformance catalog and the document sets beside it,
-            # which `generation_can_be_planned` and
-            # `configure_plans_are_kept_and_asked_together` plan and generate a
-            # harness and a set from.
-            "tests/forge/conformance/**",
-            # The integration stems `the_emitted_transition_function_equals_the_producer`
-            # generates and states the table of.
-            "integration_resources/flat_lifecycle/**",
-            "integration_resources/nested_lifecycle/**",
-            # The conformance documents, which suites here read by path
-            # (`w3c_name_system_variable`, `codegen_depfile_content`,
-            # `cli_lint_parity`, `a_regeneration_removes_what_it_no_longer_writes`)
-            # and parse as a corpus.
-            "resources/**",
-            # The two CMake routes that generate at build time and the one module
-            # they ask the generator's plan through, which
-            # `the_conformance_cmake_route_declares_what_the_generator_plans`
-            # compiles in and holds to declaring what the generator plans.
-            "cmake/SCECodegenPlan.cmake",
-            "cmake/SCEStaticW3CTest.cmake",
-            "cmake/SCEStaticIntegrationFixture.cmake",
-            # The module the plan module includes, which
-            # `a_configure_asks_each_plan_once_per_input_state` configures a
-            # project through with a real `cmake`.
-            "cmake/SCEClangFormat.cmake",
-            # The locator the plan module resolves the generator through when
-            # no includer did.
-            "cmake/SCEFindCodegen.cmake",
-            # The test tree's build, whose Mesh rule-3 override and every
-            # command it declares from a plan the same suite compiles in and
-            # holds to declaring what the generator plans.
-            "tests/CMakeLists.txt",
-            # The C11 conformance suite's build, which the same suite compiles
-            # in and holds to declaring its fixtures after their plans were
-            # asked together.
-            "backends/c/tests/CMakeLists.txt",
-            # The conformance registry, whose fixtures
-            # `a_c11_machine_includes_what_it_states_it_requires` generates,
-            # and the one reading of it both conformance routes register
-            # their fixtures through, which `w3c_registry_drives_cmake`
-            # reads.
-            "tests/w3c/conformance/fixtures.json",
-            "cmake/SCEW3CRegistry.cmake",
-            # The C11 ctest fixture's BasicHTTP listener and the script that
-            # hands its port to the runners, which
-            # `the_c11_http_fixture_hands_its_runners_the_port_it_bound` runs.
-            "tests/w3c/http_server_fixture.sh",
-            "tests/w3c/standalone_http_server.js",
-            "tests/w3c/http_endpoint.js",
-            "tests/w3c/basic_http_test_endpoint.h",
-            # The C11 runtime's build, whose vocabulary of what a machine
-            # requires `a_c11_machine_includes_what_it_states_it_requires`
-            # compiles in and holds to what the generator can state.
-            "backends/c/runtime/CMakeLists.txt",
-            # The host's log seams, which
-            # `a_c11_machine_logs_through_the_log_seams` links a machine with
-            # and reads the lines of.
-            "backends/c/runtime/posix/log.c",
-            # The runtime's text unit, the real seams' definitions, which the
-            # same test links a machine with (docs/adr/0110, D2).
-            "backends/c/runtime/text/real_text.c",
-            # The C11 runtime's headers, whose includes
-            # `a_c11_machines_core_reaches_only_freestanding_headers` walks from
-            # every machine's core (docs/adr/0110, D1): an edit of one alone
-            # has to start the suite that judges it.
-            "backends/c/runtime/include/**",
-            "backends/c/forge-runtime/include/**",
-            # The C11 MCU gate's set, its budget, its board and the record that
-            # names the set (docs/adr/0110, D3), which
-            # `the_c11_mcu_gate_weighs_the_set_its_record_names` compiles in
-            # and holds to one another.
-            "scripts/gates/c11-mcu.sh",
-            "backends/c/mcu/**",
-            "docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md",
-            # The standard library, whose statecharts that save are held to
-            # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
-            # docs/adr/0045): an edit of one alone has to start the suite.
-            "stdlib/**",
-            # The scenarios of the standard host features, which
-            # `every_replay_scenario_keeps_to_its_vocabulary` holds to the
-            # members their drivers read: an edit of one alone has to start
-            # the suite.
-            "tests/host_features/**",
-            # The registry of metric names both lanes are held to (docs/adr/0109,
-            # D16), which `sce-rust-metrics` reads at run time.
-            "tests/metrics/**",
-            # The narrow row's runtime header, which the C11 broadcast-log
-            # tests read to hold the stamp width the generator judges against
-            # to the width the header keeps and each name the generated header
-            # calls to a declaration of it.
-            "backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
-            # The C++ runtime's two broadcast-log headers, which the C++
-            # broadcast-log tests read: each name the generated headers call
-            # against a declaration of it, and the stamp width the generator
-            # judges against the width the narrow row keeps.
-            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
-            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
-            # The Kotlin replays of the two C ABIs (group key agreement, peer
-            # core), which the lane builds with Gradle and the capi crates'
-            # tests run under `SCE_REQUIRE_TOOLS`: an edit of one alone has to
-            # start the suite that runs it.
-            "backends/kotlin/mls-replay/**",
-            "backends/kotlin/peer-replay/**",
-            # The Kotlin binding of the peer core's C ABI, which the peer
-            # core's Kotlin replay and the world's Kotlin device are built on.
-            "backends/kotlin/peer/**",
-            # The ledgers' configurations and stores, which
-            # `every_ledger_binding_names_what_its_file_holds` reads: an edit
-            # of a binding alone has to start the suite that holds it to its
-            # file. The bound files themselves span the source trees, and an
-            # edit of one that renames a bound symbol is read on the next run
-            # of this lane, not on its own push.
-            "docs/spec/*/mnemosyne.toml",
-            "docs/spec/*/.atomic/workspace.atomic.json",
-            "docs/sce-ledger/*/mnemosyne.toml",
-            "docs/sce-ledger/*/.atomic/workspace.atomic.json",
-            # The generated diff's renderer and the locator it resolves the
-            # generator through, which
-            # `a_change_shows_what_it_does_to_the_generated_code` copies into
-            # a repository of its own and runs.
-            "scripts/generated_diff.sh",
-            "scripts/lib/sce_codegen.sh",
-            # The release pipeline's declaration of its packages and its
-            # reader, which `a_release_declares_its_packages_by_their_trees`
-            # holds to the tree manifests.
-            "scripts/release.py",
-            "tools/codegen/release.toml",
-        ],
-        # The crate whose test suite this gate runs. `include-str-coverage`
-        # in the self-test reads it: every file the sources under this root
-        # `include_str!` is an input the suite asserts on, so some lane that
-        # runs the suite has to start when it changes. Declaring the root is
-        # the hand-written half; which paths it implies comes from the tree,
-        # so an `include_str!` added tomorrow is covered the day it is
-        # written rather than the day somebody remembers a list.
-        "include_str_roots": ["sce-build"],
-        # 1363s, and it was declared 151 until 2026-09-20. This is the densest
-        # correctness net in the tree — every contract test under
-        # `sce-build/tests/` runs here — and it leaves the push anyway,
-        # because the budget is a ceiling on what a developer waits for rather
-        # than a ranking of what is valuable.
-        #
-        # ⚠ NINE TIMES OFF, AND NOTHING HERE COULD SEE IT. `budget_breach`
-        # compares a declaration against a measurement only for gates a push
-        # SELECTS; this one is `ci_only`, so no push prices it and its figure
-        # was watched by nothing. The header says as much about `w3c-kotlin`
-        # and calls it the right scope for a PUSH budget, which it is — the
-        # residue is that a ci_only cost can rot without limit, and this is
-        # what that looks like when it does.
-        #
-        # ⚠⚠ Where the time actually is, measured the same day: three targets
-        # own 790s of it — `diagnostic_fix_is_applicable` 469s over 5 tests,
-        # `ecmascript_acceptance_parity` 187s over 4, `mutation_rounds_
-        # selection` 134s over 13. 64% of the lane in 22 tests, so "the suite
-        # is large" is not what makes it long, and 504 test binaries share the
-        # other 36%.
-        #
-        # ⚠⚠⚠ A fail-fast run reads a THIRD of this and looks like the whole
-        # lane: 180 of 504 binaries in 1184s, because the slow targets sort
-        # early. `SCE_GATE_NO_FAIL_FAST=1` is what makes a local run comparable
-        # to the CI lane's, and three rounds of fixing one failure at a time
-        # were spent before that was read off the gate script.
-        "ci_only": "1363s measured 2026-09-20, declared 151s until then. "
-                   "Fully mirrored by rust-workspace-tests.yml, which runs "
-                   "the same command. The trade is the sharpest of the four: "
-                   "this is where every sce-build contract test lives, so a "
-                   "broken contract now reaches main and is answered a round "
-                   "later.",
-        "cost_s": 1363,
-        "summary": "cargo test --workspace --features cli,sce-rust-mesh/wss",
-        # The gate builds the Gradle prerequisites the suites run (the Kotlin
-        # runtime jars and the three JVM programs) before the suites, so a
-        # pass no longer depends on what the machine built before. What is
-        # left is a test that skips on a missing tool, and a landing runs the
-        # suites under SCE_REQUIRE_TOOLS and reads such a miss as could not
-        # run. It also reads HEAD's history (`lowering_decision_ledger`),
-        # which `commits` carries.
-        "cache": True,
-        "kept_only_from_a_landing": "a suite test skips with a warning where a "
-                                "tool or a built JVM program it runs is "
-                                "missing (`ToolLocator::require_or_skip`, "
-                                "`require_all_or_warn`)",
-        "inputs": None,
-        "commits": ["HEAD"],
-        # The highest figure a run has reached (PEAK_MEASURED); the one run
-        # that reached it was killed there, so the true peak may lie above.
-        "peak_gb": 16,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The one reader of the content axis. The header's `source-hash` covers
-    # the INPUT documents, so an edit to the templates or to the emit code
-    # under `sce-build/src` that changes what comes out does not move it, and
-    # the committed trees drift with every other gate green. This regenerates
-    # them and compares, which is also what makes the procedure's own
-    # documented claim ("regenerate and expect no diff") checked rather than
-    # asserted.
-    "regen-reproduces": {
-        "workflows": ["regen-reproduces.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "117s regenerating every committed tree, which is work "
-                   "proportional to the corpus and not to the change. "
-                   "regen-reproduces.yml runs it. What this costs is worth "
-                   "naming: a template edit that does not carry its "
-                   "regenerated trees now lands, and that exact miss shipped "
-                   "once already (PR-90, where enter_at panicked in the real "
-                   "generated code while the branch's own suite was green).",
-        "cost_s": 117,
-        "summary": "regeneration reproduces every committed tree",
-        # Regenerates in a worktree of HEAD, with each submodule at the commit
-        # HEAD records, so the unit carries HEAD's id (`commits`). The plan
-        # also keeps no verdict for a tree that differs from HEAD.
-        "cache": True,
-        "inputs": None,
-        "commits": ["HEAD"],
-        "peak_gb": 6.5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # What replaces `regen-reproduces` once nothing generated is committed
-    # (ADR 0097, section 5): every action of every declared tree run here
-    # from an empty cache and held against the fleet's entry of the same key.
-    # Declared and skipped until bx's fleet cache exists: the script passes
-    # and says so when `SCE_FLEET_CACHE` names no instance, and the half that
-    # needs no fleet (two runs on one machine) is a test of the workspace
-    # suite, `a_declared_tree_reproduces_its_committed_tree`.
-    "generated-deterministic": {
-        "local": ["tools/codegen/**", "stdlib/**"],
-        "builds": ["sce-codegen"],
-        "no_ci_reason": "it compares against the fleet's action cache, which no "
-                        "hosted runner reaches (a site's REAPI instance, read "
-                        "through `bx-fleet site-tunnel`), and which does not "
-                        "exist until bx's fleet cache lands (ADR 0097, "
-                        "amendment 16). Without one the gate is skipped.",
-        # Unmeasured: the skip is a shell start. A run that names a fleet
-        # builds the generator twice (the comparer in a target directory of
-        # its own) and runs every declared tree's actions, about what
-        # `regen-reproduces` costs.
-        "cost_s": 1,
-        "summary": "every action agrees with the fleet's entry of its key",
-        "cache": False,
-        "no_cache_reason": "its verdict is about the fleet's entries as they "
-                           "are when it runs, which move without any commit",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "drift-suites": {
-        "workflows": ["drift-verify.yml"],
-        "runner_workflow": True,
-        "ci_only": "146s. It is declared serial on purpose and that is what "
-                   "it costs; drift-verify.yml runs it.",
-        "cost_s": 146,
-        "summary": "committed-tree drift + sourcemap, serial",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # forge-conformance.yml verifies the language arms in parallel jobs, and
-    # its path filter is workflow-wide: a change under
-    # backends/*/forge-runtime/** starts all of them in CI. These gates
-    # therefore fire together too, which is the parity we want. The split is
-    # for attribution — a failure names its arm — and each `extra` widens
-    # the trigger past the workflow filter rather than narrowing it, so a
-    # change outside forge-runtime still reaches the arm it could break.
-    "forge-go": {
-        "workflows": ["forge-conformance.yml"],
-        "runner_workflow": True,
-        "extra": ["backends/go/**"],
-        "deps": ["codegen-build"],
-        # 15s, timed on a warm tree on 2026-09-02 and no longer a normalised
-        # figure. Seven observations that day — five `--measure` runs reading
-        # 27 17 16 15 10 and two real pushes reading 10 and 12 — put the
-        # settled band at 10-17s once the first run's cache-filling is
-        # dropped. 15 is the worse of the last measured pair, the rule the
-        # budget header sets. Still the cheapest forge arm and the only one
-        # that runs before a push.
-        "cost_s": 15,
-        "summary": "Go forge conformance regenerate + test",
-        "cache": False,
-        "no_cache_reason": "samples thread interleavings: its queue and "
-                           "broadcast-log stress runs under `go test -race` record "
-                           "what the machine's scheduler happened to run, so a pass "
-                           "is one draw and keeping it would stop the drawing",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "forge-rust": {
-        "workflows": ["forge-conformance.yml"],
-        "runner_workflow": True,
-        "extra": ["backends/rust/**"],
-        "deps": ["codegen-build"],
-        # Warm reads as 0; the release profile it needs is a separate build
-        # tree from every other gate, so a cold run pays that once.
-        "ci_only": "96s, a release build of the Rust forge arm, and about "
-                   "three minutes more for the queue runtime under loom, "
-                   "Miri and ThreadSanitizer. Its siblings are already in CI "
-                   "for the same reason and they share one workflow, "
-                   "forge-conformance.yml.",
-        "cost_s": 280,
-        "summary": "Rust forge conformance (numerical + codec round-trips, release)",
-        "cache": False,
-        "no_cache_reason": "samples thread interleavings: its stress runs record "
-                           "the histories the scheduler happened to produce and "
-                           "ThreadSanitizer reports only the races it saw, so a "
-                           "pass is one draw and keeping it would stop the drawing",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "forge-python": {
-        "workflows": ["forge-conformance.yml"],
-        "runner_workflow": True,
-        "extra": ["backends/python/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "107s. forge-conformance.yml verifies every language arm "
-                   "in parallel jobs, which is where this belongs — the arms "
-                   "fire together anyway, so paying for them serially at push "
-                   "time bought attribution and nothing else.",
-        "cost_s": 107,
-        "summary": "Python forge conformance (numerical)",
-        "cache": False,
-        "no_cache_reason": "samples thread interleavings: its queue and "
-                           "broadcast-log stress runs record what the machine's "
-                           "scheduler happened to run, so a pass is one draw and "
-                           "keeping it would stop the drawing",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    "forge-cpp": {
-        "workflows": ["forge-conformance.yml"],
-        # Two reasons were recorded here for keeping a second spelling and
-        # neither survived. The log artifact does not need the lane's own
-        # commands — `scripts/gate forge-cpp | tee` keeps it. The build
-        # configuration was real: the lane built RelWithDebInfo under Ninja
-        # while the gate left CMAKE_BUILD_TYPE unset, so a local pass said
-        # nothing about the binary CI judged. The gate now carries the build
-        # type (and Ninja where installed), which cost 6s -> 22s and is what
-        # the mirror is for.
-        "runner_workflow": True,
-        # The modules its projects declare every generation through, resolve
-        # the generator through, and format generated C++ by, and the one that
-        # says which warning classes its test programs turn off.
-        #
-        # And the JSON library its test programs include, vendored in the tree
-        # (backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt,
-        # NLOHMANN_JSON_INCLUDE_DIR): `bx --checks prepush --learn forge-cpp`
-        # (2026-11-24) read every header of it, and no trigger named it.
-        "extra": ["backends/cpp/**", "sce/**", "cmake/SCECodegenPlan.cmake",
-                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake",
-                  "cmake/SCETestWarnings.cmake",
-                  "third_party/nlohmann_json/include/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "59s, the last move needed to fit the ceiling. "
-                   "forge-conformance.yml runs it beside the other arms.",
-        "cost_s": 59,
-        "summary": "C++ forge conformance build + test",
-        "cache": True,
-        # Keyed on its triggers: what `bx --checks prepush --learn forge-cpp`
-        # (2026-11-24) read outside them, the runner's inputs and
-        # `codegen-build`'s key was what the submodule preflight read deriving
-        # every gate's triggers, which it no longer does, and the schema the
-        # generator validates against, which forge-conformance.yml now names.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # ⚠ The C11 arm existed as a complete standalone CMake project, a harness
-    # template and ten per-kind fragments, and NOTHING RAN ANY OF IT —
-    # measured 2026-09-17, there was no gate script and no job in
-    # forge-conformance.yml. The four sibling arms made the set look
-    # complete. Its first run was green, so what it had not been surviving
-    # was change, which is exactly what a lane is for.
-    #
-    # ⚠⚠ THE FOLLOW-UP LANDED THE SAME DAY. This entry said `workflows` was
-    # empty on purpose — "forge-conformance.yml has no C11 job today, so
-    # claiming one would make `--ci-owed` report a lane that cannot pay" —
-    # and carried a `no_ci_reason` naming the job as the thing that would
-    # retire it. `conformance-c` is in that workflow now, so both are gone.
-    #
-    # The history is kept rather than deleted silently because a
-    # `no_ci_reason` is a PROMISE, and this note is the only evidence it was
-    # kept. An entry that simply stopped carrying one would read the same as
-    # an entry that never made the promise at all.
-    #
-    # ⚠⚠⚠ No `ci_only`: unlike the C++ arm, this one is 17s and a push that
-    # touches `backends/c/**` or the forge fixtures still selects it. It runs
-    # in BOTH places on purpose — the push catches it before it leaves, and
-    # the job catches the pushes that bypassed the hooks.
-    #
-    # Slug `forge-c` until 2026-10-20. A lane gate is named
-    # `<family>-<Language::canonical_name()>`, and this backend's name is
-    # `c11` (its W3C gate was already `w3c-c11`), so the old slug was the one
-    # lane a backend's row could not be derived from.
-    "forge-c11": {
-        "workflows": ["forge-conformance.yml"],
-        "runner_workflow": True,
-        # The modules its projects declare every generation through, resolve
-        # the generator through, and format generated code by.
-        "extra": ["backends/c/**", "cmake/SCECodegenPlan.cmake",
-                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake"],
-        "deps": ["codegen-build"],
-        "cost_s": 17,
-        "summary": "C11 forge conformance build + test",
-        "cache": True,
-        # Keyed on its triggers: what `bx --checks prepush --learn forge-c11`
-        # (2026-11-24) read outside them, the runner's inputs and
-        # `codegen-build`'s key was what the submodule preflight read deriving
-        # every gate's triggers, which it no longer does, and the schema the
-        # generator validates against, which forge-conformance.yml now names.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # ⚠ The SIXTH arm, and it was the one the set was missing. Measured
-    # 2026-09-18: `forge-conformance.yml` has six jobs — rust, python, go,
-    # kotlin, cpp, c — and `scripts/gates/` mirrored five. Nothing local ran the
-    # Kotlin forge harness; `w3c-kotlin` runs a different Gradle project. So a
-    # break confined to the Kotlin forge lowering passed every local lane and
-    # went red only after the push, which is the half of `forge-c11`'s story with
-    # the sides swapped: there the code existed and nothing ran it, here CI ran
-    # it and the mirror did not. Five siblings made the set look complete.
-    #
-    # ⚠⚠ `ci_only` on purpose. 52s is over what the push budget will spend on a
-    # sixth forge arm, and its five siblings already settled that argument —
-    # forge-conformance.yml runs all six in parallel jobs, so paying serially at
-    # push time buys attribution and nothing else.
-    "forge-kotlin": {
-        "workflows": ["forge-conformance.yml"],
-        "runner_workflow": True,
-        "extra": ["backends/kotlin/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "52s, the Gradle jvmTest arm. Its five siblings are in CI "
-                   "for the same reason and they share one workflow, "
-                   "forge-conformance.yml.",
-        "cost_s": 52,
-        "summary": "Kotlin forge conformance (Gradle jvmTest)",
-        "cache": False,
-        "no_cache_reason": "samples thread interleavings: its queue and "
-                           "broadcast-log stress runs record what the JVM's "
-                           "threads happened to do, so a pass is one draw and "
-                           "keeping it would stop the drawing",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # ⚠ The Swift backend's own lane, and the one the family tables could not
-    # hold. `<family>-<canonical name>` slugs name a backend's arm of a lane the
-    # backend has: `w3c-<lang>` and `forge-<lang>` need an emitter that writes a
-    # W3C statechart or a Forge kind. What Swift had first was a runtime, a
-    # reference host and two hundred generated machines that replay the shared
-    # scenarios, and until this entry nothing a runner ran compiled any of it:
-    # the Swift lane was `bx -- scripts/test_swift_backend.sh` by hand.
-    #
-    # The slug is `swift-backend` and not `forge-swift` on purpose. A
-    # `forge-swift` would have been a Forge conformance gate that conforms
-    # nothing, and `a_backend_holds_what_the_other_backends_hold` reads the slug
-    # to decide that the backend HOLDS such a gate, which would erase the `NotYet`
-    # row that says it does not. The Forge and W3C arms exist now and took
-    # `forge-swift` and `w3c-swift`, and this gate keeps judging the packages that
-    # are neither.
-    #
-    # `deps` is the generator, which the script regenerates the machines with.
-    "swift-backend": {
-        "workflows": ["swift-backend.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        # 38s and 19s, the gate script run twice end to end through `bx` on a
-        # build machine on 2026-10-28 (the first run built the packages, the
-        # second found them built); 38 is declared, the worse of the two. Not
-        # taken by `scripts/gate --measure`, which is refused locally for this
-        # repository. Both figures include the transfer.
-        #
-        # `ci_only` is not about the 38s, which the push budget could spend. The
-        # toolchain kept it out of every push: a hand-installed pin that
-        # `provision` puts on a build machine, and a push the hook ran in place
-        # on a machine that lacked it would be refused for a reason that says
-        # nothing about the tree. The gate fails loudly without a toolchain
-        # rather than skipping. An update to main runs it all the same (see
-        # "What `ci_only` means"): the pin is a tool of bx.toml's platform, so
-        # bx runs the unit only on a machine that carries it.
-        "ci_only": "38s, and the 6.4.0 toolchain is a hand-installed pin "
-                   "(`[platform.linux.tools.swift]` in bx.toml); the gate "
-                   "refuses without it, so a push of another ref run on a "
-                   "machine without the pin would be refused for a reason that "
-                   "says nothing about the tree. An update to main runs it "
-                   "where bx placed it, on a machine that carries the pin. "
-                   "swift-backend.yml installs the pin by its digest.",
-        "cost_s": 38,
-        # The suite's committed traces, which `ATestSuiteRunsThroughItsRunnerTests.swift`
-        # replays through the function and the runner program, and the trace's wire schema,
-        # whose status `TraceTests.swift` holds the runtime's to, both read at run time. The
-        # workflow's `paths:` names both, as a `ci_only` gate's triggers must be
-        # (`ci-only-coverage`).
-        "extra": ["sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json",
-                  # The corpus's suites `ACorpusSuiteReplaysToItsExpectedLogsTests.swift`
-                  # replays: the traces and expected logs of each, read at run time, and the
-                  # documents of orders_suite and nested_suite, which the regeneration
-                  # writes into the machines' target.
-                  "sce-build/tests/fixtures/test_profile/runs/**",
-                  "sce-build/tests/fixtures/ttcn3_export/**"],
-        "summary": "Swift backend: runtime, host features and generated machines",
-        # The toolchain is a pinned tool of the platform, so its version is in
-        # the key, and a machine without it fails the gate loudly.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
-    # suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
-    # the same job, as `mutation-cases` rides `tree-hygiene.yml`, because what the two need is the
-    # same: the generator built, the pinned toolchain installed and checked against its digest.
-    # A job of its own would repeat those steps and pay for them twice.
-    #
-    # `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin,
-    # and the gate fails loudly without it. An update to main runs it where bx placed it.
-    "w3c-swift": {
-        "workflows": ["swift-backend.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml); the gate refuses without it, so a push of "
-                   "another ref run on a machine without the pin would be "
-                   "refused for a reason that says nothing about the tree. An "
-                   "update to main runs it where bx placed it, on a machine "
-                   "that carries the pin. swift-backend.yml installs the pin "
-                   "by its digest.",
-        # 76s, `scripts/test_swift_backend.sh w3c` through `bx` on a build machine on
-        # 2026-11-01, which is what the gate runs and reads (a gate run is refused locally
-        # for this repository, so the script under it was timed). 156 fixtures lowered and
-        # 156 tests run. Warm, like `swift-backend`'s figure: a runner starts from nothing.
-        "cost_s": 76,
-        "summary": "W3C conformance, Swift AOT",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Swift twin of `ecma262-lowered-kotlin`: one machine that asks every case of the shared
-    # ECMA-262 table, generated with the build-time lowering (the only route Swift has), compiled
-    # and run. A third step of the same job as `swift-backend` and `w3c-swift`, for the same
-    # reason: the generator built and the pinned toolchain installed are steps it shares.
-    #
-    # `ci_only` for the reason `swift-backend` is: the toolchain pin.
-    "ecma262-lowered-swift": {
-        "workflows": ["swift-backend.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml); the gate refuses without it, so a push of "
-                   "another ref run on a machine without the pin would be "
-                   "refused for a reason that says nothing about the tree. An "
-                   "update to main runs it where bx placed it, on a machine "
-                   "that carries the pin. swift-backend.yml installs the pin "
-                   "by its digest.",
-        # 11s, `scripts/test_swift_backend.sh ecma262-lowered` through `bx` on a build machine
-        # on 2026-11-01 (the script under the gate: a gate run is refused locally for this
-        # repository). 107 cases, one generated machine. Warm, like its siblings: a runner
-        # starts from nothing.
-        "cost_s": 11,
-        "summary": "ECMA-262 lowered artifact, Swift",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Swift twin of `forge-kotlin`: the forge runtime's own tests and every unit the generator
-    # writes for a forge document, held to the numerical oracle. A fourth step of the same job as
-    # `swift-backend`, `w3c-swift` and `ecma262-lowered-swift`, for the same reason. It takes the
-    # `forge-<canonical name>` slug the `swift-backend` entry said it would, now that Swift writes
-    # forge kinds in part and holds what it writes to the oracle; the queue and broadcast-log
-    # history checks the other arms make are read here when Swift has those kinds.
-    #
-    # `ci_only` for the reason `swift-backend` is: the toolchain pin.
-    "forge-swift": {
-        "workflows": ["swift-backend.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml); the gate refuses without it, so a push of "
-                   "another ref run on a machine without the pin would be "
-                   "refused for a reason that says nothing about the tree. An "
-                   "update to main runs it where bx placed it, on a machine "
-                   "that carries the pin. swift-backend.yml installs the pin "
-                   "by its digest.",
-        # 102s, `scripts/test_swift_backend.sh forge` through `bx` on a build machine on
-        # 2026-11-01 (the script under the gate: a gate run is refused locally for this
-        # repository). The forge runtime's 73 tests and 184 conformance tests. Warm, like its
-        # siblings: a runner starts from nothing.
-        "cost_s": 102,
-        "summary": "Forge conformance, Swift",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The TLA+ models of docs/formal under TLC, as docs/formal/models.json declares
-    # them (docs/adr/0115, D5). Nothing ran them before this gate.
-    #
-    # `ci_only`: the largest configuration is explored whole, which is minutes, and
-    # a push has five for everything. TLC is fetched by the runner that needs it and
-    # checked against the manifest's digest; Java is what every runner here has, and
-    # the gate answers "could not run" (exit 3) where it has not.
-    "formal-models": {
-        "workflows": ["formal-models.yml"],
-        "runner_workflow": True,
-        "extra": ["docs/formal/**", "scripts/formal/**", "tools/git-hooks/spec_isolation.py"],
-        "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
-                   "states), which takes minutes of a push that has five for everything. "
-                   "formal-models.yml runs it on every change to a model or its judge.",
-        "cost_s": 367,
-        "summary": "TLA+ models under TLC, with every protocol part taken out in turn",
-        # TLC explores every reachable state of a configuration, and the manifest
-        # records the count, so one input gives one answer.
-        "cache": True,
-        # Keyed on its triggers: `bx --checks prepush --learn formal-models`
-        # (pc2, 2026-11-24) found 124 reads and 4 listings, every one inside
-        # the triggers and the runner's inputs.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "commits": [],
-        "peak_gb": 8,
-        # TLC runs as many workers as the machine has cores (`-workers auto`).
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The proofs of the host core under Verus, as docs/formal/proofs.json declares them
-    # (docs/adr/0115, D13).
-    #
-    # `ci_only`: the push set runs on a developer's machine, which need not carry Verus
-    # and the Rust release it runs on (bx.toml declares both for the build machines).
-    "formal-proofs": {
-        "workflows": ["formal-proofs.yml"],
-        "runner_workflow": True,
-        "extra": ["docs/formal/proofs.json", "scripts/formal/proofs.py", "backends/rust/mesh/src/https/**"],
-        "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the push set runs "
-                   "on a developer's machine, which need not carry it or the Rust release it "
-                   "runs on. formal-proofs.yml runs it on every change to a proved file or its "
-                   "judge, and bx.toml declares both tools for the build machines.",
-        "cost_s": 22,
-        "summary": "Verus proofs of the host core, with each break of it refused",
-        # Verus answers one way for one input: the file, the manifest and the pinned tool.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 2,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
-    # layer 3), and the mutants that show the check reads orderings at all. It needs
-    # GenMC, which no hosted runner carries and which is built from source
-    # (`scripts/install_genmc.sh`), so it runs where that was done.
-    #
-    # ⚠ `ci_only` because the install is the cost and the hosts do not all have
-    # it: the gate fails loudly where GenMC is absent rather than skipping, and
-    # a push that selected it on such a host would be refused for a reason that
-    # says nothing about the tree. The workflow caches the build under a key
-    # made of the installer's hash, so the pin and the cache move together.
-    "genmc-queue": {
-        "workflows": ["genmc-queue.yml"],
-        "runner_workflow": True,
-        # What the gate reads, and no wider: the runtime headers GenMC compiles,
-        # the harnesses, and the hosted atomics every C harness includes whole.
-        # For C++ that is the three headers a mutant rewrites (the two queue
-        # headers and the broadcast log) and the
-        # harnesses with their shim and support headers; every other header of
-        # that runtime is not read. The same set as the workflow's `paths:`,
-        # which the self-test holds.
-        "extra": [
-            "backends/c/forge-runtime/include/**",
-            "backends/c/runtime/include/sce/text.h",
-            "backends/c/forge-runtime/tests/genmc/**",
-            "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
-            "backends/cpp/forge-runtime/include/sce/forge/queue.h",
-            "backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h",
-            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
-            "backends/cpp/forge-runtime/tests/genmc/**",
-            "scripts/install_genmc.sh",
-        ],
-        "ci_only": "72s measured 2026-10-10 on a host that has GenMC, and the "
-                   "host is the constraint: GenMC is built from source "
-                   "(scripts/install_genmc.sh), no hosted runner carries it, "
-                   "and the build machines do not all have it. An update to "
-                   "main runs it where bx placed it: GenMC is a tool of "
-                   "bx.toml's platform, needed by this gate's runs. "
-                   "genmc-queue.yml builds it once per pin and caches it.",
-        "cost_s": 72,
-        "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
-        # GenMC explores every interleaving its model admits rather than
-        # sampling some, and its revision is pinned by the tracked installer.
-        "cache": True,
-        # Keyed on its triggers: `bx --checks prepush --learn genmc-queue`
-        # (2026-11-24) found 55 reads and 4 listings, every one inside the
-        # triggers and the runner's inputs.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # A C11 machine's core links with no C library, is weighed against a budget
-    # and runs its replay scenario on a Cortex-M4 under QEMU (docs/adr/0110, D3):
-    # the set the ADR names, generated, compiled with the ADR's flags, linked
-    # with `-nostdlib -lgcc` beside the board's startup, memory functions and
-    # seams (backends/c/mcu/), and held to backends/c/mcu/footprint.budget.
-    #
-    # `cost_s` is an ESTIMATE, absent from COST_MEASURED: the gate was written
-    # where no ARM compiler could run. Six generations, a few dozen small C
-    # compiles and six QEMU runs of a second or two each, after the generator
-    # build `codegen-build` owns. Time it on its first run and date it here.
-    #
-    # `ci_only` for `genmc-queue`'s reason: the ARM compiler is a tool bx.toml
-    # declares (`[platform.linux.tools.arm-none-eabi-gcc]`, Arm's tarball of the
-    # release scripts/install_arm_gnu_toolchain.sh pins) and QEMU a package the
-    # unit requires (`packages` below), and not every build machine is verified
-    # to carry them; the gate refuses (exit 3) without them, so a push that
-    # selected it there would be refused for a reason that says nothing about
-    # the tree. c11-mcu.yml installs both on its runner.
-    "c11-mcu": {
-        "workflows": ["c11-mcu.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "Arm's GNU Toolchain, a tool bx.toml pins by the install "
-                   "script's digests, and QEMU, a package the gate's unit "
-                   "requires, which not every build machine is verified to "
-                   "carry; the gate ends 'could not run' without them, so a "
-                   "push that selected it there would be refused for a reason "
-                   "that says nothing about the tree. c11-mcu.yml installs both.",
-        "cost_s": 60,
-        "summary": "C11 machines linked with no libc, weighed and run on a Cortex-M4",
-        # QEMU's release does not move the verdict: a run passes or fails on
-        # the scenario's expectations, on a counter clock the scenario alone
-        # moves. So it is a requirement of the unit, not a tool with pinned
-        # bytes (docs/adr/0110, D4).
-        "packages": ["qemu-system-arm"],
-        # The compiler is a tool of the platform at the release bx.toml checks
-        # (and the gate refuses another build of it), the budget and the
-        # scenarios are tracked, and the run is on a counter clock the
-        # scenario alone moves.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # Catches codegen breakage in the example documents (the namespace
-    # migration that broke them shipped green otherwise) and lints every
-    # document this repository authors. The trigger comes from the
-    # workflow's `paths:` like every other mirrored gate; it used to be a
-    # `local` list, and that list named `examples/**` while the gate's own
-    # sweep also read `integration_resources/*/*.scxml` — so editing an
-    # authored document there ran the lint never. The self-test now
-    # compares a gate's sweep against its trigger.
-    "example-codegen": {
-        "workflows": ["example-codegen.yml"],
-        # The workflow runs `scripts/gate example-codegen` instead of
-        # restating this gate's commands, so the check has one spelling
-        # for both callers. Every other mirrored gate still carries a
-        # second copy of its commands in its workflow; this flag is what
-        # makes the difference measurable per gate rather than a claim
-        # about the set, and the self-test below holds the delegation.
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        "ci_only": "99s against a declared 4s — the widest gap in the table, "
-                   "and the clearest case of a warmed-sweep reading being "
-                   "mistaken for what a push pays. It generates from every "
-                   "authored document under examples/ and integration_"
-                   "resources/, which is work proportional to the corpus. "
-                   "example-codegen.yml runs it.",
-        "cost_s": 99,
-        "summary": "example SCXML codegen smoke + authored-document lint",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The lane that starts on a compiled-in INPUT rather than on Rust.
-    #
-    # `workspace-tests` runs the same library assertions, but its filter is
-    # narrow on purpose — it is 151s, half the push budget, and widening it
-    # to reach `sce/include/**`, `backends/**` and `tools/codegen/**` would
-    # start it on nearly every push. So the wide filter lives here, on a
-    # lane that only builds the library suite. Both gates declare the same
-    # `include_str_roots`, and `include-str-coverage` checks their UNION:
-    # what has to hold is that SOME lane running the suite starts for the
-    # path, which is exactly what splitting by cost is allowed to satisfy.
-    "doc-content": {
-        "workflows": ["doc-content-gate.yml"],
-        "runner_workflow": True,
-        "include_str_roots": ["sce-build"],
-        "ci_only": "the library suite plus its build, on a filter wide "
-                   "enough to reach every compiled-in input. It is here "
-                   "rather than in the push because the push already "
-                   "delegates the same assertions through workspace-tests; "
-                   "what this lane adds is the paths that lane does not "
-                   "start for. doc-content-gate.yml runs it.",
-        "cost_s": 60,
-        "summary": "sce-build lib suite, compiled-in inputs",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "ledger-citations": {
-        "workflows": ["spec-citations.yml"],
-        "runner_workflow": True,
-        # Where the time goes, re-measured 2026-08-11 evening after the
-        # mnemosyne pin moved to c9b276bf. `validate-code-refs` used to be
-        # 108.9s of the 110s this gate took alone, because the symbol resolver
-        # re-read, re-parsed and re-compiled its tree-sitter query once per
-        # CITATION. Upstream now resolves once per FILE, and this tree is where
-        # that ratio is visible: 4487 citations over 290 files across the five
-        # workspaces, so the call count fell 15.5x and the wall clock fell
-        # further still (synth 82.1 -> 0.90, scxml 11.5 -> 0.54, mesh 12.5 ->
-        # 0.29, wire 0.40, bytesguard 0.45 — 2.6s in total). The whole-tree
-        # existence sweep, 4.4s over 6357 files, is now the larger half.
-        # `cost_s` stays at the `--measure` figure the runner compares against.
-        "ci_only": "121s across five workspaces. The registry's own header "
-                   "already told this story once — the hook's prose called it "
-                   "sub-second per workspace while a measurement put the whole "
-                   "gate at 157s — and the 15s it was declared at was the same "
-                   "mistake in the other direction, read off a warmed full "
-                   "sweep. spec-citations.yml runs it.",
-        "cost_s": 121,
-        "summary": "spec-citation ledgers, 5 workspaces",
-        # The validator is the revision a tracked workflow pins. Its git reads
-        # (`git diff --cached`, `checkout-index`) are the commit hook's
-        # `--staged` mode; the full gate a unit runs reads the tracked tree.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The authoring core's claim is that it knows no subject matter. A claim
-    # like that decays silently -- one helpful special case at a time -- so it
-    # is a test. It was declared Python only at 0.262s; the suite since grew
-    # to 413 cases, 86 of which drive a document through `sce-codegen`, and
-    # the figure was never retaken.
-    #
-    # ⚠ What moved it: a push on 2026-09-24 was refused at 331s of the 300s
-    # ceiling with every gate green, this one reading 81s paced. Timed alone
-    # it was 155s with the `cargo build` (opt 0) binary `codegen-build`
-    # leaves for it, and 72s once `sce-build` builds at opt 1 in the dev
-    # profile (`Cargo.toml`). The run-driven 86 are also why CI now builds
-    # the generator for this lane: without it they skipped, and the lane
-    # passed without judging them.
-    "authoring-core": {
-        "workflows": ["authoring-core.yml"],
-        "runner_workflow": True,
-        "ci_only": "72s measured with the generator built at opt 1, 155s "
-                   "at opt 0, against a declared 0.262. authoring-core.yml "
-                   "runs it twice: Python only, and with sce-codegen built "
-                   "so the 86 run-driven cases are judged, not skipped.",
-        "cost_s": 72,
-        "summary": "authoring core is domain-free, and its refusals still fire",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The logical interface every target shares, and the library built from it. The generator and
-    # a compiler are needed (the parity cases build and run C++), so unlike authoring-core's
-    # Python-only job this one has no run without them: the gate refuses to start.
-    "targets": {
-        "workflows": ["targets.yml"],
-        "runner_workflow": True,
-        "ci_only": "81s with the generator built at opt 1: the interface cases are seconds each, "
-                   "the three parity cases build and run a C++ library. Not taken by "
-                   "`scripts/gate --measure`, which is refused locally for this repository.",
-        "cost_s": 81,
-        "summary": "the logical interface is platform-free, and the library judges as verify does",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The gate whose absence let a stale verifies-catalog reach CI red:
-    # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate
-    # python generator, and the hook mirrored only the first.
-    "spec-snapshot": {
-        "workflows": ["spec-snapshot-drift.yml"],
-        "runner_workflow": True,
-        "cost_s": 13,
-        # Its tooling suite judges the citations of every tree the ledgers
-        # enrol, so those trees are its trigger, derived from the ledgers'
-        # configs (`enrolled_by`, see `enrolled_globs`) and never listed here.
-        # Until 2026-11-09 the trigger was the workflow's filter alone, and
-        # bx-fleet check learn found it reading 1072 files that filter did not
-        # name. The workflow's own `paths:` cannot derive, so CI starts this
-        # lane for fewer paths than a push selects it for.
-        "enrolled_by": "docs/*/*/mnemosyne.toml",
-        "summary": "spec snapshot integrity + verifies-catalog drift",
-        # `check_spec_drift.py --mode integrity` is the offline mode: it hashes
-        # the snapshot against its recorded provenance. The `upstream` mode,
-        # which fetches the published specification, is not what this runs.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # A compliance verdict — an AGPL-3.0 section 4 / MIT section 1 violation in a
-    # release tarball — that was reachable only after a push, on a check that
-    # needs nothing but bash and takes three hundredths of a second.
-    "license-ssot": {
-        "workflows": ["license-verify.yml"],
-        "runner_workflow": True,
-        "cost_s": 0,
-        "summary": "license SSOT vs the tree it describes",
-        # `package_embed.sh` writes `git describe` into the package's VERSION
-        # file, which the licence check does not read.
-        "cache": True,
-        # Read by `check learn` (2026-11-24, bx 340e9f9e): the SSOT, the
-        # licence texts it names, and its checker. The checker lists
-        # `third_party/` and each dependency's directory and looks at every
-        # file at depth two (`find -maxdepth 2 -type f`) to find a dependency
-        # the SSOT does not name, which is the violation this gate exists for:
-        # `third_party/` and `third_party/*/` are those listings and
-        # `third_party/*/*` those files. Two notices sit deeper and are opened
-        # by name (lua.h, json.hpp). `LICENSE*` covers the root's texts.
-        "inputs": [
-            "LICENSE*",
-            "sce/sce_licenses.cmake",
-            "scripts/verify_licenses.sh",
-            "third_party/",
-            "third_party/*/",
-            "third_party/*/*",
-            "third_party/lua/src/lua.h",
-            "third_party/nlohmann_json/include/nlohmann/json.hpp",
-        ],
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The same compliance verdict for the browser visualizer, which
-    # `license-ssot` cannot reach: it reads `third_party/`, and the
-    # visualizer's libraries live under `web/visualizer/vendor/`.
-    #
-    # That gap was not hypothetical. d3 (ISC) shipped vendored and
-    # unregistered for as long as the visualizer existed, and elkjs
-    # (EPL-2.0 — a licence that obliges a COMMERCIAL distributor to defend
-    # and indemnify every other contributor) was pulled from unpkg at
-    # runtime by one `<script src>` line. Throughout, LICENSE-THIRD-PARTY.md
-    # opened with "All dependencies are MIT licensed" and nothing in the
-    # tree could contradict it.
-    "web-vendor-licenses": {
-        "workflows": ["license-verify.yml"],
-        "runner_workflow": True,
-        # The files the gate OPENS, not only the ones it is about. It reads
-        # each vendored library's `LICENSE` and `README.md` and the registry
-        # itself, so a commit that touches only one of those — deleting a
-        # licence text, say, which is the violation — has to select this
-        # lane. `script-read-coverage` refuses the entry without them.
-        "extra": [
-            "web/visualizer/vendor/**",
-            "web/visualizer/*.html",
-            "LICENSE-THIRD-PARTY.md",
-        ],
-        "cost_s": 0,
-        "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
-        "cache": True,
-        # Read by `check learn` (2026-11-24, bx 340e9f9e): the registry of
-        # licences, each vendored library's texts and the pages that load them
-        # (`web/visualizer/*.html`). It lists `web/visualizer/` for the pages
-        # and `web/visualizer/vendor/` for a library nobody registered; the
-        # vendor tree is named whole, which gives its listings too.
-        "inputs": [
-            "LICENSE-THIRD-PARTY.md",
-            "web/visualizer/",
-            "web/visualizer/*.html",
-            "web/visualizer/vendor/**",
-        ],
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # Where the W3C BasicHTTP fixture listener answers had come to be spelled in
-    # five places at once — twelve C11 runners, two gate helpers, a CI job, the
-    # Rust and Go harnesses, two Python suites — and the drift only became
-    # visible when a second checkout could not run the BasicHTTP suites while
-    # the first held the port. `tests/w3c/basic_http_test_endpoint.h` owns it
-    # now; this keeps that ownership a property of the tree.
-    #
-    # Trigger is deliberately the catch-all, and that is affordable rather than
-    # lazy: a re-spelling can appear in any file, and narrowing to the paths we
-    # happen to remember would miss exactly the one nobody thought of. The gate
-    # asks `git grep` for the handful of files that name the number at all and
-    # runs its comment-stripper only on those — 124ms measured, down from 14.7s
-    # when it stripped every tracked source file.
-    #
-    # It gets its own lane rather than riding another's because nothing else
-    # can catch the defect: a re-spelled port that equals the owner's still
-    # WORKS, so every suite stays green and the drift surfaces only the day
-    # someone moves the endpoint. There is no compile error to lean on.
-    "http-endpoint-ssot": {
-        "workflows": ["http-endpoint-ssot.yml"],
-        "runner_workflow": True,
-        # 0.185s, and the first figure here this gate has ever been able to
-        # confirm. The 4 it carried was chosen on 2026-08-24 to cover the
-        # process the runner starts around a 124ms scan, because `--measure`
-        # answered 0 every time — `scripts/gate` timed with whole-second
-        # `SECONDS`, so a gate that finishes in a fifth of a second had no
-        # readable cost at all. The runner now keeps a millisecond clock, and
-        # six runs on 2026-09-02 read 0.165 0.145 0.154 0.162 0.169 0.185,
-        # none of them queued behind the cargo lock. 0.185 is the worse of
-        # the last pair. The process the 4 was covering turns out to be
-        # ~40ms, not the seconds it was insured against.
-        "cost_s": 0.185,
-        "summary": "BasicHTTP fixture endpoint has one owner",
-        "cache": True,
-        # The whole tree, and it stays so: the scan finds its candidates with
-        # `git grep` over every tracked source, and in a narrowed unit's copy
-        # that search would see only the inputs, so a re-spelling in a file
-        # left out would pass.
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The generated codecs are committed goldens, not workspace members:
-    # `cargo metadata` lists eight packages and none of them is a codec, so
-    # `clippy --workspace` lints the generator and never its output. Both arms
-    # were CI-only until the registry started asking which workflows lack a
-    # gate.
-    "codec-clippy": {
-        "workflows": ["sce-forge-codec-clippy.yml"],
-        "runner_workflow": True,
-        # The goldens compile against the Rust forge runtime and what cargo
-        # builds for it (its path dependencies, the workspace manifests). The
-        # workflow named the runtime's directory alone, so an edit of
-        # `backends/rust/portable-bytes` selected nothing that lints codecs.
-        "builds": ["forge-runtime-rust"],
-        "ci_only": "106s linting 95 generated codec goldens. "
-                   "sce-forge-codec-clippy.yml runs it.",
-        "cost_s": 106,
-        "summary": "clippy generated codecs, alloc on",
-        "cache": True,
-        # Keyed on its triggers and the two directories the script lists for
-        # `codec_*.rs`. `bx --checks prepush --learn codec-clippy` (pc2,
-        # 2026-11-24): 206 reads and 5 listings, every one inside these once
-        # the runtime's cargo build is among the triggers.
-        "inputs": INPUTS_ARE_TRIGGERS,
-        "lists": ["tests/forge/expected/", "tests/forge/expected/views/"],
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "codec-no-alloc": {
-        "workflows": ["sce-forge-codec-no-alloc.yml"],
-        "runner_workflow": True,
-        # As `codec-clippy`: the goldens compile against the runtime's build.
-        "builds": ["forge-runtime-rust"],
-        "ci_only": "90s. sce-forge-codec-no-alloc.yml runs it, next to its "
-                   "alloc-on sibling.",
-        # The text algorithms it compiles are read from a materialization of
-        # `rust-static-datamodel` (docs/adr/0097), which sce-codegen writes.
-        "deps": ["codegen-build"],
-        "cost_s": 90,
-        "summary": "generated codecs compile without alloc",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The two conformance surfaces nothing local ran. Both narrow their
-    # workflow's catch-all (see `narrows` in `gate_triggers`) and state their
-    # real inputs here: the engine, the generator, the templates that emit the
-    # AOT runners, and the fixtures the runners are registered from.
-    #
-    # The Rust arm of the same workflow was left out here once, on the grounds
-    # that `sce-rust-tests` is a workspace member and `workspace-tests` already
-    # runs its cases. That run is not the lane's: it takes the committed tree
-    # in the test profile, while the lane regenerates and runs in release. So
-    # the lane kept its own inline spelling, and it is `w3c-rust` now.
-    "w3c-cpp": {
-        "workflows": ["w3c-tests.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "the lane declares no `paths:` filter, which is a statement "
-                   "about a runner paid by the minute, not about what the "
-                   "suite reads. Inheriting it would run the longest gate in "
-                   "the set for a README edit.",
-        "extra": ["sce/**", "tests/w3c/**", "tests/CMakeLists.txt",
-                  "resources/**", "tools/codegen/templates/**",
-                  "sce-build/src/**",
-                  # The modules the route registers and plans its fixtures
-                  # through, and the one the test tree takes the warning
-                  # classes its test programs turn off from.
-                  "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
-                  "cmake/SCECodegenPlan.cmake", "cmake/SCETestWarnings.cmake"],
-        "deps": ["codegen-build"],
-        "ci_only": "55s, and it is the gate that decides whether the budget "
-                   "is met on a good run or on every run. Without it the set "
-                   "measured 286s against a 300s ceiling, and the same gates "
-                   "measured twice varied by as much as 27s (clippy alone "
-                   "swung 15s to 42s), so fourteen seconds of headroom is "
-                   "none. w3c-tests.yml declares no `paths:` filter, so CI "
-                   "runs this arm on every push regardless.",
-        "cost_s": 55,
-        "summary": "W3C conformance, C++ Interpreter + AOT",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # A deploy workflow whose three build steps are verdicts. Its trigger
-    # already includes `sce-build/**`, so a Rust change every other gate passes
-    # could still turn it red — after the push.
-    # The diagram's geometry, judged without a browser. Every defect it was
-    # written for was invisible to every other lane: ELK's routes deleted 23
-    # lines after being stored, a container shrunk after its edges were routed
-    # to it, a cross-hierarchy route read in the wrong coordinate frame, a
-    # collapse leaving eight edges touching nothing. None of them broke a
-    # build, and a rendered diagram is not bytes another test can diff.
-    #
-    # ⚠ `ci_only`, and not because it is slow — it is seconds. It needs the
-    # visualizer WASM, which `visualizer-wasm` builds in the same workflow and
-    # which a push does not build.
-    "visualizer-layout": {
-        "workflows": ["deploy-visualizer.yml"],
-        "runner_workflow": True,
-        "ci_only": "needs the codegen and engine WASMs that visualizer-wasm "
-                   "builds in the same workflow; a push builds no WASM, so the "
-                   "measurement would have nothing to turn a document into a "
-                   "structure with, nor to compare that structure against.",
-        # ⚠ `web/visualizer/**` and no wider, which took two attempts to get
-        # right. The gate first swept every tracked `.scxml`; declaring that
-        # honestly meant `**/*.scxml`, and `ci-only-coverage` then refused the
-        # entry with the sentence worth keeping: "The gate was not moved to
-        # CI, it was removed" — deploy-visualizer.yml does not run for an
-        # arbitrary document, so the lane would have been advertised and never
-        # run. The fixtures are pinned in `web/visualizer/measure/fixtures.txt`
-        # instead, which is inside this trigger; what that costs is written
-        # there.
-        "extra": ["web/visualizer/**"],
-        # The WASMs it measures are `visualizer-wasm`'s output, in gitignored
-        # directories, so that gate runs first: a landing unit runs on a
-        # build machine's checkout, where they are absent (the gate ends 3,
-        # and the item would never land) or left by an older tree (a verdict
-        # about WASMs this change did not build). deploy-visualizer.yml runs
-        # the two as steps of one job, so there the second run of
-        # `visualizer-wasm` finds its output built.
-        "deps": ["visualizer-wasm"],
-        # 22s measured 2026-09-18, up from 6s: the lane gained a stress half
-        # that replays 25 seeded gestures per fixture over all ten. The seed
-        # is pinned in the gate script, so the cost is stable and a red is
-        # reproducible.
-        # The scenario half (2026-10-13) replays 31 scenarios of the shared
-        # corpus on the browser's engine; the gate's cost is unmeasured since,
-        # and a hosted run is what measures it.
-        "cost_s": 22,
-        "summary": "diagram layout invariants, drag/collapse/stress survival, "
-                   "and the shared scenarios on the browser's engine",
-        # The WASMs it reads are built in the same unit (`deps`), and the
-        # stress half's seed is pinned in the script, so the verdict is the
-        # tree's. Kept only from a landing unit, through `visualizer-wasm`.
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    "visualizer-wasm": {
-        "workflows": ["deploy-visualizer.yml"],
-        # The page's engine is the main tree built with emscripten, and the
-        # codegen WASM is `sce-build-wasm` built by wasm-pack.
-        "builds": ["main-tree", "codegen-wasm"],
-        "runner_workflow": True,
-        "ci_only": "77s measured 2026-08-22 (declared 42) building three "
-                   "WASM artifacts. deploy-visualizer.yml runs it, and this "
-                   "gate declares no trigger of its own, so the workflow's "
-                   "filter IS the trigger — the two cannot disagree.",
-        "cost_s": 77,
-        "summary": "codegen + visualizer + DOOM WASM builds",
-        # The SDK is bx.toml's pinned emsdk tool, wasm-pack a need of the
-        # platform.
-        "cache": True,
-        "kept_only_from_a_landing": "the emscripten half runs only where emsdk is "
-                                "found, so a pass without it judged one "
-                                "artifact of three",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Rust engine as the module a browser loads, run under Node and in
-    # headless Chrome on the scenarios every backend replays. No other lane can
-    # say whether the engine starts on `wasm32-unknown-unknown`: that target
-    # gives a module no clock, and the failure compiles and traps only when the
-    # module runs. Chrome is the web target's own host and Node the faster one.
-    #
-    # `ci_only` for what it needs rather than for the number alone: the target's
-    # standard library, Node, Chrome, and a `wasm-bindgen` tool at exactly the
-    # version `Cargo.lock` holds, none of which a push can assume. The
-    # workflow's filter IS the trigger, as `visualizer-wasm`'s is.
-    #
-    # Measured 2026-10-08 as the gate script itself, through `bx --local`
-    # (`scripts/gate --measure` is refused locally for this repository): 107s
-    # with the dependencies built (the runtime and the replay crate rebuilt),
-    # of which Chrome's replay is 20s. The first dev-profile build of the target
-    # on that tree took 128s before Chrome was added. The same gate built in
-    # release took 620s (`lto = "thin"` with one codegen unit over 44 generated
-    # machines), which is why it builds the dev profile.
-    "wasm32-scenarios": {
-        "workflows": ["wasm32-scenarios.yml"],
-        "runner_workflow": True,
-        "ci_only": "107s measured 2026-10-08 with the dependencies built "
-                   "(128s on a first dev-profile build before Chrome was "
-                   "added, 620s in release). wasm32-scenarios.yml runs it, "
-                   "and needs the wasm32 standard library, Node, headless "
-                   "Chrome and a wasm-bindgen at the version Cargo.lock "
-                   "holds. An update to main runs it where bx placed it, on "
-                   "a machine carrying bx.toml's pinned Chrome and "
-                   "wasm-bindgen tools.",
-        "cost_s": 107,
-        "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
-        # The browser and the glue tool are pinned tools of bx.toml's platform
-        # (`chrome`, Chrome for Testing at the version scripts/install_chrome.sh
-        # names, and `wasm-bindgen` at Cargo.lock's), and the wasm32 standard
-        # library is a target of the release the plan names, declared with it
-        # in `[platform.linux.tools.rust]`. In a landing
-        # only the pinned Chrome judges the module, so a pass kept from one is
-        # that browser's; outside a landing the gate may replay in the Chrome on
-        # the machine's PATH, which no key names.
-        "cache": True,
-        "kept_only_from_a_landing": "outside a landing it replays in whatever "
-                                    "Chrome is on PATH where the pinned Chrome "
-                                    "for Testing is absent",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The other half of the main tree's ctest partition, and the half nothing
-    # ran. Measured 2026-08-12 with a logging shim in place of `ctest` during a
-    # full `scripts/gate --all`: 28 gates passed and the only runs against this
-    # build were `w3c-c11`'s two. 159 of 382 registered cases — every `mesh_*`
-    # case and every C++ unit suite — were executed by no gate and by no
-    # workflow, since none configures the main tree.
-    "cpp-suite": {
-        "workflows": ["cpp-suite.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "the lane declares no `paths:` ALLOW filter, for the same "
-                   "reason `w3c-cpp`'s does not: that is a statement about a "
-                   "runner paid by the minute, not about what the suite "
-                   "reads. This one builds the whole C++ tree, so its real "
-                   "inputs are the engine, its tests, the mesh sources and "
-                   "the CMake definitions that register them. Since "
-                   "2026-08-29 it DOES declare a `paths-ignore:` deny list "
-                   "(docs/**, **/*.md, .claude/**), which narrows nothing "
-                   "this table claims: a deny list still starts the lane for "
-                   "every path it does not name, so the catch-all reading "
-                   "above holds. What the deny list changes is per-change "
-                   "delegation, and `ci_owed` is where that is read.",
-        # The transport SDKs' pin comes first: the build machines install them
-        # with that script (`[platform.linux.tools.mesh-transports]`). Then
-        # what spreads the suite over the lane's shards (`SCE_CTEST_SHARD`)
-        # and the reading of the tree it plans from, which the gate script
-        # runs, and the report of where the build's time went.
-        "extra": ["scripts/install_mesh_transports.sh",
-                  "scripts/lib/ctest_shards.py",
-                  "scripts/lib/ctest_registered_commands.cmake",
-                  "scripts/lib/build_time_report.py",
-                  "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
-                  "examples/**", "resources/**", "tools/codegen/templates/**",
-                  "sce-build/src/**",
-                  # The union documents every algorithm lane is held to, which
-                  # the Interpreter's lowered-algorithm test lowers and runs
-                  # (AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp).
-                  "sce-build/tests/fixtures/union/**",
-                  # The algorithms the catalog names in the statechart
-                  # fixtures (a map an algorithm is lent, docs/adr/0108 step
-                  # 7b), which the same test lowers and runs, and the
-                  # statecharts AStaticDatamodelRunsLoweredUnderTheInterpreter
-                  # Test lowers beside them.
-                  "sce-build/tests/fixtures/static_datamodel/**",
-                  # The test profile's documents the build generates the
-                  # suites from, their traces and their expected logs, which
-                  # ATestSuiteRunsEndToEndTest and
-                  # ACorpusSuiteReplaysToItsExpectedLogsTest read at run time.
-                  "sce-build/tests/fixtures/test_profile/**",
-                  # The documents of the corpus's orders_suite and
-                  # nested_suite, which the build generates.
-                  "sce-build/tests/fixtures/ttcn3_export/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "110s building and running the whole C++ ctest tree. "
-                   "cpp-suite.yml runs it. Its `extra` list is wide on "
-                   "purpose — sce/**, tests/**, examples/** — so it was "
-                   "selected by most pushes, which is what made it a budget "
-                   "problem rather than an occasional one.",
-        "cost_s": 110,
-        "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # ADR 0059, section 7: the C++ interface compiled at the standard a
-    # consumer compiles it at. Every public header, every Forge C++ golden and
-    # every C++ header the generators write for this configure, each compiled
-    # ALONE with -Werror at C++17 and at C++20, beside the scan that refuses a
-    # standard-selecting `#if` in the headers and the C++ templates.
-    #
-    # SCE's own build compiles every target at C++20, so the C++17 four
-    # targets declared had never been compiled, and a downstream C++17 build
-    # found the first defect under GCC 15. No other gate can see that class:
-    # each builds SCE the way SCE builds itself.
-    #
-    # ⚠ `cost_s` is an ESTIMATE, not a stopwatch reading, and the slug is
-    # absent from COST_MEASURED for that reason. Its parts: a cold scratch
-    # configure and the generation rules (about two minutes), then some 2,600
-    # syntax-only compiles that `scripts/lib/sce_build_jobs.sh` spreads over
-    # the machine (about three on a 32-core build host). Time
-    # `scripts/gate cpp-interface-standard` on such a host and date it here.
-    "cpp-interface-standard": {
-        "workflows": ["cpp-interface-standard.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        # What the gate compiles or reads to decide what to compile: the
-        # engine and its headers, the C++ runtime and the C backend it
-        # compiles, the C++ templates and the generator that fills them, the
-        # Forge goldens, the CMake that registers the corpora, and the tool.
-        # The workflow's `paths:` lists every one, which `ci-only-coverage`
-        # holds.
-        "extra": ["sce/**", "backends/cpp/**", "backends/c/**",
-                  "tools/codegen/templates/**", "sce-build/src/**",
-                  "tests/forge/expected/**", "tests/CMakeLists.txt",
-                  "CMakeLists.txt", "cmake/**", "tools/interface-standard/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "minutes long, estimated rather than measured: a cold "
-                   "configure, every generation rule and about 2,600 "
-                   "compiles, in a GCC 15 image the runner builds first. "
-                   "cpp-interface-standard.yml runs it, and an update to main "
-                   "runs it on a build machine with a rootless Docker.",
-        "cost_s": 300,
-        "summary": "C++ interface compiled alone at C++17 and C++20 (ADR 0059)",
-        # The verdict is GCC 15's: its libstdc++ is the one that drops a
-        # transitive include first. So the gate runs in one image wherever it
-        # runs, the hosted lane, a build machine or a workstation alike: the
-        # runner builds `container` (gcc:15.3.0 and what the configure needs)
-        # and runs `scripts/gate cpp-interface-standard` inside it, generator
-        # build included (see "Gates that run in an image"). A machine's own
-        # GCC never judges it. A build machine takes the unit only where its
-        # run account has a rootless Docker (`needs`).
-        "container": "tools/interface-standard/Containerfile",
-        "needs": ["docker"],
-        "cache": False,
-        "no_cache_reason": "the image is built from a tag (gcc:15.3.0) and the "
-                           "Debian archive, and neither is fixed by the tree: "
-                           "a rebuilt image can carry another compiler patch "
-                           "or package, and the verdict moves with them",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # An installed SCE builds what its own generator writes. The install
-    # exports `sce-codegen`, its templates and `SCECodegen.cmake`, and the C++
-    # they write includes the Forge C++ runtime; until that runtime was an
-    # exported target, the install shipped one of its headers and only under
-    # the mesh, and `tests/install_tree_consumer` — the test that would have
-    # said so — was opt-in and run by no lane. This builds a scratch tree,
-    # installs it, and builds and runs four probe projects against the prefix,
-    # one of them a statechart generated by the installed generator.
-    #
-    # ⚠ `cost_s` is an ESTIMATE, not a stopwatch reading, and the slug is
-    # absent from COST_MEASURED for that reason. Its parts: a cold scratch
-    # configure and a build of the SCE libraries with no tests (about the
-    # 123s `ecma262-lowered-cpp` measured for its own scratch tree with ccache
-    # warm, which also builds a test), the install, and four small probe
-    # configures and builds. Time `scripts/gate install-consumer` on a build
-    # host and date it here.
-    "install-consumer": {
-        "workflows": ["install-consumer.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        # What the gate builds, installs or runs: the CMake that defines and
-        # installs the targets and the package config, the engine and its
-        # headers, the Forge C++ runtime, the templates and the generator the
-        # install ships, and the probes. The workflow's `paths:` lists every
-        # one, which `ci-only-coverage` holds.
-        "extra": ["CMakeLists.txt", "cmake/**", "sce/**",
-                  "backends/cpp/forge-runtime/**", "tools/codegen/**",
-                  "sce-build/src/**", "tests/install_tree_consumer/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "minutes long, estimated rather than measured: a cold "
-                   "configure and build of the SCE libraries in a tree of "
-                   "its own, an install and four probe builds — the scratch "
-                   "tree is the point, so a warm developer tree does not make "
-                   "it cheaper. install-consumer.yml runs it.",
-        "cost_s": 240,
-        "summary": "generated C++ built and run against an installed SCE",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The C++ client parts built with MSVC on Windows (docs/adr/0107, D11): the
-    # reference host, its COSE operations on vcpkg's libsodium and the generated
-    # machines through CMake, and the Bazel consumers through both channels.
-    # No other gate builds on Windows, and no push host is one.
-    #
-    # ⚠ `cost_s` is an ESTIMATE, absent from COST_MEASURED: the lane has no run.
-    # Its parts are a cached generator build, a cold configure and a build of
-    # sce_base and one test, two vcpkg ports and a cold Bazel through two
-    # channels. Time the gate on a Windows host and date it here.
-    "windows-msvc": {
-        "workflows": ["windows-msvc.yml"],
-        # Not delegated: the workflow runs the gate's script itself, not through
-        # `scripts/gate`. The runner opens with this file's self-test and
-        # `scripts/lib/require_submodules.sh`, which read the tree through
-        # Python on POSIX paths and are held on the Linux lanes; on the Windows
-        # runner they would be a second, unrelated verdict ahead of the one this
-        # lane exists for. The commands live once, in the script.
-        "ci_only": "a Windows host with Visual Studio 2022 and vcpkg, which no "
-                   "push host is, and minutes long, estimated rather than "
-                   "measured. windows-msvc.yml runs it on a hosted Windows "
-                   "runner.",
-        "cost_s": 1500,
-        "summary": "C++ host, COSE and generated machines with MSVC; Bazel channels",
-        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
-        # a gate can run"). The host is the platform: every build machine is
-        # the Linux bx.toml declares, and the verdict is MSVC's on Windows, so
-        # a landing unit could never be placed and every item reaching the
-        # gate would come back unlanded. When bx.toml declares a Windows
-        # platform this attribute names it, and the gate joins the judgment.
-        "platform": "github-hosted-windows-2022",
-        "platform_reason": "the verdict is MSVC's, with Visual Studio 2022 and "
-                           "vcpkg on the hosted windows-2022 image; every build "
-                           "machine is the Linux platform bx.toml declares",
-        "cache": False,
-        "no_cache_reason": "a host compiler and ports no declaration pins: the "
-                           "verdict is MSVC's as the Windows image carries it, and "
-                           "vcpkg's libxml2 and libsodium at the versions its "
-                           "checkout holds",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The only gate that configures the OTHER value of SCE_SCRIPT_ENGINE.
-    #
-    # Every gate above builds the quickjs selection, which is what
-    # `tests/CMakeLists.txt` said three times in as many words — "no gate
-    # configures -DSCE_SCRIPT_ENGINE=lua" — and each of those comments named a
-    # file compiled by every build and run by none. This one compiles a C++
-    # artifact generated with `--script-engine lua` and runs it, which is the
-    # measurement `docs/SCE_LUA_TRANSLATION_SEAM.md` ended without.
-    #
-    # Its workflow declares a `paths:` filter, so the filter IS the trigger and
-    # there is no `narrows`/`extra` pair to keep in step with it. `sce/**` is
-    # deliberately NOT in that filter as a whole: the selection reaches only the
-    # scripting seam, the shared helpers the generated code calls, and the
-    # option's own CMakeLists.
-    "ecma262-lowered-cpp": {
-        "workflows": ["ecma262-lowered-cpp.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        # The scratch tree is thrown away on every run, so there is no warm
-        # case for this gate the way there is for one that reuses `build/`:
-        # `SCE_SCRIPT_ENGINE` is PUBLIC on `sce_scripting`, the selection is
-        # therefore a property of the whole tree, and a developer's `build/` is
-        # the quickjs one and must stay that way. What that costs is the sce
-        # libraries from cold on every invocation, which is minutes rather than
-        # the ~60s an already-built tree takes.
-        #
-        # 123s measured by `scripts/gate --measure` on the build machine
-        # 2026-08-29, with ccache warm. 86 of those seconds are the
-        # `sce_build_is_current` ctest FIXTURE, not the suite — the suite itself
-        # runs in 0.16s — so the number is dominated by a staleness check the
-        # tree makes every ctest case pay.
-        #
-        # So it is CI's, not the push's. A developer who wants it runs
-        # `scripts/gate ecma262-lowered-cpp` by name.
-        "ci_only": "it configures and builds a second tree from cold — the "
-                   "`lua` selection cannot share the quickjs `build/` because "
-                   "the option is PUBLIC on sce_scripting. "
-                   "ecma262-lowered-cpp.yml runs it, on a filter naming the "
-                   "seam's two halves and the two tables the fixture's "
-                   "population comes from.",
-        "cost_s": 123,
-        "summary": "ECMA-262 through a Lua-lowered C++ artifact",
-        "cache": True,
-        # The whole tree: `bx --checks prepush --learn ecma262-lowered-cpp`
-        # (2026-11-24) read 946 of its 1931 paths outside its triggers, nearly
-        # all of them the root configure's test tree (`tests/**`,
-        # `resources/**`, `integration_resources/**`, the LICENSE files,
-        # `web/visualizer/test-list.js`), which `main-tree` does not name.
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Kotlin twin of the row above, and it exists because the argument that
-    # row makes applies unchanged to a second backend that had crossed the same
-    # seam. Kotlin had `ScriptSource.lua`, a lowered arm on `LuaScriptEngine`
-    # and a frontend that answers the shared table — and no lane that ran an
-    # ARTIFACT through any of it.
-    #
-    # ⚠ It found a defect on its first run: the generated Kotlin evaluates a
-    # transition's `cond` twice, so a guard with a side effect records the
-    # wrong arm's answer. Declared in
-    # `tests/ecmascript/kotlin_lowered_artifact_defects.json`, which this gate
-    # holds in both directions.
-    "ecma262-lowered-kotlin": {
-        "workflows": ["ecma262-lowered-kotlin.yml"],
-        "runner_workflow": True,
-        "deps": ["codegen-build"],
-        # Not `ci_only`, and the number is why. Unlike the C++ twin this gate
-        # configures no second tree: it regenerates two machines into the
-        # module's own Gradle build and runs 98 cases against them.
-        #
-        # ⚠ THE BASIS IS NOT THE WARM ONE THIS TABLE'S HEADER DESCRIBES, and
-        # the departure is a faithful reading of that header rather than an
-        # exception to it. "Warm" is defended up there as "a push happens on a
-        # tree the developer has just built" — and NOTHING but this gate builds
-        # this module. Its generation, its two machines and its test sources
-        # are reached by no other target, so a warm reading here means "this
-        # gate ran before", not "the developer just built the tree". The state
-        # a push actually finds it in is the one its own `paths:` filter
-        # selects for: a change under `tools/codegen/templates/**` or
-        # `sce-build/src/**` invalidates the generation and the compile.
-        #
-        # So the number is measured from THAT state, worse of two runs, the
-        # way the header takes the worse of two:
-        #
-        #   ./gradlew :sce-kotlin-lowered-ecma262:clean
-        #   GRADLE_OPTS="-Dorg.gradle.caching=false" \
-        #       scripts/gate --measure ecma262-lowered-kotlin
-        #
-        # 2026-08-30 on the build machine: 11s and 4s from clean; 1s and 1s
-        # warm. 11 is declared. Over-declaring is the safe direction — the
-        # ceiling check only refuses a gate that grew PAST its declaration —
-        # and it keeps this row above `COST_NOISE_S`, so the gate contributes
-        # a ratio to the pace estimate instead of being invisible to it.
-        #
-        # ⚠⚠ The line this replaced claimed "2s … INCLUDING a clean". Two
-        # clean runs measured 4s and 11s, so that number was a warm reading
-        # wearing a cold justification. Re-derive with the two commands above
-        # rather than trusting this paragraph.
-        #
-        # ⚠ The suite itself always RUNS: the gate passes `--rerun`, because
-        # its verdict is read from the run's output and Gradle answers an
-        # unchanged test task UP-TO-DATE without producing any. So this is not
-        # a cached green being timed.
-        "cost_s": 11,
-        "summary": "ECMA-262 through a Lua-lowered Kotlin artifact",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "w3c-c11": {
-        "workflows": ["w3c-tests.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm's real "
-                   "inputs are the C backend, the C templates, the "
-                   "generator, and the inbox probe it shares with the C++ "
-                   "engine's inbox test (docs/adr/0084).",
-        # The shared Lua the machines embed, and the shared tables every Lua
-        # engine's readers ask (`system_variable_writes.json` among them).
-        "extra": ["backends/c/**", "tools/codegen/templates/**",
-                  "sce-build/src/**", "tests/integration/inbox_probe.scxml",
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
-                  # The registry the route registers every fixture from, the
-                  # documents it generates, and the modules it registers and
-                  # plans them through.
-                  "tests/w3c/conformance/fixtures.json", "resources/**",
-                  "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
-                  "cmake/SCECodegenPlan.cmake",
-                  # The test log every runtime writes of the generated suite,
-                  # which `test_a_test_suite_runs_through_its_runner.c` reads
-                  # at run time, and the wire schema whose status
-                  # `test_case_run_test.c` holds the runtime's to.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
-                  "schemas/sce-test-log.v1.schema.json",
-                  # The suite's committed traces, which the same test and the
-                  # runner program's replay, and the trace's wire schema,
-                  # whose status `input_trace_test.c` holds the runtime's to,
-                  # all read at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json",
-                  # The documents of the corpus's boundary_suite, which the
-                  # build generates, and the traces and expected logs of the
-                  # corpus's other suites, which
-                  # `test_a_corpus_suite_replays_to_its_expected_logs.c`
-                  # replays and reads at run time.
-                  "sce-build/tests/fixtures/test_profile/boundary/**",
-                  "sce-build/tests/fixtures/test_profile/runs/**",
-                  # The documents of job_suite the build generates, and the
-                  # job's completion of the kind examples its port sends.
-                  "sce-build/tests/fixtures/test_profile/*.scxml",
-                  "sce-build/kind-examples/event-schema.scxml",
-                  # The documents of orders_suite and nested_suite, the records
-                  # and templates over a union they import, and the unions.
-                  "sce-build/tests/fixtures/ttcn3_export/**",
-                  "sce-build/tests/fixtures/test_profile/imports/**",
-                  "sce-build/tests/fixtures/union/**",
-                  # The configurations of every form the build generates,
-                  # whose readers and writers
-                  # `test_a_record_reads_back_the_form_it_writes.c` round-trips,
-                  # and the reader of a received message's every part the
-                  # build generates and
-                  # `test_a_received_message_is_made_in_the_machines_types.c`
-                  # runs.
-                  "sce-build/tests/fixtures/test_profile/trace_forms/**",
-                  "sce-build/tests/fixtures/test_profile/received/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
-                   "is the point. The same 245 tests read 85s and 95s run on "
-                   "their own, 258s and 391s inside the push that also builds "
-                   "the generator and runs three other suites. Four readings "
-                   "spanning 4.6x is not a cost that can be declared, and no "
-                   "value fits a 300s ceiling that this gate alone can exceed. "
-                   "It kept its place through two re-prices before the numbers "
-                   "settled the argument; the owner's rule decides it — the "
-                   "slow ones go to CI so a push stays under five minutes. "
-                   "`w3c-tests.yml` has no `paths:` filter, so it runs on every "
-                   "push and nothing narrows what CI sees.",
-        "cost_s": 258,
-        "summary": "W3C conformance, C11 MCU backend",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "w3c-go": {
-        "workflows": ["w3c-tests.yml"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "the Go backend, the Go templates and the generator.",
-        # The shared Lua is copied under backends/go; the shared tables its
-        # readers ask are not.
-        "extra": ["backends/go/**", "tools/codegen/templates/**",
-                  "sce-build/src/**", "tests/ecmascript/**",
-                  # The test log's wire schema, which the runtime's
-                  # `TestEveryKindIsOneTheSchemaNames` reads at run time.
-                  "schemas/sce-test-log.v1.schema.json",
-                  # The test log every runtime writes of the generated suite,
-                  # which the Go suite runner's test of `answers_the_job`
-                  # reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
-                  # The suite's committed traces, which the same test replays,
-                  # and the trace's wire schema, whose status the runtime's
-                  # `TestSchemaFileDeclaresStatus` holds its own to, both read
-                  # at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json",
-                  # The traces and expected logs of the corpus's other suites,
-                  # which `a_corpus_suite_replays_to_its_expected_logs_test.go`
-                  # replays and reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runs/**"],
-        "deps": ["codegen-build"],
-        # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
-        # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
-        # queued behind the cargo package-cache lock, which is what makes
-        # this the cleanest of the three retirements. 10 is the worse of the
-        # last pair. Two pushes that day read 15s and 8s, straddling it.
-        "cost_s": 10,
-        "summary": "W3C conformance, Go AOT",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The Rust arm, and the last W3C lane to get a gate: `test-rust` in
-    # w3c-tests.yml carried its generation, fixture server and `cargo test`
-    # inline while every sibling job ran `scripts/gate w3c-<backend>`. A
-    # backend's lanes are derived from this table as
-    # `<family>-<Language::canonical_name()>`, so the missing slug was a lane
-    # the Rust row could not be read from.
-    #
-    # ⚠ No `cost_s`: nobody has timed this script yet, and a figure borrowed
-    # from the lane's timeout would be a guess wearing a measurement's unit.
-    # `run_order` sorts an unmeasured gate last, and UNMEASURED_COST_CEILING
-    # counts it, which is the honest place for it until a run is read.
-    "w3c-rust": {
-        "workflows": ["w3c-tests.yml"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "the Rust runtime and Lua crates, the Rust templates, the "
-                   "generator, the W3C fixtures it generates from and the "
-                   "build fixtures its hand-written tests compile in.",
-        "extra": ["backends/rust/**", "tools/codegen/templates/**",
-                  "sce-build/src/**", "resources/**", "tests/w3c/**",
-                  "sce-build/tests/fixtures/**",
-                  # The shared Lua the Lua crate loads, and the shared tables
-                  # its readers ask.
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
-                  # What the crate's build script generates its trees from
-                  # (docs/adr/0097): their manifests, the standard library and
-                  # the documents outside the fixture directories.
-                  "tools/codegen/trees/**", "stdlib/**",
-                  "integration_resources/**", "tests/integration/**",
-                  "examples/ai_loop/**"],
-        # No `deps`: the crate's build script is the generator of its own
-        # trees, built from sce-build as a build-dependency, so no gate's
-        # sce-codegen is executed.
-        "ci_only": "unmeasured, and the lane it mirrors says why it cannot "
-                   "be a push gate: `test-rust` carries a 65-minute timeout, "
-                   "the longest of the W3C jobs, because it links the "
-                   "release test binaries under thin LTO with one codegen "
-                   "unit. w3c-tests.yml declares no `paths:` filter, so CI "
-                   "runs this arm on every push.",
-        "summary": "W3C conformance, Rust AOT",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "w3c-kotlin": {
-        "workflows": ["w3c-tests.yml"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "the Kotlin backend, the Kotlin templates and the "
-                   "generator.",
-        # The last three are what the SCRIPT opens: the refusal list it
-        # holds a ceiling over, the fixture registry it walks, and the one
-        # document it probes the seam with. Declared because `--ci-owed`
-        # reads this list to say which lanes judge a change, and a commit
-        # editing only a divergence list was being told this lane was not
-        # one of them (`script-read-coverage`).
-        "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
-                  "sce-build/src/**",
-                  # How both suite modules run their tests and take a row's
-                  # overlay, applied by each (it was the tests module's own
-                  # build file until the W3C suite became a module).
-                  "gradle/sce-kotlin-suite.gradle.kts",
-                  # The shared Lua the Lua engine copies in at build time, and
-                  # the shared tables its readers ask.
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
-                  "tests/ecmascript/kotlin_frontend_refusals.json",
-                  "tests/w3c/conformance/fixtures.json",
-                  "resources/150/test150.scxml",
-                  # The test log every runtime writes of the generated suite,
-                  # which `ATestSuiteRunsThroughItsRunnerTest` reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
-                  # The suite's committed traces, which the same test replays,
-                  # and the trace's wire schema, whose status `TraceTest` holds
-                  # the runtime's to, both read at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json",
-                  # The traces and expected logs of the corpus's other suites,
-                  # which `ACorpusSuiteReplaysToItsExpectedLogsTest` replays and
-                  # reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runs/**"],
-        "deps": ["codegen-build"],
-        # 69s was measured on a push whose Kotlin tree was already current.
-        # 152s, pace-normalised, is what it cost on 2026-08-24 when a
-        # `tools/codegen/templates/**` edit invalidated every generated Kotlin
-        # file — and that is not the unusual case for this row, because that
-        # path is one of its own triggers. A gate is worth what it costs when
-        # its trigger actually fires, so the higher reading is the one written
-        # down. The earlier note said 10s / 34s, both taken with fewer suites
-        # in the same run.
-        "ci_only": "152s when a template edit fires its own trigger — half "
-                   "the 300s push budget for one gate, and it breached the "
-                   "ceiling on the push that measured it. w3c-tests.yml is "
-                   "unfiltered, so CI runs this arm on every push regardless: "
-                   "the same trade `w3c-python` took at less than half the "
-                   "cost. What is given up is that a Kotlin AOT regression "
-                   "now reaches main and is answered a round later.",
-        "cost_s": 152,
-        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS + Lua, "
-                   "each over the machines emitted for the language it reads)",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    "w3c-python": {
-        "workflows": ["w3c-tests.yml"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "the Python backend, the Python templates and the "
-                   "generator.",
-        # The shared Lua the engine loads, and the shared tables its readers
-        # ask. The installer of the repository's Python environment, whose
-        # revision names the interpreter the suite runs on wherever that
-        # environment was built (`sce_gate_python` in scripts/gates/lib.sh).
-        "extra": ["backends/python/**", "tools/codegen/templates/**",
-                  "sce-build/src/**",
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
-                  "scripts/install_sce_python.sh",
-                  # The test log every runtime writes of the generated suite,
-                  # which `test_a_test_suite_runs_through_its_runner.py` reads
-                  # at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
-                  # The suite's committed traces, which the same test replays,
-                  # read at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  # The trace's wire schema, whose status
-                  # `test_a_recorded_trace_is_read_and_replayed.py` holds the
-                  # runtime's to, read at run time.
-                  "schemas/sce-test-trace.v1.schema.json",
-                  # The documents of the corpus's boundary_suite, which the
-                  # gate's regeneration writes the modules of (they are not
-                  # committed), and the traces and expected logs of the
-                  # corpus's other suites, which
-                  # `test_a_corpus_suite_replays_to_its_expected_logs.py`
-                  # replays and reads at run time.
-                  "sce-build/tests/fixtures/test_profile/boundary/**",
-                  "sce-build/tests/fixtures/test_profile/runs/**",
-                  # The documents of job_suite the same regeneration writes,
-                  # and the job's completion of the kind examples its port
-                  # sends.
-                  "sce-build/tests/fixtures/test_profile/*.scxml",
-                  "sce-build/kind-examples/event-schema.scxml",
-                  # The documents of orders_suite and nested_suite, the records
-                  # and templates over a union they import, and the unions.
-                  "sce-build/tests/fixtures/ttcn3_export/**",
-                  "sce-build/tests/fixtures/test_profile/imports/**",
-                  "sce-build/tests/fixtures/union/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
-                   "every push.",
-        "cost_s": 72,
-        "summary": "W3C conformance, Python AOT",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-        "parallelism": PARALLELISM_SCRIPT,
-    },
-    # The wrapper layer, not the engine under it: the trigger is the binding
-    # sources, because `w3c-cpp` already judges the same interpreter 404 cases
-    # at a time. This carried no `cost_s` for as long as no machine with the
-    # Python development headers had run it, which put it last by default.
-    # Measured 2026-08-12 on a machine that has them: it builds the pybind11
-    # extension and runs all 202 fixtures through it in 47s.
-    "w3c-python-bindings": {
-        "workflows": ["w3c-tests.yml"],
-        # The extension links the engine, so it configures and builds the
-        # main tree (tests and examples off).
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "the pybind11 wrapper sources.",
-        "extra": ["backends/python/bindings/**"],
-        "ci_only": "184s, the most expensive gate a push could still run once "
-                   "the table was priced at what a loaded machine charges. "
-                   "w3c-tests.yml declares no `paths:` filter, so CI runs this "
-                   "arm on every push.",
-        "cost_s": 184,
-        "summary": "W3C conformance, pybind11 -> C++ Interpreter",
-        "cache": True,
-        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
-                                "python3-config (python3-dev)",
-        "packages": ["python3-dev"],
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The W3C runner built with emscripten and run under Node, and the
-    # interactive suite beside it. Nothing ran that route from 2025-11-16 until
-    # this gate, and it rotted: seven defects, each invisible to every native
-    # build, repaired in b48c4f8bc1..48f14e6e6c.
-    #
-    # ⚠ `cost_s` is a SUM of three readings taken through `bx --local` on
-    # 2026-11-04 with three build slots, before the script existed: an
-    # incremental relink of both programs (60s), the W3C run (49s) and the
-    # interactive run (4s). The script itself has not been timed, so the slug
-    # is absent from COST_MEASURED. A cold configure and build of the tree was
-    # about 600s wall (some 3000 cpu-s, the generator's build included) on the
-    # same day. Its `peak_gb` was read off that cold build.
-    #
-    # Since 2026-11-05 it runs both programs in BOTH emscripten trees, the
-    # threaded engine's and the host-driven engine's (the browser's), so a run
-    # does that work twice and `cost_s` is twice the sum above: still a sum,
-    # still not a timing of the script.
-    "w3c-wasm": {
-        "workflows": ["w3c-tests.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
-                   "what the native runner reads, plus the CMake that "
-                   "configures the two emscripten trees and the Node host the "
-                   "programs are linked with (tests/w3c/wasm_polyfill.js).",
-        # What the two programs are built from and run against: the engine,
-        # the runner and its Node host (tests/w3c/), the mock the runner
-        # links, the CMake that configures the tree and registers the
-        # fixtures (the root list carries the WASM link settings), the
-        # generator and its templates, and the documents. And the emsdk pin
-        # the build machines install it with (`scripts/install_emsdk.sh`).
-        "extra": ["scripts/install_emsdk.sh",
-                  "sce/**", "tests/w3c/**", "tests/mocks/**",
-                  "tests/CMakeLists.txt", "CMakeLists.txt", "cmake/**",
-                  "tools/codegen/templates/**", "sce-build/src/**",
-                  "resources/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "226s warm for the two trees, summed from three readings "
-                   "of one tree rather than timed as a script, and about "
-                   "1200s cold. No other gate a push runs builds both "
-                   "emscripten trees, so the cold figure is the state a "
-                   "trigger usually finds them in, and it needs emsdk, which "
-                   "a push host is not required to carry. w3c-tests.yml "
-                   "declares no `paths:` filter, so CI runs this arm on every "
-                   "push, in a job of its own (`test-cpp-wasm`).",
-        "cost_s": 226,
-        "summary": "W3C conformance and the interactive suite, C++ "
-                   "Interpreter + AOT built with emscripten, under Node, on "
-                   "the threaded and the host-driven engine",
-        # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
-        "cache": True,
-        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
-                                "emsdk (`[platform.linux.tools.emsdk]`)",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5.3,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-    # The emscripten tree, all of it: every target built, every registered
-    # ctest case run under Node. Measured 2026-11-05: the tree declared 388
-    # programs and the two gates above built three of them, and
-    # `integration_tests` could not build there at all.
-    #
-    # ⚠ `cost_s` is HALF a reading. The first run built the tree cold in 3328s
-    # on a hosted runner and failed seven links before ctest started, so the
-    # Node half is not in the figure; the arrival estimate it replaces, 2400s
-    # scaled from the `w3c-wasm` lane, was low by the build alone. The first
-    # green run reads the whole.
-    "cpp-suite-wasm": {
-        "workflows": ["cpp-suite.yml"],
-        "builds": ["main-tree"],
-        "runner_workflow": True,
-        "narrows": "the same catch-all reading as `cpp-suite`, whose "
-                   "WebAssembly half this is: it builds the whole emscripten "
-                   "tree, so its inputs are the engine, its tests, the CMake "
-                   "that registers them (the root list carries the WASM "
-                   "settings and says what the tree does not declare), the "
-                   "generator and its templates, and the documents.",
-        # The emsdk pin the build machines install for it comes first.
-        "extra": ["scripts/install_emsdk.sh",
-                  "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
-                  "resources/**", "integration_resources/**",
-                  "tools/codegen/templates/**", "sce-build/src/**"],
-        "deps": ["codegen-build"],
-        "ci_only": "the whole emscripten tree, each suite linked with "
-                   "ASYNCIFY, and every case run under Node. Its first run "
-                   "(cpp-suite.yml run 41956988917, 2026-11-05) configured "
-                   "and built the tree cold in 3328s and stopped at seven "
-                   "links, so the figure is that build alone and the ctest "
-                   "half has no reading yet. It needs emsdk, which a push "
-                   "host is not required to carry. cpp-suite.yml runs it in "
-                   "a job of its own beside the native suite.",
-        "cost_s": 3328,
-        "summary": "C++ ctest suite built with emscripten, every case under Node",
-        # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
-        "cache": True,
-        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
-                                "emsdk (`[platform.linux.tools.emsdk]`)",
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 5,
-        "parallelism": PARALLELISM_COMPILE,
-    },
-}
+# Every gate's entry is a file of its own, `tools/git-hooks/gates/<slug>.py`,
+# read by `gate_table.load_table`: the fields above, with the reasons for
+# their values beside them. A gate's run reads its own entry and those of the
+# gates it depends on, and not this file ("One file per gate" in
+# gate_table.py).
+GATES: dict[str, dict] = gate_table.load_table()
 
 # ── Workflows with no gate ────────────────────────────────────────
 #
@@ -3501,81 +1033,6 @@ def gate_script(repo_root: Path, slug: str) -> Path:
     return repo_root / "scripts" / "gates" / f"{slug}.sh"
 
 
-def glob_to_regex(glob: str) -> re.Pattern:
-    """Translate a GitHub Actions path glob into an anchored regex.
-
-    Handles the three shapes the workflows actually use — `dir/**`,
-    `**/*.ext`, and literal paths — plus the single-segment `*` that
-    `backends/*/forge-runtime/**` needs. `**` crosses separators, `*` does
-    not, matching Actions' own semantics.
-    """
-    out = ["^"]
-    i = 0
-    while i < len(glob):
-        c = glob[i]
-        if glob.startswith("**/", i):
-            out.append("(.*/)?")
-            i += 3
-        elif glob.startswith("**", i):
-            out.append(".*")
-            i += 2
-        elif c == "*":
-            out.append("[^/]*")
-            i += 1
-        else:
-            out.append(re.escape(c))
-            i += 1
-    out.append("$")
-    return re.compile("".join(out))
-
-
-def workflow_paths(repo_root: Path, name: str) -> list[str]:
-    """The deduped ALLOW-side (`paths:`) globs a workflow declares under `on:`.
-
-    A workflow with no `paths:` filter runs on every push, so it returns the
-    catch-all — the honest translation of "CI always runs this".
-
-    ⚠ Allow-side ONLY, and the asymmetry is deliberate rather than an
-    oversight. A `paths-ignore:` workflow really does start on every push in
-    this sense: there is no path list CI checks a change INTO. What it has is
-    a list it checks changes OUT of, which is a different question with a
-    different reader — `workflow_ignored_paths` below — because the two are
-    consumed in different places. `narrows` asks this one ("is CI's trigger
-    the catch-all, so the local table may state the real inputs instead?")
-    and the answer stays yes. `ci_owed` asks the other ("will CI actually
-    start for THIS change?"), and that is where a deny-list bites.
-
-    Reading a deny-list as "unfiltered" here and stopping would have made the
-    narrowing self-test pass by blindness the moment the first `paths-ignore`
-    landed: `.github/workflows/cpp-suite.yml` acquired one on 2026-08-29 and
-    every check in this file went on reporting the lane as unfiltered.
-    `sce-build/tests/workflow_trigger_coverage.rs` already counted it
-    ("`paths-ignore` counts: it is the same filter with the sense flipped"),
-    so two readers of one file disagreed about whether it was filtered, and
-    nothing held them in step. `both_filter_readers_agree` in the self-test
-    below is now what does.
-    """
-    wf = repo_root / ".github" / "workflows" / name
-    if not wf.is_file():
-        # Missing workflow: refuse to guess. The caller turns an empty
-        # trigger set into "always run", which is the safe direction.
-        return ["**"]
-    text = wf.read_text(encoding="utf-8")
-    on_block = re.search(r"^on:\n(.*?)(?=^\S)", text, re.S | re.M)
-    if not on_block:
-        return ["**"]
-    globs: list[str] = []
-    for block in re.finditer(r"^(\s+)paths:\s*\n((?:\1\s+-.*\n|\s*#.*\n)*)",
-                             on_block.group(1), re.M):
-        for line in block.group(2).splitlines():
-            line = line.strip()
-            if line.startswith("- "):
-                globs.append(line[2:].strip().strip("'\""))
-    if not globs:
-        return ["**"]
-    return list(dict.fromkeys(globs))
-
-
 def workflow_ignored_paths(repo_root: Path, name: str) -> list[str]:
     """The deduped DENY-side (`paths-ignore:`) globs a workflow declares.
 
@@ -3643,24 +1100,6 @@ def swept_globs(src: str) -> list[str]:
     for match in _SWEEP_CALL.finditer(src):
         out.extend(re.findall(r"'([^']*)'", match.group(1)))
     return out
-
-
-def tracked_paths(repo_root: Path, *pathspecs: str) -> list[str]:
-    """Every path git tracks that matches one of `pathspecs` — every tracked
-    path when there are none — repository-relative, as git stores it.
-
-    `-z`, always. Without it git's default `core.quotePath` writes a path
-    holding any byte outside printable ASCII as a quoted octal escape,
-    which names no file on disk, and a caller splitting on whitespace also
-    cuts a path with a space in two — either way the file is skipped in
-    silence. A git that fails is an error, not an empty tree: an empty list
-    here reads as "nothing to judge" to every caller.
-    """
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "ls-" + "files", "-z", "--", *pathspecs],
-        capture_output=True, check=True,
-    )
-    return [p.decode("utf-8", "surrogateescape") for p in proc.stdout.split(b"\0") if p]
 
 
 def tracked_matching(repo_root: Path, glob: str) -> list[str]:
@@ -3733,665 +1172,39 @@ def script_code(path: Path) -> str:
     )
 
 
-def enrolled_globs(repo_root: Path, configs: str):
-    """The trees the ledgers matching `configs` enrol, as trigger globs.
-
-    A ledger's `mnemosyne.toml` lists, under
-    `[plugins.set_equality_validator]`, the paths whose citations it judges.
-    They are read with the reader the citation gate itself uses
-    (`paths_from_toml` in tools/mnemosyne-adoption/migrate_citations.py), so
-    the two cannot parse the list differently. A directory becomes
-    `<dir>/**` and a file stays itself; each ledger's own directory joins as
-    well, since its config decides the set and its store is what the
-    citations are judged against.
-
-    `None` when the set cannot be read: no config matches, the reader cannot
-    be loaded, or a config has no such list. The caller reads that as the
-    catch-all, the safe direction, the same answer `workflow_paths` gives for
-    a workflow it cannot find.
-
-    Read once per process and root: `select` derives the triggers for every
-    call, and the self-test calls it dozens of times.
-    """
-    key = (str(repo_root), configs)
-    if key not in _ENROLLED:
-        _ENROLLED[key] = _read_enrolled(repo_root, configs)
-    cached = _ENROLLED[key]
-    return None if cached is None else list(cached)
-
-
-_ENROLLED: dict[tuple[str, str], list[str] | None] = {}
-
-
-def _read_enrolled(repo_root: Path, configs: str):
-    """`enrolled_globs` without the cache."""
-    found = sorted(repo_root.glob(configs))
-    reader = repo_root / "tools" / "mnemosyne-adoption" / "migrate_citations.py"
-    if not found or not reader.is_file():
-        return None
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_sce_enrolment_reader", reader)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        globs: list[str] = []
-        for config in found:
-            # The ledger's own directory: the config, its store and the
-            # document it is made from, which the ledger's tooling reads.
-            globs.append(f"{config.parent.relative_to(repo_root).as_posix()}/**")
-            for absolute in module.paths_from_toml(str(config)):
-                rel = Path(absolute).relative_to(module.REPO_ROOT).as_posix()
-                globs.append(f"{rel}/**" if (repo_root / rel).is_dir()
-                             else rel)
-    except (Exception, SystemExit):
-        return None
-    return list(dict.fromkeys(globs))
-
-
-# ── What a build reads: `builds` ──────────────────────────────────
-#
-# Eleven gates configure and build the main CMake tree, and every one of them
-# compiles what the tree compiles whatever else it does: the engine, its
-# runtimes, the submodules, and, since the ECMAScript frontend is linked into
-# `sce_scripting` (sce/CMakeLists.txt, `sce_link_ecmascript_frontend`), the
-# `sce-build` crate through cargo. Each gate used to write its own share of
-# that into `extra`, and the shares had drifted: none named the root
-# `Cargo.toml` or `Cargo.lock`, `w3c-python-bindings` and `visualizer-wasm`
-# named no `sce/` at all (2026-11-16), so an edit to what they compile neither
-# selected them nor moved the key of a unit kept for them.
-#
-# So what a shared build reads is written once, here, and a gate names it in
-# `builds`; `gate_triggers` adds it to the gate's trigger, which is also the
-# unit's input set (`unit_inputs`). The cargo half is DERIVED, from the files
-# cargo and the crate itself declare, so a new path dependency, a new member
-# or a new compiled-in file joins every such gate on the commit that adds it:
-#   * the workspace: the root `Cargo.toml`, `Cargo.lock`, and every member's
-#     manifest (`cargo_workspace_manifests`), which cargo reads to load the
-#     workspace; a build from a crate outside it reads the root's and those
-#     of the crates it builds;
-#   * `.cargo/`, whose configuration every cargo run reads;
-#   * each crate the build compiles: the crate named and its path
-#     dependencies (`[dependencies]`, `[build-dependencies]` and their target
-#     forms, never `[dev-dependencies]`), each as its `src/**`, its build
-#     script and the roots its manifest declares (`cargo_build_targets`).
-#     Not the whole directory: `tests/`, `benches/` and `examples/` are
-#     compiled by `cargo test` or `--all-targets`, which a gate runs as its
-#     own command and names its own trigger for. Taken whole, one integration
-#     test of `sce-build` selected 39 gates of a landing (2026-11-24);
-#   * every file a compiled module names by path, found by walking the module
-#     tree as rustc does (`rust_module_closure`): a `#[path]` module and the
-#     directory it owns, and each `include_str!` / `include_bytes!` /
-#     `include!` target. A module behind `#[cfg(test)]` is not walked;
-#   * what `sce-build`'s build script reads: the generator witness (its
-#     WITNESS_FILES, WITNESS_TREES and RUN_TIME_TREE, in
-#     sce-build/src/generator_witness.rs, which the script digests and embeds);
-# `MAIN_TREE_CONFIGURE` is the CMake half: what the root CMakeLists.txt
-# configures for every tree. A subdirectory a gate turns on with an option of
-# its own (`tests/`, the examples, the Python bindings) stays in its `extra`.
-#
-# `every-tree-builder-names-what-it-builds` in the self-test finds the gates
-# whose script configures the root tree and refuses one that does not name
-# `main-tree`, and `ci-only-coverage` holds a filtered workflow's `paths:` to
-# what its gate builds.
-MAIN_TREE_CONFIGURE = (
-    "CMakeLists.txt", "cmake/**", "sce/**", "third_party/**",
-    "backends/cpp/forge-runtime/**", "backends/c/runtime/**",
-    "tools/txml_converter/**",
-)
-# Each shared build: the CMake globs it configures, and the crates cargo
-# builds for it.
-# The third field says whether cargo builds the crates as members of this
-# workspace (`cargo build -p`), which loads every member's manifest, or from a
-# crate of the gate's own that names them as path dependencies, which reads
-# their manifests and the root's (the fields they inherit) and no other.
-BUILT_INPUTS: dict[str, tuple[tuple[str, ...], tuple[str, ...], bool]] = {
-    "sce-codegen": ((), ("sce-build",), True),
-    "main-tree": (MAIN_TREE_CONFIGURE, ("sce-build",), True),
-    "codegen-wasm": ((), ("sce-build-wasm",), True),
-    # The Rust forge runtime a generated Rust codec compiles against, built
-    # by the codec gates in a crate of their own (scripts/check_*_codec.sh).
-    # `bx --checks prepush --learn codec-clippy` (2026-11-24) read the root
-    # manifest and the runtime's, and no other member's.
-    "forge-runtime-rust": ((), ("backends/rust/forge-runtime",), False),
-}
-# The file whose constants name what `sce-build`'s build script reads.
-GENERATOR_WITNESS = "sce-build/src/generator_witness.rs"
-
-_CARGO_DEP_TABLE = re.compile(
-    r"^\[(?:target\.[^\]]+\.)?(?:dependencies|build-dependencies)"
-    r"(?:\.[A-Za-z0-9_-]+)?\]\s*$")
-_CARGO_PATH_VALUE = re.compile(r'\bpath\s*=\s*"([^"]+)"')
-# A compiled-in file (`include_str!`, `include_bytes!`, `include!`) and a
-# module whose file a `#[path]` names, each by a literal path relative to the
-# source file that names it.
-_RUST_INCLUDE = re.compile(r'include(?:_str|_bytes)?!\(\s*"([^"]+)"\s*\)')
-_RUST_PATH_ATTR = re.compile(r'^\s*#\[path\s*=\s*"([^"]+)"\s*\]')
-_RUST_MOD_DECL = re.compile(
-    r'^(\s*)(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;')
-_RUST_TEST_ONLY = re.compile(r'^\s*#\[cfg\(test\)\]\s*$')
-_RUST_ATTRIBUTE = re.compile(r'^\s*(?:#\[|///|//!)')
-_CARGO_TABLE = re.compile(r'^\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?\s*$')
-_CARGO_STRING_VALUE = re.compile(r'^\s*(path|build)\s*=\s*"([^"]+)"')
-_CARGO_BUILD_OFF = re.compile(r'^\s*build\s*=\s*false\b')
-
-
-def cargo_path_deps(repo_root: Path, crate: str) -> list[str]:
-    """The directories of the path dependencies `crate/Cargo.toml` builds.
-
-    Read by its lines, as the registry reads every TOML file (see
-    `fleet_platforms`): a table header opens a dependency table or closes
-    one, and a `path = "..."` inside one names a directory relative to the
-    crate. `[dev-dependencies]` is not a dependency table here: a build of
-    the crate compiles none of it.
-    """
-    try:
-        text = (repo_root / crate / "Cargo.toml").read_text(encoding="utf-8")
-    except OSError:
-        return []
-    found: list[str] = []
-    in_deps = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("["):
-            in_deps = bool(_CARGO_DEP_TABLE.match(stripped))
-            continue
-        if in_deps and not stripped.startswith("#"):
-            found.extend(posixpath.normpath(f"{crate}/{rel}")
-                         for rel in _CARGO_PATH_VALUE.findall(stripped))
-    return found
-
-
-def generator_witness_globs(repo_root: Path) -> list[str]:
-    """What `sce-build`'s build script reads: the generator witness.
-
-    `WITNESS_FILES` as paths, `WITNESS_TREES` and `RUN_TIME_TREE` as trees,
-    read out of GENERATOR_WITNESS, the one place they are written.
-    """
-    try:
-        text = (repo_root / GENERATOR_WITNESS).read_text(encoding="utf-8")
-    except OSError:
-        return []
-    globs: list[str] = []
-    for name, tree in (("WITNESS_FILES", False), ("WITNESS_TREES", True)):
-        found = re.search(r"pub const " + name + r": &\[&str\] = &\[(.*?)\];",
-                          text, re.S)
-        if found:
-            globs.extend(f"{v}/**" if tree else v
-                         for v in re.findall(r'"([^"]+)"', found.group(1)))
-    found = re.search(r'pub const RUN_TIME_TREE: &str = "([^"]+)";', text)
-    if found:
-        globs.append(f"{found.group(1)}/**")
-    return globs
-
-
-def cargo_build_targets(repo_root: Path, crate: str):
-    """`(build script or None, [lib and bin roots it declares])` of `crate`.
-
-    Cargo's own target rules (the Cargo Book, "Target auto-discovery" and
-    "Configuring a target"): the build script is `build.rs` unless
-    `[package] build` names another file or turns it off, and a `[lib]` or
-    `[[bin]]` table may name its root with `path`. The roots cargo finds by
-    itself (`src/lib.rs`, `src/main.rs`, `src/bin/`) are not listed here.
-    `[[test]]`, `[[bench]]` and `[[example]]` roots are never among these:
-    `cargo build` compiles none of them, and `cargo test` or `--all-targets`
-    is a gate's own command. Read by its lines, as the registry reads every
-    TOML file. Paths are from the repository root.
-    """
-    try:
-        text = (repo_root / crate / "Cargo.toml").read_text(encoding="utf-8")
-    except OSError:
-        return None, []
-    table = ""
-    script = "build.rs"
-    declared: list[str] = []
-    for line in text.splitlines():
-        header = _CARGO_TABLE.match(line.strip())
-        if header:
-            table = header.group(1)
-            continue
-        if table == "package" and _CARGO_BUILD_OFF.match(line):
-            script = None
-            continue
-        value = _CARGO_STRING_VALUE.match(line)
-        if not value:
-            continue
-        key, rel = value.groups()
-        if table == "package" and key == "build":
-            script = rel
-        elif table in ("lib", "bin") and key == "path":
-            declared.append(posixpath.normpath(f"{crate}/{rel}"))
-    if script is not None:
-        script = posixpath.normpath(f"{crate}/{script}")
-        if not (repo_root / script).is_file():
-            script = None
-    return script, declared
-
-
-def rust_module_closure(repo_root: Path, roots) -> tuple[list[str], list[str]]:
-    """What a build that is not a test compiles from `roots`, by path.
-
-    Walks the module tree the way rustc resolves it (the Rust Reference,
-    "Modules"): `mod x;` in a crate root or a `mod.rs` is `x.rs` or
-    `x/mod.rs` beside it, in any other file `f.rs` it is under `f/`, and a
-    `#[path]` names the file relative to the directory of the file that
-    declares it. A module whose attributes say `#[cfg(test)]` is not walked:
-    a build that is not a test compiles none of it. Every file walked is read
-    for the literal paths of `include_str!`, `include_bytes!` and `include!`,
-    which resolve against that file's directory. A declaration that is
-    indented sits in an inline module, whose files this does not place, so
-    the walk takes every source below the directory instead.
-
-    Returns the files named by path (`#[path]` and include targets, which
-    may lie outside `src/`) and the directories a `#[path]` module owns.
-    """
-    root = repo_root.resolve()
-    named: list[str] = []
-    trees: list[str] = []
-    pending = [(r, [posixpath.dirname(r)]) for r in roots]
-    seen: set[str] = set()
-
-    def resolved(base, rel):
-        try:
-            return (repo_root / base).joinpath(rel).resolve() \
-                .relative_to(root).as_posix()
-        except ValueError:
-            return None
-
-    def sources_below(folder):
-        return [p for p in tracked_paths(repo_root, folder) if p.endswith(".rs")]
-
-    while pending:
-        source, owns = pending.pop()
-        if source in seen:
-            continue
-        seen.add(source)
-        try:
-            text = (repo_root / source).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        here = posixpath.dirname(source)
-        # Over the whole text: rustfmt breaks a long call over three lines.
-        for rel in _RUST_INCLUDE.findall(text):
-            if (path := resolved(here, rel)) is not None:
-                named.append(path)
-                if path.endswith(".rs"):
-                    pending.append((path, owns))
-        lines = text.splitlines()
-        for i, line in enumerate(lines):
-            decl = _RUST_MOD_DECL.match(line)
-            if not decl:
-                continue
-            indent, name = decl.groups()
-            above, test_only, path_attr = i - 1, False, None
-            while above >= 0 and _RUST_ATTRIBUTE.match(lines[above]):
-                test_only |= bool(_RUST_TEST_ONLY.match(lines[above]))
-                if (attr := _RUST_PATH_ATTR.match(lines[above])):
-                    path_attr = attr.group(1)
-                above -= 1
-            if test_only:
-                continue
-            if indent:
-                for folder in owns:
-                    pending.extend((p, [p[:-3]]) for p in sources_below(folder))
-                continue
-            if path_attr is not None:
-                if (path := resolved(here, path_attr)) is None:
-                    continue
-                folder = posixpath.dirname(path)
-                named.append(path)
-                trees.append(f"{folder}/**")
-                pending.append((path, [folder, path[:-3]]))
-                pending.extend((p, [p[:-3]]) for p in sources_below(folder))
-                continue
-            for folder in owns:
-                flat = f"{folder}/{name}.rs"
-                nested = f"{folder}/{name}/mod.rs"
-                if (repo_root / flat).is_file():
-                    pending.append((flat, [f"{folder}/{name}"]))
-                elif (repo_root / nested).is_file():
-                    pending.append((nested, [f"{folder}/{name}"]))
-    return named, trees
-
-
-_CARGO_MEMBERS = re.compile(r"^\s*members\s*=\s*\[(.*?)\]", re.S | re.M)
-
-
-def cargo_workspace_manifests(repo_root: Path) -> list[str]:
-    """The manifests cargo reads to load this workspace: the root's and each
-    member's (`[workspace] members`, its globs expanded), sorted.
-
-    A build of any member loads them all, and a crate outside the workspace
-    that names a member as a path dependency reads the member's and, for the
-    fields the member inherits, the root's. Named one by one rather than as
-    `**/Cargo.toml`, which also names the manifests of crates no build here
-    loads (a probe with a workspace of its own, a submodule's)."""
-    root = repo_root / "Cargo.toml"
-    try:
-        text = root.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    section = text.split("[workspace]", 1)[1] if "[workspace]" in text else ""
-    section = re.split(r"^\[(?!workspace\])", section, maxsplit=1, flags=re.M)[0]
-    found = _CARGO_MEMBERS.search(section)
-    members = re.findall(r'"([^"]+)"', re.sub(r"#[^\n]*", "", found.group(1))) \
-        if found else []
-    manifests = ["Cargo.toml"]
-    for member in members:
-        for path in sorted(repo_root.glob(member)) if "*" in member \
-                else [repo_root / member]:
-            if (path / "Cargo.toml").is_file():
-                manifests.append(f"{path.relative_to(repo_root)}/Cargo.toml")
-    return sorted(dict.fromkeys(manifests))
-
-
-def cargo_build_closure(repo_root: Path, crates) -> list[str]:
-    """`crates` and the path dependencies a build of them compiles
-    (`cargo_path_deps`), transitively, sorted."""
-    closure: list[str] = []
-    pending = list(crates)
-    while pending:
-        crate = pending.pop()
-        if crate in closure:
-            continue
-        closure.append(crate)
-        pending.extend(cargo_path_deps(repo_root, crate))
-    return sorted(closure)
-
-
-def cargo_build_globs(repo_root: Path, crates, in_workspace=True) -> list[str]:
-    """What a cargo build of `crates` reads, as globs: as members of this
-    workspace (`in_workspace`), or as path dependencies of a crate outside it.
-
-    See "What a build reads". Exact paths a directory glob already covers
-    are left out, so each file is named once.
-    """
-    closure = cargo_build_closure(repo_root, crates)
-    globs = [".cargo/**"] + (["Cargo.lock"] if in_workspace else [])
-    named: list[str] = (cargo_workspace_manifests(repo_root) if in_workspace
-                        else ["Cargo.toml"]) + [
-        f"{crate}/Cargo.toml" for crate in sorted(closure)]
-    if "sce-build" in closure:
-        named.extend(generator_witness_globs(repo_root))
-    trees: list[str] = []
-    roots: list[str] = []
-    for crate in sorted(closure):
-        trees.append(f"{crate}/src/**")
-        script, declared = cargo_build_targets(repo_root, crate)
-        declared = declared + ([script] if script else [])
-        named.extend(declared)
-        roots.extend(declared)
-        roots.extend(p for p in ([f"{crate}/src/lib.rs", f"{crate}/src/main.rs"]
-                                 + tracked_paths(repo_root, f"{crate}/src/bin"))
-                     if p.endswith(".rs") and p not in declared
-                     and (repo_root / p).is_file())
-    reached, owned = rust_module_closure(repo_root, roots)
-    named.extend(reached)
-    trees.extend(owned)
-    for tree in dict.fromkeys(trees):
-        # A tree beneath another one adds nothing to it.
-        if not any(other != tree and glob_to_regex(other).match(tree[:-3])
-                   for other in trees):
-            globs.append(tree)
-    wide = [g for g in globs + named if "*" in g]
-    covered = [glob_to_regex(g) for g in wide]
-    out = list(globs)
-    for g in named:
-        if "*" in g or not any(p.match(g) for p in covered):
-            out.append(g)
-    return list(dict.fromkeys(out))
-
-
-_BUILT_CACHE: dict[tuple[str, str], list[str]] = {}
-
-
-def built_inputs(repo_root: Path, name: str) -> list[str]:
-    """The globs a gate that `builds` `name` reads for it (`BUILT_INPUTS`)."""
-    key = (str(repo_root.resolve()), name)
-    if key not in _BUILT_CACHE:
-        configure, crates, in_workspace = BUILT_INPUTS[name]
-        joined = list(dict.fromkeys(
-            list(configure) + (cargo_build_globs(repo_root, crates, in_workspace)
-                               if crates else [])))
-        # An exact path a tree of the other half already covers is named once.
-        trees = [glob_to_regex(g) for g in joined if "*" in g]
-        _BUILT_CACHE[key] = [g for g in joined
-                             if "*" in g or not any(p.match(g) for p in trees)]
-    return list(_BUILT_CACHE[key])
-
-
-# ── What a build reads that does not select it ─────────────────────
-#
-# A gate's trigger is what can change its verdict; its key has to hold every
-# file its run looks at, or bx's trace calls the run "could not measure" (bx
-# RFC 0020, 5.2). For a cargo build the two differ, and the difference is
-# cargo's own, so it is derived here from the manifests as the trigger half is
-# and joins the KEY of a gate that `builds` (`gate_reads`), never its
-# trigger:
-#   * loading the workspace (the Cargo Book, "Target auto-discovery"): every
-#     package the resolver loads, which is each member and each package a
-#     member names by `path` in any dependency table, dev-dependencies
-#     included (`cargo_loaded_packages`). Of each, cargo reads the manifest,
-#     looks for `src/lib.rs` and `src/main.rs`, looks for `build.rs` when
-#     `[package] build` does not name the script, and lists `src/bin/`,
-#     `tests/`, `examples/` and `benches/` where they exist, with each
-#     `<dir>/<name>/main.rs` a listed directory holds
-#     (`cargo_package_load_reads`). It compiles none of that unless it builds
-#     the package, so an edit there changes no verdict of these gates and
-#     selects none of them;
-#   * a build script cargo has not run in that target directory before: no
-#     earlier run has told cargo what the script reads (`rerun-if-changed`),
-#     and a script that has told it nothing is fingerprinted by every file of
-#     its package (the Cargo Book, "Build Scripts", "Change Detection"), so a
-#     crate the build compiles that has a build script is read whole
-#     (`<crate>/**`).
-# Measured 2026-11-24 with `bx --checks prepush --learn` (bx 340e9f9e):
-# `forge-c11` and `forge-cpp` read every member's manifest and target roots,
-# their `tests/` and `examples/` listings, and every file of `sce-build`, of
-# which the triggers named only what the generator compiles.
-_CARGO_ANY_DEP_TABLE = re.compile(
-    r"^\[(?:target\.[^\]]+\.)?(?:dependencies|build-dependencies|dev-dependencies)"
-    r"(?:\.[A-Za-z0-9_-]+)?\]\s*$")
-# The directories cargo lists in a package it loads, for the targets its
-# manifest does not name.
-CARGO_DISCOVERED_DIRS = ("src/bin", "tests", "examples", "benches")
-
-
-def cargo_loaded_packages(repo_root: Path) -> list[str]:
-    """The packages cargo loads to resolve this workspace, sorted: each member
-    (`cargo_workspace_manifests`) and each package one names by `path` in any
-    dependency table, `[dev-dependencies]` included, transitively. Read by
-    lines, as `cargo_path_deps` reads a manifest; a path outside the
-    repository names no tracked file and is left out."""
-    members = [m[:-len("/Cargo.toml")] for m in cargo_workspace_manifests(repo_root)
-               if m != "Cargo.toml"]
-    seen: list[str] = []
-    pending = list(members)
-    while pending:
-        package = pending.pop()
-        if package in seen or package.startswith("../") or package == "..":
-            continue
-        seen.append(package)
-        try:
-            text = (repo_root / package / "Cargo.toml").read_text(encoding="utf-8")
-        except OSError:
-            continue
-        in_deps = False
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("["):
-                in_deps = bool(_CARGO_ANY_DEP_TABLE.match(stripped))
-                continue
-            if in_deps and not stripped.startswith("#"):
-                pending.extend(posixpath.normpath(f"{package}/{rel}")
-                               for rel in _CARGO_PATH_VALUE.findall(stripped))
-    return sorted(seen)
-
-
-def cargo_package_load_reads(repo_root: Path, package: str) -> list[str]:
-    """What cargo reads of `package` to load it, built or not, as input
-    patterns: the manifest, the target roots it looks for that are tracked,
-    and a listing (`<dir>/`, bx RFC 0020 4.2) of each discovery directory that
-    holds a tracked file, with the `<name>/main.rs` of each target directory
-    in it. See "What a build reads that does not select it"."""
-    try:
-        text = (repo_root / package / "Cargo.toml").read_text(encoding="utf-8")
-    except OSError:
-        return []
-    table, script_named = "", False
-    for line in text.splitlines():
-        header = _CARGO_TABLE.match(line.strip())
-        if header:
-            table = header.group(1)
-        elif table == "package" and re.match(r"^\s*build\s*=", line):
-            script_named = True
-    tracked = set(tracked_paths(repo_root, package))
-    reads = [f"{package}/Cargo.toml"]
-    looked_for = ["src/lib.rs", "src/main.rs"] + ([] if script_named else ["build.rs"])
-    reads.extend(f"{package}/{rel}" for rel in looked_for
-                 if f"{package}/{rel}" in tracked)
-    for folder in CARGO_DISCOVERED_DIRS:
-        prefix = f"{package}/{folder}/"
-        held = sorted(p for p in tracked if p.startswith(prefix))
-        if held:
-            reads.append(prefix)
-            reads.extend(p for p in held
-                         if re.fullmatch(r"[^/]+/main\.rs", p[len(prefix):]))
-    return reads
-
-
-_READS_CACHE: dict[tuple[str, str], list[str]] = {}
-
-
-def built_reads(repo_root: Path, name: str) -> list[str]:
-    """What a gate that `builds` `name` reads for it beyond `built_inputs`:
-    the workspace's load (`cargo_package_load_reads` of every package cargo
-    loads) for a build as members of this workspace, and the whole of each
-    crate the build compiles that has a build script. A pattern `built_inputs`
-    or a wider one here already gives is left out. Empty for a build cargo does
-    not run. See "What a build reads that does not select it"."""
-    key = (str(repo_root.resolve()), name)
-    if key not in _READS_CACHE:
-        _, crates, in_workspace = BUILT_INPUTS[name]
-        reads: list[str] = []
-        if crates:
-            if in_workspace:
-                for package in cargo_loaded_packages(repo_root):
-                    reads.extend(cargo_package_load_reads(repo_root, package))
-            for crate in cargo_build_closure(repo_root, crates):
-                if cargo_build_targets(repo_root, crate)[0] is not None:
-                    reads.append(f"{crate}/**")
-        built = built_inputs(repo_root, name)
-        trees = [g for g in built + reads if g.endswith("/**")]
-        # A listing is given by a tree that holds the directory's entries,
-        # which is a tree that matches a name inside it.
-        covering = [(t, glob_to_regex(t)) for t in trees]
-        _READS_CACHE[key] = [
-            p for p in dict.fromkeys(reads)
-            if p not in built and not any(
-                t != p and r.match(f"{p}x" if p.endswith("/") else p)
-                for t, r in covering)]
-    return list(_READS_CACHE[key])
-
-
 def gate_triggers(repo_root: Path, slugs=None) -> dict[str, list[str]]:
-    """Each gate's trigger globs, derived from its workflow and its own lists;
-    those of `slugs` alone when it is given.
+    """Each gate's trigger globs, derived from its workflow and its own lists
+    (`triggers_of` in trigger_globs.py, which says how); those of `slugs`
+    alone when it is given.
 
     A gate's globs are derived from its own entry and nothing else, so asking
     for one gate reads its workflows, its builds and its ledgers and no other
-    gate's. The submodule preflight asks for the gate it runs alone, because a
-    narrowed unit's copy holds that gate's inputs and no other's: deriving
-    every gate's there read every workflow and ledger config of the tree, and
-    each read outside the inputs is one bx calls "could not measure"
-    (`bx --checks prepush --learn forge-c11`, 2026-11-24).
-
-    `narrows` is the one case where a gate does not inherit its workflow's
-    trigger. A workflow with no `paths:` filter is telling CI "run this on
-    every push", which is a statement about a runner that is paid for by the
-    minute and not about what the check reads. Inheriting it locally makes
-    the catch-all the trigger for the gate, so the whole conformance suite
-    would run for a README edit. A narrowing gate states its real inputs in
-    `local`/`extra` instead, and the self-test holds the two properties that
-    keep the narrowing from becoming a coverage hole: the workflow it
-    narrows must actually be unfiltered (or there is nothing to narrow), and
-    the gate must be left with triggers of its own (or it never runs).
+    gate's. The submodule preflight derives the gate it runs alone
+    (`submodule_needs` in gate_table.py), because a narrowed unit's copy holds
+    that gate's inputs and no other's: deriving every gate's there read every
+    workflow and ledger config of the tree, and each read outside the inputs
+    is one bx calls "could not measure" (`bx --checks prepush --learn
+    forge-c11`, 2026-11-24).
     """
-    triggers: dict[str, list[str]] = {}
-    for slug, spec in GATES.items():
-        if slugs is not None and slug not in slugs:
-            continue
-        globs: list[str] = list(spec.get("local", []))
-        for wf in spec.get("workflows", []):
-            wf_globs = workflow_paths(repo_root, wf)
-            if spec.get("narrows") and wf_globs == ["**"]:
-                # The catch-all is dropped; the workflow FILE is not. Editing
-                # a lane is a reason to run what that lane runs, and every
-                # filtered workflow classifies its own edits by naming itself
-                # in `paths:`. Without this line an unfiltered lane's file is
-                # unclassified, so touching it buys the full suite — measured
-                # at 27 gates including the 408s vendor smoke.
-                globs.append(f".github/workflows/{wf}")
-                continue
-            globs.extend(wf_globs)
-        globs.extend(spec.get("extra", []))
-        for built in spec.get("builds", []):
-            globs.extend(built_inputs(repo_root, built))
-        if spec.get("enrolled_by"):
-            # What the ledgers enrol, read from their configs on every call:
-            # a tree enrolled tomorrow selects the gate on the same commit.
-            globs.extend(enrolled_globs(repo_root, spec["enrolled_by"])
-                         or ["**"])
-        triggers[slug] = list(dict.fromkeys(globs))
-    return triggers
+    return {slug: trigger_globs.triggers_of(repo_root, spec)
+            for slug, spec in GATES.items()
+            if slugs is None or slug in slugs}
 
 
 def gate_reads(repo_root: Path, slugs=None) -> dict[str, list[str]]:
-    """What each gate's run reads that does not select it, sorted: for each
-    shared build it names (`builds`), `built_reads`. Those of `slugs` alone
-    when it is given. A gate keyed on its triggers is keyed on these too
-    (`gate_inputs`); see "What a build reads that does not select it"."""
-    return {slug: sorted({p for built in spec.get("builds", [])
-                          for p in built_reads(repo_root, built)})
+    """What each gate's run reads that does not select it (`reads_of` in
+    trigger_globs.py); those of `slugs` alone when it is given. A gate keyed
+    on its triggers is keyed on these too (`gate_inputs`); see "What a build
+    reads that does not select it" in trigger_globs.py."""
+    return {slug: trigger_globs.reads_of(repo_root, spec)
             for slug, spec in GATES.items()
             if slugs is None or slug in slugs}
 
 
 def run_order(slugs, table=None) -> list[str]:
-    """Order the given gates: dependencies first, then cheapest first.
-
-    Two properties, in that priority. A gate never runs before something it
-    executes the output of, and among gates that are free to move, the one
-    that can fail soonest goes first. Nothing about the order is written
-    down as an order — it falls out of `deps` and `cost_s`, so adding a gate
-    cannot silently push a cheap check behind an expensive one the way the
-    hand-placed sequence did.
-
-    A gate with no measured cost sorts last among the gates available at
-    that moment rather than being guessed at: an unmeasured gate should not
-    claim a cheap slot it has not earned.
-
-    One gate is taken at a time, not one dependency level at a time. Level
-    order looks equivalent and is not: it puts every dependent behind every
-    independent gate, so a 1s gate that only needs the 1s generator build
-    would run after the 399s vendor smoke. Taking the cheapest currently
-    available gate lets a dependency unlock cheap work that then goes
-    straight to the front.
-    """
-    table = GATES if table is None else table
-    remaining = set(slugs)
-    ordered: list[str] = []
-    while remaining:
-        ready = [s for s in remaining
-                 if all(d not in remaining for d in table[s].get("deps", []))]
-        if not ready:
-            # A dependency cycle is a registry bug, not a runtime condition.
-            raise ValueError(f"dependency cycle among {sorted(remaining)}")
-        pick = min(ready, key=lambda s: (table[s].get("cost_s") is None,
-                                         table[s].get("cost_s") or 0.0,
-                                         s))
-        ordered.append(pick)
-        remaining.discard(pick)
-    return ordered
+    """Dependencies first, then cheapest first (`run_order` in
+    gate_table.py), over `table`, every gate's entry unless given."""
+    return gate_table.run_order(slugs, GATES if table is None else table)
 
 
 # Measurement noise floor for the drift report below. `scripts/gate` times
@@ -4606,16 +1419,7 @@ def budget_breach(measured: dict, table=None):
 
 def transitive_deps(slug: str, table=None) -> set[str]:
     """Every gate `slug` needs, directly or through another gate."""
-    table = GATES if table is None else table
-    seen: set[str] = set()
-    stack = list(table[slug].get("deps", []))
-    while stack:
-        d = stack.pop()
-        if d in seen:
-            continue
-        seen.add(d)
-        stack.extend(table[d].get("deps", []))
-    return seen
+    return gate_table.transitive_deps(slug, GATES if table is None else table)
 
 
 def matched(repo_root: Path, changed: list[str]) -> tuple[set[str], str]:
@@ -4743,29 +1547,9 @@ def why_hosted(slug: str, table=None) -> str:
 
 
 def container_placement(order, table=None) -> list[tuple[str, str, str]]:
-    """Where each gate of a run in `order` runs: `(where, slug, containerfile)`.
-
-    `where` is "host" (the machine the runner is on) or "container" (the
-    image `containerfile` builds, where the runner runs the gate with its
-    dependencies). A dependency that only gates in an image need is left out:
-    it runs inside, with them. One that a gate on the host also needs stays,
-    since that gate executes its output here. The order of `order` is kept.
-    """
-    table = GATES if table is None else table
-    in_image = [s for s in order if table[s].get("container")]
-    inside: set[str] = set()
-    for slug in in_image:
-        inside |= transitive_deps(slug, table)
-    host = {s for s in order if s not in in_image and s not in inside}
-    for slug in list(host):
-        host |= transitive_deps(slug, table) & set(order)
-    placed = []
-    for slug in order:
-        if slug in in_image:
-            placed.append(("container", slug, table[slug]["container"]))
-        elif slug in host:
-            placed.append(("host", slug, ""))
-    return placed
+    """Where each gate of a run in `order` runs (`container_placement` in
+    gate_table.py, which the runner asks)."""
+    return gate_table.container_placement(order, GATES if table is None else table)
 
 
 def hosted_only(repo_root: Path, selected) -> list[str]:
@@ -4904,16 +1688,23 @@ def tracked_tree_is_head(repo_root: Path) -> bool:
 # agreed on it: the runner and the library it sources, the toolchain selectors
 # (Rust's pin, Go's module for its release, the mesh transports' revision the
 # library reads), the submodule preflight and the `.gitmodules` it reads, the
-# registry, and `.cargo/`, whose configuration every cargo run reads. Read
-# again on 2026-11-24 with bx 340e9f9e, which traces listings: seven gates
-# agreed that every unit also lists the root (`./`) and `tools/git-hooks/`.
-# bx's trace refuses a unit that reads a file or lists a directory outside its
-# inputs, so a runner that starts reading another fails the unit ("could not
-# measure"), never passes it.
+# gate table's reader, and `.cargo/`, whose configuration every cargo run
+# reads. Read again on 2026-11-24 with bx 340e9f9e, which traces listings:
+# seven gates agreed that every unit also lists the root (`./`) and
+# `tools/git-hooks/`. bx's trace refuses a unit that reads a file or lists a
+# directory outside its inputs, so a runner that starts reading another fails
+# the unit ("could not measure"), never passes it.
+#
+# The runner read this file then, and lists `tools/git-hooks/` and the root
+# because it ran it with its directory, or the working one, first on
+# `sys.path`. It reads `gate_table.py` instead since 2026-11-25, as
+# `python3 -I`, which lists neither, and `unit_inputs` adds the entries of
+# the gates a unit runs ("One file per gate" in gate_table.py);
+# `a-gate-run-reads-its-own-entries` holds that reading. The root stays: what
+# else in the runner lists it was never traced apart from Python.
 RUNNER_INPUTS = (
     "./",
     ".gitmodules",
-    "tools/git-hooks/",
     "scripts/gate",
     "scripts/gates/lib.sh",
     "scripts/lib/rust_toolchains.sh",
@@ -4933,85 +1724,22 @@ RUNNER_INPUTS = (
     # Cargo's home out of what a Rust build writes.
     "scripts/lib/reproducible_paths.sh",
     "scripts/install_mesh_transports.sh",
-    "tools/git-hooks/gate_registry.py",
+    "tools/git-hooks/gate_table.py",
     "rust-toolchain.toml",
     "backends/go/forge-runtime/go.mod",
     ".cargo/**",
 )
 
-
-def submodule_paths(repo_root: Path) -> list[str]:
-    """The paths of the submodules `.gitmodules` records, sorted."""
-    done = subprocess.run(
-        ["git", "config", "-f", str(repo_root / ".gitmodules"),
-         "--get-regexp", r"^submodule\..*\.path$"],
-        capture_output=True, text=True, check=False)
-    return sorted(line.split(None, 1)[1]
-                  for line in done.stdout.splitlines() if " " in line)
-
-
-def reaches_beneath(pattern: str, path: str) -> bool:
-    """Can input pattern `pattern` name a file beneath directory `path`?
-
-    Asked a segment at a time, so `third_party/*/*` reaches
-    `third_party/spdlog` and `web/visualizer/vendor/**` does not. A
-    pattern that ends in `/` gives a directory's names and nothing they
-    hold (bx RFC 0020, section 4.2), so it reaches nothing beneath them.
-    """
-    if pattern.endswith("/"):
-        return False
-    parts = path.split("/")
-    for i, seg in enumerate(pattern.split("/")):
-        if seg == "**" or i == len(parts):
-            return True
-        if not glob_to_regex(seg).match(parts[i]):
-            return False
-    return False
-
-
-def submodules_reached(patterns, paths) -> list[str]:
-    """Those of the submodules at `paths` beneath which `patterns` name a file.
-
-    A narrowed unit's copy holds a submodule checked out only when its
-    inputs give the submodule's `<path>/.git`, and holds every other one as
-    a bare gitlink (bx RFC 0026, section 4.1, 2026-11-23). So the submodule
-    preflight asks a narrowed gate for these alone
-    (`scripts/lib/require_submodules.sh`), and
-    `a-narrowed-gate-holds-the-submodules-it-reads` refuses an entry that
-    reaches one without its `.git`.
-    """
-    return [p for p in paths if any(reaches_beneath(g, p) for g in patterns)]
-
+# The trigger derivation as a unit's inputs name it: read by a run only for a
+# gate keyed on its triggers (`submodule_needs` in gate_table.py).
+TRIGGER_GLOBS_INPUT = "tools/git-hooks/trigger_globs.py"
 
 
 def gate_inputs(slug, table=None, triggers=None, reads=None):
-    """What `slug`'s OWN script reads, as its key names it: `None` for the
-    whole tracked tree, or a sorted list of patterns. A declared list is
-    itself; `INPUTS_ARE_TRIGGERS` is the gate's trigger globs from
-    `triggers` (`gate_triggers`), which a caller computes once per plan,
-    the listing patterns in its `lists` (a directory the script lists,
-    whose names bx keys and whose contents it does not: bx RFC 0020, 4.2),
-    and what the builds it names read without selecting it, from `reads`
-    (`gate_reads`). Neither a listing nor such a read is a trigger: a name
-    new in such a directory is selected by the glob that matches it, or
-    reads nothing the verdict depends on.
-
-    A gate keyed on its triggers that names a build and is given no `reads`
-    is refused, as one given no `triggers` is: its key would miss what its
-    build reads."""
-    table = GATES if table is None else table
-    own = table[slug].get("inputs")
-    if own != INPUTS_ARE_TRIGGERS:
-        return own
-    if triggers is None:
-        raise ValueError(f"{slug} is keyed on its triggers and none were given")
-    if table[slug].get("builds") and (reads is None or slug not in reads):
-        raise ValueError(f"{slug} is keyed on its triggers and builds "
-                         f"{table[slug]['builds']}, and what those read was "
-                         f"not given")
-    return sorted(dict.fromkeys(list(triggers[slug])
-                                + list(table[slug].get("lists", []))
-                                + list((reads or {}).get(slug, []))))
+    """What `slug`'s OWN script reads, as its key names it (`gate_inputs` in
+    gate_table.py)."""
+    return gate_table.gate_inputs(slug, GATES if table is None else table,
+                                  triggers, reads)
 
 
 def unit_inputs(closure, table=None, triggers=None, reads=None):
@@ -5021,9 +1749,10 @@ def unit_inputs(closure, table=None, triggers=None, reads=None):
     tree: a key narrower than what the unit reads would let a pass outlive
     a change to the part left out. Otherwise the union of their patterns
     (`gate_inputs`, with `triggers` and `reads` for a gate keyed on its
-    triggers), of
-    `RUNNER_INPUTS`, and of each gate's script and mirrored workflows,
-    sorted so that one closure always yields one key.
+    triggers), of `RUNNER_INPUTS`, and of each gate's script, entry and
+    mirrored workflows, sorted so that one closure always yields one key. A
+    gate keyed on its triggers adds `trigger_globs.py`, which the runner's
+    submodule preflight reads to learn what those triggers reach.
     """
     table = GATES if table is None else table
     patterns: set[str] = set(RUNNER_INPUTS)
@@ -5033,10 +1762,152 @@ def unit_inputs(closure, table=None, triggers=None, reads=None):
             return None
         patterns.update(own)
         patterns.add(f"scripts/gates/{slug}.sh")
+        patterns.add(gate_table.entry_input(slug))
+        if table[slug].get("inputs") == INPUTS_ARE_TRIGGERS:
+            patterns.add(TRIGGER_GLOBS_INPUT)
         patterns.update(f".github/workflows/{wf}"
                         for wf in table[slug].get("workflows", []))
     return sorted(patterns)
 
+
+# The tracer `a-gate-run-reads-its-own-entries` runs a question of the runner
+# under: `gate_table.py` as `python3 -I` starts it (no directory first on
+# `sys.path`; `runpy` adds none for a file), with Python's audit hook
+# writing every file the run opened and every directory it listed, one a line,
+# to the file its first argument names.
+RUN_TRACER = r"""
+import os, runpy, sys
+log, target = sys.argv[1], sys.argv[2]
+sys.argv = [target] + sys.argv[3:]
+seen, live = [], [True]
+def hook(event, args):
+    if not live[0]:
+        return
+    if event == "open" and isinstance(args[0], (str, bytes)):
+        seen.append("open " + os.path.abspath(os.fsdecode(args[0])))
+    elif event in ("os.listdir", "os.scandir"):
+        path = args[0] if args and args[0] is not None else "."
+        if isinstance(path, (str, bytes)):
+            seen.append("list " + os.path.abspath(os.fsdecode(path)))
+sys.addaudithook(hook)
+code = 0
+try:
+    runpy.run_path(target, run_name="__main__")
+except SystemExit as exc:
+    code = exc.code if isinstance(exc.code, int) else 1
+live[0] = False
+with open(log, "w", encoding="utf-8") as out:
+    out.write("\n".join(seen))
+sys.exit(code)
+"""
+
+
+def traced_run_reads(question: list[str]) -> tuple[int, list[tuple[str, str]]]:
+    """The status of `gate_table.py <question>` and what its run read of this
+    checkout: `(kind, path)`, `kind` "open" or "list", the path relative to
+    the checkout `gate_table.py` belongs to."""
+    import tempfile
+
+    root = gate_table.HERE.parent.parent
+    with tempfile.TemporaryDirectory() as scratch:
+        log = Path(scratch) / "reads"
+        done = subprocess.run(
+            [sys.executable, "-I", "-c", RUN_TRACER, str(log),
+             str(gate_table.HERE / "gate_table.py"), *question],
+            cwd=root, capture_output=True, text=True, check=False)
+        lines = log.read_text(encoding="utf-8").splitlines() \
+            if log.is_file() else []
+    reads = []
+    for line in lines:
+        kind, _, path = line.partition(" ")
+        full = Path(path)
+        if full == root or root in full.parents:
+            reads.append((kind, full.relative_to(root).as_posix() if full != root
+                          else "."))
+    return done.returncode, reads
+
+
+def unit_read_failures(repo_root: Path, table=None) -> list[str]:
+    """What `a-gate-run-reads-its-own-entries` refuses, for the gates of
+    `table` it picks by what they declare: one alone, one with a dependency,
+    one in an image, one in shards, the first whose unit is narrowed, and the
+    first keyed on its triggers that needs a submodule, whose preflight reads
+    `trigger_globs.py` to derive its reach.
+
+    Each question the runner asks of a unit's gates (`order`, `placement`,
+    `submodules`, `shard-env` for a gate in shards) is run under
+    `RUN_TRACER`, and its reads are held to three things: of
+    `tools/git-hooks/` it opens `gate_table.py` and the entries of the gates
+    the unit runs (and `trigger_globs.py` when one is keyed on its
+    triggers), it lists no directory of the checkout, and every file it
+    opens is among the inputs the plan gives the unit (`unit_inputs`) when
+    those are narrowed. A run that opened neither `gate_table.py` nor its
+    gate's entry traced nothing, and is refused as a reading that did not
+    happen.
+    """
+    table = GATES if table is None else table
+    triggers = gate_triggers(repo_root)
+    reads = gate_reads(repo_root)
+
+    def first(wanted):
+        return next((s for s in sorted(table) if wanted(s, table[s])), None)
+
+    picks = {
+        "a gate alone": first(lambda s, e: not e.get("deps")
+                              and not e.get("container")),
+        "a gate with a dependency": first(lambda s, e: bool(e.get("deps"))
+                                          and not e.get("container")),
+        "a gate in an image": first(lambda s, e: bool(e.get("container"))),
+        "a gate in shards": first(lambda s, e: bool(e.get("shard_env"))),
+        "a narrowed gate": first(lambda s, e: unit_inputs(
+            {s} | transitive_deps(s, table), table, triggers, reads) is not None),
+        "a gate keyed on its triggers that needs a submodule": first(
+            lambda s, e: e.get("inputs") == INPUTS_ARE_TRIGGERS and any(
+                gate_table.submodule_needs(repo_root, [s], table, which=True))),
+    }
+    failures = [f"no {what} in the table to trace" for what in
+                ("a gate alone", "a gate with a dependency")
+                if picks[what] is None]
+    for what, slug in picks.items():
+        if slug is None:
+            continue
+        closure = {slug} | transitive_deps(slug, table)
+        order = run_order(closure, table)
+        allowed = {"tools/git-hooks/gate_table.py"} | {
+            gate_table.entry_input(s) for s in closure}
+        if any(table[s].get("inputs") == INPUTS_ARE_TRIGGERS for s in closure):
+            allowed.add(TRIGGER_GLOBS_INPUT)
+        inputs = unit_inputs(closure, table, triggers, reads)
+        files = [glob_to_regex(p) for p in inputs or [] if not p.endswith("/")]
+        questions = [["order", slug], ["placement", *order],
+                     ["submodules", *order]]
+        if table[slug].get("shard_env"):
+            questions.append(["shard-env", slug])
+        for question in questions:
+            asked = f"{what} ({slug}): gate_table.py {' '.join(question)}"
+            status, seen = traced_run_reads(question)
+            if status != 0:
+                failures.append(f"{asked} ended {status}")
+                continue
+            opened = {path for kind, path in seen if kind == "open"}
+            for path in sorted(path for kind, path in seen if kind == "list"):
+                failures.append(f"{asked} listed {path}/, which no unit's "
+                                f"inputs give and no entry read needs")
+            for path in sorted(p for p in opened if p.startswith("tools/git-hooks/")
+                               and p not in allowed):
+                failures.append(f"{asked} opened {path}, which the verdict of "
+                                f"{sorted(closure)} does not rest on")
+            if inputs is not None:
+                for path in sorted(p for p in opened
+                                   if not any(r.match(p) for r in files)):
+                    failures.append(f"{asked} opened {path}, outside the "
+                                    f"inputs its unit is planned with")
+            if not {"tools/git-hooks/gate_table.py",
+                    gate_table.entry_input(slug)} <= opened:
+                failures.append(f"{asked} was traced opening neither "
+                                f"gate_table.py nor the gate's entry, so the "
+                                f"trace read nothing: {sorted(opened)}")
+    return failures
 
 def head_commit(repo_root: Path):
     """The full id of the commit HEAD names, or None when git cannot say."""
@@ -5248,20 +2119,6 @@ def mapping_table() -> dict[str, dict]:
         slug: dict(spec, pace_normalised=PACE_NORMALISED.get(slug))
         for slug, spec in GATES.items()
     }
-
-
-def registry_source() -> list[str]:
-    """This file's own lines, for the self-test cases that read its prose.
-
-    Two of them do: the `# Not delegated:` note a delegating gate has to
-    carry, and the pace-normalised comments PACE_NORMALISED mirrors. Both
-    compare prose against a literal defined in this same file, so both
-    have to read THIS file. `--repo-root` defaults to `.`, so resolving
-    the path that way would let a run started from another directory
-    check one checkout's comments against another checkout's tables and
-    call the disagreement a defect.
-    """
-    return pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
 
 
 # ── The Rust toolchains bx.toml declares ──────────────────────────
@@ -7617,22 +4474,23 @@ def self_test(repo_root: Path) -> int:
     # as "not done yet" forever. Each non-delegating entry carries a
     # `# Not delegated:` note stating the measured difference — the
     # lane adds a reporting flag, uploads an artifact, installs a tool.
-    # Reading the registry's own source for the note is what keeps the
-    # note from being optional; the same shape the `local`-only gates'
-    # reasons take.
+    # Reading the entry's own source for the note is what keeps the note
+    # from being optional; the same shape the `local`-only gates' reasons
+    # take. The note sits in the first lines of the entry's dict, which the
+    # entry's file opens on a line of its own. Read from this checkout's
+    # entries (`gate_table.entry_source`), never from `--repo-root`, so one
+    # checkout's comments are not judged against another checkout's table.
     cases += 1
-    registry_src = registry_source()
     for slug, spec in sorted(GATES.items()):
         if not spec.get("workflows") or spec.get("runner_workflow"):
             continue
-        entry = next(
-            (i for i, line in enumerate(registry_src) if line.strip().startswith(f'"{slug}": {{')),
-            None,
-        )
+        entry_src = gate_table.entry_source(slug)
+        entry = next((i for i, line in enumerate(entry_src) if line == "{"), None)
         if entry is None:
-            failures.append(f"delegation: {slug} is not declared in this file's source")
+            failures.append(f"delegation: {gate_table.entry_input(slug)} opens "
+                            f"no dict on a line of its own")
             continue
-        window = "\n".join(registry_src[entry : entry + 12])
+        window = "\n".join(entry_src[entry : entry + 12])
         if "Not delegated:" not in window:
             failures.append(
                 f"delegation: {slug} still restates its gate's commands in CI and "
@@ -7911,34 +4769,27 @@ def self_test(repo_root: Path) -> int:
 
     cases += 1
     # The half that keeps this from rotting: the PROSE and the DATA have to
-    # name the same slugs. Six comments in this file say a cost was
+    # name the same slugs. Six comments in the entries said a cost was
     # pace-normalised, and until 2026-09-02 that was the only place it was
     # written — so the drift report told readers to "update cost_s" on
     # every one of them. A new normalisation that lands as a comment and
     # not as an entry here puts us straight back there, and nothing would
     # notice. Rule 10 of this repository's round rules, applied to the
-    # registry's own file.
-    prose_says, current = set(), None
-    for line in registry_source():
-        # Leaving the GATES literal ends the current slug's block. Without
-        # this the scanner attributes every later mention to whichever slug
-        # happened to be last — and it caught itself doing exactly that on
-        # 2026-09-02: the four mentions in this function and in the drift
-        # printer landed on `w3c-python-bindings`, and the case failed with
-        # a slug that has no such comment. Fourth time this repository has
-        # been bitten by a scanner reading its own text.
-        if line and not line[0].isspace():
-            current = None
-        match = re.match(r'    "([a-z0-9-]+)": \{', line)
-        if match:
-            current = match.group(1)
-        if current and "pace-normalis" in line:
-            prose_says.add(current)
+    # registry's own files.
+    #
+    # Each entry is a file of its own, so a mention belongs to the gate whose
+    # file holds it. While the entries were one literal in this file the
+    # scanner had to find where one ended, and caught itself on 2026-09-02
+    # attributing the mentions in this function and in the drift printer to
+    # whichever slug happened to be last.
+    prose_says = {slug for slug in GATES
+                  if any("pace-normalis" in line
+                         for line in gate_table.entry_source(slug))}
     if prose_says != set(PACE_NORMALISED):
         only_prose = sorted(prose_says - set(PACE_NORMALISED))
         only_data = sorted(set(PACE_NORMALISED) - prose_says)
         failures.append(
-            f"PACE_NORMALISED disagrees with the comments in this file: "
+            f"PACE_NORMALISED disagrees with the comments in the entries: "
             f"prose-only={only_prose} data-only={only_data} — a normalised "
             f"cost the report cannot read is the defect this map exists for")
 
@@ -8342,7 +5193,10 @@ def self_test(repo_root: Path) -> int:
     # (scripts/lib/require_submodules.sh) derives the triggers of the gate it
     # runs and of no other: every gate's read every workflow and ledger
     # config, which `bx --checks prepush --learn forge-c11` (2026-11-24) found
-    # outside its inputs. Asked of the derivation and of the call.
+    # outside its inputs. Asked of the derivation and of the call: the
+    # preflight asks gate_table.py, whose answer for forge-c11 alone is the one
+    # every gate's derivation gives (what its run opens is traced by
+    # `a-gate-run-reads-its-own-entries`).
     cases += 1
     alone = gate_triggers(repo_root, ["forge-c11"])
     if set(alone) != {"forge-c11"} \
@@ -8358,11 +5212,20 @@ def self_test(repo_root: Path) -> int:
             .read_text(encoding="utf-8")
     except OSError:
         preflight = ""
-    calls = re.findall(r'mod\["(gate_triggers|gate_reads)"\]\(([^)]*)\)', preflight)
-    if not calls or any("[slug]" not in args for _, args in calls):
+    if '"$TABLE" submodules' not in preflight or "gate_registry.py" in preflight:
         failures.append(
-            f"preflight: scripts/lib/require_submodules.sh derives {calls}; it "
-            f"asks gate_triggers and gate_reads for the gate it runs alone")
+            "preflight: scripts/lib/require_submodules.sh does not ask "
+            "gate_table.py for the gates it runs, so a unit's run would read "
+            "the registry and every gate's derivation")
+    whole = gate_inputs("forge-c11", triggers=gate_triggers(repo_root),
+                        reads=gate_reads(repo_root))
+    scope = "*" if whole is None else " ".join(
+        submodules_reached(whole, submodule_paths(repo_root)))
+    asked = list(gate_table.submodule_needs(repo_root, ["forge-c11"], GATES))
+    if asked not in ([], [f"forge-c11\t{scope}"]):
+        failures.append(
+            f"preflight: gate_table.py answers {asked} for forge-c11 alone, and "
+            f"its derivation among every gate's reaches {scope!r}")
 
     # a-workflow-that-follows-the-generator-holds-its-build. A workflow that
     # starts for every source of the generator (`sce-build/src/**`) but not for
@@ -8558,6 +5421,43 @@ def self_test(repo_root: Path) -> int:
     for lib in sorted(sourced - set(RUNNER_INPUTS)):
         failures.append(f"runner-inputs: {lib} is sourced by the runner or the gate "
                         f"library and RUNNER_INPUTS does not name it")
+
+    # a-gate-run-reads-its-own-entries. What a unit's run reads of
+    # tools/git-hooks/ is what its verdict rests on ("One file per gate" in
+    # gate_table.py): the runner's questions open gate_table.py and the
+    # entries of the gates the unit runs, list nothing, and stay inside the
+    # inputs the plan gives the unit. Traced as the runner starts them, with
+    # Python's audit hook (`unit_read_failures`).
+    cases += 1
+    failures.extend(f"a-gate-run-reads-its-own-entries: {f}"
+                    for f in unit_read_failures(repo_root))
+
+    # an-entry-is-data. An entry is read, never run: literals and the names of
+    # `ENTRY_NAMES` are its values, and anything else is refused, so an
+    # entry can neither execute code in the runner nor name what
+    # gate_table.py does not define. Every file in the entries' directory is
+    # an entry, named by its gate's slug.
+    cases += 1
+    good = gate_table.parse_entry(
+        '{\n    # a reason\n    "parallelism": PARALLELISM_SCRIPT,\n'
+        '    "cost_s": -1.5, "inputs": INPUTS_ARE_TRIGGERS,\n'
+        '    "deps": ["a", "b"], "summary": "x" "y",\n}\n', "fixture")
+    if good != {"parallelism": gate_table.PARALLELISM_SCRIPT, "cost_s": -1.5,
+                "inputs": INPUTS_ARE_TRIGGERS, "deps": ["a", "b"],
+                "summary": "xy"}:
+        failures.append(f"an-entry-is-data: the fixture read as {good}")
+    for text in ('{"inputs": open("x")}', '{"x": __import__("os")}',
+                 '{"x": [i for i in ()]}', '["not", "a", "dict"]',
+                 '{"x": UNDEFINED}', '{1: 2}', '{"x": 1 + 2}', '{**{}}'):
+        try:
+            gate_table.parse_entry(text, "fixture")
+            failures.append(f"an-entry-is-data: {text!r} was read as an entry")
+        except gate_table.EntryError:
+            pass
+    for path in sorted(gate_table.ENTRIES.iterdir()):
+        if path.suffix != ".py" or not gate_table.SLUG.match(path.stem):
+            failures.append(f"an-entry-is-data: {path.name} in the entries' "
+                            f"directory names no gate, so nothing reads it")
 
     # a-gate-keyed-on-its-triggers-is-narrowed-by-them. A gate whose key is its
     # trigger globs (`INPUTS_ARE_TRIGGERS`) gains nothing when a glob is the
@@ -8835,10 +5735,12 @@ def self_test(repo_root: Path) -> int:
                                                        "docs/b/**"]})[0]
     if by_triggers.get("inputs") != sorted(
             {"docs/a.md", "docs/b/**", "scripts/gates/by-triggers.sh",
+             gate_table.entry_input("by-triggers"), TRIGGER_GLOBS_INPUT,
              *RUNNER_INPUTS}):
         failures.append(
             f"plan-fixture: `by-triggers` is keyed on its triggers, its "
-            f"script and the runner's inputs, and was planned as {by_triggers}")
+            f"script, its entry, the derivation of its triggers and the "
+            f"runner's inputs, and was planned as {by_triggers}")
     try:
         plan_units({"by-triggers"}, rust="1.0.0", table=fixture)
         failures.append("plan-fixture: a gate keyed on its triggers was planned "
@@ -8856,11 +5758,12 @@ def self_test(repo_root: Path) -> int:
                                                 "sce-specs/tests/"]})[0]
     if built_unit.get("inputs") != sorted(
             {"sce-build/src/**", "sce-revision/src/lib.rs", "sce-specs/tests/",
-             "scripts/gates/building.sh", *RUNNER_INPUTS}):
+             "scripts/gates/building.sh", gate_table.entry_input("building"),
+             TRIGGER_GLOBS_INPUT, *RUNNER_INPUTS}):
         failures.append(
             f"plan-fixture: `building` is keyed on its triggers, what its build "
-            f"reads beside them, its script and the runner's inputs, and was "
-            f"planned as {built_unit}")
+            f"reads beside them, its script, its entry, the derivation of both "
+            f"and the runner's inputs, and was planned as {built_unit}")
     try:
         plan_units({"building"}, rust="1.0.0", table=building,
                    triggers={"building": ["sce-build/src/**"]})
@@ -8881,10 +5784,11 @@ def self_test(repo_root: Path) -> int:
             "and its own unit kept a verdict anyway")
     elif by_name["alone"]["cache"] is not True \
             or by_name["alone"].get("inputs") != sorted(
-                {"docs/**", "scripts/gates/alone.sh", *RUNNER_INPUTS}):
+                {"docs/**", "scripts/gates/alone.sh",
+                 gate_table.entry_input("alone"), *RUNNER_INPUTS}):
         failures.append(
             f"plan-fixture: `alone` keeps its verdict over its own inputs, "
-            f"its script's and the runner's, and was planned as "
+            f"its script's, its entry's and the runner's, and was planned as "
             f"{by_name['alone']}")
     elif by_name["child"].get("secs") != 5.0:
         failures.append(
@@ -9447,10 +6351,6 @@ def main() -> int:
                          "that verify the selection: the change's gates "
                          "(--changed / --changed-from), every gate (--all) or "
                          "the named gates and their dependencies (--named)")
-    ap.add_argument("--placement", nargs="+", metavar="SLUG",
-                    help="for gates in run order, print where each runs, one "
-                         "'host <slug>' or 'container <slug> <containerfile>' "
-                         "a line, leaving out what runs inside an image")
     ap.add_argument("--landing", action="store_true",
                     help="select as the judgment of an update to main: every "
                          "reached gate the fleet can run, ci_only included "
@@ -9463,20 +6363,9 @@ def main() -> int:
                     help="with --plan: the Rust release every unit runs, as "
                          "`rustc --version` prints it (1.91.0); without it no "
                          "unit's verdict is kept")
-    ap.add_argument("--shard-env", metavar="SLUG",
-                    help="print the variable SLUG's script reads its shard "
-                         "from (`shard_env`), or nothing when it has none")
     args = ap.parse_args()
 
     repo_root = args.repo_root.resolve()
-
-    if args.shard_env is not None:
-        if args.shard_env not in GATES:
-            print(f"gate_registry: unknown slug: {args.shard_env}",
-                  file=sys.stderr)
-            return 2
-        print(GATES[args.shard_env].get("shard_env", ""))
-        return 0
 
     if args.self_test:
         return self_test(repo_root)
@@ -9527,16 +6416,6 @@ def main() -> int:
             cost = GATES[slug].get("cost_s")
             cost_s = f"{cost:>7.1f}s" if cost is not None else "      ?"
             print(f"{cost_s}  {slug:<26} {GATES[slug].get('summary', '')}")
-        return 0
-
-    if args.placement:
-        unknown = sorted(set(args.placement) - set(GATES))
-        if unknown:
-            print("gate_registry: unknown slug(s): " + ", ".join(unknown),
-                  file=sys.stderr)
-            return 2
-        for where, slug, containerfile in container_placement(args.placement):
-            print(f"{where} {slug} {containerfile}".rstrip())
         return 0
 
     if args.plan:

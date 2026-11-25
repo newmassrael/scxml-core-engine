@@ -18,6 +18,7 @@ mutation_tests -p sce-build --features cli \
 mutation_runtime_targets scripts/gates/ecma262-lowered-kotlin.sh \
     .github/workflows/ecma262-lowered-kotlin.yml \
     tools/git-hooks/gate_registry.py \
+    tools/git-hooks/gates/ecma262-lowered-kotlin.py \
     backends/kotlin/lowered-ecma262/build.gradle.kts \
     tools/codegen/templates/kotlin/transition_actions.kt.jinja2
 # ⚠ COMPILED, so `mutation_targets` and not the runtime list. One case removes
@@ -37,9 +38,9 @@ mutation_targets sce-build/tests/ci_supersession_policy.rs
 # `gate_registry_contract` holds every gate to having a workflow that runs it.
 
 mutation_case "the lowered Kotlin gate loses the workflow that runs it" <<'PY'
-edit("tools/git-hooks/gate_registry.py",
-     '"ecma262-lowered-kotlin": {\n        "workflows": ["ecma262-lowered-kotlin.yml"],',
-     '"ecma262-lowered-kotlin": {\n        "workflows": [],')
+edit("tools/git-hooks/gates/ecma262-lowered-kotlin.py",
+     '{\n    "workflows": ["ecma262-lowered-kotlin.yml"],',
+     '{\n    "workflows": [],')
 PY
 
 # ── A new lane slips past the supersession policy ──────────────────
