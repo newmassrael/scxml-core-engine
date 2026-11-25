@@ -6110,10 +6110,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/build.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/tests/codegen_hash_root_gate.rs",
           "kind": "references"
         },
@@ -7907,6 +7903,12 @@
       "target_kind": "section",
       "target_id": "synth-5-B",
       "reason": "7ebd7aa4a73 regenerated the Go codec printer output, which renamed the symbol to CodecVariantDefaultMarkerVariantDefault"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "2b02438ff75 dropped the only citation in sce-build/build.rs: producers are named by a source digest, not the generator hash 6.2.6 covers"
     }
   ],
   "frames": {},
