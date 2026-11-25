@@ -974,8 +974,9 @@ pub trait StatePolicy: Sized + 'static {
 
     /// The door of data a host lends with its event
     /// ([`Engine::process_event_with`](crate::Engine::process_event_with);
-    /// docs/adr/0124, D2): hold it to what [`lift_event_payload`](Self::lift_event_payload)
-    /// holds the same data to when a wire carries it, the bounds of its texts
+    /// docs/adr/0124, D2): hold it to what a `std` build's `lift_event_payload`
+    /// (no item of a `no_std` build, so not a link) holds the same data to when
+    /// a wire carries it, the bounds of its texts
     /// and byte strings among them. Data that enters a machine keeps one
     /// contract whichever route it takes.
     ///
