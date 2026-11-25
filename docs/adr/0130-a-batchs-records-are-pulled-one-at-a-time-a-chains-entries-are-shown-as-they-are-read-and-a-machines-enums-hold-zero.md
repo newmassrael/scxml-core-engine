@@ -6,6 +6,9 @@
   landed there (25af0b8b61e) by giving the frame reader the same body.
 - Amended (2026-11-25): a chain hook's refusal is a kind of its own (section 2), and a record handed out and not read
   is skipped as the arm it was handed out as, not as the codec's view of every arm (section 1).
+- Amended by ADR 0137 (2026-11-26): the reader runs the longer body through one out-of-line function of its own,
+  `SceReader::read_vle_long`, so no field holds the body's answer and record, and `codec::zint_tail` reads the chain
+  by one loop (section 5).
 - Amends: ADR 0049 (a decoded Rust codec is a view over its wire bytes): a view's read takes a chain hook. ADR 0128 (a
   frame's reads are total and its verdict is read once): a sequence of frames is read through one reader, whose first
   refusal ends the sequence.
@@ -131,7 +134,8 @@ ADR 0128's `SceReader` kept a byte loop of its own, and the generated decodes re
 a ZInt was written twice, and the fast path was not the one the generated code took. Both are now one: a ZInt of one
 byte is read inline at each field (`codec::zint_byte`) and every longer one by one cold body (`codec::zint_tail`),
 which `SceCursor::read_vle_*` and `SceReader::read_vle_*` both run, the reader recording the body's refusal through
-`SceReader::fail` as every other refusal of a frame.
+`SceReader::fail` as every other refusal of a frame. (ADR 0137: the reader calls the body through
+`SceReader::read_vle_long`, one function out of line, and the body is one loop.)
 
 ## Consequences
 

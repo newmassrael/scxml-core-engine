@@ -3,7 +3,8 @@
 - Status: Accepted (2026-11-26), under the owner's standing rule: the most long-term correct, textbook structure, cost
   ignored. Its figures are the consumer's measurement at the landing (section "Measured"). Amended the same day: a
   chain's rule is a type the routines are instantiated at, not data handed to them (sections 1 and 2, "Amendment of
-  2026-11-26").
+  2026-11-26"). Amended by ADR 0137: a body read is `#[inline(never)]` only where the generated set reads it from two
+  sites or more, and carries no attribute where it reads it from one (section 3).
 - Amends: ADR 0128 (a frame's reads are total and its verdict is read once): a chain's loop is the runtime's, not each
   codec's. ADR 0130 (a chain's entries are shown as they are read): a view's scan of a chain is the runtime's, and a
   walk reads an entry with a hook. ADR 0049 (a decoded Rust codec is a view over its wire bytes): `ListWalk` reads an
@@ -148,6 +149,10 @@ args, hook)`, and `read`, which a walk of a list (`ListIter`) and `NonEmptyListV
 `read_with` with `()`. A walk of a list still shows no entry to a consumer's hook: the scan did.
 
 ### 3. A codec's body is read by its own function, out of line
+
+Amended by ADR 0137: the attribute below is the one of a body the generated set reads from two sites or more. A body
+read from one site carries none, and the compiler places it; kept out of line, it was a call frame its one caller paid
+for and a function the caller could not inline, measured at the landing (ADR 0137, "Context").
 
 The function that reads a binary codec's body, the one every parent reads it through, is `#[inline(never)]`: the
 eager `read_into` of a codec that reads into its destination (`read` of one built as a value), and the view's

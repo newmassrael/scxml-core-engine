@@ -7,6 +7,9 @@
   frame's reader, not in a local of each decode.
 - Related: ADR 0081 (a codec is planned once and each backend prints the plan), ADR 0099 (every runtime answers the
   same kinds of refusal), ADR 0065 §6 (what a decode refuses).
+- Amended by: ADR 0137 (2026-11-26): `SceCursor::read_frame` answers the value the read returns, its verdict is one
+  function of the runtime, a view's `decode` is the read of its frame (sections 2 and 4), and a refusal is recorded
+  by one out-of-line call (section 1).
 - Requested by: a downstream bare-metal consumer, 2026-11-25.
 
 ## Context
@@ -50,7 +53,9 @@ recorded (`fail`); the failure table's statement for Rust is that call (`CodecFa
 ### 2. The verdict is read once
 
 A codec's `decode_into(cursor, out, ..)` is `cursor.read_frame(|cursor| Self::read_into(cursor, out, ..))`:
-`SceCursor::read_frame` makes a reader where the cursor stands, runs the read, and answers the reader's verdict. The
+`SceCursor::read_frame` makes a reader where the cursor stands, runs the read, and answers the reader's verdict, with
+the value the read returns (ADR 0137: a view's `decode` is `cursor.read_frame(|cursor| Self::read(cursor))`, and the
+verdict is one function, `end_frame`, for every codec). The
 body is `read_into` (`read` for a codec built as a value), which returns nothing. A codec that embeds or dispatches
 to another reads it through its own reader (`Body::read_into(cursor, ..)`), so a frame has one verdict however deep it
 nests, and no parent tests a child's answer.
