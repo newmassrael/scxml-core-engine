@@ -305,3 +305,42 @@ fn a_walk_reads_its_entries_with_the_total_read() {
         "the walk answers a refusal per entry:\n{code}"
     );
 }
+
+/// Codecs whose views scan a list: a counted repeat, a repeat read to the end
+/// of its frame, a chain, the chain of a frame's extensions closed by an entry
+/// flag, and a chain whose entries gate the fields that follow it.
+const SCANNED: [&str; 5] = [
+    "codec_repeat_basic",
+    "codec_until_eof_basic",
+    "codec_tlv_chain_basic",
+    "codec_zenoh_ext_envelope",
+    "codec_chain_has_tagged",
+];
+
+/// A view's scan counts an entry only where it read it whole. An entry whose
+/// read recorded a refusal is the zeros a total read returns, and the walk of
+/// the list stops at it, so a count that held it would be one the walk never
+/// reaches: the gates a decode derives from the list's entries after the
+/// refusal would walk a list that disagrees with its count (docs/adr/0061 §3).
+#[test]
+fn a_scan_counts_the_entries_it_read_whole() {
+    for name in SCANNED {
+        let code = rust_of(name);
+        assert!(
+            code.contains("ListView::new(_rest, _count, "),
+            "{name}'s view scans no list:\n{code}"
+        );
+        let counts: Vec<&str> = code
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("_count +="))
+            .collect();
+        assert!(!counts.is_empty(), "{name}'s scan counts no entry:\n{code}");
+        for count in counts {
+            assert_eq!(
+                count, "_count += u32::from(!cursor.failed());",
+                "{name}'s scan counts an entry whose read was refused:\n{code}"
+            );
+        }
+    }
+}

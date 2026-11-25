@@ -1206,7 +1206,7 @@ mod shared_counts {
 mod chain_ends {
     use super::codecs::codec_chain_depth_entry::CodecChainDepthEntryParts;
     use super::codecs::codec_chain_depth_plain::{CodecChainDepthPlain, CodecChainDepthPlainWire};
-    use super::codecs::codec_chain_has_marker::CodecChainHasMarker;
+    use super::codecs::codec_chain_has_marker::{CodecChainHasMarker, CodecChainHasMarkerView};
     use sce_forge_runtime::codec::{Bounded, CodecError, SceCursor, VecSink};
 
     // The list of the chain is one entry or more where the value is made, so no
@@ -1238,5 +1238,26 @@ mod chain_ends {
             CodecChainHasMarker::decode(&mut SceCursor::new(&[0x80])).err(),
             Some(CodecError::NeedMoreBytes)
         );
+    }
+
+    // A frame cut inside the chain, after an entry that says another follows:
+    // the view's scan counts the entries it read whole, so the marker it looks
+    // for among them is looked for in a list that holds as many entries as its
+    // count says, and the view refuses the frame as the codec does.
+    #[test]
+    fn a_frame_cut_inside_a_chain_is_refused_by_the_codec_and_its_view_alike() {
+        // E set; extension 1 with a successor, the marker with a successor,
+        // extension 3, the last; no slices.
+        let frame = [0x80, 0x81, 0x92, 0x03, 0x00];
+        assert!(CodecChainHasMarkerView::decode(&mut SceCursor::new(&frame)).is_ok());
+        for cut in 1..frame.len() {
+            let eager = CodecChainHasMarker::decode(&mut SceCursor::new(&frame[..cut])).err();
+            assert_eq!(eager, Some(CodecError::NeedMoreBytes), "a cut at {cut}");
+            assert_eq!(
+                CodecChainHasMarkerView::decode(&mut SceCursor::new(&frame[..cut])).err(),
+                eager,
+                "the view answers otherwise for a cut at {cut}"
+            );
+        }
     }
 }

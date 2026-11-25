@@ -303,6 +303,16 @@ impl ViewList<'_> {
 const SCAN_OPEN: &str = "let _rest = cursor.rest();\n            \
                          let mut _count: u32 = 0;";
 
+/// What the scan of any list does after it reads an entry: count it, where it
+/// was read whole. An entry whose read recorded a refusal is the zeros a total
+/// read returns (docs/adr/0128), and the walk, which reads the span again from
+/// its first entry, stops at it, so a count that held it would be one the walk
+/// never reaches: a list whose entries disagree with its count, which a walk of
+/// it refuses to be (docs/adr/0061 §3). The frame is refused all the same; the
+/// count is the entries a walk of it yields, so whatever the decode derives
+/// from the list after the refusal (a gate on its entries) walks it whole.
+const SCAN_COUNT: &str = "_count += u32::from(!cursor.failed());";
+
 /// A `<sce:repeat>` field of a view: decode `count` or until-EOF entries, each
 /// once and for the checks alone, and keep the span.
 ///
@@ -342,7 +352,7 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
                      break;\n{indent}    \
                  }}\n{indent}    \
                  {past}{entry}::read(cursor{decode_arg});\n{indent}    \
-                 _count += 1;\n{indent}\
+                 {SCAN_COUNT}\n{indent}\
              }}"
         )
     };
@@ -474,7 +484,7 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
         lines.push(format!("_more = _entry.{acc}();"));
     }
     lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
-    lines.push("_count += 1;".to_string());
+    lines.push(SCAN_COUNT.to_string());
     if entry_flag_acc.is_some() {
         lines.push("if !_more { break; }".to_string());
     }

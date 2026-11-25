@@ -473,6 +473,32 @@ fn a_field_gated_on_the_entries_of_a_chain_is_decided_by_the_scan() {
     assert!(accepted > 100, "only {accepted} frames were accepted");
 }
 
+/// A frame cut inside an entry of the chain whose entries gate the fields after
+/// it: the scan counts the entries it read whole and not the one cut short, so
+/// the gates, decided by walking the entries it counted, walk a list that holds
+/// as many as its count says. The view refuses every prefix as the decode
+/// does.
+#[test]
+fn a_frame_cut_inside_a_gating_chains_entry_is_refused_by_the_view_as_by_the_decode() {
+    // Not wide; an entry of kind 9 with a successor, one of kind 7, the last,
+    // and `priority` for the 7. A cut at 5 leaves the second entry its kind
+    // and no more.
+    let frame = [0x00, 0x09, 0x01, 0xAA, 0x07, 0x00, 0xBB, 0x42];
+    assert!(matches!(
+        agree!(CodecChainHasTagged, CodecChainHasTaggedView, &frame),
+        Verdict::Accepted
+    ));
+    for cut in 0..frame.len() {
+        assert!(
+            matches!(
+                agree!(CodecChainHasTagged, CodecChainHasTaggedView, &frame[..cut]),
+                Verdict::Refused
+            ),
+            "a prefix of {cut} bytes is accepted"
+        );
+    }
+}
+
 #[test]
 fn an_embedded_body_is_decoded_as_its_own_view() {
     let accepted = sweep!(
