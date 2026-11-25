@@ -16,8 +16,9 @@
 #
 # Unset, each gate builds its whole suite and runs it, which is what the build
 # machines and a developer run. The plan's form and `verify` also serve the
-# suites scripts/lib/workspace_shards.py spreads (w3c-rust's targets and
-# regen-reproduces' steps): it writes its plans with `write_shard`, and each
+# suites scripts/lib/workspace_shards.py spreads (w3c-rust's targets,
+# regen-reproduces' steps and the targets tree-hygiene names): it writes its
+# plans with `write_shard`, and each
 # of those gates reports what it ran with `report`, so one verdict reads
 # every sharded lane.
 #

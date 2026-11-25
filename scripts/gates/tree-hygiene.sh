@@ -191,7 +191,75 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # build does compile it now (`cmake/SCEBuildLowering.cmake`), but a
 # breakage found there is found by a 30-minute lane; found here it is
 # found in seconds.
-sce_gate_tested -- cargo test -p sce-build --features cli,ffi \
+# ONE PART OF THE SUITE, when `SCE_TREE_HYGIENE_SHARD=k/N` asks for one: the
+# CI lane runs these targets as N jobs (tree-hygiene.yml, ADR 0120 D3). Run
+# whole on a hosted runner they took 1530 s of tests after a 385 s build (job
+# 138916754622, 2026-11-25), the longest target 279 s. The units are the
+# targets the `cargo test` command below names, read from this file by
+# scripts/lib/workspace_shards.py (`--gate-targets`), so the list stays
+# written once, in the command; `hygiene_part` runs that command with the
+# targets of this part and no other. Every job writes the whole plan beside
+# its part, and the lane's last job holds the plans of all the parts to one
+# digest and every part to a report that each of its targets ran
+# (`ctest_shards.py verify`); `hook_ci_parity` holds the parts to every target
+# the command names, each in one part. The two hook tests at the end build
+# nothing and take seconds; the first part runs them. Unset, the gate runs the
+# whole suite, which is what a developer and the build machines run.
+SHARD_PLAN=""
+SHARD_UNITS=()
+SHARD_INDEX=1
+HYGIENE_LOG="$(mktemp)"
+sce_gate_on_exit "rm -f '$HYGIENE_LOG'"
+if [[ -n "${SCE_TREE_HYGIENE_SHARD:-}" ]]; then
+    SHARD_PLAN="$SCE_REPO_ROOT/target/tree-hygiene-shard"
+    rm -rf "$SHARD_PLAN"
+    shard_units="$(python3 scripts/lib/workspace_shards.py \
+        --gate-targets scripts/gates/tree-hygiene.sh --out "$SHARD_PLAN" "$SCE_TREE_HYGIENE_SHARD")" \
+        || sce_gate_cannot_run "scripts/lib/workspace_shards.py could not name shard $SCE_TREE_HYGIENE_SHARD"
+    while IFS= read -r unit; do
+        case "$unit" in
+            "test "*) SHARD_UNITS+=("$unit") ;;
+            "") ;;
+            *) sce_gate_cannot_run "scripts/lib/workspace_shards.py named a unit it does not define: $unit" ;;
+        esac
+    done <<<"$shard_units"
+    SHARD_INDEX="${SCE_TREE_HYGIENE_SHARD%%/*}"
+    sce_gate_step "shard $SCE_TREE_HYGIENE_SHARD: ${#SHARD_UNITS[@]} test target(s)"
+fi
+
+# The command it is given, with each `--test <name>` kept when that target is
+# in this part and dropped when it is not; unsharded, the command as written.
+# A part whose targets the command does not all name is refused: the plan and
+# the command would then be reading two lists.
+hygiene_part() {
+    if [[ -z "$SHARD_PLAN" ]]; then
+        sce_gate_tested --log "$HYGIENE_LOG" -- "$@"
+        return
+    fi
+    local -a command=()
+    local kept=0 unit
+    while (( $# )); do
+        if [[ "$1" == --test ]]; then
+            for unit in ${SHARD_UNITS[@]+"${SHARD_UNITS[@]}"}; do
+                if [[ "$unit" == "test $2" ]]; then
+                    command+=(--test "$2")
+                    kept=$((kept + 1))
+                    break
+                fi
+            done
+            shift 2
+            continue
+        fi
+        command+=("$1")
+        shift
+    done
+    (( kept == ${#SHARD_UNITS[@]} )) \
+        || sce_gate_fail "shard $SCE_TREE_HYGIENE_SHARD holds ${#SHARD_UNITS[@]} target(s) and the command names $kept of them"
+    (( kept > 0 )) || return 0
+    sce_gate_tested --log "$HYGIENE_LOG" -- "${command[@]}"
+}
+
+hygiene_part cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
     --test a_declared_attribute_must_reach_the_ir \
     --test a_deployment_annotation_is_not_the_document \
@@ -261,6 +329,29 @@ sce_gate_tested -- cargo test -p sce-build --features cli,ffi \
     --test a_documents_tables_are_its_tree_in_document_order \
     --test a_workflow_names_the_image_it_runs_on \
     || sce_gate_fail "tree-wide hygiene gates"
+
+# What this part ran, for the lane's last job to hold beside the other parts'
+# (`ctest_shards.py verify`): a target counts when cargo started its binary,
+# and one cargo never started fails the part here rather than reading as a pass.
+if [[ -n "$SHARD_PLAN" ]]; then
+    ran=0
+    missing=()
+    for unit in ${SHARD_UNITS[@]+"${SHARD_UNITS[@]}"}; do
+        if grep -qE "Running.* tests/${unit#test }(\.rs|/main\.rs) \(" "$HYGIENE_LOG"; then
+            ran=$((ran + 1))
+        else
+            missing+=("$unit")
+        fi
+    done
+    if (( ${#missing[@]} > 0 )); then
+        sce_gate_fail "cargo started no binary for ${#missing[@]} target(s) of shard $SCE_TREE_HYGIENE_SHARD: ${missing[*]}"
+    fi
+    python3 scripts/lib/ctest_shards.py report --out "$SHARD_PLAN" --executed "$ran" --disabled 0
+    sce_gate_step "shard $SCE_TREE_HYGIENE_SHARD: $ran target(s) ran and passed"
+    if (( SHARD_INDEX != 1 )); then
+        exit 0
+    fi
+fi
 
 # The pre-push hook exempts a bx landing queue's ref by what it holds, never by
 # its name alone (tools/git-hooks/bx-land-refs.sh): the test builds a repository

@@ -10,6 +10,7 @@
 #   workspace-tests   the workspace's test targets, `core`  SCE_WORKSPACE_SHARD   rust-workspace-tests.yml
 #   w3c-rust          sce-rust-tests' test targets, `core`  SCE_W3C_RUST_SHARD    w3c-tests.yml
 #   regen-reproduces  the regeneration's steps              SCE_REGEN_SHARD       regen-reproduces.yml
+#   tree-hygiene      the targets its `cargo test` names     SCE_TREE_HYGIENE_SHARD tree-hygiene.yml
 #
 # Unset, each gate runs its whole suite, which is what the build machines and a
 # developer run. (scripts/lib/ctest_shards.py is the same for a ctest suite.)
@@ -18,6 +19,8 @@
 #   scripts/lib/workspace_shards.py --features <list> --all     every unit
 #   scripts/lib/workspace_shards.py --package <name> <k>/<N>    one package's suite
 #   scripts/lib/workspace_shards.py --regen <k>/<N>             the regeneration's steps
+#   scripts/lib/workspace_shards.py --gate-targets <gate> <k>/<N>
+#                                     the targets a gate script's cargo command names
 #   scripts/lib/workspace_shards.py ... --out <dir> <k>/<N>     and write the plan there
 #   scripts/lib/workspace_shards.py --measure <job log>         the costs a run measured
 #   scripts/lib/workspace_shards.py --self-test
@@ -30,7 +33,9 @@
 # product-line builds the workspace-tests gate adds
 # (scripts/gates/workspace-tests.sh says what each of them is). `step <name>`
 # is a step of scripts/regen_all_committed_trees.sh with the trees it owns
-# (scripts/lib/sce_generated_tree.sh, `sce_regen_steps`).
+# (scripts/lib/sce_generated_tree.sh, `sce_regen_steps`). For `--gate-targets`,
+# `test <name>` is a target the gate script names with `--test` in its
+# `cargo test` command, which is the one list of what that gate runs.
 #
 # WHY SHARDS. The workspace suite outgrew one job. Measured on the run of
 # 293defb01c (Rust Workspace Tests, job 132834013098): 29 minutes of build and
@@ -64,6 +69,12 @@
 # units run, so the tables below are a matter of balance only. Re-measure after a
 # change of the suite's shape with `--measure` on a job log of the unsharded
 # lane, or on the logs of every shard of a sharded one put together.
+#
+# THE TARGETS A GATE NAMES are read from the gate script, the way the shell
+# hands them to cargo: continuation lines joined, comment lines dropped, every
+# `--test <name>` of a logical line that runs `cargo test`. The gate then
+# filters its own command to its part, so the list stays written once, in the
+# command a reader of the script sees run.
 
 from __future__ import annotations
 
@@ -72,6 +83,7 @@ import datetime
 import hashlib
 import json
 import re
+import shlex
 import statistics
 import subprocess
 import sys
@@ -164,6 +176,51 @@ REGEN_SECONDS: dict[str, float] = {
     "embed-manifest": 122,
 }
 
+# Seconds per target of a gate whose cargo command names its targets
+# (`--gate-targets`), by gate script. tree-hygiene: from its last green run
+# whole (job 138916754622, 2026-11-25), the targets of a second or more; the
+# run took 1530 s of tests after a 385 s build. A target the table does not
+# hold is given a second, the order of the median of that run (1.6 s).
+GATE_SECONDS: dict[str, dict[str, float]] = {
+    "scripts/gates/tree-hygiene.sh": {
+        "diagnostic_fix_is_applicable": 279,
+        "diagnostic_corpus_schema": 206,
+        "mutation_rounds_selection": 176,
+        "cli_lint_sweep": 174,
+        "ecmascript_acceptance_parity": 156,
+        "cli_expression_refusal": 91,
+        "committed_sourcemap_drift": 44,
+        "b9_drift_detection": 34,
+        "gate_registry_contract": 25,
+        "a_value_written_into_a_string_literal_is_escaped": 21,
+        "configuration_rules_cite_their_clause": 16,
+        "scope_obligation": 16,
+        "a_rendering_shows_the_literal_the_author_wrote": 13,
+        "a_deployment_annotation_is_not_the_document": 11,
+        "a_documents_tables_are_its_tree_in_document_order": 11,
+        "a_declared_attribute_must_reach_the_ir": 11,
+        "script_engine_census": 11,
+        "a_page_in_any_shape_normalises_to_the_canonical_one": 9,
+        "cli_guard_emission": 8,
+        "a_rendering_reads_back_as_the_same_document": 7,
+        "an_action_uses_only_the_fields_its_tag_declares": 7,
+        "a_line_that_opens_a_block_carries_its_word": 7,
+        "an_sce_attribute_nothing_reads_is_refused_not_ignored": 7,
+        "the_analyzer_declares_which_fields_it_writes": 6,
+        "datamodel_read_accessor": 6,
+        "a_standard_named_in_code_is_one_sce_implements": 6,
+        "mutation_corpus_fits_its_lane": 5,
+        "no_file_keeps_a_copy_of_the_w3c_registry": 4,
+        "a_forge_document_never_declares_one_name_twice": 3,
+        "ci_supersession_policy": 2,
+        "hook_ci_parity": 2,
+        "ledger_symbol_axis_reach": 2,
+        "hybrid_stubs_are_written_only_by_the_generator": 2,
+        "forge_document_name_is_the_stem": 2,
+    },
+}
+GATE_UNMEASURED_SECONDS = 1.0
+
 CORE = "core"
 
 Cost = Callable[[str], float]
@@ -255,6 +312,61 @@ def regen_outputs(steps: list[str], bx_toml: Path | None = None) -> list[str]:
             if glob not in globs:
                 globs.append(glob)
     return globs
+
+
+def gate_targets(text: str, gate: str = "the gate") -> list[str]:
+    """The `test <name>` units of a gate script's `text`: every target it names
+    with `--test` in a command that runs `cargo test`, read as the shell reads
+    it (continuation lines joined, comment lines dropped, a quoted string one
+    word, a command ending at `||`, `&&`, `;` or `|`, so a failure label that
+    spells a command is not one), sorted. Refused when there is none, or when a
+    name is one the shell fills in, which no reading of the file can see."""
+    logical: list[str] = []
+    pending = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+            continue
+        logical.append(pending + stripped)
+        pending = ""
+    if pending:
+        logical.append(pending)
+    names: set[str] = set()
+    for line in logical:
+        if "cargo test" not in line:
+            continue
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.commenters = ""
+        lexer.whitespace_split = True
+        try:
+            words = list(lexer)
+        except ValueError as error:
+            raise SystemExit(f"workspace_shards: {gate} has a cargo test line the shell "
+                             f"reading cannot split ({error}): {line}")
+        commands: list[list[str]] = [[]]
+        for word in words:
+            if word in ("||", "&&", ";", "|", "&"):
+                commands.append([])
+            else:
+                commands[-1].append(word)
+        for command in commands:
+            if not any(a == "cargo" and b == "test" for a, b in zip(command, command[1:])):
+                continue
+            for flag, name in zip(command, command[1:]):
+                if flag != "--test":
+                    continue
+                if not name or "$" in name:
+                    raise SystemExit(f"workspace_shards: {gate} names a target the shell "
+                                     f"fills in ({name!r}); a part of it cannot be planned "
+                                     f"from the file")
+                names.add(name)
+    if not names:
+        raise SystemExit(f"workspace_shards: {gate} runs no `cargo test` that names a "
+                         f"target with `--test`, so there is nothing to spread")
+    return [f"test {name}" for name in sorted(names)]
 
 
 def shards(all_units: list[str], count: int, cost: Cost) -> list[list[str]]:
@@ -387,6 +499,38 @@ def self_test() -> int:
     check(unit_name("test w3c") == "w3c" and unit_name("step specs") == "specs"
           and unit_name(CORE) == CORE, "a unit's name is read past its kind")
 
+    gate_text = "\n".join([
+        "# a comment naming --test not_a_target in prose",
+        "sce_gate_tested -- cargo test -p sce-build --features cli \\",
+        "    --test b_second \\",
+        "    --test a_first \\",
+        "    || sce_gate_fail \"cargo test --test not_in_the_label\"",
+        "cargo build --test not_a_test_run",
+        "hygiene_part cargo test -p x --test 'c_quoted'",
+    ])
+    check(gate_targets(gate_text) == ["test a_first", "test b_second", "test c_quoted"],
+          f"the targets of every cargo test line, sorted: {gate_targets(gate_text)}")
+    for refused in ("cargo build --test x", 'cargo test --test "$name"'):
+        try:
+            gate_targets(refused)
+            check(False, f"refused: {refused}")
+        except SystemExit:
+            check(True, "refused")
+    for gate in GATE_SECONDS:
+        check((REPO_ROOT / gate).is_file(), f"a cost table names no gate script: {gate}")
+    hygiene = REPO_ROOT / "scripts/gates/tree-hygiene.sh"
+    if hygiene.is_file():
+        named = gate_targets(hygiene.read_text(encoding="utf-8"))
+        check("test hook_ci_parity" in named and len(named) > 50,
+              f"tree-hygiene.sh names {len(named)} target(s); the reading broke")
+        gate_cost = cost_by(GATE_SECONDS["scripts/gates/tree-hygiene.sh"],
+                            GATE_UNMEASURED_SECONDS)
+        for count in (2, 6):
+            spread = shards(named, count, gate_cost)
+            assigned = [u for s in spread for u in s]
+            check(sorted(assigned) == named and len(assigned) == len(set(assigned)),
+                  f"{count}: the parts of tree-hygiene are every target once")
+
     try:
         plan_of(["core", "core"], 2, package)
         check(False, "a unit named twice is refused")
@@ -455,6 +599,9 @@ def main() -> int:
     parser.add_argument("--package", help="one package's suite, not the workspace's")
     parser.add_argument("--regen", action="store_true",
                         help="the regeneration's steps, not a cargo suite")
+    parser.add_argument("--gate-targets", metavar="GATE",
+                        help="the targets a gate script's cargo command names, "
+                             "the script's path from the repository root")
     parser.add_argument("--all", action="store_true", help="every unit")
     parser.add_argument("--out", metavar="DIR", help="write the whole plan and this "
                                                      "shard's part of it into DIR")
@@ -472,7 +619,16 @@ def main() -> int:
     if args.regen and (args.package or args.features):
         parser.error("--regen spreads the regeneration's steps; it takes no "
                      "--package or --features")
-    if args.regen:
+    if args.gate_targets and (args.regen or args.package or args.features):
+        parser.error("--gate-targets spreads what a gate script names; it takes no "
+                     "--regen, --package or --features")
+    if args.gate_targets:
+        script = REPO_ROOT / args.gate_targets
+        if not script.is_file():
+            parser.error(f"--gate-targets {args.gate_targets}: no such gate script")
+        every = gate_targets(script.read_text(encoding="utf-8"), args.gate_targets)
+        cost = cost_by(GATE_SECONDS.get(args.gate_targets, {}), GATE_UNMEASURED_SECONDS)
+    elif args.regen:
         every = regen_steps()
         cost = cost_by(REGEN_SECONDS, statistics.median(REGEN_SECONDS.values()))
     elif args.package:
@@ -484,7 +640,7 @@ def main() -> int:
         cost = cost_by(MEASURED_SECONDS, UNMEASURED_SECONDS)
     else:
         parser.error("--features is required, the features the suite enables "
-                     "(or --package, or --regen)")
+                     "(or --package, --regen or --gate-targets)")
     if args.all:
         print("\n".join(every))
         return 0

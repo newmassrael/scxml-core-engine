@@ -13,6 +13,12 @@
 {
     "workflows": ["tree-hygiene.yml"],
     "runner_workflow": True,
+    # Its targets are spread over the lane's six jobs when SCE_TREE_HYGIENE_SHARD
+    # names `k/N` (`--gate-targets` in scripts/lib/workspace_shards.py, which
+    # reads them from the gate's own `cargo test` command): whole, the job took
+    # 37 minutes on a hosted runner (job 138916754622). A plan makes one unit
+    # per part (`shard_count`).
+    "shard_env": "SCE_TREE_HYGIENE_SHARD",
     # 193s measured 2026-08-22, against a declared 13 — the single
     # largest gate a push could run, and it runs on EVERY push because
     # its workflow is unfiltered. The old number was not a lie about the

@@ -1983,23 +1983,24 @@ fn the_ctest_shard_helpers_pass_their_own_cases() {
 
 // ── The lanes whose shards workspace_shards.py plans ───────────────────────
 //
-// Two gates run a suite as N jobs of a lane with a part that
+// Three gates run a suite as N jobs of a lane with a part that
 // scripts/lib/workspace_shards.py plans, and a last job that holds the parts
 // together: w3c-rust (the targets of sce-rust-tests, `SCE_W3C_RUST_SHARD`) in
-// w3c-tests.yml and regen-reproduces (the regeneration's steps,
-// `SCE_REGEN_SHARD`) in regen-reproduces.yml. The build machines run each
-// whole. Every job writes the whole plan beside its part (`--out`), in the
+// w3c-tests.yml, regen-reproduces (the regeneration's steps,
+// `SCE_REGEN_SHARD`) in regen-reproduces.yml, and tree-hygiene (the targets its
+// own `cargo test` command names, `SCE_TREE_HYGIENE_SHARD`) in
+// tree-hygiene.yml. The build machines run each whole. Every job writes the whole plan beside its part (`--out`), in the
 // form ctest_shards.py writes, and the lane's verdict job holds the plans of all
 // the shards to one digest and every shard to a report that its part ran
 // (`ctest_shards.py verify`). What is held here is that those pieces stay wired,
 // and that the parts are the whole suite, each unit once, read by a reading of
 // its own: cargo's for the targets, the regeneration's own `--list` for the
-// steps.
+// steps, the gate script's command for the targets a gate names.
 
 /// Each lane whose shards workspace_shards.py plans: its workflow, the gate
 /// script its jobs run, the variable that hands the gate its shard, and the
 /// arguments that name the suite to the helper.
-const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 2] = [
+const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 3] = [
     (
         ".github/workflows/w3c-tests.yml",
         "scripts/gates/w3c-rust.sh",
@@ -2011,6 +2012,12 @@ const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 2] = [
         "scripts/gates/regen-reproduces.sh",
         "SCE_REGEN_SHARD",
         &["--regen"],
+    ),
+    (
+        ".github/workflows/tree-hygiene.yml",
+        "scripts/gates/tree-hygiene.sh",
+        "SCE_TREE_HYGIENE_SHARD",
+        &["--gate-targets", "scripts/gates/tree-hygiene.sh"],
     ),
 ];
 
@@ -2119,6 +2126,37 @@ fn every_step_the_regeneration_runs_is_in_exactly_one_shard() {
         expected.contains("step runtime-rust") && expected.len() > 10,
         "the regeneration lists {} step(s), without `runtime-rust` or under the ten it \
          has held since it was sharded; the reading broke",
+        expected.len()
+    );
+    let seen = units_of_each_shard(args, count);
+    assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
+}
+
+/// Every target the tree-hygiene gate's `cargo test` command names is in exactly
+/// one part of its lane, and no part holds a target the command does not name.
+/// The names are read here from the script's code, continuation lines joined,
+/// by a reading of this file's own and not the helper's.
+#[test]
+fn every_target_the_tree_hygiene_gate_names_is_in_exactly_one_shard() {
+    let (lane_path, gate_path, variable, args) = PLANNED_SHARD_LANES[2];
+    let (_, (count, _)) = sharded_job(lane_path, &read(lane_path), &format!("{variable}:"));
+    let code = uncommented(&read(gate_path)).replace("\\\n", " ");
+    let expected: BTreeSet<String> = code
+        .lines()
+        .filter(|l| l.contains("cargo test"))
+        .flat_map(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            words
+                .windows(2)
+                .filter(|w| w[0] == "--test")
+                .map(|w| format!("test {}", w[1]))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        expected.contains("test hook_ci_parity") && expected.len() > 50,
+        "{gate_path} names {} target(s) in its cargo command, without `hook_ci_parity` \
+         or under the fifty it has held since it was split; the reading broke",
         expected.len()
     );
     let seen = units_of_each_shard(args, count);
