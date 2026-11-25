@@ -34,6 +34,10 @@ serde_json = "1"
 # The process's sink of what the core, the driver and the link log, which hands each record to the
 # function a host installs (`sce_peer_set_log_sink`).
 log = { workspace = true, features = ["kv"] }
+# The engine of the list's machine writes its diagnostics (target `sce`) to that sink only with the
+# runtime's `log` feature (docs/adr/0053, amendment of 2026-11-25), and the crates between ask for
+# the runtime without it: the program that installs the sink asks for it.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["log"] }
 
 [dev-dependencies]
 # The relay's server, run in the tests' process and reached over a socket.
