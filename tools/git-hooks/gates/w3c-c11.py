@@ -3,6 +3,11 @@
 #
 # The registry entry of the gate `w3c-c11`, read by that slug alone
 # ("One file per gate" in tools/git-hooks/gate_table.py).
+#
+# Its script runs one shard of the suite when SCE_W3C_C11_SHARD names
+# `k/N`, as w3c-tests.yml's three jobs do (scripts/lib/ctest_shards.py plans
+# the part and builds only what its tests run). No `shard_env`: the build
+# machines run it whole, as they run `cpp-suite`.
 {
     "workflows": ["w3c-tests.yml"],
     "builds": ["main-tree"],
@@ -14,6 +19,11 @@
     # The shared Lua the machines embed, and the shared tables every Lua
     # engine's readers ask (`system_variable_writes.json` among them).
     "extra": ["backends/c/**", "tools/codegen/templates/**",
+              # What spreads the suite over the lane's shards and the
+              # reading of the tree it plans from, which the gate script
+              # runs.
+              "scripts/lib/ctest_shards.py",
+              "scripts/lib/ctest_registered_commands.cmake",
               "sce-build/src/**", "tests/integration/inbox_probe.scxml",
               "sce/include/scripting/*.lua", "tests/ecmascript/**",
               # The registry the route registers every fixture from, the

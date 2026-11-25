@@ -1494,19 +1494,64 @@ const WORKSPACE_LANE: &str = ".github/workflows/rust-workspace-tests.yml";
 const WORKSPACE_GATE: &str = "scripts/gates/workspace-tests.sh";
 const SHARD_HELPER: &str = "scripts/lib/workspace_shards.py";
 
+/// The jobs under a workflow's `jobs:`, each as its key and the lines of its
+/// block: a job key is a line indented by exactly two spaces that ends in a
+/// colon, and its block runs to the next one. Comment lines are dropped.
+fn workflow_jobs(workflow: &str) -> Vec<(String, Vec<&str>)> {
+    let mut jobs: Vec<(String, Vec<&str>)> = Vec::new();
+    let mut in_jobs = false;
+    for line in workflow.lines() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        if !line.starts_with(' ') && !line.trim().is_empty() {
+            in_jobs = line.trim_end() == "jobs:";
+            continue;
+        }
+        if !in_jobs {
+            continue;
+        }
+        let key = line
+            .strip_prefix("  ")
+            .filter(|rest| !rest.starts_with(' '))
+            .and_then(|rest| rest.trim_end().strip_suffix(':'))
+            .filter(|k| !k.is_empty() && !k.contains(' '));
+        match key {
+            Some(k) => jobs.push((k.to_string(), Vec::new())),
+            None => {
+                if let Some((_, lines)) = jobs.last_mut() {
+                    lines.push(line);
+                }
+            }
+        }
+    }
+    jobs
+}
+
 /// The shard count a sharded lane declares: the `N` of `<variable> ${{
-/// matrix.shard }}/N`, and the matrix's `shard:` list, which must be `1..=N`.
+/// matrix.shard }}/N`, and the `shard:` list of the matrix of the job that sets
+/// it, which must be `1..=N`. Read per job, since one workflow may run two
+/// sharded suites, each with its own count.
 fn lane_shards(lane: &str, workflow: &str, variable: &str) -> (usize, Vec<usize>) {
-    let count = workflow
-        .lines()
-        .filter(|l| !l.trim_start().starts_with('#'))
+    sharded_job(lane, workflow, variable).1
+}
+
+/// The job of `workflow` that sets `variable` per shard, with its shard count
+/// and matrix.
+fn sharded_job(lane: &str, workflow: &str, variable: &str) -> (String, (usize, Vec<usize>)) {
+    let jobs = workflow_jobs(workflow);
+    let (key, lines) = jobs
+        .iter()
+        .find(|(_, lines)| lines.iter().any(|l| l.trim().starts_with(variable)))
+        .unwrap_or_else(|| panic!("{lane} sets no `{variable} ${{{{ matrix.shard }}}}/N`"));
+    let count = lines
+        .iter()
         .find_map(|l| l.trim().strip_prefix(variable))
         .and_then(|v| v.trim().rsplit('/').next().map(str::to_string))
         .and_then(|n| n.trim().parse::<usize>().ok())
         .unwrap_or_else(|| panic!("{lane} sets no `{variable} ${{{{ matrix.shard }}}}/N`"));
-    let listed = workflow
-        .lines()
-        .filter(|l| !l.trim_start().starts_with('#'))
+    let listed = lines
+        .iter()
         .find_map(|l| l.trim().strip_prefix("shard:"))
         .map(|list| {
             list.trim()
@@ -1516,8 +1561,8 @@ fn lane_shards(lane: &str, workflow: &str, variable: &str) -> (usize, Vec<usize>
                 .filter_map(|n| n.trim().parse::<usize>().ok())
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| panic!("{lane} declares no `shard:` matrix"));
-    (count, listed)
+        .unwrap_or_else(|| panic!("{lane}'s job `{key}` declares no `shard:` matrix"));
+    (key.clone(), (count, listed))
 }
 
 /// The workspace lane's shard count (`SCE_WORKSPACE_SHARD`).
@@ -1713,23 +1758,38 @@ fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
     );
 }
 
-// ── The sharded C++ suite is wired to run what the unsharded suite runs ─────
+// ── The sharded ctest suites are wired to run what the unsharded suites run ─
 //
-// cpp-suite.yml runs the C++ ctest suite as N jobs (`SCE_CTEST_SHARD=k/N`, read
-// by scripts/gates/cpp-suite.sh), and the build machines run it whole. Which
-// tests the whole suite holds is a fact of a configured tree, so the union is
-// held where there is one: every job plans the whole suite against the count
-// the gate registered (`ctest_shards.py plan --expect`), and the lane's verdict
-// job holds the plans of all the shards to one digest and every shard to a
-// report that its part ran (`ctest_shards.py verify`). What is held here,
-// with no tree, is that those pieces stay wired: one shard count on both sides
-// of the matrix, the gate handing the variable to the helper, the verdict job
-// running the check, and the helpers' own cases.
+// Two gates run a ctest suite as N jobs of a lane, each with a variable of its
+// own that names `k/N`: cpp-suite (the main tree, `-LE c11`, `SCE_CTEST_SHARD`)
+// in cpp-suite.yml, and w3c-c11 (the main tree, `-L c11`, `SCE_W3C_C11_SHARD`)
+// in w3c-tests.yml. The build machines run each whole. Which tests a suite holds
+// is a fact of a configured tree, so the union is held where there is one:
+// every job plans the whole suite against the count the gate registered
+// (`ctest_shards.py plan --expect`), and the lane's verdict job holds the plans
+// of all the shards to one digest and every shard to a report that its part
+// ran (`ctest_shards.py verify`). What is held here, with no tree, is that those
+// pieces stay wired: one shard count on both sides of each matrix, the gate
+// handing its variable to the helper, a verdict job that needs the sharded job
+// and runs the check, and the helpers' own cases.
 
-const CPP_SUITE_LANE: &str = ".github/workflows/cpp-suite.yml";
-const CPP_SUITE_GATE: &str = "scripts/gates/cpp-suite.sh";
 const CTEST_SHARD_HELPER: &str = "scripts/lib/ctest_shards.py";
 const BUILD_TIME_REPORT: &str = "scripts/lib/build_time_report.py";
+
+/// Each lane that runs a ctest suite in shards: its workflow, the gate script
+/// its jobs run, and the variable that hands the gate its shard.
+const CTEST_SHARDED_LANES: [(&str, &str, &str); 2] = [
+    (
+        ".github/workflows/cpp-suite.yml",
+        "scripts/gates/cpp-suite.sh",
+        "SCE_CTEST_SHARD",
+    ),
+    (
+        ".github/workflows/w3c-tests.yml",
+        "scripts/gates/w3c-c11.sh",
+        "SCE_W3C_C11_SHARD",
+    ),
+];
 
 /// The lines of a shell or YAML file that are not whole-line comments.
 fn uncommented(text: &str) -> String {
@@ -1739,40 +1799,75 @@ fn uncommented(text: &str) -> String {
         .join("\n")
 }
 
-/// The C++ lane's matrix and its variable name one shard count, the gate reads
-/// the variable and hands it to the helper, and the lane's verdict runs the
-/// helper's check over what the shards left.
+/// The jobs a job's `needs:` names, in either spelling (`needs: a` or
+/// `needs: [a, b]`).
+fn needs_of(lines: &[&str]) -> Vec<String> {
+    lines
+        .iter()
+        .find_map(|l| l.trim().strip_prefix("needs:"))
+        .map(|value| {
+            value
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|job| job.trim().to_string())
+                .filter(|job| !job.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Each sharded lane's matrix and its variable name one shard count, its gate
+/// reads the variable and hands it to the helper with the count it registered,
+/// and a job of the same workflow that needs the sharded job runs the helper's
+/// check over what the shards left.
 #[test]
-fn the_cpp_suite_lane_and_its_gate_agree_on_the_shards() {
-    let lane = read(CPP_SUITE_LANE);
-    let (count, listed) = lane_shards(CPP_SUITE_LANE, &lane, "SCE_CTEST_SHARD:");
-    assert!(
-        count >= 2,
-        "{CPP_SUITE_LANE} runs the suite in {count} shard(s); one is the whole suite"
-    );
+fn every_sharded_ctest_lane_and_its_gate_agree_on_the_shards() {
+    for (lane_path, gate_path, variable) in CTEST_SHARDED_LANES {
+        let lane = read(lane_path);
+        let (job, (count, listed)) = sharded_job(lane_path, &lane, &format!("{variable}:"));
+        assert!(
+            count >= 2,
+            "{lane_path}'s job `{job}` runs its suite in {count} shard(s); one is the \
+             whole suite"
+        );
+        assert_eq!(
+            listed,
+            (1..=count).collect::<Vec<_>>(),
+            "{lane_path}'s job `{job}` has a `shard:` matrix that is not 1..={count}, the \
+             count its `{variable}` names: a shard it lists past the count is refused by \
+             the helper, and one it leaves out runs in no job"
+        );
+        let gate = uncommented(&read(gate_path));
+        assert!(
+            gate.contains(variable) && gate.contains(CTEST_SHARD_HELPER),
+            "{gate_path} no longer reads {variable} and hands it to {CTEST_SHARD_HELPER}, \
+             so the jobs of {lane_path}'s `{job}` would each run the whole suite"
+        );
+        assert!(
+            gate.contains("--expect"),
+            "{gate_path} no longer holds the shard plan to the count it registered \
+             (`--expect`), so a plan that read fewer tests than the gate would pass"
+        );
+        let verify = format!("{CTEST_SHARD_HELPER} verify");
+        let held = workflow_jobs(&lane).iter().any(|(_, lines)| {
+            needs_of(lines).contains(&job) && lines.iter().any(|l| l.contains(&verify))
+        });
+        assert!(
+            held,
+            "no job of {lane_path} needs `{job}` and runs `{CTEST_SHARD_HELPER} verify`, \
+             so nothing holds its shards to one plan: a test that fell between two plans \
+             would leave every shard green"
+        );
+    }
+    // No two of these lanes read one variable: a job that set it would hand
+    // the same part to two gates, each counting its own suite.
+    let variables: BTreeSet<&str> = CTEST_SHARDED_LANES.iter().map(|(_, _, v)| *v).collect();
     assert_eq!(
-        listed,
-        (1..=count).collect::<Vec<_>>(),
-        "{CPP_SUITE_LANE}'s `shard:` matrix is not 1..={count}, the count its \
-         `SCE_CTEST_SHARD` names: a shard it lists past the count is refused by the \
-         helper, and one it leaves out runs in no job"
-    );
-    let gate = uncommented(&read(CPP_SUITE_GATE));
-    assert!(
-        gate.contains("SCE_CTEST_SHARD") && gate.contains(CTEST_SHARD_HELPER),
-        "{CPP_SUITE_GATE} no longer reads SCE_CTEST_SHARD and hands it to \
-         {CTEST_SHARD_HELPER}, so the lane's jobs would each run the whole suite"
-    );
-    assert!(
-        gate.contains("--expect"),
-        "{CPP_SUITE_GATE} no longer holds the shard plan to the count it registered \
-         (`--expect`), so a plan that read fewer tests than the gate would pass"
-    );
-    assert!(
-        uncommented(&lane).contains(&format!("{CTEST_SHARD_HELPER} verify")),
-        "{CPP_SUITE_LANE} no longer runs `{CTEST_SHARD_HELPER} verify`, so nothing \
-         holds its shards to one plan: a test that fell between two plans would leave \
-         every shard green"
+        variables.len(),
+        CTEST_SHARDED_LANES.len(),
+        "two sharded ctest lanes read one variable: {CTEST_SHARDED_LANES:?}"
     );
 }
 

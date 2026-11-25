@@ -5944,14 +5944,15 @@ set_tests_properties(c11_unit_payload_composed PROPERTIES
 # from "the scan lost its root". Naming only the trees this
 # configuration populates keeps the floor meaningful instead of
 # weakening it to tolerate emptiness.
+set(_sce_cxx_generated_roots "${SCE_C_INTEGRATION_GENERATED_DIR}")
+if(SCE_C_RUNTIME_POSIX)
+    list(APPEND _sce_cxx_generated_roots "${SCE_C_GENERATED_DIR}")
+endif()
 set(_sce_cxx_scan_roots
     "${CMAKE_SOURCE_DIR}/backends/c/runtime/include/sce"
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include/sce/forge"
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    ${_sce_cxx_generated_roots}
 )
-if(SCE_C_RUNTIME_POSIX)
-    list(APPEND _sce_cxx_scan_roots "${SCE_C_GENERATED_DIR}")
-endif()
 list(JOIN _sce_cxx_scan_roots "|" _sce_cxx_scan_roots)
 
 add_test(NAME c11_headers_are_cxx_consumable
@@ -5963,9 +5964,16 @@ add_test(NAME c11_headers_are_cxx_consumable
         -DSCE_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cxx_consumption
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cxx_consumption_gate.cmake
 )
+# The generated trees are named in REQUIRED_FILES as well: what the gate scans
+# is whatever the build has written there, and a run of one shard of the suite
+# (scripts/lib/ctest_shards.py) builds only what its own tests name. A
+# directory of the build tree named here is read by the shard planner as
+# needing every output under it, so the shard that runs this test runs every
+# generation into these trees, and the scan covers what a whole build would.
 set_tests_properties(c11_headers_are_cxx_consumable PROPERTIES
     TIMEOUT 300
     LABELS "unit;c11"
+    REQUIRED_FILES "${_sce_cxx_generated_roots}"
 )
 
 # ============================================================
