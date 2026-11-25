@@ -44,5 +44,14 @@ pub fn first_of(items: &[u8]) -> heapless::Vec<u8, 1> {
     if let Some(item) = items.first() {
         list.push_bounded(*item);
     }
+    noted(items.len());
     list
+}
+
+/// A diagnostic through the runtime's macro: a record of the `log` facade in
+/// the unified host build, where the application crate asks for the runtime's
+/// `log` feature, and on the MCU target, where nothing asks for it, a call that
+/// type-checks its arguments and writes nothing, with no facade linked.
+fn noted(count: usize) {
+    sce_rust_runtime::sce_log_debug!("first_of: {} items offered", count);
 }

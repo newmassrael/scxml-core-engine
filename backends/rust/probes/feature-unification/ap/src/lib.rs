@@ -6,8 +6,9 @@
 //! Compiled only in the host `cargo check --workspace`, beside a crate that
 //! asks the runtime for no features. What it holds compiles only where the
 //! runtime has the defaults this crate asks for, so a build that handed this
-//! crate the bare-metal profile, or took the HTTP processor or the macrostep
-//! report away from it, fails here rather than in a downstream workspace.
+//! crate the bare-metal profile, or took the HTTP processor, the macrostep
+//! report or the `log` facade away from it, fails here rather than in a
+//! downstream workspace.
 
 #![deny(warnings)]
 
@@ -43,4 +44,12 @@ pub fn chains_cut_short<P: StatePolicy>(engine: &Engine<P>) -> (u32, u32) {
         engine.truncated_macrosteps(),
         engine.truncated_event_chains(),
     )
+}
+
+/// The most verbose level the runtime's records are written at, read through
+/// the runtime's re-export of the `log` facade. The re-export is the runtime's
+/// `log` feature, which this crate's defaults ask for and the bare-metal crate
+/// beside it does not.
+pub fn records_up_to() -> sce_rust_runtime::log::LevelFilter {
+    sce_rust_runtime::log::max_level()
 }

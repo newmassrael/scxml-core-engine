@@ -8,7 +8,7 @@ One workspace holding a bare-metal crate (`mcu`) and an application crate
 # mcu/Cargo.toml: the bare-metal profile is the absence of `std`
 sce-rust-runtime = { path = "...", default-features = false }
 
-# ap/Cargo.toml: the defaults, `std`, `http-send` and `macrostep-diagnostics`
+# ap/Cargo.toml: the defaults, `std`, `http-send`, `macrostep-diagnostics` and `log`
 sce-rust-runtime = { path = "..." }
 ```
 
@@ -20,12 +20,16 @@ for:
 - `cargo check --workspace` on the host builds the `std` profile, the union.
   `mcu` compiles in it because it names only what the bare-metal profile
   declares, which `std` declares too; `ap` holds code that compiles only where
-  `SceString` is `String`, the HTTP processor exists and the macrostep report
-  (`truncated_macrosteps`) can be read.
+  `SceString` is `String`, the HTTP processor exists, the macrostep report
+  (`truncated_macrosteps`) can be read and the runtime re-exports the `log`
+  facade (`sce_rust_runtime::log`). `mcu` writes a diagnostic through
+  `sce_log_debug!`, which is a record of that facade here.
 - `cargo build -p sce-feature-unification-mcu --target thumbv7em-none-eabihf`
   selects `mcu` alone, and Cargo unifies features only across the packages one
   command builds, so the runtime is its bare-metal profile. The thumb target
   has no `std`; a feature of `ap` leaking into this build is a hard error.
+  Without the runtime's `log` feature, `mcu`'s `sce_log_debug!` compiles to
+  a call that writes nothing, and the facade is not in the build.
 
 `mcu` depends on [`portable-emit`](../portable-emit/README.md), the generated
 `--no-std` machine, so both builds compile a real emission.
