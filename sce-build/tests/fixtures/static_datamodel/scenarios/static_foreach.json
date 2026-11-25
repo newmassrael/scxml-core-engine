@@ -26,6 +26,10 @@
       "event": "double", "expect": { "variables": { "picked": [100, 200, 5, 100], "finished": 3, "errors": 2 } } },
 
     { "event": "clear", "expect": { "variables": { "picked": [] } } },
-    { "event": "double", "expect": { "variables": { "picked": [], "finished": 4, "errors": 2 } } }
+    { "event": "double", "expect": { "variables": { "picked": [], "finished": 4, "errors": 2 } } },
+
+    { "event": "a", "expect": { "variables": { "picked": [100] } } },
+    { "note": "the walk is of the one element the loop began with: one copy lands and the block goes on, where a walk of the live list would take each element it appended until the list was full, and the refusal would end the block",
+      "event": "double", "expect": { "variables": { "picked": [100, 100], "finished": 5, "errors": 2 } } }
   ]
 }

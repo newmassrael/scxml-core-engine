@@ -2535,6 +2535,15 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # Content that reads an event's typed payload runs for a delivery of that event, and not for
+    # an event of another name the transition's descriptor also matches, which carries none. A
+    # document of this channel alone, beside the schema it imports: no shared scenario sends an
+    # event its document holds no payload for, so `test_static_scalars.c` sends it itself.
+    sce_generate_static_integration_c_test(static_payload_other_event
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/static_payload_other_event/static_payload_other_event.scxml"
+        STAGE_ALSO schema_meter_reading.scxml
+    )
     # The payload's enum field is a value of an enum the machine imports under
     # the alias its schema writes, so the staging carries both beside it.
     sce_generate_static_integration_c_test(static_payload_enum
@@ -3346,6 +3355,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_enum_grown_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
+        ${INTEGRATION_C_TEST_static_payload_other_event_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_number_SOURCES}
         ${INTEGRATION_C_TEST_static_forge_calls_SOURCES}

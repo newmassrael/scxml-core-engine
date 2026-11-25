@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): content that
+  reads an event's typed payload runs for a delivery of that event, and not for
+  an event of another name the transition's descriptor also matches, which
+  carries no such payload.
+
+  A document of the C11 channel alone, beside its C test
+  (`backends/c/tests/integration/test_static_scalars.c`): a delivery of the
+  event a schema names whose data does not fit is refused whole at the door
+  and never reaches a transition (docs/adr/0086, section 4.2), so the one
+  delivery that reaches content reading the payload without carrying it is an
+  event of another name. No shared scenario sends one.
+
+    listening  `meter.read` writes the level it carries into `level` and
+               counts itself in `taken`. Its descriptor also matches
+               `meter.read.late`, an event of this document (`paused` takes
+               it), which carries no `meter.read` payload: the content does
+               not run for it, so `level` keeps what the last reading gave
+               and `taken` does not move. Run against the empty payload, it
+               would write a level of 0 and count a second reading.
+    paused     `pause` leads here, and `meter.read.late` back.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="listening" datamodel="sce-static" name="static_payload_other_event">
+  <sce:import kind="event-schema" src="schema_meter_reading.scxml" as="MeterReading"/>
+  <datamodel>
+    <data id="level" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="taken" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="listening">
+    <transition event="meter.read" type="internal">
+      <assign location="level" expr="_event.data.level"/>
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+    <transition event="pause" target="paused"/>
+  </state>
+  <state id="paused">
+    <transition event="meter.read.late" target="listening"/>
+  </state>
+</scxml>

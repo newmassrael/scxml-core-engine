@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A meter's reading: the payload of `meter.read`, one whole number, for the
+  C11 fixture `static_payload_other_event.scxml` beside it. Its own resource
+  tree holds it because the staging copies a fixture's siblings from the
+  fixture's own directory (`STAGE_ALSO`), and the import resolves relative to
+  the importing document.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_meter_reading"
+       sce:event-name="meter.read">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

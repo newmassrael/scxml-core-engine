@@ -45,6 +45,9 @@
 //     where a `<send>` runs and carried on as its `<param>`s — an enum field as
 //     the name its enum declares, an integer as its number — and a value that
 //     does not fit its type is left out with an `error.execution`.
+//   * `static_payload_other_event` (a document of this channel alone): content
+//     that reads a payload does not run for an event of another name its
+//     transition's descriptor matches, which carries none.
 //   * `sync_client`: a call of an imported algorithm — a header of `static inline`
 //     functions the machine includes — in a guard and in an assignment, over the
 //     payload of each answer, and a call that refuses its arguments is a failure
@@ -220,6 +223,7 @@
 #include "static_payload_bytes_sm.h"
 #include "static_payload_enum_grown_sm.h"
 #include "static_payload_enum_sm.h"
+#include "static_payload_other_event_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
 #include "static_real32_sm.h"
@@ -3621,10 +3625,10 @@ STATIC_SCENARIO_PEERED_TIMED(presence_peer, presence_peer_states, presence_peer_
                              presence_peer_records)
 
 // What no scenario can state, because a scenario's event carries its data or is
-// a different event: a delivery that carried no payload. Content that reads one
-// runs for a payload and for nothing else — against the zeroed buffer of a
-// delivery with none it would assign `day = 0` and say the thirtieth never
-// happened.
+// a different event: a delivery that carried no payload. A delivery of
+// `day.picked` whose data does not fit its schema is refused whole at the door
+// (docs/adr/0086, section 4.2) and reaches no transition; one that reached the
+// content would assign `day = 0` and say the thirtieth never happened.
 static int content_that_reads_a_payload_does_not_run_for_a_delivery_without_one(void) {
     static_payload_t sm;
     REQUIRE_STARTED(static_payload_init(&sm), STATIC_PAYLOAD_START_OK);
@@ -3642,6 +3646,61 @@ static int content_that_reads_a_payload_does_not_run_for_a_delivery_without_one(
             (long long)day);
         bad = 1;
     }
+    return bad;
+}
+
+// The one delivery that reaches content reading a payload without carrying it:
+// an event of another name the transition's descriptor also matches
+// (§scxml-3.12.1). `meter.read` matches `meter.read.late`, which the document
+// takes elsewhere and which carries no `meter.read` payload, so the content of
+// the `meter.read` transition does not run for it. Run against the empty
+// payload, it would write a level of 0 over the thirty the reading gave and
+// count a second reading.
+static bool other_event_raise(static_payload_other_event_t *sm, const char *name, const char *data) {
+    static_payload_other_event_event_with_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    if (!static_payload_other_event_resolve_event_by_name(name, &meta.event)) {
+        return false;
+    }
+    meta.data = data;
+    static_payload_other_event_raise_external(sm, &meta);
+    static_payload_other_event_step(sm);
+    return true;
+}
+
+static int content_that_reads_a_payload_does_not_run_for_another_event_its_descriptor_matches(void) {
+    static_payload_other_event_t sm;
+    REQUIRE_STARTED(static_payload_other_event_init(&sm), STATIC_PAYLOAD_OTHER_EVENT_START_OK);
+    int bad = 0;
+    if (!other_event_raise(&sm, "meter.read", "{\"level\":30}")) {
+        (void)fprintf(stderr, "static_payload_other_event: FAIL - the machine has no meter.read\n");
+        static_payload_other_event_destroy(&sm);
+        return 1;
+    }
+    if (static_payload_other_event_get_level(&sm) != 30u || static_payload_other_event_get_taken(&sm) != 1u) {
+        (void)fprintf(stderr, "static_payload_other_event: FAIL - the reading was not taken: level %u, taken %u\n",
+                      (unsigned)static_payload_other_event_get_level(&sm),
+                      (unsigned)static_payload_other_event_get_taken(&sm));
+        bad = 1;
+    }
+    if (!other_event_raise(&sm, "meter.read.late", NULL)) {
+        (void)fprintf(stderr, "static_payload_other_event: FAIL - the machine has no meter.read.late\n");
+        static_payload_other_event_destroy(&sm);
+        return 1;
+    }
+    if (static_payload_other_event_get_level(&sm) != 30u || static_payload_other_event_get_taken(&sm) != 1u) {
+        (void)fprintf(stderr,
+                      "static_payload_other_event: FAIL - meter.read.late ran content that reads the meter.read "
+                      "payload: level %u, taken %u, want 30 and 1\n",
+                      (unsigned)static_payload_other_event_get_level(&sm),
+                      (unsigned)static_payload_other_event_get_taken(&sm));
+        bad = 1;
+    }
+    if (!static_payload_other_event_in_state(&sm, STATIC_PAYLOAD_OTHER_EVENT_STATE_LISTENING)) {
+        (void)fprintf(stderr, "static_payload_other_event: FAIL - the machine left `listening`\n");
+        bad = 1;
+    }
+    static_payload_other_event_destroy(&sm);
     return bad;
 }
 
@@ -3906,7 +3965,7 @@ int main(void) {
     bad |= static_list_scenario("static_list", 11);
     bad |= static_list_index_scenario("static_list_index", 24);
     bad |= static_list_assign_scenario("static_list_assign", 11);
-    bad |= static_foreach_scenario("static_foreach", 13);
+    bad |= static_foreach_scenario("static_foreach", 15);
     bad |= static_real_scenario("static_real", 13);
     bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
@@ -4016,6 +4075,7 @@ int main(void) {
     bad |= presence_peer_scenario("presence_peer_bob", 21);
     bad |= presence_peer_scenario("presence_peer_server", 12);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
+    bad |= content_that_reads_a_payload_does_not_run_for_another_event_its_descriptor_matches();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();
     bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();
     if (bad != 0) {
