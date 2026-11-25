@@ -51,8 +51,8 @@ PY
 # as the bare call did. Only compiling a consumer can tell the difference.
 mutation_case "the facade expands to the caller's log again" <<'PY'
 edit("backends/rust/runtime/src/helpers/logger.rs",
-     """        $crate::log::error!(target: "sce", $($arg)*)""",
-     """        ::log::error!(target: "sce", $($arg)*)""")
+     """        $crate::log::$level!(target: "sce", $($arg)*)""",
+     """        ::log::$level!(target: "sce", $($arg)*)""")
 PY
 
 # Half three. `$crate::log` is only a path if the runtime actually carries

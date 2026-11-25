@@ -58,7 +58,7 @@ pub fn defer_invoke<S: Copy + PartialEq + Debug>(
     pending: &mut Vec<PendingInvoke<S>>,
     invoke: PendingInvoke<S>,
 ) {
-    log::debug!("InvokeHelper: Deferred invoke {}", invoke.invoke_id);
+    crate::sce_log_debug!("InvokeHelper: Deferred invoke {}", invoke.invoke_id);
     pending.push(invoke);
 }
 
@@ -73,14 +73,14 @@ pub fn cancel_invokes_for_state<S: Copy + PartialEq + Debug>(
     let before = pending.len();
     pending.retain(|p| {
         if p.state == state {
-            log::debug!("InvokeHelper: Cancelled pending invoke {}", p.invoke_id);
+            crate::sce_log_debug!("InvokeHelper: Cancelled pending invoke {}", p.invoke_id);
             false
         } else {
             true
         }
     });
     if pending.len() < before {
-        log::debug!(
+        crate::sce_log_debug!(
             "InvokeHelper: Cancelled {} pending invokes for state",
             before - pending.len()
         );
@@ -102,13 +102,13 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
         return;
     }
 
-    log::debug!("InvokeHelper: Executing {} pending invokes", pending.len());
+    crate::sce_log_debug!("InvokeHelper: Executing {} pending invokes", pending.len());
 
     // §scxml-6.4: Take pending list to prevent iterator invalidation
     let invokes_to_execute = std::mem::take(pending);
 
     for invoke_info in &invokes_to_execute {
-        log::debug!("InvokeHelper: Starting invoke {}", invoke_info.invoke_id);
+        crate::sce_log_debug!("InvokeHelper: Starting invoke {}", invoke_info.invoke_id);
         executor(invoke_info);
     }
 }

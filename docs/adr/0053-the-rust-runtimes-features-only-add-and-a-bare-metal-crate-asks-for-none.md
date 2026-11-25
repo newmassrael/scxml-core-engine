@@ -1,7 +1,8 @@
 # ADR 0053 — The Rust runtime's features only add, and a bare-metal crate asks for none
 
 - Status: Accepted (2026-10-21) and implemented; amended 2026-10-21, when the owner answered the
-  three questions it left open (see the amendment at the end)
+  three questions it left open, and 2026-11-25, when the `log` facade became a feature (see the
+  amendments at the end)
 - Date: 2026-10-21
 - Scope: the `[features]` of `sce-rust-runtime` (`backends/rust/runtime/Cargo.toml`), the `cfg`
   that selects its two profiles in every file of `backends/rust/runtime/src`, the manifests of the
@@ -305,3 +306,48 @@ the slot count is `CAPACITY` either way.
 The template's tests read the new spelling, and the compile probe of a composite element declares
 `std = []` and leaves it off, the build a bare-metal crate gets. No committed generated tree holds
 a bounded collection, so nothing is regenerated for this.
+
+## Amendment, 2026-11-25: the `log` facade is the feature `log`, in `default`
+
+A downstream bare-metal consumer, whose release library is to carry no diagnostic output, found the
+globals of the `log` crate in it (the logger, its state, the level filter and the logger that does
+nothing; nine symbols), linked from this runtime, though it installs no logger. The runtime depended
+on `log` in every build: `pub use log` stood at the crate root without a `cfg`, and each
+`sce_log_*!` macro expanded to `$crate::log::<level>!(target: "sce", ..)` in every profile. A
+crate cannot take a dependency of a crate it depends on away, so only a feature here could.
+
+```toml
+default = ["std", "http-send", "macrostep-diagnostics", "log"]
+log = ["dep:log"]
+```
+
+- **With `log`** nothing changed: the crate depends on `log`, re-exports it as
+  `sce_rust_runtime::log`, and each `sce_log_*!` call is one record at its level under the target
+  `sce`. The five calls of the `invoke` module that named `log::debug!` directly now go through
+  `sce_log_debug!` like every other call of the crate, so their target is `sce` too, where it was
+  the module's path.
+- **Without it** the crate does not depend on `log` and has no re-export, and each `sce_log_*!`
+  expands to a branch never taken that holds `format_args!` of the call's arguments: the call is
+  type-checked as before, so a call site that compiles in one build compiles in the other, and its
+  arguments are not evaluated. The choice is made by a `cfg` on the definition of the macros' one
+  expansion (`__sce_log!`, `helpers::logger`), which is read in the runtime's build; a `cfg!` in
+  the body of an exported macro would read the features of the crate that calls it.
+- **A consumer who writes nothing keeps every record**: the feature is in `default`. A crate that
+  writes `default-features = false` has stated what it asks for, as with `macrostep-diagnostics`,
+  and names `log` when it installs a logger and wants the engine's records. In this repository the
+  crates that install one name it: `sce-rust-tests` (its tests' `env_logger`),
+  `sce-rust-peer-capi` and `sce-rust-relay-server` (the sinks they install, which reach the
+  runtime only through crates that ask for `std` alone). The library crates that ask for `std`
+  alone do not ask for it, and the application that links them decides.
+- **It only adds.** A crate that names `sce_rust_runtime::log` asks for the feature and still
+  compiles in a build where another crate asked for nothing; a crate that calls `sce_log_*!`
+  compiles in both.
+
+What holds it: `backends/rust/runtime/tests/the_runtime_logs_only_with_the_log_feature.rs`, with
+one half for each build (the default build runs the half that reads the records a capturing logger
+was handed; the `nostd-mcu` gate's `--no-default-features --features std` run is the other half,
+which holds that a call evaluates none of its arguments), and the feature-unification probe, whose
+application crate reads `sce_rust_runtime::log` in the host build of the union and whose
+bare-metal crate calls `sce_log_debug!` in both its builds, the thumb one without the facade. The
+footprint probe's bare-metal images no longer link the facade, so their figures may move; the
+`nostd-mcu` gate weighs them on its next run.

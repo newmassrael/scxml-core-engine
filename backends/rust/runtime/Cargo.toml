@@ -26,7 +26,7 @@ description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, help
 # beside an application crate: each built alone, and `cargo check --workspace`
 # stopped at this crate. No feature here removes a name or refuses another
 # feature, and `default` is what a consumer who writes nothing gets.
-default = ["std", "http-send", "macrostep-diagnostics"]
+default = ["std", "http-send", "macrostep-diagnostics", "log"]
 
 # The application profile: the crate links `std`, holds its owned strings and
 # lists in `String` and `Vec`, and carries what needs an allocator or an
@@ -73,6 +73,26 @@ http-send = ["std"]
 
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
 test-clock = []
+
+# The runtime's own diagnostics through the `log` facade: the `sce_log_debug!`
+# family writes each record under the target `sce`, and the crate re-exports
+# `log` as `sce_rust_runtime::log`, the path those macros expand to.
+#
+# Without it the crate does not depend on `log` at all, and each `sce_log_*!`
+# expands to code that type-checks its arguments and never runs, so an image
+# that is to carry no diagnostic output links none of the facade's globals (the
+# logger, its state and the level filter). A downstream bare-metal consumer
+# found nine of those symbols in its release library, linked from a runtime it
+# installs no logger for (2026-11).
+#
+# It is in `default`, so a consumer who writes nothing keeps every record it
+# had. A crate that writes `default-features = false` and installs a logger
+# names it: in this repository `sce-rust-tests` (its tests' `env_logger`),
+# `sce-rust-peer-capi` and `sce-rust-relay-server` (the sinks they install).
+# It only adds (docs/adr/0053, amendment of 2026-11-25): a crate that names
+# `sce_rust_runtime::log` asks for it, and still compiles in a build where
+# another crate asked for nothing.
+log = ["dep:log"]
 
 # §scxml-3.13: the macrostep ceiling REPORTS itself, and this feature is the
 # report — never the ceiling.
@@ -157,7 +177,9 @@ test-component = ["std"]
 record-cbor = ["std", "dep:sce-forge-runtime"]
 
 [dependencies]
-log = { workspace = true }
+# The facade of the `log` feature above; optional, so a build without the
+# feature does not compile it and its image carries none of its globals.
+log = { workspace = true, optional = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to
 # `cfg(feature = "std")`). `default-features = false` drops the
 # crate's `std` feature so a `--no-default-features --target=thumbv7em-none-eabihf`

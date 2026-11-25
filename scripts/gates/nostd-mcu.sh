@@ -37,7 +37,8 @@ cargo clippy -p sce-rust-runtime --no-default-features \
     || sce_gate_fail "no_std runtime clippy"
 
 # The `std` profile with none of the features that add to it (docs/adr/0053):
-# no `http-send`, so no BasicHTTP processor, and no `macrostep-diagnostics`.
+# no `http-send`, so no BasicHTTP processor, no `macrostep-diagnostics`, and
+# no `log`, so no facade under the `sce_log_*!` macros.
 # Every other build of the runtime in this repository has both, through
 # `default` or through the workspace's union, so a `cfg` that only this build
 # reads — the refusal of a BasicHTTP send, the bound without its report on a
@@ -48,7 +49,10 @@ cargo clippy -p sce-rust-runtime --no-default-features \
 # §4.4): the workspace's union turns it on for the crates that compile test
 # components, and only here is the runtime built without it, where
 # `microstep_algorithms`'s `a_build_without_the_test_component_feature` holds
-# that the machine a microstep drives has no take step to call.
+# that the machine a microstep drives has no take step to call. So does the
+# half of `the_runtime_logs_only_with_the_log_feature` without the runtime's
+# `log` feature: the `sce_log_*!` macros then write nothing and evaluate
+# none of their arguments.
 sce_gate_step "std runtime without http-send or the macrostep report: clippy + tests"
 cargo clippy -p sce-rust-runtime --no-default-features --features std \
     --all-targets -- -D warnings \
