@@ -295,6 +295,7 @@ pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // The reader a generated decode reads one frame through (docs/adr/0128), spelled
 // from the same path as the cursor it starts from.
 pub use crate::reader::SceReader;
+pub use crate::records::{show_entry, ChainHook, ChainSite, Record, RecordRead, Records};
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};

@@ -341,6 +341,17 @@ impl<'a> SceReader<'a> {
         self.pos
     }
 
+    /// The bytes consumed since `at`, a [`Self::mark`] of this reader: what one
+    /// entry occupies (docs/adr/0130). Empty once the frame has failed, whose
+    /// bytes from there are not the frame's.
+    pub fn since(&self, at: usize) -> &'a [u8] {
+        if self.fault.is_some() {
+            return &[];
+        }
+        let buf = self.buf;
+        buf.get(at..self.pos).unwrap_or(&[])
+    }
+
     /// Go back to `at`, a [`Self::mark`] of this reader. What the reader
     /// recorded stays: a failed frame stays failed, and its input ended.
     pub fn rewind(&mut self, at: usize) {

@@ -65,6 +65,9 @@ pub mod queue;
 /// The reader a generated decode reads one frame through, every read total and
 /// the frame's verdict said once (docs/adr/0128), re-exported from [`codec`].
 pub mod reader;
+/// A sequence of frames read one record at a time, and the hook a chain's entries
+/// are shown to as they are read (docs/adr/0130), re-exported from [`codec`].
+pub mod records;
 pub mod storage;
 /// The fence of a text template's untrusted hole (docs/adr/0087, section 3.1):
 /// every marker removed from the value, in place, with no allocator.
