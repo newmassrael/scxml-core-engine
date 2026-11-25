@@ -27,8 +27,8 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, Entered, EventId, HistoryId, NoHistory,
-    RunStore, SelectionRows, StateId, StateKind, StatePolicy, StateRow, StepFunction,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, Entered, EventId, HistoryId,
+    NoHistory, RunStore, SelectionRows, StateId, StateKind, StatePolicy, StateRow, StepFunction,
     StepFunctionForm, Steps, Target, TransitionId, TransitionRow, TriggerEvent, TriggerRow,
     WalkProcedures, Workspace, GENERAL_WALK, NO_WALK,
 };
@@ -275,7 +275,7 @@ impl<const PRINTED: bool> StatePolicy for Doc<PRINTED> {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         is_default_entry: bool,
     ) {
         let name = Self::get_state_name(Self::state_of(state));
@@ -286,7 +286,7 @@ impl<const PRINTED: bool> StatePolicy for Doc<PRINTED> {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         let name = Self::get_state_name(Self::state_of(state));
         self.record(format!("exit {name}"));
@@ -298,7 +298,7 @@ impl<const PRINTED: bool> StatePolicy for Doc<PRINTED> {
         &mut self,
         transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> bool {
         self.record(format!("guard {}", transition.index()));
         transition != IDLE_GO_NEVER && transition != BUSY_EVENTLESS_NEVER
@@ -308,7 +308,7 @@ impl<const PRINTED: bool> StatePolicy for Doc<PRINTED> {
         &mut self,
         transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         self.record(format!("content {}", transition.index()));
     }
