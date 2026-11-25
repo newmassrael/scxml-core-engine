@@ -36,7 +36,7 @@
 //!
 //! Atomic A (this file) authors the trait and its two default impls; it
 //! wires the trait into `Engine` via two consumer methods
-//! ([`crate::Engine::hal_now_ticks_ms`], [`crate::Engine::hal_wake`]) so the
+//! ([`crate::EngineState::hal_now_ticks_ms`], [`crate::EngineState::hal_wake`]) so the
 //! HAL is reachable from the public Engine API today. Atomic B will adopt
 //! `heapless::*` collections and re-express `PullScheduler` against the HAL
 //! tick source.

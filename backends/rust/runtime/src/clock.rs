@@ -38,7 +38,7 @@
 /// so there time is the host's from the first call: it moves the engine with
 /// [`Engine::advance_time_ms`](crate::Engine::advance_time_ms), or installs its
 /// own reading with [`SceClock::Source`] through
-/// [`Engine::set_clock`](crate::Engine::set_clock) before `initialize`.
+/// [`EngineState::set_clock`](crate::EngineState::set_clock) before `initialize`.
 ///
 /// Deliberately not `PartialEq`: two [`SceClock::Source`]s are the same clock
 /// when they read the same time source, and comparing the function pointers
@@ -81,7 +81,7 @@ pub enum SceClock {
     /// For a host whose time source is neither the policy's HAL nor its own
     /// bookkeeping — an RTOS tick counter reached through a C symbol, a media
     /// clock, a simulation running faster than real time. Must be
-    /// non-decreasing, for the reason on [`Engine::now_ms`](crate::Engine::now_ms).
+    /// non-decreasing, for the reason on [`EngineState::now_ms`](crate::EngineState::now_ms).
     ///
     /// A plain `fn` pointer rather than a closure so the variant stays `Copy`
     /// and allocation-free; a host needing captured state puts it behind the

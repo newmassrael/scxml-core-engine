@@ -7439,6 +7439,11 @@
           "file": "sce/include/model/IStateNode.h",
           "symbol": "setDoneDataContentInlineText",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9291,6 +9296,11 @@
         {
           "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11956,6 +11966,11 @@
         {
           "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -15873,6 +15888,11 @@
         {
           "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -16802,6 +16822,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "enter_entry_set",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
           "kind": "references"
         }
       ],

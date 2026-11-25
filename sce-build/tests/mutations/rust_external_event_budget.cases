@@ -110,8 +110,8 @@ PY
 
 mutation_case "the scheduler's same-instant pops have no budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call {",
-     "                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call && false {")
+     "                        >= self.state.core.main_loop.max_external_events_per_call\n                    {",
+     "                        >= self.state.core.main_loop.max_external_events_per_call\n                        && false\n                    {")
 PY
 
 # The bound must count entries due AT the reading, not every entry popped at it.

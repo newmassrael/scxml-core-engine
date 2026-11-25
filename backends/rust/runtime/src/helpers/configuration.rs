@@ -3,7 +3,7 @@
 
 //! §scxml-3.11: is a state chain a configuration THIS document can hold?
 //!
-//! [`Engine::get_active_states`](crate::Engine::get_active_states) publishes the
+//! [`EngineState::get_active_states`](crate::EngineState::get_active_states) publishes the
 //! configuration a machine is in, and [`Engine::enter_at`](crate::Engine::enter_at)
 //! is the door that takes one back. This module owns the question between them,
 //! and it is the only place that asks it.

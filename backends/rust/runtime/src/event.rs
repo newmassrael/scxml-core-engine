@@ -123,7 +123,7 @@ impl EventOrigin {
 /// caller pushes to, and the script-visible `_event.type` is decided by the
 /// engine where it DEQUEUES the event — the one moment the queue is known —
 /// through [`EventType::classify`] and
-/// [`Engine::is_current_event_external`](crate::Engine::is_current_event_external)
+/// [`EngineState::is_current_event_external`](crate::EngineState::is_current_event_external)
 /// (2026-09-26; before that an enqueue-time flag typed interleaved events
 /// wrongly). So this field is a second producer nothing reads, which is why
 /// [`platform`](Self::platform) and [`internal`](Self::internal) below have no
@@ -181,7 +181,7 @@ pub struct EventMetadata {
     #[cfg(feature = "std")]
     pub invoke_id: SceString,
     /// The token of the host-run invocation this event completes, set only by
-    /// `Engine::complete_host_invoke` after it confirmed the invocation was
+    /// `EngineState::complete_host_invoke` after it confirmed the invocation was
     /// still running. A host invoke's `done.invoke.<id>` that arrives without
     /// one did not come through that check, so the engine refuses it
     /// (§scxml-6.4). Not script-visible: `_event` has no field for it.

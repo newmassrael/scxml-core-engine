@@ -3479,6 +3479,11 @@
           "file": "sce-build/src/cli/mod.rs",
           "symbol": "cmd_generate",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineState",
+          "kind": "implements"
         }
       ]
     },

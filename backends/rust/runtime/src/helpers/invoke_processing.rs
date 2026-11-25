@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use crate::event::EventMetadata;
 use crate::invoke::ChildSession;
 use crate::policy::StatePolicy;
-use crate::Engine;
+use crate::{Engine, EngineState};
 
 /// Type alias for the shared child-to-parent event queue.
 ///
@@ -77,7 +77,7 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
     queue: &Option<ParentEventQueue>,
     active_invokes: &HashMap<String, ChildSession>,
     invoke_key: &str,
-    engine: &mut Engine<P>,
+    engine: &mut EngineState<P>,
 ) {
     let parent_events: Vec<(String, String)> = if let Some(ref q) = queue {
         let mut locked = q.lock().unwrap();
@@ -98,7 +98,7 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
         let mut metadata = EventMetadata::sent_by_session("", sender);
         metadata.data = ev_data;
         metadata.invoke_id = child.map_or_else(String::new, |cs| cs.invoke_id.clone());
-        if let Some(meta) = Engine::<P>::arriving_event(&ev_name, metadata) {
+        if let Some(meta) = EngineState::<P>::arriving_event(&ev_name, metadata) {
             engine.raise_external_with_meta(meta);
         }
     }
@@ -110,13 +110,13 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
 /// This handles both event naming patterns at runtime, replacing conditional template logic.
 ///
 /// `donedata` is the child's stashed top-level `<final>` payload (from
-/// [`Engine::donedata_at_final`](crate::Engine::donedata_at_final)). It is
+/// [`EngineState::donedata_at_final`](crate::EngineState::donedata_at_final)). It is
 /// lifted onto `_event.data` per §scxml-5.5 + 6.3.1. Pass an empty string
 /// when the child has no `<donedata>`.
 pub fn raise_done_invoke<P: StatePolicy>(
     invoke_id: &str,
     donedata: String,
-    engine: &mut Engine<P>,
+    engine: &mut EngineState<P>,
 ) {
     let specific = format!("done.invoke.{}", invoke_id);
     // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
@@ -126,7 +126,7 @@ pub fn raise_done_invoke<P: StatePolicy>(
         data: donedata,
         ..Default::default()
     };
-    if let Some(meta) = Engine::<P>::arriving_event(&specific, metadata) {
+    if let Some(meta) = EngineState::<P>::arriving_event(&specific, metadata) {
         engine.raise_external_with_meta(meta);
     }
 }

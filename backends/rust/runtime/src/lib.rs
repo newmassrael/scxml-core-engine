@@ -19,7 +19,9 @@
 //! `sce-codegen generate -l rust`. This crate provides:
 //!
 //! - [`StatePolicy`]: the trait contract generated code implements
-//! - [`Engine`]: the execution engine parameterized on a `StatePolicy`
+//! - [`Engine`]: the execution engine parameterized on a `StatePolicy`, and
+//!   [`EngineState`], everything of it but the policy, which a policy's hooks
+//!   are handed
 //! - `scripting::IScriptEngine`: trait for runtime ECMAScript evaluation
 //!   (implementations: [`sce-rust-lua`](../sce_rust_lua/index.html))
 //! - `helpers::*`: W3C algorithm helpers (LCA, entry/exit chains, conflict
@@ -81,14 +83,14 @@
 //!   `#![no_std]` with no allocator, the bare-metal profile a crate for a
 //!   microcontroller selects with `default-features = false`.
 //! - `http-send` (default): the BasicHTTP event processor (the `http`
-//!   module, `Engine::set_http_send_callback`); asks for `std`. A `std` build
+//!   module, `EngineState::set_http_send_callback`); asks for `std`. A `std` build
 //!   without it refuses a BasicHTTP send with `error.execution`, as it refuses
 //!   any type it does not support.
 //! - `macrostep-diagnostics` (default): the macrostep report, and the
 //!   accessors that read it (`truncated_macrosteps` and its siblings). The
 //!   bound it reports on is in every build; a bare-metal crate that reads the
 //!   report asks for this feature.
-//! - `transition-observer`: `Engine::set_transition_observer`, which tells a
+//! - `transition-observer`: `EngineState::set_transition_observer`, which tells a
 //!   host each transition the engine takes by the row of its emitted
 //!   transition table (docs/adr/0089). Without it the engine holds no field
 //!   and makes no call for it.
@@ -584,7 +586,6 @@ pub mod transition_observer;
 pub use action_realization::ActionRealization;
 pub use clock::SceClock;
 pub use donedata_storage::{DoneDataStorage, NoDoneData};
-pub use engine::Engine;
 pub use engine::PullScheduler;
 /// §scxml-6.2.4: why [`Engine::initialize_as_root`] refused a start.
 pub use engine::RootStartRefusal;
@@ -594,6 +595,7 @@ pub use engine::ScheduledRoute;
 /// §scxml-6.2.4: what became of a send handed to [`Engine::send_to_target`].
 #[cfg(feature = "std")]
 pub use engine::TargetSendOutcome;
+pub use engine::{Engine, EngineState};
 /// docs/adr/0090: the reply address an event carries, which the processor that
 /// delivers it writes and a host names in its own terms.
 #[cfg(feature = "std")]
@@ -676,7 +678,7 @@ pub use scheduler_storage::{NoDelayedSends, SchedulerStorage};
 pub use script_session::{ScriptSessionFailure, ScriptSessionStage};
 #[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};
-/// docs/adr/0089: what the observer `Engine::set_transition_observer` takes is
+/// docs/adr/0089: what the observer `EngineState::set_transition_observer` takes is
 /// told, named at the crate root beside the engine it observes.
 #[cfg(feature = "transition-observer")]
 pub use transition_observer::TransitionTaken;

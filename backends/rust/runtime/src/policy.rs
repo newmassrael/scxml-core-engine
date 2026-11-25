@@ -54,7 +54,7 @@ use crate::helpers::hierarchy::Bounded;
 use crate::helpers::microstep::Buffers;
 use crate::helpers::run_store::RunStorage;
 use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
-use crate::Engine;
+use crate::EngineState;
 
 /// A text or byte string of data a host lent that is past the bound its schema
 /// states (docs/adr/0124, D2): the field, the bytes it holds and the bound.
@@ -173,7 +173,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// HAL impl bound to this policy (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984).
     ///
-    /// Determines which [`Hal`] impl the [`Engine`] dispatches `ticks` /
+    /// Determines which [`Hal`] impl the [`Engine`](crate::Engine) dispatches `ticks` /
     /// `wake` / `irq-save` calls through. Generated code emits
     /// `type Hal = sce_rust_runtime::StdHal;` per policy under the default
     /// host backend; the future `sce-codegen generate -l rust --no-std` flag
@@ -237,7 +237,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// The scheduler keeps a `send_id` per pending entry purely so `<cancel>`
     /// can find and drop the matching one; the id is read only by
-    /// [`Engine::cancel_event`](crate::Engine::cancel_event) and never reaches a
+    /// [`EngineState::cancel_event`](crate::EngineState::cancel_event) and never reaches a
     /// fired event's metadata (the timer drain passes an empty `send_id`). A
     /// document with no `<cancel>` therefore never reads it, so generated code
     /// emits the zero-size [`ElidedSendId`](crate::ElidedSendId) and the no_std
@@ -259,7 +259,7 @@ pub trait StatePolicy: Sized + 'static {
     /// every generated policy emits it.
     type ScheduledSendId: crate::ScheduledSendIdLike;
 
-    /// The delayed-send queue the [`Engine`] keeps for this machine, chosen by
+    /// The delayed-send queue the [`Engine`](crate::Engine) keeps for this machine, chosen by
     /// what the document uses.
     ///
     /// - [`NoDelayedSends`](crate::NoDelayedSends), zero-size, for a document
@@ -280,7 +280,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Where the payload of a top-level `<final>`'s `<donedata>` waits for the
     /// parent that lifts it onto `done.invoke.<id>`
-    /// ([`Engine::donedata_at_final`]).
+    /// ([`EngineState::donedata_at_final`]).
     ///
     /// [`SceString`](crate::SceString) for a document with such a `<donedata>`,
     /// and the zero-size [`NoDoneData`](crate::NoDoneData), which reads as the
@@ -331,7 +331,7 @@ pub trait StatePolicy: Sized + 'static {
     /// this document needs: `RunStore<CONFIGURATION, RECORDS, HISTORIES>`.
     type RunStore: RunStorage;
 
-    /// The configuration as [`Engine::get_active_states`] returns it (§scxml-3.4):
+    /// The configuration as [`EngineState::get_active_states`] returns it (§scxml-3.4):
     /// `BoundedVec<State, N>` with `N` the most states one configuration holds,
     /// a `Vec` under std and a `heapless::Vec` of exactly that capacity without
     /// it.
@@ -388,7 +388,7 @@ pub trait StatePolicy: Sized + 'static {
     /// end: a consumer can branch on it to decide whether its driving loop
     /// needs a clock, and the engine counts the macrosteps taken while nothing
     /// polled the scheduler (see
-    /// [`unattended_scheduler_steps`](crate::Engine::unattended_scheduler_steps)).
+    /// [`unattended_scheduler_steps`](crate::EngineState::unattended_scheduler_steps)).
     ///
     /// The same fact reaches CLI consumers as the generate manifest's
     /// `needs_event_scheduler`; before this constant, a `build.rs` consumer of
@@ -446,7 +446,8 @@ pub trait StatePolicy: Sized + 'static {
     // because the data is baked into the generated source.
     // ──────────────────────────────────────────────
 
-    /// The state the engine names before [`Engine::initialize`] enters the
+    /// The state the engine names before
+    /// [`Engine::initialize`](crate::Engine::initialize) enters the
     /// initial configuration, and the state enum's `Default` (§scxml-3.2).
     ///
     /// Not what `initialize` enters: that is the document's initial transition
@@ -562,7 +563,7 @@ pub trait StatePolicy: Sized + 'static {
     /// (§scxml-6.4.1), emitted when the build declared one.
     ///
     /// Their `done.invoke.<id>` is accepted only through
-    /// `Engine::complete_host_invoke` (a plain label: that method does not
+    /// `EngineState::complete_host_invoke` (a plain label: that method does not
     /// exist on the no_std profile, where this constant still does), the one
     /// path that knows the invocation is still running; the engine
     /// refuses one raised any other way. Empty — nothing refused — for a
@@ -616,7 +617,11 @@ pub trait StatePolicy: Sized + 'static {
     //
     // These mirror C++ policy methods that take `Engine&` as a parameter.
     // Generated code mutates the policy via `&mut self` and calls engine
-    // methods through the `engine` parameter. Each answers for ONE state or
+    // methods through the `engine` parameter, the engine's `EngineState`:
+    // everything of the engine but the policy, borrowed apart from it, so the
+    // two references a hook holds are to two places (docs/adr/0131). A method
+    // that needs the policy is `Engine`'s and is not reachable from a hook,
+    // where the policy is `self` already. Each answers for ONE state or
     // ONE transition: which states a microstep exits and enters, and in which
     // order, is the engine's Appendix D procedure, not the policy's.
     //
@@ -642,7 +647,7 @@ pub trait StatePolicy: Sized + 'static {
     /// selection — which has no event of its own, so a policy binds nothing
     /// for it. The default binds nothing: a document whose guards never read
     /// `_event` has nothing to bind.
-    fn bind_current_event(&mut self, _event: EventId, _engine: &mut Engine<Self>) {}
+    fn bind_current_event(&mut self, _event: EventId, _engine: &mut EngineState<Self>) {}
 
     /// Appendix D selectTransitions, the half only the document can answer:
     /// the first of `state`'s own transitions, in document order, that `event`
@@ -661,7 +666,7 @@ pub trait StatePolicy: Sized + 'static {
         state: StateId,
         event: EventId,
         event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
     ) -> Option<TransitionId>;
 
     /// Whether a transition of the document takes something before the
@@ -685,7 +690,7 @@ pub trait StatePolicy: Sized + 'static {
     /// [`TAKES_TRANSITIONS`](StatePolicy::TAKES_TRANSITIONS) holds; the
     /// default takes nothing. Only with the crate's `test-component` feature.
     #[cfg(feature = "test-component")]
-    fn take_transition(&mut self, _transition: TransitionId, _engine: &mut Engine<Self>) {}
+    fn take_transition(&mut self, _transition: TransitionId, _engine: &mut EngineState<Self>) {}
 
     /// Execute one transition's executable content (§scxml-3.13 — run between
     /// the microstep's exits and its entries).
@@ -697,7 +702,7 @@ pub trait StatePolicy: Sized + 'static {
         &mut self,
         transition: TransitionId,
         event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
     );
 
     /// Enter `state` (§scxml-3.8): run its `<onentry>`, and its initial
@@ -722,7 +727,7 @@ pub trait StatePolicy: Sized + 'static {
         &mut self,
         state: StateId,
         event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         is_default_entry: bool,
     );
 
@@ -738,7 +743,7 @@ pub trait StatePolicy: Sized + 'static {
         &mut self,
         state: StateId,
         event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
     );
 
     /// §scxml-3.10.2: a `<history>`'s default transition content, run after
@@ -751,7 +756,7 @@ pub trait StatePolicy: Sized + 'static {
         &mut self,
         _history: HistoryId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -770,7 +775,7 @@ pub trait StatePolicy: Sized + 'static {
     /// and the engine refuses the start (docs/adr/0096).
     fn initialize_data_model(
         &mut self,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Result<(), Self::StartFailure> {
         Ok(())
     }
@@ -778,7 +783,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Execute any pending `<invoke>` elements deferred during entry (§scxml-6.4).
     ///
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true`.
-    fn execute_pending_invokes(&mut self, _engine: &mut Engine<Self>) {}
+    fn execute_pending_invokes(&mut self, _engine: &mut EngineState<Self>) {}
 
     /// The state whose `<invoke>` the document gives the id `invoke_id`
     /// (§scxml-6.4), or `None` when it has no such invoke — what a restore
@@ -823,7 +828,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
     /// saves. `std` only, as the saved state is.
     #[cfg(feature = "std")]
-    fn restart_invoke(&mut self, _invoke_id: &str, _engine: &mut Engine<Self>) {}
+    fn restart_invoke(&mut self, _invoke_id: &str, _engine: &mut EngineState<Self>) {}
 
     /// How many times each `<invoke>` that has started in this session has
     /// started, by the id the document gives it, in document order
@@ -865,7 +870,7 @@ pub trait StatePolicy: Sized + 'static {
     fn resume_child(
         &mut self,
         child: &crate::saved_state::SavedChild,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         _wall_now_ms: u64,
     ) -> Result<(), crate::saved_state::StateRefusal> {
         Err(crate::saved_state::StateRefusal::new(format!(
@@ -876,17 +881,18 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Ask `engine`'s factory of children's routers for the router of each
     /// running child a restore resumed and no factory has been asked for yet
-    /// ([`Engine::start_owed_child_mesh`]; docs/adr/0043, docs/adr/0045). The
+    /// ([`EngineState::start_owed_child_mesh`]; docs/adr/0043, docs/adr/0045). The
     /// engine calls it when that factory is registered or installed.
     ///
     /// Generated only when the document has an `<invoke type="scxml">` and
     /// saves. A policy with no children to resume has none to ask for, which
     /// is what the default says.
     #[cfg(feature = "std")]
-    fn start_owed_child_meshes(&mut self, _engine: &mut Engine<Self>) {}
+    fn start_owed_child_meshes(&mut self, _engine: &mut EngineState<Self>) {}
 
     /// Hand `invokers`, the tree's host invokers, to every child this session
-    /// holds ([`Engine::adopt_host_invokers`]; docs/adr/0045).
+    /// holds ([`Engine::adopt_host_invokers`](crate::Engine::adopt_host_invokers);
+    /// docs/adr/0045).
     ///
     /// Generated when the document has an `<invoke type="scxml">`. A policy
     /// with no children has none to hand them to, which is what the default
@@ -896,7 +902,8 @@ pub trait StatePolicy: Sized + 'static {
     }
 
     /// Hand `tree`, the inboxes of the tree, to every child this session
-    /// holds ([`Engine::adopt_tree_inboxes`]; ARCHITECTURE.md "Engine
+    /// holds ([`Engine::adopt_tree_inboxes`](crate::Engine::adopt_tree_inboxes);
+    /// ARCHITECTURE.md "Engine
     /// Threading", item 3).
     ///
     /// Generated when the document has an `<invoke type="scxml">`. A policy
@@ -907,7 +914,8 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Route `ending`, a host's ending of a host-run invocation of session
     /// `session_id`, to the child that is that session or holds it in its
-    /// tree ([`Engine::route_host_invoke_end`]; docs/adr/0045). `None` when
+    /// tree ([`Engine::route_host_invoke_end`](crate::Engine::route_host_invoke_end);
+    /// docs/adr/0045). `None` when
     /// no child is or holds that session.
     ///
     /// Generated when the document has an `<invoke type="scxml">`. A policy
@@ -929,7 +937,7 @@ pub trait StatePolicy: Sized + 'static {
     fn execute_finalize_for_child_event(
         &mut self,
         _event: &EventWithMetadata<Self::Event, Self::Payload>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -1004,7 +1012,7 @@ pub trait StatePolicy: Sized + 'static {
         &mut self,
         _event_name: &str,
         _metadata: &EventMetadata,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -1012,7 +1020,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_CHILD_TICK` is `true`. Called from
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
-    fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
+    fn tick_children(&mut self, _engine: &mut EngineState<Self>) {}
 
     /// §scxml-6.4: the nearest deadline of any running child, in milliseconds
     /// from now, or `None` when no child has one.
@@ -1030,7 +1038,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// §scxml-6.4: move every running child's host-owned clock to `clock`,
     /// the parent's, as the parent opens a turn — see
-    /// [`Engine::follow_clock`](crate::Engine::follow_clock).
+    /// [`EngineState::follow_clock`](crate::EngineState::follow_clock).
     ///
     /// A policy that invokes nothing has no child to move, which is what the
     /// default says.
@@ -1059,7 +1067,7 @@ pub trait StatePolicy: Sized + 'static {
         _event_name: &str,
         _event_data: &str,
         _sender: &str,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> bool {
         false
     }
@@ -1125,7 +1133,7 @@ pub trait StatePolicy: Sized + 'static {
         _event_name: &str,
         _event_data: &str,
         _sender: &str,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> bool {
         false
     }
