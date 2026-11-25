@@ -57,6 +57,11 @@ GENMC_ROOT="${GENMC_ROOT:-$HOME/.local/genmc/$GENMC_REV}"
 GENMC="$GENMC_ROOT/bin/genmc"
 [[ -x "$GENMC" ]] || sce_gate_fail "genmc $GENMC_REV is not installed at $GENMC; run scripts/install_genmc.sh on this host"
 
+# The harnesses are listed by glob, and a part of the runs is chosen by its place
+# in that list (IN PARTS, below), so the list is sorted the same way on every
+# machine.
+LC_COLLATE=C
+
 HARNESS_DIR=backends/c/forge-runtime/tests/genmc
 HOST_ATOMICS=backends/c/forge-runtime/tests/conformance/sce_atomic_host.c
 CXX_HARNESS_DIR=backends/cpp/forge-runtime/tests/genmc
@@ -268,9 +273,35 @@ mkdir -p "$RUN_DIR"
 RUN_IDS=()
 PARALLEL="$(sce_build_jobs)"
 
+# ── IN PARTS (ADR 0120, D3) ───────────────────────────────────────
+#
+# When SCE_GENMC_QUEUE_SHARD names `k/N`, as the lane's jobs and a landing's
+# units do, this gate starts the runs whose place in the order below is k modulo
+# N, and judges everything else as it does whole: every harness is read and every
+# mutant's program is checked to match, in every part. The order is the one the
+# loops below name the runs in, over harnesses listed in the C locale's order
+# (`LC_COLLATE` above), so every part counts the same runs the same way, and the
+# parts are every run once. Whole, the 189 runs took 1006 s of a 1236 s job on
+# a hosted runner, two or three at a time (job 138783228903, 2026-11-24), and
+# one run is seconds, so a part is a third of that.
+SHARD_INDEX=0
+SHARD_COUNT=0
+if [[ -n "${SCE_GENMC_QUEUE_SHARD:-}" ]]; then
+    [[ "$SCE_GENMC_QUEUE_SHARD" =~ ^([0-9]+)/([0-9]+)$ ]] \
+        && (( BASH_REMATCH[1] >= 1 && BASH_REMATCH[1] <= BASH_REMATCH[2] )) \
+        || sce_gate_fail "SCE_GENMC_QUEUE_SHARD is k/N with 1 <= k <= N, got '$SCE_GENMC_QUEUE_SHARD'"
+    SHARD_INDEX="${BASH_REMATCH[1]}"
+    SHARD_COUNT="${BASH_REMATCH[2]}"
+fi
+RUNS_NAMED=0
+
 start_run() {
     local id="$1"
     shift
+    RUNS_NAMED=$((RUNS_NAMED + 1))
+    if (( SHARD_COUNT > 0 && (RUNS_NAMED - 1) % SHARD_COUNT != SHARD_INDEX - 1 )); then
+        return 0
+    fi
     RUN_IDS+=("$id")
     while (( $(jobs -pr | wc -l) >= PARALLEL )); do
         wait -n || true
@@ -385,4 +416,9 @@ for id in "${RUN_IDS[@]}"; do
 done
 (( ${#failed[@]} == 0 )) || sce_gate_fail "${#failed[@]} of ${#RUN_IDS[@]} GenMC run(s) failed: ${failed[*]}"
 
-echo "genmc-queue: $checked harness(es) pass and every required mutant is caught"
+if (( SHARD_COUNT > 0 )); then
+    (( ${#RUN_IDS[@]} > 0 )) || sce_gate_fail "part $SHARD_INDEX of $SHARD_COUNT started none of the $RUNS_NAMED run(s)"
+    echo "genmc-queue: part $SHARD_INDEX of $SHARD_COUNT, ${#RUN_IDS[@]} of the $RUNS_NAMED run(s) of $checked harness(es), pass and catch every required mutant"
+else
+    echo "genmc-queue: $checked harness(es) pass and every required mutant is caught"
+fi

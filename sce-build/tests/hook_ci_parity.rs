@@ -2312,3 +2312,65 @@ fn the_embed_vendor_parts_are_its_checks_each_once() {
         "{EMBED_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
     );
 }
+
+// ── Every sharded job lists each of its shards once ─────────────────────────
+
+/// A job that hands its gate `<VARIABLE>_SHARD: ${{ matrix.shard }}/N` runs a
+/// matrix of exactly `1..=N`: a shard it lists past N is refused by the gate,
+/// one it leaves out runs in no job, and one listed twice runs twice. Read from
+/// every workflow, so a lane split tomorrow is held without an edit here.
+#[test]
+fn every_sharded_job_lists_each_of_its_shards_once() {
+    let dir = repo_root().join(".github/workflows");
+    let mut sharded = 0usize;
+    for entry in fs::read_dir(&dir).expect("the workflows directory is readable") {
+        let path = entry.expect("a directory entry").path();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        if !name.ends_with(".yml") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        for (job, lines) in workflow_jobs(&text) {
+            let Some(count) = lines.iter().find_map(|l| {
+                let (variable, value) = l.trim().split_once(':')?;
+                if !variable.ends_with("_SHARD") || variable.contains(' ') {
+                    return None;
+                }
+                value
+                    .trim()
+                    .strip_prefix("${{ matrix.shard }}/")?
+                    .parse::<usize>()
+                    .ok()
+            }) else {
+                continue;
+            };
+            sharded += 1;
+            let listed: Vec<usize> = lines
+                .iter()
+                .find_map(|l| l.trim().strip_prefix("shard:"))
+                .map(|list| {
+                    list.trim()
+                        .trim_start_matches('[')
+                        .trim_end_matches(']')
+                        .split(',')
+                        .filter_map(|n| n.trim().parse().ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+            assert_eq!(
+                listed,
+                (1..=count).collect::<Vec<_>>(),
+                "{name}'s job `{job}` hands its gate {count} shard(s) and its `shard:` matrix \
+                 is {listed:?}"
+            );
+        }
+    }
+    assert!(
+        sharded >= 8,
+        "only {sharded} sharded job(s) found in .github/workflows; the reading broke"
+    );
+}

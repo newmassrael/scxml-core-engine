@@ -61,10 +61,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The runs in three parts, one job each: every harness and mutant is read in
+  # each part, and a part starts every third run of the order the gate names
+  # them in ("IN PARTS" in scripts/gates/genmc-queue.sh). Whole, the 189 runs
+  # took 1006 s of a 1236 s job, two or three at a time (job 138783228903,
+  # 2026-11-24), so a part is about six minutes beside the build dependencies
+  # and the cached GenMC every job restores.
   genmc-queue:
-    name: GenMC Queue
+    name: GenMC Queue (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
       - name: Checkout Repository
@@ -91,4 +102,6 @@ jobs:
         run: scripts/install_genmc.sh
 
       - name: GenMC queue gate
+        env:
+          SCE_GENMC_QUEUE_SHARD: ${{ matrix.shard }}/3
         run: scripts/gate genmc-queue

@@ -17,6 +17,11 @@
 {
     "workflows": ["genmc-queue.yml"],
     "runner_workflow": True,
+    # Its script starts every N-th of its runs when SCE_GENMC_QUEUE_SHARD
+    # names `k/N` ("IN PARTS" in scripts/gates/genmc-queue.sh), as the lane's
+    # three jobs do: whole, the 189 runs took 1006 s on a hosted runner (job
+    # 138783228903). A plan makes one unit per part (`shard_count`).
+    "shard_env": "SCE_GENMC_QUEUE_SHARD",
     # What the gate reads, and no wider: the runtime headers GenMC compiles,
     # the harnesses, and the hosted atomics every C harness includes whole.
     # For C++ that is the three headers a mutant rewrites (the two queue
