@@ -1044,7 +1044,7 @@ mod tests {
             let mut left = self.binary(level + 1);
             'operators: loop {
                 for (token, op) in operators.iter() {
-                    if self.eat(*token) {
+                    if self.eat(token) {
                         let right = self.binary(level + 1);
                         left = CExpr::binary(*op, left, right);
                         continue 'operators;

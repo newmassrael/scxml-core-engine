@@ -1378,12 +1378,11 @@ mod tests {
                             }
                         }
                     }
-                    KotlinExpr::Binary { op, left, right } => {
+                    KotlinExpr::Binary { op, left, right }
                         if op.precedence() == Precedence::Comparison
-                            && (is_comparison(left) || is_comparison(right))
-                        {
-                            seen.insert("a comparison in a comparison".to_string());
-                        }
+                            && (is_comparison(left) || is_comparison(right)) =>
+                    {
+                        seen.insert("a comparison in a comparison".to_string());
                     }
                     _ => {}
                 }
