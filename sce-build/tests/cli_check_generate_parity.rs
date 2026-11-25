@@ -508,14 +508,6 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "roots the `// From:` provenance line; on `check` anyway as a global",
     ),
     f(
-        "--step-function",
-        Reach::Verdict,
-        None,
-        "rust",
-        "prints the Rust machine as its own step function (docs/adr/0129), \
-         which refuses a document outside the class that form serves",
-    ),
-    f(
         "--strict-unresolved",
         Reach::Verdict,
         None,

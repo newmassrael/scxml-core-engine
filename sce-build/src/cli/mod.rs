@@ -2242,22 +2242,6 @@ struct GenerateArgs {
     /// sce-portable-emit-probe crate gates both directions.
     #[arg(long)]
     no_std: bool,
-    /// Print the Rust machine as its own step function rather than for the
-    /// shared interpreter (docs/adr/0129). Only meaningful with `-l rust`;
-    /// ignored for other language targets.
-    ///
-    /// A document of the static class (no `<parallel>`, no `<history>`, no
-    /// `<invoke>`, no transition of more than one target) is printed as arms
-    /// of constants the engine runs in
-    /// place of its shared main loop and Appendix D procedures; any other
-    /// document is refused (`codegen/step-function-outside-class`). The
-    /// policy, its hooks and its names are the same in both forms, so a host
-    /// binds to either alike. The build that generates the machines of one
-    /// image states the form for each document, and the document a run
-    /// reaches (an import, a child) is printed for the interpreter unless its
-    /// own run says otherwise.
-    #[arg(long)]
-    step_function: bool,
     /// Generate the variant of the document these features denote (ADR 0057
     /// §6): comma-separated, `--features` alone for the variant with no
     /// feature on.
@@ -2874,16 +2858,6 @@ struct CheckArgs {
     /// to render, so the flag has no producer to agree with there.
     #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
     no_std: bool,
-    /// Check the document printed as its own Rust step function, mirroring
-    /// `generate --step-function` (docs/adr/0129): a document outside the
-    /// class a step function serves is refused as `generate` refuses it.
-    /// Only meaningful when `rust` is among the checked backends.
-    ///
-    /// Single-document runs only, as `--no-std` is: the document-set route
-    /// renders through the multi-document entry point, which prints every
-    /// machine for the shared interpreter.
-    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
-    step_function: bool,
     /// Check the variant of the document these features denote, mirroring
     /// `generate --features` (ADR 0057 §6). Without it `check` judges the
     /// document as written, with every variant held to its references.
@@ -6378,9 +6352,6 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         const_fold_budget,
         no_std: _,
         // Declared to conflict with every argument that reaches this route,
-        // as `--no-std` is: a set is printed for the shared interpreter.
-        step_function: _,
-        // Declared to conflict with every argument that reaches this route,
         // as `--no-std` is: a set is compiled as written.
         features: _,
         host_processor,
@@ -6572,7 +6543,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std,
-        step_function,
         features,
         host_processor,
         host_invoker,
@@ -6937,7 +6907,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 };
                 let codegen_options = crate::generator::StatechartCodegenOptions {
                     no_std,
-                    form: rust_machine_form(step_function),
                     ..Default::default()
                 };
                 let emit_options = crate::ModelEmitOptions {
@@ -7130,9 +7099,6 @@ impl ChildGeneration {
         child.features = None;
         child.host_processor.clear();
         child.host_invoker.clear();
-        // The form is the run's document's (docs/adr/0129): a document it
-        // reaches is printed for the interpreter unless its own run says so.
-        child.step_function = false;
         child.input_root = Some(input_root.to_string());
         child.emit_ast = None;
         child.profile = None;
@@ -7443,16 +7409,6 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     emit_generate_manifest(&set);
 }
 
-/// The form `--step-function` asks the Rust generator to print a machine in
-/// (docs/adr/0129); the other generators read none.
-fn rust_machine_form(step_function: bool) -> crate::generator::RustMachineForm {
-    if step_function {
-        crate::generator::RustMachineForm::StepFunction
-    } else {
-        crate::generator::RustMachineForm::Interpreted
-    }
-}
-
 /// Generate one document as `generate` does, and hand back what the run
 /// found for the manifest rather than printing it: `generate` prints it for
 /// its one document, and `--with-imports` merges the reports of every
@@ -7481,7 +7437,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         partition,
         const_fold_budget,
         no_std,
-        step_function,
         features,
         host_processor,
         host_invoker,
@@ -8436,7 +8391,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         };
         let codegen_options = crate::generator::StatechartCodegenOptions {
             no_std,
-            form: rust_machine_form(step_function),
             ..Default::default()
         };
         // The engine target is the run's selection, or the backend's

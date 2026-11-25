@@ -6931,26 +6931,6 @@ pub enum GenerateError {
         at: Option<SourceLocation>,
     },
 
-    /// A Rust machine the build asked to print as its own step function
-    /// (`--step-function`, docs/adr/0129) whose document is outside the class
-    /// that form serves. Producer: the Rust generator, from
-    /// [`crate::step_function::StepFunction::of`]. `document` is the machine's
-    /// name; `reasons` names each thing that puts the document outside the
-    /// class, as [`crate::step_function::OutsideClass::describe`] states it,
-    /// joined by `; `; `at` is the element the first reason is about, when one
-    /// is.
-    #[error(
-        "the Rust machine of '{document}' cannot be printed as its own step function \
-         (--step-function): its document has {reasons}. A step function serves a document \
-         with no <parallel>, no <history>, no <invoke> and no transition of more than one \
-         target; generate it without --step-function for the shared interpreter (ADR 0129)"
-    )]
-    CodegenStepFunctionOutsideClass {
-        document: String,
-        reasons: String,
-        at: Option<SourceLocation>,
-    },
-
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge
     /// runtime does not implement yet. The kind is specified for three

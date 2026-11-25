@@ -257,7 +257,6 @@
         "codegen/feature-lifting-mismatch",
         "codegen/standard-host-type-not-served",
         "codegen/standard-host-bound-relation",
-        "codegen/step-function-outside-class",
         "queue/storage-not-exactly-one",
         "queue/allocator-progress-missing",
         "queue/progress-unreachable",

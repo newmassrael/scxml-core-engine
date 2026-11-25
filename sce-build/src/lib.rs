@@ -369,10 +369,6 @@ pub mod source_tree;
 /// comments skipped, so that the import block of a generated file is decided in
 /// one place and not once per template.
 pub mod std_imports;
-/// A document of the static class printed as its own step function
-/// (docs/adr/0129): the arms the Rust generator writes, computed from the
-/// document's tables, and the refusal of a document outside that class.
-pub mod step_function;
 /// An author's JSON read the way they meant it: an object that writes a key
 /// twice is refused, not resolved to the last. See [`strict_json::from_str`].
 pub mod strict_json;
@@ -1466,7 +1462,6 @@ fn compile_scxml_configured(
         event_extra_derives: event_extra_derives.to_vec(),
         host_processor_types: host_processor_types.to_vec(),
         host_invoker_types: host_invoker_types.to_vec(),
-        form: generator::RustMachineForm::Interpreted,
     };
 
     for scxml_path in scxml_files {
@@ -1558,7 +1553,6 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
             | GenerateError::InlineChildUnreturnable { at, .. }
             | GenerateError::CodegenStandardHostTypeNotServed { at, .. }
             | GenerateError::CodegenStandardHostBoundRelation { at, .. }
-            | GenerateError::CodegenStepFunctionOutsideClass { at, .. }
             | GenerateError::CodegenNoStdSchedulerUnbounded { at, .. }
             | GenerateError::Migration { at, .. } => at.clone(),
             _ => None,
