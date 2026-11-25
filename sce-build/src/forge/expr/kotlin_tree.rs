@@ -440,7 +440,12 @@ impl KotlinExpr {
                 lambda,
             } => {
                 callee.write(Slot::Postfix, out);
-                if !args.is_empty() || lambda.is_none() {
+                // A lambda after a call's own argument list is that call's
+                // trailing lambda (Kotlin grammar, callSuffix), so a lambda
+                // handed to what a call returns keeps its empty list: `f()() { … }`,
+                // where `f() { … }` would hand it to `f`.
+                let absorbs = matches!(&**callee, Self::Call { lambda: None, .. });
+                if !args.is_empty() || lambda.is_none() || absorbs {
                     out.push('(');
                     for (i, arg) in args.iter().enumerate() {
                         if i > 0 {
