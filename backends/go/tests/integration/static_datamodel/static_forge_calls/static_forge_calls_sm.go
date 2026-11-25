@@ -1519,9 +1519,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='customer'>: an integer operation overflowed or failed")); return true }; p.vCustomer = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vCustomer = ""
 
 			}()
 		case 7:

@@ -1031,15 +1031,11 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.finish, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vFinish = pendingDoneInvokeGenPayload!!.finish
 
             vConstrained = pendingDoneInvokeGenPayload!!.constrained
 
-            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.model, 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vAnsweredBy = pendingDoneInvokeGenPayload!!.model
 
             vPromptTokens = pendingDoneInvokeGenPayload!!.prompt_tokens
 
@@ -1050,14 +1046,10 @@ class StaticHostModelStateMachine(
 
             if (vWhy == null) {
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("read", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "read"
             } else {
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
             }
     }
 
@@ -1067,33 +1059,25 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokeGenPayload!!.error
     }
 
     private fun transitionContentOfGeneratingAt2() {
                 // SCE-MAP: static_host_model.scxml:94 :: generating :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "deadline"
     }
 
     private fun transitionContentOfGeneratingAt3() {
                 // SCE-MAP: static_host_model.scxml:97 :: generating :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("invalid_argument", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "invalid_argument"
     }
 
     private fun transitionContentOfGeneratingAt4() {
                 // SCE-MAP: static_host_model.scxml:100 :: generating :: _transition_4
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("left", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "left"
     }
 
     // The content of `idle`'s own transitions, by the index the
@@ -1115,9 +1099,7 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vPrompt = com.sce.forge.runtime.SceChecked.bounded(pendingHostModelGenerateRequestPayload!!.prompt, 8192); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='prompt'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPrompt = pendingHostModelGenerateRequestPayload!!.prompt
 
             vMaxTokens = pendingHostModelGenerateRequestPayload!!.max_tokens
 
@@ -1127,19 +1109,13 @@ class StaticHostModelStateMachine(
                 return
             }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = ""
 
-            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vFinish = ""
 
             vConstrained = false
 
-            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded("", 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vAnsweredBy = ""
 
             vPromptTokens = 0.toUInt()
 

@@ -1615,9 +1615,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLabel = "busy"
 
 			}()
 		case 1:

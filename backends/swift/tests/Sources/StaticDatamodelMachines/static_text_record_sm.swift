@@ -606,9 +606,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: self.pendingTextSlotPayload.slot, version: self.pendingTextSlotPayload.version, text: (try Checked.bounded(self.pendingTextSlotPayload.text, capacity: 32))); self.vIncoming = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vIncoming = StaticTextRecordSlotRecord(slot: self.pendingTextSlotPayload.slot, version: self.pendingTextSlotPayload.version, text: self.pendingTextSlotPayload.text)
 
 
 

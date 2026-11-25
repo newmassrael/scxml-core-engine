@@ -1022,9 +1022,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "b", 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticCancelExprEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='which'>: an integer operation overflowed or failed")); return true }; p.vWhich = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vWhich = "b"
 
 			}()
 		case 4:
@@ -1033,9 +1031,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticCancelExprEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='which'>: an integer operation overflowed or failed")); return true }; p.vWhich = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vWhich = ""
 
 			}()
 		case 5:

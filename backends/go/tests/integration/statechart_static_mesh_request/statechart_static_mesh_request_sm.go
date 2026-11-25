@@ -1209,9 +1209,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticMeshRequestEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLabel = "busy"
 
 			}()
 		case 1:
@@ -1220,9 +1218,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#ghost", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticMeshRequestEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='peer'>: an integer operation overflowed or failed")); return true }; p.vPeer = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPeer = "#ghost"
 
 			}()
 		}

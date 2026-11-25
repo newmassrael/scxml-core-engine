@@ -1305,21 +1305,17 @@ func (p *StaticOptionalRecordPolicy) ExecuteTransitionContent(source StaticOptio
 
 	// SCE Accepted Subset §2.15: <sce:append target="items">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vItems) >= 3 { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vItems, StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: scealgorithm.Bounded(&sceFailure, p.pendingItemPickedPayload.title, 16), count: p.pendingItemPickedPayload.count}); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; p.vItems = append(p.vItems, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vItems) >= 3 { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vItems, StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: p.pendingItemPickedPayload.title, count: p.pendingItemPickedPayload.count}); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; p.vItems = append(p.vItems, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: scealgorithm.Bounded(&sceFailure, p.pendingItemPickedPayload.title, 16), count: p.pendingItemPickedPayload.count}; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='draft'>: an integer operation overflowed or failed")); return true }; p.vDraft = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vDraft = StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: p.pendingItemPickedPayload.title, count: p.pendingItemPickedPayload.count}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Some[StaticOptionalRecordItemRecord](StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: scealgorithm.Bounded(&sceFailure, p.pendingItemPickedPayload.title, 16), count: p.pendingItemPickedPayload.count}); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = optional.Some[StaticOptionalRecordItemRecord](StaticOptionalRecordItemRecord{id: p.pendingItemPickedPayload.id, title: p.pendingItemPickedPayload.title, count: p.pendingItemPickedPayload.count})
 
 			}()
 		case 1:
@@ -1359,9 +1355,7 @@ func (p *StaticOptionalRecordPolicy) ExecuteTransitionContent(source StaticOptio
 	if p.vPick.IsPresent() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vPick.Proven().title, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='title'>: an integer operation overflowed or failed")); return true }; p.vTitle = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vTitle = p.vPick.Proven().title
 
 
 
@@ -1370,9 +1364,7 @@ func (p *StaticOptionalRecordPolicy) ExecuteTransitionContent(source StaticOptio
 	} else {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "none", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='title'>: an integer operation overflowed or failed")); return true }; p.vTitle = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vTitle = "none"
 
 
 
@@ -1407,9 +1399,7 @@ func (p *StaticOptionalRecordPolicy) ExecuteTransitionContent(source StaticOptio
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "bumped", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick.value.title'>: an integer operation overflowed or failed")); return true }; { sceRecord := p.vPick.Proven(); sceRecord.title = sceValue; p.vPick = optional.Some(sceRecord) }; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	{ sceRecord := p.vPick.Proven(); sceRecord.title = "bumped"; p.vPick = optional.Some(sceRecord) }
 
 	}
 

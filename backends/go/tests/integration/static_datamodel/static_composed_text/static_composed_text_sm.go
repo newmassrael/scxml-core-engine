@@ -1382,9 +1382,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, row.label, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; p.vLastLabel = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLastLabel = row.label
 
 
 

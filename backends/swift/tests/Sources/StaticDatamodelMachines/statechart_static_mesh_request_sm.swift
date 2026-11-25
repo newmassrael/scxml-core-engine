@@ -715,9 +715,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, reason: .expressionFailed, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLabel = "busy"
 
                 }
             case 1:
@@ -725,9 +723,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#ghost", capacity: 16)); self.vPeer = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, reason: .expressionFailed, message: "<assign location='peer'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPeer = "#ghost"
 
                 }
             default:

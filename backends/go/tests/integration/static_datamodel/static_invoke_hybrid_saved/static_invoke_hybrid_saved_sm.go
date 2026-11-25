@@ -1405,9 +1405,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteTransitionContent(source StaticIn
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_holder.scxml", 48); if sceFailure.Failed() { return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = "static_hybrid_holder.scxml"
 
 			}()
 		case 2:

@@ -900,9 +900,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vCustomer = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='customer'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vCustomer = ""
 
                 }
             case 7:

@@ -1458,16 +1458,12 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source St
 	if p.vLabel.IsPresent() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vLabel.Proven(), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLabelValue = p.vLabel.Proven()
 
 	} else {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLabelValue = ""
 
 	}
 

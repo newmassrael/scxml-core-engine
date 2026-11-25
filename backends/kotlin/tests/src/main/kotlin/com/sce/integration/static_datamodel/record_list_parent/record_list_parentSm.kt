@@ -1660,9 +1660,7 @@ class RecordListParentStateMachine(
 
             vShown = vShown.copy(value = pendingRecordListRegisterPayload!!.value)
 
-            if (try { vShown = vShown.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListRegisterPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vShown = vShown.copy(text = pendingRecordListRegisterPayload!!.text)
 
             vShown = vShown.copy(wallTime = pendingRecordListRegisterPayload!!.wallTime)
 
@@ -1691,9 +1689,7 @@ class RecordListParentStateMachine(
 
             vOther = vOther.copy(value = pendingRecordListValuePayload!!.value)
 
-            if (try { vOther = vOther.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListValuePayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='other.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOther = vOther.copy(text = pendingRecordListValuePayload!!.text)
 
             vOther = vOther.copy(wallTime = pendingRecordListValuePayload!!.wallTime)
 

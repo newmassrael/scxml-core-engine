@@ -484,65 +484,49 @@ class StaticStringLiteralStateMachine(
     private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_string_literal.scxml:26 :: idle :: _transition_0
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("it's", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "it's"
     }
 
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_string_literal.scxml:29 :: idle :: _transition_1
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a\\b", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "a\\b"
     }
 
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_string_literal.scxml:32 :: idle :: _transition_2
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("\$name \${x}", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "\$name \${x}"
     }
 
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_string_literal.scxml:35 :: idle :: _transition_3
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("\\(x)", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "\\(x)"
     }
 
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_string_literal.scxml:38 :: idle :: _transition_4
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a\nb\tc", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "a\nb\tc"
     }
 
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_string_literal.scxml:42 :: idle :: _transition_5
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("Aé€", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "Aé€"
     }
 
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_string_literal.scxml:46 :: idle :: _transition_6
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("𐍈𐍈", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "𐍈𐍈"
     }
 
     private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_string_literal.scxml:49 :: idle :: _transition_7
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a??=b", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vHeld = "a??=b"
     }
 
     private fun transitionContentOfIdleAt8() {

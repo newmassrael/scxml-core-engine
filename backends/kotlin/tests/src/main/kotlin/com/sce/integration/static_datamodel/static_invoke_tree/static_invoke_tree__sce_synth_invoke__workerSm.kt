@@ -896,9 +896,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     private fun transitionContentOfSecondAt1() {
                 // SCE-MAP: static_invoke_tree.scxml:69 :: second :: _transition_1
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_holder.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPick = "static_hybrid_holder.scxml"
     }
 
     private fun transitionContentOfSecondAt2() {

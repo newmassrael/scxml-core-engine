@@ -772,9 +772,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt6() {
                 // SCE-MAP: static_forge_calls.scxml:77 :: run :: _transition_6
 
-            if (try { vCustomer = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='customer'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vCustomer = ""
     }
 
     private fun transitionContentOfRunAt7() {

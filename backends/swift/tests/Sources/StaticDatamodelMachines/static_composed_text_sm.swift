@@ -778,9 +778,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(row.label, capacity: 8)); self.vLastLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLastLabel = row.label
 
 
 

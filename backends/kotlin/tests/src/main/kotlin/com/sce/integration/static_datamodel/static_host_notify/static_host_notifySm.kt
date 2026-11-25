@@ -1701,13 +1701,9 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vPermission = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeAskPayload!!.state, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='permission'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPermission = pendingDoneInvokeAskPayload!!.state
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "done"
     }
 
     private fun transitionContentOfAskingAt1() {
@@ -1716,25 +1712,19 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeAskPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokeAskPayload!!.error
     }
 
     private fun transitionContentOfAskingAt2() {
                 // SCE-MAP: static_host_notify.scxml:90 :: asking :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "deadline"
     }
 
     private fun transitionContentOfAskingAt3() {
                 // SCE-MAP: static_host_notify.scxml:93 :: asking :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
     }
 
     // The content of `cancelling`'s own transitions, by the index the
@@ -1761,9 +1751,7 @@ class StaticHostNotifyStateMachine(
 
             vExisted = pendingDoneInvokeCancelPayload!!.existed
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "done"
     }
 
     private fun transitionContentOfCancellingAt1() {
@@ -1772,25 +1760,19 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeCancelPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokeCancelPayload!!.error
     }
 
     private fun transitionContentOfCancellingAt2() {
                 // SCE-MAP: static_host_notify.scxml:148 :: cancelling :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "deadline"
     }
 
     private fun transitionContentOfCancellingAt3() {
                 // SCE-MAP: static_host_notify.scxml:151 :: cancelling :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
     }
 
     // The content of `idle`'s own transitions, by the index the
@@ -1814,17 +1796,11 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vId = com.sce.forge.runtime.SceChecked.bounded(pendingHostNotifyPostRequestPayload!!.id, 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vId = pendingHostNotifyPostRequestPayload!!.id
 
-            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded(pendingHostNotifyPostRequestPayload!!.title, 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vTitle = pendingHostNotifyPostRequestPayload!!.title
 
-            if (try { vBody = com.sce.forge.runtime.SceChecked.bounded(pendingHostNotifyPostRequestPayload!!.body, 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vBody = pendingHostNotifyPostRequestPayload!!.body
 
             vAtMs = pendingHostNotifyPostRequestPayload!!.at_ms
     }
@@ -1835,9 +1811,7 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vId = com.sce.forge.runtime.SceChecked.bounded(pendingHostNotifyCancelRequestPayload!!.id, 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vId = pendingHostNotifyCancelRequestPayload!!.id
     }
 
     private fun transitionContentOfIdleAt4() {
@@ -1868,13 +1842,9 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vStatus = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePostPayload!!.status, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='status'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vStatus = pendingDoneInvokePostPayload!!.status
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "done"
     }
 
     private fun transitionContentOfPostingAt1() {
@@ -1883,25 +1853,19 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePostPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokePostPayload!!.error
     }
 
     private fun transitionContentOfPostingAt2() {
                 // SCE-MAP: static_host_notify.scxml:129 :: posting :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "deadline"
     }
 
     private fun transitionContentOfPostingAt3() {
                 // SCE-MAP: static_host_notify.scxml:132 :: posting :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
     }
 
     // The content of `posting_far`'s own transitions, by the index the
@@ -1925,13 +1889,9 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vStatus = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeFarPayload!!.status, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='status'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vStatus = pendingDoneInvokeFarPayload!!.status
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "done"
     }
 
     private fun transitionContentOfPostingFarAt1() {
@@ -1940,17 +1900,13 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeFarPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokeFarPayload!!.error
     }
 
     private fun transitionContentOfPostingFarAt2() {
                 // SCE-MAP: static_host_notify.scxml:76 :: posting_far :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
     }
 
     // The content of `requesting`'s own transitions, by the index the
@@ -1975,13 +1931,9 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vPermission = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePromptPayload!!.state, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='permission'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPermission = pendingDoneInvokePromptPayload!!.state
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "done"
     }
 
     private fun transitionContentOfRequestingAt1() {
@@ -1990,24 +1942,18 @@ class StaticHostNotifyStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePromptPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokePromptPayload!!.error
     }
 
     private fun transitionContentOfRequestingAt2() {
                 // SCE-MAP: static_host_notify.scxml:107 :: requesting :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "deadline"
     }
 
     private fun transitionContentOfRequestingAt3() {
                 // SCE-MAP: static_host_notify.scxml:110 :: requesting :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "refused"
     }
 }

@@ -2433,9 +2433,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListEditPayload.text, capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vStaging.text = self.pendingRecordListEditPayload.text
 
 
 
@@ -2527,9 +2525,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vStaging.text = ""
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
@@ -2617,9 +2613,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vStaging.text = ""
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
@@ -2765,15 +2759,11 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 for s in self.vStaged {
                     _ = s
 
-                var ifCondFailed14 = false
-                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) }) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false } }()) {
+                if (a.element / 65536 == UInt64(s.id) && (s.kind == 2 || a.element % 65536 == UInt64(s.field))) {
 
 
                 self.vCovered = true
 
-                }
-                if ifCondFailed14 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
@@ -2886,15 +2876,11 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 for s in self.vStaged {
                     _ = s
 
-                var ifCondFailed20 = false
-                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) }) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false } }()) {
+                if (a.element / 65536 == UInt64(s.id) && (s.kind == 2 || a.element % 65536 == UInt64(s.field))) {
 
 
                 self.vCovered = true
 
-                }
-                if ifCondFailed20 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
@@ -2906,13 +2892,13 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(try Checked.div(a.element, 65536), to: UInt32.self)); self.vOp.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(a.element / 65536, to: UInt32.self)); self.vOp.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(try Checked.rem(a.element, 65536), to: UInt16.self)); self.vOp.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(a.element % 65536, to: UInt16.self)); self.vOp.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2922,9 +2908,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOp.text = ""
 
 
 
@@ -2972,9 +2956,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(s.text, capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOp.text = s.text
 
 
 
@@ -4161,9 +4143,7 @@ break sceBlock
                 if (self.vOp.kind == 0) {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vOp.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld.text = self.vOp.text
 
 
 
@@ -4343,9 +4323,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(v.text, capacity: 96)); self.vUndoing.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vUndoing.text = v.text
 
 
 
@@ -4870,15 +4848,11 @@ break sceBlock
                     _ = a
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(a.element, 65536)); self.vHeld.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld.id = a.element / 65536
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(a.element, 65536)); self.vHeld.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld.field = a.element % 65536
 
 
 
@@ -4902,13 +4876,13 @@ break sceBlock
                 if (self.vAnnounce) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(try Checked.div(a.element, 65536), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(a.element / 65536, to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(try Checked.rem(a.element, 65536), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(a.element % 65536, to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5003,9 +4977,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(u.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld.text = u.text
 
 
 
@@ -5335,13 +5307,13 @@ break sceBlock
                     _ = named
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(try Checked.div(named, 65536), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(named / 65536, to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(try Checked.rem(named, 65536), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(named % 65536, to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

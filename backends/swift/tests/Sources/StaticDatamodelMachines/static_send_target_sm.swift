@@ -689,9 +689,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_internal", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vRoute = "#_internal"
 
                 }
             case 3:
@@ -699,9 +697,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_parent", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vRoute = "#_parent"
 
                 }
             case 4:
@@ -709,9 +705,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_scxml_stranger", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vRoute = "#_scxml_stranger"
 
                 }
             case 5:

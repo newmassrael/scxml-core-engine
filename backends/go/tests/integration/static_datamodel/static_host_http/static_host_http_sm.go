@@ -1428,21 +1428,15 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeFetchPayload.headers, 4096); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='response_headers'>: an integer operation overflowed or failed")); return true }; p.vResponseHeaders = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vResponseHeaders = p.pendingDoneInvokeFetchPayload.headers
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeFetchPayload.body, 16384); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='response_body'>: an integer operation overflowed or failed")); return true }; p.vResponseBody = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vResponseBody = p.pendingDoneInvokeFetchPayload.body
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "done", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "done"
 
 			}()
 		case 1:
@@ -1454,9 +1448,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeFetchPayload.error, 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = p.pendingDoneInvokeFetchPayload.error
 
 			}()
 		case 2:
@@ -1465,9 +1457,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "deadline", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "deadline"
 
 			}()
 		case 3:
@@ -1476,9 +1466,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "refused", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "refused"
 
 			}()
 		}
@@ -1493,27 +1481,19 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostHttpFetchRequestPayload.method, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='method'>: an integer operation overflowed or failed")); return true }; p.vMethod = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vMethod = p.pendingHostHttpFetchRequestPayload.method
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostHttpFetchRequestPayload.url, 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='url'>: an integer operation overflowed or failed")); return true }; p.vUrl = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vUrl = p.pendingHostHttpFetchRequestPayload.url
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostHttpFetchRequestPayload.headers, 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='request_headers'>: an integer operation overflowed or failed")); return true }; p.vRequestHeaders = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRequestHeaders = p.pendingHostHttpFetchRequestPayload.headers
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostHttpFetchRequestPayload.body, 16384); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='request_body'>: an integer operation overflowed or failed")); return true }; p.vRequestBody = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRequestBody = p.pendingHostHttpFetchRequestPayload.body
 
 			}()
 		}

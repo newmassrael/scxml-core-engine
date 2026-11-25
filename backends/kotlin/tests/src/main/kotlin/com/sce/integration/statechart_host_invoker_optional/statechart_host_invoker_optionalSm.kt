@@ -739,14 +739,10 @@ class StatechartHostInvokerOptionalStateMachine(
 
             if (vLabel != null) {
 
-            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vLabel), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLabelValue = com.sce.forge.runtime.SceOptional.proven(vLabel)
             } else {
 
-            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLabelValue = ""
             }
 
             vHitKnown = vHit != null

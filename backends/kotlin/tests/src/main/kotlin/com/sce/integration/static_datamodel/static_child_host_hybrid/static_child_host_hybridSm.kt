@@ -597,8 +597,6 @@ class StaticChildHostHybridStateMachine(
     private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_child_host_hybrid.scxml:31 :: working :: _transition_1
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hosted_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vPick = "static_hosted_second.scxml"
     }
 }

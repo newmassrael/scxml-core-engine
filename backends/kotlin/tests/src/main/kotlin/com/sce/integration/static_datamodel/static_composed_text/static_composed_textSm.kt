@@ -659,9 +659,7 @@ class StaticComposedTextStateMachine(
             }
             }
 
-            if (try { vLastLabel = com.sce.forge.runtime.SceChecked.bounded(row.label, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last_label'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLastLabel = row.label
 
             if (try { vBlobBytes = com.sce.forge.runtime.SceChecked.add(vBlobBytes, row.blob.size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='blob_bytes'>: an integer operation overflowed or failed"); true }) {
                 return

@@ -573,15 +573,11 @@ class StaticWireWideStateMachine(
                     return
                 }
 
-            if (try { vLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLow = pendingWideRelayedPayload!!.big % 1000.toULong()
 
             vLarge = pendingWideRelayedPayload!!.big > 9007199254740992.toULong()
 
-            if (try { vSmallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSmallLow = pendingWideRelayedPayload!!.small % 1000
 
             vNegative = pendingWideRelayedPayload!!.small < 0
 

@@ -2245,17 +2245,11 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         break sceBlock
                     }
 
-                var ifCondFailed4 = false
-                if ({ () -> Bool in do { return (try Checked.div(self.pendingSheetRowPayload.key, 256)) > self.vLamport } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false } }()) {
+                if (self.pendingSheetRowPayload.key / 256 > self.vLamport) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(self.pendingSheetRowPayload.key, 256)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLamport = self.pendingSheetRowPayload.key / 256
 
-                }
-                if ifCondFailed4 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
@@ -2293,8 +2287,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     engine.raise(EventWithMetadata(SheetPeerEvent.sheetRecompute, metadata: sendMetadata))
                 }
 
-                var ifCondFailed6 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false } }()) {
+                if (self.vHub && self.pendingSheetRowPayload.key % 256 != 1) {
 
                 // W3C SCXML 6.2: send id="__send_10"
                 do {
@@ -2341,13 +2334,9 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
                 }
                 }
-                if ifCondFailed6 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
 
 
-                var ifCondFailed7 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false } }()) {
+                if (self.vHub && self.pendingSheetRowPayload.key % 256 != 2) {
 
                 // W3C SCXML 6.2: send id="__send_11"
                 do {
@@ -2393,9 +2382,6 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         break sceBlock
                     }
                 }
-                }
-                if ifCondFailed7 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
@@ -2707,17 +2693,11 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         break sceBlock
                     }
 
-                var ifCondFailed10 = false
-                if ({ () -> Bool in do { return (try Checked.div(self.pendingSheetColPayload.key, 256)) > self.vLamport } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false } }()) {
+                if (self.pendingSheetColPayload.key / 256 > self.vLamport) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(self.pendingSheetColPayload.key, 256)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLamport = self.pendingSheetColPayload.key / 256
 
-                }
-                if ifCondFailed10 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
@@ -2755,8 +2735,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     engine.raise(EventWithMetadata(SheetPeerEvent.sheetRecompute, metadata: sendMetadata))
                 }
 
-                var ifCondFailed12 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false } }()) {
+                if (self.vHub && self.pendingSheetColPayload.key % 256 != 1) {
 
                 // W3C SCXML 6.2: send id="__send_20"
                 do {
@@ -2803,13 +2782,9 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
                 }
                 }
-                if ifCondFailed12 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
 
 
-                var ifCondFailed13 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, reason: .expressionFailed, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false } }()) {
+                if (self.vHub && self.pendingSheetColPayload.key % 256 != 2) {
 
                 // W3C SCXML 6.2: send id="__send_21"
                 do {
@@ -2855,9 +2830,6 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         break sceBlock
                     }
                 }
-                }
-                if ifCondFailed13 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }

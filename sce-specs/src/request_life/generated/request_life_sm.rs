@@ -2167,20 +2167,9 @@ impl StatePolicy for RequestLifePolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="outcome">
-                    let sce_failed =
-                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.outcome =
-                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
-                                    &&ev.bundle[..],
-                                )?;
-                            Ok(())
-                        })() {
-                            Ok(()) => false,
-                            Err(_) => true,
-                        };
-                    if sce_failed {
-                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                    }
+                    self.outcome = ::sce_rust_runtime::portable::SceString::<64>::within::<64>(
+                        &&ev.bundle[..],
+                    );
 
                     // W3C SCXML 5.3: <assign location="verdict">
                     self.verdict = RequestLifeVerdictEnum::Ok;
@@ -2297,19 +2286,9 @@ impl StatePolicy for RequestLifePolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="holder">
-                    let sce_failed =
-                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
-                                &&ev.holder[..],
-                            )?;
-                            Ok(())
-                        })() {
-                            Ok(()) => false,
-                            Err(_) => true,
-                        };
-                    if sce_failed {
-                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                    }
+                    self.holder = ::sce_rust_runtime::portable::SceString::<64>::within::<64>(
+                        &&ev.holder[..],
+                    );
 
                     // W3C SCXML 5.3: <assign location="attempt">
                     let sce_failed =
@@ -2354,19 +2333,9 @@ impl StatePolicy for RequestLifePolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="holder">
-                    let sce_failed =
-                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
-                                &&ev.holder[..],
-                            )?;
-                            Ok(())
-                        })() {
-                            Ok(()) => false,
-                            Err(_) => true,
-                        };
-                    if sce_failed {
-                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                    }
+                    self.holder = ::sce_rust_runtime::portable::SceString::<64>::within::<64>(
+                        &&ev.holder[..],
+                    );
 
                     // W3C SCXML 5.3: <assign location="attempt">
                     let sce_failed =
@@ -2421,19 +2390,9 @@ impl StatePolicy for RequestLifePolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="holder">
-                    let sce_failed =
-                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
-                                &&ev.holder[..],
-                            )?;
-                            Ok(())
-                        })() {
-                            Ok(()) => false,
-                            Err(_) => true,
-                        };
-                    if sce_failed {
-                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                    }
+                    self.holder = ::sce_rust_runtime::portable::SceString::<64>::within::<64>(
+                        &&ev.holder[..],
+                    );
 
                     // W3C SCXML 5.3: <assign location="attempt">
                     let sce_failed =
@@ -2546,20 +2505,9 @@ impl StatePolicy for RequestLifePolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="outcome">
-                    let sce_failed =
-                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.outcome =
-                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
-                                    &&ev.bundle[..],
-                                )?;
-                            Ok(())
-                        })() {
-                            Ok(()) => false,
-                            Err(_) => true,
-                        };
-                    if sce_failed {
-                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                    }
+                    self.outcome = ::sce_rust_runtime::portable::SceString::<64>::within::<64>(
+                        &&ev.bundle[..],
+                    );
 
                     // W3C SCXML 5.3: <assign location="verdict">
                     self.verdict = RequestLifeVerdictEnum::Ok;

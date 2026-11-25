@@ -1042,9 +1042,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_internal", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRoute = "#_internal"
 
 			}()
 		case 3:
@@ -1053,9 +1051,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_parent", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRoute = "#_parent"
 
 			}()
 		case 4:
@@ -1064,9 +1060,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_scxml_stranger", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRoute = "#_scxml_stranger"
 
 			}()
 		case 5:

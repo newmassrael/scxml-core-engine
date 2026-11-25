@@ -2077,9 +2077,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = pendingRecordListEditPayload!!.value)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vStaging = vStaging.copy(text = pendingRecordListEditPayload!!.text)
 
             vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
 
@@ -2141,9 +2139,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = 0)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vStaging = vStaging.copy(text = "")
 
             if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
@@ -2203,9 +2199,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = 0)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vStaging = vStaging.copy(text = "")
 
             if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
@@ -2316,13 +2310,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
             for (s in vStaged) {
 
 
-            var ifCondFailed14 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed14 = true; false })) {
+            if (a.element / 65536.toULong() == s.id.toULong() && (s.kind == 2.toUByte() || a.element % 65536.toULong() == s.field.toULong())) {
 
             vCovered = true
-            }
-            if (ifCondFailed14) {
-                return
             }
             }
 
@@ -2403,13 +2393,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
             for (s in vStaged) {
 
 
-            var ifCondFailed20 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed20 = true; false })) {
+            if (a.element / 65536.toULong() == s.id.toULong() && (s.kind == 2.toUByte() || a.element % 65536.toULong() == s.field.toULong())) {
 
             vCovered = true
-            }
-            if (ifCondFailed20) {
-                return
             }
             }
 
@@ -2418,19 +2404,17 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(kind = 1.toUByte())
 
-            if (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.narrowToUInt(a.element / 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.narrowToUShort(a.element % 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vOp = vOp.copy(value = 0)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOp = vOp.copy(text = "")
 
             vOp = vOp.copy(wallTime = a.wallTime)
 
@@ -2458,9 +2442,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(value = s.value)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(s.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOp = vOp.copy(text = s.text)
 
             vOp = vOp.copy(wallTime = 0)
 
@@ -3324,9 +3306,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (vOp.kind == 0.toUByte()) {
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vHeld = vHeld.copy(text = vOp.text)
 
             vHeld = vHeld.copy(id = vOp.id.toULong())
 
@@ -3435,9 +3415,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vUndoing = vUndoing.copy(value = v.value)
 
-            if (try { vUndoing = vUndoing.copy(text = com.sce.forge.runtime.SceChecked.bounded(v.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='undoing.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vUndoing = vUndoing.copy(text = v.text)
 
             vUndoing = vUndoing.copy(wallTime = v.wallTime)
 
@@ -3809,13 +3787,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             for (a in vOne) {
 
-            if (try { vHeld = vHeld.copy(id = com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.id'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vHeld = vHeld.copy(id = a.element / 65536.toULong())
 
-            if (try { vHeld = vHeld.copy(field = com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.field'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vHeld = vHeld.copy(field = a.element % 65536.toULong())
 
             vHeld = vHeld.copy(wallTime = a.wallTime)
 
@@ -3830,11 +3804,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             if (vAnnounce) {
 
-            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(a.element / 65536.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(a.element % 65536.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3892,9 +3866,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vHeld = vHeld.copy(value = u.value)
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(u.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vHeld = vHeld.copy(text = u.text)
 
             vHeld = vHeld.copy(wallTime = u.wallTime)
 
@@ -4113,11 +4085,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             for (named in vMoved) {
 
-            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(named / 65536.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(named % 65536.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

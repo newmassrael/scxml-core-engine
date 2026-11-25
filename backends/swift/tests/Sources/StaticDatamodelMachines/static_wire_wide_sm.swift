@@ -642,9 +642,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(self.pendingWideRelayedPayload.big, 1000)); self.vLow = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, reason: .expressionFailed, message: "<assign location='low'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLow = self.pendingWideRelayedPayload.big % 1000
 
 
 
@@ -652,9 +650,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.rem(self.pendingWideRelayedPayload.small, 1000)); self.vSmallLow = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, reason: .expressionFailed, message: "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vSmallLow = self.pendingWideRelayedPayload.small % 1000
 
 
 

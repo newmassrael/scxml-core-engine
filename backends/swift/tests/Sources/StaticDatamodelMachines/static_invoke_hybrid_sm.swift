@@ -1208,9 +1208,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("./static_hybrid_first.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPick = "./static_hybrid_first.scxml"
 
             }
             // W3C SCXML 6.4: an <invoke> starts at the end of the macrostep, so its
@@ -1229,9 +1227,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_missing.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPick = "static_hybrid_missing.scxml"
 
             }
             // W3C SCXML 6.4: an <invoke> starts at the end of the macrostep, so its
@@ -1250,9 +1246,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("/opt/charts/static_hybrid_second.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPick = "/opt/charts/static_hybrid_second.scxml"
 
             }
             // W3C SCXML 6.4: an <invoke> starts at the end of the macrostep, so its

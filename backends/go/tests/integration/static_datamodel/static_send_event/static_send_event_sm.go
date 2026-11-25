@@ -1039,9 +1039,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "pong", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vName = "pong"
 
 			}()
 		case 3:
@@ -1050,9 +1048,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "ping", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vName = "ping"
 
 			}()
 		case 4:
@@ -1061,9 +1057,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vName = ""
 
 			}()
 		case 5:

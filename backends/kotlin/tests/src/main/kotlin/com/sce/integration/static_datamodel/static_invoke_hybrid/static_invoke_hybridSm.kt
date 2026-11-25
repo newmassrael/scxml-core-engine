@@ -556,9 +556,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
+            vPick = "./static_hybrid_first.scxml"
                 }
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
@@ -571,9 +569,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
+            vPick = "static_hybrid_missing.scxml"
                 }
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
@@ -596,9 +592,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
+            vPick = "/opt/charts/static_hybrid_second.scxml"
                 }
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two

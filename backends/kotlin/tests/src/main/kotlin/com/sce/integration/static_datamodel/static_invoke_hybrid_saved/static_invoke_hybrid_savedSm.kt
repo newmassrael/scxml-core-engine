@@ -557,9 +557,7 @@ class StaticInvokeHybridSavedStateMachine(
     private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_invoke_hybrid_saved.scxml:45 :: working :: _transition_1
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_holder.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            vPick = "static_hybrid_holder.scxml"
     }
 
     private fun transitionContentOfWorkingAt2() {

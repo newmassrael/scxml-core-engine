@@ -562,25 +562,19 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_event.scxml:32 :: idle :: _transition_2
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vName = "pong"
     }
 
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_event.scxml:35 :: idle :: _transition_3
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vName = "ping"
     }
 
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_event.scxml:38 :: idle :: _transition_4
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vName = ""
     }
 
     private fun transitionContentOfIdleAt5() {

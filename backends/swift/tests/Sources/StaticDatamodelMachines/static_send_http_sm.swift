@@ -521,9 +521,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vLabel = "busy"
 
                 }
             case 1:

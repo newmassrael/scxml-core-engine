@@ -1097,9 +1097,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticTextRecordSlotRecord{slot: p.pendingTextSlotPayload.slot, version: p.pendingTextSlotPayload.version, text: scealgorithm.Bounded(&sceFailure, p.pendingTextSlotPayload.text, 32)}; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; p.vIncoming = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vIncoming = StaticTextRecordSlotRecord{slot: p.pendingTextSlotPayload.slot, version: p.pendingTextSlotPayload.version, text: p.pendingTextSlotPayload.text}
 
 
 

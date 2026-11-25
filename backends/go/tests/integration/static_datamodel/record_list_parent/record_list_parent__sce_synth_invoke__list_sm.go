@@ -5061,9 +5061,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vStaging.text = p.pendingRecordListEditPayload.text
 
 
 
@@ -5161,9 +5159,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vStaging.text = ""
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
@@ -5257,9 +5253,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vStaging.text = ""
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
@@ -5414,17 +5408,11 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	for _, s := range append(p.vStaged[:0:0], p.vStaged...) {
 		_ = s
 
-	{
-	var ifCondFailed14 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }() {
+	if a.element / 65536 == uint64(s.id) && (s.kind == 2 || a.element % 65536 == uint64(s.field)) {
 
 
 	p.vCovered = true
 
-	}
-	if ifCondFailed14 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
 	}
 
 	}
@@ -5545,17 +5533,11 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	for _, s := range append(p.vStaged[:0:0], p.vStaged...) {
 		_ = s
 
-	{
-	var ifCondFailed20 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
+	if a.element / 65536 == uint64(s.id) && (s.kind == 2 || a.element % 65536 == uint64(s.field)) {
 
 
 	p.vCovered = true
 
-	}
-	if ifCondFailed20 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
 	}
 
 	}
@@ -5568,13 +5550,13 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; p.vOp.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(a.element / 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; p.vOp.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; p.vOp.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(a.element % 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; p.vOp.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5584,9 +5566,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.text = ""
 
 
 
@@ -5635,9 +5615,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, s.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.text = s.text
 
 
 
@@ -6941,9 +6919,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	if p.vOp.kind == 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld.text = p.vOp.text
 
 
 
@@ -7133,9 +7109,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, v.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; p.vUndoing.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vUndoing.text = v.text
 
 
 
@@ -7709,15 +7683,11 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 		_ = a
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; p.vHeld.id = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld.id = a.element / 65536
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; p.vHeld.field = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld.field = a.element % 65536
 
 
 
@@ -7741,13 +7711,13 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	if p.vAnnounce {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(a.element / 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(a.element % 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7853,9 +7823,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, u.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld.text = u.text
 
 
 
@@ -8209,13 +8177,13 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 		_ = named
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(named / 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(named % 65536)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

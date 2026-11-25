@@ -652,16 +652,12 @@ class StatechartStaticMeshRequestStateMachine(
                 return
             }
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLabel = "busy"
     }
 
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:63 :: idle :: _transition_1
 
-            if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPeer = "#ghost"
     }
 }

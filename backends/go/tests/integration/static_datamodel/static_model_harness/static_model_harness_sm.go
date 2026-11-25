@@ -2583,9 +2583,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vWhy.Proven().path, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; p.vRefused.path = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRefused.path = p.vWhy.Proven().path
 
 	}
 
@@ -2600,9 +2598,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "/id", 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; p.vRefused.path = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRefused.path = "/id"
 
 			}()
 		case 2:
@@ -2611,9 +2607,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "accepted", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "accepted"
 
 			}()
 		}
@@ -2628,9 +2622,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeGenPayload.text, 4096); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='said'>: an integer operation overflowed or failed")); return true }; p.vSaid = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vSaid = p.pendingDoneInvokeGenPayload.text
 
 
 	// docs/adr/0087: <sce:lift text="said" schema="Answer">
@@ -2647,9 +2639,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeGenPayload.error, 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = p.pendingDoneInvokeGenPayload.error
 
 			}()
 		case 3:
@@ -2658,9 +2648,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "invalid_argument", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "invalid_argument"
 
 			}()
 		}
@@ -2672,9 +2660,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "exhausted", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "exhausted"
 
 			}()
 		}
@@ -2686,9 +2672,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "exhausted", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "exhausted"
 
 			}()
 		}
@@ -2718,9 +2702,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHarnessStartPayload.request, 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='request'>: an integer operation overflowed or failed")); return true }; p.vRequest = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vRequest = p.pendingHarnessStartPayload.request
 
 			}()
 		}
@@ -2732,9 +2714,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "timeout", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticModelHarnessEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOutcome = "timeout"
 
 			}()
 		}

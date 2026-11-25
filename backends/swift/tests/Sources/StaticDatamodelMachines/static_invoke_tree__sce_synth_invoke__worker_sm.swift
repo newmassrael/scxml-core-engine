@@ -997,9 +997,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_holder.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPick = "static_hybrid_holder.scxml"
 
                 }
             case 2:

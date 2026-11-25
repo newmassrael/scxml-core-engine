@@ -631,9 +631,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("b", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vWhich = "b"
 
                 }
             case 4:
@@ -641,9 +639,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vWhich = ""
 
                 }
             case 5:

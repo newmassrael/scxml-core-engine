@@ -574,25 +574,19 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_target.scxml:32 :: idle :: _transition_2
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRoute = "#_internal"
     }
 
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_target.scxml:35 :: idle :: _transition_3
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRoute = "#_parent"
     }
 
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_target.scxml:38 :: idle :: _transition_4
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRoute = "#_scxml_stranger"
     }
 
     private fun transitionContentOfIdleAt5() {

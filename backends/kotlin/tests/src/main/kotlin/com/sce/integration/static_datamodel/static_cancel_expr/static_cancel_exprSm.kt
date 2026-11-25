@@ -569,17 +569,13 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_cancel_expr.scxml:39 :: idle :: _transition_3
 
-            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vWhich = "b"
     }
 
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_cancel_expr.scxml:42 :: idle :: _transition_4
 
-            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vWhich = ""
     }
 
     private fun transitionContentOfIdleAt5() {

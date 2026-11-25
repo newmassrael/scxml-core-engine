@@ -1119,9 +1119,7 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemUint64(&sceFailure, p.pendingWideRelayedPayload.big, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='low'>: an integer operation overflowed or failed")); return true }; p.vLow = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLow = p.pendingWideRelayedPayload.big % 1000
 
 
 
@@ -1129,9 +1127,7 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, p.pendingWideRelayedPayload.small, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; p.vSmallLow = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vSmallLow = p.pendingWideRelayedPayload.small % 1000
 
 
 

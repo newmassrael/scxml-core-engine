@@ -1834,15 +1834,9 @@ class SheetPeerStateMachine(
                 }
 
 
-            var ifCondFailed4 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed4 = true; false })) {
+            if (pendingSheetRowPayload!!.key / 256.toULong() > vLamport) {
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-            }
-            if (ifCondFailed4) {
-                return
+            vLamport = pendingSheetRowPayload!!.key / 256.toULong()
             }
 
             vPlaced = vPlaced.copy(key = pendingSheetRowPayload!!.key)
@@ -1875,8 +1869,7 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            var ifCondFailed6 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed6 = true; false })) {
+            if (vHub && pendingSheetRowPayload!!.key % 256.toULong() != 1.toULong()) {
 
 
             if (run send@{
@@ -1925,13 +1918,9 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed6) {
-                return
-            }
 
 
-            var ifCondFailed7 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed7 = true; false })) {
+            if (vHub && pendingSheetRowPayload!!.key % 256.toULong() != 2.toULong()) {
 
 
             if (run send@{
@@ -1979,9 +1968,6 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            if (ifCondFailed7) {
-                return
             }
     }
 
@@ -2274,15 +2260,9 @@ class SheetPeerStateMachine(
                 }
 
 
-            var ifCondFailed10 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed10 = true; false })) {
+            if (pendingSheetColPayload!!.key / 256.toULong() > vLamport) {
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-            }
-            if (ifCondFailed10) {
-                return
+            vLamport = pendingSheetColPayload!!.key / 256.toULong()
             }
 
             vPlaced = vPlaced.copy(key = pendingSheetColPayload!!.key)
@@ -2315,8 +2295,7 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            var ifCondFailed12 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed12 = true; false })) {
+            if (vHub && pendingSheetColPayload!!.key % 256.toULong() != 1.toULong()) {
 
 
             if (run send@{
@@ -2365,13 +2344,9 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed12) {
-                return
-            }
 
 
-            var ifCondFailed13 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
+            if (vHub && pendingSheetColPayload!!.key % 256.toULong() != 2.toULong()) {
 
 
             if (run send@{
@@ -2419,9 +2394,6 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            if (ifCondFailed13) {
-                return
             }
     }
 

@@ -2679,9 +2679,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "./static_hybrid_first.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = "./static_hybrid_first.scxml"
 
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
@@ -2701,9 +2699,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_missing.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = "static_hybrid_missing.scxml"
 
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
@@ -2723,9 +2719,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "/opt/charts/static_hybrid_second.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = "/opt/charts/static_hybrid_second.scxml"
 
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end

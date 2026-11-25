@@ -485,25 +485,19 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_type.scxml:28 :: idle :: _transition_1
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vKind = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
     }
 
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_type.scxml:31 :: idle :: _transition_2
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("urn:example:no-such-processor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vKind = "urn:example:no-such-processor"
     }
 
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_type.scxml:34 :: idle :: _transition_3
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vKind = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
     }
 
     private fun transitionContentOfIdleAt4() {

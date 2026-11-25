@@ -666,9 +666,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("pong", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vName = "pong"
 
                 }
             case 3:
@@ -676,9 +674,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("ping", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vName = "ping"
 
                 }
             case 4:
@@ -686,9 +682,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vName = ""
 
                 }
             case 5:

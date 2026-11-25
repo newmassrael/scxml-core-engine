@@ -2322,9 +2322,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListRegisterPayload.text, capacity: 96)); self.vShown.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vShown.text = self.pendingRecordListRegisterPayload.text
 
 
 
@@ -2374,9 +2372,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListValuePayload.text, capacity: 96)); self.vOther.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOther.text = self.pendingRecordListValuePayload.text
 
 
 

@@ -949,9 +949,7 @@ class StatechartStaticHostParamsStateMachine(
 
             vReady = true
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vLabel = "busy"
     }
 
     private fun transitionContentOfIdleAt1() {

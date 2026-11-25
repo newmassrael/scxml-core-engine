@@ -666,17 +666,13 @@ class StaticOptionalRecordStateMachine(
                     return
                 }
 
-            if (try { if (vItems.size < 3) { vItems = vItems + (StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = com.sce.forge.runtime.SceChecked.bounded(pendingItemPickedPayload!!.title, 16), count = pendingItemPickedPayload!!.count)); false } else { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='items'>: the list already holds its capacity of 3"); true } } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<sce:append target='items'>: an integer operation overflowed or failed"); true }) {
+            if (if (vItems.size < 3) { vItems = vItems + (StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = pendingItemPickedPayload!!.title, count = pendingItemPickedPayload!!.count)); false } else { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='items'>: the list already holds its capacity of 3"); true }) {
                 return
             }
 
-            if (try { vDraft = StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = com.sce.forge.runtime.SceChecked.bounded(pendingItemPickedPayload!!.title, 16), count = pendingItemPickedPayload!!.count); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='draft'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vDraft = StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = pendingItemPickedPayload!!.title, count = pendingItemPickedPayload!!.count)
 
-            if (try { vPick = StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = com.sce.forge.runtime.SceChecked.bounded(pendingItemPickedPayload!!.title, 16), count = pendingItemPickedPayload!!.count); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPick = StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = pendingItemPickedPayload!!.title, count = pendingItemPickedPayload!!.count)
     }
 
     private fun transitionContentOfHoldingAt1() {
@@ -705,16 +701,12 @@ class StaticOptionalRecordStateMachine(
 
             if (vPick != null) {
 
-            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vPick).title, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vTitle = com.sce.forge.runtime.SceOptional.proven(vPick).title
 
             vCount = com.sce.forge.runtime.SceOptional.proven(vPick).count
             } else {
 
-            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded("none", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vTitle = "none"
 
             vCount = -1
             }
@@ -736,9 +728,7 @@ class StaticOptionalRecordStateMachine(
                 return
             }
 
-            if (try { vPick = com.sce.forge.runtime.SceOptional.proven(vPick).copy(title = com.sce.forge.runtime.SceChecked.bounded("bumped", 16)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick.value.title'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPick = com.sce.forge.runtime.SceOptional.proven(vPick).copy(title = "bumped")
             }
     }
 

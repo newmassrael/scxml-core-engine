@@ -1376,9 +1376,7 @@ func (p *StaticChildHostHybridPolicy) ExecuteTransitionContent(source StaticChil
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hosted_second.scxml", 48); if sceFailure.Failed() { return true }; p.vPick = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vPick = "static_hosted_second.scxml"
 
 			}()
 		}

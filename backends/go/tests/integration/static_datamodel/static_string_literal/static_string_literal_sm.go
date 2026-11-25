@@ -887,9 +887,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "it's", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "it's"
 
 			}()
 		case 1:
@@ -898,9 +896,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "a\\b", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "a\\b"
 
 			}()
 		case 2:
@@ -909,9 +905,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "$name ${x}", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "$name ${x}"
 
 			}()
 		case 3:
@@ -920,9 +914,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "\\(x)", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "\\(x)"
 
 			}()
 		case 4:
@@ -931,9 +923,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "a\nb\tc", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "a\nb\tc"
 
 			}()
 		case 5:
@@ -942,9 +932,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "Aé€", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "Aé€"
 
 			}()
 		case 6:
@@ -953,9 +941,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "𐍈𐍈", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "𐍈𐍈"
 
 			}()
 		case 7:
@@ -964,9 +950,7 @@ func (p *StaticStringLiteralPolicy) ExecuteTransitionContent(source StaticString
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "a??=b", 32); if sceFailure.Failed() { return true }; p.vHeld = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld = "a??=b"
 
 			}()
 		case 8:

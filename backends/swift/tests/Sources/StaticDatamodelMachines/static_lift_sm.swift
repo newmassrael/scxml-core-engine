@@ -779,9 +779,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTextKeptPayload.text, capacity: 512)); self.vSaid = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, reason: .expressionFailed, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vSaid = self.pendingTextKeptPayload.text
 
 
                 // docs/adr/0087: <sce:lift text="said" schema="Answer">

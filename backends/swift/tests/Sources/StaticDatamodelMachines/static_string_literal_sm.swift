@@ -544,9 +544,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("it's", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "it's"
 
                 }
             case 1:
@@ -554,9 +552,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("a\\b", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "a\\b"
 
                 }
             case 2:
@@ -564,9 +560,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("$name ${x}", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "$name ${x}"
 
                 }
             case 3:
@@ -574,9 +568,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("\\(x)", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "\\(x)"
 
                 }
             case 4:
@@ -584,9 +576,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("a\nb\tc", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "a\nb\tc"
 
                 }
             case 5:
@@ -594,9 +584,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("Aé€", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "Aé€"
 
                 }
             case 6:
@@ -604,9 +592,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("𐍈𐍈", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "𐍈𐍈"
 
                 }
             case 7:
@@ -614,9 +600,7 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("a??=b", capacity: 32)); self.vHeld = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vHeld = "a??=b"
 
                 }
             case 8:

@@ -1448,9 +1448,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingTextKeptPayload.text, 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='said'>: an integer operation overflowed or failed")); return true }; p.vSaid = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vSaid = p.pendingTextKeptPayload.text
 
 
 	// docs/adr/0087: <sce:lift text="said" schema="Answer">

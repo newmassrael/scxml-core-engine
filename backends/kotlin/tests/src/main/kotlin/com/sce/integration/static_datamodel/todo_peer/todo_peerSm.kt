@@ -1326,9 +1326,7 @@ class TodoPeerStateMachine(
                     return
                 }
 
-            if (try { vTyped = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='typed'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vTyped = pendingTodoEditPayload!!.text
 
             vEntry = vEntry.copy(element = pendingTodoEditPayload!!.id.toULong())
 
@@ -1411,9 +1409,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(value = 0)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOp = vOp.copy(text = "")
 
             vOp = vOp.copy(wallTime = o.wallTime)
 
@@ -1435,9 +1431,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(value = pendingTodoEditPayload!!.value)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOp = vOp.copy(text = pendingTodoEditPayload!!.text)
 
             vOp = vOp.copy(wallTime = 0)
 
@@ -1585,9 +1579,7 @@ class TodoPeerStateMachine(
 
             if (vOp.kind == 0.toUByte()) {
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vHeld = vHeld.copy(text = vOp.text)
 
             vHeld = vHeld.copy(id = vOp.id.toULong())
 
@@ -1982,11 +1974,11 @@ class TodoPeerStateMachine(
 
             vOcc = vOcc.copy(conflict = l.conflict)
 
-            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, l.start / 1000)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOcc = vOcc.copy(start = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='occ.start'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOcc = vOcc.copy(start = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), l.start % 1000)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='occ.start'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

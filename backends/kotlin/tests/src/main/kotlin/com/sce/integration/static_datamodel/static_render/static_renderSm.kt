@@ -555,41 +555,31 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_render.scxml:36 :: idle :: _transition_1
 
-            if (try { vWho = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='who'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vWho = "abcdefgh"
 
             vCount = -32768
 
             vView = StaticRenderViewModeEnum.AGENDA_LIST
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("0123456789abcdef", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSaid = "0123456789abcdef"
     }
 
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_render.scxml:43 :: idle :: _transition_2
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("a[[TEXTbTEXT]]c", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSaid = "a[[TEXTbTEXT]]c"
     }
 
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_render.scxml:47 :: idle :: _transition_3
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("[[TE[[TEXTXT", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSaid = "[[TE[[TEXTXT"
     }
 
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_render.scxml:51 :: idle :: _transition_4
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("é[[TEXTü", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSaid = "é[[TEXTü"
     }
 
     private fun transitionContentOfIdleAt5() {

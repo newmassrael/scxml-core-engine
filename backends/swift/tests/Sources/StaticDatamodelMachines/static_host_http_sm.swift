@@ -770,21 +770,15 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeFetchPayload.headers, capacity: 4096)); self.vResponseHeaders = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='response_headers'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vResponseHeaders = self.pendingDoneInvokeFetchPayload.headers
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeFetchPayload.body, capacity: 16384)); self.vResponseBody = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='response_body'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vResponseBody = self.pendingDoneInvokeFetchPayload.body
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOutcome = "done"
 
                 }
             case 1:
@@ -795,9 +789,7 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeFetchPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOutcome = self.pendingDoneInvokeFetchPayload.error
 
                 }
             case 2:
@@ -805,9 +797,7 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOutcome = "deadline"
 
                 }
             case 3:
@@ -815,9 +805,7 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOutcome = "refused"
 
                 }
             default:
@@ -833,27 +821,19 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostHttpFetchRequestPayload.method, capacity: 8)); self.vMethod = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='method'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vMethod = self.pendingHostHttpFetchRequestPayload.method
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostHttpFetchRequestPayload.url, capacity: 2048)); self.vUrl = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='url'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vUrl = self.pendingHostHttpFetchRequestPayload.url
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostHttpFetchRequestPayload.headers, capacity: 2048)); self.vRequestHeaders = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='request_headers'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vRequestHeaders = self.pendingHostHttpFetchRequestPayload.headers
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostHttpFetchRequestPayload.body, capacity: 16384)); self.vRequestBody = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='request_body'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vRequestBody = self.pendingHostHttpFetchRequestPayload.body
 
                 }
             default:

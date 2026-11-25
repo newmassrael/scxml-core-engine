@@ -764,9 +764,7 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hosted_second.scxml", capacity: 48)); self.vPick = sceValue } catch { return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vPick = "static_hosted_second.scxml"
 
                 }
             default:

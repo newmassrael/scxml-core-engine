@@ -1556,9 +1556,7 @@ class StaticModelHarnessStateMachine(
                 return
             }
 
-            if (try { vRefused = vRefused.copy(path = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vWhy).path, 256)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refused.path'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRefused = vRefused.copy(path = com.sce.forge.runtime.SceOptional.proven(vWhy).path)
             }
     }
 
@@ -1567,17 +1565,13 @@ class StaticModelHarnessStateMachine(
 
             vRefused = vRefused.copy(code = StaticModelHarnessHarnessCodeEnum.NOT_OFFERED)
 
-            if (try { vRefused = vRefused.copy(path = com.sce.forge.runtime.SceChecked.bounded("/id", 256)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refused.path'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRefused = vRefused.copy(path = "/id")
     }
 
     private fun transitionContentOfCheckAt2() {
                 // SCE-MAP: static_model_harness.scxml:186 :: check :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("accepted", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "accepted"
     }
 
     // The content of `generate`'s own transitions, by the index the
@@ -1601,9 +1595,7 @@ class StaticModelHarnessStateMachine(
                     return
                 }
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.text, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vSaid = pendingDoneInvokeGenPayload!!.text
 
             when (val sceLift = com.sce.runtime.EventPayload.liftRecord(vSaid, 1, 256, "{\"priority\":3}") { r -> StaticModelHarnessAnswerRecord(id = r.field("id").let { v -> v.uint32() }, amount = r.field("amount").let { v -> v.int64() }, title = r.field("title").let { v -> v.string(16) }, kind = r.field("kind").let { v -> v.name().let { name -> when (name) { "meeting" -> StaticModelHarnessEnumLiftKindEnum.MEETING; "task" -> StaticModelHarnessEnumLiftKindEnum.TASK; else -> throw v.unknownVariant(name, "enum_lift_kind") } } }, note = r.field("note").let { v -> v.optional { present -> present.string(8) } }, tag = r.field("tag").let { v -> v.bytes(4) }, priority = r.field("priority").let { v -> v.uint8() }) }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticModelHarnessLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticModelHarnessLiftRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticModelHarnessLiftRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticModelHarnessLiftRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticModelHarnessLiftRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticModelHarnessLiftRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticModelHarnessLiftRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticModelHarnessLiftRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticModelHarnessLiftRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticModelHarnessLiftRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticModelHarnessLiftRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NUL_IN_TEXT; com.sce.runtime.EventPayload.RefusalCode.TOO_FEW -> StaticModelHarnessLiftRefusalCodeEnum.TOO_FEW; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
     }
@@ -1614,17 +1606,13 @@ class StaticModelHarnessStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = pendingDoneInvokeGenPayload!!.error
     }
 
     private fun transitionContentOfGenerateAt3() {
                 // SCE-MAP: static_model_harness.scxml:146 :: generate :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("invalid_argument", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "invalid_argument"
     }
 
     // The content of `repair`'s own transitions, by the index the
@@ -1643,9 +1631,7 @@ class StaticModelHarnessStateMachine(
     private fun transitionContentOfRepairAt0() {
                 // SCE-MAP: static_model_harness.scxml:201 :: repair :: _transition_0
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("exhausted", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "exhausted"
     }
 
     // The content of `retry`'s own transitions, by the index the
@@ -1664,9 +1650,7 @@ class StaticModelHarnessStateMachine(
     private fun transitionContentOfRetryAt0() {
                 // SCE-MAP: static_model_harness.scxml:155 :: retry :: _transition_0
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("exhausted", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "exhausted"
     }
 
     // The content of `waiting`'s own transitions, by the index the
@@ -1700,9 +1684,7 @@ class StaticModelHarnessStateMachine(
                     return
                 }
 
-            if (try { vRequest = com.sce.forge.runtime.SceChecked.bounded(pendingHarnessStartPayload!!.request, 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='request'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vRequest = pendingHarnessStartPayload!!.request
     }
 
     // The content of `work`'s own transitions, by the index the
@@ -1721,8 +1703,6 @@ class StaticModelHarnessStateMachine(
     private fun transitionContentOfWorkAt0() {
                 // SCE-MAP: static_model_harness.scxml:115 :: work :: _transition_0
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("timeout", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticModelHarnessEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vOutcome = "timeout"
     }
 }

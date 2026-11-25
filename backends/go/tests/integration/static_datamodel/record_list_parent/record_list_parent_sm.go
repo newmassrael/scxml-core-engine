@@ -3905,9 +3905,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListRegisterPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; p.vShown.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vShown.text = p.pendingRecordListRegisterPayload.text
 
 
 
@@ -3958,9 +3956,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListValuePayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; p.vOther.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOther.text = p.pendingRecordListValuePayload.text
 
 
 

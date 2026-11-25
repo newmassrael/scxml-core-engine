@@ -544,9 +544,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vKind = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
 
                 }
             case 2:
@@ -554,9 +552,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("urn:example:no-such-processor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vKind = "urn:example:no-such-processor"
 
                 }
             case 3:
@@ -564,9 +560,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vKind = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
 
                 }
             case 4:

@@ -551,9 +551,7 @@ class StaticTextRecordStateMachine(
                     return
                 }
 
-            if (try { vIncoming = StaticTextRecordSlotRecord(slot = pendingTextSlotPayload!!.slot, version = pendingTextSlotPayload!!.version, text = com.sce.forge.runtime.SceChecked.bounded(pendingTextSlotPayload!!.text, 32)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='incoming'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vIncoming = StaticTextRecordSlotRecord(slot = pendingTextSlotPayload!!.slot, version = pendingTextSlotPayload!!.version, text = pendingTextSlotPayload!!.text)
 
             vHeld = call_Latest__vv(vHeld, vIncoming)
 

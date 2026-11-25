@@ -3961,9 +3961,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingTodoEditPayload.text, 32); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='typed'>: an integer operation overflowed or failed")); return true }; p.vTyped = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vTyped = p.pendingTodoEditPayload.text
 
 
 
@@ -4086,9 +4084,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.text = ""
 
 
 
@@ -4131,9 +4127,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingTodoEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.text = p.pendingTodoEditPayload.text
 
 
 
@@ -4342,9 +4336,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if p.vOp.kind == 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vHeld.text = p.vOp.text
 
 
 
@@ -5005,13 +4997,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_UtcFromLocal__vv(p.vZoneStarts, p.vZoneOffsets, scealgorithm.DivInt64(&sceFailure, l.start, 1000))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; p.vUtcSec = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_UtcFromLocal__vv(p.vZoneStarts, p.vZoneOffsets, l.start / 1000)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; p.vUtcSec = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vUtcSec, 1000), scealgorithm.RemInt64(&sceFailure, l.start, 1000)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; p.vOcc.start = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vUtcSec, 1000), l.start % 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; p.vOcc.start = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

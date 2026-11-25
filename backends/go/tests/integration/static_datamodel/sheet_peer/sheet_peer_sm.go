@@ -3771,19 +3771,11 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 					return
 				}
 
-	{
-	var ifCondFailed4 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false }; return sceValue }() {
+	if p.pendingSheetRowPayload.key / 256 > p.vLamport {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLamport = p.pendingSheetRowPayload.key / 256
 
-	}
-	if ifCondFailed4 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
 	}
 
 
@@ -3826,9 +3818,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	{
-	var ifCondFailed6 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false }; return sceValue }() {
+	if p.vHub && p.pendingSheetRowPayload.key % 256 != 1 {
 
 	// W3C SCXML 6.2: send id="__send_10"
 	{
@@ -3894,15 +3884,9 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed6 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
 
 
-	{
-	var ifCondFailed7 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }() {
+	if p.vHub && p.pendingSheetRowPayload.key % 256 != 2 {
 
 	// W3C SCXML 6.2: send id="__send_11"
 	{
@@ -3966,10 +3950,6 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			return
 		}
 	}
-	}
-	}
-	if ifCondFailed7 {
-		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
@@ -4387,19 +4367,11 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 					return
 				}
 
-	{
-	var ifCondFailed10 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false }; return sceValue }() {
+	if p.pendingSheetColPayload.key / 256 > p.vLamport {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vLamport = p.pendingSheetColPayload.key / 256
 
-	}
-	if ifCondFailed10 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
 	}
 
 
@@ -4442,9 +4414,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	{
-	var ifCondFailed12 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false }; return sceValue }() {
+	if p.vHub && p.pendingSheetColPayload.key % 256 != 1 {
 
 	// W3C SCXML 6.2: send id="__send_20"
 	{
@@ -4510,15 +4480,9 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed12 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
 
 
-	{
-	var ifCondFailed13 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
+	if p.vHub && p.pendingSheetColPayload.key % 256 != 2 {
 
 	// W3C SCXML 6.2: send id="__send_21"
 	{
@@ -4582,10 +4546,6 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			return
 		}
 	}
-	}
-	}
-	if ifCondFailed13 {
-		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
