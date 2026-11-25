@@ -10,11 +10,23 @@
 # them in a guard; it expects a value past the bound to leave what it was written to as
 # it was and `errors` to count it, a byte above 0x7F to be one byte and not the two of
 # its character, and a payload that carries a character past U+00FF, which is no byte, to
-# be refused with nothing written. The mutants take one decision away each:
+# be refused with nothing written, and a frame past the eight bytes its schema declares to
+# be refused whole where the payload is read, on the routes that write none of it too.
+# The mutants take one decision away each:
 #
-#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   a frame past its schema's bound is read, and not refused where the payload is read;
 #   an assignment to a bytes variable is not held to its bound, whatever it is read from;
 #   the bytes of a payload are the bytes of its UTF-8 text.
+#
+# Every place is an `OwnedBytes<N>` (docs/adr/0086, section 7.4) written through
+# `Checked::held`, so a generator that skipped a bound would write a vector into it, which
+# does not compile (2ae2838be61); the bound of an assignment is taken away where the type
+# holds it, in `Bounded::make`, for a byte string alone. A record taken whole from a
+# payload is of the payload's own schema, so its field's bound is the one the payload is
+# read under, and since 1e442386c88 a frame past it is refused where it is read, before any
+# write: the case that took the record's own bound away is aimed at that refusal, the one
+# decision that now keeps the record within its field's bound, and the steps that only
+# measure the frame or read none of it are what see it.
 #
 # The text itself, each way it can be spelled, is held by `EventPayloadBytes`
 # (`a_cpp_payload_bytes_are_read_as_latin1_text_ctest.cases`).
@@ -24,18 +36,19 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets sce-build/src/forge/static_lowering.rs sce/include/common/EventPayloadLift.h
+mutation_targets backends/cpp/forge-runtime/include/sce/forge/bounded.h
 mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
 
-mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "            (EntryType::Scalar(SceType::Bytes), Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
-     "            (EntryType::Scalar(SceType::Bytes), Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+mutation_case "a frame past its schema's bound is read, and not refused where the payload is read" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "        if (bytes.size() > bound) {\n            return pastBytes(bytes.size(), bound);",
+     "        if (false && bytes.size() > bound) {\n            return pastBytes(bytes.size(), bound);")
 PY
 
 mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "        } else if let Some(capacity) = self.bytes.get(location) {",
-     "        } else if let Some(capacity) = self.bytes.get(location).filter(|_| false) {")
+edit("backends/cpp/forge-runtime/include/sce/forge/bounded.h",
+     "        if (!admits(static_cast<std::size_t>(list.size()))) {",
+     "        if (!admits(static_cast<std::size_t>(list.size())) && !std::is_same<L, std::vector<std::uint8_t>>::value) {")
 PY
 
 mutation_case "the bytes of a payload are the bytes of its UTF-8 text" <<'PY'
