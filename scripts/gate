@@ -537,8 +537,8 @@ fi
 # the gate's statuses inside pass through as they are.
 gate_in_container() {
     local slug="$1" containerfile="$2" tag rc=0 cache target common security
-    local release sysroot
-    local -a user mounts inner
+    local release sysroot wrapper=""
+    local -a user mounts inner wrapper_env=()
     if ! command -v docker >/dev/null 2>&1; then
         printf '\nERROR gate: %s runs in the image %s builds, and docker is not on PATH here.\n' \
             "$slug" "$containerfile" >&2
@@ -629,6 +629,24 @@ gate_in_container() {
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
         "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2
+    # The compile cache a CI lane compiles Rust through
+    # (.github/actions/compile-cache): sccache, named by RUSTC_WRAPPER. The
+    # binary is static and is mounted read-only beside nothing the image holds;
+    # the settings and the cache service's address and token it reads go in
+    # with it. What it answers is a compilation whose inputs, the compiler and
+    # its target among them, are the image's own, and what links is linked in
+    # the image, so nothing built against another libc is handed in. Its server
+    # lives in the container, so its counts are printed there, after the gate
+    # and with the gate's status kept.
+    if [[ "$(basename "${RUSTC_WRAPPER:-}")" == sccache ]] \
+            && wrapper="$(command -v "$RUSTC_WRAPPER" 2>/dev/null)" && [[ -n "$wrapper" ]]; then
+        mounts+=(-v "$wrapper:/opt/sce-sccache/sccache:ro")
+        wrapper_env=(-e RUSTC_WRAPPER=/opt/sce-sccache/sccache -e CARGO_INCREMENTAL=0
+                     -e SCCACHE_GHA_ENABLED -e SCCACHE_GHA_RW_MODE -e SCCACHE_IDLE_TIMEOUT
+                     -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN -e ACTIONS_CACHE_SERVICE_V2)
+        inner=(bash -c '"$@"; rc=$?; /opt/sce-sccache/sccache --show-stats >&2; exit "$rc"' \
+            gate-in-container "${inner[@]}")
+    fi
     # The commands that reproduce a failure inside come back through the cache
     # directory, and are printed out here, where the step summary is.
     : >"$cache/repro.jsonl"
@@ -638,6 +656,7 @@ gate_in_container() {
         -e HOME=/sce-cache/home -e CARGO_HOME=/sce-cache/cargo \
         -e PATH="/opt/clang-format-19/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         -e BX_GRANT_CORES -e BX_GRANT_MEM_MB -e SCE_GATE_NO_FAIL_FAST \
+        ${wrapper_env[@]+"${wrapper_env[@]}"} \
         "$tag" "${inner[@]}" || rc=$?
     cat "$cache/repro.jsonl" >>"$SCE_GATE_REPRO_FILE" 2>/dev/null || true
     case "$rc" in
