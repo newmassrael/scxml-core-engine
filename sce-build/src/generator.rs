@@ -9442,13 +9442,15 @@ mod tests {
     /// own order.
     #[test]
     fn rust_numbered_events_are_the_order_the_template_sorted_them_in() {
-        let mut model = SCXMLModel::default();
-        model.events = [
-            "go", "Go", "gO", "Zeta", "alpha", "error.x", "_b", "1a", "Error",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect();
+        let model = SCXMLModel {
+            events: [
+                "go", "Go", "gO", "Zeta", "alpha", "error.x", "_b", "1a", "Error",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+            ..SCXMLModel::default()
+        };
         let env = minijinja::Environment::new();
         let sorted = env
             .render_str(
