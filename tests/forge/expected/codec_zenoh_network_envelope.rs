@@ -632,6 +632,14 @@ impl<'a> CodecZenohNetworkEnvelopeView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -646,22 +654,29 @@ impl<'a> CodecZenohNetworkEnvelopeView<'a> {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match _peek & 0x1F {
-            25u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohInterest(CodecZenohInterestView::read(cursor)),
-            26u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohResponseFinal(CodecZenohResponseFinalView::read(cursor)),
-            27u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohResponse(CodecZenohResponseView::read(cursor)),
-            28u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohRequest(CodecZenohRequestView::read(cursor)),
-            29u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohPush(CodecZenohPushView::read(cursor)),
-            30u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohDeclare(CodecZenohDeclareView::read(cursor)),
-            31u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohOam(CodecZenohOamView::read(cursor)),
+            25u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohInterest(CodecZenohInterestView::read_with(cursor, _hook)),
+            26u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohResponseFinal(CodecZenohResponseFinalView::read_with(cursor, _hook)),
+            27u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohResponse(CodecZenohResponseView::read_with(cursor, _hook)),
+            28u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohRequest(CodecZenohRequestView::read_with(cursor, _hook)),
+            29u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohPush(CodecZenohPushView::read_with(cursor, _hook)),
+            30u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohDeclare(CodecZenohDeclareView::read_with(cursor, _hook)),
+            31u8 => CodecZenohNetworkEnvelopeViewVariant::CodecZenohOam(CodecZenohOamView::read_with(cursor, _hook)),
             other => CodecZenohNetworkEnvelopeViewVariant::Default {
                 tag: CodecZenohNetworkEnvelopeUnknownTag(other),
-                body: CodecZenohOamView::read(cursor),
+                body: CodecZenohOamView::read_with(cursor, _hook),
             },
         };
         Self {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.
@@ -754,6 +769,178 @@ impl<'a> CodecZenohNetworkEnvelopeView<'a> {
         let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
+    }
+}
+
+// ── Records (ADR 0130) ───────────────────────────────────────────────
+// The frames of `CodecZenohNetworkEnvelope` laid one after the other, read one record
+// at a time: `next` peeks the tag of a record and hands out a handle of the arm
+// it names, and the arm's view is read only when the handle is, so the stack
+// under the call that reads it holds that arm's view and no other. A record
+// handed out and not read is skipped as the arm it was handed out as, never as
+// the view of every arm.
+
+/// How a record of the arm `CodecZenohInterest` is read: as
+/// [`CodecZenohInterestView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohInterestRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohInterestRecord {
+    type View<'f> = CodecZenohInterestView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohInterestView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohResponseFinal` is read: as
+/// [`CodecZenohResponseFinalView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohResponseFinalRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohResponseFinalRecord {
+    type View<'f> = CodecZenohResponseFinalView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohResponseFinalView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohResponse` is read: as
+/// [`CodecZenohResponseView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohResponseRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohResponseRecord {
+    type View<'f> = CodecZenohResponseView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohResponseView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohRequest` is read: as
+/// [`CodecZenohRequestView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohRequestRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohRequestRecord {
+    type View<'f> = CodecZenohRequestView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohRequestView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohPush` is read: as
+/// [`CodecZenohPushView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohPushRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohPushRecord {
+    type View<'f> = CodecZenohPushView;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohPushView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohDeclare` is read: as
+/// [`CodecZenohDeclareView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohDeclareRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohDeclareRecord {
+    type View<'f> = CodecZenohDeclareView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohDeclareView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecZenohOam` is read: as
+/// [`CodecZenohOamView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeCodecZenohOamRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecZenohNetworkEnvelopeCodecZenohOamRecord {
+    type View<'f> = CodecZenohOamView<'f>;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecZenohOamView::read_with(reader, hook)
+    }
+}
+
+/// One record of a [`CodecZenohNetworkEnvelopeRecords`], of the arm its tag names, not
+/// yet read: a borrow of the reader and nothing else. `read()` reads the arm's
+/// view and `read_with(hook)` shows `hook` each chain entry as it is read; a
+/// record not read is skipped by the next `next`, as its own arm.
+#[allow(dead_code)]
+pub enum CodecZenohNetworkEnvelopeRecord<'r, 'f> {
+    CodecZenohInterest(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohInterestRecord>),
+    CodecZenohResponseFinal(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohResponseFinalRecord>),
+    CodecZenohResponse(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohResponseRecord>),
+    CodecZenohRequest(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohRequestRecord>),
+    CodecZenohPush(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohPushRecord>),
+    CodecZenohDeclare(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohDeclareRecord>),
+    CodecZenohOam(::sce_forge_runtime::codec::Record<'r, 'f, CodecZenohNetworkEnvelopeCodecZenohOamRecord>),
+}
+
+// A record is a handle and its arm, whatever the arms' views hold, so handing
+// one out costs the consumer two words of stack on every target.
+const _: () = assert!(core::mem::size_of::<CodecZenohNetworkEnvelopeRecord<'static, 'static>>() <= 64);
+
+/// The frames of `CodecZenohNetworkEnvelope` laid one after the other in `&'f [u8]`,
+/// read one record at a time through one reader (docs/adr/0130). The sequence
+/// ends at the end of the bytes, at a tag no arm names (the start of something
+/// else, which a single frame's default arm would take), and at the first
+/// refusal, which is its verdict.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct CodecZenohNetworkEnvelopeRecords<'f>(::sce_forge_runtime::codec::Records<'f>);
+
+#[allow(dead_code)]
+impl<'f> CodecZenohNetworkEnvelopeRecords<'f> {
+    /// The records of `bytes`, none read.
+    pub const fn new(bytes: &'f [u8]) -> Self {
+        Self(::sce_forge_runtime::codec::Records::new(bytes))
+    }
+
+    /// The bytes of the records read whole: where a refused record, or the
+    /// first byte no arm's tag names, begins.
+    pub const fn consumed(&self) -> usize {
+        self.0.consumed()
+    }
+
+    /// The sequence's verdict: the first refusal of any record read, or `Ok`.
+    pub fn verdict(&self) -> Result<(), CodecError> {
+        self.0.verdict()
+    }
+
+    /// The next record, of the arm its tag names; `None` at the end of the
+    /// bytes, at a tag no arm names and once a record was refused.
+    // A record borrows the sequence it was read from, which `Iterator::next`
+    // cannot say: the consumer reads one record and then asks for the next.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<CodecZenohNetworkEnvelopeRecord<'_, 'f>> {
+        let _peek = self.0.head()?;
+        match _peek & 0x1F {
+            25u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohInterest(self.0.record())),
+            26u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohResponseFinal(self.0.record())),
+            27u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohResponse(self.0.record())),
+            28u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohRequest(self.0.record())),
+            29u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohPush(self.0.record())),
+            30u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohDeclare(self.0.record())),
+            31u8 => Some(CodecZenohNetworkEnvelopeRecord::CodecZenohOam(self.0.record())),
+            _ => None,
+        }
     }
 }
 

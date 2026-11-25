@@ -676,6 +676,14 @@ impl<'a> CodecChainHasTaggedView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -700,7 +708,9 @@ impl<'a> CodecChainHasTaggedView<'a> {
             let mut _more = false;
             for _ in 0..3u32 {
                 if cursor.failed() { break; }
-                let _entry = CodecChainHasTaggedEntryView::read(cursor);
+                let _at = cursor.mark();
+                let _entry = CodecChainHasTaggedEntryView::read_with(cursor, _hook);
+                ::sce_forge_runtime::codec::show_entry(cursor, _hook, ::sce_forge_runtime::codec::ChainSite { codec: "codec_chain_has_tagged", field: "entries" }, _at);
                 _more = _entry.more();
                 _count += u32::from(!cursor.failed());
                 if !_more { break; }
@@ -735,6 +745,13 @@ impl<'a> CodecChainHasTaggedView<'a> {
             entries_has_0x7_has_0x9_header_wide: cursor.settle(match (_has_entries_7, _has_entries_9, (header & 0x01u8) != 0) { (true, true, true) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: _m0, priority: priority.unwrap_or_default() }), (true, true, false) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: _m0, priority: priority.unwrap_or_default() }), (true, false, true) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: _m0, priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }), (false, true, true) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: _m0, priority: priority.unwrap_or_default() }), (true, false, false) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: _m0, priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }), (false, true, false) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: _m0 }), (false, false, true) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: _m0, priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }), (false, false, false) => ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).ok_or(CodecError::PresentIfMismatch).map(|_m0| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: _m0, checksum: checksum.unwrap_or_default() }), }),
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

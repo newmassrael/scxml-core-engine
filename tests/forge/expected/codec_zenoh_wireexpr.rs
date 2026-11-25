@@ -181,6 +181,14 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
         _out
     }
 
+    /// [`Self::read`], under the name every view reads with a chain hook
+    /// (docs/adr/0130): `CodecZenohWireexpr` is its own view and holds no chain,
+    /// so `_hook` is shown nothing.
+    #[inline(always)]
+    pub fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'f>, n: u8, _hook: &mut H) -> Self where S: CodecZenohWireexprFrom<'f> {
+        Self::read(cursor, n)
+    }
+
     /// Worst-case encoded byte count for this codec — the upper bound
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for

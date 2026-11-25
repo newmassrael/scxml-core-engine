@@ -794,6 +794,14 @@ impl<'a> CodecZenohRequestView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -808,7 +816,7 @@ impl<'a> CodecZenohRequestView<'a> {
         let rid = cursor.read_vle_u64();
         #[allow(clippy::needless_late_init)]
         let keyexpr: CodecZenohWireexprView<'a>;
-        keyexpr = CodecZenohWireexprView::read(cursor, (header >> 5) & 0x1);
+        keyexpr = CodecZenohWireexprView::read_with(cursor, (header >> 5) & 0x1, _hook);
         #[allow(clippy::needless_late_init)]
         let extensions: Option<Bounded<ListView<'a, super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>>;
         if (header & 0x80u8) != 0 {
@@ -817,7 +825,9 @@ impl<'a> CodecZenohRequestView<'a> {
             let mut _more = false;
             loop {
                 if cursor.failed() { break; }
-                let _entry = CodecZenohExtEntryView::read(cursor);
+                let _at = cursor.mark();
+                let _entry = CodecZenohExtEntryView::read_with(cursor, _hook);
+                ::sce_forge_runtime::codec::show_entry(cursor, _hook, ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_request", field: "extensions" }, _at);
                 _more = _entry.z();
                 _count += u32::from(!cursor.failed());
                 if !_more { break; }
@@ -836,12 +846,12 @@ impl<'a> CodecZenohRequestView<'a> {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match _peek & 0x1F {
-            1u8 => CodecZenohRequestViewVariant::CodecZenohMsgPut(CodecZenohMsgPutView::read(cursor)),
-            2u8 => CodecZenohRequestViewVariant::CodecZenohMsgDel(CodecZenohMsgDelView::read(cursor)),
-            3u8 => CodecZenohRequestViewVariant::CodecZenohQuery(CodecZenohQueryView::read(cursor)),
+            1u8 => CodecZenohRequestViewVariant::CodecZenohMsgPut(CodecZenohMsgPutView::read_with(cursor, _hook)),
+            2u8 => CodecZenohRequestViewVariant::CodecZenohMsgDel(CodecZenohMsgDelView::read_with(cursor, _hook)),
+            3u8 => CodecZenohRequestViewVariant::CodecZenohQuery(CodecZenohQueryView::read_with(cursor, _hook)),
             other => CodecZenohRequestViewVariant::Default {
                 tag: CodecZenohRequestUnknownTag(other),
-                body: CodecZenohQueryView::read(cursor),
+                body: CodecZenohQueryView::read_with(cursor, _hook),
             },
         };
         Self {
@@ -852,6 +862,13 @@ impl<'a> CodecZenohRequestView<'a> {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

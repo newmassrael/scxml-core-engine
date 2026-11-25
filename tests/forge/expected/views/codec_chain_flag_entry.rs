@@ -126,6 +126,14 @@ impl CodecChainFlagEntry {
         _out
     }
 
+    /// [`Self::read`], under the name every view reads with a chain hook
+    /// (docs/adr/0130): `CodecChainFlagEntry` is its own view and holds no chain,
+    /// so `_hook` is shown nothing.
+    #[inline(always)]
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'_>, wide: u8, _hook: &mut H) -> Self {
+        Self::read(cursor, wide)
+    }
+
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the

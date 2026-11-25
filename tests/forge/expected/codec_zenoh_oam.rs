@@ -714,6 +714,14 @@ impl<'a> CodecZenohOamView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -734,7 +742,9 @@ impl<'a> CodecZenohOamView<'a> {
             let mut _more = false;
             loop {
                 if cursor.failed() { break; }
-                let _entry = CodecZenohExtEntryView::read(cursor);
+                let _at = cursor.mark();
+                let _entry = CodecZenohExtEntryView::read_with(cursor, _hook);
+                ::sce_forge_runtime::codec::show_entry(cursor, _hook, ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_oam", field: "extensions" }, _at);
                 _more = _entry.z();
                 _count += u32::from(!cursor.failed());
                 if !_more { break; }
@@ -752,12 +762,12 @@ impl<'a> CodecZenohOamView<'a> {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match (header >> 5) & 0x03 {
-            0u8 => CodecZenohOamViewVariant::CodecZenohExtUnit(CodecZenohExtUnitView::read(cursor)),
-            1u8 => CodecZenohOamViewVariant::CodecZenohExtZint(CodecZenohExtZintView::read(cursor)),
-            2u8 => CodecZenohOamViewVariant::CodecZenohExtZbuf(CodecZenohExtZbufView::read(cursor)),
+            0u8 => CodecZenohOamViewVariant::CodecZenohExtUnit(CodecZenohExtUnitView::read_with(cursor, _hook)),
+            1u8 => CodecZenohOamViewVariant::CodecZenohExtZint(CodecZenohExtZintView::read_with(cursor, _hook)),
+            2u8 => CodecZenohOamViewVariant::CodecZenohExtZbuf(CodecZenohExtZbufView::read_with(cursor, _hook)),
             other => CodecZenohOamViewVariant::Default {
                 tag: CodecZenohOamUnknownTag(other),
-                body: CodecZenohExtUnitView::read(cursor),
+                body: CodecZenohExtUnitView::read_with(cursor, _hook),
             },
         };
         Self {
@@ -767,6 +777,13 @@ impl<'a> CodecZenohOamView<'a> {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

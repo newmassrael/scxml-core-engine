@@ -383,6 +383,14 @@ impl<'a> CodecZenohDeclSubscriberView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>, n: u8) -> Self {
+        Self::read_with(cursor, n, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, n: u8, _hook: &mut H) -> Self {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -403,12 +411,19 @@ impl<'a> CodecZenohDeclSubscriberView<'a> {
         let id = cursor.read_vle_u32();
         #[allow(clippy::needless_late_init)]
         let wireexpr: CodecZenohWireexprView<'a>;
-        wireexpr = CodecZenohWireexprView::read(cursor, n);
+        wireexpr = CodecZenohWireexprView::read_with(cursor, n, _hook);
         Self {
             id,
             wireexpr,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, n: u8, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, n, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

@@ -423,6 +423,14 @@ impl CodecVariantPeekBasicView {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'_>, _hook: &mut H) -> Self {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -437,8 +445,8 @@ impl CodecVariantPeekBasicView {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match _peek & 0x01 {
-            0u8 => CodecVariantPeekBasicViewVariant::CodecPeekArmA(CodecPeekArmAView::read(cursor)),
-            1u8 => CodecVariantPeekBasicViewVariant::CodecPeekArmB(CodecPeekArmBView::read(cursor)),
+            0u8 => CodecVariantPeekBasicViewVariant::CodecPeekArmA(CodecPeekArmAView::read_with(cursor, _hook)),
+            1u8 => CodecVariantPeekBasicViewVariant::CodecPeekArmB(CodecPeekArmBView::read_with(cursor, _hook)),
             // Build-time `codec/variant-arm-unreachable` proves the
             // arm set covers the tag domain without a default, so no tag
             // read from its bits reaches here; a tag outside the arms is a
@@ -453,6 +461,13 @@ impl CodecVariantPeekBasicView {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'_>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.
@@ -509,5 +524,97 @@ impl CodecVariantPeekBasicView {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
+    }
+}
+
+// ── Records (ADR 0130) ───────────────────────────────────────────────
+// The frames of `CodecVariantPeekBasic` laid one after the other, read one record
+// at a time: `next` peeks the tag of a record and hands out a handle of the arm
+// it names, and the arm's view is read only when the handle is, so the stack
+// under the call that reads it holds that arm's view and no other. A record
+// handed out and not read is skipped as the arm it was handed out as, never as
+// the view of every arm.
+
+/// How a record of the arm `CodecPeekArmA` is read: as
+/// [`CodecPeekArmAView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecVariantPeekBasicCodecPeekArmARecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecVariantPeekBasicCodecPeekArmARecord {
+    type View<'f> = CodecPeekArmAView;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecPeekArmAView::read_with(reader, hook)
+    }
+}
+
+/// How a record of the arm `CodecPeekArmB` is read: as
+/// [`CodecPeekArmBView`], from where the record starts.
+#[allow(dead_code)]
+pub struct CodecVariantPeekBasicCodecPeekArmBRecord;
+
+impl ::sce_forge_runtime::codec::RecordRead for CodecVariantPeekBasicCodecPeekArmBRecord {
+    type View<'f> = CodecPeekArmBView;
+
+    #[inline]
+    fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        CodecPeekArmBView::read_with(reader, hook)
+    }
+}
+
+/// One record of a [`CodecVariantPeekBasicRecords`], of the arm its tag names, not
+/// yet read: a borrow of the reader and nothing else. `read()` reads the arm's
+/// view and `read_with(hook)` shows `hook` each chain entry as it is read; a
+/// record not read is skipped by the next `next`, as its own arm.
+#[allow(dead_code)]
+pub enum CodecVariantPeekBasicRecord<'r, 'f> {
+    CodecPeekArmA(::sce_forge_runtime::codec::Record<'r, 'f, CodecVariantPeekBasicCodecPeekArmARecord>),
+    CodecPeekArmB(::sce_forge_runtime::codec::Record<'r, 'f, CodecVariantPeekBasicCodecPeekArmBRecord>),
+}
+
+// A record is a handle and its arm, whatever the arms' views hold, so handing
+// one out costs the consumer two words of stack on every target.
+const _: () = assert!(core::mem::size_of::<CodecVariantPeekBasicRecord<'static, 'static>>() <= 64);
+
+/// The frames of `CodecVariantPeekBasic` laid one after the other in `&'f [u8]`,
+/// read one record at a time through one reader (docs/adr/0130). The sequence
+/// ends at the end of the bytes, at a tag no arm names (the start of something
+/// else, which a single frame's default arm would take), and at the first
+/// refusal, which is its verdict.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct CodecVariantPeekBasicRecords<'f>(::sce_forge_runtime::codec::Records<'f>);
+
+#[allow(dead_code)]
+impl<'f> CodecVariantPeekBasicRecords<'f> {
+    /// The records of `bytes`, none read.
+    pub const fn new(bytes: &'f [u8]) -> Self {
+        Self(::sce_forge_runtime::codec::Records::new(bytes))
+    }
+
+    /// The bytes of the records read whole: where a refused record, or the
+    /// first byte no arm's tag names, begins.
+    pub const fn consumed(&self) -> usize {
+        self.0.consumed()
+    }
+
+    /// The sequence's verdict: the first refusal of any record read, or `Ok`.
+    pub fn verdict(&self) -> Result<(), CodecError> {
+        self.0.verdict()
+    }
+
+    /// The next record, of the arm its tag names; `None` at the end of the
+    /// bytes, at a tag no arm names and once a record was refused.
+    // A record borrows the sequence it was read from, which `Iterator::next`
+    // cannot say: the consumer reads one record and then asks for the next.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<CodecVariantPeekBasicRecord<'_, 'f>> {
+        let _peek = self.0.head()?;
+        match _peek & 0x01 {
+            0u8 => Some(CodecVariantPeekBasicRecord::CodecPeekArmA(self.0.record())),
+            1u8 => Some(CodecVariantPeekBasicRecord::CodecPeekArmB(self.0.record())),
+            _ => None,
+        }
     }
 }

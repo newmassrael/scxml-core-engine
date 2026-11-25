@@ -794,6 +794,14 @@ impl<'a> CodecZenohDeclarationView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.take_array::<1>();
@@ -804,18 +812,18 @@ impl<'a> CodecZenohDeclarationView<'a> {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match header & 0x1F {
-            0u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(CodecZenohDeclKexprView::read(cursor, (header >> 5) & 0x1)),
-            1u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexprView::read(cursor)),
-            2u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriberView::read(cursor, (header >> 5) & 0x1)),
-            3u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberView::read(cursor, (header >> 7) & 0x1)),
-            4u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryableView::read(cursor, (header >> 5) & 0x1, (header >> 7) & 0x1)),
-            5u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryableView::read(cursor, (header >> 7) & 0x1)),
-            6u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclToken(CodecZenohDeclTokenView::read(cursor, (header >> 5) & 0x1)),
-            7u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(CodecZenohUndeclTokenView::read(cursor, (header >> 7) & 0x1)),
-            26u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(CodecZenohDeclFinalView::read(cursor)),
+            0u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(CodecZenohDeclKexprView::read_with(cursor, (header >> 5) & 0x1, _hook)),
+            1u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexprView::read_with(cursor, _hook)),
+            2u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriberView::read_with(cursor, (header >> 5) & 0x1, _hook)),
+            3u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberView::read_with(cursor, (header >> 7) & 0x1, _hook)),
+            4u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryableView::read_with(cursor, (header >> 5) & 0x1, (header >> 7) & 0x1, _hook)),
+            5u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryableView::read_with(cursor, (header >> 7) & 0x1, _hook)),
+            6u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclToken(CodecZenohDeclTokenView::read_with(cursor, (header >> 5) & 0x1, _hook)),
+            7u8 => CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(CodecZenohUndeclTokenView::read_with(cursor, (header >> 7) & 0x1, _hook)),
+            26u8 => CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(CodecZenohDeclFinalView::read_with(cursor, _hook)),
             other => CodecZenohDeclarationViewVariant::Default {
                 tag: CodecZenohDeclarationUnknownTag(other),
-                body: CodecZenohDeclFinalView::read(cursor),
+                body: CodecZenohDeclFinalView::read_with(cursor, _hook),
             },
         };
         Self {
@@ -823,6 +831,13 @@ impl<'a> CodecZenohDeclarationView<'a> {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

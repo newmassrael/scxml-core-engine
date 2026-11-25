@@ -532,6 +532,14 @@ impl CodecZenohPushView {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'_>, _hook: &mut H) -> Self {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.take_array::<1>();
@@ -542,10 +550,10 @@ impl CodecZenohPushView {
         // default arm (when declared) carries the runtime tag value so encode
         // can round-trip it back onto the wire.
         let body = match header & 0x1F {
-            29u8 => CodecZenohPushViewVariant::CodecZenohPushBody(CodecZenohPushBodyView::read(cursor)),
+            29u8 => CodecZenohPushViewVariant::CodecZenohPushBody(CodecZenohPushBodyView::read_with(cursor, _hook)),
             other => CodecZenohPushViewVariant::Default {
                 tag: CodecZenohPushUnknownTag(other),
-                body: CodecZenohPushBodyView::read(cursor),
+                body: CodecZenohPushBodyView::read_with(cursor, _hook),
             },
         };
         Self {
@@ -553,6 +561,13 @@ impl CodecZenohPushView {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'_>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.

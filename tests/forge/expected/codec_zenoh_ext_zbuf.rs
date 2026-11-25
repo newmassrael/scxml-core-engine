@@ -165,6 +165,14 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
         _out
     }
 
+    /// [`Self::read`], under the name every view reads with a chain hook
+    /// (docs/adr/0130): `CodecZenohExtZbuf` is its own view and holds no chain,
+    /// so `_hook` is shown nothing.
+    #[inline(always)]
+    pub fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'f>, _hook: &mut H) -> Self where S: CodecZenohExtZbufFrom<'f> {
+        Self::read(cursor)
+    }
+
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:

@@ -92,9 +92,10 @@ use sce_rust_runtime::{Engine, StatePolicy};
 /// The document's states, declared in document order. Each variant's
 /// discriminant is its position in that order, which is the number the
 /// runtime's tables know the state by (docs/adr/0064), so a state is its number
-/// at no cost.
+/// at no cost. It is held in the smallest integer that holds every number, and
+/// all-zero bytes are its first state (docs/adr/0130 §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum RequestLifeState {
     Request = 0,
     Open = 1,
@@ -143,9 +144,10 @@ impl RequestLifeState {
 
 /// The events the document names, and the null event. Each variant's
 /// discriminant is the number the runtime knows the event by, its position in
-/// `StatePolicy::EVENTS`.
+/// `StatePolicy::EVENTS`, held in the smallest integer that holds every number
+/// and the null event's (docs/adr/0130 §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum RequestLifeEvent {
     Cancel = 0,
     Claim = 1,

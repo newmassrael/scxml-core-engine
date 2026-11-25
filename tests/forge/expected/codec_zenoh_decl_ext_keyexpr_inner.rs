@@ -173,6 +173,14 @@ impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerIn<S>
         _out
     }
 
+    /// [`Self::read`], under the name every view reads with a chain hook
+    /// (docs/adr/0130): `CodecZenohDeclExtKeyexprInner` is its own view and holds no chain,
+    /// so `_hook` is shown nothing.
+    #[inline(always)]
+    pub fn read_with<'f, H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'f>, _hook: &mut H) -> Self where S: CodecZenohDeclExtKeyexprInnerFrom<'f> {
+        Self::read(cursor)
+    }
+
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the

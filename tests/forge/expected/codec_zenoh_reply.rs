@@ -559,6 +559,14 @@ impl<'a> CodecZenohReplyView<'a> {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        Self::read_with(cursor, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -589,7 +597,9 @@ impl<'a> CodecZenohReplyView<'a> {
             let mut _more = false;
             loop {
                 if cursor.failed() { break; }
-                let _entry = CodecZenohExtEntryView::read(cursor);
+                let _at = cursor.mark();
+                let _entry = CodecZenohExtEntryView::read_with(cursor, _hook);
+                ::sce_forge_runtime::codec::show_entry(cursor, _hook, ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_reply", field: "extensions" }, _at);
                 _more = _entry.z();
                 _count += u32::from(!cursor.failed());
                 if !_more { break; }
@@ -603,7 +613,7 @@ impl<'a> CodecZenohReplyView<'a> {
         }
         #[allow(clippy::needless_late_init)]
         let body: CodecZenohPushBodyView;
-        body = CodecZenohPushBodyView::read(cursor);
+        body = CodecZenohPushBodyView::read_with(cursor, _hook);
         Self {
             header,
             consolidation,
@@ -611,6 +621,13 @@ impl<'a> CodecZenohReplyView<'a> {
             body,
         }
 
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceCursor<'a>, _out: &mut Self, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.
