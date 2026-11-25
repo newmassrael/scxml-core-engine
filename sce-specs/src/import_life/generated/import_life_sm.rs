@@ -197,14 +197,23 @@ pub type ImportLifeConfiguration =
 /// program none of whose documents uses a feature links none of its code
 /// (docs/adr/0066).
 ///
+/// `walk` is how this machine's microsteps form their exit and entry sets
+/// (docs/adr/0125). A document with no `<history>`, no `<parallel>` and no
+/// transition of more than one target fixes them itself: the generator
+/// computed, by Appendix D's procedures, what each transition enters
+/// (`entry_paths`, each its length first, each state with whether it is
+/// entered by default) and `entry_rows` names each transition's path, so the
+/// row walk reads them. Any other document carries the general walk, which
+/// computes them, and no rows.
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
-        TransitionRow,
+        DocumentTables, EntryRow, EntryStep, HistoryId, HistoryRow, StateId, StateKind, StateRow,
+        Target, TransitionId, TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -269,6 +278,38 @@ pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         default_state: ::sce_rust_runtime::StateId(ImportLifeState::Pending as u16),
         null_event: ::sce_rust_runtime::EventId(4),
         error_events: &[],
+        walk: &::sce_rust_runtime::ROW_WALK,
+        entry_rows: &[
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::at(0),
+            EntryRow::NONE,
+            EntryRow::at(3),
+            EntryRow::at(6),
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::NONE,
+            EntryRow::at(9),
+        ],
+        entry_paths: &[
+            EntryStep::count(2),
+            EntryStep::new(StateId(2), false),
+            EntryStep::new(StateId(3), false),
+            EntryStep::count(2),
+            EntryStep::new(StateId(2), false),
+            EntryStep::new(StateId(4), false),
+            EntryStep::count(2),
+            EntryStep::new(StateId(2), false),
+            EntryStep::new(StateId(5), false),
+            EntryStep::count(2),
+            EntryStep::new(StateId(0), true),
+            EntryStep::new(StateId(1), false),
+        ],
         history: None,
         parallel: None,
     }
@@ -990,8 +1031,10 @@ impl StatePolicy for ImportLifePolicy {
     // headroom. The workspace is a local of the call that runs a macrostep; the
     // run store, the configuration and what each of the 0 `<history>`
     // element(s) recorded, one such set each, is the engine's.
-    type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(6) }, 1, 9, 0>;
+    // docs/adr/0125: this document's microsteps are walked from the entry rows
+    // of its tables, which builds no set of states and walks no stack, so the
+    // workspace holds the enabled set alone.
+    type Workspace = ::sce_rust_runtime::Workspace<0, 1, 0, 0>;
     type RunStore = ::sce_rust_runtime::RunStore<
         { ::sce_rust_runtime::state_words(6) },
         { ::sce_rust_runtime::record_words(6, 0) },
