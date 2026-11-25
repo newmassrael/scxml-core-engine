@@ -33,7 +33,7 @@
 // value is stored in), so the width an operation is judged at is the width it
 // is emitted at.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use crate::attribute_spelling::AttributeSpelling;
@@ -147,6 +147,7 @@ pub(crate) fn judge(
         collections,
         arrays: arrays.clone(),
         found: Vec::new(),
+        safe: BTreeSet::new(),
         shifts: ShiftCounts::new(),
         recording: true,
         untyped: std::cell::Cell::new(false),
@@ -363,6 +364,10 @@ struct Analysis<'c, 'a> {
     /// Each build-time array's declared length.
     arrays: BTreeMap<String, i128>,
     found: Vec<IntHazard>,
+    /// Where each integer `+ - * / %` and unary `-` the reporting pass judged
+    /// unable to fail is written ([`Self::safe_at`]): what
+    /// [`proven_operations`] discharges, beside the hazards it does not.
+    safe: BTreeSet<(usize, usize)>,
     /// What each shift's count is proven to be, at every point the body
     /// reaches it ([`Self::record_shift`]).
     shifts: ShiftCounts,
@@ -875,6 +880,19 @@ impl Analysis<'_, '_> {
         }
     }
 
+    /// Record that the operation `node` cannot fail, on the reporting pass: its
+    /// result lies in its type and, for a `/` or a `%`, its divisor is not 0
+    /// and does not divide the minimum by -1. An operation the parser placed
+    /// nowhere is not recorded, and is never proven.
+    fn safe_at(&mut self, node: &TypedExpr) {
+        if !self.recording {
+            return;
+        }
+        if let Some(span) = &node.span {
+            self.safe.insert((span.start, span.end));
+        }
+    }
+
     /// Record what `count`, the range of the count of the shift `node`,
     /// proves of it against the width of what it shifts — the least of what
     /// every pass over the stable ranges proved, as a hazard is recorded only
@@ -947,7 +965,9 @@ impl Analysis<'_, '_> {
                             lo: -v.hi,
                             hi: -v.lo,
                         };
-                        if !r.within(own) {
+                        if r.within(own) {
+                            self.safe_at(node);
+                        } else {
                             self.hazard(node, expr, spelling, HazardKind::Overflow);
                         }
                         Some(r.clamp(own))
@@ -980,18 +1000,25 @@ impl Analysis<'_, '_> {
                 match op {
                     BinOp::Add | BinOp::Sub | BinOp::Mul => {
                         let result = arith(*op, l, r);
-                        if !result.within(own) {
+                        if result.within(own) {
+                            self.safe_at(node);
+                        } else {
                             self.hazard(node, expr, spelling, HazardKind::Overflow);
                         }
                         Some(result.clamp(own))
                     }
                     BinOp::Div | BinOp::Mod => {
                         let guarded = name_of(right).is_some_and(|k| env.nonzero.contains(&k));
-                        if r.contains(0) && !guarded {
+                        let by_zero = r.contains(0) && !guarded;
+                        let min_by_minus_one = own.lo < 0 && l.contains(own.lo) && r.contains(-1);
+                        if by_zero {
                             self.hazard(node, expr, spelling, HazardKind::DivideByZero);
                         }
-                        if own.lo < 0 && l.contains(own.lo) && r.contains(-1) {
+                        if min_by_minus_one {
                             self.hazard(node, expr, spelling, HazardKind::MinDividedByMinusOne);
+                        }
+                        if !by_zero && !min_by_minus_one {
+                            self.safe_at(node);
                         }
                         Some(if *op == BinOp::Mod {
                             modulo_range(l, r).clamp(own)
@@ -1617,6 +1644,88 @@ pub(crate) fn shift_counts(
     judge_algorithm(m, ctx)
         .map(|judgement| judgement.shifts)
         .unwrap_or_default()
+}
+
+/// The integer `+ - * / %` and unary `-` of one expression that cannot fail
+/// ([`proven_operations`]), by where the parser placed each.
+#[derive(Debug, Default)]
+pub(crate) struct ProvenOperations {
+    /// Each operation the analysis judged unable to fail.
+    safe: BTreeSet<(usize, usize)>,
+    /// Each operation it reported a hazard at: an overflow, a divisor that can
+    /// be 0, or a minimum divided by -1.
+    failing: BTreeSet<(usize, usize)>,
+}
+
+impl ProvenOperations {
+    /// Whether the operation `node` is proven unable to fail: judged safe where
+    /// the parser placed it, and no hazard reported there. Two operations the
+    /// passes before emission placed at one range are proven together or not
+    /// at all, and one placed nowhere is never proven.
+    pub(crate) fn holds(&self, node: &TypedExpr) -> bool {
+        node.span.as_ref().is_some_and(|span| {
+            let at = (span.start, span.end);
+            self.safe.contains(&at) && !self.failing.contains(&at)
+        })
+    }
+}
+
+/// The integer operations of `tree` that cannot fail when every value it reads
+/// holds any value of its declared type (docs/adr/0133): the rule a
+/// `sce-static` statechart's expression is judged by, whose variables and
+/// payload fields hold, at any point of a run, exactly the values their types
+/// declare. `tree` is typed as it is emitted, so each operation is judged at
+/// the width it is computed at; a name read where a condition of the same
+/// expression holds is read at the range that condition leaves it
+/// (`n > 0 ? n - 1 : 0`), as a guard narrows a name in an algorithm's body.
+///
+/// An index read and a store into a narrower type are not judged here: a
+/// list's declared bound holds its length from above and never from below, so
+/// an index can always miss, and a narrowing is judged by the types alone
+/// where the expression is lowered.
+pub(crate) fn proven_operations(tree: &TypedExpr, ctx: &TypeCtx<'_>) -> ProvenOperations {
+    let mut analysis = Analysis {
+        ctx,
+        ret: None,
+        collections: Vec::new(),
+        arrays: BTreeMap::new(),
+        found: Vec::new(),
+        safe: BTreeSet::new(),
+        shifts: ShiftCounts::new(),
+        recording: true,
+        untyped: std::cell::Cell::new(false),
+        proven: Facts::none(),
+    };
+    let mut env = Env::default();
+    declared_ranges(tree, &mut env);
+    analysis.eval(tree, "", None, &env);
+    let failing = analysis
+        .found
+        .iter()
+        .filter(|hazard| {
+            matches!(
+                hazard.kind,
+                HazardKind::Overflow | HazardKind::DivideByZero | HazardKind::MinDividedByMinusOne
+            )
+        })
+        .filter_map(|hazard| hazard.span.as_ref().map(|span| (span.start, span.end)))
+        .collect();
+    ProvenOperations {
+        safe: analysis.safe,
+        failing,
+    }
+}
+
+/// Each name `node` reads, at the range its type holds, into `env`: the start
+/// a condition of the expression narrows from, as a parameter's declared range
+/// is an algorithm's.
+fn declared_ranges(node: &TypedExpr, env: &mut Env) {
+    if let (Some(key), Some(range)) = (name_of(node), type_range(node.ty)) {
+        env.vars.entry(key).or_insert(range);
+    }
+    for child in node.children() {
+        declared_ranges(child, env);
+    }
 }
 
 #[cfg(test)]
@@ -2360,5 +2469,100 @@ mod tests {
             &total
         )
         .is_empty());
+    }
+
+    /// Whether every integer `+ - * / %` and unary `-` of `written` is proven
+    /// unable to fail by the declared types of the names it reads
+    /// ([`proven_operations`]), each name typed as `names` gives and the value
+    /// landing in `place`. Panics on an expression that holds none, so a case
+    /// cannot pass for want of an operation to judge.
+    fn proven(names: &[(&str, SceType)], place: SceType, written: &str) -> bool {
+        fn operations<'t>(node: &'t TypedExpr, out: &mut Vec<&'t TypedExpr>) {
+            let arithmetic = matches!(
+                &node.kind,
+                ExprKind::Binary {
+                    op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod,
+                    ..
+                }
+            ) || (matches!(
+                &node.kind,
+                ExprKind::Unary {
+                    op: UnaryOp::Neg,
+                    ..
+                }
+            ) && !is_integer_literal(node));
+            if arithmetic && matches!(node.ty, InferredType::Int { .. }) {
+                out.push(node);
+            }
+            for child in node.children() {
+                operations(child, out);
+            }
+        }
+        let mut ctx = TypeCtx::new();
+        for (name, ty) in names {
+            ctx.insert_var(name, InferredType::from_sce_type(ty));
+        }
+        let tree = judged(
+            written,
+            &ctx,
+            Expected::Hint(InferredType::from_sce_type(&place)),
+        )
+        .expect("the expression types");
+        let mut found = Vec::new();
+        operations(&tree, &mut found);
+        assert!(!found.is_empty(), "`{written}` holds no integer operation");
+        let proof = proven_operations(&tree, &ctx);
+        found.iter().all(|node| proof.holds(node))
+    }
+
+    /// docs/adr/0133: a sum of two `uint8` values computed as a `uint8` can
+    /// pass 255, so it is not proven, whatever it is stored into.
+    #[test]
+    fn a_sum_that_can_pass_its_type_is_not_proven() {
+        let names = [("a", SceType::Uint8), ("b", SceType::Uint8)];
+        assert!(!proven(&names, SceType::Uint8, "a + b"));
+        assert!(!proven(&names, SceType::Uint8, "a + 1"));
+        assert!(!proven(&names, SceType::Uint8, "a - b"));
+    }
+
+    /// docs/adr/0133: an operation whose result the declared ranges of its
+    /// operands hold in its type is proven, so a halved `uint8` plus one is.
+    #[test]
+    fn an_operation_the_declared_ranges_keep_in_its_type_is_proven() {
+        let names = [("a", SceType::Uint8), ("wide", SceType::Uint32)];
+        assert!(proven(&names, SceType::Uint8, "a / 2 + 1"));
+        assert!(proven(&names, SceType::Uint32, "wide % 10"));
+        assert!(proven(&names, SceType::Uint32, "wide / 3 * 2"));
+    }
+
+    /// docs/adr/0133: a divisor the declared type lets be 0 is not proven,
+    /// and one a condition of the same expression keeps from 0 is.
+    #[test]
+    fn a_divisor_that_can_be_zero_is_not_proven_unless_the_expression_rules_it_out() {
+        let names = [("a", SceType::Uint8), ("b", SceType::Uint8)];
+        assert!(!proven(&names, SceType::Uint8, "a / b"));
+        assert!(!proven(&names, SceType::Uint8, "a % b"));
+        assert!(proven(&names, SceType::Uint8, "b !== 0 ? a / b : 0"));
+    }
+
+    /// docs/adr/0133: a name read where a condition of the expression holds is
+    /// read at the range the condition leaves it, as a guard narrows a name in
+    /// an algorithm's body.
+    #[test]
+    fn a_condition_of_the_expression_narrows_what_its_branch_reads() {
+        let names = [("n", SceType::Uint8)];
+        assert!(proven(&names, SceType::Uint8, "n > 0 ? n - 1 : 0"));
+        assert!(!proven(&names, SceType::Uint8, "n >= 0 ? n - 1 : 0"));
+        assert!(proven(&names, SceType::Uint8, "n < 255 ? n + 1 : n"));
+    }
+
+    /// docs/adr/0133: the signed minimum has no negation and no quotient by -1
+    /// in its type, so neither is proven over a declared signed range.
+    #[test]
+    fn a_signed_negation_or_division_by_minus_one_is_not_proven() {
+        let names = [("x", SceType::Int16)];
+        assert!(!proven(&names, SceType::Int16, "-x"));
+        assert!(!proven(&names, SceType::Int16, "x / -1"));
+        assert!(proven(&names, SceType::Int16, "x / 2"));
     }
 }

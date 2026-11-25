@@ -604,7 +604,16 @@ fn lower_at(
         settle_shifts(&mut ast, ctx, expr);
     }
     if ctx.receives_failures {
+        // docs/adr/0133: what the declared types prove of each operation is
+        // read from the tree the author wrote, before the rewrite below
+        // replaces its operators.
+        let proven = ctx
+            .proves_operations
+            .then(|| crate::forge::int_ranges::proven_operations(&ast, ctx));
         check_integer_arithmetic(&mut ast, expected, Discharge::AtRun);
+        if let Some(proven) = &proven {
+            discharge_proven_arithmetic(&mut ast, proven, target);
+        }
         check_integer_indexing(&mut ast, Discharge::AtRun);
         check_integer_narrowing(&mut ast, slot_type(slot));
         if matches!(target, ExprTarget::C) {
@@ -4245,6 +4254,29 @@ impl CheckedOp {
         }
     }
 
+    /// Whether it is one of the integer arithmetic contract's `+ - * / %` and
+    /// unary `-`: an operation the interval analysis judges by the range of
+    /// its result and its divisor ([`discharge_proven_arithmetic`]).
+    fn is_arithmetic(self) -> bool {
+        matches!(
+            self,
+            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem | Self::Neg
+        )
+    }
+
+    /// The binary operator a two-operand arithmetic operation is written as,
+    /// or `None` for any other operation: the inverse of [`Self::of_binary`].
+    fn binary(self) -> Option<BinOp> {
+        Some(match self {
+            Self::Add => BinOp::Add,
+            Self::Sub => BinOp::Sub,
+            Self::Mul => BinOp::Mul,
+            Self::Div => BinOp::Div,
+            Self::Rem => BinOp::Mod,
+            _ => return None,
+        })
+    }
+
     /// The shift a shift operator is, or `None` for any other operator.
     fn of_shift(op: BinOp) -> Option<Self> {
         Some(match op {
@@ -4487,6 +4519,76 @@ pub(crate) fn prove_integer_operations(node: &mut TypedExpr, expected: InferredT
     check_integer_arithmetic(node, expected, Discharge::AtBuild);
     check_integer_indexing(node, Discharge::AtBuild);
     prove_shifts(node);
+}
+
+/// Discharge at build every checked `+ - * / %` and unary `-` of `node` that
+/// `proven` holds (docs/adr/0133): an operation that cannot fail when every
+/// value it reads holds any value of its declared type, in an expression whose
+/// failures are received ([`TypeCtx::proves_operations`]). Rust prints it
+/// through the forge runtime's `algorithm::proven` ([`Discharge::AtBuild`]),
+/// as it prints a proven operation of an algorithm's body, so the crate a
+/// machine is compiled in holds no operator of its own; every other target
+/// prints the operator, as it prints one there. Either way the operation
+/// records no failure, so an expression made of such operations has none to
+/// receive ([`can_fail`]) and the statement that holds it no error path.
+/// Runs after [`check_integer_arithmetic`], whose checked node it either
+/// keeps or turns back into the operator the author wrote.
+///
+/// [`TypeCtx::proves_operations`]: crate::forge::types::TypeCtx::proves_operations
+pub(crate) fn discharge_proven_arithmetic(
+    node: &mut TypedExpr,
+    proven: &crate::forge::int_ranges::ProvenOperations,
+    target: ExprTarget,
+) {
+    for child in node.children_mut() {
+        discharge_proven_arithmetic(child, proven, target);
+    }
+    let checked_arithmetic = matches!(
+        &node.kind,
+        ExprKind::Checked {
+            op,
+            discharge: Discharge::AtRun,
+            ..
+        } if op.is_arithmetic()
+    );
+    if !checked_arithmetic || !proven.holds(node) {
+        return;
+    }
+    let placeholder = ExprKind::NullLit;
+    node.kind = match std::mem::replace(&mut node.kind, placeholder) {
+        ExprKind::Checked {
+            op, left, right, ..
+        } if matches!(target, ExprTarget::Rust) => ExprKind::Checked {
+            op,
+            left,
+            right,
+            discharge: Discharge::AtBuild,
+        },
+        ExprKind::Checked {
+            op: CheckedOp::Neg,
+            left,
+            right: None,
+            ..
+        } => ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand: left,
+        },
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(right),
+            discharge,
+        } => match op.binary() {
+            Some(op) => ExprKind::Binary { op, left, right },
+            None => ExprKind::Checked {
+                op,
+                left,
+                right: Some(right),
+                discharge,
+            },
+        },
+        other => other,
+    };
 }
 
 /// Mark every shift of `node` that [`settle_shifts`] left the operator it is,
@@ -19562,6 +19664,102 @@ mod tests {
         assert_eq!(
             js("(level + 1) * 2"),
             "SceStatic.U8.mul(SceStatic.U8.add(level, 1), 2)"
+        );
+    }
+
+    // ── docs/adr/0133: an operation the declared types prove ────────
+
+    /// A `sce-static` statechart's context as the scope it is typed in makes
+    /// it: every failure received, and an operation the declared types prove
+    /// unable to fail discharged where the document is built.
+    fn statechart_ctx() -> TypeCtx<'static> {
+        let mut ctx = js_ctx();
+        ctx.insert_var("step", int(false, 8));
+        ctx.proves_operations = true;
+        ctx
+    }
+
+    /// `expr` lowered for `target` into a place of type `slot` in
+    /// [`statechart_ctx`], with whether it can fail.
+    fn statechart(expr: &str, target: ExprTarget, slot: InferredType) -> (String, bool) {
+        let lowered =
+            transpile_into_receiving(expr, target, &statechart_ctx(), &empty_renames(), slot)
+                .unwrap();
+        (lowered.text, lowered.can_fail)
+    }
+
+    /// A sum that can pass its type stays checked, and its statement can fail.
+    #[test]
+    fn a_statechart_checks_an_operation_its_declared_types_do_not_prove() {
+        let (text, fails) = statechart("level + 3", ExprTarget::Rust, int(false, 8));
+        assert!(fails, "{text}");
+        assert_eq!(text, "sce_forge_runtime::algorithm::add::<u8>(level, 3)?");
+        let (text, fails) = statechart("level / step", ExprTarget::Rust, int(false, 8));
+        assert!(fails, "a divisor that can be 0: {text}");
+        let (text, fails) = statechart("level + 3", ExprTarget::Js, int(false, 8));
+        assert!(fails, "{text}");
+        assert_eq!(text, "SceStatic.U8.add(level, 3)");
+    }
+
+    /// An operation the declared types prove has no failure in it: Rust prints
+    /// it through the runtime's proven helpers, with no `?`, and the
+    /// Interpreter prints the operator.
+    #[test]
+    fn a_statechart_discharges_an_operation_its_declared_types_prove() {
+        let (text, fails) = statechart("level / 2 + 1", ExprTarget::Rust, int(false, 8));
+        assert!(!fails, "{text}");
+        assert!(!text.contains('?'), "{text}");
+        assert!(
+            text.contains("sce_forge_runtime::algorithm::proven::div::<u8>(level, 2)")
+                && text.starts_with("sce_forge_runtime::algorithm::proven::add::<u8>("),
+            "{text}"
+        );
+        let (text, fails) = statechart("level / 2 + 1", ExprTarget::Js, int(false, 8));
+        assert!(!fails, "{text}");
+        assert!(
+            text.contains("Math.trunc(level / 2)") && !text.contains("SceStatic.U8."),
+            "{text}"
+        );
+        let (text, fails) = statechart("level / 2 + 1", ExprTarget::C, int(false, 8));
+        assert!(!fails, "{text}");
+        assert!(!text.contains("sce_forge_checked_"), "{text}");
+    }
+
+    /// A divisor a condition of the expression keeps from 0 is proven, as one
+    /// its declared type keeps from 0 is.
+    #[test]
+    fn a_statechart_discharges_a_division_its_own_condition_guards() {
+        let (text, fails) = statechart(
+            "step !== 0 ? level / step : 0",
+            ExprTarget::Rust,
+            int(false, 8),
+        );
+        assert!(!fails, "{text}");
+        assert!(
+            text.contains("sce_forge_runtime::algorithm::proven::div::<u8>(level, step)"),
+            "{text}"
+        );
+    }
+
+    /// A literal, a read of a place of the same type and a widening store have
+    /// nothing to fail; a store into a narrower type a wider one can leave is
+    /// still checked.
+    #[test]
+    fn a_statechart_store_fails_only_where_a_narrowing_can() {
+        for (expr, slot) in [
+            ("7", int(false, 8)),
+            ("level", int(false, 8)),
+            ("level", int(false, 16)),
+            ("level", int(true, 32)),
+        ] {
+            let (text, fails) = statechart(expr, ExprTarget::Rust, slot);
+            assert!(!fails, "{expr} into {slot:?}: {text}");
+        }
+        let (text, fails) = statechart("wide", ExprTarget::Rust, int(false, 8));
+        assert!(fails, "{text}");
+        assert!(
+            text.contains("sce_forge_runtime::algorithm::narrow::<u8, u64>(wide)?"),
+            "{text}"
         );
     }
 

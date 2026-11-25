@@ -1430,6 +1430,20 @@ pub struct TypeCtx<'a> {
     ///
     /// [`prove_integer_operations`]: crate::forge::expr::prove_integer_operations
     pub integers_proven: bool,
+    /// Whether an integer operation of an expression that receives failures
+    /// ([`Self::receives_failures`]) is checked only where it can fail when
+    /// every value it reads holds any value of its declared type
+    /// (docs/adr/0133): a `sce-static` statechart's expression, whose
+    /// variables and payload fields hold exactly that, set with
+    /// `receives_failures` by the scope it is typed in and nowhere else. An
+    /// operation proven so records no failure: Rust prints it through the forge
+    /// runtime's `algorithm::proven` and every other backend prints its
+    /// operator ([`discharge_proven_arithmetic`]). The body of an algorithm
+    /// that declares `may-fail` leaves it off and checks every operation, as
+    /// the contract says such a body does (SCE_FORGE.md §3.4.1).
+    ///
+    /// [`discharge_proven_arithmetic`]: crate::forge::expr::discharge_proven_arithmetic
+    pub proves_operations: bool,
     /// What the interval analysis proved of each shift's count in the body of
     /// an algorithm that does not declare `may-fail` ([`ShiftCounts`]), set by
     /// the algorithm renderer and empty everywhere else. A shift it holds is
@@ -1812,6 +1826,7 @@ impl<'a> TypeCtx<'a> {
             project_str_args_as_bytes_view: false,
             receives_failures: false,
             integers_proven: false,
+            proves_operations: false,
             shift_counts: ShiftCounts::new(),
             lengths_are_uint32: false,
             exact_integers: false,

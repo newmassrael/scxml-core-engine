@@ -2354,9 +2354,13 @@ impl StaticScope {
         }
         // E12 D5: a machine receives the failures of what it runs — an
         // integer operation that overflows, a call of a callee that declares
-        // `may-fail` — as `error.execution`, so every integer operation is
-        // checked and such a call is admitted (SCE_FORGE.md §3.4.1).
+        // `may-fail` — as `error.execution`, so every integer operation that
+        // can fail is checked and such a call is admitted (SCE_FORGE.md
+        // §3.4.1). An operation that cannot, every value it reads holding any
+        // value of its declared type, is discharged where the document is
+        // built and raises nothing (docs/adr/0133).
         ctx.receives_failures = true;
+        ctx.proves_operations = true;
         ctx
     }
 }
