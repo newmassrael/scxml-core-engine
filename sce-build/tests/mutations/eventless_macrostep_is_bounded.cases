@@ -125,7 +125,7 @@ PY
 # (Dropping the name entirely is the sibling mutant in
 # `internal_chain_is_bounded.cases`, which owns the shared recorder.)
 #
-# The recorder, `report_truncated_macrostep`, names the state the machine
+# The recorder, `record_truncated_macrostep`, names the state the machine
 # stands in and cannot see the enabled set, so the mutant moves the machine's
 # current state to the first target of the first enabled transition on the
 # turn the budget is already spent — just before the refusal reads it.
@@ -141,7 +141,7 @@ edit("backends/rust/runtime/src/engine.rs",
             if let Some(crate::helpers::tables::Named::State(target)) =
                 self.tables.targets(self.enabled[0]).first().map(|target| target.named())
             {
-                self.host.settle(Entered { states: 1, current: Some(target) });
+                self.host.core().settle(Entered { states: 1, current: Some(target), ended_in: None });
             }
         }
         if self.refuse_spent_macrostep() {""")
