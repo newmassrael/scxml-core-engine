@@ -338,6 +338,19 @@ impl<E, P: Default> EventWithMetadata<E, P> {
         }
     }
 
+    /// `_event.sendid` of an error a `<send>` raises: the id of the send that
+    /// failed. A build without `std` holds no
+    /// `_event.sendid` (no reader of it exists there), so it records nothing.
+    #[inline]
+    pub fn carry_send_id(&mut self, send_id: &str) {
+        #[cfg(feature = "std")]
+        {
+            self.metadata.send_id = crate::sce_string_from_str(send_id);
+        }
+        #[cfg(not(feature = "std"))]
+        let _ = send_id;
+    }
+
     /// Construct an `error.*` event the processor itself raised.
     ///
     /// The single way generated code raises a platform error, so the two things
