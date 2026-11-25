@@ -17,6 +17,10 @@
 #
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
+#
+# A check is taken away as `if false && <the check>` rather than `if false`, and a value it no longer
+# needs is still read: the crate denies warnings, so a binding or an import only the check used would
+# be unused and the mutant would not compile (Mutation Rounds jobs 138193765404 to 138193765472).
 
 mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed --test a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it --test a_relay_that_gives_a_false_commit_first_does_not_keep_a_device_out -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
 mutation_targets backends/rust/mls/src/lib.rs backends/rust/mls/src/host.rs
@@ -59,7 +63,7 @@ PY
 mutation_case "A device applies a commit the log does not name as the one that begins the next epoch" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "        if named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch: next });",
-     "        if false {\n            return Err(MlsError::CommitNotNamed { epoch: next });")
+     "        if false && named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch: next });")
 PY
 
 mutation_case "A device applies a commit the log names for its latest epoch, whichever epoch is next" <<'PY'
@@ -77,7 +81,7 @@ PY
 mutation_case "The administrator merges a commit the log does not name" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "        if named != Some(pending.commit_hash) {",
-     "        if false {")
+     "        if false && named != Some(pending.commit_hash) {")
 PY
 
 mutation_case "A commit is made for the epoch two after the group's, and the log names it there" <<'PY'
@@ -89,7 +93,7 @@ PY
 mutation_case "A commit is named by one hash for every commit" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "    Sha256::digest(commit).into()\n}",
-     "    let _ = commit;\n    [0; 32]\n}")
+     "    Sha256::digest(&commit[..0]).into()\n}")
 PY
 
 mutation_case "A commit that was merged is still waiting to be merged" <<'PY'
@@ -123,7 +127,7 @@ PY
 mutation_case "A device the log has no grant for is added" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "            if !listed {",
-     "            if false {")
+     "            if false && !listed {")
 PY
 
 mutation_case "A device is added with another key than the log gave its node" <<'PY'
@@ -155,13 +159,13 @@ PY
 mutation_case "A Welcome is taken whose group does not hold the confirmation tag of the commit the log names" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "        if public.confirmation_tag() != Some(group.confirmation_tag()) {",
-     "        if false {")
+     "        if false && public.confirmation_tag() != Some(group.confirmation_tag()) {")
 PY
 
 mutation_case "A Welcome is taken with a commit the log does not name for its epoch" <<'PY'
 edit("backends/rust/mls/src/lib.rs",
      "        if named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch });",
-     "        if false {\n            return Err(MlsError::CommitNotNamed { epoch });")
+     "        if false && named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch });")
 PY
 
 mutation_case "A Welcome that was refused leaves the key package it used consumed" <<'PY'
@@ -239,7 +243,7 @@ PY
 mutation_case "A linked device is written to the log as a grant that nobody vouched for" <<'PY'
 edit("backends/rust/mls/src/host.rs",
      "            Body::LinkedGrant {\n                node,\n                role,\n                key,\n                parent,\n                parent_signature,\n                signature,\n            },\n        )?];",
-     "            Body::Grant {\n                node,\n                role,\n                key,\n                final_seq: None,\n            },\n        )?];")
+     "            {\n                let _ = (parent, parent_signature, signature);\n                Body::Grant {\n                    node,\n                    role,\n                    key,\n                    final_seq: None,\n                }\n            },\n        )?];")
 PY
 
 mutation_case "A person is taken off by the one device that was named" <<'PY'
