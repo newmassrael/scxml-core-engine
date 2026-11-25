@@ -25,6 +25,11 @@
 {
     "workflows": ["wasm32-scenarios.yml"],
     "runner_workflow": True,
+    # Two parts when SCE_WASM32_SCENARIOS_SHARD names `k/2`: clippy for the
+    # target, and the module built and replayed, which share nothing. Whole,
+    # the hosted job took 11 minutes (job 139040902859). A plan makes one unit
+    # per part (`shard_count`).
+    "shard_env": "SCE_WASM32_SCENARIOS_SHARD",
     "ci_only": "107s measured 2026-10-08 with the dependencies built "
                "(128s on a first dev-profile build before Chrome was "
                "added, 620s in release). wasm32-scenarios.yml runs it, "

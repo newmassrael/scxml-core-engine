@@ -45,6 +45,36 @@ CHROME_RUNNER="backends/rust/scenarios/wasm/run_chrome.mjs"
 # Rust release is declared with it (`[platform.linux.tools.rust]` in bx.toml).
 sce_gate_require_rust_target "$TARGET"
 
+# TWO PARTS, when `SCE_WASM32_SCENARIOS_SHARD` names one (ADR 0120 D3): 1/2 is
+# the lint half below, 2/2 the module built, given its glue and replayed. They
+# share nothing but the target's standard library, and each compiles the
+# generator crate its own way (clippy's artefacts are not the build's), which
+# is why the lane runs them as two jobs: whole, the job took 11 minutes (job
+# 139040902859, 2026-11-25), 253 s of clippy and 250 s of the build before 69 s
+# of replay. Unset, both run, which is what a developer and the build machines
+# run.
+LINT=1
+REPLAY=1
+case "${SCE_WASM32_SCENARIOS_SHARD:-}" in
+    "") ;;
+    1/2) REPLAY=0 ;;
+    2/2) LINT=0 ;;
+    *) sce_gate_fail "SCE_WASM32_SCENARIOS_SHARD is '${SCE_WASM32_SCENARIOS_SHARD}': the gate has two parts, 1/2 (clippy for $TARGET) and 2/2 (the module built and replayed)" ;;
+esac
+
+if (( LINT )); then
+    # The lint half: the runtime and the replay crate, compiled for the target. A
+    # cfg-gated branch exists for this target and no other, so the host's clippy
+    # never reads it, and a call into the operating system in one is exactly what
+    # the runtime's `clippy.toml` bans. `-D warnings` as the workspace lint does.
+    sce_gate_step "clippy for $TARGET"
+    sce_gate_tested -- cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
+        || sce_gate_fail "cargo clippy -p $CRATE --target $TARGET"
+fi
+if (( ! REPLAY )); then
+    exit 0
+fi
+
 command -v node >/dev/null 2>&1 \
     || sce_gate_cannot_run "node is not on PATH; the module is run under Node"
 
@@ -79,14 +109,6 @@ fi
 if sce_gate_landing && [[ "${CHROME_BIN:-}" != "$pinned_chrome" ]]; then
     sce_gate_cannot_run "the pinned Chrome for Testing ${chrome_rev:-?} is not at $pinned_chrome (scripts/install_chrome.sh). This run is a landing's, where only the pinned browser judges the module."
 fi
-
-# The lint half: the runtime and the replay crate, compiled for the target. A
-# cfg-gated branch exists for this target and no other, so the host's clippy
-# never reads it, and a call into the operating system in one is exactly what
-# the runtime's `clippy.toml` bans. `-D warnings` as the workspace lint does.
-sce_gate_step "clippy for $TARGET"
-sce_gate_tested -- cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
-    || sce_gate_fail "cargo clippy -p $CRATE --target $TARGET"
 
 # The dev profile, not release. Release is `lto = "thin"` with one codegen unit
 # (Cargo.toml), which sends the 44 generated machines through a single unit:

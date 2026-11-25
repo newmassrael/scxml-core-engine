@@ -2222,6 +2222,46 @@ fn every_module_of_the_authoring_suite_is_in_exactly_one_shard() {
     assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
 }
 
+// ── The wasm32 lane runs its gate in two parts ─────────────────────────────
+//
+// `wasm32-scenarios` runs clippy for the target when `SCE_WASM32_SCENARIOS_SHARD`
+// is `1/2`, builds and replays the module when it is `2/2`, both when it is
+// unset, and refuses any other value. The parts are fixed, so what is held here
+// is that the lane runs exactly those two and the gate still reads both.
+
+/// The wasm32 lane runs the gate's two parts, the gate carries both arms and
+/// the registry entry declares the variable the lane sets.
+#[test]
+fn the_wasm32_lane_runs_both_parts_of_its_gate() {
+    let lane_path = ".github/workflows/wasm32-scenarios.yml";
+    let variable = "SCE_WASM32_SCENARIOS_SHARD";
+    let (job, (count, listed)) = sharded_job(lane_path, &read(lane_path), &format!("{variable}:"));
+    assert_eq!(
+        (count, listed),
+        (2, vec![1, 2]),
+        "{lane_path}'s job `{job}` does not run the gate's two parts, 1/2 and 2/2"
+    );
+    let gate = uncommented(&read("scripts/gates/wasm32-scenarios.sh"));
+    for arm in [
+        "1/2) REPLAY=0",
+        "2/2) LINT=0",
+        "cargo clippy -p",
+        "node \"$NODE_RUNNER\"",
+    ] {
+        assert!(
+            gate.contains(variable) && gate.contains(arm),
+            "scripts/gates/wasm32-scenarios.sh no longer reads {variable} with `{arm}`, so \
+             a part of the lane would run less than its half of the gate"
+        );
+    }
+    assert!(
+        read("tools/git-hooks/gates/wasm32-scenarios.py")
+            .contains(&format!("\"shard_env\": \"{variable}\"")),
+        "the wasm32-scenarios entry does not declare `shard_env` {variable}, so a landing \
+         would run the gate whole while the lane splits it"
+    );
+}
+
 // ── The interface-standard lane measures in shards ──────────────────────────
 //
 // `cpp-interface-standard` plans its whole measurement from the configured
