@@ -1777,6 +1777,57 @@ mutation_ctest_build_dir() {
     return 1
 }
 
+# The ccache this tree compiles through, as the launcher CMake wrote into its
+# build file; nothing for a tree that names none, or names another launcher.
+#
+# Asked of the tree and not of PATH, because the question is what the round's
+# builds go through: a ccache on PATH that the tree does not launch answers for
+# nothing the round compiles.
+mutation_ctest_compiler_cache() {
+    local line launcher
+    [[ -f "$MUTATION_BUILD_DIR/build.ninja" ]] || return 0
+    line="$(sed -n '/^  LAUNCHER = /{s/^  LAUNCHER = //;p;q;}' \
+        "$MUTATION_BUILD_DIR/build.ninja" 2>/dev/null || true)"
+    read -r launcher _ <<<"$line" || true
+    [[ -n "${launcher:-}" && "$(basename "$launcher")" == "ccache" && -x "$launcher" ]] || return 0
+    printf '%s\n' "$launcher"
+}
+
+# What ccache `$1` has answered so far, as `hits misses`; nothing when it
+# cannot say. A hit is either kind ccache counts, from its manifest or from the
+# preprocessed source; a miss is a compilation it had to run.
+mutation_ctest_compiler_cache_counts() {
+    local stats
+    stats="$("$1" --print-stats 2>/dev/null)" || return 0
+    printf '%s\n' "$stats" | awk -F'\t' '
+        $1 == "direct_cache_hit" || $1 == "preprocessed_cache_hit" { hits += $2 }
+        $1 == "cache_miss" { misses += $2 }
+        END { printf "%d %d\n", hits, misses }'
+}
+
+# How much of the first build the compiler cache answered, from its counts
+# before (`$1`) and after (`$2`) it.
+#
+# Said, because the setup of a ctest round is that build, and how long it takes
+# turns on this number and on the jobs it runs: on the sweep of 2026-11-24 (run
+# 45318713297) the first build of `static_datamodel_generated_cpp_test` was 56
+# to 78 minutes, and no line of the job said whether a single unit of it came
+# from a cache. A
+# delta and not the counters themselves, so a cache other builds share answers
+# for this build alone, as nearly as a shared cache can.
+mutation_ctest_say_compiler_cache() {
+    local hits_before misses_before hits_after misses_after hits asked
+    if [[ -z "$1" || -z "$2" ]]; then
+        dim "the first build compiles through no compiler cache this round can count"
+        return 0
+    fi
+    read -r hits_before misses_before <<<"$1"
+    read -r hits_after misses_after <<<"$2"
+    hits=$(( hits_after - hits_before ))
+    asked=$(( hits + misses_after - misses_before ))
+    dim "the compiler cache answered $hits of the first build's $asked compilation(s)"
+}
+
 # Every file this repository owns that a registered test command names.
 #
 # `command[0]` alone is not the artifact set: a case can be `bash <script>`
@@ -1785,7 +1836,7 @@ mutation_ctest_build_dir() {
 # not land. Paths outside the repository are dropped for the same reason —
 # a mutation here cannot change them, so they can only dilute the check.
 mutation_ctest_resolve() {
-    local build_dir json uncovered
+    local build_dir json uncovered build_jobs compiler_cache cache_before="" cache_after=""
     build_dir="$(mutation_ctest_build_dir)" || {
         red "mutation_ctest needs --test-dir <dir>: it names the tree to rebuild"
         exit 2
@@ -1816,14 +1867,26 @@ mutation_ctest_resolve() {
     mapfile -t selected < <(mutation_ctest_closure_of_selection)
     # Said, because nothing else shows it: a closure that came back empty reads
     # exactly like one that was never asked for, and the lane's first build was
-    # the whole tree for as long as nobody could see which one it ran.
+    # the whole tree for as long as nobody could see which one it ran. The jobs
+    # too, for the same reason: `scripts/lib/sce_build_jobs.sh` answers them, on
+    # most machines from the load at this moment, and a build at one job reads
+    # in the log exactly like a build at four.
+    build_jobs="$(sce_build_jobs_value)"
     if (( ${#selected[@]} > 0 )); then
-        dim "the first build covers ${#selected[@]} build output(s) and their closure"
+        dim "the first build covers ${#selected[@]} build output(s) and their closure, $build_jobs job(s) at a time"
     else
-        dim "the first build is the whole tree"
+        dim "the first build is the whole tree, $build_jobs job(s) at a time"
     fi
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
+    compiler_cache="$(mutation_ctest_compiler_cache)"
+    if [[ -n "$compiler_cache" ]]; then
+        cache_before="$(mutation_ctest_compiler_cache_counts "$compiler_cache")"
+    fi
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$build_jobs" \
         ${selected[@]+--target "${selected[@]}"} >/dev/null 2>&1 || true
+    if [[ -n "$compiler_cache" ]]; then
+        cache_after="$(mutation_ctest_compiler_cache_counts "$compiler_cache")"
+    fi
+    mutation_ctest_say_compiler_cache "$cache_before" "$cache_after"
 
     json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || {
         red "ctest could not enumerate the suite: ${MUTATION_RUNNER_ARGS[*]}"
