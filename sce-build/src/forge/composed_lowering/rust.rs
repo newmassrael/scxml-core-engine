@@ -170,42 +170,59 @@ pub(crate) fn rust_unit_union_read(
     left: &[&ScopedCase],
     member: &str,
 ) -> Result<String, String> {
+    use crate::forge::expr::rust_tree::{RustArm, RustExpr, RustUnOp};
     let field =
         crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Rust);
-    Ok(match unit_union_member_of(union, left, member)? {
+    let held = || RustExpr::atom(holder);
+    let read = match unit_union_member_of(union, left, member)? {
         UnionMember::Tag => rust_union_tag_method(member)
-            .map(|method| format!("{holder}.{method}()"))
+            .map(|method| held().method(method, Vec::new()))
             .ok_or_else(|| {
                 format!("the tag's key `{member}` names no Rust method its value can be read by")
             })?,
-        UnionMember::Case(case) => format!(
-            "{RUST_UNION_CASE_PROVEN}({holder}.{}()).{field}",
-            rust_case_view(&case.variant.name)
-        ),
+        UnionMember::Case(case) => RustExpr::path_call(
+            RUST_UNION_CASE_PROVEN,
+            vec![held().method(rust_case_view(&case.variant.name), Vec::new())],
+        )
+        .field(field),
         UnionMember::Shared => {
             // Every case is an arm where every case is left, and the `match`
             // is the field. Otherwise the narrowing proved the value is in none
             // of the others, whose arm is `None`, and the runtime reads the
             // field out of the `Some` of the case the value is in.
             let others = unit_union_leaves_others(union, left);
-            let arms: String = left
+            let mut arms: Vec<RustArm> = left
                 .iter()
                 .map(|case| {
-                    let ident = rust_case_ident(&case.variant.name);
-                    if others {
-                        format!("{ty}::{ident}(record) => Some(record.{field}), ")
-                    } else {
-                        format!("{ty}::{ident}(record) => record.{field}, ")
+                    let read = RustExpr::atom("record").field(field.as_str());
+                    RustArm {
+                        pattern: format!("{ty}::{}(record)", rust_case_ident(&case.variant.name)),
+                        body: if others {
+                            RustExpr::path_call("Some", vec![read])
+                        } else {
+                            read
+                        },
                     }
                 })
                 .collect();
+            let scrutinee = held().prefixed(RustUnOp::Ref);
             if others {
-                format!("{RUST_UNION_CASE_PROVEN}(match &{holder} {{ {arms}_ => None, }})")
+                arms.push(RustArm {
+                    pattern: "_".to_string(),
+                    body: RustExpr::atom("None"),
+                });
+                RustExpr::path_call(
+                    RUST_UNION_CASE_PROVEN,
+                    vec![RustExpr::match_of(scrutinee, arms, true)],
+                )
             } else {
-                format!("(match &{holder} {{ {arms}}})")
+                RustExpr::match_of(scrutinee, arms, true)
             }
         }
-    })
+    };
+    // The read stands where the expression emitter splices it as it is
+    // (`ExprKind::Raw`), so it is printed as one operand.
+    Ok(read.as_operand())
 }
 
 /// The Rust spellings of the walks, for the machine `machine` (section 7.1,

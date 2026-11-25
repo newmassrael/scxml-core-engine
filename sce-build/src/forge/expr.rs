@@ -75,6 +75,8 @@ pub type Refusal = Spanned<ExprError>;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
+use rust_tree::{RustBinOp, RustExpr, RustStmt, RustUnOp};
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Public API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -592,22 +594,22 @@ fn lower_at(
         ExprTarget::Cpp => emit_cpp(&ast, expected)?,
         ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
-            emit_rust_returned_str(&ast)?
+            emit_rust_returned_str(&ast)?.to_string()
         }
         ExprTarget::Rust
             if position == Position::Copied
                 && matches!(expected, InferredType::Str | InferredType::Bytes) =>
         {
-            emit_rust_copied(&ast, expected)?
+            emit_rust_copied(&ast, expected)?.to_string()
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Str => {
-            emit_rust_owned_str(&ast)?
+            emit_rust_owned_str(&ast)?.to_string()
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Bytes => {
-            emit_rust_owned_bytes(&ast)?
+            emit_rust_owned_bytes(&ast)?.to_string()
         }
         ExprTarget::Rust if position == Position::Owned && expected.is_optional() => {
-            emit_rust_owned_optional(&ast, expected)?
+            emit_rust_owned_optional(&ast, expected)?.to_string()
         }
         // A text or a byte string that may be absent, returned, leaves the function
         // as the owned value its signature declares, as a present one does: an
@@ -619,9 +621,9 @@ fn lower_at(
                     InferredType::Optional(OptionalElem::Str | OptionalElem::Bytes)
                 ) =>
         {
-            emit_rust_owned_optional(&ast, expected)?
+            emit_rust_owned_optional(&ast, expected)?.to_string()
         }
-        ExprTarget::Rust => emit_rust(&ast, expected)?,
+        ExprTarget::Rust => emit_rust(&ast, expected)?.to_string(),
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Swift => swift::emit(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
@@ -3144,7 +3146,7 @@ fn typed_integer_literal(target: ExprTarget, node: &TypedExpr) -> Option<String>
     };
     let wide = wide_literal(node).is_some();
     Some(match target {
-        ExprTarget::Rust => format!("{written}{}", rust_int_type(signed, bits)),
+        ExprTarget::Rust => return rust_typed_literal(node).map(|literal| literal.to_string()),
         ExprTarget::Go => format!("{}({written})", go_int_type(signed, bits)),
         ExprTarget::Swift => format!("{}({written})", swift::int_type(signed, bits)),
         ExprTarget::C | ExprTarget::Cpp | ExprTarget::Kotlin if wide => return None,
@@ -3569,9 +3571,9 @@ pub fn transpile_lvalue(
                     ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
                 ) =>
         {
-            rust_emit_value(&ast)?
+            rust_emit_value(&ast)?.to_string()
         }
-        ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
+        ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
@@ -4594,11 +4596,11 @@ fn camel_helper(op: RingOp, rule: OverflowRule) -> String {
 /// runtime is written from. `backend` names the emitter in the refusal of a
 /// node typing gave no integer type, which the judge refuses before any
 /// emitter is reached.
-fn total_parts<E>(
+fn total_parts<T, E>(
     expr: &TypedExpr,
     backend: &str,
-    mut emit: impl FnMut(&TypedExpr, InferredType) -> Result<String, E>,
-) -> Result<(bool, u8, Vec<String>), E>
+    mut emit: impl FnMut(&TypedExpr, InferredType) -> Result<T, E>,
+) -> Result<(bool, u8, Vec<T>), E>
 where
     E: From<ExprError>,
 {
@@ -11737,8 +11739,15 @@ fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
 //   well-typed context to begin with). For robustness we still emit
 //   `expr as iN` when widening is necessary.
 // * Hex/bin/oct literal in float context: hard error.
+// * The expression is built as a tree of the Rust expressions it is made of
+//   ([`RustExpr`], `expr/rust_tree.rs`), a cast a node of its own wherever
+//   it comes from, and printed once, where it leaves this layer: every
+//   parenthesis is the printer's, decided by the kinds of the nodes around it
+//   and the precedence the Rust Reference gives them, and no rule here groups
+//   anything or reads back what it has written.
 
-fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+/// The Rust expression `expr` is where a value of `expected` is wanted.
+fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<RustExpr, Refusal> {
     // The context a quantity-annotated output asks for is its numeric base
     // (see `rust_coerce`), or the push-downs below never see a float.
     let expected = expected.strip_quantity();
@@ -11752,15 +11761,11 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_rust(left, expected)?;
-            let r_raw = emit_rust(right, expected)?;
-            let l = rust_left_operand(left, *op, l_raw);
-            let r = if child_needs_parens(right, *op, false, rust_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", rust_binop(*op)));
+            return Ok(RustExpr::binary(
+                rust_binop(*op),
+                emit_rust(left, expected)?,
+                emit_rust(right, expected)?,
+            ));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context. Without this, `-40` in a
@@ -11777,19 +11782,11 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
     {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_rust(operand, expected)?;
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "",
-                _ => unreachable!("guarded by outer match"),
-            };
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{prefix}({inner})")
+            // `+x` is `x`.
+            return Ok(if *op == UnaryOp::Neg {
+                inner.prefixed(RustUnOp::Neg)
             } else {
-                format!("{prefix}{inner}")
+                inner
             });
         }
     }
@@ -11803,11 +11800,7 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
-                let inner = emit_rust(&args[0], InferredType::Unknown)?;
-                return Ok(format!(
-                    "({inner}).len() as {}",
-                    rust_int_type(signed, bits)
-                ));
+                return Ok(rust_length(&args[0])?.cast(rust_int_type(signed, bits)));
             }
         }
         // ⚠ THE WIDTH COMES FROM THE CONTEXT, NOT FROM A CONSTANT. The first
@@ -11818,23 +11811,52 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
         // type; `round` does the same.
         if let Some(op) = real_to_int_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
-                let inner = emit_rust(&args[0], InferredType::Float { bits: 64 })?;
-                let m = match op {
-                    RealToInt::Round => "round",
-                    RealToInt::Floor => "floor",
-                };
-                return Ok(format!(
-                    "({inner}).{m}() as {}",
-                    rust_int_type(signed, bits)
-                ));
+                return Ok(rust_real_to_int(op, &args[0])?.cast(rust_int_type(signed, bits)));
             }
         }
     }
-    let raw = match typed_integer_literal(ExprTarget::Rust, expr) {
+    let raw = match rust_typed_literal(expr) {
         Some(literal) => literal,
         None => rust_emit_node(expr)?,
     };
     rust_coerce(raw, expr.ty, expected, expr)
+}
+
+/// `len(value)`: Rust's `len`, a `usize`, which counts a text in its UTF-8
+/// bytes.
+fn rust_length(value: &TypedExpr) -> Result<RustExpr, Refusal> {
+    Ok(emit_rust(value, InferredType::Unknown)?.method("len", Vec::new()))
+}
+
+/// The real `round(value)` or `floor(value)` is before it is made an integer:
+/// `f64::round` is already half away from zero, and `f64::floor` already goes
+/// toward −∞.
+fn rust_real_to_int(op: RealToInt, value: &TypedExpr) -> Result<RustExpr, Refusal> {
+    let method = match op {
+        RealToInt::Round => "round",
+        RealToInt::Floor => "floor",
+    };
+    Ok(emit_rust(value, InferredType::Float { bits: 64 })?.method(method, Vec::new()))
+}
+
+/// An integer literal that has taken the type of its place
+/// ([`typed_integer_literal`]), in Rust: its digits with the type's suffix,
+/// under the `-` the author wrote, which stays the prefix operator it is.
+fn rust_typed_literal(node: &TypedExpr) -> Option<RustExpr> {
+    let InferredType::Int { signed, bits } = node.ty else {
+        return None;
+    };
+    let (text, negated) = integer_literal_parts(node)?;
+    let literal = RustExpr::atom(format!(
+        "{}{}",
+        portable_number_literal(&text),
+        rust_int_type(signed, bits)
+    ));
+    Some(if negated {
+        literal.prefixed(RustUnOp::Neg)
+    } else {
+        literal
+    })
 }
 
 /// How a Rust index reads an element that is no plain value (docs/adr/0086):
@@ -11870,8 +11892,8 @@ fn rust_element_by_reference(ty: InferredType) -> Option<RustElement> {
 /// The list `left` an index reads, as the reference `at` and `at_ref` take: a
 /// borrow of the list, or, for a list that is itself an element read by
 /// reference ([`RustElement::Operand`]), that reference.
-fn rust_list_operand(left: &TypedExpr) -> Result<String, Refusal> {
-    let emitted = wrap_postfix(left, emit_rust(left, InferredType::Unknown)?);
+fn rust_list_operand(left: &TypedExpr) -> Result<RustExpr, Refusal> {
+    let emitted = emit_rust(left, InferredType::Unknown)?;
     let by_reference = matches!(
         &left.kind,
         ExprKind::Checked {
@@ -11883,7 +11905,7 @@ fn rust_list_operand(left: &TypedExpr) -> Result<String, Refusal> {
     Ok(if by_reference {
         emitted
     } else {
-        format!("&{emitted}")
+        emitted.prefixed(RustUnOp::Ref)
     })
 }
 
@@ -11903,23 +11925,19 @@ fn rust_list_operand(left: &TypedExpr) -> Result<String, Refusal> {
 ///   pass has lowered it to a `Raw` call by now) returns `String`, as does
 ///   an imported transform's;
 /// * anything else is borrowed, and takes `.to_string()`.
-fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, Refusal> {
+fn emit_rust_returned_str(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => Ok(format!(
-            "if {} {{ {} }} else {{ {} }}",
+        } => Ok(RustExpr::if_else(
             emit_rust(condition, InferredType::Bool)?,
             emit_rust_returned_str(consequent)?,
             emit_rust_returned_str(alternate)?,
         )),
         ExprKind::Call { .. } | ExprKind::Raw(_) => emit_rust(expr, InferredType::Str),
-        _ => {
-            let borrowed = emit_rust(expr, InferredType::Str)?;
-            Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
-        }
+        _ => Ok(emit_rust(expr, InferredType::Str)?.method("to_string", Vec::new())),
     }
 }
 
@@ -11932,22 +11950,18 @@ fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, Refusal> {
 /// somewhere else would move it out from behind `&mut self`. A call's fresh
 /// `String` copied once more costs an allocation and is correct; the field
 /// moved out is not.
-fn emit_rust_owned_str(expr: &TypedExpr) -> Result<String, Refusal> {
+fn emit_rust_owned_str(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => Ok(format!(
-            "if {} {{ {} }} else {{ {} }}",
+        } => Ok(RustExpr::if_else(
             emit_rust(condition, InferredType::Bool)?,
             emit_rust_owned_str(consequent)?,
             emit_rust_owned_str(alternate)?,
         )),
-        _ => {
-            let borrowed = emit_rust(expr, InferredType::Str)?;
-            Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
-        }
+        _ => Ok(emit_rust(expr, InferredType::Str)?.method("to_string", Vec::new())),
     }
 }
 
@@ -11988,22 +12002,18 @@ fn emit_c_owned_bytes(expr: &TypedExpr) -> Result<String, ExprError> {
 /// is a `&[u8; N]` and a variable read is the machine's own field, so each leaf
 /// is copied, and the arms of a conditional one by one, since both arms of a
 /// Rust `if` must be one type.
-fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<String, Refusal> {
+fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => Ok(format!(
-            "if {} {{ {} }} else {{ {} }}",
+        } => Ok(RustExpr::if_else(
             emit_rust(condition, InferredType::Bool)?,
             emit_rust_owned_bytes(consequent)?,
             emit_rust_owned_bytes(alternate)?,
         )),
-        _ => {
-            let borrowed = emit_rust(expr, InferredType::Bytes)?;
-            Ok(format!("{}.to_vec()", wrap_postfix(expr, borrowed)))
-        }
+        _ => Ok(emit_rust(expr, InferredType::Bytes)?.method("to_vec", Vec::new())),
     }
 }
 
@@ -12020,7 +12030,9 @@ pub(crate) fn rust_literal(written: &str, bytes: bool) -> Option<String> {
     if bytes && !string_literal_as_bytes(&mut ast) {
         return None;
     }
-    rust_emit_value(&ast).ok()
+    rust_emit_value(&ast)
+        .ok()
+        .map(|literal| literal.to_string())
 }
 
 /// `text` as what the C++ runtime's `OwnedText<N>::literal` is handed: the
@@ -12069,23 +12081,19 @@ pub(crate) fn cpp_literal_elements(written: &str, bytes: bool) -> Option<Option<
 /// since both arms of a Rust `if` must be one type. A text literal is a `&str`
 /// already; every other value is sliced whole, a variable read included, so a
 /// field of the machine is lent and never moved out of it.
-fn emit_rust_copied(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+fn emit_rust_copied(expr: &TypedExpr, expected: InferredType) -> Result<RustExpr, Refusal> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => Ok(format!(
-            "if {} {{ {} }} else {{ {} }}",
+        } => Ok(RustExpr::if_else(
             emit_rust(condition, InferredType::Bool)?,
             emit_rust_copied(consequent, expected)?,
             emit_rust_copied(alternate, expected)?,
         )),
         ExprKind::StringLit { .. } if expected == InferredType::Str => emit_rust(expr, expected),
-        _ => {
-            let held = emit_rust(expr, expected)?;
-            Ok(format!("&{}[..]", wrap_postfix(expr, held)))
-        }
+        _ => Ok(emit_rust(expr, expected)?.borrowed_whole()),
     }
 }
 
@@ -12094,14 +12102,14 @@ fn emit_rust_copied(expr: &TypedExpr, expected: InferredType) -> Result<String, 
 /// expression reads an optional text or byte string borrowed
 /// ([`rust_optional::view`]), so its present value is copied into the place's
 /// own; any other element is `Copy`, and the value is taken as it is.
-fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<RustExpr, Refusal> {
     let view = emit_rust(expr, expected)?;
     Ok(match expected {
         // The absent value is owned as it is: there is no borrowed text to copy.
         InferredType::Optional(elem @ (OptionalElem::Str | OptionalElem::Bytes))
             if !matches!(expr.kind, ExprKind::NullLit) =>
         {
-            rust_optional::owned(&wrap_postfix(expr, view), elem)
+            rust_optional::owned(view, elem)
         }
         // An optional record that a variable, a parameter or a local holds is
         // copied where another place takes it whole, as a record is
@@ -12114,7 +12122,7 @@ fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<
                     ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
                 ) =>
         {
-            format!("{}.clone()", wrap_postfix(expr, view))
+            view.method("clone", Vec::new())
         }
         _ => view,
     })
@@ -12124,18 +12132,18 @@ fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<
 /// is its own form ([`rust_optional_form`]), and a place that holds an optional
 /// text or byte string is read borrowed ([`rust_optional::view`]), as a place
 /// that holds a present one is.
-fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
+fn rust_emit_node(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
     if let Some(form) = optional_form(expr) {
         return rust_optional_form(form, expr);
     }
-    let text = rust_emit_value(expr)?;
+    let value = rust_emit_value(expr)?;
     let place = matches!(
         expr.kind,
         ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
     );
     Ok(match expr.ty {
-        InferredType::Optional(elem) if place => rust_optional::view(&text, elem),
-        _ => text,
+        InferredType::Optional(elem) if place => rust_optional::view(value, elem),
+        _ => value,
     })
 }
 
@@ -12145,15 +12153,15 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
 /// `proven`, `x ?? d` is a `match` whose absent arm alone evaluates `d`, and
 /// equality is `Option`'s own, a side of `T` lifted into the optional value of
 /// the other ([`InferredType::lifted_into`], [`rust_coerce`]).
-fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refusal> {
+fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<RustExpr, Refusal> {
     let read = |node: &TypedExpr| emit_rust(node, InferredType::Unknown);
     Ok(match form {
         OptionalForm::Test { subject, present } => {
-            let view = wrap_postfix(subject, read(subject)?);
+            let view = read(subject)?;
             if present {
-                rust_optional::is_present(&view)
+                rust_optional::is_present(view)
             } else {
-                rust_optional::is_absent(&view)
+                rust_optional::is_absent(view)
             }
         }
         // A record is read in place, through a borrow, and the member `.f` of the
@@ -12162,9 +12170,9 @@ fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Strin
         OptionalForm::Proven { subject }
             if subject.ty == InferredType::Optional(OptionalElem::Record) =>
         {
-            rust_optional::proven_ref(&wrap_postfix(subject, read(subject)?))
+            rust_optional::proven_ref_expr(read(subject)?)
         }
-        OptionalForm::Proven { subject } => rust_optional::proven(&read(subject)?),
+        OptionalForm::Proven { subject } => rust_optional::proven(read(subject)?),
         OptionalForm::Otherwise { value, fallback } => {
             // Both arms of the `match` are one type: a present text is read
             // borrowed, so a default of text is borrowed too.
@@ -12176,47 +12184,37 @@ fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Strin
                     None => default,
                 },
             };
-            rust_optional::coalesce(&read(value)?, &default, whole.ty.is_optional())
+            rust_optional::coalesce(read(value)?, default, whole.ty.is_optional())
         }
         OptionalForm::Equality { left, right, equal } => {
             let optional = [left.ty, right.ty]
                 .into_iter()
                 .find(|ty| ty.is_optional())
                 .unwrap_or(InferredType::Unknown);
-            let op = if equal {
-                BinOp::StrictEq
-            } else {
-                BinOp::StrictNeq
-            };
-            let l = rust_left_operand(left, op, emit_rust(left, optional)?);
-            let r = emit_rust(right, optional)?;
-            let r = if child_needs_parens(right, op, false, rust_precedence) {
-                format!("({r})")
-            } else {
-                r
-            };
-            rust_optional::equality(&l, &r, equal)
+            rust_optional::equality(
+                emit_rust(left, optional)?,
+                emit_rust(right, optional)?,
+                equal,
+            )
         }
-        OptionalForm::Constant(answer) => answer.to_string(),
+        OptionalForm::Constant(answer) => RustExpr::atom(answer.to_string()),
     })
 }
 
-/// `text`, the Rust value of `node`, borrowed as an expression reads the
+/// `value`, the Rust value of `node`, borrowed as an expression reads the
 /// present value of an optional text or byte string of the element `elem`
 /// (`&str`, `&[u8]`): a string literal is one already, and any other text — an
 /// owned `String` or `Vec<u8>`, a byte-string literal's array — is sliced whole.
-/// A value of any other element is `Copy`, and is `text` itself.
-fn rust_borrowed(node: &TypedExpr, text: String, elem: OptionalElem) -> String {
+/// A value of any other element is `Copy`, and is `value` itself.
+fn rust_borrowed(node: &TypedExpr, value: RustExpr, elem: OptionalElem) -> RustExpr {
     match (elem, &node.kind) {
-        (OptionalElem::Str, ExprKind::StringLit { .. }) => text,
-        (OptionalElem::Str | OptionalElem::Bytes, _) => {
-            format!("&{}[..]", wrap_postfix(node, text))
-        }
-        _ => text,
+        (OptionalElem::Str, ExprKind::StringLit { .. }) => value,
+        (OptionalElem::Str | OptionalElem::Bytes, _) => value.borrowed_whole(),
+        _ => value,
     }
 }
 
-fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
+fn rust_emit_value(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
     Ok(match &expr.kind {
         // docs/adr/0063: the standard library's own operation at the node's
         // type, a `const fn` that never panics. Fully qualified, so a literal
@@ -12224,88 +12222,80 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         // would leave it ambiguous.
         ExprKind::Total { op, rule, .. } => {
             let (signed, bits, operands) = total_parts(expr, "Rust", emit_rust)?;
-            format!(
-                "{}::{}_{}({})",
-                rust_int_type(signed, bits),
-                rule.helper(),
-                op.helper(),
-                operands.join(", ")
+            RustExpr::path_call(
+                format!(
+                    "{}::{}_{}",
+                    rust_int_type(signed, bits),
+                    rule.helper(),
+                    op.helper()
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value } => {
-            format!("\"{}\"", crate::filters::escape_rust(value.clone()))
-        }
+        ExprKind::NumberLit(n) => RustExpr::atom(portable_number_literal(n)),
+        ExprKind::StringLit { value } => RustExpr::atom(format!(
+            "\"{}\"",
+            crate::filters::escape_rust(value.clone())
+        )),
         // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
         // so the default `==`/`!=` Binary path needs no special-casing —
         // only this constant rendering. ASCII-only by contract so `b"…"`
         // is valid.
-        ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
-        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        ExprKind::NullLit => "None".to_string(),
+        ExprKind::BytesLit { bytes } => {
+            RustExpr::atom(format!("b\"{}\"", bytes_as_quoted_ascii(bytes)))
+        }
+        ExprKind::BoolLit(b) => RustExpr::atom(if *b { "true" } else { "false" }),
+        ExprKind::NullLit => RustExpr::atom("None"),
         // The one spelling the declaration of the name takes
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::Rust.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => RustExpr::atom(ExprTarget::Rust.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => RustExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `&str + i64` does not compile in Rust, and `&str + &str` does
             // not either. `format!` takes a string slice, an owned `String`
             // and an integer alike, and prints an integer as its decimal
             // digits -- the one text ECMA-262 13.15.3 gives it everywhere.
-            let operand = |side: &TypedExpr| -> Result<String, Refusal> {
-                let text = emit_rust(side, side.ty)?;
+            let operand = |side: &TypedExpr| -> Result<RustExpr, Refusal> {
+                let value = emit_rust(side, side.ty)?;
                 match concat_operand(side.ty) {
-                    ConcatOperand::Text | ConcatOperand::Decimal => Ok(text),
-                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text).into()),
+                    ConcatOperand::Text | ConcatOperand::Decimal => Ok(value),
+                    ConcatOperand::Refused(what) => {
+                        Err(concat_refusal(what, value.to_string()).into())
+                    }
                 }
             };
-            format!(
-                "format!(\"{{}}{{}}\", {}, {})",
-                operand(left)?,
-                operand(right)?
+            RustExpr::macro_call(
+                "format",
+                vec![RustExpr::atom("\"{}{}\""), operand(left)?, operand(right)?],
             )
         }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_rust(left, operand_ty)?;
-            let r_raw = emit_rust(right, right_operand_type(*op, operand_ty))?;
-            let l = rust_left_operand(left, *op, l_raw);
-            let r = if child_needs_parens(right, *op, false, rust_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            format!("{l} {} {r}", rust_binop(*op))
+            RustExpr::binary(
+                rust_binop(*op),
+                emit_rust(left, operand_ty)?,
+                emit_rust(right, right_operand_type(*op, operand_ty))?,
+            )
         }
         ExprKind::Unary { op, operand } => {
             let inner = emit_rust(operand, expr.ty)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "",
-                UnaryOp::Not | UnaryOp::BitNot => "!",
-            };
-            if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
+            match op {
+                UnaryOp::Neg => inner.prefixed(RustUnOp::Neg),
+                // `+x` is `x`.
+                UnaryOp::Pos => inner,
+                UnaryOp::Not | UnaryOp::BitNot => inner.prefixed(RustUnOp::Not),
             }
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => {
-            format!(
-                "if {} {{ {} }} else {{ {} }}",
-                emit_rust(condition, InferredType::Bool)?,
-                emit_rust(consequent, expr.ty)?,
-                emit_rust(alternate, expr.ty)?,
-            )
-        }
+        } => RustExpr::if_else(
+            emit_rust(condition, InferredType::Bool)?,
+            emit_rust(consequent, expr.ty)?,
+            emit_rust(alternate, expr.ty)?,
+        ),
         // A field of the element a list of records is indexed at is read through
         // the element by reference: a record that owns text is not `Copy`, and the
         // list keeps its element.
@@ -12328,18 +12318,18 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             else {
                 unreachable!("guarded by the match above")
             };
-            let (helpers, then) = rust_contract(*discharge);
-            format!(
-                "{helpers}::at_ref({}, {}){then}.{property}",
-                rust_list_operand(left)?,
-                emit_rust(index, InferredType::Unknown)?,
+            rust_contract(
+                *discharge,
+                "at_ref",
+                vec![
+                    rust_list_operand(left)?,
+                    emit_rust(index, InferredType::Unknown)?,
+                ],
             )
+            .field(property.as_str())
         }
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_rust(object, InferredType::Unknown)?)
-            )
+            emit_rust(object, InferredType::Unknown)?.field(property.as_str())
         }
         ExprKind::Index { object, index } => {
             // Rust slice/array indexing requires `usize`. Concrete
@@ -12349,15 +12339,12 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             // refuses the access. `UntypedInt` literals (e.g.
             // `arr[0]`) are accepted by rustc directly and stay
             // un-wrapped to keep prior goldens byte-stable.
-            let idx_raw = emit_rust(index, InferredType::Unknown)?;
-            let idx_emit = match index.ty {
-                InferredType::Int { .. } => format!("({idx_raw}) as usize"),
-                _ => idx_raw,
+            let position = emit_rust(index, InferredType::Unknown)?;
+            let position = match index.ty {
+                InferredType::Int { .. } => position.cast("usize"),
+                _ => position,
             };
-            format!(
-                "{}[{idx_emit}]",
-                wrap_postfix(object, emit_rust(object, InferredType::Unknown)?),
-            )
+            emit_rust(object, InferredType::Unknown)?.indexed(position)
         }
         ExprKind::Call {
             callee,
@@ -12368,42 +12355,38 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             ..
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "({}).len()",
-                    emit_rust(&args[0], InferredType::Unknown)?
-                ));
+                return rust_length(&args[0]);
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
-                // `f64::round` is already half away from zero, and `f64::floor`
-                // already goes toward −∞.
-                let inner = emit_rust(&args[0], InferredType::Float { bits: 64 })?;
-                let m = match op {
-                    RealToInt::Round => "round",
-                    RealToInt::Floor => "floor",
-                };
-                return Ok(format!("(({inner}).{m}() as i64)"));
+                return Ok(rust_real_to_int(op, &args[0])?.cast("i64"));
             }
             let mut emitted_args = Vec::with_capacity(args.len());
             for (i, a) in args.iter().enumerate() {
                 emitted_args.push(emit_rust(a, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_rust(callee, InferredType::Unknown)?);
+            let callee = emit_rust(callee, InferredType::Unknown)?;
             // A generated algorithm writes the list it returns into a destination
             // the call holds (docs/adr/0082), and the call's value is that list. A
-            // list is taken only from an algorithm that declares `may-fail`.
+            // list is taken only from an algorithm that declares `may-fail`, whose
+            // failure `?` hands on.
             if *into_destination && *fails {
-                emitted_args.push("&mut sce_out".to_string());
-                let call = format!("{symbol}({})", emitted_args.join(", "));
-                let written = pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
-                    .map_err(|e| e.at(expr.span.clone()))?;
-                return Ok(format!(
-                    "{{ let mut sce_out = {RUST_LIST_DESTINATION}; {written}; sce_out }}"
+                emitted_args.push(RustExpr::atom(RUST_DESTINATION).prefixed(RustUnOp::RefMut));
+                return Ok(RustExpr::block(
+                    vec![
+                        RustStmt::Let {
+                            pattern: format!("mut {RUST_DESTINATION}"),
+                            init: RustExpr::atom(RUST_LIST_DESTINATION),
+                        },
+                        RustStmt::Expr(RustExpr::call(callee, emitted_args).tried()),
+                    ],
+                    RustExpr::atom(RUST_DESTINATION),
                 ));
             }
-            let call = format!("{symbol}({})", emitted_args.join(", "));
+            let call = RustExpr::call(callee, emitted_args);
+            // A call of a `may-fail` function hands its failure on by `?`, as
+            // [`pass_failure_on`] spells it for Rust.
             if *fails {
-                pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
-                    .map_err(|e| e.at(expr.span.clone()))?
+                call.tried()
             } else {
                 call
             }
@@ -12411,7 +12394,7 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field (`&str`) → the
             // algorithm `bytes` param type (`&[u8]`) via `.as_bytes()`.
-            format!("{}.as_bytes()", emit_rust(source, InferredType::Unknown)?)
+            emit_rust(source, InferredType::Unknown)?.method("as_bytes", Vec::new())
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
         // not known below its width ([`settle_shifts`]).
@@ -12435,7 +12418,6 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             right: Some(index),
             discharge,
         } => {
-            let (helpers, then) = rust_contract(*discharge);
             let list = rust_list_operand(left)?;
             let index = emit_rust(index, InferredType::Unknown)?;
             // A union, typed by no operand type, is no `Copy` value either: the
@@ -12444,11 +12426,12 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             let element = rust_element_by_reference(expr.ty)
                 .or_else(|| listed_union(left.ty).map(|_| RustElement::Owned));
             match element {
-                None => format!("{helpers}::at({list}, {index}){then}"),
-                Some(RustElement::Operand) => format!("{helpers}::at_ref({list}, {index}){then}"),
-                Some(RustElement::Owned) => {
-                    format!("{helpers}::at_ref({list}, {index}){then}.clone()")
+                None => rust_contract(*discharge, "at", vec![list, index]),
+                Some(RustElement::Operand) => {
+                    rust_contract(*discharge, "at_ref", vec![list, index])
                 }
+                Some(RustElement::Owned) => rust_contract(*discharge, "at_ref", vec![list, index])
+                    .method("clone", Vec::new()),
             }
         }
         // SCE_FORGE.md §3.4.1: the runtime's checked helper at the operation's
@@ -12481,23 +12464,24 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
                     }
                     .at(expr.span.clone()));
                 };
-                return Ok(format!(
-                    "sce_forge_runtime::algorithm::narrow::<{}, {}>({})?",
-                    rust_int_type(signed, bits),
-                    rust_int_type(from_signed, from_bits),
-                    emit_rust(left, left.ty)?
-                ));
+                return Ok(RustExpr::path_call(
+                    format!(
+                        "sce_forge_runtime::algorithm::narrow::<{}, {}>",
+                        rust_int_type(signed, bits),
+                        rust_int_type(from_signed, from_bits)
+                    ),
+                    vec![emit_rust(left, left.ty)?],
+                )
+                .tried());
             }
             let mut operands = vec![emit_rust(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_rust(right, expr.ty)?);
             }
-            let (helpers, then) = rust_contract(*discharge);
-            format!(
-                "{helpers}::{}::<{}>({}){then}",
-                op.helper(),
-                rust_int_type(signed, bits),
-                operands.join(", ")
+            rust_contract(
+                *discharge,
+                &format!("{}::<{}>", op.helper(), rust_int_type(signed, bits)),
+                operands,
             )
         }
     })
@@ -12525,17 +12509,18 @@ fn rust_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, Refusal> {
+) -> Result<RustExpr, Refusal> {
     let (signed, bits) = settled_shift_width(expr).map_err(|e| e.at(expr.span.clone()))?;
     let ty = rust_int_type(signed, bits);
     let value = emit_rust(left, expr.ty)?;
     let written = emit_rust(count, InferredType::Unknown)?;
     match discharge {
         Discharge::AtRun => {
-            return Ok(format!(
-                "sce_forge_runtime::algorithm::{}::<{ty}, _>({value}, {written})?",
-                op.helper()
-            ))
+            return Ok(RustExpr::path_call(
+                format!("sce_forge_runtime::algorithm::{}::<{ty}, _>", op.helper()),
+                vec![value, written],
+            )
+            .tried())
         }
         // Proven below the width ([`prove_integer_operations`]): the operator
         // itself, in the runtime, so the crate the file is compiled in holds no
@@ -12543,31 +12528,48 @@ fn rust_settled_shift(
         // where it is `>>`.
         Discharge::AtBuild => {
             let helper = if op == CheckedOp::Shl { "shl" } else { "shr" };
-            return Ok(format!(
-                "sce_forge_runtime::algorithm::proven::{helper}::<{ty}, _>({value}, {written})"
+            return Ok(RustExpr::path_call(
+                format!("sce_forge_runtime::algorithm::proven::{helper}::<{ty}, _>"),
+                vec![value, written],
             ));
         }
         Discharge::Total => {}
     }
     let places = rust_shift_places(count, written);
+    // The value for a count at or past the width, where the standard library's
+    // checked shift answers none.
+    let or_zero = |call: RustExpr| call.method("unwrap_or", vec![RustExpr::atom("0")]);
     Ok(match op {
-        CheckedOp::Shl => format!("{ty}::checked_shl({value}, {places}).unwrap_or(0)"),
-        CheckedOp::Shr if signed => format!(
-            "{ty}::wrapping_shr({value}, u32::min({places}, {}))",
-            bits - 1
+        CheckedOp::Shl => or_zero(RustExpr::path_call(
+            format!("{ty}::checked_shl"),
+            vec![value, places],
+        )),
+        CheckedOp::Shr if signed => RustExpr::path_call(
+            format!("{ty}::wrapping_shr"),
+            vec![
+                value,
+                RustExpr::path_call(
+                    "u32::min",
+                    vec![places, RustExpr::atom((bits - 1).to_string())],
+                ),
+            ],
         ),
-        // A cast, written bare as every cast here is: the operator it stands
-        // beside parenthesises it where the grammar needs it
-        // ([`rust_left_operand`]), and an outer pair of its own is refused by
-        // `unused_parens` where it is assigned (`algorithm_shift_count`).
+        // Made on the bits, in the unsigned type of the width, and cast back: a
+        // cast node, which the printer groups where the grammar needs it and
+        // leaves bare where it is assigned, as `unused_parens` asks
+        // (`algorithm_shift_count`).
         CheckedOp::UShr if signed => {
             let unsigned = rust_int_type(false, bits);
-            format!(
-                "{unsigned}::checked_shr({}, {places}).unwrap_or(0) as {ty}",
-                rust_cast(value, left, unsigned)
-            )
+            or_zero(RustExpr::path_call(
+                format!("{unsigned}::checked_shr"),
+                vec![value.cast(unsigned), places],
+            ))
+            .cast(ty)
         }
-        _ => format!("{ty}::checked_shr({value}, {places}).unwrap_or(0)"),
+        _ => or_zero(RustExpr::path_call(
+            format!("{ty}::checked_shr"),
+            vec![value, places],
+        )),
     })
 }
 
@@ -12577,10 +12579,12 @@ fn rust_settled_shift(
 /// hold it, which is past every width. A count below 0 reaches a total shift
 /// only outside the bodies the contract covers, where it is the caller's to rule
 /// out (SCE_FORGE.md §3.4.1), and is past the width there too.
-fn rust_shift_places(count: &TypedExpr, written: String) -> String {
+fn rust_shift_places(count: &TypedExpr, written: RustExpr) -> RustExpr {
     if let Some((text, false)) = integer_literal_parts(count) {
         if let Some(value) = integer_literal_value(&text) {
-            return u32::try_from(value).map_or_else(|_| "u32::MAX".to_string(), |v| v.to_string());
+            return RustExpr::atom(
+                u32::try_from(value).map_or_else(|_| "u32::MAX".to_string(), |v| v.to_string()),
+            );
         }
     }
     match count.ty.strip_quantity() {
@@ -12591,58 +12595,67 @@ fn rust_shift_places(count: &TypedExpr, written: String) -> String {
         InferredType::Int {
             signed: false,
             bits,
-        } if bits < 32 => format!("u32::from({written})"),
-        _ => format!("u32::try_from({written}).unwrap_or(u32::MAX)"),
+        } if bits < 32 => RustExpr::path_call("u32::from", vec![written]),
+        _ => RustExpr::path_call("u32::try_from", vec![written])
+            .method("unwrap_or", vec![RustExpr::atom("u32::MAX")]),
     }
 }
 
-/// Where a Rust integer operation of the contract (SCE_FORGE.md §3.4.1) is
-/// printed from, and what follows the call: the runtime's checked helper and
-/// `?`, which hands a failure to the caller of a `may-fail` body, or the
-/// runtime's `proven` function and nothing, for an operation the interval
-/// analysis proved ([`Discharge::AtBuild`]). Either way the operation is a
-/// call, so the crate the file is compiled in holds no operator and no index
-/// of its own for it.
-fn rust_contract(discharge: Discharge) -> (&'static str, &'static str) {
+/// A Rust integer operation of the contract (SCE_FORGE.md §3.4.1), the call of
+/// `helper` with `args`: the runtime's checked helper, its failure handed to
+/// the caller of a `may-fail` body by `?`, or the runtime's `proven` function,
+/// for an operation the interval analysis proved ([`Discharge::AtBuild`]).
+/// Either way the operation is a call, so the crate the file is compiled in
+/// holds no operator and no index of its own for it.
+fn rust_contract(discharge: Discharge, helper: &str, args: Vec<RustExpr>) -> RustExpr {
     match discharge {
-        Discharge::AtRun => ("sce_forge_runtime::algorithm", "?"),
+        Discharge::AtRun => {
+            RustExpr::path_call(format!("sce_forge_runtime::algorithm::{helper}"), args).tried()
+        }
         // A total operation is a shift's alone, which [`rust_settled_shift`]
         // prints; no operation of the contract reaches here so marked.
-        Discharge::AtBuild | Discharge::Total => ("sce_forge_runtime::algorithm::proven", ""),
+        Discharge::AtBuild | Discharge::Total => RustExpr::path_call(
+            format!("sce_forge_runtime::algorithm::proven::{helper}"),
+            args,
+        ),
     }
 }
 
-fn rust_binop(op: BinOp) -> &'static str {
+/// The local a call that writes the list it returns into a destination is
+/// handed (docs/adr/0082), whose value the call is.
+const RUST_DESTINATION: &str = "sce_out";
+
+/// The Rust operator `op` is written as.
+fn rust_binop(op: BinOp) -> RustBinOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "==",
-        BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>",
+        BinOp::Add => RustBinOp::Add,
+        BinOp::Sub => RustBinOp::Sub,
+        BinOp::Mul => RustBinOp::Mul,
+        BinOp::Div => RustBinOp::Div,
+        BinOp::Mod => RustBinOp::Rem,
+        BinOp::StrictEq => RustBinOp::Eq,
+        BinOp::StrictNeq => RustBinOp::Ne,
+        BinOp::Lt => RustBinOp::Lt,
+        BinOp::Gt => RustBinOp::Gt,
+        BinOp::LtEq => RustBinOp::Le,
+        BinOp::GtEq => RustBinOp::Ge,
+        BinOp::And => RustBinOp::And,
+        BinOp::Or => RustBinOp::Or,
+        BinOp::BitAnd => RustBinOp::BitAnd,
+        BinOp::BitOr => RustBinOp::BitOr,
+        BinOp::BitXor => RustBinOp::BitXor,
+        BinOp::Shl => RustBinOp::Shl,
+        BinOp::Shr | BinOp::UShr => RustBinOp::Shr,
         BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
 fn rust_coerce(
-    raw: String,
+    raw: RustExpr,
     from: InferredType,
     to: InferredType,
     node: &TypedExpr,
-) -> Result<String, Refusal> {
+) -> Result<RustExpr, Refusal> {
     use InferredType::*;
     // A value of `T` where an optional value of `T` is expected is a present one
     // (docs/adr/0055, section 2): converted to the element's type, borrowed as an
@@ -12651,7 +12664,9 @@ fn rust_coerce(
     // does not type.
     if let Some(elem) = from.lifted_into(to) {
         let value = rust_coerce(raw, from, elem.present(), node)?;
-        return Ok(rust_optional::present(&rust_borrowed(node, value, elem)));
+        return Ok(rust_optional::present_expr(rust_borrowed(
+            node, value, elem,
+        )));
     }
     // A quantity is emitted as its numeric base: the unit is a check the
     // document passed, not a type Rust has. Left on, `raw_temp * 0.5` with
@@ -12666,7 +12681,11 @@ fn rust_coerce(
         (UntypedInt, Float { .. }) | (UntypedInt, UntypedFloat) => {
             if let ExprKind::NumberLit(text) = &node.kind {
                 if is_decimal_integer_literal(text) {
-                    return Ok(format!("{raw}.0"));
+                    // The literal itself, written as a real one.
+                    return Ok(RustExpr::atom(format!(
+                        "{}.0",
+                        portable_number_literal(text)
+                    )));
                 }
                 // Hex/bin/oct literal in float context — textbook strict: error.
                 return Err(ExprError::TypeCoercion {
@@ -12685,11 +12704,11 @@ fn rust_coerce(
                 Float { bits: 32 } => "f32",
                 _ => "f64",
             };
-            Ok(format!("{raw} as {target}"))
+            Ok(raw.cast(target))
         }
         // Concrete int → float: explicit cast.
-        (Int { .. }, Float { bits: 64 }) => Ok(rust_cast(raw, node, "f64")),
-        (Int { .. }, Float { bits: 32 }) => Ok(rust_cast(raw, node, "f32")),
+        (Int { .. }, Float { bits: 64 }) => Ok(raw.cast("f64")),
+        (Int { .. }, Float { bits: 32 }) => Ok(raw.cast("f32")),
         // Untyped int adopts concrete int — no cast needed at source level.
         (UntypedInt, Int { .. }) => Ok(raw),
         // Untyped float → concrete float: emit as-is; Rust infers.
@@ -12704,14 +12723,10 @@ fn rust_coerce(
                 signed: s2,
                 bits: b2,
             },
-        ) if (s1, b1) != (s2, b2) => {
-            let target = rust_int_type(s2, b2);
-            Ok(rust_cast(raw, node, target))
-        }
+        ) if (s1, b1) != (s2, b2) => Ok(raw.cast(rust_int_type(s2, b2))),
         // Float widening or narrowing.
         (Float { bits: b1 }, Float { bits: b2 }) if b1 != b2 => {
-            let target = if b2 == 64 { "f64" } else { "f32" };
-            Ok(rust_cast(raw, node, target))
+            Ok(raw.cast(if b2 == 64 { "f64" } else { "f32" }))
         }
         _ => Ok(raw),
     }
@@ -15649,7 +15664,8 @@ mod tests {
 
     /// `a as u32 < b` does not parse in Rust: the `<` after a type opens its
     /// generic arguments. A widened `len` before `<` is the shape
-    /// `sce:std/mesh/dedup_admit` wrote; `<=` parses and stays as it was.
+    /// `sce:std/mesh/dedup_admit` wrote; `<=` parses and leaves the cast bare.
+    /// The length is read off its operand as it is, with no pair of its own.
     #[test]
     fn rust_cast_before_less_than_is_parenthesised() {
         let mut ctx = TypeCtx::new();
@@ -15659,19 +15675,19 @@ mod tests {
         ctx.insert_var("m", int(true, 64));
         assert_eq!(
             tp_with("len(buf) < n", ExprTarget::Rust, &ctx),
-            "((buf).len() as u32) < n"
+            "(buf.len() as u32) < n"
         );
         assert_eq!(
             tp_with("len(buf) <= n", ExprTarget::Rust, &ctx),
-            "(buf).len() as u32 <= n"
+            "buf.len() as u32 <= n"
         );
         assert_eq!(
             tp_with("round(x) < m", ExprTarget::Rust, &ctx),
-            "((x).round() as i64) < m"
+            "(x.round() as i64) < m"
         );
         assert_eq!(
             tp_with("n > len(buf)", ExprTarget::Rust, &ctx),
-            "n > (buf).len() as u32"
+            "n > buf.len() as u32"
         );
     }
 
@@ -19405,7 +19421,7 @@ mod tests {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("label", InferredType::Str);
         for (target, expected) in [
-            (ExprTarget::Rust, "(label).len()"),
+            (ExprTarget::Rust, "label.len()"),
             (ExprTarget::Cpp, "(label).size()"),
             (ExprTarget::Go, "len(label)"),
             (ExprTarget::Kotlin, "(label).encodeToByteArray().size"),

@@ -25,7 +25,14 @@
 //! build proved `x` present, through [`proven`], whose absent arm is the
 //! runtime's `unreachable!` (`sce_forge_runtime::optional::proven`), written
 //! once there.
+//!
+//! **A tree where an expression is built.** The spellings the Rust expression
+//! emitter reads are built as its tree ([`RustExpr`]), whose printer groups each
+//! operand where Rust's grammar needs it; a spelling the statement lowering
+//! splices into text takes its operands as text, which stands as one operand
+//! ([`RustExpr::atom`]), and is printed from the same tree.
 
+use crate::forge::expr::rust_tree::{RustArm, RustBinOp, RustExpr, RustUnOp};
 use crate::forge::types::OptionalElem;
 
 /// The runtime module the spellings below call.
@@ -41,28 +48,32 @@ pub const ABSENT: &str = "None";
 
 /// A value of `T` where an optional value is expected, which is present.
 pub fn present(value: &str) -> String {
-    format!("Some({value})")
+    present_expr(RustExpr::atom(value)).to_string()
+}
+
+/// [`present`], of the value `value` an expression is.
+pub(crate) fn present_expr(value: RustExpr) -> RustExpr {
+    RustExpr::path_call("Some", vec![value])
 }
 
 /// The optional value `held` holds, as an expression reads it: `held` itself
 /// for an element that is `Copy`, and `held.as_deref()` (an `Option<&str>` or
-/// `Option<&[u8]>`) for a text or a byte string. `held` is a place or a
-/// postfix expression (`self.title`, `ev.title`).
-pub fn view(held: &str, elem: OptionalElem) -> String {
+/// `Option<&[u8]>`) for a text or a byte string.
+pub(crate) fn view(held: RustExpr, elem: OptionalElem) -> RustExpr {
     match elem {
-        OptionalElem::Str | OptionalElem::Bytes => format!("{held}.as_deref()"),
-        _ => held.to_string(),
+        OptionalElem::Str | OptionalElem::Bytes => held.method("as_deref", Vec::new()),
+        _ => held,
     }
 }
 
 /// The value a place of `optional<T>` is written from, given the [`view`] of
 /// another optional value: the view itself for an element that is `Copy`, and
 /// an owned copy of the borrowed text or bytes otherwise.
-pub fn owned(view: &str, elem: OptionalElem) -> String {
+pub(crate) fn owned(view: RustExpr, elem: OptionalElem) -> RustExpr {
     match elem {
-        OptionalElem::Str => format!("{view}.map(str::to_string)"),
-        OptionalElem::Bytes => format!("{view}.map(<[u8]>::to_vec)"),
-        _ => view.to_string(),
+        OptionalElem::Str => view.method("map", vec![RustExpr::atom("str::to_string")]),
+        OptionalElem::Bytes => view.method("map", vec![RustExpr::atom("<[u8]>::to_vec")]),
+        _ => view,
     }
 }
 
@@ -79,19 +90,19 @@ pub fn mapped(value: &str, map: &dyn Fn(&str) -> String) -> String {
 }
 
 /// `x !== null`, of the [`view`] of `x`.
-pub fn is_present(view: &str) -> String {
-    format!("{view}.is_some()")
+pub(crate) fn is_present(view: RustExpr) -> RustExpr {
+    view.method("is_some", Vec::new())
 }
 
 /// `x === null`, of the [`view`] of `x`.
-pub fn is_absent(view: &str) -> String {
-    format!("{view}.is_none()")
+pub(crate) fn is_absent(view: RustExpr) -> RustExpr {
+    view.method("is_none", Vec::new())
 }
 
 /// `x.value` where the build has proven `x` present, of the [`view`] of `x`:
 /// a `T`, or the `&str` / `&[u8]` an expression reads a text or bytes as.
-pub fn proven(view: &str) -> String {
-    format!("{RUNTIME}::proven({view})")
+pub(crate) fn proven(view: RustExpr) -> RustExpr {
+    RustExpr::path_call(format!("{RUNTIME}::proven"), vec![view])
 }
 
 /// `x.value` where the build has proven the optional record `held` present,
@@ -102,7 +113,15 @@ pub fn proven(view: &str) -> String {
 /// value, is for an element that is. `held` is a place or a postfix expression
 /// (`self.pick`, `x`).
 pub fn proven_ref(held: &str) -> String {
-    format!("{RUNTIME}::proven_ref(&{held})")
+    proven_ref_expr(RustExpr::atom(held)).to_string()
+}
+
+/// [`proven_ref`], of the place `held` an expression reads.
+pub(crate) fn proven_ref_expr(held: RustExpr) -> RustExpr {
+    RustExpr::path_call(
+        format!("{RUNTIME}::proven_ref"),
+        vec![held.prefixed(RustUnOp::Ref)],
+    )
 }
 
 /// The place `field` of the present record `held` is written through, where the
@@ -119,22 +138,36 @@ pub fn proven_field_place(held: &str, field: &str) -> String {
 /// only then, and `x` once. `d_is_optional` says that `d` is itself an
 /// optional value, which makes the whole an optional value: the present `x`
 /// is then lifted, as `d` already is one.
-pub fn coalesce(view: &str, default: &str, d_is_optional: bool) -> String {
+pub(crate) fn coalesce(view: RustExpr, default: RustExpr, d_is_optional: bool) -> RustExpr {
+    let bound = RustExpr::atom(PRESENT);
     let taken = if d_is_optional {
-        present(PRESENT)
+        present_expr(bound)
     } else {
-        PRESENT.to_string()
+        bound
     };
-    format!("match {view} {{ Some({PRESENT}) => {taken}, None => {default} }}")
+    RustExpr::match_of(
+        view,
+        vec![
+            RustArm {
+                pattern: format!("Some({PRESENT})"),
+                body: taken,
+            },
+            RustArm {
+                pattern: ABSENT.to_string(),
+                body: default,
+            },
+        ],
+        false,
+    )
 }
 
 /// `x === y` (or `x !== y` where `equal` is false) of two optional values, or
 /// of an optional value and a [`present`] one, each given as its [`view`]:
 /// total, since two absent values are equal and an absent one equals no
 /// present one, which is `Option`'s own `==`.
-pub fn equality(left: &str, right: &str, equal: bool) -> String {
-    let op = if equal { "==" } else { "!=" };
-    format!("{left} {op} {right}")
+pub(crate) fn equality(left: RustExpr, right: RustExpr, equal: bool) -> RustExpr {
+    let op = if equal { RustBinOp::Eq } else { RustBinOp::Ne };
+    RustExpr::binary(op, left, right)
 }
 
 /// The value of a `<param>` of a `<send>` or a `<donedata>` that carries the
@@ -195,6 +228,17 @@ mod tests {
         text.to_string()
     }
 
+    /// The text of the expression `built`, held to be well formed as
+    /// [`expression`] holds a text.
+    fn printed(built: RustExpr) -> String {
+        expression(&built.to_string())
+    }
+
+    /// A place or a postfix expression an expression reads.
+    fn at(text: &str) -> RustExpr {
+        RustExpr::atom(text)
+    }
+
     #[test]
     fn the_two_values_are_none_and_some() {
         assert_eq!(expression(ABSENT), "None");
@@ -203,32 +247,34 @@ mod tests {
 
     #[test]
     fn a_text_or_bytes_is_read_borrowed_and_every_other_element_as_it_is() {
-        assert_eq!(expression(&view("self.due", INT64)), "self.due");
+        assert_eq!(printed(view(at("self.due"), INT64)), "self.due");
         assert_eq!(
-            expression(&view("self.status", OptionalElem::Enum)),
+            printed(view(at("self.status"), OptionalElem::Enum)),
             "self.status"
         );
         assert_eq!(
-            expression(&view("self.title", OptionalElem::Str)),
+            printed(view(at("self.title"), OptionalElem::Str)),
             "self.title.as_deref()"
         );
         assert_eq!(
-            expression(&view("ev.tag", OptionalElem::Bytes)),
+            printed(view(at("ev.tag"), OptionalElem::Bytes)),
             "ev.tag.as_deref()"
         );
     }
 
     #[test]
     fn a_borrowed_view_is_owned_again_where_a_place_holds_it() {
+        let title = view(at("ev.title"), OptionalElem::Str);
         assert_eq!(
-            expression(&owned("ev.title.as_deref()", OptionalElem::Str)),
+            printed(owned(title, OptionalElem::Str)),
             "ev.title.as_deref().map(str::to_string)"
         );
+        let tag = view(at("ev.tag"), OptionalElem::Bytes);
         assert_eq!(
-            expression(&owned("ev.tag.as_deref()", OptionalElem::Bytes)),
+            printed(owned(tag, OptionalElem::Bytes)),
             "ev.tag.as_deref().map(<[u8]>::to_vec)"
         );
-        assert_eq!(expression(&owned("ev.due", INT64)), "ev.due");
+        assert_eq!(printed(owned(at("ev.due"), INT64)), "ev.due");
     }
 
     #[test]
@@ -245,9 +291,9 @@ mod tests {
 
     #[test]
     fn a_test_of_presence_is_is_some_and_of_absence_is_none() {
-        assert_eq!(expression(&is_present("self.due")), "self.due.is_some()");
+        assert_eq!(printed(is_present(at("self.due"))), "self.due.is_some()");
         assert_eq!(
-            expression(&is_absent("self.title.as_deref()")),
+            printed(is_absent(view(at("self.title"), OptionalElem::Str))),
             "self.title.as_deref().is_none()"
         );
     }
@@ -255,7 +301,7 @@ mod tests {
     #[test]
     fn a_proven_read_goes_through_the_runtime() {
         assert_eq!(
-            expression(&proven("self.due")),
+            printed(proven(at("self.due"))),
             "sce_forge_runtime::optional::proven(self.due)"
         );
     }
@@ -282,18 +328,27 @@ mod tests {
 
     #[test]
     fn a_default_is_evaluated_only_in_the_absent_arm() {
-        let d = "sce_forge_runtime::algorithm::mul::<i64>(self.huge, self.huge)?";
+        let d = RustExpr::path_call(
+            "sce_forge_runtime::algorithm::mul::<i64>",
+            vec![at("self.huge"), at("self.huge")],
+        )
+        .tried();
         assert_eq!(
-            expression(&coalesce("self.due", d, false)),
-            format!("match self.due {{ Some(sce_present) => sce_present, None => {d} }}")
+            printed(coalesce(at("self.due"), d, false)),
+            "match self.due { Some(sce_present) => sce_present, None => \
+             sce_forge_runtime::algorithm::mul::<i64>(self.huge, self.huge)? }"
         );
         assert_eq!(
-            expression(&coalesce("self.title.as_deref()", "\"none\"", false)),
+            printed(coalesce(
+                view(at("self.title"), OptionalElem::Str),
+                at("\"none\""),
+                false
+            )),
             "match self.title.as_deref() { Some(sce_present) => sce_present, None => \"none\" }"
         );
         // An optional default keeps the whole an optional value.
         assert_eq!(
-            expression(&coalesce("self.due", "self.other", true)),
+            printed(coalesce(at("self.due"), at("self.other"), true)),
             "match self.due { Some(sce_present) => Some(sce_present), None => self.other }"
         );
     }
@@ -301,13 +356,13 @@ mod tests {
     #[test]
     fn equality_is_options_own() {
         assert_eq!(
-            expression(&equality("self.due", "self.other", true)),
+            printed(equality(at("self.due"), at("self.other"), true)),
             "self.due == self.other"
         );
         assert_eq!(
-            expression(&equality(
-                "self.status",
-                &present("StaticOptionalStatusEnum::Done"),
+            printed(equality(
+                at("self.status"),
+                present_expr(at("StaticOptionalStatusEnum::Done")),
                 false
             )),
             "self.status != Some(StaticOptionalStatusEnum::Done)"

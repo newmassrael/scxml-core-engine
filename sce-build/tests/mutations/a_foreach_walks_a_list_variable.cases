@@ -96,6 +96,6 @@ PY
 # target's spelling: Rust declares `inner_at` and reads `innerAt`.
 mutation_case "an expression reads a local as written" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     "        ExprKind::Ident(s) => ExprTarget::Rust.local_spelling(s),\n",
-     "        ExprKind::Ident(s) => s.clone(),\n")
+     "        ExprKind::Ident(s) => RustExpr::atom(ExprTarget::Rust.local_spelling(s)),\n",
+     "        ExprKind::Ident(s) => RustExpr::atom(s.clone()),\n")
 PY
