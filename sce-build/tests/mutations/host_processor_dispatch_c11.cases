@@ -22,14 +22,16 @@
 # report would leave the machine mid-act with no trace — so both the count
 # arm and the too-large-entry arm are mutated here.
 
-mutation_ctest --test-dir build -R '^c11_integration_host_processor$'
+mutation_ctest --test-dir build -R '^(c11_integration_host_processor|c11_unit_host_answer_heap)$'
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 \
     tools/codegen/templates/c/param_macros.jinja2 \
     backends/c/runtime/include/sce/host_processor.h
-# The one authored file in that test: everything else the target compiles is
-# generated at CMake time (`sce_generate_static_integration_c_test`), so every
-# assertion these cases red lives here.
-mutation_oracles backends/c/tests/integration/test_host_processor.c
+# The one authored file in the integration test: everything else that target
+# compiles is generated at CMake time (`sce_generate_static_integration_c_test`).
+# The unit test is the list a handler pushes into, alone, which is the only place
+# the fixed-storage arm of `sce_host_response_push` is still reached (see the
+# too-large-entry case below).
+mutation_oracles backends/c/tests/integration/test_host_processor.c backends/c/tests/unit/host_answer_heap_test.c
 
 # ── The dispatch stops happening ────────────────────────────────────
 #
@@ -130,7 +132,14 @@ PY
 #
 # The two arms are separate cases because they are separate branches: a list
 # that ran out of slots, and one entry too large for the slot it was given.
-# The corpus reaches both only because the C11 driver asks each on purpose.
+# The count arm is reached by the C11 driver, which asks it on purpose. The
+# slot arm is not reached there any longer: the machine of
+# `test_host_processor.c` has a script engine, so each reply's data grows in its
+# heap (docs/adr/0086, section 8.6 (d)) and no reply is too large for a slot,
+# which is why the round measured 2026-11-24 found the case SURVIVED, 0/1 red.
+# A list of fixed storage is the one a machine without a script engine hands
+# its handler, and `c11_unit_host_answer_heap` pushes past it
+# (`a_list_of_fixed_storage_refuses_past_it_and_releases_nothing`).
 
 mutation_case "an overflowing report is not reported" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
