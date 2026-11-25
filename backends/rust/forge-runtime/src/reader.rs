@@ -395,17 +395,36 @@ impl<'a> SceReader<'a> {
 
 impl<'a> SceCursor<'a> {
     /// Decode one frame through `read`, over a [`SceReader`] that starts where
-    /// this cursor stands, and answer the reader's verdict.
+    /// this cursor stands, and answer what `read` returns under the reader's
+    /// verdict: the value a view's read builds, or `()` for a read into a
+    /// destination.
     ///
     /// The cursor moves past the frame where the frame was read whole: on
     /// `Ok`, and on `CapacityExceeded`, whose frame is well formed and read to
     /// its end (docs/adr/0077 §7). On any other refusal it does not move, so a
     /// caller that receives `NeedMoreBytes` reads the frame again from the same
     /// place once more bytes have arrived.
+    ///
+    /// It is generic over the read, so each decode has its own copy, inlined
+    /// where the decode is: the reader's start and the call. The verdict and the
+    /// move of the cursor are [`Self::end_frame`], one function for every
+    /// decode of a program (docs/adr/0137).
     #[inline]
-    pub fn read_frame(&mut self, read: impl FnOnce(&mut SceReader<'a>)) -> Result<(), CodecError> {
+    pub fn read_frame<T>(
+        &mut self,
+        read: impl FnOnce(&mut SceReader<'a>) -> T,
+    ) -> Result<T, CodecError> {
         let mut reader = SceReader::new(self.peek_slice(self.remaining()).unwrap_or_default());
-        read(&mut reader);
+        let value = read(&mut reader);
+        self.end_frame(&reader).map(|()| value)
+    }
+
+    /// The verdict of the frame `reader` read from where this cursor stands,
+    /// and the cursor moved past it where it was read whole
+    /// ([`Self::read_frame`]). Not generic over anything a decode reads, so it
+    /// is one function, out of line, for every codec (docs/adr/0137).
+    #[inline(never)]
+    fn end_frame(&mut self, reader: &SceReader<'a>) -> Result<(), CodecError> {
         match reader.fault {
             None => self.advance(reader.pos).and(reader.verdict()),
             Some(refused) => Err(refused),
@@ -617,6 +636,30 @@ mod tests {
             0,
             "a frame past a capacity is read whole"
         );
+    }
+
+    #[test]
+    fn a_frame_answers_the_value_its_read_returns_under_the_verdict() {
+        let bytes = [4u8, 5, 6];
+        let mut cursor = SceCursor::new(&bytes);
+        assert_eq!(cursor.read_frame(|r| r.take_array::<2>()[1]), Ok(5));
+        assert_eq!(cursor.remaining(), 1);
+        // A refused frame answers its refusal, not the zeros its read returned,
+        // and leaves the cursor where it was.
+        assert_eq!(
+            cursor.read_frame(|r| r.take_array::<2>()[0]),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(cursor.remaining(), 1);
+        // A frame past a capacity answers the capacity and is read whole.
+        assert_eq!(
+            cursor.read_frame(|r| {
+                r.note_capacity();
+                r.take_array::<1>()[0]
+            }),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(cursor.remaining(), 0);
     }
 
     #[test]
