@@ -2624,11 +2624,11 @@ mutation_go_check_selector() {
 
 # ── The Swift runner ───────────────────────────────────────────────
 #
-# A SwiftPM package whose test target is built to one executable, the
-# `<Package>PackageTests.xctest` that `swift build --build-tests` writes under the
-# package's `.build/`. That file is the artifact set, as a Go package's compiled test
-# binary is: a mutation that reaches it changes its hash, and one that leaves every
-# hash unchanged is INCONCLUSIVE and not SURVIVED.
+# A SwiftPM package whose test targets `swift build --build-tests` compiles into the
+# products directory `--show-bin-path` names. The files that hold the tests are the
+# artifact set (`mutation_swift_test_products`), as a Go package's compiled test binary
+# is: a mutation that reaches them changes a hash, and one that leaves every hash
+# unchanged is INCONCLUSIVE and not SURVIVED.
 #
 # The selector is the package directory and then any arguments `swift test` takes
 # (`--filter <regex>`), passed to the run and never to the build, so the build is the
@@ -2679,7 +2679,42 @@ mutation_swift_require() {
     fi
 }
 
-# Compile the tests, then take the executables as the artifact set.
+# The files of products directory `$1` that hold the compiled tests, one per line.
+#
+# Which files those are is the build system's to say, and SwiftPM has two that write
+# different layouts on Linux:
+#
+#   native      one `<Package>PackageTests.xctest` executable holds every test target;
+#   swiftbuild  each test target is a thin launcher `<Target>-test-runner` that loads
+#               its sibling `<Target>.so`, and the library holds the test code and every
+#               package module it links statically.
+#
+# The pinned 6.4 toolchain builds with swiftbuild by default (`.build/.buildSystem_debug`
+# reads `swiftbuild`), and the lanes take the default, so the round does too: judging a
+# build system the lanes never run would answer about a binary nobody tests. Reading
+# only the native name found nothing under swiftbuild, and every Swift round stopped at
+# "the selector built no test executable" before its baseline. Both layouts are read,
+# and under swiftbuild the library is taken with its launcher: a mutation reaches the
+# library and leaves the launcher as it was, so the launcher alone would hash every
+# mutant unchanged.
+mutation_swift_test_products() {
+    local bin="$1" artifact runner library
+    for artifact in "$bin"/*PackageTests.xctest; do
+        if [[ -f "$artifact" ]]; then
+            printf '%s\n' "$artifact"
+        fi
+    done
+    for runner in "$bin"/*-test-runner; do
+        [[ -f "$runner" ]] || continue
+        printf '%s\n' "$runner"
+        library="${runner%-test-runner}.so"
+        if [[ -f "$library" ]]; then
+            printf '%s\n' "$library"
+        fi
+    done
+}
+
+# Compile the tests, then take the files that hold them as the artifact set.
 #
 # Compiled BEFORE resolving, for the reason `mutation_go_resolve` states: resolution is
 # a file-existence test, and a package this round is the first to build has no
@@ -2693,9 +2728,11 @@ mutation_swift_resolve() {
     bin="$( cd "$dir" && swift build --build-tests --show-bin-path 2>/dev/null )" || true
 
     MUTATION_ARTIFACTS=()
-    while IFS= read -r artifact; do
-        [[ -f "$artifact" ]] && MUTATION_ARTIFACTS+=("$artifact")
-    done < <(ls "$bin"/*PackageTests.xctest 2>/dev/null)
+    if [[ -n "$bin" ]]; then
+        while IFS= read -r artifact; do
+            MUTATION_ARTIFACTS+=("$artifact")
+        done < <(mutation_swift_test_products "$bin")
+    fi
 
     if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
         red "the selector built no test executable: ${MUTATION_RUNNER_ARGS[*]}"
