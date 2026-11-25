@@ -98,6 +98,8 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # The account's 20 hosted jobs are shared; one job per shard at once.
+      max-parallel: 2
       matrix:
         shard: [1, 2]
 
