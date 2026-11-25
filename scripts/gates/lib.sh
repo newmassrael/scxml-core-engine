@@ -191,17 +191,43 @@ sce_gate_step() {
 # already uses (a quiet build plus a verbose replay) and the shape this file's
 # ctest callers use (`tee` + `PIPESTATUS[0]`).
 #
+# WHERE THE TIME GOES is said while the build runs, because a build that runs
+# into its job's ceiling never reaches a line after it. From 2026-11-21 every
+# run of the C++ suite's lane was cancelled at its ceiling with nothing in the
+# log between "building the main tree" and the cancel (job 138540727626, 15:24
+# to 17:26), so two hours could not be attributed to anything. Ninja numbers
+# each step it starts (`NINJA_STATUS`: steps finished, steps in the build,
+# seconds since it started); the first of those lines, which carries the
+# build's size, and then one a minute (`SCE_GATE_BUILD_PROGRESS_S`) go to
+# stderr. The whole output stays in `<build-dir>/sce_gate_build.<gate>.log`,
+# where a lane can upload it whatever the build's end, and `.ninja_log` beside
+# it holds every step the build finished (scripts/lib/build_time_report.py
+# reads it).
+#
 # Usage: sce_gate_build <build-dir> [extra cmake --build args...]
 #        || sce_gate_fail "<what was being built>"
 # `--parallel` is supplied here so the job-count rule stays in one place.
 sce_gate_build() {
     local dir="$1"
     shift
-    local log
-    log="$(mktemp)"
-    sce_gate_on_exit "rm -f '$log'"
+    local log="$dir/sce_gate_build.${SCE_GATE_SLUG:-gate}.log"
+    local statuses=()
+    # A tree that does not exist cannot hold its log, and its build fails;
+    # the output is kept for the failure report all the same.
+    if [[ ! -d "$dir" ]]; then
+        log="$(mktemp)"
+        sce_gate_on_exit "rm -f '$log'"
+    fi
 
-    if cmake --build "$dir" "$@" --parallel "$(sce_build_jobs)" >"$log" 2>&1; then
+    # The group is on the left of `||`, so `set -e` does not end the gate
+    # when the pipeline fails; the build's own status is read from PIPESTATUS.
+    {
+        NINJA_STATUS="${NINJA_STATUS:-[%f/%t %es] }" \
+            cmake --build "$dir" "$@" --parallel "$(sce_build_jobs)" 2>&1 \
+            | tee "$log" | _sce_gate_build_progress
+        statuses=("${PIPESTATUS[@]}")
+    } || true
+    if [[ "${statuses[0]:-1}" == 0 ]]; then
         return 0
     fi
 
@@ -227,6 +253,21 @@ sce_gate_build() {
         tail -60 "$log" >&2
     fi
     return 1
+}
+
+# The build's progress lines from its output on stdin: the first, and then one
+# whenever `SCE_GATE_BUILD_PROGRESS_S` seconds (60 unless set) have passed,
+# each with the time it was printed.
+_sce_gate_build_progress() {
+    local every="${SCE_GATE_BUILD_PROGRESS_S:-60}" line
+    local last=$(( SECONDS - every ))
+    while IFS= read -r line; do
+        [[ "$line" == \[*\]\ * ]] || continue
+        (( SECONDS - last >= every )) || continue
+        last=$SECONDS
+        printf '  [%s] %s %s\n' "${SCE_GATE_SLUG:-gate}" "$(date -u +%H:%M:%SZ)" \
+            "${line:0:200}" >&2
+    done
 }
 
 # ── A gate's build tree is a build cache of the checkout ──
@@ -577,10 +618,19 @@ sce_main_build_dir() {
         # A gate whose verdict depends on how a directory was once configured
         # by a person is not a gate; the configure and the floor have to be
         # written next to each other.
-        cmake -B "$SCE_MAIN_BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        #
+        # The configure's own output goes to `sce_gate_configure.log` in the
+        # tree, the file `sce_gate_configure_tree` writes for the other trees,
+        # where a lane can upload it: it takes minutes on a hosted runner (5m12s
+        # in job 138540727626), most of them the generator's plans, and said
+        # nothing of them. Its end is shown when it fails.
+        if ! cmake -B "$SCE_MAIN_BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
               -DBUILD_TESTS=ON -DSCE_ENABLE_MESH=ON \
-              ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
-            || sce_gate_fail "cmake configure"
+              ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev \
+              >"$SCE_MAIN_BUILD_DIR/sce_gate_configure.log" 2>&1; then
+            tail -40 "$SCE_MAIN_BUILD_DIR/sce_gate_configure.log" >&2
+            sce_gate_fail "cmake configure (the whole output: $SCE_MAIN_BUILD_DIR/sce_gate_configure.log)"
+        fi
     fi
 }
 

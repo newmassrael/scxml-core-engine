@@ -2541,8 +2541,10 @@ GATES: dict[str, dict] = {
                    "above holds. What the deny list changes is per-change "
                    "delegation, and `ci_owed` is where that is read.",
         # The transport SDKs' pin comes first: the build machines install them
-        # with that script (`[platform.linux.tools.mesh-transports]`).
+        # with that script (`[platform.linux.tools.mesh-transports]`). Then
+        # the report of where the build's time went, which the gate runs.
         "extra": ["scripts/install_mesh_transports.sh",
+                  "scripts/lib/build_time_report.py",
                   "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "examples/**", "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**",

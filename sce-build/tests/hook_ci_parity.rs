@@ -1709,3 +1709,35 @@ fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
          in a shard and not in the whole suite: {extra:?}"
     );
 }
+
+// ── Where a build's time went is read by a helper that passes its own cases ──
+//
+// The cpp-suite gate prints the report after its build, and its lane prints it
+// for a job cancelled inside the build (scripts/lib/build_time_report.py). A
+// report that misreads ninja's log would send the next reading of a slow lane
+// to the wrong targets, so the reading is held to its cases here.
+
+const BUILD_TIME_REPORT: &str = "scripts/lib/build_time_report.py";
+
+/// The build-time report passes its own cases: the last run of a log that
+/// holds several, one step per edge with several outputs, the slowest steps and
+/// the targets their time is summed under.
+#[test]
+fn the_build_time_report_passes_its_own_cases() {
+    let out = std::process::Command::new("python3")
+        .arg(BUILD_TIME_REPORT)
+        .arg("--self-test")
+        .current_dir(repo_root())
+        .output()
+        .expect("python3 runs the report");
+    assert!(
+        out.status.success(),
+        "{BUILD_TIME_REPORT} --self-test failed:\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("checks passed"),
+        "{BUILD_TIME_REPORT} --self-test said nothing about its checks, so it may have run none"
+    );
+}
