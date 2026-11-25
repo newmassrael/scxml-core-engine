@@ -25,6 +25,11 @@
 # and moving it moved only some of them. `codegen_binary_resolution.rs`
 # fails if a profile-specific path reappears outside the four locators.
 
+# The generator this file builds keeps Cargo's home out of its bytes, as every
+# gate's build does (the reasons are in the file sourced here), and so does every
+# later Rust build of the script that sources this file.
+source "$(dirname "${BASH_SOURCE[0]}")/reproducible_paths.sh"
+
 # Print the path of an existing sce-codegen binary, or return 1.
 sce_codegen_path() {
     local root="${1:-$(git rev-parse --show-toplevel)}"

@@ -42,6 +42,13 @@ if [ -n "$_sce_mesh_rev" ] && [ -d "$HOME/.local/share/sce-mesh-transports/$_sce
 fi
 unset _sce_mesh_rev
 
+# Cargo's home kept out of what every Rust build of a gate writes, so that a
+# gate's outputs are the same bytes in every account and checkout:
+# scripts/lib/reproducible_paths.sh says how and why there. Done for every
+# gate, because the gates share `target/`, and a crate built once with the
+# mapping and once without would be rebuilt by each.
+source "$SCE_REPO_ROOT/scripts/lib/reproducible_paths.sh"
+
 # Fail the gate with a message that names the slug. The slug — not a stage
 # number — is the stable identifier: it survives reordering, so a failure
 # message, a doc reference and a memory note all keep pointing at the same

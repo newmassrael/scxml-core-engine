@@ -59,9 +59,12 @@ if(SCE_LOWERING_TARGET_DIR)
 endif()
 if(SCE_LOWERING_NIGHTLY_BIN)
     set(SCE_CARGO "${SCE_LOWERING_NIGHTLY_BIN}/cargo")
+    # RUSTFLAGS replaces `build.rustflags`, so the flags a build was given there
+    # (CARGO_BUILD_RUSTFLAGS: the mapping of Cargo's home that
+    # scripts/lib/reproducible_paths.sh sets) are carried over into it.
     list(APPEND _cargo_env
         "PATH=${SCE_LOWERING_NIGHTLY_BIN}:$ENV{PATH}"
-        "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals")
+        "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals $ENV{CARGO_BUILD_RUSTFLAGS}")
     list(APPEND _cargo_args -Z build-std=std,panic_abort)
 endif()
 
