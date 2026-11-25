@@ -23,6 +23,11 @@
 //! banned the syscall would be a check people route around. The signal is the
 //! ARITHMETIC — `/proc/loadavg` subtracted from `nproc` — which is the rule
 //! itself and nothing else.
+//!
+//! The owner also says where that arithmetic does not apply. On a GitHub-hosted
+//! runner the job owns the machine, and the load the rule would subtract is the
+//! job's own previous step; there every processor is the answer, below the two
+//! channels that are asked first.
 
 mod common;
 
@@ -114,5 +119,68 @@ fn nothing_spells_the_parallel_jobs_rule_a_second_time() {
          before survived the commit that created the owner because nothing \
          looked. Source the owner — it has no side effects, which is why it is \
          a file of its own."
+    );
+}
+
+/// What the owner's rule prints with `env` set, the three channels that decide
+/// it cleared first so the machine running the test chooses nothing.
+#[cfg(target_os = "linux")]
+fn rule_answer(env: &[(&str, &str)]) -> String {
+    let mut command = std::process::Command::new("bash");
+    command
+        .arg("-c")
+        .arg("source \"$1\" && sce_build_jobs_value")
+        .arg("bash")
+        .arg(repo_root().join(OWNER))
+        .env_remove("SCE_BUILD_JOBS")
+        .env_remove("BX_GRANT_CORES")
+        .env_remove("RUNNER_ENVIRONMENT");
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    let out = command.output().expect("run bash over the owner");
+    assert!(
+        out.status.success(),
+        "sourcing {OWNER} and asking it failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// A GitHub-hosted runner is a machine of one job's alone, so the build asks
+/// for every processor it has and not for what the job's own configure left of
+/// them; an override and a bx grant are still asked first.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_hosted_runner_is_given_every_processor_it_has() {
+    let nproc = std::process::Command::new("nproc")
+        .output()
+        .expect("run nproc");
+    let processors = String::from_utf8_lossy(&nproc.stdout).trim().to_string();
+    assert!(
+        !processors.is_empty(),
+        "nproc printed nothing to compare with"
+    );
+
+    assert_eq!(
+        rule_answer(&[("RUNNER_ENVIRONMENT", "github-hosted")]),
+        processors,
+        "a hosted runner was not given every processor it has"
+    );
+    assert_eq!(
+        rule_answer(&[
+            ("RUNNER_ENVIRONMENT", "github-hosted"),
+            ("SCE_BUILD_JOBS", "3")
+        ]),
+        "3",
+        "SCE_BUILD_JOBS no longer overrides on a hosted runner"
+    );
+    assert_eq!(
+        rule_answer(&[
+            ("RUNNER_ENVIRONMENT", "github-hosted"),
+            ("BX_GRANT_CORES", "5")
+        ]),
+        "5",
+        "a bx grant is no longer asked before the hosted runner"
     );
 }
