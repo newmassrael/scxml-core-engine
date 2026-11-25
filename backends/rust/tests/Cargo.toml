@@ -20,8 +20,11 @@ description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 # test components of the test profile, whose policies implement the take step
 # (docs/SCE_TEST_PROFILE.md §4.4), which only that feature declares.
 # `record-cbor`: a machine that signs or seals a record by name writes it, and
-# reads one back, with the runtime's record codec (docs/adr/0109, D9).
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor"] }
+# reads one back, with the runtime's record codec (docs/adr/0109, D9). `log`:
+# the tests install `env_logger`, and the engine and the generated machines
+# write their diagnostics to it only with the facade (docs/adr/0053, amendment
+# of 2026-11-25).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor", "log"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
