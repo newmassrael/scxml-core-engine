@@ -113,6 +113,9 @@ impl StatePolicy for SplitPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        // Tables written by hand carry no selection rows: the policy answers
+        // the selection itself, in `first_enabled_transition` (docs/adr/0127).
+        selection: None,
     };
     const STATES: &'static [St] = &[St::Idle, St::Busy];
     const HISTORIES: &'static [NoHistory] = &[];
