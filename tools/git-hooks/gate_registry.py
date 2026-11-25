@@ -818,7 +818,12 @@ GATES: dict[str, dict] = {
         "cost_s_no_op": 0.111,
         "summary": "build target/debug/sce-codegen",
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers, which are what the build compiles, and on
+        # what cargo reads beside them to load the workspace and fingerprint
+        # the generator's build script (`gate_reads`, "What a build reads
+        # that does not select it"). Read off `bx --checks prepush --learn`
+        # of `forge-c11` and `forge-cpp` (2026-11-24), whose units run it.
+        "inputs": INPUTS_ARE_TRIGGERS,
         "commits": [],
         "peak_gb": 5,
         "parallelism": PARALLELISM_COMPILE,
@@ -1625,7 +1630,12 @@ GATES: dict[str, dict] = {
         "cost_s": 59,
         "summary": "C++ forge conformance build + test",
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers: what `bx --checks prepush --learn forge-cpp`
+        # (2026-11-24) read outside them, the runner's inputs and
+        # `codegen-build`'s key was what the submodule preflight read deriving
+        # every gate's triggers, which it no longer does, and the schema the
+        # generator validates against, which forge-conformance.yml now names.
+        "inputs": INPUTS_ARE_TRIGGERS,
         "commits": [],
         "peak_gb": 5,
         "parallelism": PARALLELISM_COMPILE,
@@ -1668,7 +1678,12 @@ GATES: dict[str, dict] = {
         "cost_s": 17,
         "summary": "C11 forge conformance build + test",
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers: what `bx --checks prepush --learn forge-c11`
+        # (2026-11-24) read outside them, the runner's inputs and
+        # `codegen-build`'s key was what the submodule preflight read deriving
+        # every gate's triggers, which it no longer does, and the schema the
+        # generator validates against, which forge-conformance.yml now names.
+        "inputs": INPUTS_ARE_TRIGGERS,
         "commits": [],
         "peak_gb": 5,
         "parallelism": PARALLELISM_COMPILE,
@@ -2751,6 +2766,11 @@ GATES: dict[str, dict] = {
         "cost_s": 123,
         "summary": "ECMA-262 through a Lua-lowered C++ artifact",
         "cache": True,
+        # The whole tree: `bx --checks prepush --learn ecma262-lowered-cpp`
+        # (2026-11-24) read 946 of its 1931 paths outside its triggers, nearly
+        # all of them the root configure's test tree (`tests/**`,
+        # `resources/**`, `integration_resources/**`, the LICENSE files,
+        # `web/visualizer/test-list.js`), which `main-tree` does not name.
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
