@@ -15346,9 +15346,10 @@ fn render_codec(
                         let view_stmt = rust_view::tlv_chain_decode_stmt(
                             &view_list,
                             &rust_view::ViewChain {
+                                codec: &m.name,
                                 entry_binds: &entry_binds,
                                 max_depth: *max_depth,
-                                    terminate_on,
+                                terminate_on,
                             },
                         );
                         obj.insert(
@@ -20122,7 +20123,9 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                 if stores {
                     format!("{body_type}::read_into({from}, {into}{thread_arg})")
                 } else {
-                    format!("{body_type}::read({from}{thread_arg})")
+                    // A view hands its chain hook to every body it reads
+                    // (docs/adr/0130).
+                    format!("{body_type}::read_with({from}{thread_arg}, _hook)")
                 }
             };
             let place = format!("{RUST_DECODE_OUT}.{id}");

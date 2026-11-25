@@ -351,7 +351,7 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
                  if cursor.failed() {{\n{indent}        \
                      break;\n{indent}    \
                  }}\n{indent}    \
-                 {past}{entry}::read(cursor{decode_arg});\n{indent}    \
+                 {past}{entry}::read_with(cursor{decode_arg}, _hook);\n{indent}    \
                  {SCAN_COUNT}\n{indent}\
              }}"
         )
@@ -430,6 +430,9 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
 
 /// What a `<sce:tlv-chain>` view scan needs beyond the list itself.
 pub(super) struct ViewChain<'a> {
+    /// The document name of the codec that declares the chain, which the
+    /// chain hook is told with each entry (docs/adr/0130).
+    pub codec: &'a str,
     /// The flag-inputs the chain supplies entry by entry.
     pub entry_binds: &'a ChainEntryBinds,
     /// The chain's depth, `None` where the protocol states none.
@@ -455,6 +458,7 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     let entry = list.entry;
     let decode_arg = list.decode_arg;
     let ViewChain {
+        codec,
         entry_binds,
         max_depth,
         terminate_on,
@@ -472,14 +476,24 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
         &entry_flag_acc,
         "if cursor.remaining() == 0 { break; }",
     ));
+    // Each entry is shown to the chain hook right after it is read, as the
+    // bytes it occupies, and what the hook refuses is the frame's refusal
+    // (docs/adr/0130); the entry's own body reads with the same hook.
+    lines.push("let _at = cursor.mark();".to_string());
     // The entry is bound to a local when the loop reads something off it: the
     // flag that ends the chain, the identifier a per-entry flag-input is
     // waiting for.
     if entry_flag_acc.is_some() || !entry_binds.is_empty() {
-        lines.push(format!("let _entry = {entry}::read(cursor{decode_arg});"));
+        lines.push(format!(
+            "let _entry = {entry}::read_with(cursor{decode_arg}, _hook);"
+        ));
     } else {
-        lines.push(format!("{entry}::read(cursor{decode_arg});"));
+        lines.push(format!("{entry}::read_with(cursor{decode_arg}, _hook);"));
     }
+    lines.push(format!(
+        "{RUNTIME_CODEC}::show_entry(cursor, _hook, {RUNTIME_CODEC}::ChainSite {{ codec: \"{codec}\", field: \"{field_id}\" }}, _at);",
+        field_id = field.id
+    ));
     if let Some(acc) = &entry_flag_acc {
         lines.push(format!("_more = _entry.{acc}();"));
     }

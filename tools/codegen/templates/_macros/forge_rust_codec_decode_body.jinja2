@@ -203,7 +203,7 @@
 {% if arm.rust_cfg %}
             {{ arm.rust_cfg }}
 {% endif %}
-            {{ arm.value_literal }} => {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.view_body_type }}::read(cursor{{ arm.body_decode_args_after_cursor }})),
+            {{ arm.value_literal }} => {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.view_body_type }}::read_with(cursor{{ arm.body_decode_args_after_cursor }}, _hook)),
 {% if arm.rust_cfg_off %}
             {{ arm.rust_cfg_off }}
             {{ arm.value_literal }} => {
@@ -218,7 +218,7 @@
    bits, so what reaches here is a tag the default arm may hold. #}
             other => {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
                 tag: {{ variant.unknown_tag.type_name }}(other),
-                body: {{ variant.default_arm.view_body_type }}::read(cursor{{ variant.default_arm.body_decode_args_after_cursor }}),
+                body: {{ variant.default_arm.view_body_type }}::read_with(cursor{{ variant.default_arm.body_decode_args_after_cursor }}, _hook),
             },
 {% else %}
             // Build-time `codec/variant-arm-unreachable` proves the

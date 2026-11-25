@@ -447,6 +447,17 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         *_out = Self::read(cursor{{ decode_forward_args_with_comma }});
     }
 {% endif %}
+{% if emit_views and view_is_alias %}
+{% set hook_generics = (decode_generics[:-1] ~ ", H: " ~ runtime_codec ~ "::ChainHook>") if decode_generics else ("<H: " ~ runtime_codec ~ "::ChainHook>") %}
+
+    /// [`Self::read`], under the name every view reads with a chain hook
+    /// (docs/adr/0130): `{{ struct_name }}` is its own view and holds no chain,
+    /// so `_hook` is shown nothing.
+    #[inline(always)]
+    pub fn read_with{{ hook_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self{{ decode_where }} {
+        Self::read(cursor{{ decode_forward_args_with_comma }})
+    }
+{% endif %}
 
 {% if has_quantity %}
     // NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
@@ -725,8 +736,23 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// read. Every read is total, each refusal is recorded in the reader and the
     /// first of them is the frame's verdict.
     pub fn read(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self {
+        Self::read_with(cursor{{ decode_forward_args_with_comma }}, &mut ())
+    }
+
+    /// [`Self::read`], each entry of every chain the frame holds, this view's
+    /// and those of every body it reads, shown to `_hook` right after the entry
+    /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    pub fn read_with<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self {
 {% set view_decode = true %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
+    }
+
+    /// [`Self::decode_into`] with each chain entry shown to `hook`
+    /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
+    /// hook's among them.
+    pub fn decode_with<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceCursor<{{ view_cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, hook: &mut H) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read_with(cursor{{ decode_forward_args_with_comma }}, hook))
     }
 
     /// [`Self::read`] into a destination the caller owns.
