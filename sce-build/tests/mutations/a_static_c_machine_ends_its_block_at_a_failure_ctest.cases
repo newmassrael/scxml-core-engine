@@ -32,6 +32,7 @@ mutation_ctest --test-dir build -R '^c11_integration_static_(scalars|host_call)$
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs backends/c/forge-runtime/include/sce/forge/wire.h
 mutation_targets sce-build/src/forge/generator.rs
 mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h backends/c/tests/integration/test_static_host_call.c
+mutation_oracles sce-build/tests/fixtures/static_datamodel/scenarios/static_foreach.json backends/c/tests/integration_resources/static_payload_other_event/static_payload_other_event.scxml
 
 # ── A failed statement writes nothing and ends its block ───────────
 
@@ -87,9 +88,16 @@ PY
 
 # ── Content that reads a payload runs for a payload ────────────────
 #
-# No scenario carries a delivery without one, so `test_static_scalars.c` states
-# it itself: against the zeroed buffer of such a delivery the content would
-# assign `day = 0` over the thirtieth.
+# A delivery of the payload's own event whose data does not fit is refused whole
+# at the door (docs/adr/0086, section 4.2, since 3460c5390a1) and reaches no
+# content, so the check is reached only by an event of another name the
+# transition's descriptor also matches. `test_static_scalars.c` sent `day.picked`
+# with no data, which the door now refuses, and the case SURVIVED (measured
+# 2026-11-24, 0/2 red). The C11 document `static_payload_other_event` matches
+# `meter.read.late` with its `meter.read` transition, and
+# `content_that_reads_a_payload_does_not_run_for_another_event_its_descriptor_matches`
+# sends it: run against the empty payload, the content writes a level of 0 over
+# the thirty and counts a second reading.
 
 mutation_case "content that reads a payload runs for a delivery that carried none" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
@@ -138,7 +146,10 @@ PY
 #
 # `static_foreach` appends each element to the list it walks: a walk of the live
 # list never ends before the list is full, and one that reads the live length
-# for the copy's takes the element it has just written.
+# for the copy's takes the element it has just written. With three elements and
+# room for four, both walks append one copy and are refused on the second, so
+# the case SURVIVED (measured 2026-11-24, 0/2 red); the scenario's last `double`
+# walks one element, where the copy's walk appends once and the block goes on.
 
 mutation_case "a loop walks the live list instead of its copy" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
@@ -152,10 +163,13 @@ edit("sce-build/src/forge/static_lowering.rs",
      "(uint32_t)sce_at_{n}_ + 1u; (void){index};")
 PY
 
+# The head declares the copy and the count the prologue reads, so the head stays
+# and its body is never entered: replacing the head left the prologue naming
+# what nothing declared (measured 2026-11-24, `sce_list_1_` undeclared).
 mutation_case "a native loop's head is never entered" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "        {{ action.native_loop }} {\n            {{ action.native_loop_prologue }}",
-     "        if (false) {\n            {{ action.native_loop_prologue }}")
+     "        {{ action.native_loop }} if (false) {\n            {{ action.native_loop_prologue }}")
 PY
 
 # ── A record is its fields, written one at a time ──────────────────
@@ -165,16 +179,22 @@ PY
 # back as it stood is a record that never moves; an initial value that is not
 # the document's is a record that starts somewhere else.
 
+# The value is still computed and discarded: leaving it out of the format left
+# `value` unused, which `-D warnings` refused in `sce-build` before any test ran
+# (measured 2026-11-24).
 mutation_case "a record field is assigned its own value back" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "        format!(\"{target}.{field} = {value};\")\n    }\n    // Through the log seams, as the machine's other `<log>` is",
-     "        format!(\"{target}.{field} = {target}.{field};\")\n    }\n    // Through the log seams, as the machine's other `<log>` is")
+     "        format!(\"{target}.{field} = {target}.{field}; (void)({value});\")\n    }\n    // Through the log seams, as the machine's other `<log>` is")
 PY
 
+# The whole record is `{ 0 }`, the one initializer C zeroes any struct with: a
+# `.f = 0` per field is no initializer for a field that is itself a buffer, and
+# `-Werror=missing-braces` refused `static_record_string` (measured 2026-11-24).
 mutation_case "a record starts with every field zero" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "        let inits: Vec<String> = fields.iter().map(|(f, v)| format!(\".{f} = {v}\")).collect();",
-     "        let inits: Vec<String> = fields.iter().map(|(f, _)| format!(\".{f} = 0\")).collect();")
+     "        let _ = fields;\n        let inits: Vec<String> = vec![\"0\".to_string()];")
 PY
 
 # ── A string holds no more than its bound, and holds what it was given ──
@@ -184,10 +204,16 @@ PY
 # bytes `ab` over the four `abcd`, which a copy that leaves out the terminator
 # leaves reading `abcd`.
 
+# Lifted where a store to a string variable is held to its bound
+# (`held_to_bound`, the rule an `<assign>` stores by), not in the helper every
+# bounded string goes through: there it also let `static_invoke_string`'s
+# literal past its child's bound through, a copy the compiler could see past its
+# buffer, and `-Werror=array-bounds` refused the mutant (measured 2026-11-24).
+# `copy` stores a variable, whose length the compiler cannot see.
 mutation_case "a string is assigned past its capacity" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "format!(\"sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u)\")",
-     "format!(\"sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u + 1000000u)\")")
+     "        if let Some(capacity) = self.strings.get(location) {\n            Receiving {\n                text: self.target.bounded_string(&value.text, *capacity),",
+     "        if let Some(capacity) = self.strings.get(location) {\n            Receiving {\n                text: self.target.bounded_string(&value.text, *capacity + 1000000),")
 PY
 
 mutation_case "a string is copied without its terminator" <<'PY'
@@ -196,10 +222,14 @@ edit("sce-build/src/forge/static_lowering.rs",
      "format!(\"memmove({target}, {value}, sce_text_length({value}));\")")
 PY
 
+# The read a string variable's reader answers, made where it is built: the
+# reader still names `sm`, which `return "";` left unread, and
+# `-Werror=unused-parameter` refused the mutant (measured 2026-11-24). The
+# template's `field.read` also answers a map's view, which `""` is not.
 mutation_case "a published string reads as nothing" <<'PY'
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    return {{ field.read }};",
-     "    return \"\";")
+edit("sce-build/src/forge/static_lowering.rs",
+     "                .map(|_| target.variable_ref(var, target.field_ref(&name)));",
+     "                .map(|_| \"((void)sm, \\\"\\\")\".to_string());")
 PY
 
 # ── A done event carries the pairs whose value was computed ─────────
