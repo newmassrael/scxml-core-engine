@@ -4470,6 +4470,20 @@ impl<'a> Judge<'a> {
             spelling,
             Expected::Slot(InferredType::Str),
         )?;
+        if let Some(why) = unbounded_delay(&action.delayexpr, ctx) {
+            return Err(self.rule_at(
+                format!("delayexpr=\"{}\"", action.delayexpr),
+                &format!(
+                    "a `delayexpr` is a text the data model bounds, as every text a \
+                     machine holds is, so an engine with no heap can hold it \
+                     (docs/adr/0134): {why}"
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.delayexpr,
+            ));
+        }
         Ok(())
     }
 
@@ -7344,11 +7358,53 @@ impl<'a> Judge<'a> {
     }
 }
 
+/// Why the text of the `delayexpr` `written` has no bound the data model
+/// declares, naming the subexpression that has none; `None` for a text it
+/// bounds (docs/adr/0134, decision 2). A text with a bound is the one a machine
+/// with no heap writes into a buffer of that bound, as every text it holds is.
+fn unbounded_delay(written: &str, ctx: &TypeCtx<'_>) -> Option<String> {
+    match crate::forge::text_bound::text_bound_of(written, ctx) {
+        Ok(crate::forge::text_bound::TextBound::Unbounded(why)) => {
+            Some(why.describe(written.trim()))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::forge::model::{AlgorithmValueType, SceType};
     use crate::forge::types::OptionalElem;
+
+    /// docs/adr/0134, decision 2: a delay whose text the data model bounds is
+    /// accepted, and one that reads a call whose callee declares no bound on
+    /// what it returns is refused, naming that call.
+    #[test]
+    fn a_delay_whose_text_has_no_bound_is_refused() {
+        use crate::forge::types::FuncSig;
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var(
+            "wait",
+            InferredType::Int {
+                signed: false,
+                bits: 32,
+            },
+        );
+        ctx.insert_var("name", InferredType::Str);
+        ctx.insert_string_capacity("name", 8);
+        ctx.insert_func("Free", FuncSig::new(Vec::new(), InferredType::Str));
+        for bounded in [
+            "wait + 'ms'",
+            "name + 's'",
+            "'5s'",
+            "wait > 1 ? '1s' : name",
+        ] {
+            assert_eq!(unbounded_delay(bounded, &ctx), None, "{bounded}");
+        }
+        let why = unbounded_delay("Free() + 'ms'", &ctx).expect("a call with no bound has none");
+        assert!(why.starts_with("`Free()`"), "{why}");
+    }
 
     /// The type of one value of the scalar `t`.
     fn scalar(t: SceType) -> AlgorithmValueType {
