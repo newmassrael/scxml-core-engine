@@ -10,7 +10,7 @@
   (the main loop is one copy), ADR 0076 (the internal queue's proven depth), ADR 0118 (Proposed: a document's cost is
   computed from its plan), ADR 0123 (the core decides where a run ends), ADR 0125 (what a document fixes of a
   microstep is computed when it is built), ADR 0127 (one selection reads the rows of every machine; both forms read
-  it, decision 2).
+  it, decision 2), ADR 0131 (a policy's hook is handed the engine's state apart from the policy, in both forms).
 - Requested by: a downstream bare-metal consumer, 2026-11-25.
 
 ## Context
@@ -115,7 +115,9 @@ replace the main loop, and it does not replace the policy.
   `execute_entry_actions` exactly as the shared procedures do, and keep the run store as they do. So the guards and
   their errors (a `cond` that fails is false and raises `error.execution`, §scxml-5.9), the order of `<onexit>`,
   transition content and `<onentry>`, `done.state.<id>` raised on entering a `<final>` child of a compound state
-  (the policy's entry hook raises it), and a test component's take step are one code in both forms.
+  (the policy's entry hook raises it), and a test component's take step are one code in both forms. Each hook is
+  dispatched as ADR 0131 dispatches it, in both forms: the policy as `&mut self` and the engine's state as
+  `engine: &mut EngineState<Self>`, two fields of the engine borrowed apart.
 - **Where a run ends.** An arm that enters a `<final>` child of `<scxml>` reports it as `Entered::ended_in`, as the
   shared `enter_one` does from the tables (ADR 0123 decision 2); the generator knows it when it writes the arm.
 - **The same names.** The policy keeps its type, its `<Machine>Actions` host trait, its constructors, its

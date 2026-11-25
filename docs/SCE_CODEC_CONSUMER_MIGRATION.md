@@ -4041,8 +4041,8 @@ regenerates every Rust machine it generates.
 - **A generated machine** is regenerated, and nothing a host calls changes. Its tables gain `selection`, the rows
   that say which of each state's written transitions each event enables, and its policy no longer writes
   `first_enabled_transition`: the runtime's one selection reads the rows for every machine of a program and asks the
-  policy only `guard_holds(transition, event_data, engine)`, which a machine with a guard writes. The event enum, its
-  numbers and `EVENTS` are unchanged.
+  policy only `guard_holds(transition, event_data, engine)`, which a machine with a guard writes; its `engine` is
+  `&mut EngineState<Self>`, as every hook's (ADR 0131). The event enum, its numbers and `EVENTS` are unchanged.
 - **Tables written by hand** (`DocumentTables { .. }`) fail to compile once, with `E0063` (a missing field): they add
   `selection: None`. Their machine answers the selection itself, as before, so a hand-written `StatePolicy` keeps
   its `first_enabled_transition`. `StatePolicy::first_enabled_transition` now has a default, which stops the program
