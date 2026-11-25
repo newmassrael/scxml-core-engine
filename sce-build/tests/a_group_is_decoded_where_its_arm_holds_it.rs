@@ -12,7 +12,8 @@
 //! first element it builds and reads each element into the arm's field; the
 //! chain whose memberships are the gates is read through `decode_chain_in` or
 //! `decode_placed_in`, which install the arm and check the chain where it
-//! lives. Here the eager `decode_into` of each such codec is read for a local of
+//! lives. Here the eager `read_into` of each such codec, the body its
+//! `decode_into` reads a frame through (docs/adr/0128), is read for a local of
 //! an element's type and for the writes that build the elements in place.
 //!
 //! What the decode does, frame by frame, is held by the round trips the
@@ -31,8 +32,8 @@ fn resource_dir() -> PathBuf {
 }
 
 /// The eager decode of the codec `name`, generated for Rust from its resource,
-/// with its view: its `decode_into`, which reads the frame in one pass
-/// (docs/adr/0077 §7).
+/// with its view: its `read_into`, which reads the frame in one pass
+/// (docs/adr/0077 §7) through the frame's reader (docs/adr/0128).
 fn eager_decode(name: &str) -> String {
     let path = resource_dir().join(format!("{name}.scxml"));
     let source = std::fs::read_to_string(&path)
@@ -55,7 +56,7 @@ fn eager_decode(name: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let start = code
-        .find("pub fn decode_into")
+        .find("pub fn read_into")
         .unwrap_or_else(|| panic!("{name} has an eager decode"));
     let body = &code[start..];
     let end = body
@@ -107,7 +108,7 @@ fn a_chain_whose_kinds_decide_the_arm_is_read_where_the_arm_holds_it() {
         "{name} still refines a chain it built elsewhere:\n{body}"
     );
     // A chain of the other kind is read again into the arm it names.
-    assert_contains(name, &body, "*cursor = _extensions_at;");
+    assert_contains(name, &body, "cursor.rewind(_extensions_at);");
     // The payload, which the decode does not build, is stored in the arm.
     assert_contains(name, &body, "*_p_payload = payload.unwrap_or_default();");
 }
@@ -165,9 +166,13 @@ fn a_chain_whose_kinds_its_value_cannot_hold_is_read_on_to_the_frames_end() {
     let name = "codec_chain_has_tagged";
     let body = eager_decode(name);
     let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert_contains(name, &flat, "if _entries_full { _over = true; break; }");
+    assert_contains(
+        name,
+        &flat,
+        "if _entries_full { cursor.note_capacity(); break; }",
+    );
     assert!(
-        !flat.contains("if _entries_full { return Err(CodecError::CapacityExceeded); }"),
+        !flat.contains("if _entries_full { cursor.fail(CodecError::CapacityExceeded); break; }"),
         "{name} answers the capacity before the frame is read whole:\n{body}"
     );
 }
@@ -184,10 +189,10 @@ fn a_chain_whose_arm_holds_a_later_list_answers_the_capacity_at_the_chain() {
     assert_contains(
         name,
         &flat,
-        "if _extensions_full { return Err(CodecError::CapacityExceeded); }",
+        "if _extensions_full { cursor.fail(CodecError::CapacityExceeded); break; }",
     );
     assert!(
-        !flat.contains("if _extensions_full { _over = true; break; }"),
+        !flat.contains("if _extensions_full { cursor.note_capacity(); break; }"),
         "{name} reads on past a list its arm would hold:\n{body}"
     );
 }
@@ -216,7 +221,7 @@ fn an_embedded_body_of_an_arm_is_decoded_into_that_arm() {
     let body = eager_decode(name);
     assert_no_local(name, &body, "body");
     assert_contains(name, &body, "_out.header_current_or_future = match (");
-    assert_contains(name, &body, "::decode_into(cursor, _p), &mut _over)?;");
+    assert_contains(name, &body, "::read_into(cursor, _p);");
 }
 
 /// Two lists of one count are filled in their pair where the arm holds both, and
@@ -251,7 +256,7 @@ fn two_lists_of_one_count_whose_second_is_lawful_are_paired_by_value() {
     assert_contains(
         name,
         &body,
-        "weights.insert(Default::default()).refill_from(",
+        "weights.get_or_insert_with(Default::default).refill_from(",
     );
     assert_contains(
         name,
@@ -272,10 +277,11 @@ fn a_group_of_scalars_is_still_assembled_from_its_locals() {
 }
 
 /// A decode past a capacity reads its frame once: each field and body notes a
-/// capacity it was past and reads on, and the decode answers
-/// `CapacityExceeded` at its end, after every refusal of the frame's own
-/// (docs/adr/0077 §7). No second reading of the frame judges it, so no value
-/// of a second form takes room in the decode's frame.
+/// capacity it was past in the frame's reader and reads on, and the reader
+/// answers `CapacityExceeded` once the frame is read, after every refusal of
+/// the frame's own (docs/adr/0077 §7, docs/adr/0128). The body returns no
+/// verdict of its own, and no second reading of the frame judges it, so no
+/// value of a second form takes room in the decode's frame.
 #[test]
 fn a_decode_past_a_capacity_reads_its_frame_once() {
     for name in [
@@ -286,12 +292,15 @@ fn a_decode_past_a_capacity_reads_its_frame_once() {
         "codec_zenoh_interest",
     ] {
         let body = eager_decode(name);
-        assert_contains(name, &body, "let mut _over = false;");
-        assert_contains(
-            name,
-            &body,
-            "if _over {\n            return Err(CodecError::CapacityExceeded);\n        }\n        Ok(())",
-        );
+        assert_contains(name, &body, "cursor.hold_with(|cursor| ");
+        // A list's fill answers its capacity to the list it fills, which the
+        // reader then holds: that `return` is the fill's, not the frame's.
+        for verdict in [")?;", "_over"] {
+            assert!(
+                !body.contains(verdict),
+                "{name} answers a verdict of its own (`{verdict}`):\n{body}"
+            );
+        }
         for judge in ["past_capacity", "View::decode", "store_into", "_frame"] {
             assert!(
                 !body.contains(judge),

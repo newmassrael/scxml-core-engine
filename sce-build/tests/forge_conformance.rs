@@ -11703,7 +11703,7 @@ fn forge_rust_codec_variant_peek_basic() {
     assert_standalone_forge_rust("codec_variant_peek_basic", "codec_variant_peek_basic.rs");
 }
 
-/// A Rust codec reads a fixed count of bytes as an array (`peek_array`) and the
+/// A Rust codec reads a fixed count of bytes as an array (`take_array`) and the
 /// byte a variant dispatches on as a byte (`peek_u8`), never as a slice of a
 /// constant length it then indexes. An index of a slice keeps a bounds check
 /// whose panic site names the file of each read, so two codecs of one decode
@@ -11722,8 +11722,8 @@ fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
             }
             let text = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("Cannot read {}: {e}", path.display()));
-            for (at, _) in text.match_indices("cursor.peek_slice(") {
-                let count = &text[at + "cursor.peek_slice(".len()..];
+            for (at, _) in text.match_indices("cursor.take_slice(") {
+                let count = &text[at + "cursor.take_slice(".len()..];
                 assert!(
                     !count.starts_with(|c: char| c.is_ascii_digit()),
                     "{} peeks a constant count of bytes as a slice: {}",
@@ -11731,8 +11731,8 @@ fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
                     text[at..].lines().next().unwrap_or_default()
                 );
             }
-            arrays += text.matches("cursor.peek_array::<").count();
-            bytes += text.matches("let _peek = cursor.peek_u8()?;").count();
+            arrays += text.matches("cursor.take_array::<").count();
+            bytes += text.matches("let _peek = cursor.peek_u8();").count();
         }
     }
     assert!(
@@ -16136,11 +16136,11 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
     // would trip rustc's `unused_variables` lint. Negative assertion
     // mirrors the 11287248 / b35dbb66 substring-pattern.
     assert!(
-        !keyexpr_rust.contains("let raw = cursor.peek_array::<0>()?;"),
+        !keyexpr_rust.contains("let raw = cursor.take_array::<0>();"),
         "variant-only dispatcher must NOT emit dead prefix-decode `let raw`\n{keyexpr_rust}"
     );
     assert!(
-        !keyexpr_rust.contains("cursor.advance(0)?;"),
+        !keyexpr_rust.contains("cursor.advance(0);"),
         "variant-only dispatcher must NOT emit no-op `cursor.advance(0)`\n{keyexpr_rust}"
     );
 
@@ -17303,11 +17303,11 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     // Decode site: arm body's decode receives the dispatcher's `n`
     // input verbatim (FlagBindSource::Input passthrough).
     assert!(
-        disp_rust.contains("B5nuChainArmA::decode_into(cursor, _b, n)"),
+        disp_rust.contains("B5nuChainArmA::read_into(cursor, _b, n)"),
         "dispatcher decode must pass `n` to arm_a; got:\n{disp_rust}"
     );
     assert!(
-        !disp_rust.contains("B5nuChainArmA::decode_into(cursor, _b, header)"),
+        !disp_rust.contains("B5nuChainArmA::read_into(cursor, _b, header)"),
         "dispatcher decode must NOT pass bare `header`;\n{disp_rust}"
     );
     // Encode site: arm_a says `N` itself (its one gated field), so it is
@@ -25883,12 +25883,12 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     // call is pinned to its own closing parenthesis: the statement around it
     // notes a capacity the arm reports (docs/adr/0077 §7).
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::decode_into(cursor, _b, (header >> 6) & 0x1)"),
+        parent_rust.contains("CodecAxis1D1WithInput::read_into(cursor, _b, (header >> 6) & 0x1)"),
         "variant arm decode must thread `(header >> 6) & 0x1`:\n{parent_rust}"
     );
     // No-input arm must NOT pick up any spurious arg.
     assert!(
-        parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)"),
+        parent_rust.contains("CodecAxis1D1NoInput::read_into(cursor, _b)"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
     // Encode site: the arm says `S` itself, so it is handed the sink alone,
@@ -26673,7 +26673,7 @@ fn axis1_inversion_multi_flag_input_order() {
     // which is no part of the order pinned here.
     assert!(
         parent_body.contains(
-            "CodecMultiDisp::decode_into(cursor, &mut _out.payload, \
+            "CodecMultiDisp::read_into(cursor, &mut _out.payload, \
              (header >> 5) & 0x1, \
              (header >> 6) & 0x1, \
              (header >> 7) & 0x1)"

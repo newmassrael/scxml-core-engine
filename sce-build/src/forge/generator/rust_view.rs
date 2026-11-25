@@ -181,8 +181,9 @@ pub(super) fn entry_walk_item(struct_name: &str, view_borrowed: bool, inputs: us
 ///
 /// Function pointers over the lifetime of the bytes (`fn(&mut SceCursor<'a>, ..)`) made the list
 /// invariant in that lifetime, so a view decoded from a long-lived buffer could not be lent for a
-/// shorter time. The entry is `Entry<'b>` for the cursor's `'b` here, as a generic associated type
-/// says and a function pointer cannot.
+/// shorter time. The entry is `Entry<'b>` for the reader's `'b` here, as a generic associated type
+/// says and a function pointer cannot. The read is the entry view's total read (docs/adr/0128),
+/// inlined into the walk, so a walk tests no refusal field by field.
 ///
 /// `entry` is the entry's view as a path for a call (`{Entry}View`), `entry_ty` as a type with the
 /// lifetime `'b` where it carries one, and `inputs` how many flag inputs its decode takes, each
@@ -204,8 +205,9 @@ pub(super) fn walk_item(
          impl {RUNTIME_CODEC}::ListWalk<{inputs}> for {walk} {{\n    \
              type Entry<'b> = {entry_ty};\n\
          \n    \
-             fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; {inputs}]) -> Result<Self::Entry<'b>, CodecError> {{\n        \
-                 {entry}::decode(_c{call_args})\n    \
+             #[inline(always)]\n    \
+             fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}]) -> Self::Entry<'b> {{\n        \
+                 {entry}::read(_r{call_args})\n    \
              }}\n\
          \n    \
              fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{ {advance} }}\n\
@@ -246,7 +248,9 @@ impl ViewList<'_> {
     /// constructor. The scan has refused an entry past the bound already, with
     /// the error the eager decode gives, and a chain closed by an entry flag
     /// with no entry as short (R7), so the constructor's refusal is never
-    /// reached.
+    /// reached on a frame read whole. The constructors are one chain settled in
+    /// the frame's reader once (docs/adr/0128): on a frame that failed they make
+    /// the list's default, and the reader keeps the first refusal.
     fn build(&self) -> String {
         let args = self
             .inputs
@@ -257,24 +261,24 @@ impl ViewList<'_> {
         let list = format!("ListView::new(_rest, _count, [{args}])");
         // An always-present list of one entry or more is its first entry and
         // the list after it (`list_type`); the scan has read that first entry.
-        let list = if self.field.present_if.is_none()
+        let bounded = if self.field.present_if.is_none()
             && crate::forge::codec_totality::list_least(self.field) > 0
         {
             format!(
-                "{RUNTIME_CODEC}::NonEmptyListView::from_scan({list}).ok_or(CodecError::NeedMoreBytes)?"
+                "{RUNTIME_CODEC}::NonEmptyListView::from_scan({list}).ok_or(CodecError::NeedMoreBytes).and_then(|_l| Bounded::new(_l).ok_or(CodecError::TooManyElements))"
             )
         } else {
-            list
+            format!("Bounded::new({list}).ok_or(CodecError::TooManyElements)")
         };
-        let bounded = format!("Bounded::new({list}).ok_or(CodecError::TooManyElements)?");
         // Each entry the scan read was read under the start, so the list follows
         // its law and this refusal is never reached either (docs/adr/0065 §6 R8).
-        match self.law_start {
+        let made = match self.law_start {
             Some(start) => format!(
-                "{RUNTIME_CODEC}::Lawful::new({start}, {bounded}).ok_or(CodecError::PresentIfMismatch)?"
+                "{bounded}.and_then(|_l| {RUNTIME_CODEC}::Lawful::new({start}, _l).ok_or(CodecError::PresentIfMismatch))"
             ),
             None => bounded,
-        }
+        };
+        format!("cursor.settle({made})")
     }
 
     /// The field's value, from `build`, as the field holds it.
@@ -290,7 +294,7 @@ impl ViewList<'_> {
 
 /// What the scan of any list begins with: the frame from the list's first
 /// entry on, which is what the walk reads from, and the entry count.
-const SCAN_OPEN: &str = "let _rest = cursor.peek_slice(cursor.remaining())?;\n            \
+const SCAN_OPEN: &str = "let _rest = cursor.rest();\n            \
                          let mut _count: u32 = 0;";
 
 /// A `<sce:repeat>` field of a view: decode `count` or until-EOF entries, each
@@ -319,14 +323,19 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
             .map(|max_count| {
                 format!(
                     "if _count == {max_count} {{\n{indent}        \
-                         return Err(CodecError::TooManyElements);\n{indent}    \
+                         cursor.fail(CodecError::TooManyElements);\n{indent}    \
                      }}\n{indent}    "
                 )
             })
             .unwrap_or_default();
+        // The loop is left where the frame has failed, so a count read before
+        // the refusal makes no loop of reads that read nothing (docs/adr/0128).
         format!(
             "{head} {{\n{indent}    \
-                 {past}{entry}::decode(cursor{decode_arg})?;\n{indent}    \
+                 if cursor.failed() {{\n{indent}        \
+                     break;\n{indent}    \
+                 }}\n{indent}    \
+                 {past}{entry}::read(cursor{decode_arg});\n{indent}    \
                  _count += 1;\n{indent}\
              }}"
         )
@@ -441,17 +450,19 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     let overflow_check =
         tlv_chain_guard(lang, entry_flag_acc.is_some(), *max_depth, "            ");
     let indent = "                ";
-    let mut lines =
-        chain_end_of_frame_stop(&entry_flag_acc, "if cursor.remaining() == 0 { break; }");
+    // The loop is left where the frame has failed (docs/adr/0128).
+    let mut lines = vec!["if cursor.failed() { break; }".to_string()];
+    lines.extend(chain_end_of_frame_stop(
+        &entry_flag_acc,
+        "if cursor.remaining() == 0 { break; }",
+    ));
     // The entry is bound to a local when the loop reads something off it: the
     // flag that ends the chain, the identifier a per-entry flag-input is
     // waiting for.
     if entry_flag_acc.is_some() || !entry_binds.is_empty() {
-        lines.push(format!(
-            "let _entry = {entry}::decode(cursor{decode_arg})?;"
-        ));
+        lines.push(format!("let _entry = {entry}::read(cursor{decode_arg});"));
     } else {
-        lines.push(format!("{entry}::decode(cursor{decode_arg})?;"));
+        lines.push(format!("{entry}::read(cursor{decode_arg});"));
     }
     if let Some(acc) = &entry_flag_acc {
         lines.push(format!("_more = _entry.{acc}();"));

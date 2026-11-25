@@ -11906,10 +11906,9 @@ fn rust_store_rebind(l: &LangCtx, f: &CodecField, m: &CodecModel) -> Option<Stri
     let tag = rust_storage_tag(&m.name, &f.id);
     let store = |value: &str| format!("{value}.store::<{STORAGE_PARAM}, {tag}>()");
     // Past what the profile holds, the field holds its default, inside its
-    // bounds, and the decode notes it and reads on (docs/adr/0077 §7).
-    let held = |stored: String| {
-        format!("let {id} = {RUNTIME_CODEC}::note_held({stored}, &mut {RUST_DECODE_OVER})?;")
-    };
+    // bounds, and the decode notes it in its reader and reads on (docs/adr/0077
+    // §7, docs/adr/0128).
+    let held = |stored: String| format!("let {id} = cursor.hold({stored});");
     Some(if f.present_if.is_some() {
         held(format!("{id}.map(|_v| {}).transpose()", store("_v")))
     } else {
@@ -11934,9 +11933,9 @@ fn rust_bounded_rebind(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> Op
     let id = l.codec_field_id(&f.id);
     let new = format!("{RUNTIME_CODEC}::Bounded::new");
     Some(if f.present_if.is_some() {
-        format!("let {id} = {id}.map(|_v| {new}(_v).ok_or({refusal})).transpose()?;")
+        format!("let {id} = cursor.settle({id}.map(|_v| {new}(_v).ok_or({refusal})).transpose());")
     } else {
-        format!("let {id} = {new}({id}).ok_or({refusal})?;")
+        format!("let {id} = cursor.settle({new}({id}).ok_or({refusal}));")
     })
 }
 
@@ -13224,6 +13223,46 @@ fn rust_group_storage(
     Ok((stored, wire))
 }
 
+/// The statements a Rust view decode reads each list and embedded body of `m`
+/// outside a group by, rewritten to read it into a local of its own rather than
+/// into the view's field (docs/adr/0128): a view is a value of a few words
+/// (docs/adr/0049), and its decode builds it once from what its reads return,
+/// so no field is written first with a default and then with what the frame
+/// says. A group's elements are in locals already ([`rust_group_storage`]).
+fn rust_view_locals(
+    m: &CodecModel,
+    imports: &[ImportContext],
+    l: &LangCtx,
+    wire: &mut [serde_json::Value],
+) {
+    let roles = crate::forge::codec_roles::classify(m, imports);
+    for (f, obj) in m.fields.iter().zip(wire.iter_mut()) {
+        if roles.group_of(&f.id).is_some() {
+            continue;
+        }
+        let local = codec_field_decode_local(&f.id, l.lang);
+        let place = format!("{RUST_DECODE_OUT}.{}", l.codec_field_id(&f.id));
+        let Some(obj) = obj.as_object_mut() else {
+            continue;
+        };
+        let ty = obj
+            .get("view_rs_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        for (key, _) in RUST_BUILT_DECODE_KEYS
+            .iter()
+            .filter(|(key, _)| key.starts_with("view_"))
+        {
+            let Some(stmt) = obj.get(*key).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let rewritten = decode_into_local(stmt, &place, &local, &ty);
+            obj.insert((*key).into(), rewritten.into());
+        }
+    }
+}
+
 /// The statements a Rust decode builds an element by, and the type of what it
 /// builds: the eager form's (`rs_owned_type`) and the view's.
 const RUST_BUILT_DECODE_KEYS: [(&str, &str); 6] = [
@@ -13254,7 +13293,7 @@ fn decode_into_local(stmt: &str, place: &str, local: &str, ty: &str) -> String {
     ]
     .iter()
     .any(|call| stmt.contains(call.as_str()));
-    if stmt.contains(&format!("{place}.insert(")) {
+    if stmt.contains(&format!("{place}.get_or_insert_with(")) {
         format!("let mut {local}: {ty} = None;\n        {built}")
     } else if fills_in_place {
         format!("let mut {local}: {ty} = Default::default();\n        {built}")
@@ -13473,7 +13512,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
             // gives the second list as many default entries as the first, which
             // need not follow the law (docs/adr/0065 §6 R8), so such a group is
             // decoded by value.
-            let refill = format!("{place}.insert(Default::default()).refill(");
+            let refill = format!("{place}.{RUST_INSTALL}.refill(");
             if !stmt.contains(&refill) {
                 return None;
             }
@@ -13598,7 +13637,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                     "decode_chain_in"
                 };
                 format!(
-                    "{RUNTIME_CODEC}::{door}(&mut {RUST_DECODE_OUT}.{accessor}, |_c| {}, |_g| match _g {{ {} => Some(_c), _ => None }}, &mut {fill_fn})?",
+                    "{{ let _read = {RUNTIME_CODEC}::{door}(&mut {RUST_DECODE_OUT}.{accessor}, |_c| {}, |_g| match _g {{ {} => Some(_c), _ => None }}, &mut {fill_fn}); cursor.settle(_read) }}",
                     defaults_but(arm, Some(slot)),
                     held(format!("{} {{ {}: {slot}, .. }}", arm.2, acc(chain))),
                 )
@@ -13652,7 +13691,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                      // while the decode reads on to the frame's end, so a frame\n                \
                      // malformed past the chain is refused for that.\n                \
                      if {full} {{\n                    \
-                         {RUST_DECODE_OVER} = true;\n                    \
+                         cursor.note_capacity();\n                    \
                          break;\n                \
                      }}"
                 )
@@ -13660,7 +13699,8 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                 format!(
                     "// hold the arm the frame names.\n                \
                      if {full} {{\n                    \
-                         return Err(CodecError::CapacityExceeded);\n                \
+                         cursor.fail(CodecError::CapacityExceeded);\n                    \
+                         break;\n                \
                      }}"
                 )
             };
@@ -13672,13 +13712,15 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                      // the arm they name. Past what the profile holds the chain keeps an\n        \
                      // entry of each kind it read while it has room for one of each, and\n        \
                      // the decode reads on (docs/adr/0077 §7).\n        \
-                     let {at} = *cursor;\n        \
+                     let {at} = cursor.mark();\n        \
                      {}let mut {first} = true;\n        \
                      loop {{\n            \
                          {}let mut {fill_fn} = |_vec: &mut {list_ty}| -> Result<(), CodecError> {fill};\n            \
                          let ({settled}, {full}) = {select_read};\n            \
-                         {}if {settled} {{\n                \
-                             {RUST_DECODE_OVER} |= {full};\n                \
+                         {}if {settled} || cursor.failed() {{\n                \
+                             if {full} {{\n                    \
+                                 cursor.note_capacity();\n                \
+                             }}\n                \
                              break;\n            \
                          }}\n            \
                          if !{first} {{\n                \
@@ -13688,7 +13730,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                              {RUST_ARM_NOT_HELD};\n            \
                          }}\n            \
                          {first} = false;\n            \
-                         *cursor = {at};\n        \
+                         cursor.rewind({at});\n        \
                      }}",
                     lines(&|v| format!("let mut {} = false;", has(v)), "        "),
                     lines(&|v| format!("let mut {} = false;", found(v)), "            "),
@@ -13810,7 +13852,7 @@ const RUST_ARM_NOT_HELD: &str = "return Err(CodecError::PresentIfMismatch)";
 /// `_p`, and the branch that would leave a gated field absent cannot run, since
 /// the arm the gates installed holds it ([`rust_group_in_place`]).
 fn place_in_arm(stmt: &str, place: &str) -> String {
-    let inserted = replace_call(stmt, &format!("{place}.insert("), "_p");
+    let inserted = replace_call(stmt, &format!("{place}.get_or_insert_with("), "_p");
     let present = inserted.replace(
         &format!("{place} = None;"),
         &format!("{RUST_ARM_NOT_HELD};"),
@@ -16114,27 +16156,19 @@ fn render_codec(
     // The fields each form holds and the fields the wire reads: on Rust a group
     // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
     // and every other backend holds the wire's fields as they are.
-    let (stored, wire) = if matches!(lang, crate::generator::Language::Rust)
+    let (stored, mut wire) = if matches!(lang, crate::generator::Language::Rust)
         && m.encoding == CodecEncoding::Positional
     {
         rust_group_storage(m, imports, &l, fields, emit_views)?
     } else {
         (fields.clone(), fields)
     };
-    // Whether the eager Rust decode notes a capacity in `RUST_DECODE_OVER`, so
-    // declares it and answers it once the frame is read whole (docs/adr/0077
-    // §7): a statement it renders for a field names it, or a variant's arm,
-    // whose decode the template notes. A decode that notes nowhere neither
-    // declares nor tests it, and a view's statements never note.
-    let decode_notes_over = matches!(lang, crate::generator::Language::Rust)
-        && (m.variant.is_some()
-            || wire.iter().any(|field| {
-                RUST_EAGER_DECODE_KEYS
-                    .iter()
-                    .filter_map(|key| field.get(*key).and_then(|v| v.as_str()))
-                    .any(rust_names_over)
-            }));
-    ctx.insert("decode_notes_over".into(), decode_notes_over.into());
+    if emit_views
+        && matches!(lang, crate::generator::Language::Rust)
+        && m.encoding == CodecEncoding::Positional
+    {
+        rust_view_locals(m, imports, &l, &mut wire);
+    }
     ctx.insert("fields".into(), serde_json::json!(stored));
     ctx.insert("wire_fields".into(), serde_json::json!(wire));
     // RFC §synth-5-B flags primitive: codec-level rollup so the template
@@ -17292,7 +17326,7 @@ fn render_codec(
                 // The byte itself, read with no index: an index of a peeked
                 // slice leaves a bounds check whose panic site names this
                 // codec's file, and keeps two variants of one body apart.
-                crate::generator::Language::Rust => "let _peek = cursor.peek_u8()?;".to_string(),
+                crate::generator::Language::Rust => "let _peek = cursor.peek_u8();".to_string(),
                 crate::generator::Language::Cpp => format!(
                     "const std::uint8_t* _peek_raw = cursor.peek_slice(1);\n        \
                      if (_peek_raw == nullptr) {CPP_NEED_MORE_BYTES}\n        \
@@ -19906,7 +19940,7 @@ struct EmbedDecode<'a> {
 #[derive(Clone, Copy)]
 enum EmbedDecodeInto {
     /// Into the value, which stores the body: a Rust decode notes a capacity
-    /// it was past ([`RUST_DECODE_OVER`]), and `c11_over` says whether the C11
+    /// it was past in the frame's reader, and `c11_over` says whether the C11
     /// decode is a store after a parse ([`c11_may_exceed_capacity`]).
     Value { c11_over: bool },
     /// Where it sits, as a view: it stores nothing and cannot run out.
@@ -19978,51 +20012,62 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
     match lang {
         Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),
         Language::Rust => {
-            // The body is decoded into the field where it will live, not
-            // returned and moved into it; see `RUST_DECODE_OUT`. A body past a
-            // capacity has read its own frame whole, and the decode notes it
-            // and reads on (`RUST_DECODE_OVER`).
-            let decode = |from: &str, into: &str| {
-                let call = format!("{body_type}::decode_into({from}, {into}{thread_arg})?;");
+            // A storing decode reads the body into the field where it will
+            // live, not returned and moved into it (see `RUST_DECODE_OUT`); a
+            // gated one makes the field present only where it holds no body
+            // yet, so no whole default is written over a body the destination
+            // holds (docs/adr/0128). A view is a value of a few words, built
+            // once from what its reads return, so its body is read as a value.
+            // Either reads through the frame's reader: a refusal, or a body past
+            // a capacity, is the reader's to say once the frame is read whole.
+            let read = |from: &str, into: &str| {
                 if stores {
-                    rust_noted(&call)
+                    format!("{body_type}::read_into({from}, {into}{thread_arg})")
                 } else {
-                    call
+                    format!("{body_type}::read({from}{thread_arg})")
                 }
             };
-            let held = format!("&mut {RUST_DECODE_OUT}.{id}");
-            let inserted = format!("{RUST_DECODE_OUT}.{id}.insert({body_type}::default())");
+            let place = format!("{RUST_DECODE_OUT}.{id}");
+            let held = format!("&mut {place}");
+            let inserted = format!("{place}.get_or_insert_with({body_type}::default)");
+            // The statement that reads the body from `from` into its field.
+            let into_field = |from: &str, gated: bool| {
+                match (stores, gated) {
+                    (true, false) => format!("{};", read(from, &held)),
+                    (true, true) => format!("{};", read(from, &inserted)),
+                    (false, false) => format!("{place} = {};", read(from, "")),
+                    (false, true) => format!("{place} = Some({});", read(from, "")),
+                }
+            };
+            // A body a length says the size of is read from those bytes alone,
+            // as a frame of its own whose refusal is this one's.
+            let within = |sibling: &str, gated: bool| {
+                let body = into_field("_inner", gated);
+                let body = body.strip_suffix(';').unwrap_or(&body);
+                let (assign, value) = match body.split_once(" = ") {
+                    Some((assign, value)) if !stores => (format!("{assign} = "), value.to_string()),
+                    _ => (String::new(), body.to_string()),
+                };
+                format!("{assign}cursor.within({sibling} as usize, |_inner| {value});")
+            };
             match (&test_lit, len_expr(Language::Rust)) {
-                (None, None) => decode("cursor", &held),
+                (None, None) => into_field("cursor", false),
                 (Some(test), None) => format!(
                     "if {test} {{\n            \
                          {}\n        \
                      }} else {{\n            \
                          {RUST_DECODE_OUT}.{id} = None;\n        \
                      }}",
-                    decode("cursor", &inserted)
+                    into_field("cursor", true)
                 ),
-                (None, Some(sibling)) => format!(
-                    "{{\n            \
-                         let _len = {sibling} as usize;\n            \
-                         let _raw = cursor.peek_slice(_len)?;\n            \
-                         let mut _inner = SceCursor::new(_raw);\n            \
-                         {}\n            \
-                         cursor.advance(_len)?;\n        \
-                     }}",
-                    decode("&mut _inner", &held)
-                ),
+                (None, Some(sibling)) => within(&sibling, false),
                 (Some(test), Some(sibling)) => format!(
                     "if {test} {{\n            \
-                         let _len = {sibling} as usize;\n            \
-                         let _raw = cursor.peek_slice(_len)?;\n            \
-                         let mut _inner = SceCursor::new(_raw);\n            \
-                         {}\n            \
-                         cursor.advance(_len)?;\n        \
+                         {}\n        \
                      }} else {{\n            \
                          {RUST_DECODE_OUT}.{id} = None;\n        \
                      }}",
-                    decode("&mut _inner", &inserted)
+                    within(&sibling, true)
                 ),
             }
         }
@@ -21094,7 +21139,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}",
                 rust_noted(&format!(
-                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
+                    "{RUST_DECODE_OUT}.{id}.{RUST_INSTALL}.{refill}|_vec| {{\n                \
                          let mut {RUST_LIST_FULL} = false;\n                \
                          for _ in 0.._n {{\n{entry}}}\n                \
                          {}\n            \
@@ -21116,7 +21161,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}",
                 rust_noted(&format!(
-                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
+                    "{RUST_DECODE_OUT}.{id}.{RUST_INSTALL}.{refill}|_vec| {{\n                \
                          let mut {RUST_LIST_FULL} = false;\n                \
                          let mut _read = 0usize;\n                \
                          while cursor.remaining() > 0 {{\n{entry}}}\n                \
@@ -21550,41 +21595,17 @@ const KOTLIN_INVALID_UTF8: &str = "return Decoded.Refused(CodecError.InvalidUtf8
 /// [`KOTLIN_INVALID_UTF8`] on C++.
 const CPP_INVALID_UTF8: &str = "return ::SCE::Forge::CodecError::InvalidUtf8;";
 
-/// What a Rust storing decode notes a capacity in: past what its profile holds
-/// it reads the frame on and answers `CapacityExceeded` once the frame is read
-/// whole and every refusal of the frame's own has had its turn (docs/adr/0077
-/// §7), the rule the C11 backend reads a frame by (`_over`,
-/// `sce_forge_codec_note_capacity`).
-const RUST_DECODE_OVER: &str = "_over";
-
-/// The statements an eager Rust decode renders for a field, each of which may
-/// note a capacity ([`RUST_DECODE_OVER`]); the template renders exactly these
-/// for a field when it does not render a view.
-const RUST_EAGER_DECODE_KEYS: [&str; 7] = [
-    "repeat_decode_stmt",
-    "tlv_chain_decode_stmt",
-    "embed_decode_stmt",
-    "present_if_decode_stmt",
-    "bounded_rebind",
-    "store_rebind",
-    "peek_byte_decode_stmt",
-];
-
-/// Whether `stmt` names [`RUST_DECODE_OVER`] as an identifier: notes a capacity
-/// in it or takes one into it.
-fn rust_names_over(stmt: &str) -> bool {
-    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    stmt.match_indices(RUST_DECODE_OVER).any(|(at, _)| {
-        let before = stmt[..at].chars().next_back();
-        let after = stmt[at + RUST_DECODE_OVER.len()..].chars().next();
-        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
-    })
-}
-
 /// What a Rust list decode notes inside its fill that it read an entry it did
-/// not hold, or one whose body was past a capacity; the fill answers
-/// `CapacityExceeded` for it once the list is read whole.
+/// not hold; the fill answers `CapacityExceeded` for it once the list is read
+/// whole. An entry whose own body was past a capacity notes that in the frame's
+/// reader (docs/adr/0128).
 const RUST_LIST_FULL: &str = "_full";
+
+/// How a storing Rust decode makes a gated list present before it fills it in
+/// place: the list the destination holds already, or, where it holds none, an
+/// empty one (docs/adr/0128). The fill clears it either way, so a destination
+/// that keeps its list from frame to frame has no whole list written over it.
+const RUST_INSTALL: &str = "get_or_insert_with(Default::default)";
 
 /// A kind of entry the gates on a chain ask for (docs/adr/0065 §6 R6), as a
 /// Rust chain decode notes it of each entry it reads, held or not: the local
@@ -21712,9 +21733,11 @@ fn chain_found_local(chain_id: &str, value: u64) -> String {
 }
 
 /// The lines a Rust list decode reads one entry of `body_type` by and holds it
-/// (docs/adr/0077 §7): the entry decoded in a local of its own, a capacity its
-/// body reports noted, `between` (what the loop reads off the entry before it
-/// is held), the kinds `kinds` it is of noted, and the entry held where the
+/// (docs/adr/0077 §7): the loop left where the frame has failed, so a count read
+/// before the refusal makes no loop of reads that read nothing (docs/adr/0128),
+/// the entry read as a value through the frame's reader (a capacity its body
+/// reports noted there), `between` (what the loop reads off the entry before
+/// it is held), the kinds `kinds` it is of noted, and the entry held where the
 /// list has room ([`RUST_LIST_FULL`] noted where it has not).
 fn rust_list_entry_lines(
     body_type: &str,
@@ -21723,10 +21746,8 @@ fn rust_list_entry_lines(
     kinds: &[RustChainKind],
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("let mut _entry = {body_type}::default();"),
-        format!(
-            "{RUNTIME_CODEC}::note_capacity({body_type}::decode_into(cursor, &mut _entry{decode_arg}), &mut {RUST_LIST_FULL})?;"
-        ),
+        "if cursor.failed() { break; }".to_string(),
+        format!("let _entry = {body_type}::read(cursor{decode_arg});"),
     ];
     lines.extend(between);
     for kind in kinds {
@@ -21809,13 +21830,15 @@ fn rust_list_fill_end(indent: &str) -> String {
 
 /// `stmt`, a Rust statement that fills a field through one call answering
 /// `Result<(), CodecError>` and ends `)?;` (`_out.x.refill(..)?;`), with that
-/// answer noted in [`RUST_DECODE_OVER`] rather than returned when it is
-/// `CapacityExceeded`: the call has read what it fills whole by then.
+/// answer held by the frame's reader (docs/adr/0128): `CapacityExceeded` noted
+/// and the reads going on, since the call has read what it fills whole by then,
+/// and any other refusal recorded. The call's fill reads through the reader it
+/// is handed, so the reader is not borrowed twice.
 fn rust_noted(stmt: &str) -> String {
     let body = stmt
-        .strip_suffix(")?;")
+        .strip_suffix("?;")
         .expect("a filling statement ends with `)?;`");
-    format!("{RUNTIME_CODEC}::note_capacity({body}), &mut {RUST_DECODE_OVER})?;")
+    format!("cursor.hold_with(|cursor| {body});")
 }
 
 /// "The cursor has no bytes left", in each backend's runtime spelling.
@@ -22523,7 +22546,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}",
                 rust_noted(&format!(
-                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}{fill})?;"
+                    "{RUST_DECODE_OUT}.{id}.{RUST_INSTALL}.{refill}{fill})?;"
                 ))
             )
         }
@@ -23230,7 +23253,7 @@ fn streaming_fixed_enum_conversion(
         Language::Swift => no_swift_emitter("streaming_fixed_enum_conversion"),
         Language::Rust => (
             String::new(),
-            format!("{from}({carrier_read}).ok_or(CodecError::UndeclaredEnumValue)?"),
+            format!("cursor.settle({from}({carrier_read}).ok_or(CodecError::UndeclaredEnumValue))"),
         ),
         Language::Kotlin => (
             String::new(),
@@ -23323,27 +23346,24 @@ fn present_if_decode_fixed(
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_fixed"),
-        // Rust peeks the field's bytes as an array (`SceCursor::peek_array`):
+        // Rust takes the field's bytes as an array (`SceReader::take_array`):
         // its length is in its type, so `raw[k]` has no bounds check and the
         // read no panic site naming the codec's file. With one, two codecs whose
         // decodes are the same body differ by that site alone, and are not
-        // merged into one function.
+        // merged into one function. The take is total (docs/adr/0128): past the
+        // frame's end it is zeros and the reader holds the refusal.
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
-                 let raw = cursor.peek_array::<{n}>()?;\n            \
-                 {conv12}let _v = {body12};\n            \
-                 cursor.advance({n})?;\n            \
-                 _v\n        \
+                 let raw = cursor.take_array::<{n}>();\n            \
+                 {conv12}{body12}\n        \
              }};"
         ),
         (Language::Rust, Some(p)) => {
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let raw = cursor.peek_array::<{n}>()?;\n            \
-                     {conv12}let _v = {body12};\n            \
-                     cursor.advance({n})?;\n            \
-                     Some(_v)\n        \
+                     let raw = cursor.take_array::<{n}>();\n            \
+                     {conv12}Some({body12})\n        \
                  }} else {{\n            \
                      None\n        \
                  }};"
@@ -23579,10 +23599,7 @@ fn present_if_decode_tail(
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
                  let _n = cursor.remaining();\n            {guard}\
-                 let raw = cursor.peek_slice(_n)?;\n            \
-                 let _v = raw;\n            \
-                 cursor.advance(_n)?;\n            \
-                 _v\n        \
+                 cursor.take_slice(_n)\n        \
              }};"
         ),
         (Language::Rust, Some(p)) => {
@@ -23590,10 +23607,7 @@ fn present_if_decode_tail(
             format!(
                 "let {id} = if {test} {{\n            \
                      let _n = cursor.remaining();\n            {guard}\
-                     let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = raw;\n            \
-                     cursor.advance(_n)?;\n            \
-                     Some(_v)\n        \
+                     Some(cursor.take_slice(_n))\n        \
                  }} else {{\n            \
                      None\n        \
                  }};"
@@ -23883,10 +23897,7 @@ fn present_if_decode_length_ref(
             format!(
                 "let {id} = {{\n            \
                      {count}\n            \
-                     let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = raw;\n            \
-                     cursor.advance(_n)?;\n            \
-                     _v\n        \
+                     cursor.take_slice(_n)\n        \
                  }};"
             )
         }
@@ -23896,10 +23907,7 @@ fn present_if_decode_length_ref(
             format!(
                 "let {id} = {head} {{\n            \
                      {count}\n            \
-                     let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = raw;\n            \
-                     cursor.advance(_n)?;\n            \
-                     Some(_v)\n        \
+                     Some(cursor.take_slice(_n))\n        \
                  }} else {{\n            \
                      None\n        \
                  }};"
@@ -24114,11 +24122,8 @@ fn present_if_decode_string_length_ref(
             format!(
                 "let {id} = {{\n            \
                      {count}\n            \
-                     let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = core::str::from_utf8(raw)\n                \
-                         .map_err(|_| CodecError::InvalidUtf8)?;\n            \
-                     cursor.advance(_n)?;\n            \
-                     _v\n        \
+                     let raw = cursor.take_slice(_n);\n            \
+                     cursor.settle(core::str::from_utf8(raw).map_err(|_| CodecError::InvalidUtf8))\n        \
                  }};"
             )
         }
@@ -24128,11 +24133,8 @@ fn present_if_decode_string_length_ref(
             format!(
                 "let {id} = {head} {{\n            \
                      {count}\n            \
-                     let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = core::str::from_utf8(raw)\n                \
-                         .map_err(|_| CodecError::InvalidUtf8)?;\n            \
-                     cursor.advance(_n)?;\n            \
-                     Some(_v)\n        \
+                     let raw = cursor.take_slice(_n);\n            \
+                     Some(cursor.settle(core::str::from_utf8(raw).map_err(|_| CodecError::InvalidUtf8)))\n        \
                  }} else {{\n            \
                      None\n        \
                  }};"
@@ -24549,10 +24551,10 @@ fn length_count_stmts(
                 format!("(_len as usize){offset}")
             } else if a > 0 {
                 format!(
-                    "usize::try_from(_len).ok().and_then(|v| v.checked_add({a})).ok_or(CodecError::NeedMoreBytes)?"
+                    "cursor.settle(usize::try_from(_len).ok().and_then(|v| v.checked_add({a})).ok_or(CodecError::NeedMoreBytes))"
                 )
             } else {
-                format!("usize::try_from(_len{offset}).map_err(|_| CodecError::NeedMoreBytes)?")
+                format!("cursor.settle(usize::try_from(_len{offset}).map_err(|_| CodecError::NeedMoreBytes))")
             };
             // A gated sibling's value is bound to `_len` by the head of the
             // block (`rust_gated_head`), not here.
@@ -27317,11 +27319,11 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
     use crate::generator::Language;
     match (lang, width_bits) {
         (Language::Rust, 16) =>
-            format!("let {field_id} = cursor.read_vle_u16()?;"),
+            format!("let {field_id} = cursor.read_vle_u16();"),
         (Language::Rust, 32) =>
-            format!("let {field_id} = cursor.read_vle_u32()?;"),
+            format!("let {field_id} = cursor.read_vle_u32();"),
         (Language::Rust, 64) =>
-            format!("let {field_id} = cursor.read_vle_u64()?;"),
+            format!("let {field_id} = cursor.read_vle_u64();"),
         (Language::Cpp, n) => format!(
             "auto {field_id}_read = cursor.read_vle_u{n}();\n        \
              if (!{field_id}_read.has_value()) return {field_id}_read.error();\n        \
@@ -27537,7 +27539,7 @@ fn generate_decode_expr(
                 // than it says: a slice index would panic on it, where the
                 // decode refuses a short frame with `NeedMoreBytes`.
                 Language::Rust => {
-                    format!("raw.get({byte_off}..{end}).ok_or(CodecError::NeedMoreBytes)?")
+                    format!("cursor.settle(raw.get({byte_off}..{end}).ok_or(CodecError::NeedMoreBytes))")
                 }
                 Language::Go => format!("raw[{byte_off}:{end}]"),
                 Language::Python => format!("raw[{byte_off}:{end}]"),
@@ -51818,9 +51820,9 @@ mod tests {
              links.refill(|_vec| { Ok(()) })?;"
         );
         assert_eq!(
-            filled("_out.links.insert(Default::default()).refill_from(true, |_vec| Ok(()))?;"),
+            filled("_out.links.get_or_insert_with(Default::default).refill_from(true, |_vec| Ok(()))?;"),
             "let mut links: Ty = None;\n        \
-             links.insert(Default::default()).refill_from(true, |_vec| Ok(()))?;"
+             links.get_or_insert_with(Default::default).refill_from(true, |_vec| Ok(()))?;"
         );
         assert_eq!(
             filled("_out.links = span;"),

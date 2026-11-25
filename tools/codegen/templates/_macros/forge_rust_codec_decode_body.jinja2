@@ -1,15 +1,22 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -#}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -#}
-{#- The statements of a Rust codec's `decode` (or `decode_into`), between its
+{#- The statements of a Rust codec's `read` (or `read_into`), between its
     signature and its closing brace, for the eager struct and for its view.
 
     Included by `forge/rust/codec.rs.jinja2` twice. `view_decode` is false for
     the eager struct (`{Codec}<'a>`) and true for the view (`{Codec}View`, ADR
-    0049), and picks the three things that differ: the statement a list, an
-    embedded body renders (`view_*` where the view holds it differently), the
-    variant enum an arm is installed in, and the type an arm's body is. Every
-    other field is read by the same statement on both. One skeleton, so a
-    branch added here reaches both. -#}
+    0049), and picks what differs: the statement a list, an embedded body
+    renders (`view_*` where the view holds it differently), the variant enum an
+    arm is read into, the type an arm's body is, and how the value is made. The
+    eager form of a codec that builds lists in place fills `_out` where its
+    fields live; a view is a value of a few words and is built once, as a
+    struct literal of what its reads return (docs/adr/0128). Every other field
+    is read by the same statement on both. One skeleton, so a branch added here
+    reaches both.
+
+    `cursor` is the frame's reader (`SceReader`, docs/adr/0128): every read is
+    total and records a refusal in it, so no statement here returns early and
+    the frame's verdict is said once, by the caller that made the reader. -#}
 {#- One field of the positional prefix, bound to its own local. An
     enum-typed field travels on the wire as the enum's carrier, so
     `decode_expr` reads that carrier and the enum's own conversion
@@ -33,8 +40,9 @@
 {% if field.is_enum and field.enum_is_open %}
         let {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
 {%- elif field.is_enum %}
-        let {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
-            .ok_or(CodecError::UndeclaredEnumValue)?;
+        let {{ field.id }} = cursor.settle(
+            {{ field.enum_from_underlying }}({{ field.decode_expr }}).ok_or(CodecError::UndeclaredEnumValue),
+        );
 {%- else %}
         let {{ field.id }} = {{ field.decode_expr }};
 {%- endif %}
@@ -52,12 +60,58 @@
 {%- endif %}
 {% endmacro %}
 {% set decode_variant_enum = struct_name ~ ('ViewVariant' if view_decode else ('VariantIn' if emit_owned else 'Variant')) %}
-{% set notes_over = decode_notes_over and not view_decode %}
-{% if notes_over %}
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+{#- The value a view is: a struct literal of its fields, each the local its
+    statement read it into, or the expression a group is built by. A group's
+    construction holds what the gates the reads found say of its elements, which
+    a frame the reader refused need not, so a refused frame is the view's
+    default; the verdict is the reader's. #}
+{% macro view_literal(fields, with_body) %}
+{% set grouped = namespace(any=false) %}
+{% for field in fields %}{% if field.view_assign_expr is defined or field.assign_expr is defined %}{% set grouped.any = true %}{% endif %}{% endfor %}
+{% if grouped.any %}
+        if cursor.failed() {
+            return Self::default();
+        }
 {% endif %}
+        Self {
+{% for field in fields %}
+{% if field.view_assign_expr is defined %}
+            {{ field.id }}: {{ field.view_assign_expr }},
+{% elif field.assign_expr is defined %}
+            {{ field.id }}: {{ field.assign_expr }},
+{% else %}
+            {{ field.id }},
+{% endif %}
+{% endfor %}
+{% if with_body %}
+            body,
+{% endif %}
+        }
+{% endmacro %}
+{#- The eager form's store of what its statements read into locals: a group
+    built in place has its arm installed already and stores in it what it did
+    not build (`assign_stmt`, empty when that is nothing); any other group is
+    built from its elements' locals once the frame is read with no refusal and
+    no value past a capacity, since its construction holds what the gates the
+    reads found say of the elements, which such a frame need not (docs/adr/0077
+    §7, docs/adr/0128); the field then keeps the value it held. #}
+{% macro eager_store(fields) %}
+{% for field in fields %}
+{% if field.assign_stmt is defined %}
+{% if field.assign_stmt %}
+        {{ field.assign_stmt }}
+{% endif %}
+{% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+{% if field.assign_expr is defined %}
+        if cursor.clean() {
+            _out.{{ field.id }} = {{ field.assign_expr }};
+        }
+{% else %}
+        _out.{{ field.id }} = {{ field.id }};
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endmacro %}
 {% if has_parent_flags %}
         // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
@@ -85,9 +139,9 @@
         // RFC §synth-5-B empty body — nothing to read; the surrounding
         // header byte (and the wire-protocol layer that demuxes it)
         // already proved this codec was selected, so return the
-        // default-constructed envelope without touching the cursor.
+        // envelope without touching the reader.
         let _ = cursor;
-        Ok(Self {})
+        Self {}
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
         // RFC §synth-5-B peek-byte / streaming-prefix:
@@ -121,29 +175,27 @@
 {% if fields %}
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_array::<{{ min_bytes }}>()?;
+        let raw = cursor.take_array::<{{ min_bytes }}>();
 {% for field in fields %}
 {{ decode_field(field, view_decode) }}
 {% endfor %}
-        cursor.advance({{ min_bytes }})?;
 {% endif %}
 {% endif %}
-        // Dispatch on the tag field; each arm decodes its body codec
-        // from the cursor. The default arm (when declared) carries the
-        // runtime tag value so encode can round-trip it back onto the
-        // wire.
-        // Each arm is installed in `_out.body` holding its body's default and
-        // that body is decoded where it sits, so no arm body is returned up
-        // through the variant wrapper.
 {# docs/adr/0072: in a build that leaves out every other arm, the variant enum
-   has one variant and the `if let` that decodes into it always matches; that
-   is a fact of the feature world, not a defect, so the lint is allowed there
-   and only for a variant that has a gated arm. #}
+   has one variant and the `if let` that reads into it always matches, as the
+   test that it holds the arm always does; that is a fact of the feature world,
+   not a defect, so the lints are allowed there and only for a variant that has
+   a gated arm. #}
 {% set gated_ns = namespace(gated=false) %}
 {% for arm in variant.arms %}{% if arm.rust_cfg %}{% set gated_ns.gated = true %}{% endif %}{% endfor %}
-        match {{ variant.tag_match_expr }} {
+{% if view_decode %}
+        // Dispatch on the tag field; each arm reads its body's view as a value
+        // from the reader and is made of it once, so no arm is installed
+        // holding a default body before its body is read (docs/adr/0128). The
+        // default arm (when declared) carries the runtime tag value so encode
+        // can round-trip it back onto the wire.
+        let body = match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-{% set arm_body = arm.view_body_type if view_decode else arm.stored_body %}
 {# docs/adr/0072: a build without the arm's feature has no such arm, and its
    decode refuses the arm's tag: the tag is one the document names, so it is
    not the catch-all's, and reading the frame as another arm's body would
@@ -151,43 +203,82 @@
 {% if arm.rust_cfg %}
             {{ arm.rust_cfg }}
 {% endif %}
+            {{ arm.value_literal }} => {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.view_body_type }}::read(cursor{{ arm.body_decode_args_after_cursor }})),
+{% if arm.rust_cfg_off %}
+            {{ arm.rust_cfg_off }}
             {{ arm.value_literal }} => {
-                _out.body = {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm_body }}::default());
+                cursor.fail(CodecError::VariantArmNotBuilt);
+                {{ decode_variant_enum }}::default()
+            }
+{% endif %}
+{% endfor %}
+{% if variant.default_arm %}
+{# docs/adr/0065 §6 R3: the arms above take every tag the document names, a
+   build that leaves an arm out refusing its tag, and the tag was read from its
+   bits, so what reaches here is a tag the default arm may hold. #}
+            other => {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
+                tag: {{ variant.unknown_tag.type_name }}(other),
+                body: {{ variant.default_arm.view_body_type }}::read(cursor{{ variant.default_arm.body_decode_args_after_cursor }}),
+            },
+{% else %}
+            // Build-time `codec/variant-arm-unreachable` proves the
+            // arm set covers the tag domain without a default.
+            _ => unreachable!("variant exhaustiveness gated by codec/variant-arm-unreachable at parse time"),
+{% endif %}
+        };
+{{ view_literal(fields, true) }}
+{% else %}
+        // Dispatch on the tag field; each arm reads its body codec from the
+        // reader where `_out.body` holds it, so no arm body is returned up
+        // through the variant wrapper (docs/adr/0049). An arm is installed,
+        // holding its body's default, only where `_out.body` holds another
+        // arm: a destination that holds the arm already, as one a caller
+        // reads frame after frame into does, is read into as it is, every
+        // field of the body written by its read (docs/adr/0128). The default
+        // arm (when declared) carries the runtime tag value so encode can
+        // round-trip it back onto the wire.
+        match {{ variant.tag_match_expr }} {
+{% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
+            {{ arm.value_literal }} => {
+{% if gated_ns.gated %}
+                #[allow(unreachable_patterns)]
+{% endif %}
+                if !matches!(_out.body, {{ decode_variant_enum }}::{{ arm.variant_name }}(_)) {
+                    _out.body = {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.stored_body }}::default());
+                }
 {% if gated_ns.gated %}
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ arm.variant_name }}(_b) = &mut _out.body {
-{% if notes_over %}
-                    ::sce_forge_runtime::codec::note_capacity({{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }}), &mut _over)?;
-{% else %}
-                    {{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }})?;
-{% endif %}
+                    {{ arm.stored_body }}::read_into(cursor, _b{{ arm.body_decode_args_after_cursor }});
                 }
             }
 {% if arm.rust_cfg_off %}
             {{ arm.rust_cfg_off }}
-            {{ arm.value_literal }} => return Err(CodecError::VariantArmNotBuilt),
+            {{ arm.value_literal }} => cursor.fail(CodecError::VariantArmNotBuilt),
 {% endif %}
 {% endfor %}
 {% if variant.default_arm %}
-{% set default_body = variant.default_arm.view_body_type if view_decode else variant.default_arm.stored_body %}
-{# docs/adr/0065 §6 R3: the arms above take every tag the document names, a
-   build that leaves an arm out refusing its tag, and the tag was read from its
-   bits, so what reaches here is a tag the default arm may hold. #}
             other => {
-                _out.body = {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
-                    tag: {{ variant.unknown_tag.type_name }}(other),
-                    body: {{ default_body }}::default(),
-                };
+{% if gated_ns.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
+                if let {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} { tag, .. } = &mut _out.body {
+                    *tag = {{ variant.unknown_tag.type_name }}(other);
+                } else {
+                    _out.body = {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
+                        tag: {{ variant.unknown_tag.type_name }}(other),
+                        body: {{ variant.default_arm.stored_body }}::default(),
+                    };
+                }
 {% if gated_ns.gated %}
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} { body: _b, .. } = &mut _out.body {
-{% if notes_over %}
-                    ::sce_forge_runtime::codec::note_capacity({{ default_body }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }}), &mut _over)?;
-{% else %}
-                    {{ default_body }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }})?;
-{% endif %}
+                    {{ variant.default_arm.stored_body }}::read_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }});
                 }
             }
 {% else %}
@@ -198,42 +289,18 @@
             _ => return Err(CodecError::UndeclaredEnumValue),
 {% endif %}
         }
-{# A group the eager decode builds in place has its arm installed already and
-   stores in it what it did not build (`assign_stmt`, empty when that is
-   nothing); any other group is built from its elements' locals, unless a
-   field was past a capacity: the locals then need not make a value of the
-   group's type, and the field keeps the one it held. #}
-{% for field in fields %}
-{% if field.assign_stmt is defined and not view_decode %}
-{% if field.assign_stmt %}
-        {{ field.assign_stmt }}
+{{ eager_store(fields) }}
 {% endif %}
-{% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
-{% if field.assign_expr is defined and notes_over %}
-        if !_over {
-            _out.{{ field.id }} = {{ field.assign_expr }};
-        }
-{% else %}
-        _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
-{% endif %}
-{% endif %}
-{% endfor %}
-{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-{% endif %}
-        Ok(())
 {% elif needs_streaming %}
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
@@ -257,46 +324,25 @@
 {% endif %}
 {% endif %}
 {% endfor %}
-{% for field in fields %}
-{% if field.assign_stmt is defined and not view_decode %}
-{% if field.assign_stmt %}
-        {{ field.assign_stmt }}
-{% endif %}
-{% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
-{% if field.assign_expr is defined and notes_over %}
-        if !_over {
-            _out.{{ field.id }} = {{ field.assign_expr }};
-        }
-{% else %}
+{% if view_decode %}
 {# A view builds the chain of a membership over its bytes (docs/adr/0065 §6 R6a). #}
-        _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
+{{ view_literal(fields, false) }}
+{% else %}
+{{ eager_store(fields) }}
 {% endif %}
-{% endif %}
-{% endfor %}
-{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-{% endif %}
-        Ok(())
 {% elif has_variable_fields %}
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
-        // cursor remaining. Codecs WITH a tail field still consume
-        // to end (tail's definition forces it). The prior
-        // "consume entire cursor" behaviour deferred to "the first
-        // multi-frame consumer" — the TLV chain is that consumer,
-        // so length-ref entry codecs now decode-iterably from a
-        // shared cursor without each entry eating the next entry's
-        // bytes.
-        let _frame_len = cursor.remaining();
-{% if min_bytes > 0 %}
-        if _frame_len < {{ min_bytes }} {
-            return Err(CodecError::NeedMoreBytes);
-        }
-{% endif %}
-        let raw = cursor.peek_slice(_frame_len)?;
+        // remaining input. Codecs WITH a tail field still consume
+        // to end (tail's definition forces it). The TLV chain is the
+        // multi-frame consumer, so length-ref entry codecs decode
+        // iterably from a shared reader without each entry eating the
+        // next entry's bytes. The fixed head is at least `min_bytes`
+        // bytes, zeros once the frame has failed (docs/adr/0128), so
+        // its reads by constant offsets below it hold on either.
+        let raw = cursor.peek_at_least::<{{ min_bytes }}>();
+        let _frame_len = raw.len();
 {% for field in fields %}
 {{ decode_field(field, view_decode) }}
 {% endfor %}
@@ -306,13 +352,14 @@
 {% endfor %}
         };
 {% if has_tail_fields %}
-        cursor.advance(_frame_len)?;
+        cursor.advance(_frame_len);
 {% else %}
-        // Stream-correct: advance only the bytes actually decoded.
+        // Stream-correct: consume only the bytes actually decoded.
         // For each length-ref field, end = byte_off + sibling local
         // value (the sibling let-binding ran before the payload's).
         // Take the max across all length-ref fields; min_bytes is the
-        // lower bound.
+        // lower bound. A frame shorter than that is refused by the
+        // consume, with `NeedMoreBytes`.
         let mut _consumed: usize = {{ min_bytes }};
 {% for field in fields %}
 {% if field.is_variable and field.bit_size_kind == "length-ref" %}
@@ -324,35 +371,22 @@
         }
 {% endif %}
 {% endfor %}
-        if _consumed > _frame_len {
-            return Err(CodecError::NeedMoreBytes);
-        }
-        cursor.advance(_consumed)?;
+        cursor.advance(_consumed);
 {% endif %}
-{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-{% endif %}
-        Ok(value)
+        value
 {% else %}
-{# The frame is a fixed count of bytes, peeked as an array: its length is in
+{# The frame is a fixed count of bytes, taken as an array: its length is in
    its type, so no read `raw[k]` below keeps a bounds check, nor a panic site
-   naming this codec's file that would keep two decodes of one body apart. #}
-        let raw = cursor.peek_array::<{{ min_bytes }}>()?;
+   naming this codec's file that would keep two decodes of one body apart. Past
+   the frame's end the array is zeros and the reader holds the refusal
+   (docs/adr/0128). #}
+        let raw = cursor.take_array::<{{ min_bytes }}>();
 {% for field in fields %}
 {{ decode_field(field, view_decode) }}
 {% endfor %}
-        let value = Self {
+        Self {
 {% for field in fields %}
             {{ field.id }},
 {% endfor %}
-        };
-        cursor.advance({{ min_bytes }})?;
-{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
         }
-{% endif %}
-        Ok(value)
 {% endif %}

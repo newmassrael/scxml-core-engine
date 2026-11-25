@@ -91,5 +91,5 @@ fn a_list_always_there_held_to_its_law_is_read_off_every_arm() {
         "= _m_links.clone().map_or(0, |_l| usize::from(_l.start()));",
     );
     assert_contains(name, &code, "let mut links: ");
-    assert_contains(name, &code, "note_capacity(links.refill_from(");
+    assert_contains(name, &code, "cursor.hold_with(|cursor| links.refill_from(");
 }

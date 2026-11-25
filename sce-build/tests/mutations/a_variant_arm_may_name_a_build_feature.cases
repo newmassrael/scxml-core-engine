@@ -66,8 +66,12 @@ edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
      r'''{% if arm.rust_cfg %}
             {{ arm.rust_cfg }}
 {% endif %}
-            {{ arm.value_literal }} => {''',
-     r'''            {{ arm.value_literal }} => {''')
+            {{ arm.value_literal }} => {
+{% if gated_ns.gated %}
+                #[allow(unreachable_patterns)]''',
+     r'''            {{ arm.value_literal }} => {
+{% if gated_ns.gated %}
+                #[allow(unreachable_patterns)]''')
 PY
 
 mutation_case "the owned variant enum drops the cfg of a gated arm" <<'PY'
@@ -215,7 +219,7 @@ mutation_case "the Rust decode does not refuse a left-out arm's tag" <<'PY'
 edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
      r'''{% if arm.rust_cfg_off %}
             {{ arm.rust_cfg_off }}
-            {{ arm.value_literal }} => return Err(CodecError::VariantArmNotBuilt),
+            {{ arm.value_literal }} => cursor.fail(CodecError::VariantArmNotBuilt),
 {% endif %}''',
      r'''''')
 PY

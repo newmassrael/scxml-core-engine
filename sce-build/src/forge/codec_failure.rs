@@ -277,7 +277,9 @@ impl CodecFailure {
 
     /// The statement a generated decode refuses its frame with for this
     /// failure, in the channel each language has for it (docs/adr/0099,
-    /// amendment of 2026-11-16): Rust's `Err`, a C11 status, a C++ and a Kotlin
+    /// amendment of 2026-11-16): the refusal recorded in a Rust decode's
+    /// reader, which says the frame's verdict once it is read (docs/adr/0128),
+    /// a C11 status, a C++ and a Kotlin
     /// `Decoded` holding the error, Go's `error`, a Python exception and a
     /// Swift typed throw. Every kind has one on every backend: a decode is
     /// refused with the kind that refused it, never with a sentinel that
@@ -285,7 +287,7 @@ impl CodecFailure {
     pub fn raise_stmt(self, lang: Language) -> String {
         let symbol = self.symbol(lang);
         match lang {
-            Language::Rust => format!("return Err({symbol});"),
+            Language::Rust => format!("cursor.fail({symbol});"),
             Language::C11 | Language::Cpp => format!("return {symbol};"),
             Language::Kotlin => format!("return Decoded.Refused({symbol})"),
             Language::Go => format!("return nil, {symbol}"),
