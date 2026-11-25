@@ -22,6 +22,7 @@ on:
       - 'docs/formal/**'
       - 'scripts/formal/**'
       - 'tools/git-hooks/spec_isolation.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -32,6 +33,7 @@ on:
       - 'docs/formal/**'
       - 'scripts/formal/**'
       - 'tools/git-hooks/spec_isolation.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -43,10 +45,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The runs in three parts, one job each, spread by the states each run
+  # records (`shard_runs` in scripts/formal/models.py, whose self-test the gate
+  # runs first holds the parts to every run once). Whole, the runs took 1042 s
+  # (job 138489726305, 2026-11-24), the largest 248 s, so three parts are
+  # about six minutes each beside a minute of Java and TLC every job pays.
   formal-models:
-    name: Formal Models
+    name: Formal Models (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
       - name: Checkout Repository
@@ -65,4 +77,6 @@ jobs:
           key: tlc-${{ hashFiles('docs/formal/models.json') }}
 
       - name: Formal models gate
+        env:
+          SCE_FORMAL_MODELS_SHARD: ${{ matrix.shard }}/3
         run: scripts/gate formal-models

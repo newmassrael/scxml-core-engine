@@ -26,8 +26,18 @@ python3 scripts/formal/models.py --self-test \
 python3 tools/git-hooks/spec_isolation.py --self-test \
     || sce_gate_fail "the judge of what changes a check is wrong (tools/git-hooks/spec_isolation.py --self-test)"
 
+# In parts (ADR 0120, D3): when SCE_FORMAL_MODELS_SHARD names `k/N`, as the
+# lane's jobs and a landing's units do, the k-th part of the runs, spread by
+# their recorded weight (`shard_runs` in models.py, whose self-test above holds
+# the parts to every run once). Unset, every run. Whole, the runs took 1042 s on
+# a hosted runner (job 138489726305, 2026-11-24).
+SHARD_ARGS=()
+if [[ -n "${SCE_FORMAL_MODELS_SHARD:-}" ]]; then
+    SHARD_ARGS=(--shard "$SCE_FORMAL_MODELS_SHARD")
+fi
+
 status=0
-python3 scripts/formal/models.py || status=$?
+python3 scripts/formal/models.py ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"} || status=$?
 case "$status" in
     0) ;;
     3) sce_gate_cannot_run "no Java or no TLC for the models" ;;

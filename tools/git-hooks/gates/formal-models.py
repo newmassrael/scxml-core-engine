@@ -14,7 +14,14 @@
 {
     "workflows": ["formal-models.yml"],
     "runner_workflow": True,
-    "extra": ["docs/formal/**", "scripts/formal/**", "tools/git-hooks/spec_isolation.py"],
+    # Its runs are spread over the lane's three jobs when SCE_FORMAL_MODELS_SHARD
+    # names `k/N` (`shard_runs` in scripts/formal/models.py): whole, they took
+    # 1042 s on a hosted runner (job 138489726305). A plan makes one unit per
+    # part (`shard_count`).
+    "shard_env": "SCE_FORMAL_MODELS_SHARD",
+    # The spreading is `scripts/lib/ctest_shards.py`'s, which models.py imports.
+    "extra": ["docs/formal/**", "scripts/formal/**", "tools/git-hooks/spec_isolation.py",
+              "scripts/lib/ctest_shards.py"],
     "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
                "states), which takes minutes of a push that has five for everything. "
                "formal-models.yml runs it on every change to a model or its judge.",

@@ -34,7 +34,11 @@
 # holding run checks has a run that shows it can fail. Exit 1 is a
 # verdict about the models, exit 3 is "could not run" (no Java, no TLC).
 #
-# Usage: models.py [--self-test | --record] [--only <module>] [--workers N]
+# In shards (ADR 0120, D3), `--shard k/N` checks the k-th of N parts of the runs,
+# spread by their recorded weight (`shard_runs`); every part checks the manifest
+# whole, and the parts are every run once.
+#
+# Usage: models.py [--self-test | --record] [--only <module> | --shard k/N] [--workers N]
 
 from __future__ import annotations
 
@@ -441,19 +445,73 @@ def possible_judged(run: dict, possible: bool) -> str | None:
     return f"{run['possible']} is {'always' if possible else 'not always'} possible"
 
 
-def check(only: str | None, workers: str, record: bool) -> int:
+def ctest_shards_module():
+    """`scripts/lib/ctest_shards.py`, whose spreading of units over shards the
+    sharded lanes share."""
+    lib = str(ROOT / "scripts" / "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import ctest_shards  # noqa: E402  (the path above is what finds it)
+    return ctest_shards
+
+
+def shard_spec(text: str) -> tuple[int, int]:
+    return ctest_shards_module().shard_arg(text)
+
+
+def shard_runs(manifest: dict, count: int) -> list[list[tuple[str, str]]]:
+    """The runs of each of `count` shards, as (module, configuration) pairs.
+
+    Spread by `scripts/lib/ctest_shards.py`'s rule: heaviest first, each to the
+    shard whose load after taking it is least. A holding run weighs the distinct
+    states its configuration records, in thousands, once more for each second
+    pass over the same states (a promise, a graph for what must stay possible);
+    a run that violates stops at its first violation and weighs one. Measured on
+    job 138489726305 (2026-11-24): a holding run's time followed its count,
+    Principals.cfg 248 s for 8.7 million states and its promise, and
+    BroadcastLog_r1.cfg 116 s for 15.4 million states alone.
+    """
+    if count < 1:
+        raise Problem(f"a plan of {count} shard(s)")
+    shards = ctest_shards_module()
+    units = []
+    for model in manifest["models"]:
+        for run in model["runs"]:
+            key = f"{model['module']}/{run['config']}"
+            weight = 1
+            if run["expect"] == "holds":
+                weight = max(1, int(run.get("states", 0)) // 1000)
+                weight *= 1 + ("promise" in run) + ("possible" in run)
+            unit = shards.Unit([key])
+            unit.closure = frozenset(f"{key}#{n}" for n in range(weight))
+            units.append(unit)
+    parts = []
+    for part in shards.assign(units, count):
+        parts.append([tuple(unit.name.split("/", 1)) for unit in part])
+    return parts
+
+
+def check(only: str | None, workers: str, record: bool,
+          shard: tuple[int, int] | None = None) -> int:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     problems = declared(manifest, FORMAL)
     if problems and not record:
         for line in problems:
             print(f"models.py: {line}", file=sys.stderr)
         return 1
+    mine = None
+    if shard is not None:
+        index, count = shard
+        mine = set(shard_runs(manifest, count)[index - 1])
+        print(f"models.py: shard {index} of {count}, {len(mine)} run(s)", flush=True)
     jar = tlc_jar(manifest)
     failed = 0
     for model in manifest["models"]:
         if only and model["module"] != only:
             continue
         for run in model["runs"]:
+            if mine is not None and (model["module"], run["config"]) not in mine:
+                continue
             status, output = run_tlc(jar, model["module"], run["config"], workers)
             if record and run["expect"] == "holds":
                 counts = re.findall(r"(\d+) distinct states found", output)
@@ -704,19 +762,45 @@ class SelfTest(unittest.TestCase):
         self.assertIsNotNone(judged(run, 0, "7 distinct states found"))
         self.assertIsNotNone(judged(run, 150, "parse error"))
 
+    def test_the_shards_are_every_run_once(self) -> None:
+        manifest = {"models": [
+            {"module": "A", "runs": [
+                {"config": "A.cfg", "expect": "holds", "states": 9000, "promise": "kept"},
+                {"config": "A_without.cfg", "expect": "violates", "invariant": "Safe"}]},
+            {"module": "B", "runs": [
+                {"config": "B.cfg", "expect": "holds", "states": 4000},
+                {"config": "B_live.cfg", "expect": "holds", "states": 3000},
+                {"config": "B_without.cfg", "expect": "violates", "invariant": "Safe"}]},
+        ]}
+        every = sorted((m["module"], r["config"]) for m in manifest["models"] for r in m["runs"])
+        for count in (1, 2, 3, 6):
+            parts = shard_runs(manifest, count)
+            self.assertEqual(len(parts), count)
+            self.assertEqual(sorted(run for part in parts for run in part), every, count)
+            self.assertEqual(parts, shard_runs(manifest, count), "the same manifest, another plan")
+        # A.cfg weighs its 9000 states twice, more than the rest together.
+        heaviest = next(part for part in shard_runs(manifest, 2) if ("A", "A.cfg") in part)
+        self.assertEqual(heaviest, [("A", "A.cfg")])
+        with self.assertRaises(Problem):
+            shard_runs(manifest, 0)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check the TLA+ models as docs/formal/models.json declares them.")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--record", action="store_true", help="write the state counts TLC found into the manifest")
     parser.add_argument("--only", help="check one module")
+    parser.add_argument("--shard", type=shard_spec,
+                        help="k/N: check the k-th of N parts of the runs (`shard_runs`)")
     parser.add_argument("--workers", default="auto")
     args = parser.parse_args()
     if args.self_test:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(SelfTest)
         return 0 if unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful() else 1
+    if args.shard and (args.only or args.record):
+        parser.error("--shard checks a part of every module's runs; it takes no --only or --record")
     try:
-        return check(args.only, args.workers, args.record)
+        return check(args.only, args.workers, args.record, args.shard)
     except CannotRun as error:
         print(f"models.py: cannot run: {error}", file=sys.stderr)
         return EXIT_CANNOT_RUN
