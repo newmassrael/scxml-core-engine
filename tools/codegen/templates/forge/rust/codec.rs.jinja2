@@ -395,9 +395,13 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// receives `NeedMoreBytes` reads the frame again from the same place once
     /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError>{{ decode_where }} {
+{% if decode_in_place %}
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out{{ decode_forward_args_with_comma }})?;
         Ok(_out)
+{% else %}
+        cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }}))
+{% endif %}
     }
 
     /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
@@ -739,10 +743,10 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
     /// errors of [`{{ value_type }}::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes; on a refusal it does not move.
+    /// The view is the value its read builds, answered as it is: no default of
+    /// it is made first and copied over (docs/adr/0137).
     pub fn decode(cursor: &mut SceCursor<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
-        let mut _out = Self::default();
-        Self::decode_into(cursor, &mut _out{{ decode_forward_args_with_comma }})?;
-        Ok(_out)
+        cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }}))
     }
 
     /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`

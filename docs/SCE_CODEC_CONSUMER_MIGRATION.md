@@ -4077,3 +4077,24 @@ change; a consumer regenerates its Rust codecs. No frame decodes differently.
   every read of a frame inlined into one function generates with `generate --inline-decode`
   (`ForgeCompileOptions::inline_decode`), which marks them `#[inline(always)]`, and measures the image before keeping
   it.
+
+## A Rust body read is out of line only where its set reads it twice (ADR 0137)
+
+Landing: the commits that add this section. The Rust codec goldens and every committed tree of generated Rust codecs
+change; a consumer regenerates its Rust codecs. No frame decodes differently.
+
+- **The function that reads a codec's body carries `#[inline(never)]` only where the generated set reads the body
+  from two sites or more**, and no attribute where it reads it from one, which leaves it to the compiler. The set is
+  counted where it is generated: `generate --with-imports` counts the documents it walks. A build that generates its
+  codecs one document at a time counts its set once with
+  `sce_build::forge::body_reads::BodyReadSites::of_documents(&documents, &include_dirs, |_| views)` and sets the
+  answer as `ForgeCompileOptions::body_reads` on each generation; without it, no body read carries the attribute,
+  and a body several codecs embed is the compiler's to copy. `--inline-decode` still marks every body read
+  `#[inline(always)]`.
+- **A view's `decode`, and an eager codec's built as a value, is `cursor.read_frame(|cursor| Self::read(cursor))`**:
+  no default is built first. Nothing a consumer calls changes.
+- **`SceCursor::read_frame` answers what its read returns**, `Result<T, CodecError>`. A call written by hand whose
+  closure returns `()` compiles as before; one that kept a value in a captured local can return it instead.
+- A build that measures its size or its stack reads them again after it moves its pin: the refusal of a read is a
+  call of `SceReader::fail`, a ZInt longer than a byte a call of the reader's one longer read, and every decode's
+  verdict one function of the runtime.

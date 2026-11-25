@@ -7,6 +7,11 @@
 //! (docs/adr/0137). The sites are counted once, from the set's import graph
 //! (`BodyReadSites::count`), and the eager read and the view's are two functions,
 //! each read from its own sites; `inline_decode` asks every body read inlined.
+//!
+//! A decode is a thin call: a view's decode answers the view its read builds,
+//! with no default of it made first, and an eager codec built as a value does
+//! the same; the verdict and the move of the cursor are one function of the
+//! runtime for every codec, which the runtime's tests hold.
 
 use std::path::PathBuf;
 
@@ -111,6 +116,15 @@ fn view_body_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
         .into_iter()
         .find(|(_, body)| reads_the_body(body) && is_view_read(body))
         .unwrap_or_else(|| panic!("{name} has a view body read:\n{code}"))
+}
+
+/// The statements of `body` after its signature.
+fn statements(body: &str) -> Vec<&str> {
+    body.lines()
+        .skip(1)
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// Each arm and default arm of a variant, and each embedded body, is one site;
@@ -261,4 +275,61 @@ fn inline_decode_inlines_every_body_read_whatever_its_sites() {
             );
         }
     }
+}
+
+/// A view's decode answers the view its read builds, as one read of the frame:
+/// no default of the view is made first and copied over.
+#[test]
+fn a_views_decode_answers_the_view_its_read_builds() {
+    let options = ForgeCompileOptions {
+        views: true,
+        ..ForgeCompileOptions::default()
+    };
+    for name in ["codec_zenoh_ext_entry", "codec_zenoh_oam"] {
+        let code = rust_with(name, &options);
+        let decode = methods(&code, "decode")
+            .into_iter()
+            .map(|(_, body)| body)
+            .find(|body| body.starts_with("    pub fn decode(cursor: &mut SceCursor<"))
+            .unwrap_or_else(|| panic!("{name} has a view decode:\n{code}"));
+        assert_eq!(
+            statements(decode),
+            ["cursor.read_frame(|cursor| Self::read(cursor))"],
+            "{name}'s view decode is more than the read of its frame:\n{decode}"
+        );
+    }
+}
+
+/// An eager codec built as a value decodes as its view does, answering the
+/// value its read builds; one that reads into its destination decodes into a
+/// default of itself, which its lists are built in.
+#[test]
+fn an_eager_decode_of_a_value_answers_the_value_its_read_builds() {
+    let code = rust_with("codec_simple_frame", &ForgeCompileOptions::default());
+    let decode = methods(&code, "decode")
+        .into_iter()
+        .map(|(_, body)| body)
+        .next()
+        .unwrap_or_else(|| panic!("codec_simple_frame has a decode:\n{code}"));
+    let said = statements(decode);
+    assert_eq!(
+        said.len(),
+        1,
+        "codec_simple_frame's decode is more than the read of its frame:\n{decode}"
+    );
+    assert!(
+        said[0].starts_with("cursor.read_frame(|cursor| Self::read(cursor"),
+        "codec_simple_frame's decode does not answer the value its read builds:\n{decode}"
+    );
+
+    let code = rust_with("codec_zenoh_ext_entry", &ForgeCompileOptions::default());
+    let decode = methods(&code, "decode")
+        .into_iter()
+        .map(|(_, body)| body)
+        .next()
+        .unwrap_or_else(|| panic!("codec_zenoh_ext_entry has a decode:\n{code}"));
+    assert!(
+        decode.contains("let mut _out = Self::default();"),
+        "codec_zenoh_ext_entry's decode does not read into a destination:\n{decode}"
+    );
 }
