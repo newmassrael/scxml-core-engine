@@ -618,6 +618,11 @@ pub struct Action {
     /// statement itself instead, with the exit written in it
     /// ([`crate::forge::static_lowering::StaticTarget::receiving_statement`]),
     /// and its dispatcher does not read this.
+    ///
+    /// `false` exactly where the build proved the statement cannot fail
+    /// (docs/adr/0133), and then `native_code` holds no error path at all.
+    /// Read through [`Self::statement_can_fail`] by every reader that counts
+    /// what a statement raises.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_fails: bool,
@@ -1068,6 +1073,16 @@ impl<'a> NestedBlock<'a> {
 }
 
 impl Action {
+    /// Whether the statement the static lowering wrote for this action can fail
+    /// and raise `error.execution` (docs/adr/0133): the one classification the
+    /// lowering made of it, which [`Self::native_fails`] holds beside the
+    /// statement it describes, so the internal queue bound
+    /// ([`crate::internal_queue_bound`]) counts exactly the error paths each
+    /// backend's dispatcher prints. `false` for an action no lowering wrote.
+    pub fn statement_can_fail(&self) -> bool {
+        !self.native_code.is_empty() && self.native_fails
+    }
+
     /// Whether this `<if>`'s condition is emitted as backend code — the
     /// [`Transition::guard_is_native`] question for the `<if>` door, where the
     /// lowered slot is [`native_cond`](Self::native_cond).

@@ -70,8 +70,11 @@
 //! - `actions/assign.rs.jinja2`, `actions/log.rs.jinja2`,
 //!   `actions/sce_append.rs.jinja2` through `actions/_native_statement.rs.jinja2`:
 //!   `error.execution` for a statement the static lowering marks
-//!   `native_fails`, which ends the block; both profiles. One per block at
-//!   most, since the first error ends it.
+//!   `native_fails` ([`Action::statement_can_fail`]), which ends the block;
+//!   both profiles. One per block at most, since the first error ends it. The
+//!   lowering marks exactly the statements the build did not prove total
+//!   (docs/adr/0133): one whose every operation and store the declared types
+//!   prove cannot fail has no error path, and is counted as raising nothing.
 //! - `actions/cancel.rs.jinja2`: `error.execution` for a `native_sendid_fails`
 //!   id, ending the block. Counted as a statement that fails.
 //! - `actions/if.rs.jinja2`: `error.execution` for each condition that fails
@@ -483,7 +486,7 @@ impl<'m> Analysis<'m> {
             // may be absent (D12 rule 3).
             "assign" | "log" | "sce_append" | "sce_render" | "sce_put" | "sce_remove"
             | "sce_clear" => {
-                if !action.native_code.is_empty() && action.native_fails {
+                if action.statement_can_fail() {
                     Ok(Cost::ending(self.execution_error()))
                 } else {
                     Ok(Cost::NONE)
@@ -565,7 +568,7 @@ impl<'m> Analysis<'m> {
         // A loop over a place held at a key of a map that a lowering opens by
         // reading the place may fail there, a key on the way absent, raising its
         // error and running no loop (docs/adr/0108, D12 rules 3 and 8).
-        let opening = if !action.native_code.is_empty() && action.native_fails {
+        let opening = if action.statement_can_fail() {
             self.execution_error()
         } else {
             0

@@ -36,8 +36,8 @@ PY
 # A statement the static lowering marks as one that can fail raises nothing.
 mutation_case "a failing statement is not counted" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''                if !action.native_code.is_empty() && action.native_fails {''',
-     r'''                if !action.native_code.is_empty() && action.native_fails && false {''')
+     r'''                if action.statement_can_fail() {''',
+     r'''                if action.statement_can_fail() && false {''')
 PY
 
 # Every failing statement of a block is counted, as if the first error did not
