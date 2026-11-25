@@ -120,31 +120,38 @@ fn a_view_hands_its_hook_to_every_body_it_reads() {
 }
 
 /// A chain's scan shows each entry to the hook right after it is read, named by
-/// the codec that declares the chain and the chain's field.
+/// the codec that declares the chain and the chain's field. The scan is the
+/// runtime's `walk_chain` (docs/adr/0136), handed the view's hook and the site;
+/// that it shows each entry right after its read, before the next is read, is
+/// held by its unit tests (`chain::tests::a_scan_shows_each_entry_to_its_hook_as_it_is_read`).
 #[test]
 fn a_chain_scan_shows_each_entry_to_the_hook_by_its_site() {
     let code = rust_of("codec_zenoh_oam");
-    let shown = "::sce_forge_runtime::codec::show_entry(cursor, _hook, \
-                 ::sce_forge_runtime::codec::ChainSite { codec: \"codec_zenoh_oam\", \
-                 field: \"extensions\" }, _at);";
-    let at = code
-        .find(shown)
-        .unwrap_or_else(|| panic!("the OAM chain shows no entry to its hook:\n{code}"));
-    let before = &code[..at];
-    let mark = before
-        .rfind("let _at = cursor.mark();")
-        .expect("the entry's start is marked before it is read");
-    let read = before
-        .rfind("CodecZenohExtEntryView::read_with(cursor, _hook)")
-        .expect("the entry is read with the hook");
-    assert!(mark < read, "the mark is taken after the entry is read");
-    // The walk reads entries the scan has shown already, and shows none again.
-    for walk in code.match_indices("fn read<'b>(_r: &mut SceReader<'b>") {
+    let flat = code.split_whitespace().collect::<Vec<_>>().join(" ");
+    let scanned = "::sce_forge_runtime::codec::walk_chain::<\
+                   super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, _, 0>(cursor, _hook, \
+                   ::sce_forge_runtime::codec::ChainScan { \
+                   site: ::sce_forge_runtime::codec::ChainSite { codec: \"codec_zenoh_oam\", \
+                   field: \"extensions\" },";
+    assert!(
+        flat.contains(scanned),
+        "the OAM chain is not scanned with the view's hook by its site:\n{code}"
+    );
+    // The walk hands the entry the hook it is given: the scan's, while the scan
+    // reads it, and `()` in a walk of the list, which shows no entry again. It
+    // names no hook of the view's own.
+    let walks: Vec<(usize, &str)> = code
+        .match_indices(
+            "fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>",
+        )
+        .collect();
+    assert!(!walks.is_empty(), "the OAM view has no walk:\n{code}");
+    for walk in walks {
         let body = &code[walk.0..];
         let body = &body[..body.find("\n    }\n").expect("the walk's read closes")];
         assert!(
-            !body.contains("_hook"),
-            "a walk shows an entry again:\n{body}"
+            !body.contains("_hook") && body.contains(", _h)"),
+            "a walk reads its entry with another hook than the one it is handed:\n{body}"
         );
     }
 }

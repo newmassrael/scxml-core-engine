@@ -23,6 +23,7 @@ use core::fmt;
 use core::marker::PhantomData;
 
 use crate::reader::SceReader;
+use crate::records::ChainHook;
 
 /// How the entries of one list are read: what a walk decodes each entry with, and
 /// how it updates the values it carries from one entry to the next.
@@ -44,8 +45,22 @@ pub trait ListWalk<const K: usize> {
     /// Read one entry from `reader` given the current values `args`: what the
     /// parent threads to every entry, and what a chain carried from the entry
     /// before. The read is total (docs/adr/0128): a refusal is recorded in
-    /// `reader`, and the entry read with it is not one the walk yields.
-    fn read<'b>(reader: &mut SceReader<'b>, args: &[u8; K]) -> Self::Entry<'b>;
+    /// `reader`, and the entry read with it is not one the walk yields. Each
+    /// chain the entry holds is shown to `hook` as its entries are read
+    /// (docs/adr/0130): the scan of a chain reads its entries here, with the
+    /// hook of the view it reads (`crate::chain::walk_chain`, docs/adr/0136).
+    fn read_with<'b, H: ChainHook>(
+        reader: &mut SceReader<'b>,
+        args: &[u8; K],
+        hook: &mut H,
+    ) -> Self::Entry<'b>;
+
+    /// [`Self::read_with`] admitting every chain entry: how a walk of a list
+    /// reads an entry the scan has shown already, so a walk shows none again.
+    #[inline(always)]
+    fn read<'b>(reader: &mut SceReader<'b>, args: &[u8; K]) -> Self::Entry<'b> {
+        Self::read_with(reader, args, &mut ())
+    }
 
     /// Update the carried values from the entry just read, so that a walk
     /// rebuilds the values the scan saw.
@@ -350,7 +365,7 @@ mod tests {
     impl ListWalk<1> for Walk {
         type Entry<'b> = Entry;
 
-        fn read<'b>(r: &mut SceReader<'b>, a: &[u8; 1]) -> Entry {
+        fn read_with<'b, H: ChainHook>(r: &mut SceReader<'b>, a: &[u8; 1], _: &mut H) -> Entry {
             let head = r.take_array::<1>()[0];
             let extra = if head & 1 == 1 {
                 Some(r.take_array::<1>()[0])
@@ -382,7 +397,7 @@ mod tests {
     impl ListWalk<0> for BorrowedWalk {
         type Entry<'b> = &'b [u8];
 
-        fn read<'b>(r: &mut SceReader<'b>, _: &[u8; 0]) -> &'b [u8] {
+        fn read_with<'b, H: ChainHook>(r: &mut SceReader<'b>, _: &[u8; 0], _: &mut H) -> &'b [u8] {
             r.take_slice(1)
         }
 
@@ -448,7 +463,7 @@ mod tests {
     impl ListWalk<0> for CountingWalk {
         type Entry<'b> = u8;
 
-        fn read<'b>(r: &mut SceReader<'b>, _: &[u8; 0]) -> u8 {
+        fn read_with<'b, H: ChainHook>(r: &mut SceReader<'b>, _: &[u8; 0], _: &mut H) -> u8 {
             DECODED.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
             r.take_array::<1>()[0]
         }
@@ -551,7 +566,7 @@ mod tests {
     impl ListWalk<1> for WideWalk {
         type Entry<'b> = [u8; 512];
 
-        fn read<'b>(_: &mut SceReader<'b>, _: &[u8; 1]) -> [u8; 512] {
+        fn read_with<'b, H: ChainHook>(_: &mut SceReader<'b>, _: &[u8; 1], _: &mut H) -> [u8; 512] {
             [0; 512]
         }
 

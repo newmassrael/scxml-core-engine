@@ -3065,7 +3065,7 @@ fn forge_views_a_list_of_an_entry_with_inputs_shares_its_walk_rust() {
         "codec_chain_flag_entry's walk does not take its one input:\n{entry}"
     );
     assert!(
-        entry.contains("CodecChainFlagEntryView::read(_r, _a[0])"),
+        entry.contains("CodecChainFlagEntryView::read_with(_r, _a[0], _h)"),
         "codec_chain_flag_entry's walk does not hand its input over:\n{entry}"
     );
 }

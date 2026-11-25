@@ -4050,3 +4050,18 @@ regenerates every Rust machine it generates.
   first time it runs.
 - **A hand-written `helpers::microstep::Behaviour`** needs nothing: `guard_holds` is a new provided method, which the
   runtime asks only of tables that carry rows.
+
+## A Rust chain is read by one routine of the runtime (ADR 0136)
+
+Landing: the commits that add this section. The Rust codec goldens and every committed tree of generated Rust codecs
+change; a consumer regenerates its Rust codecs. No frame decodes differently.
+
+- **A generated decode reads each `<sce:tlv-chain>` by `codec::read_chain_into`**, and a view scans it by
+  `codec::walk_chain`: one out-of-line function of the runtime for each type of entry and list, where each codec held
+  a loop of its own. Nothing a consumer calls changes. A build that measures its size reads it again after it moves
+  its pin.
+- **`ListWalk` is implemented by `read_with`**: `fn read_with<'b, H: ChainHook>(reader: &mut SceReader<'b>, args:
+  &[u8; K], hook: &mut H) -> Self::Entry<'b>` is the required method, and `read` is provided (`read_with` with
+  `()`). A walk written by hand outside the tree fails with `E0046` (missing `read_with`): rename its `read` to
+  `read_with`, add the `hook` parameter, and hand it to the entry's own `read_with` where the entry holds a chain.
+  A `read` kept beside it overrides the provided one, which a walk of the list calls and the scan of a chain does not.

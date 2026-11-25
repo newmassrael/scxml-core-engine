@@ -183,7 +183,10 @@ pub(super) fn entry_walk_item(struct_name: &str, view_borrowed: bool, inputs: us
 /// invariant in that lifetime, so a view decoded from a long-lived buffer could not be lent for a
 /// shorter time. The entry is `Entry<'b>` for the reader's `'b` here, as a generic associated type
 /// says and a function pointer cannot. The read is the entry view's total read (docs/adr/0128),
-/// inlined into the walk, so a walk tests no refusal field by field.
+/// inlined into the walk, so a walk tests no refusal field by field. It hands the entry the hook
+/// it is given (`read_with`, docs/adr/0130): the scan of a chain reads its entries through the walk
+/// with the view's hook (`walk_chain`, docs/adr/0136), and a walk of the list reads them with
+/// `()`, so it shows no entry again.
 ///
 /// `entry` is the entry's view as a path for a call (`{Entry}View`), `entry_ty` as a type with the
 /// lifetime `'b` where it carries one, and `inputs` how many flag inputs its decode takes, each
@@ -206,8 +209,8 @@ pub(super) fn walk_item(
              type Entry<'b> = {entry_ty};\n\
          \n    \
              #[inline(always)]\n    \
-             fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}]) -> Self::Entry<'b> {{\n        \
-                 {entry}::read(_r{call_args})\n    \
+             fn read_with<'b, H: {RUNTIME_CODEC}::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}], _h: &mut H) -> Self::Entry<'b> {{\n        \
+                 {entry}::read_with(_r{call_args}, _h)\n    \
              }}\n\
          \n    \
              fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{ {advance} }}\n\
@@ -235,6 +238,17 @@ impl ViewList<'_> {
         codec_field_decode_local(&self.field.id, crate::generator::Language::Rust)
     }
 
+    /// The values a walk of the list starts with, joined: what the parent fixes
+    /// for every entry, and 0 for what a chain carries from one entry to the
+    /// next, which is 0 before the first entry (`ChainEntryBinds::decls`).
+    fn start_args(&self) -> String {
+        self.inputs
+            .iter()
+            .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// The statement that makes the field's value from what the scan counted.
     ///
     /// `args` are what the walk starts with: what the parent fixes for every
@@ -252,13 +266,7 @@ impl ViewList<'_> {
     /// `Result` the field's value settles in the frame's reader
     /// ([`Self::value`]).
     fn build(&self) -> String {
-        let args = self
-            .inputs
-            .iter()
-            .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let list = format!("ListView::new(_rest, _count, [{args}])");
+        let list = format!("ListView::new(_rest, _count, [{}])", self.start_args());
         // An always-present list of one entry or more is its first entry and
         // the list after it (`list_type`); the scan has read that first entry.
         let bounded = if self.field.present_if.is_none()
@@ -303,14 +311,16 @@ impl ViewList<'_> {
 const SCAN_OPEN: &str = "let _rest = cursor.rest();\n            \
                          let mut _count: u32 = 0;";
 
-/// What the scan of any list does after it reads an entry: count it, where it
-/// was read whole. An entry whose read recorded a refusal is the zeros a total
-/// read returns (docs/adr/0128), and the walk, which reads the span again from
-/// its first entry, stops at it, so a count that held it would be one the walk
-/// never reaches: a list whose entries disagree with its count, which a walk of
-/// it refuses to be (docs/adr/0061 §3). The frame is refused all the same; the
-/// count is the entries a walk of it yields, so whatever the decode derives
-/// from the list after the refusal (a gate on its entries) walks it whole.
+/// What the scan of a repeat does after it reads an entry: count it, where it
+/// was read whole, the rule the runtime's scan of a chain counts by too
+/// (`walk_chain`, docs/adr/0136). An entry whose read recorded a refusal is
+/// the zeros a total read returns (docs/adr/0128), and the walk, which reads
+/// the span again from its first entry, stops at it, so a count that held it
+/// would be one the walk never reaches: a list whose entries disagree with its
+/// count, which a walk of it refuses to be (docs/adr/0061 §3). The frame is
+/// refused all the same; the count is the entries a walk of it yields, so
+/// whatever the decode derives from the list after the refusal (a gate on its
+/// entries) walks it whole.
 const SCAN_COUNT: &str = "_count += u32::from(!cursor.failed());";
 
 /// A `<sce:repeat>` field of a view: decode `count` or until-EOF entries, each
@@ -433,89 +443,63 @@ pub(super) struct ViewChain<'a> {
     /// The document name of the codec that declares the chain, which the
     /// chain hook is told with each entry (docs/adr/0130).
     pub codec: &'a str,
-    /// The flag-inputs the chain supplies entry by entry.
-    pub entry_binds: &'a ChainEntryBinds,
+    /// The list's walk ([`list_walk`]): how the scan reads an entry and what it
+    /// carries from one entry to the next, as a walk of the list does.
+    pub walk: &'a str,
     /// The chain's depth, `None` where the protocol states none.
     pub max_depth: Option<u32>,
     pub terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
 }
 
-/// A `<sce:tlv-chain>` field of a view: the loop of the eager decode, with the
-/// push that keeps the entry replaced by a count. Every check the eager loop
-/// makes is made here, in the same order: the entry's own decode, the flag
-/// that ends the chain, and the guard after the loop that tells a chain cut
-/// short from one that ran past `max-depth` (`tlv_chain_guard`).
+/// A `<sce:tlv-chain>` field of a view: one call of the runtime's `walk_chain`
+/// (docs/adr/0136), the scan every chain of a view read by one walk shares. It
+/// makes every check the eager decode makes, in the same order: the entry's own
+/// read, the flag that ends the chain, and the guards after the loop that tell a
+/// chain cut short from one that ran past `max-depth` (`tlv_chain_guard`). Each
+/// entry is shown to the view's hook right after it is read (docs/adr/0130), and
+/// counted only where its read was whole, so the count is the entries a walk of
+/// the list yields.
 ///
-/// The values an `entry-flag-bind` carries are kept in the locals the loop
-/// declares, as in the eager decode; the walk keeps them in the list's
-/// arguments, rewritten by the closure `advance`, which makes the same test.
+/// The values an `entry-flag-bind` carries are rewritten by the list's walk
+/// (`ListWalk::advance`, [`chain_advance`]), the scan's and every later walk's
+/// alike, from the values the list starts with ([`ViewList::start_args`]).
 pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> String {
     use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
-    let lang = Language::Rust;
     let field = list.field;
     let id = list.id();
-    let entry = list.entry;
-    let decode_arg = list.decode_arg;
     let ViewChain {
         codec,
-        entry_binds,
+        walk,
         max_depth,
         terminate_on,
-    } = chain;
-    let entry_flag_acc = match terminate_on {
-        TlvTerminateStrategy::ExhaustOrDepth => None,
-        TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
+    } = *chain;
+    let end = match terminate_on {
+        TlvTerminateStrategy::ExhaustOrDepth => format!("{RUNTIME_CODEC}::ChainEnd::Frame"),
+        TlvTerminateStrategy::EntryFlag { flag_name } => format!(
+            "{RUNTIME_CODEC}::ChainEnd::Flag(|_e| _e.{}())",
+            flag_getter_name(flag_name, Language::Rust)
+        ),
     };
-    let overflow_check =
-        tlv_chain_guard(lang, entry_flag_acc.is_some(), *max_depth, "            ");
-    let indent = "                ";
-    // The loop is left where the frame has failed (docs/adr/0128).
-    let mut lines = vec!["if cursor.failed() { break; }".to_string()];
-    lines.extend(chain_end_of_frame_stop(
-        &entry_flag_acc,
-        "if cursor.remaining() == 0 { break; }",
-    ));
-    // Each entry is shown to the chain hook right after it is read, as the
-    // bytes it occupies, and what the hook refuses is the frame's refusal
-    // (docs/adr/0130); the entry's own body reads with the same hook.
-    lines.push("let _at = cursor.mark();".to_string());
-    // The entry is bound to a local when the loop reads something off it: the
-    // flag that ends the chain, the identifier a per-entry flag-input is
-    // waiting for.
-    if entry_flag_acc.is_some() || !entry_binds.is_empty() {
-        lines.push(format!(
-            "let _entry = {entry}::read_with(cursor{decode_arg}, _hook);"
-        ));
-    } else {
-        lines.push(format!("{entry}::read_with(cursor{decode_arg}, _hook);"));
-    }
-    lines.push(format!(
-        "{RUNTIME_CODEC}::show_entry(cursor, _hook, {RUNTIME_CODEC}::ChainSite {{ codec: \"{codec}\", field: \"{field_id}\" }}, _at);",
-        field_id = field.id
-    ));
-    if let Some(acc) = &entry_flag_acc {
-        lines.push(format!("_more = _entry.{acc}();"));
-    }
-    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
-    lines.push(SCAN_COUNT.to_string());
-    if entry_flag_acc.is_some() {
-        lines.push("if !_more { break; }".to_string());
-    }
-    let body = chain_loop_body(indent, Some("            "), &lines);
-    let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
-    let loop_head = chain_loop_head(lang, *max_depth);
+    let depth = max_depth.map_or_else(|| "None".to_string(), |depth| format!("Some({depth})"));
     let value = list.value();
     let scan = format!(
-        "{SCAN_OPEN}\n            \
-         {more_decl}{loop_head}\n{body}\
-         }}{overflow_check}\n            \
-         _out.{id} = {value};"
+        "let _rest = cursor.rest();\n            \
+         let _count = {RUNTIME_CODEC}::walk_chain::<{walk}, _, {inputs}>(cursor, _hook, {RUNTIME_CODEC}::ChainScan {{\n                \
+             site: {RUNTIME_CODEC}::ChainSite {{ codec: \"{codec}\", field: \"{field_id}\" }},\n                \
+             args: [{args}],\n                \
+             depth: {depth},\n                \
+             end: {end},\n            \
+         }});\n            \
+         _out.{id} = {value};",
+        inputs = list.inputs.len(),
+        args = list.start_args(),
+        field_id = field.id,
     );
     match &field.present_if {
         None => format!("{{\n            {scan}\n        }}"),
         Some(pred) => {
-            let test = present_if_test_literal(list.fields, pred, lang);
+            let test = present_if_test_literal(list.fields, pred, Language::Rust);
             format!(
                 "if {test} {{\n            {scan}\n        }} else {{\n            \
                      _out.{id} = None;\n        \

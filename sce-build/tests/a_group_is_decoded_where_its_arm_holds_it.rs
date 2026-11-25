@@ -321,7 +321,13 @@ fn a_decode_past_a_capacity_reads_its_frame_once() {
         "push_keeping(_vec, _entry, &[], &mut _full);",
     );
     assert_contains("codec_repeat_unconditional_count", &body, "if _full {");
-    // A chain notes the kinds its gates ask for of every entry it read.
+    // A chain notes the kinds its gates ask for of every entry it read, in the
+    // list the runtime's read of the chain is handed (docs/adr/0136).
     let body = eager_decode("codec_chain_has_envelope");
-    assert_contains("codec_chain_has_envelope", &body, "_found_extensions_2 |= ");
+    assert_contains(
+        "codec_chain_has_envelope",
+        &body,
+        "let mut _found_extensions = [false; ",
+    );
+    assert_contains("codec_chain_has_envelope", &body, "&mut _found_extensions)");
 }

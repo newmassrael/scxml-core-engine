@@ -48,6 +48,10 @@ pub mod broadcast_log_narrow;
 #[cfg(feature = "alloc")]
 pub mod capped;
 pub mod cbor;
+/// The one read of a chain into its list and the one scan of a chain a view
+/// keeps as its bytes, out of line and shared by every chain of one entry type
+/// (docs/adr/0136), re-exported from [`codec`].
+pub mod chain;
 pub mod codec;
 pub mod content_line;
 pub mod filter;

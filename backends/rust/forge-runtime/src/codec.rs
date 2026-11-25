@@ -307,6 +307,9 @@ pub use crate::reader::SceReader;
 pub use crate::records::{
     show_entry, ChainHook, ChainSite, EntryRefused, Record, RecordRead, Records,
 };
+// The one read of a chain into its list and the one scan of a chain a view
+// keeps as its bytes, which every generated chain calls (docs/adr/0136).
+pub use crate::chain::{read_chain_into, walk_chain, ChainEnd, ChainRead, ChainScan};
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};

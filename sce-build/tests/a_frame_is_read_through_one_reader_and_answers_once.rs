@@ -292,12 +292,15 @@ fn a_contradiction_of_the_gates_is_recorded_in_the_reader() {
 }
 
 /// A walk reads each entry with the view's total read, inlined, and tests no
-/// refusal of its own: the list's walk names no `Result`.
+/// refusal of its own: the list's walk names no `Result`. It reads with the hook
+/// it is handed (docs/adr/0136), which the scan of a chain hands it.
 #[test]
 fn a_walk_reads_its_entries_with_the_total_read() {
     let code = rust_of("codec_tlv_chain_basic");
     assert!(
-        code.contains("fn read<'b>(_r: &mut SceReader<'b>, "),
+        code.contains(
+            "fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, "
+        ),
         "the walk does not read through the reader:\n{code}"
     );
     assert!(
@@ -306,12 +309,14 @@ fn a_walk_reads_its_entries_with_the_total_read() {
     );
 }
 
-/// Codecs whose views scan a list: a counted repeat, a repeat read to the end
-/// of its frame, a chain, the chain of a frame's extensions closed by an entry
-/// flag, and a chain whose entries gate the fields that follow it.
-const SCANNED: [&str; 5] = [
-    "codec_repeat_basic",
-    "codec_until_eof_basic",
+/// Codecs whose views scan a repeat: one to a count and one to the end of its
+/// frame.
+const SCANNED: [&str; 2] = ["codec_repeat_basic", "codec_until_eof_basic"];
+
+/// Codecs whose views scan a chain: a chain, the chain of a frame's extensions
+/// closed by an entry flag, and a chain whose entries gate the fields that
+/// follow it.
+const CHAINS_SCANNED: [&str; 3] = [
     "codec_tlv_chain_basic",
     "codec_zenoh_ext_envelope",
     "codec_chain_has_tagged",
@@ -322,9 +327,13 @@ const SCANNED: [&str; 5] = [
 /// the list stops at it, so a count that held it would be one the walk never
 /// reaches: the gates a decode derives from the list's entries after the
 /// refusal would walk a list that disagrees with its count (docs/adr/0061 §3).
+/// A repeat's scan counts by that rule in its own lines; a chain's is the
+/// runtime's `walk_chain` (docs/adr/0136), which counts by the same rule
+/// (`chain::tests::a_scan_counts_an_entry_only_where_its_read_was_whole`), and
+/// prints no count of its own.
 #[test]
 fn a_scan_counts_the_entries_it_read_whole() {
-    for name in SCANNED {
+    for name in SCANNED.into_iter().chain(CHAINS_SCANNED) {
         let code = rust_of(name);
         assert!(
             code.contains("ListView::new(_rest, _count, "),
@@ -335,6 +344,14 @@ fn a_scan_counts_the_entries_it_read_whole() {
             .map(str::trim)
             .filter(|line| line.starts_with("_count +="))
             .collect();
+        if CHAINS_SCANNED.contains(&name) {
+            assert!(
+                counts.is_empty()
+                    && code.contains("let _count = ::sce_forge_runtime::codec::walk_chain::<"),
+                "{name}'s chain is not scanned by the runtime's count:\n{code}"
+            );
+            continue;
+        }
         assert!(!counts.is_empty(), "{name}'s scan counts no entry:\n{code}");
         for count in counts {
             assert_eq!(
