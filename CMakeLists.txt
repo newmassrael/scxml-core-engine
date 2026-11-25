@@ -224,6 +224,67 @@ if(LLD_LINKER AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
     message(STATUS "✅ .gdb_index enabled (pubname tables consumed at link, ~48% smaller binaries)")
 endif()
 
+# =============================================================================
+# Build paths kept out of what the build writes
+# =============================================================================
+# The compiler is given every source by its absolute path, so __FILE__ (which
+# SCE::source_location records for every log call,
+# sce/include/common/SourceLocation.h), an assert's message and the debug info
+# carried the directory this tree was checked out and configured in: two
+# builds of one source in two checkouts differed in their bytes, and no cache
+# could hand one's objects to the other (reproducible-builds.org, "build
+# path"). Each source is named by its path under the source tree instead.
+#
+# The flags name no path of the checkout where the compiler allows it, for the
+# reason bx gives its remote compiles the same ones (bx RFC 0012,
+# `reexec::path_flags`, measured by its tools/measure/canonical-paths.sh): the
+# flags are part of the compile command, and a command that names the checkout
+# makes a compiler cache that keys on it one per checkout path.
+#   - GCC resolves a relative prefix where it compiles (`-fcanon-prefix-map`,
+#     GCC 13), so the way up from the build tree to the source tree (`..` for
+#     `build/`) maps the source tree to `.`: a source is `./sce/src/...`, a file
+#     the build generates `./build/...`, the compilation directory `./build`.
+#     A Ninja build compiles in the build tree, which is what makes the way up
+#     the same for every compile; a build tree outside the source tree has no
+#     way up that names no path, and keeps its paths.
+#   - Clang maps a prefix as text, and CMake names sources by absolute path, so
+#     the source tree is named and mapped to nothing: a source is
+#     `sce/src/...`, and a build tree inside the source tree, the compilation
+#     directory among it, is `build/...`. The emscripten trees take this, emcc
+#     being Clang.
+#   - MSVC has no prefix map, and its builds keep the paths.
+#
+# A debugger is pointed at the source tree for the sources (`directory`). What
+# reads a path at run time derives none from __FILE__: the W3C runner finds its
+# report script in the tree it runs in (tests/w3c/W3CTestRunner.cpp).
+file(RELATIVE_PATH _SCE_WAY_UP "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}")
+if(_SCE_WAY_UP MATCHES "^\\.\\.(/\\.\\.)*$")
+    set(_SCE_BUILD_INSIDE_SOURCE TRUE)
+else()
+    set(_SCE_BUILD_INSIDE_SOURCE FALSE)
+endif()
+include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    check_c_compiler_flag("-fcanon-prefix-map" SCE_C_HAS_CANON_PREFIX_MAP)
+    check_cxx_compiler_flag("-fcanon-prefix-map" SCE_CXX_HAS_CANON_PREFIX_MAP)
+    if(SCE_C_HAS_CANON_PREFIX_MAP AND SCE_CXX_HAS_CANON_PREFIX_MAP
+       AND _SCE_BUILD_INSIDE_SOURCE AND CMAKE_GENERATOR MATCHES "Ninja")
+        add_compile_options(
+            "$<$<COMPILE_LANGUAGE:C,CXX>:-fcanon-prefix-map>"
+            "$<$<COMPILE_LANGUAGE:C,CXX>:-ffile-prefix-map=${_SCE_WAY_UP}=.>")
+    else()
+        message(STATUS "Build paths: kept (GCC without -fcanon-prefix-map, a build tree outside "
+                       "the source tree, or a generator that compiles outside the build tree)")
+    endif()
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    check_c_compiler_flag("-ffile-prefix-map=/a=/b" SCE_C_HAS_FILE_PREFIX_MAP)
+    check_cxx_compiler_flag("-ffile-prefix-map=/a=/b" SCE_CXX_HAS_FILE_PREFIX_MAP)
+    if(SCE_C_HAS_FILE_PREFIX_MAP AND SCE_CXX_HAS_FILE_PREFIX_MAP)
+        add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:-ffile-prefix-map=${CMAKE_SOURCE_DIR}/=>")
+    endif()
+endif()
+
 # Sanitizer options for Debug builds.
 # ThreadSanitizer is a host-native build: `cmake -DENABLE_TSAN=ON` (see
 # scripts/build_tsan.sh). No container is required — TSAN is a compiler

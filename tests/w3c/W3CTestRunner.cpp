@@ -651,9 +651,14 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
                 xmlFile.close();
 
                 // Generate HTML report using Python script
-                // Script location: tests/w3c/scripts/xml_to_html.py (version-controlled)
+                // Script location: tests/w3c/scripts/xml_to_html.py (version-controlled), in
+                // the tree whose resources this run reads: W3CTestCLI runs from that tree's
+                // root (it changes into the parent of resources/ before the run). Not from
+                // __FILE__, which names this source by its path under the source tree the
+                // build compiled it from (the prefix maps of the root CMakeLists.txt), not
+                // by where any tree is.
                 std::filesystem::path scriptPath =
-                    std::filesystem::path(__FILE__).parent_path() / "scripts" / "xml_to_html.py";
+                    std::filesystem::current_path() / "tests" / "w3c" / "scripts" / "xml_to_html.py";
                 std::filesystem::path scriptDir = scriptPath.parent_path();
                 std::filesystem::path xmlPathObj(outputPath_);
 
