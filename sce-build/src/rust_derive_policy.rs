@@ -131,7 +131,8 @@ pub enum RustDeriveCategory {
     /// besides.
     QueryableData,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}State`.
-    /// Statechart lifecycle enum: `#[repr(u16)]`, its variants declared in
+    /// Statechart lifecycle enum: `#[repr(u8)]` while its variants number at
+    /// most 256 and `#[repr(u16)]` past that (docs/adr/0130), declared in
     /// document order with explicit discriminants, each the number the
     /// runtime's tables know the state by (docs/adr/0064). Used as a
     /// `HashMap` key across the generated transition tables, so `Hash`
@@ -148,7 +149,7 @@ pub enum RustDeriveCategory {
     /// event"; its `Null` sentinel is not a meaningful `Default`).
     StatechartState,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}Event`.
-    /// Statechart trigger enum. Same `#[repr(u16)]`, `Hash`-keyed shape as
+    /// Statechart trigger enum. Same smallest repr, `Hash`-keyed shape as
     /// [`Self::StatechartState`], numbered in the order of the policy's
     /// `EVENTS` with the `Null` sentinel last, but WITHOUT `Default` — there is no
     /// default event (the `Null` eventless sentinel is a dispatch marker,

@@ -9330,6 +9330,145 @@ mod tests {
         }
     }
 
+    /// The function's state and event enums are held in `u8` while their
+    /// variants number at most 256 and in `u16` past that, so all-zero bytes
+    /// are the first of each (docs/adr/0130 §4); an event enum of no variant
+    /// takes no representation, which such an enum cannot have.
+    #[test]
+    fn rust_function_enums_take_the_smallest_repr_that_holds_them() {
+        let model = transition_function_model(true, true);
+        let files = function_files(&model, Language::Rust).expect("rust renders it");
+        let code = &files[0].1;
+        assert!(code.contains("#[repr(u8)]\npub enum State {"), "{code}");
+        assert!(code.contains("#[repr(u8)]\npub enum Event {"), "{code}");
+
+        let mut eventless = transition_function_model(true, true);
+        let emitted = eventless
+            .emitted_transition_function
+            .as_mut()
+            .expect("the run built the value");
+        emitted.function.events.clear();
+        for state in &mut emitted.function.states {
+            state.next.clear();
+        }
+        let files = function_files(&eventless, Language::Rust).expect("rust renders it");
+        let code = &files[0].1;
+        let lines: Vec<&str> = code.lines().collect();
+        let at = lines
+            .iter()
+            .position(|l| *l == "pub enum Event {")
+            .unwrap_or_else(|| panic!("no event enum:\n{code}"));
+        assert!(
+            !lines[at - 1].starts_with("#[repr"),
+            "an event enum of no variant takes a repr:\n{code}"
+        );
+
+        let mut states = String::new();
+        for i in 0..256 {
+            states.push_str(&format!(
+                "<state id=\"s{i}\"><transition event=\"go\" target=\"s{}\"/></state>",
+                i + 1
+            ));
+        }
+        let wide = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:transition-function="emit" version="1.0" initial="s0" name="wide" datamodel="null">{states}<final id="s256"/></scxml>"#
+        );
+        let mut model = SCXMLParser::new()
+            .parse_string(&wide, "wide")
+            .expect("parse");
+        crate::analyzer::analyze(&mut model, "wide.scxml");
+        model.emitted_transition_function = Some(crate::model::EmittedTransitionFunction {
+            source_hash: "ef".repeat(32),
+            function: crate::model::TransitionFunction::of(&model),
+        });
+        let files = function_files(&model, Language::Rust).expect("rust renders it");
+        let code = &files[0].1;
+        assert!(
+            code.contains("#[repr(u16)]\npub enum State {"),
+            "257 states:\n{code}"
+        );
+        assert!(
+            code.contains("#[repr(u8)]\npub enum Event {"),
+            "one event:\n{code}"
+        );
+    }
+
+    /// The representation written before each `pub enum <Machine><kind>` of
+    /// `code`, for `kind` among a machine's state, history and event enums.
+    fn machine_enum_reprs(code: &str) -> Vec<(&'static str, String)> {
+        let lines: Vec<&str> = code.lines().collect();
+        let mut found = Vec::new();
+        for (at, line) in lines.iter().enumerate().skip(1) {
+            let Some(name) = line
+                .strip_prefix("pub enum ")
+                .and_then(|rest| rest.strip_suffix(" {"))
+            else {
+                continue;
+            };
+            let Some(repr) = lines[at - 1]
+                .strip_prefix("#[repr(")
+                .and_then(|rest| rest.strip_suffix(")]"))
+            else {
+                continue;
+            };
+            if let Some(kind) = ["State", "History", "Event"]
+                .into_iter()
+                .find(|kind| name.ends_with(kind))
+            {
+                found.push((kind, repr.to_string()));
+            }
+        }
+        found
+    }
+
+    /// The machine's state, history and event enums are held in `u8` while
+    /// their variants number at most 256 and in `u16` past that, so all-zero
+    /// bytes are the first of each (docs/adr/0130 §4). The event enum counts
+    /// the null event with the document's.
+    #[test]
+    fn rust_machine_enums_take_the_smallest_repr_that_holds_them() {
+        let templates = crate::template_registry::embedded_templates_for(Language::Rust);
+        let lamp = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" name="lamp" datamodel="null">
+  <state id="idle"><transition event="on" target="h"/></state>
+  <state id="lit" initial="dim">
+    <history id="h"><transition target="dim"/></history>
+    <state id="dim"><transition event="up" target="bright"/></state>
+    <state id="bright"/>
+    <transition event="off" target="idle"/>
+  </state>
+</scxml>"#;
+        let code = crate::compile_from_string_typed(lamp, "lamp", &templates)
+            .unwrap_or_else(|e| panic!("the lamp generates: {e}"));
+        assert_eq!(
+            machine_enum_reprs(&code),
+            vec![
+                ("State", "u8".to_string()),
+                ("History", "u8".to_string()),
+                ("Event", "u8".to_string()),
+            ]
+        );
+
+        // 300 states in a ring, each left by an event of its own: 300 states,
+        // and 301 events with the null event.
+        let mut states = String::new();
+        for i in 0..300 {
+            states.push_str(&format!(
+                "<state id=\"s{i}\"><transition event=\"e{i}\" target=\"s{}\"/></state>",
+                (i + 1) % 300
+            ));
+        }
+        let ring = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0" name="ring" datamodel="null">{states}</scxml>"#
+        );
+        let code = crate::compile_from_string_typed(&ring, "ring", &templates)
+            .unwrap_or_else(|e| panic!("the ring generates: {e}"));
+        assert_eq!(
+            machine_enum_reprs(&code),
+            vec![("State", "u16".to_string()), ("Event", "u16".to_string())]
+        );
+    }
+
     /// An `In()` in a Rust machine is asked of the engine, which keeps the
     /// configuration (docs/adr/0064), with the state resolved to its variant
     /// when the machine is generated: in the parser's spelling of a pure

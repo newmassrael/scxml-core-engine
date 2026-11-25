@@ -133,9 +133,10 @@ pub const ANSWER_SCHEMAS: &[::sce_rust_runtime::AnswerSchema] = &[
 /// The document's states, declared in document order. Each variant's
 /// discriminant is its position in that order, which is the number the
 /// runtime's tables know the state by (docs/adr/0064), so a state is its number
-/// at no cost.
+/// at no cost. It is held in the smallest integer that holds every number, and
+/// all-zero bytes are its first state (docs/adr/0130 §4).
 {{ state_derives_attr }}
-#[repr(u16)]
+#[repr({{ "u8" if (tables.states | length) <= 256 else "u16" }})]
 pub enum {{ machine_name }}State {
 {% for row in tables.states %}
 {% if row.id == default_state_id %}
@@ -172,9 +173,10 @@ impl {{ machine_name }}State {
 /// never in a configuration — so it is named apart from `{{ machine_name }}State`,
 /// and a target list names one as `Target::history`: the engine
 /// dereferences it to what it recorded, or to its default. Each variant's
-/// discriminant is the number the runtime's tables know the history by.
+/// discriminant is the number the runtime's tables know the history by, held
+/// in the smallest integer that holds every number (docs/adr/0130 §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
+#[repr({{ "u8" if (tables.histories | length) <= 256 else "u16" }})]
 pub enum {{ machine_name }}History {
 {% for row in tables.histories %}
     {{ row.id | to_state_variant }} = {{ loop.index0 }},
@@ -201,9 +203,10 @@ impl {{ machine_name }}History {
    every loop that numbers an event reads it. #}
 /// The events the document names, and the null event. Each variant's
 /// discriminant is the number the runtime knows the event by, its position in
-/// `StatePolicy::EVENTS`.
+/// `StatePolicy::EVENTS`, held in the smallest integer that holds every number
+/// and the null event's (docs/adr/0130 §4).
 {{ event_derives_attr }}
-#[repr(u16)]
+#[repr({{ "u8" if ((tables.events | length) + 1) <= 256 else "u16" }})]
 pub enum {{ machine_name }}Event {
 {% for event_name in tables.events %}
     {{ event_name | to_event_variant }} = {{ loop.index0 }},
