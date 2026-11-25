@@ -336,6 +336,16 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          ignored for other languages, so `check` needs no counterpart",
     ),
     f(
+        "--inline-decode",
+        Reach::Emission,
+        Some(&["--inline-decode"]),
+        "rust",
+        "marks the functions that read each Rust codec body inline instead of out \
+         of line (docs/adr/0136); what is written changes and what is accepted \
+         does not, and it is ignored for other languages, so `check` needs no \
+         counterpart",
+    ),
+    f(
         "--limit",
         Reach::Verdict,
         None,
