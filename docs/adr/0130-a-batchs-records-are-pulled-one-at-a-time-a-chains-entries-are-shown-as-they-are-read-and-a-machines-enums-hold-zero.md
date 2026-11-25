@@ -1,7 +1,9 @@
 # ADR 0130 — A batch's records are pulled one at a time, a chain's entries are shown as they are read, and a machine's enums hold zero
 
-- Status: Proposed (2026-11-25), under the owner's standing rule: the most long-term correct, textbook structure, cost
-  ignored.
+- Status: Accepted (2026-11-25), under the owner's standing rule: the most long-term correct, textbook structure, cost
+  ignored. Sections 1, 2 and 4 are this record's decisions; section 3 records the runtime half that landed with ADR
+  0128's integration (a3b833ee19b) and adds only the printer's half, and section 5 finishes the single ZInt read that
+  landed there (25af0b8b61e) by giving the frame reader the same body.
 - Amends: ADR 0049 (a decoded Rust codec is a view over its wire bytes): a view's read takes a chain hook. ADR 0128 (a
   frame's reads are total and its verdict is read once): a sequence of frames is read through one reader, whose first
   refusal ends the sequence.
@@ -83,16 +85,21 @@ value and no record of where it is.
 
 ### 3. A one-byte write is the sink's own store, and a VLE is one write (R5)
 
-`SceSink::write_u8` is a required method: a sink stores a byte itself. The provided VLE writes assemble the encoding
-and hand it to `write_bytes` once (forge-vle-fast, 07d17351d20). The generated Rust encoder writes every header, flag
-and one-byte field with `write_u8` and every VLE with `write_vle_u*`, never a one-byte slice, and a test holds the
-printer to that.
+The runtime half is decided and landed already (a3b833ee19b): `SceSink::write_u8` is a required method, so a sink
+stores a byte itself, and the provided VLE writes assemble the encoding and hand it to `write_bytes` once. This record
+does not decide it again. What it adds is the printer's half: the generated Rust encoder writes every header, flag and
+one-byte field with `write_u8` and every VLE with `write_vle_u*`, never a slice it built for the write, and a test
+sweeps every codec resource to hold the printer to that
+(`sce-build/tests/a_rust_encoder_writes_a_byte_and_a_vle_each_in_one_write.rs`).
 
 ### 4. A machine's enums are numbered from zero in the smallest representation that holds them (R6)
 
 The generated Rust state, history and event enums of a statechart, and the state and event enums of a transition
 function, have `#[repr(u8)]` where their variants number at most 256 and `#[repr(u16)]` otherwise, and discriminants
 `0..n`, so all-zero bytes are a value of each: a region allocated zeroed holds valid values before it is initialised.
+The count is that of the list the variants are made from: a statechart's events are `tables.events` (the one list the
+event numbers and the selection rows are made from, ADR 0127) and the null event after them. An event enum of a
+transition function that names no event has no variant and so no representation.
 
 Zero is the first variant. For a statechart's states that is the first state in document order, which is the number
 the tables know it by (ADR 0064); the `Default` stays the document's initial state, which a pre-order numbering need
@@ -102,10 +109,12 @@ kind) are `#[repr(u8)]` already.
 
 ### 5. A ZInt is read by one body, the cursor's and the frame reader's alike (R1)
 
-A ZInt of one byte is read inline at each field and every longer one by one cold body (`codec::zint_tail`), which
-`SceCursor::read_vle_*` and ADR 0128's `SceReader::read_vle_*` both run: the generated decodes, which read through
-the reader, take the fast path the cursor took (forge-vle-fast, b6365060f0a), and the grammar of a ZInt is written once
-in the runtime.
+The cursor's one-byte inline read and one cold body of every longer ZInt landed before this record (25af0b8b61e), but
+ADR 0128's `SceReader` kept a byte loop of its own, and the generated decodes read through the reader: the grammar of
+a ZInt was written twice, and the fast path was not the one the generated code took. Both are now one: a ZInt of one
+byte is read inline at each field (`codec::zint_byte`) and every longer one by one cold body (`codec::zint_tail`),
+which `SceCursor::read_vle_*` and `SceReader::read_vle_*` both run, the reader recording the body's refusal through
+`SceReader::fail` as every other refusal of a frame.
 
 ## Consequences
 
