@@ -74,3 +74,11 @@ edit("scripts/mutate",
 
     fixtures=""")
 PY
+
+# The CI lanes compile through sccache: a round that knows only ccache by its
+# launcher's name says it compiled through no cache it can count.
+mutation_case "a tree that compiles through sccache is read as compiling through none" <<'PY'
+edit("scripts/mutate",
+     """        ccache|sccache) printf '%s\\n' "$launcher" ;;""",
+     """        ccache) printf '%s\\n' "$launcher" ;;""")
+PY

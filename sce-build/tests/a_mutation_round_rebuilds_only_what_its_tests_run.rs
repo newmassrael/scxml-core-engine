@@ -37,7 +37,8 @@
 // The first build is the setup of every ctest round, and the round says how it
 // ran it: how many jobs it asked for, and how much of it the compiler cache the
 // tree compiles through answered. A launcher that counts what it is handed
-// stands in for ccache, so the count the round reports is one this file knows.
+// stands in for ccache, and one for sccache, which the CI lanes compile through,
+// so the count the round reports is one this file knows.
 
 mod common;
 
@@ -203,6 +204,34 @@ esac
 exec "$@"
 "#;
 
+/// A compiler launcher named `sccache` that answers `--show-stats` as sccache
+/// does: its totals, each followed by a line per language that repeats it. It
+/// runs and counts what it is handed as [`COUNTING_CCACHE`] does, a unit of
+/// `subject.c` or `helper.c` as a hit and any other as a miss.
+const COUNTING_SCCACHE: &str = r#"#!/bin/sh
+here=$(dirname "$0")
+if [ "$1" = "--show-stats" ]; then
+    n() { if [ -f "$here/$1" ]; then wc -l < "$here/$1"; else echo 0; fi; }
+    hits=$(( $(n subject) + $(n helper) ))
+    misses=$(n other)
+    printf 'Compile requests                    %s\n' "$(( hits + misses + 9 ))"
+    printf 'Compile requests executed           %s\n' "$(( hits + misses ))"
+    printf 'Cache hits                          %s\n' "$hits"
+    printf 'Cache hits (C/C++)                  %s\n' "$hits"
+    printf 'Cache misses                        %s\n' "$misses"
+    printf 'Cache misses (C/C++)                %s\n' "$misses"
+    printf 'Cache hits rate                     50.00 %%\n'
+    printf 'Cache write errors                  0\n'
+    exit 0
+fi
+case "$*" in
+    *subject.c*) echo x >> "$here/subject" ;;
+    *helper.c*) echo x >> "$here/helper" ;;
+    *) echo x >> "$here/other" ;;
+esac
+exec "$@"
+"#;
+
 /// `generator` is passed to CMake as is; `ninja` is put on the round's `PATH`
 /// either way, so a control differs from the subject in what it names alone.
 fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
@@ -210,13 +239,14 @@ fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
 }
 
 /// [`project`], with the C compiler launched through `launcher` when one is
-/// given: a script installed at `bin/ccache` under the project.
+/// given: a script, `(name, body)`, installed at `bin/<name>` under the
+/// project, since the round knows a compiler cache by its launcher's name.
 fn project_with(
     name: &str,
     generator: &str,
     shape: Shape,
     ninja: &Path,
-    launcher: Option<&str>,
+    launcher: Option<(&str, &str)>,
 ) -> Project {
     let root = repo_root().join("tmp").join(format!("g7-{name}"));
     let _ = fs::remove_dir_all(&root);
@@ -230,12 +260,12 @@ fn project_with(
     fs::write(root.join("driver.c"), DRIVER).expect("write driver.c");
     fs::write(root.join("CMakeLists.txt"), cmakelists(shape)).expect("write CMakeLists.txt");
     let mut configure_args: Vec<String> = Vec::new();
-    if let Some(body) = launcher {
+    if let Some((name, body)) = launcher {
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("create the launcher's directory");
-        let ccache = bin.join("ccache");
-        common::executable::install_executable(&ccache, body).expect("install the launcher");
-        configure_args.push(format!("-DCMAKE_C_COMPILER_LAUNCHER={}", ccache.display()));
+        let script = bin.join(name);
+        common::executable::install_executable(&script, body).expect("install the launcher");
+        configure_args.push(format!("-DCMAKE_C_COMPILER_LAUNCHER={}", script.display()));
     }
 
     let ninja_dir = ninja.parent().expect("ninja lives in a directory");
@@ -445,7 +475,7 @@ fn the_first_build_says_its_jobs_and_what_the_compiler_cache_answered() {
         "Ninja",
         Shape::Spawned,
         &ninja,
-        Some(COUNTING_CCACHE),
+        Some(("ccache", COUNTING_CCACHE)),
     );
     fs::write(p.root.join("bin").join("subject"), "x\nx\n").expect("seed the hits");
     fs::write(p.root.join("bin").join("other"), "x\n").expect("seed the misses");
@@ -460,5 +490,30 @@ fn the_first_build_says_its_jobs_and_what_the_compiler_cache_answered() {
     assert!(
         output.contains("the compiler cache answered 2 of the first build's 3 compilation(s)"),
         "the first build did not count what the compiler cache answered of it:\n{output}"
+    );
+}
+
+/// The CI lanes compile through sccache (.github/actions/compile-cache), which
+/// counts in its own words: `--show-stats` prints its totals, each followed by
+/// a line per language that repeats it. The round reads the totals once, so the
+/// first build's count is the one the ccache launcher above gives for the same
+/// tree and the same seeded answers.
+#[test]
+fn the_first_build_counts_what_sccache_answered() {
+    let Some(ninja) = ninja() else { return };
+    let p = project_with(
+        "counted-sccache",
+        "Ninja",
+        Shape::Spawned,
+        &ninja,
+        Some(("sccache", COUNTING_SCCACHE)),
+    );
+    fs::write(p.root.join("bin").join("subject"), "x\nx\n").expect("seed the hits");
+    fs::write(p.root.join("bin").join("other"), "x\n").expect("seed the misses");
+    let output = p.round();
+
+    assert!(
+        output.contains("the compiler cache answered 2 of the first build's 3 compilation(s)"),
+        "the first build did not count what sccache answered of it:\n{output}"
     );
 }

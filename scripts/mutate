@@ -1783,11 +1783,13 @@ mutation_ctest_build_dir() {
     return 1
 }
 
-# The ccache this tree compiles through, as the launcher CMake wrote into its
-# build file; nothing for a tree that names none, or names another launcher.
+# The compiler cache this tree compiles through, ccache or sccache, as the
+# launcher CMake wrote into its build file; nothing for a tree that names none,
+# or names another launcher. The CI lanes compile through sccache
+# (.github/actions/compile-cache), a workstation through ccache.
 #
 # Asked of the tree and not of PATH, because the question is what the round's
-# builds go through: a ccache on PATH that the tree does not launch answers for
+# builds go through: a cache on PATH that the tree does not launch answers for
 # nothing the round compiles.
 mutation_ctest_compiler_cache() {
     local line launcher
@@ -1795,20 +1797,35 @@ mutation_ctest_compiler_cache() {
     line="$(sed -n '/^  LAUNCHER = /{s/^  LAUNCHER = //;p;q;}' \
         "$MUTATION_BUILD_DIR/build.ninja" 2>/dev/null || true)"
     read -r launcher _ <<<"$line" || true
-    [[ -n "${launcher:-}" && "$(basename "$launcher")" == "ccache" && -x "$launcher" ]] || return 0
-    printf '%s\n' "$launcher"
+    [[ -n "${launcher:-}" && -x "$launcher" ]] || return 0
+    case "$(basename "$launcher")" in
+        ccache|sccache) printf '%s\n' "$launcher" ;;
+    esac
 }
 
-# What ccache `$1` has answered so far, as `hits misses`; nothing when it
-# cannot say. A hit is either kind ccache counts, from its manifest or from the
-# preprocessed source; a miss is a compilation it had to run.
+# What the compiler cache `$1` has answered so far, as `hits misses`; nothing
+# when it cannot say. For ccache a hit is either kind it counts, from its
+# manifest or from the preprocessed source; sccache prints its totals as
+# `Cache hits` and `Cache misses`, each followed by a line per language that
+# is not counted again. A miss is a compilation the cache had to run.
 mutation_ctest_compiler_cache_counts() {
     local stats
-    stats="$("$1" --print-stats 2>/dev/null)" || return 0
-    printf '%s\n' "$stats" | awk -F'\t' '
-        $1 == "direct_cache_hit" || $1 == "preprocessed_cache_hit" { hits += $2 }
-        $1 == "cache_miss" { misses += $2 }
-        END { printf "%d %d\n", hits, misses }'
+    case "$(basename "$1")" in
+        sccache)
+            stats="$("$1" --show-stats 2>/dev/null)" || return 0
+            printf '%s\n' "$stats" | awk '
+                /^Cache hits +[0-9]+$/ { hits = $NF; seen++ }
+                /^Cache misses +[0-9]+$/ { misses = $NF; seen++ }
+                END { if (seen == 2) printf "%d %d\n", hits, misses }'
+            ;;
+        *)
+            stats="$("$1" --print-stats 2>/dev/null)" || return 0
+            printf '%s\n' "$stats" | awk -F'\t' '
+                $1 == "direct_cache_hit" || $1 == "preprocessed_cache_hit" { hits += $2 }
+                $1 == "cache_miss" { misses += $2 }
+                END { printf "%d %d\n", hits, misses }'
+            ;;
+    esac
 }
 
 # How much of the first build the compiler cache answered, from its counts
