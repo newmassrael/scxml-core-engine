@@ -23,8 +23,8 @@
    a value that is dropped. #}
 {% macro self_sender(no_std) %}{% if no_std %}""{% else %}self.session_id.as_deref().unwrap_or(""){% endif %}{% endmacro %}
 {# The same sender, owned, for the one call that hands the policy over beside it:
-   `Engine::send_to_target` takes `self` mutably, which a borrow of `self.session_id`
-   would still hold. That call is std only, and the string is the one it needs. #}
+   `Engine::send_to_target` takes `self` mutably beside the engine's state, which a
+   borrow of `self.session_id` would still hold. That call is std only, and the string is the one it needs. #}
 {% macro self_sender_owned(no_std) %}{% if no_std %}::sce_rust_runtime::SceString::new(){% else %}::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")){% endif %}{% endmacro %}
 {# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
    queue, carrying this session as its sender. One body for the send with no

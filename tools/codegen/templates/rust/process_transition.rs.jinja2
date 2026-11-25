@@ -76,7 +76,7 @@
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above each function this template emits. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn bind_current_event(&mut self, event: ::sce_rust_runtime::EventId, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn bind_current_event(&mut self, event: ::sce_rust_runtime::EventId, engine: &mut sce_rust_runtime::EngineState<Self>) {
         // W3C SCXML 5.10: set _event for guard evaluation, in the session the
         // start established (docs/adr/0096)
         self.assert_script_session();
@@ -154,7 +154,7 @@
         state: ::sce_rust_runtime::StateId,
         event: ::sce_rust_runtime::EventId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
 {% for state_id, state in model.states | dictsort %}
@@ -195,7 +195,7 @@
     fn take_transition(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
-        _engine: &mut sce_rust_runtime::Engine<Self>,
+        _engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
         match transition.0 {
 {% for state_id, state in model.states | dictsort %}
@@ -221,7 +221,7 @@
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
         self.publish_in_predicate_states(engine);

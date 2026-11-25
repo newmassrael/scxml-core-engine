@@ -42,7 +42,7 @@
 // `<send delay=...>` and no engine-borrowing actions never reference
 // `Duration`/`Engine`, leaving the imports unused.
 #![allow(unused_imports)]
-// Method parameters such as `_engine: &mut Engine<Self>` and per-state
+// Method parameters such as `_engine: &mut ::sce_rust_runtime::EngineState<Self>` and per-state
 // fields (`pending_event_invokeid`, `script_engine_initialized`, ...) are
 // emitted on every fixture for the StatePolicy trait shape but read only
 // by fixtures that actually exercise the corresponding W3C feature.
@@ -2175,14 +2175,14 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // after the script session is established; a session that cannot be
     // refuses the start (docs/adr/0096). Delegates to inherent impl method
     // (matches C++ initializeDataModel pattern)
-    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) -> Result<(), Self::StartFailure> {
+    fn initialize_data_model(&mut self, engine: &mut ::sce_rust_runtime::EngineState<Self>) -> Result<(), Self::StartFailure> {
         self.do_initialize_data_model(engine)
     }
 {% endif %}
 
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
-    fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
+    fn execute_pending_invokes(&mut self, engine: &mut ::sce_rust_runtime::EngineState<Self>) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
         self.publish_in_predicate_states(engine);
 {% endif %}
@@ -2225,7 +2225,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         running
     }
 
-    fn restart_invoke(&mut self, invoke_id: &str, engine: &mut Engine<Self>) {
+    fn restart_invoke(&mut self, invoke_id: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>) {
         match invoke_id {
 {% for invoke_info in model.invokes | scxml_family %}
             "{{ invoke_info.invoke_id }}" => self.defer_invoke_{{ invoke_info.field_suffix }}(engine),
@@ -2272,7 +2272,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn resume_child(
         &mut self,
         child: &::sce_rust_runtime::saved_state::SavedChild,
-        engine: &mut Engine<Self>,
+        engine: &mut ::sce_rust_runtime::EngineState<Self>,
         wall_now_ms: u64,
     ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
         self.do_resume_child(child, engine, wall_now_ms)
@@ -2282,7 +2282,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // restore resumed, asked of the factory now that there is one, with the
     // invoke id and the document stem a start asks it with. A child that has
     // ended is not asked for.
-    fn start_owed_child_meshes(&mut self, engine: &mut Engine<Self>) {
+    fn start_owed_child_meshes(&mut self, engine: &mut ::sce_rust_runtime::EngineState<Self>) {
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
@@ -2331,7 +2331,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // state has ended, and is not there to take it (W3C SCXML C.1).
     // What the child sent its parent as it took the event, and its ending,
     // reach this session within the delivery (docs/adr/0045).
-    fn deliver_to_invocation(&mut self, invoke_id: &str, event_name: &str, event_data: &str, sender: &str, engine: &mut Engine<Self>) -> bool {
+    fn deliver_to_invocation(&mut self, invoke_id: &str, event_name: &str, event_data: &str, sender: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>) -> bool {
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
         if invoke_id == "{{ invoke_info.invoke_id }}" {
@@ -2377,7 +2377,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // decodes to one of them is addressed to that child rather than to this
     // machine — the routing half of C.1, which makes the published location a
     // usable target rather than a string that merely compares equal.
-    fn deliver_to_child_session(&mut self, child_session_id: &str, event_name: &str, event_data: &str, sender: &str, engine: &mut Engine<Self>) -> bool {
+    fn deliver_to_child_session(&mut self, child_session_id: &str, event_name: &str, event_data: &str, sender: &str, engine: &mut ::sce_rust_runtime::EngineState<Self>) -> bool {
         if !self.is_child_session_running(child_session_id) {
             return false;
         }
@@ -2468,7 +2468,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.invokes | scxml or model.invokes | hybrid %}
 
     // W3C SCXML 6.4: Tick child state machines
-    fn tick_children(&mut self, engine: &mut Engine<Self>) {
+    fn tick_children(&mut self, engine: &mut ::sce_rust_runtime::EngineState<Self>) {
         self.do_tick_children(engine);
     }
 
@@ -2558,7 +2558,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         &mut self,
         event_name: &str,
         metadata: &sce_rust_runtime::EventMetadata,
-        engine: &mut Engine<Self>,
+        engine: &mut ::sce_rust_runtime::EngineState<Self>,
     ) {
         self.do_forward_to_autoforward_children(event_name, metadata, engine);
     }
@@ -2568,7 +2568,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn execute_finalize_for_child_event(
         &mut self,
         event: &sce_rust_runtime::EventWithMetadata<Self::Event>,
-        engine: &mut Engine<Self>,
+        engine: &mut ::sce_rust_runtime::EngineState<Self>,
     ) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
         self.publish_in_predicate_states(engine);

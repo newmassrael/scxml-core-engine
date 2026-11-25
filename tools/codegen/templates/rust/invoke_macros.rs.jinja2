@@ -71,7 +71,7 @@ super::{{ stem }}_sm::{{ stem | to_machine_name }}Persist
    invoke's `field_suffix`. #}
 {% macro defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) %}
     // W3C SCXML 6.4: Defer the start of invoke '{{ invoke_info.invoke_id }}' of state '{{ state_id }}' to macrostep end
-    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
+    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::EngineState<Self>) {
         {
             // docs/adr/0045: the id is the state's, the number of this start and
             // the `<invoke>`'s, so it comes from the tree alone and is the same

@@ -27,7 +27,7 @@
     child's buffer empty.
 #}
 {% macro settle_child_fn(invoke_info, slot) %}
-    fn settle_{{ slot }}(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn settle_{{ slot }}(&mut self, engine: &mut sce_rust_runtime::EngineState<Self>) {
         let Some(child) = self.{{ slot }}.as_mut() else {
             return;
         };
@@ -497,7 +497,7 @@
 {% endfor %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
-    fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::EngineState<Self>) {
         if self.pending_invokes.is_empty() {
             return;
         }
@@ -856,7 +856,9 @@
 {% else %}
 {{ collect_params_into(invoke_info.params, model, 'host_invoke_params', machine_name, '<invoke>', 'invoke', 'host_invoke_payload') }}
 {% endif %}
-                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                // docs/adr/0131: the policy is handed over beside the state, so
+                // the engine names the session that starts the invocation.
+                let started = sce_rust_runtime::Engine::perform_host_invoke(self, engine, sce_rust_runtime::HostInvokeRequest {
                     processor_type: "{{ invoke_info.invoke_type | escape_rust }}".to_string(),
                     invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
                     src: host_invoke_src,
@@ -894,7 +896,7 @@
     }
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
-    fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::EngineState<Self>) {
 {% for invoke_info in model.invokes | scxml %}
 {{ child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
 {% endfor %}
@@ -950,7 +952,7 @@
         &mut self,
         event_name: &str,
         metadata: &sce_rust_runtime::EventMetadata,
-        _engine: &mut sce_rust_runtime::Engine<Self>,
+        _engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
 {% for invoke_info in autoforward_invokes %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled and is active
@@ -987,7 +989,7 @@
     fn do_execute_finalize_for_child_event(
         &mut self,
         event_with_meta: &sce_rust_runtime::EventWithMetadata<{{ machine_name }}Event>,
-        _engine: &mut sce_rust_runtime::Engine<Self>,
+        _engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
         // W3C SCXML 6.5: Only execute finalize for events from child invokes.
         // The child is found by the event's sender, the session id the SCXML
@@ -1067,7 +1069,7 @@
     fn do_resume_child(
         &mut self,
         child: &::sce_rust_runtime::saved_state::SavedChild,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
         wall_now_ms: u64,
     ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
         match (child.id.as_str(), child.document.as_str()) {
