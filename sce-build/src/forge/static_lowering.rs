@@ -3114,6 +3114,16 @@ pub trait StaticTarget {
     /// `capacity` bytes: the bound a `bytes` variable keeps on every backend
     /// (docs/adr/0005, decision 2).
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String;
+    /// `value`, a text the build proved is at most `bound` UTF-8 bytes, as a
+    /// place of `capacity` bytes takes it, `bound` no more than `capacity`
+    /// (docs/adr/0133): the store cannot fail, so it is written with nothing to
+    /// receive, where [`Self::bounded_string`] writes one that can. The value
+    /// itself by default, for a target whose text place holds any text; a
+    /// target whose place's type holds the bound builds the place's value with
+    /// no failure in it.
+    fn fitting_string(&self, value: &str, _bound: u64, _capacity: u32) -> String {
+        value.to_string()
+    }
     /// Whether a text or a byte string written to a bounded place is copied by
     /// the place's own checked constructor, which takes it borrowed
     /// (docs/adr/0086, section 7.4), so the value handed to
@@ -6671,6 +6681,15 @@ impl StaticTarget for RustTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!(
             "{}::SceBytes::<{capacity}>::from_slice(&{value})?",
+            crate::forge::composed_lowering::RUST_PORTABLE
+        )
+    }
+    // ... and a text proven to fit (docs/adr/0133) through the constructor that
+    // takes the proof's bound and judges it against the place's when the
+    // machine is compiled, so it answers no `Result` and needs no `?`.
+    fn fitting_string(&self, value: &str, bound: u64, capacity: u32) -> String {
+        format!(
+            "{}::SceString::<{capacity}>::within::<{bound}>(&{value})",
             crate::forge::composed_lowering::RUST_PORTABLE
         )
     }
@@ -13783,17 +13802,22 @@ impl Rewrites<'_> {
         ordinal
     }
 
-    /// `value`, stored whole into the variable `location`: a text or a byte
-    /// string held to the bound the variable declares, whatever the value came
-    /// from, so past it the store fails as any other does, writing nothing and
-    /// ending its block (§scxml-4.9); any other value as it is. The one rule an
+    /// `value`, the value of the expression `written` read in `ctx`, stored
+    /// whole into the variable `location`: a text or a byte string held to the
+    /// bound the variable declares, whatever the value came from, so past it
+    /// the store fails as any other does, writing nothing and ending its block
+    /// (§scxml-4.9), and a text the build proves fits stored with nothing to
+    /// fail ([`Self::held_text`]); any other value as it is. The one rule an
     /// `<assign>` and the location of a `<sce:call>` store by.
-    fn held_to_bound(&self, location: &str, value: Receiving) -> Receiving {
+    fn held_to_bound(
+        &self,
+        location: &str,
+        written: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        value: Receiving,
+    ) -> Receiving {
         if let Some(capacity) = self.strings.get(location) {
-            Receiving {
-                text: self.target.bounded_string(&value.text, *capacity),
-                can_fail: true,
-            }
+            self.held_text(written, ctx, *capacity, value)
         } else if let Some(capacity) = self.bytes.get(location) {
             // ... and so is a byte string, in bytes.
             Receiving {
@@ -13802,6 +13826,31 @@ impl Rewrites<'_> {
             }
         } else {
             value
+        }
+    }
+
+    /// `value`, the text the expression `written` computes in `ctx`, held to a
+    /// place of `capacity` bytes (docs/adr/0133): as it is where the build
+    /// proves the text is never longer ([`fitting_text_bound`]), so the store
+    /// cannot fail and only the value's own failures remain; through the
+    /// target's checked construction otherwise, which fails past the bound.
+    /// The one rule every store of a text into a bounded place classifies by.
+    fn held_text(
+        &self,
+        written: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        capacity: u32,
+        value: Receiving,
+    ) -> Receiving {
+        match fitting_text_bound(written, ctx, capacity) {
+            Some(bound) => Receiving {
+                text: self.target.fitting_string(&value.text, bound, capacity),
+                can_fail: value.can_fail,
+            },
+            None => Receiving {
+                text: self.target.bounded_string(&value.text, capacity),
+                can_fail: true,
+            },
         }
     }
 
@@ -15281,6 +15330,15 @@ impl StaticTarget for CppTarget {
         Self::held(
             &crate::forge::composed_lowering::cpp_bytes_type(capacity),
             value,
+        )
+    }
+    // ... and a text proven to fit (docs/adr/0133) through the runtime's
+    // construction that records no failure, since none can happen.
+    fn fitting_string(&self, value: &str, _bound: u64, capacity: u32) -> String {
+        let forge = crate::forge::composed_lowering::CPP_FORGE;
+        format!(
+            "{forge}::Proven::held<{}>({value})",
+            crate::forge::composed_lowering::cpp_text_type(capacity)
         )
     }
     // A literal whose length the compiler judges against the bound where it is
@@ -21747,7 +21805,8 @@ impl StaticTarget for CTarget {
     fn record_string_literal(&self, bound: u32, literal: &str) -> String {
         format!("({}){{ {literal} }}", c_string_storage_type(bound))
     }
-    // The text is the bound's own helper's answer, which fits, so the buffer is
+    // The text fits: a payload's field of the record's own bound
+    // (docs/adr/0133), or the bound's own helper's answer, so the buffer is
     // filled from it.
     fn record_string_runtime(&self, bound: u32, text: &str) -> String {
         format!("{}({text})", c_string_storage_of(bound))
@@ -25565,15 +25624,33 @@ fn renames<'a>(
     map
 }
 
+/// The bound the build proves of the text `written` computes in `ctx`
+/// ([`crate::forge::text_bound`]), when it is no more than `capacity` bytes
+/// (docs/adr/0133): what makes a store of that text into a place of
+/// `capacity` bytes one that cannot fail. `None` where the text has no bound
+/// the build knows, or one past `capacity`, and the store is checked.
+fn fitting_text_bound(
+    written: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    capacity: u32,
+) -> Option<u64> {
+    crate::forge::text_bound::text_bound_of(written, ctx)
+        .ok()?
+        .bounded()
+        .filter(|bound| *bound <= u64::from(capacity))
+}
+
 /// A whole record of the schema `alias` made from the payload of the event the
 /// walk is in (validation judged that payload to be of that schema): each field
 /// is read as `_event.data.<field>`, lowered like any expression into the type
 /// the record holds it in, and the record is made in one value — so what cannot
 /// be read leaves the variable as it was, and never half of a payload is written.
 ///
-/// A string field is held to the `sce:max-size` its schema declares, as it is when
-/// it is assigned alone: a payload whose text is past it does not fit the record,
-/// so the whole assignment fails and the record is left as it was.
+/// A string field is the payload's text of the `sce:max-size` its schema declares,
+/// which is the record's own field's bound, so it fits by its type and is copied
+/// with nothing to fail (docs/adr/0133). A byte-string field is held to that bound
+/// as it is when it is assigned alone: a payload whose bytes are past it does not
+/// fit the record, so the whole assignment fails and the record is left as it was.
 fn payload_record_value(
     machine: &str,
     alias: &str,
@@ -25602,8 +25679,7 @@ fn payload_record_value(
         }
         let text = match (&field.sce_type, field.max_size) {
             (EntryType::Scalar(SceType::String), Some(bound)) => {
-                bounded = true;
-                let held = target.bounded_string(&read.text, bound);
+                let held = target.fitting_string(&read.text, u64::from(bound), bound);
                 target.record_string_runtime(bound, &held)
             }
             (EntryType::Scalar(SceType::Bytes), Some(bound)) => {
@@ -25611,20 +25687,24 @@ fn payload_record_value(
                 let held = target.bounded_bytes(&read.text, bound);
                 target.record_bytes_runtime(bound, &held)
             }
-            // An optional text is held to the bound where it is present, and
-            // absent where it is absent (docs/adr/0055).
+            // An optional text is the field's text where it is present, and
+            // absent where it is absent (docs/adr/0055); an optional byte string
+            // is held to the bound where it is present.
             (
                 EntryType::Optional {
                     elem: elem @ (SceType::String | SceType::Bytes),
                 },
                 Some(bound),
             ) => {
-                bounded = true;
+                bounded |= matches!(elem, SceType::Bytes);
                 let held = |v: &str| match elem {
                     SceType::Bytes => {
                         target.record_bytes_runtime(bound, &target.bounded_bytes(v, bound))
                     }
-                    _ => target.record_string_runtime(bound, &target.bounded_string(v, bound)),
+                    _ => target.record_string_runtime(
+                        bound,
+                        &target.fitting_string(v, u64::from(bound), bound),
+                    ),
                 };
                 let present = optional_present(target, machine, elem, Some(bound));
                 target
@@ -26416,10 +26496,7 @@ fn lower_action(
                 let value = match field.ty {
                     crate::forge::value_type::ValueType::Text { max } => {
                         let value = lower_bounded(&action.expr, slot)?;
-                        Receiving {
-                            text: target.bounded_string(&value.text, max.max),
-                            can_fail: true,
-                        }
+                        rewrites.held_text(&action.expr, ctx, max.max, value)
                     }
                     crate::forge::value_type::ValueType::Bytes { max } => {
                         let value = lower_bounded(&action.expr, slot)?;
@@ -26585,7 +26662,7 @@ fn lower_action(
             };
             // A string variable holds at most what it declared, whatever the
             // value came from ([`Rewrites::held_to_bound`]).
-            value = rewrites.held_to_bound(location, value);
+            value = rewrites.held_to_bound(location, &action.expr, ctx, value);
             let construct = format!("<assign location='{location}'>");
             let record_field = field_location(location, rewrites);
             // A target that rewrites the document itself writes a record's
@@ -27177,7 +27254,7 @@ fn lower_action(
                 })?;
             // A text or a byte string is held to the bound of the variable it is
             // stored into, as an `<assign>` holds it.
-            let value = rewrites.held_to_bound(location, value);
+            let value = rewrites.held_to_bound(location, written, &statement_ctx, value);
             // Each map the call writes in place, in the order of the parameters
             // that take it, as the target names it and holds it.
             let mut lent_parts = Vec::new();
@@ -32893,8 +32970,8 @@ mod tests {
         )
     }
 
-    // Pinned by `RustTarget::checked_literal`, `RustTarget::bounded_string`
-    // and `emit_rust_copied` (docs/adr/0086, section 7.4).
+    // Pinned by `RustTarget::checked_literal`, `RustTarget::fitting_string`
+    // and `emit_rust_copied` (docs/adr/0086, section 7.4; docs/adr/0133).
     #[test]
     fn a_string_written_into_a_rust_variable_is_copied_into_its_bounded_type() {
         let (inits, statements) = lowered_strings(Language::Rust);
@@ -32907,22 +32984,26 @@ mod tests {
                 "::sce_rust_runtime::portable::sce_text!(16, \"x\")",
             ],
         );
-        // A literal and a read of another variable are lent to the checked
-        // constructor of the place, which copies them: never made owned first.
+        // A literal and a read of another variable are lent to the constructor
+        // of the place, which copies them: never made owned first. Each fits the
+        // place's bound by what the build proves of it (a literal of 4 bytes, a
+        // variable of 16), so the constructor is the one that takes the proof and
+        // answers no `Result` (docs/adr/0133).
         assert_eq!(statements.len(), 2, "{statements:?}");
         assert!(
             statements[0]
-                .contains("::sce_rust_runtime::portable::SceString::<16>::from_text(&\"busy\")?"),
+                .contains("::sce_rust_runtime::portable::SceString::<16>::within::<4>(&\"busy\")"),
             "{statements:?}"
         );
         assert!(
             statements[1].contains(
-                "::sce_rust_runtime::portable::SceString::<16>::from_text(&&self.label[..])?"
+                "::sce_rust_runtime::portable::SceString::<16>::within::<16>(&&self.label[..])"
             ),
             "{statements:?}"
         );
         for statement in &statements {
             assert!(!statement.contains(".to_string()"), "{statements:?}");
+            assert!(!statement.contains('?'), "{statements:?}");
         }
     }
 
@@ -33270,6 +33351,62 @@ mod tests {
             assert!(!text.contains("to_string"), "{inits:?} {statements:?}");
             assert!(!text.contains("toString"), "{inits:?} {statements:?}");
         }
+    }
+
+    // ── docs/adr/0133: a text store fails only past what the build proves ──
+
+    const WITH_BOUNDED_TEXTS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="short" sce:type="string" sce:capacity="8" expr="'s'"/>
+    <data id="long" sce:type="string" sce:capacity="16" expr="'l'"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <assign location="long" expr="short + '-'"/>
+      <assign location="long" expr="short + '-' + short"/>
+      <assign location="short" expr="long"/>
+      <assign location="short" expr="'12345678'"/>
+    </transition>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    /// Each statement of `WITH_BOUNDED_TEXTS`'s `go` transition as the Kotlin
+    /// lowering leaves it, with whether it can fail.
+    fn lowered_bounded_texts() -> Vec<(String, bool)> {
+        let mut model = SCXMLParser::new()
+            .parse_string(WITH_BOUNDED_TEXTS, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_kotlin(&mut model, "M").expect("lowers");
+        model.states["s"].transitions[0]
+            .actions
+            .iter()
+            .map(|a| (a.native_code.clone(), a.statement_can_fail()))
+            .collect()
+    }
+
+    /// A text whose bound the build proves within its place's is stored as it
+    /// is and cannot fail; one whose bound passes the place's, or that has
+    /// none, is held to the bound and fails past it, raising `error.execution`.
+    #[test]
+    fn a_text_store_fails_only_past_what_the_build_proves_of_the_text() {
+        let statements = lowered_bounded_texts();
+        assert_eq!(statements.len(), 4, "{statements:?}");
+        // 8 + 1 bytes into 16: total.
+        let (code, fails) = &statements[0];
+        assert!(!fails && !code.contains("SceChecked.bounded"), "{code}");
+        // 8 + 1 + 8 bytes into 16: checked.
+        let (code, fails) = &statements[1];
+        assert!(*fails && code.contains("SceChecked.bounded("), "{code}");
+        // A variable of 16 bytes into one of 8: checked.
+        let (code, fails) = &statements[2];
+        assert!(*fails && code.contains("SceChecked.bounded("), "{code}");
+        // A literal of exactly the bound: total.
+        let (code, fails) = &statements[3];
+        assert!(!fails && !code.contains("SceChecked.bounded"), "{code}");
     }
 
     /// A `<send event="e" typeexpr="kind">` declaring `types`.

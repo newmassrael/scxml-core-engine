@@ -816,6 +816,22 @@ impl<const N: usize> SceString<N> {
         Self::proven_text(from.as_str())
     }
 
+    /// The text of an expression whose length the build proved is at most `L`
+    /// bytes (docs/adr/0133), `L` judged against `N` when this is compiled
+    /// ([`Fits`]): what a machine writes where it stores a text it proved fits
+    /// its place, with no `Result` and so no failure to receive. A text past
+    /// `N` breaks the proof the build made, and stops the program rather than
+    /// be cut or dropped, as a broken proof does in every runtime that prints
+    /// one.
+    pub fn within<const L: usize>(text: &str) -> Self {
+        let () = Fits::<L, N>::OK;
+        let mut held = Self::new();
+        match held.try_push_str(text) {
+            Ok(()) => held,
+            Err(CapacityExceeded) => bound_proven_at_build_was_not(),
+        }
+    }
+
     /// The text of the literal `text`, whose length `L` [`sce_text!`] reads at
     /// build time and judges against `N` ([`Fits`]): a literal past the bound
     /// does not compile. The one way a literal is built with no `Result`; the
@@ -834,6 +850,14 @@ impl<const N: usize> SceString<N> {
             Ok(()) | Err(CapacityExceeded) => held,
         }
     }
+}
+
+/// The panic of [`SceString::within`], out of line and cold, so that each store
+/// inlines a test and a call that takes no argument.
+#[cold]
+#[inline(never)]
+fn bound_proven_at_build_was_not() -> ! {
+    panic!("a text SCE proved within its place's bound at build time was not (docs/adr/0133)")
 }
 
 impl<const N: usize> Default for SceString<N> {
@@ -1310,6 +1334,22 @@ mod tests {
         let accented = SceString::<4>::from_text("é").expect("fits");
         assert!(write!(out, "{text}{inline}{accented}").is_ok());
         assert_eq!(out.as_str(), "abcdé");
+    }
+
+    // docs/adr/0133: a text the build proved within its place's bound is stored
+    // whole with no `Result`, as the checked constructor stores one that fits.
+    #[test]
+    fn a_text_proven_to_fit_is_stored_whole() {
+        let proven = SceString::<8>::within::<4>("abcd");
+        assert_eq!(proven, SceString::<8>::from_text("abcd").expect("fits"));
+        assert_eq!(SceString::<4>::within::<0>("").as_str(), "");
+    }
+
+    // ... and a text that breaks the proof stops the program, never cut to fit.
+    #[test]
+    #[should_panic(expected = "proved within its place's bound")]
+    fn a_text_that_breaks_its_proof_stops_the_program() {
+        let _ = SceString::<2>::within::<2>("abc");
     }
 
     // Both profiles coexist in one binary and carry the same bytes — the

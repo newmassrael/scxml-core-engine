@@ -212,8 +212,8 @@ PY
 # `copy` stores a variable, whose length the compiler cannot see.
 mutation_case "a string is assigned past its capacity" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        if let Some(capacity) = self.strings.get(location) {\n            Receiving {\n                text: self.target.bounded_string(&value.text, *capacity),",
-     "        if let Some(capacity) = self.strings.get(location) {\n            Receiving {\n                text: self.target.bounded_string(&value.text, *capacity + 1000000),")
+     "            None => Receiving {\n                text: self.target.bounded_string(&value.text, capacity),",
+     "            None => Receiving {\n                text: self.target.bounded_string(&value.text, capacity + 1000000),")
 PY
 
 mutation_case "a string is copied without its terminator" <<'PY'

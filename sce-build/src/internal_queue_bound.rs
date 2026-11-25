@@ -1870,4 +1870,97 @@ mod tests {
         assert!(lines.iter().all(|line| line.len() <= 72));
         assert_eq!(lines.join(" "), bound.basis());
     }
+
+    // ── docs/adr/0133: a statement the build proves cannot fail ──────────
+
+    /// A `sce-static` document whose `idle` state's `tick` transition holds
+    /// `assigns`, and whose `busy` state takes `error.execution`.
+    fn session(assigns: &str) -> String {
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="count" sce:type="uint8" expr="0"/>
+    <data id="wide" sce:type="uint16" expr="0"/>
+    <data id="phase" sce:type="string" sce:capacity="16" expr="'idle'"/>
+    <data id="last" sce:type="string" sce:capacity="16" expr="'none'"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="tick" target="busy">{assigns}
+    </transition>
+  </state>
+  <state id="busy">
+    <transition event="error.execution" target="idle"/>
+    <transition event="done" target="idle"/>
+  </state>
+</scxml>"#
+        )
+    }
+
+    /// Each `<assign>` here is total: a literal into its own type, a widening
+    /// read, arithmetic the declared ranges keep in its type (one under a
+    /// condition of its own), a literal text within its place's bound, and a
+    /// text place copied into one of the same bound.
+    const TOTAL_ASSIGNS: &str = r#"
+      <assign location="count" expr="7"/>
+      <assign location="wide" expr="count"/>
+      <assign location="count" expr="count / 2 + 1"/>
+      <assign location="count" expr="count > 0 ? count - 1 : 0"/>
+      <assign location="phase" expr="'waiting'"/>
+      <assign location="last" expr="phase"/>"#;
+
+    /// The statements of `session(assigns)`'s `tick` transition as the Rust
+    /// lowering leaves them, and the document's internal queue bound read from
+    /// the same lowered model, as the generator reads it.
+    fn lowered_session(assigns: &str) -> (Vec<Action>, InternalQueueBound) {
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_string(&session(assigns), "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        crate::forge::static_lowering::lower_rust(&mut model, "M").expect("lowers");
+        let actions = model.states["idle"].transitions[0].actions.clone();
+        (actions, InternalQueueBound::of(&model))
+    }
+
+    /// A document whose only statements are total assigns raises nothing, so
+    /// its internal queue is 0 deep, and the Rust each assign is lowered to
+    /// holds no error path: no `?` and no `error.execution` raised.
+    #[test]
+    fn total_assigns_leave_the_internal_queue_bound_at_zero() {
+        let (actions, bound) = lowered_session(TOTAL_ASSIGNS);
+        assert_eq!(actions.len(), 6, "{actions:?}");
+        for action in &actions {
+            assert!(!action.statement_can_fail(), "{}", action.native_code);
+            assert!(
+                !action.native_code.contains('?') && !action.native_code.contains("platform_error"),
+                "{}",
+                action.native_code
+            );
+        }
+        assert_eq!(
+            bound,
+            InternalQueueBound::Proven {
+                bound: 0,
+                case: ProvenCase::NothingRaises,
+            }
+        );
+    }
+
+    /// The same document with one assign the declared types do not prove — a
+    /// `uint8` sum that can pass 255 — raises `error.execution` there, and the
+    /// bound counts it.
+    #[test]
+    fn one_assign_that_can_fail_is_counted_by_the_bound() {
+        let (actions, bound) = lowered_session(&format!(
+            "{TOTAL_ASSIGNS}\n      <assign location=\"count\" expr=\"count + 1\"/>"
+        ));
+        let added = actions.last().expect("the added assign");
+        assert!(added.statement_can_fail(), "{}", added.native_code);
+        assert!(
+            added.native_code.contains("platform_error"),
+            "{}",
+            added.native_code
+        );
+        assert_ne!(bound.depth(), Some(0), "{bound:?}");
+    }
 }
