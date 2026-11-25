@@ -6,6 +6,8 @@
 - Amends: ADR 0064 (decision 2, the tables; the alternative "precomputing more in the tables", which it left to be
   decided inside the tables and measured) and ADR 0066 (a program pays for what its documents use, carried from the
   two features to how a microstep's sets are formed).
+- Amended by: ADR 0135 (decision 3: the row walk holds its class's selection beside exitStates and enterStates, and
+  reads it from the document's candidate rows).
 - Related: ADR 0053 (the runtime's features only add), ADR 0056 (the microstep's buffers are the document's size),
   ADR 0067 (a row is as small as its numbers), ADR 0068, ADR 0123 (the core decides where a run ends).
 - Requested by: a downstream bare-metal consumer, 2026-11-25.

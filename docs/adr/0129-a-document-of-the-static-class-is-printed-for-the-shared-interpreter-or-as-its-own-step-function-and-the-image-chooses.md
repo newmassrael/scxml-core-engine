@@ -1,8 +1,13 @@
 # ADR 0129 — A document of the static class is printed either for the shared interpreter or as its own step function; the image chooses, and a differential test binds the two forms
 
-- Status: Accepted (2026-11-25), on the owner's decisions, under the owner's standing rule: the most long-term
-  correct, textbook structure, cost ignored. The Rust part is implemented in the order of the last section; its
-  figures are the footprint gate's and the consumer's measurement at the landing (section "Acceptance").
+- Status: Superseded by ADR 0135 (2026-11-26). Accepted 2026-11-25; the consumer's measurement refuted its
+  acceptance: with three machines printed as their own step functions the image's transport area grew by 6,970
+  bytes instead of shrinking. `Engine<P>::run_turn` was one body of 1,303 to 1,327 bytes per policy and
+  `Turn<EngineHost<P>, StepFunctionForm<P>>` one instantiation per machine, and each machine's `select_transition`
+  (1,720 / 1,622 / 832 bytes) and `microstep` (1,077 / 995 / 439 bytes) inlined `first_enabled` and the hooks
+  with constant arguments. ADR 0135 makes the main loop one body for every machine and runs the class by one walker
+  over its tables; the printed form, its option and its diagnostic are removed. The text below is the decision as
+  it was taken.
 - Date: 2026-11-25
 - Amends: ADR 0064 (decision 6, "there is one structure and no build mode": for a document of the static class the
   image chooses between two forms of one structure, per document, and no runtime feature or `cfg` chooses).

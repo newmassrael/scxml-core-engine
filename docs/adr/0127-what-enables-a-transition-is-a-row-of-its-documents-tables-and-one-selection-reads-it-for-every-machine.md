@@ -5,6 +5,8 @@
   gate measures the landing.
 - Amends: ADR 0123 (a machine's behaviour is indexed by the numbers its tables are), carried from where a run ends to
   which transition an event enables.
+- Amended by: ADR 0135 (decision 2: a document the row walk serves is selected from its candidate rows, made from
+  these rows, and carries no selection rows of its own).
 - Related: ADR 0064 (Appendix D runs once over a document's tables), ADR 0067 (a row is as small as its numbers),
   ADR 0074 (the engine's per-turn state belongs to its shared core), ADR 0125 (what a document fixes of a microstep is
   walked as rows), ADR 0131 (a policy's hook is handed the engine's state apart from the policy; `guard_holds` is one
