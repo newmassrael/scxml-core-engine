@@ -263,7 +263,7 @@ fn a_chain_hands_the_routine_its_rule() {
         format!(
             "impl<'f> {RUNTIME}ChainRule<'f, CodecChainPrevEntry, 2> for CodecChainPrevCarrierEntriesChain {{ \
              type Kinds = {RUNTIME}NoKinds; \
-             #[inline(always)] \
+             #[inline] \
              fn read(_r: &mut SceReader<'f>, _a: &[u8; 2]) -> CodecChainPrevEntry {{ \
              CodecChainPrevEntry::read(_r, _a[0], _a[1]) }} \
              fn follows(_e: &CodecChainPrevEntry) -> bool {{ _e.z() }} \
@@ -299,7 +299,7 @@ fn a_chain_hands_the_routine_its_rule() {
             "impl<'f, S: CodecTlvChainBasicFrom<'f>> {RUNTIME}ChainRule<'f, CodecTlvEntryOwned<S>, 0> \
              for CodecTlvChainBasicExtensionsChain {{ \
              type Kinds = {RUNTIME}NoKinds; \
-             #[inline(always)] \
+             #[inline] \
              fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecTlvEntryOwned<S> {{ \
              CodecTlvEntryOwned::<S>::read(_r) }} }}"
         ),

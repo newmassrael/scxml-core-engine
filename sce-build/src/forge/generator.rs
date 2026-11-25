@@ -22162,7 +22162,7 @@ fn rust_chain_rule_item(ctx: &RustChainRule<'_>) -> String {
          impl{read_generics} {RUNTIME_CODEC}::ChainRule<'f, {entry_type}, {width}> for {rule} {{\n    \
              type Kinds = {asked};\n\
          \n    \
-             #[inline(always)]\n    \
+             #[inline]\n    \
              fn read(_r: &mut SceReader<'f>, _a: &[u8; {width}]) -> {entry_type} {{\n        \
                  {body_type}::read(_r{call_args})\n    \
              }}{follows}{carry}\n\
