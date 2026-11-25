@@ -53,10 +53,12 @@ PY
 # A codec a document of the set imports is a module of the tree as well, and a
 # codec that holds it asks the deployment for its fields. Killed by
 # `a_deployment_answers_for_every_field_of_its_set` (`CodecZenohMsgPutPayloadField`).
+# The filter keeps naming `ForgeKind`: a closure that drops it leaves the
+# import unused, and the lib does not compile under `-D warnings`.
 mutation_case "a codec reached by import is not answered for" <<'PY'
 edit("sce-build/src/forge/deployment.rs",
      r'''        for import in imports.iter().filter(|i| i.kind == ForgeKind::Codec) {''',
-     r'''        for import in imports.iter().filter(|_| false) {''')
+     r'''        for import in imports.iter().filter(|i| i.kind == ForgeKind::Codec && false) {''')
 PY
 
 # A gated codec answered for outside its gate names a module the build leaves out.
