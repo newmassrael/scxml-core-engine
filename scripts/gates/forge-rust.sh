@@ -126,6 +126,16 @@ sce_gate_tested -- env MIRIFLAGS="-Zmiri-many-seeds=0..8" \
     PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime \
     --test broadcast_log_threads \
     || sce_gate_fail "Rust forge broadcast log threads under Miri"
+# The engine's dispatch of a policy's hooks (docs/adr/0131), under Miri with the
+# same pinned nightly. A hook is handed the policy and the engine's state, two
+# fields borrowed apart; the dispatch that handed it a `&mut` of the policy
+# beside a `&mut` of the whole engine was undefined behaviour Miri reports on
+# the first entry of every machine, and `cargo test` passes it. Here because
+# this gate is the one that holds the nightly with Miri, and its trigger
+# (`backends/rust/**`) covers the runtime the test reads.
+sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo miri test -p sce-rust-runtime \
+    --test a_hook_borrows_the_policy_and_the_engine_state_apart \
+    || sce_gate_fail "Rust engine hook dispatch under Miri"
 # `-Zbuild-std` because ThreadSanitizer needs the standard library
 # instrumented too, or every use of a std lock or channel reads as a race. Its
 # own target directory, so the flag does not invalidate the ordinary build.
