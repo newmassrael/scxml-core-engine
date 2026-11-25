@@ -650,7 +650,9 @@ pub use inbox::{EngineInbox, InboxWaker, TreeInboxes};
 /// inbox, and why a post was refused.
 pub use inbox::{InboxInput, InboxInputOf, InboxRefusal};
 /// The [`log`] facade crate, re-exported so generated code can reach it
-/// without the consumer declaring it.
+/// without the consumer declaring it. Present with the `log` feature, which
+/// `default` holds; without it the macros write nothing and need no facade
+/// (docs/adr/0053, amendment of 2026-11-25).
 ///
 /// Generated machines name every runtime symbol through this crate
 /// (`::sce_rust_runtime::SceString`, `::sce_rust_runtime::helpers::…`), so a
@@ -660,6 +662,7 @@ pub use inbox::{InboxInput, InboxInputOf, InboxRefusal};
 /// the macros would expand to a bare `::log`, which resolves in the *calling*
 /// crate and so silently made `log` an undeclared dependency of every consumer
 /// compiling a machine with a datamodel.
+#[cfg(feature = "log")]
 pub use log;
 /// Ungated on purpose — see [`payload_reading`]. The `scripting` re-export
 /// below carries the same name for `std` builds, which is why this one is
