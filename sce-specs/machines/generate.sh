@@ -25,9 +25,6 @@ source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 
 MACHINES=(request_life import_life)
 
-if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
-fi
 SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 for machine in "${MACHINES[@]}"; do

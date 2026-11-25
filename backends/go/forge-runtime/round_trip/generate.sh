@@ -28,10 +28,6 @@ GO_MOD_FILE="$REPO_ROOT/backends/go/forge-runtime/go.mod"
 GO_MODULE_ROOT="$(awk '$1 == "module" { print $2; exit }' "$GO_MOD_FILE")"
 GO_MODULE_PREFIX="$GO_MODULE_ROOT/round_trip/generated"
 
-if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
-fi
-
 SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 # Clean stale fixtures (keep the .gitignore-equivalent marker).

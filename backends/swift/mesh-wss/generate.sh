@@ -16,9 +16,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 
-if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
-fi
 SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 LOOPBACK="$REPO_ROOT/tests/mesh/wss_loopback"

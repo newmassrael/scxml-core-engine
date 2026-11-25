@@ -33,9 +33,6 @@ OUT_DIR="$SCRIPT_DIR/src/generated"
 MODULE_LIST="$SCRIPT_DIR/src/generated.rs"
 STDLIB_MESH="$REPO_ROOT/stdlib/mesh"
 
-if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
-fi
 SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 find "$OUT_DIR" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
