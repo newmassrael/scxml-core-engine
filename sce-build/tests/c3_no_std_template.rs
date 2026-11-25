@@ -1274,7 +1274,7 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
     // again, so one waits at most, and the queue is of that capacity
     // (docs/adr/0132).
     const PULL_SCHEDULER: &str =
-        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;";
+        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, ";
     const NO_SLOT: &str = "type DoneData = sce_rust_runtime::NoDoneData;";
     const STRING_SLOT: &str = "type DoneData = ::sce_rust_runtime::SceString;";
     const STASH: &str = "engine.stash_donedata_at_final(";
@@ -1308,7 +1308,7 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
             "no_std={no_std}: a delayed send waits in a PullScheduler"
         );
         assert!(
-            delayed.contains("pub const SCHEDULER_CAPACITY: usize = 1;"),
+            delayed.contains("PullScheduler<Self::ScheduledSendId, 1>;"),
             "no_std={no_std}: one delayed send in a state entered once waits at most once"
         );
         assert!(
@@ -1776,9 +1776,8 @@ fn a_zero_or_malformed_sce_scheduler_capacity_is_refused_by_its_rule() {
 
 #[test]
 fn rust_template_sizes_the_delayed_send_queue_by_what_the_document_can_leave_waiting() {
-    const SIZED: &str =
-        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;";
-    const HELD: &str = "const SCHEDULER_BOUND: Option<usize> = Some(SCHEDULER_CAPACITY);";
+    const SIZED: &str = "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, ";
+    const HELD: &str = "const SCHEDULER_BOUND: Option<usize> = Some(";
     for no_std in [false, true] {
         let code = generate(
             &analysed(DEADLINES_FSM, "", "deadlines"),
@@ -1787,7 +1786,7 @@ fn rust_template_sizes_the_delayed_send_queue_by_what_the_document_can_leave_wai
         )
         .expect("a document whose deadlines are proven generates on both profiles");
         assert!(
-            code.contains("pub const SCHEDULER_CAPACITY: usize = 2;"),
+            code.contains("PullScheduler<Self::ScheduledSendId, 2>;"),
             "no_std={no_std}: the limit and one state's deadline wait at once:\n{code}"
         );
         assert!(
@@ -1815,7 +1814,7 @@ fn rust_template_sizes_the_delayed_send_queue_by_what_the_document_can_leave_wai
         )
         .expect("render");
         assert!(
-            declared.contains("pub const SCHEDULER_CAPACITY: usize = 2;"),
+            declared.contains("PullScheduler<Self::ScheduledSendId, 2>;"),
             "no_std={no_std}: the proven capacity wins over the declared one"
         );
     }
@@ -1835,7 +1834,7 @@ fn a_document_whose_delayed_sends_are_not_bounded_takes_its_declared_capacity() 
         )
         .expect("a declared capacity sizes a queue no capacity is proven for");
         assert!(
-            code.contains("pub const SCHEDULER_CAPACITY: usize = 4;"),
+            code.contains("PullScheduler<Self::ScheduledSendId, 4>;"),
             "no_std={no_std}: the declared capacity sizes the queue:\n{code}"
         );
         assert!(
@@ -1871,5 +1870,5 @@ fn a_bare_metal_document_with_no_proven_or_declared_capacity_is_refused() {
         hosted.contains("type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;"),
         "the hosted queue names no capacity:\n{hosted}"
     );
-    assert!(!hosted.contains("SCHEDULER_CAPACITY"));
+    assert!(!hosted.contains("PullScheduler<Self::ScheduledSendId, "));
 }

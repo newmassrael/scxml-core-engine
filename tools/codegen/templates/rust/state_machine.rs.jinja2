@@ -109,14 +109,6 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // (the policy-carried SSOT for the per-machine queue size).
 pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 {% endif %}
-{% if scheduler_queue == "sized" %}
-
-// docs/adr/0132: the most delayed events this machine's delayed-send queue
-// holds at once, proven from the document or, where none is proven, declared
-// by it (`<scxml sce:scheduler-capacity>`), as the policy below says. Consumed
-// by `type Scheduler` as the no_std ring's capacity.
-pub const SCHEDULER_CAPACITY: usize = {{ scheduler_capacity }};
-{% endif %}
 {% if answer_schemas %}
 
 /// The answer schemas this machine's model generations name with `sce:answer`
@@ -1999,10 +1991,12 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% for line in scheduler_basis %}
     // {{ line }}
 {% endfor %}
-    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;
+    // The capacity is the type's alone (`PullScheduler::CAPACITY`): no module
+    // item names it, so the machines a module re-exports together share no name.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, {{ scheduler_capacity }}>;
 {% if scheduler_proven %}
     // The same capacity, held to every run a test build makes (docs/adr/0132).
-    const SCHEDULER_BOUND: Option<usize> = Some(SCHEDULER_CAPACITY);
+    const SCHEDULER_BOUND: Option<usize> = Some({{ scheduler_capacity }});
 {% endif %}
 {% elif scheduler_queue == "growable" %}
     // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above. No

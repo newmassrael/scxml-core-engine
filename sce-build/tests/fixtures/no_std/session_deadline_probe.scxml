@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  docs/adr/0134: a session whose states keep deadlines, generated with
-  `--no-std` and compiled for an MCU target with no allocator by the nostd-mcu
+  docs/adr/0134: a session whose states keep deadlines, generated for a
+  bare-metal build (no_std) and compiled for an MCU target with no allocator by the nostd-mcu
   gate (backends/rust/probes/nostd-delay). Each atomic state arms its deadline
   with a delayed <send> in its onentry and cancels it by the same id in its
   onexit, and the compound `session` keeps an overall limit the same way.
