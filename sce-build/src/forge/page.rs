@@ -263,6 +263,7 @@ pub enum Word {
     ClauseInitial,
     ClauseBinding,
     ClauseQueue,
+    ClauseScheduler,
     TypeInternal,
     Raise,
     /// A feature model's heading (ADR 0057 §2). It opens the block of its
@@ -429,6 +430,7 @@ impl Word {
         Word::ClauseInitial,
         Word::ClauseBinding,
         Word::ClauseQueue,
+        Word::ClauseScheduler,
         Word::TypeInternal,
         Word::Raise,
         Word::FeatureModel,
@@ -616,6 +618,7 @@ fn en_word(w: Word) -> &'static str {
         Word::ClauseInitial => "initial:",
         Word::ClauseBinding => "binding:",
         Word::ClauseQueue => "queue:",
+        Word::ClauseScheduler => "scheduler:",
         Word::TypeInternal => "[internal]",
         Word::Raise => "raise",
         Word::FeatureModel => "feature-model",
@@ -1156,6 +1159,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::ClauseInitial => "초기상태:",
         Word::ClauseBinding => "바인딩:",
         Word::ClauseQueue => "큐:",
+        Word::ClauseScheduler => "지연큐:",
         Word::TypeInternal => "[내부]",
         Word::Raise => "발생",
         Word::FeatureModel => "기능모델",
@@ -1193,6 +1197,7 @@ fn plain_word(word: Word) -> &'static str {
         Word::ClauseInitial => "first state:",
         Word::ClauseBinding => "initial values assigned:",
         Word::ClauseQueue => "event queue size:",
+        Word::ClauseScheduler => "delayed events held at once:",
         other => en_word(other),
     }
 }

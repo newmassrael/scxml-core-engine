@@ -3189,6 +3189,7 @@ fn parse_statechart(
             "initial" => m.initial = undo(value, head.number)?,
             "binding" => m.binding = undo(value, head.number)?,
             "queue" => m.event_queue_capacity = value.parse().ok(),
+            "scheduler" => m.scheduler_capacity = value.parse().ok(),
             other => {
                 return Err(ParseError {
                     line: head.number,

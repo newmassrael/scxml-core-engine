@@ -122,7 +122,8 @@
 //! order of lines is order in the document.
 //!
 //! ```text
-//!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>])
+//!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>]
+//!                  [, scheduler: <n>])
 //!     context <id> [cpp-type <t>] [cpp-include <i>] [kt-type <t>]
 //!     data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>]
 //!          [src <s>] [= <expr>] [content <c>]
@@ -2594,6 +2595,9 @@ fn render_statechart(
     }
     if let Some(cap) = m.event_queue_capacity {
         clauses.push((Word::ClauseQueue, cap.to_string()));
+    }
+    if let Some(cap) = m.scheduler_capacity {
+        clauses.push((Word::ClauseScheduler, cap.to_string()));
     }
     // The clause list's parentheses and commas are this construct's
     // punctuation and stay text, the same call the algorithm signature

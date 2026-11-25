@@ -435,6 +435,35 @@ pub(crate) fn artifact_label(source_name: &str) -> String {
         .to_string()
 }
 
+/// A capacity an `sce:` attribute of `<scxml>` declares (`sce:capacity`,
+/// `sce:scheduler-capacity`): a whole number of at least one, or none when the
+/// attribute is absent. Any other value is refused by the rule it breaks,
+/// naming the attribute, so a malformed or zero capacity is never read as none.
+fn root_capacity(
+    root: &roxmltree::Node<'_, '_>,
+    local_name: &str,
+    diag_label: &str,
+) -> Result<Option<u32>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    let Some(raw) = crate::sce_attr::read(root, local_name) else {
+        return Ok(None);
+    };
+    match raw.parse::<u32>() {
+        Ok(n) if n > 0 => Ok(Some(n)),
+        _ => Err(crate::forge::error::Located::new(
+            crate::forge::error::ValidationError::AttributeRuleViolated {
+                element: "scxml".to_string(),
+                attr: format!("sce:{local_name}"),
+                value: raw.to_string(),
+                rule: "positive u32".to_string(),
+            }
+            .into(),
+            diag_label,
+            None,
+            None,
+        )),
+    }
+}
+
 /// Resolve the `datamodel` attribute to the data model SCE will use.
 ///
 /// `None` is an absent attribute, whose value the spec leaves
@@ -3247,26 +3276,12 @@ impl SCXMLParser {
         // `compile_forge_with_deploy`). The value feeds the
         // `EVENT_QUEUE_CAPACITY` bound of the heapless event queue
         // in `--no-std` emission.
-        let event_queue_capacity = match crate::sce_attr::read(&root, "capacity") {
-            None => None,
-            Some(raw) => match raw.parse::<u32>() {
-                Ok(n) if n > 0 => Some(n),
-                _ => {
-                    return Err(crate::forge::error::Located::new(
-                        crate::forge::error::ValidationError::AttributeRuleViolated {
-                            element: "scxml".to_string(),
-                            attr: "sce:capacity".to_string(),
-                            value: raw.to_string(),
-                            rule: "positive u32".to_string(),
-                        }
-                        .into(),
-                        diag_label,
-                        None,
-                        None,
-                    ));
-                }
-            },
-        };
+        let event_queue_capacity = root_capacity(&root, "capacity", diag_label)?;
+        // docs/adr/0132: `<scxml sce:scheduler-capacity="N">` declares the most
+        // delayed events the machine's delayed-send queue holds at once, which a
+        // bare-metal build of a document whose capacity the generator proves no
+        // bound for is sized by. Read by the same rule as `sce:capacity`.
+        let scheduler_capacity = root_capacity(&root, "scheduler-capacity", diag_label)?;
 
         // SCE Accepted Subset §2.16: `<scxml sce:interface="closed">`
         // declares that every event crossing the statechart's boundary is
@@ -3411,6 +3426,7 @@ impl SCXMLParser {
             datamodel: resolve_declared_datamodel(root.attribute("datamodel"))
                 .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?,
             event_queue_capacity,
+            scheduler_capacity,
             interface_closed,
             transition_table_declared,
             transition_function_declared,

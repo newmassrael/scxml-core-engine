@@ -1677,3 +1677,58 @@ fn cargo_config_declares_thumbv7em_target() {
         "thumbv7em target must specify rust-lld as linker"
     );
 }
+
+/// A delayed send never cancelled in a state a transition enters again: no
+/// capacity is proven.
+const PILING_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="a"{declared}>
+  <state id="a">
+    <onentry><send event="tick" delay="1s"/></onentry>
+    <transition event="go" target="b"/>
+  </state>
+  <state id="b">
+    <transition event="back" target="a"/>
+  </state>
+</scxml>
+"#;
+
+/// `document` with `declared` written on its `<scxml>`, analysed as the
+/// command line does before it renders.
+fn analysed(document: &str, declared: &str, label: &str) -> sce_build::model::SCXMLModel {
+    let mut model = parse(&document.replace("{declared}", declared), label);
+    sce_build::analyzer::analyze(&mut model, label);
+    model
+}
+
+#[test]
+fn sce_scheduler_capacity_attribute_is_parsed_into_model() {
+    let declared = analysed(PILING_FSM, r#" sce:scheduler-capacity="4""#, "declared");
+    assert_eq!(declared.scheduler_capacity, Some(4));
+    let absent = analysed(PILING_FSM, "", "absent");
+    assert_eq!(absent.scheduler_capacity, None);
+}
+
+#[test]
+fn a_zero_or_malformed_sce_scheduler_capacity_is_refused_by_its_rule() {
+    for written in ["0", "many"] {
+        let document = PILING_FSM.replace(
+            "{declared}",
+            &format!(r#" sce:scheduler-capacity="{written}""#),
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&document, "bad_scheduler_capacity")
+            .expect_err("a capacity that is not a positive u32 must reject");
+        match err.error {
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::AttributeRuleViolated { attr, value, .. } => {
+                    assert_eq!(attr, "sce:scheduler-capacity");
+                    assert_eq!(value, written);
+                }
+                other => panic!("expected AttributeRuleViolated, got: {other:?}"),
+            },
+            other => panic!("expected AttributeRuleViolated, got: {other:?}"),
+        }
+    }
+}

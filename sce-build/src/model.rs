@@ -4698,6 +4698,19 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_queue_capacity: Option<u32>,
 
+    /// `<scxml sce:scheduler-capacity="N">`: the most delayed events the
+    /// machine's delayed-send queue holds at once, declared by the document for
+    /// a bare-metal build of a document whose capacity the generator proves no
+    /// bound for (docs/adr/0132). A proven capacity is used in its place, so the
+    /// declaration is read only where the proof cannot bound the delayed sends.
+    /// Unit: delayed events.
+    ///
+    /// Schema invariant enforced by the parser: present-but-malformed
+    /// (non-numeric, zero, or u32-overflow) surfaces
+    /// `validation/attribute-rule-violated`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduler_capacity: Option<u32>,
+
     /// `<scxml sce:interface="closed">`: every event this statechart takes
     /// from outside or sends outside is one an imported event-schema
     /// declares (SCE Accepted Subset §2.16, `crate::scxml_interface`).

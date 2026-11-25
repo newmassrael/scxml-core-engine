@@ -323,6 +323,13 @@
        and refused beside a bracket that states the same bound. On `<scxml>` it
        is the queue's depth, which is no value type and stays. -->
   <xs:attribute name="capacity" type="xs:string"/>
+  <!-- `sce:scheduler-capacity` on a statechart's `<scxml>`: the most delayed
+       events its delayed-send queue holds at once, which sizes a bare-metal
+       build where the generator proves no capacity from the document
+       (docs/adr/0132). `xs:string` for `sce:capacity`'s reason: the parser
+       refuses a value that is not a positive u32 with its own diagnostic, which
+       a schema type would pre-empt. -->
+  <xs:attribute name="scheduler-capacity" type="xs:string"/>
   <!-- `sce:limit="name"` beside a `capacity` or a `returns-max-size`: the name a
        build gives another number for (the `limit` option of `sce-codegen`, one
        `name=N` each), so that the
