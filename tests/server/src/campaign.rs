@@ -89,6 +89,11 @@ pub struct Delivery {
 /// The client of a server whose binding is durable (docs/adr/0109, D10): it reads its outbox by
 /// polls, acknowledging what it took in, goes away for a while now and then, and now and then
 /// loses a response, as a client whose exchange failed does.
+///
+/// The first of each is not left to the draw: the first poll response that carries envelopes is
+/// lost, and the client goes away at its first step after it took something in. A campaign is
+/// then sure to ask of the outbox what a client that never misses an exchange would not, however
+/// many steps the clock gave it and whatever its seed drew; the draw adds the rest.
 #[derive(Debug, Clone, Default)]
 struct DurableClient {
     /// The incarnation the outbox numbers in, as the last poll the client took said.
@@ -108,6 +113,20 @@ struct DurableClient {
     absences: u64,
     /// How many incarnations the client saw its outbox number in.
     incarnations: u64,
+}
+
+impl DurableClient {
+    /// Whether the client goes away at a step it would poll at: at the first after it took
+    /// something in, since it has not been away yet, and after that as `draw` decides.
+    fn goes_away(&self, draw: &mut Draw) -> bool {
+        (self.absences == 0 && self.ack > 0) || draw.chance(self.absent_percent)
+    }
+
+    /// Whether a poll response that carries envelopes is lost before the client takes it in:
+    /// the first is, since none has been lost yet, and after it as `draw` decides.
+    fn loses(&self, draw: &mut Draw) -> bool {
+        self.lost_responses == 0 || draw.chance(self.lost_percent)
+    }
 }
 
 /// A server killed again and again while its client keeps asking. See the module documentation.
@@ -158,11 +177,12 @@ impl Campaign {
 
     /// Make the campaign's client that of a durable binding (docs/adr/0109, D10), for a server
     /// started with `ServerOptions::durable`: it reads the server's sends by polls, each
-    /// acknowledging what it took in; at each step it goes away with a chance of
-    /// `absent_percent` in a hundred, for between `absent_ms.0` and `absent_ms.1` milliseconds,
-    /// polling nothing meanwhile; and it loses a poll's response before taking it in with a chance
-    /// of `lost_percent`. A life's halt is drawn from [`Stage::DURABLE`]: the commit, the
-    /// acknowledgement and the expiry.
+    /// acknowledging what it took in; at its first step after it took something in, and after
+    /// that at each step with a chance of `absent_percent` in a hundred, it goes away for between
+    /// `absent_ms.0` and `absent_ms.1` milliseconds, polling nothing meanwhile; and it loses the
+    /// first poll response that carries envelopes, and each after it with a chance of
+    /// `lost_percent`, before taking it in. A life's halt is drawn from [`Stage::DURABLE`]: the
+    /// commit, the acknowledgement and the expiry.
     pub fn durable(&mut self, absent_percent: u64, absent_ms: (u64, u64), lost_percent: u64) {
         self.stages = &Stage::DURABLE;
         self.durable = Some(DurableClient {
@@ -413,11 +433,7 @@ impl Campaign {
     /// Poll the durable client's outbox (docs/adr/0109, D10), acknowledging what it took in,
     /// unless the client is away; at `now` it may go away.
     fn poll(&mut self, server: &ServerProcess, now: Instant) {
-        let Some((absent_percent, absent_ms)) = self
-            .durable
-            .as_ref()
-            .map(|client| (client.absent_percent, client.absent_ms))
-        else {
+        let Some(absent_ms) = self.durable.as_ref().map(|client| client.absent_ms) else {
             return;
         };
         let away = self
@@ -428,7 +444,11 @@ impl Campaign {
         if away {
             return;
         }
-        if self.draw.chance(absent_percent) {
+        let goes_away = self
+            .durable
+            .as_ref()
+            .is_some_and(|client| client.goes_away(&mut self.draw));
+        if goes_away {
             let span = Duration::from_millis(self.draw.between(absent_ms.0, absent_ms.1));
             if let Some(client) = self.durable.as_mut() {
                 client.absent_until = Some(now + span);
@@ -449,16 +469,12 @@ impl Campaign {
     /// in their order, and acknowledges them at its next poll. A response of another incarnation
     /// than the one it knew is an outbox that numbers anew.
     fn polled(&mut self, at_ms: u64, epoch: String, envelopes: Vec<(u64, Vec<u8>)>) {
-        let lost_percent = self
-            .durable
-            .as_ref()
-            .map_or(0, |client| client.lost_percent);
-        if self.durable.is_none() {
+        let Some(client) = self.durable.as_ref() else {
             self.errors
                 .push("a mailbox reached a client that polls none".to_string());
             return;
-        }
-        if !envelopes.is_empty() && self.draw.chance(lost_percent) {
+        };
+        if !envelopes.is_empty() && client.loses(&mut self.draw) {
             if let Some(client) = self.durable.as_mut() {
                 client.lost_responses += 1;
             }
@@ -510,5 +526,51 @@ impl Campaign {
             sent_ms,
             seen,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(absent_percent: u64, lost_percent: u64) -> DurableClient {
+        DurableClient {
+            absent_percent,
+            absent_ms: (150, 900),
+            lost_percent,
+            ..DurableClient::default()
+        }
+    }
+
+    /// A client goes away at its first step after it took something in, whatever its chance,
+    /// and never before it took anything in unless the draw says so.
+    #[test]
+    fn a_client_goes_away_once_it_took_something_in_whatever_the_draw() {
+        let mut draw = Draw::new(1);
+        let mut away = client(0, 0);
+        assert!(!away.goes_away(&mut draw), "nothing taken in, no chance");
+
+        away.ack = 1;
+        assert!(away.goes_away(&mut draw), "taken in, never away yet");
+
+        away.absences = 1;
+        assert!(!away.goes_away(&mut draw), "away once, no chance");
+        assert!(client(100, 0).goes_away(&mut draw), "a chance of all");
+    }
+
+    /// The first response that carries envelopes is lost, whatever the chance; after it only the
+    /// draw loses one.
+    #[test]
+    fn the_first_response_is_lost_whatever_the_draw() {
+        let mut draw = Draw::new(1);
+        let mut losing = client(0, 0);
+        assert!(losing.loses(&mut draw), "none lost yet");
+
+        losing.lost_responses = 1;
+        assert!(!losing.loses(&mut draw), "one lost, no chance");
+
+        let mut certain = client(0, 100);
+        certain.lost_responses = 1;
+        assert!(certain.loses(&mut draw), "a chance of all");
     }
 }
