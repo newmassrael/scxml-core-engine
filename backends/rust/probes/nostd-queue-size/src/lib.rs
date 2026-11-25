@@ -186,8 +186,13 @@ const _: () = assert!(
 /// generator stopped reading the document's state tree
 /// (sce-build/src/microstep_bounds.rs) or the Rust template's `type Workspace`
 /// (tools/codegen/templates/rust/state_machine.rs.jinja2) changed.
+///
+/// Three flat states fix every microstep's sets (docs/adr/0125), so the turn
+/// walks the document's rows: it builds no set of states and owes no walk a
+/// step, and only the enabled set is paid. The general walk's capacities above
+/// are what a document outside that class is sized to.
 const _: <EventQueueCapacityProbePolicy as StatePolicy>::Workspace =
-    sce_rust_runtime::Workspace::<{ sce_rust_runtime::state_scratch(3) }, 1, 5, 0>::new();
+    sce_rust_runtime::Workspace::<0, 1, 0, 0>::new();
 
 /// Constant-construction lever. A bare-metal program holds its engine in a
 /// `static`, so nothing is built at start-up and no copy of the engine is made on
