@@ -1261,3 +1261,24 @@ mod chain_ends {
         }
     }
 }
+
+// A length the frame says outside its bound is refused, and the decode reads
+// on through its reader (docs/adr/0128): what it makes of the refused length is
+// total, so the frame is refused with the bound's error and nothing panics.
+mod refused_lengths {
+    use super::codecs::codec_declared_bounds::CodecDeclaredBounds;
+    use sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn a_length_below_its_offset_is_refused_and_not_wrapped() {
+        // No key; a tag length of 0, which says a tag of -1 bytes; no items.
+        let frame = [0x00, 0x00, 0x00];
+        assert_eq!(
+            CodecDeclaredBounds::decode(&mut SceCursor::new(&frame)).err(),
+            Some(CodecError::LengthOutOfRange)
+        );
+        // The same frame with a tag length of 1 is a frame: an empty tag.
+        let frame = [0x00, 0x01, 0x00];
+        assert!(CodecDeclaredBounds::decode(&mut SceCursor::new(&frame)).is_ok());
+    }
+}

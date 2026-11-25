@@ -374,3 +374,66 @@ fn a_body_a_length_bounds_is_read_by_its_own_read() {
         );
     }
 }
+
+/// Codecs whose decode reads a length a sibling carries: one carried as itself
+/// plus one (`sce:length-arith="-1"`) and read streaming, one carried as
+/// itself minus one (`"+1"`) and sliced at a fixed offset, one whose `+1` is
+/// applied to the flag of a carrier, and a 32-bit length sliced at a fixed
+/// offset.
+const LENGTHS: [&str; 4] = [
+    "codec_declared_bounds",
+    "codec_scout_zid_body",
+    "codec_zenoh_hello",
+    "codec_length_ref_uint32_le",
+];
+
+/// A length the check refuses is still read on through the reader
+/// (docs/adr/0128), so what the decode makes of it is total over every value
+/// the carrier holds: the offset is applied checked, and a slice at a fixed
+/// offset is the frame past the offset, then that many bytes of it, with no sum
+/// of the two. Arithmetic that a refused length can carry past its type would
+/// panic in a build that checks it, on a frame that is only to be refused.
+#[test]
+fn a_length_is_offset_and_sliced_with_no_arithmetic_that_can_overflow() {
+    for name in LENGTHS {
+        let code = rust_of(name);
+        let reads: Vec<&str> = ["read", "read_into"]
+            .into_iter()
+            .flat_map(|fun| bodies(&code, fun))
+            .collect();
+        assert!(!reads.is_empty(), "{name} has no read");
+        for body in reads {
+            let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+            for unchecked in [
+                "(_len as usize) - ",
+                "(_len as usize) + ",
+                "try_from(_len - ",
+                "as usize - ",
+                "as usize + ",
+            ] {
+                assert!(
+                    !flat.contains(unchecked),
+                    "{name} offsets a length unchecked (`{unchecked}`):\n{body}"
+                );
+            }
+            for (at, _) in flat.match_indices("raw.get(") {
+                let range = &flat[at + "raw.get(".len()..];
+                let start = range.trim_start_matches(|c: char| c.is_ascii_digit());
+                assert!(
+                    start.starts_with("..)"),
+                    "{name} slices by a sum of an offset and a length:\n{body}"
+                );
+            }
+        }
+    }
+    let bounds = rust_of("codec_declared_bounds");
+    assert!(
+        bounds.contains("checked_sub(1).ok_or(CodecError::LengthOutOfRange)"),
+        "the tag's length is not taken one below what it carries, checked:\n{bounds}"
+    );
+    let zid = rust_of("codec_scout_zid_body");
+    assert!(
+        zid.contains("raw.get(1..).zip((zid_len_m1 as usize).checked_add(1))"),
+        "the zid is not sliced past its offset by a length one above what it carries:\n{zid}"
+    );
+}

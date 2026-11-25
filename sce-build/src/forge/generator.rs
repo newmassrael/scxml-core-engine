@@ -24654,16 +24654,33 @@ fn length_count_stmts(
     let up = u64::try_from(a.max(0)).unwrap_or(0);
     match lang {
         Language::Rust => {
-            let narrow = if fits && a == 0 {
-                "_len as usize".to_string()
-            } else if fits {
-                format!("(_len as usize){offset}")
-            } else if a > 0 {
-                format!(
-                    "cursor.settle(usize::try_from(_len).ok().and_then(|v| v.checked_add({a})).ok_or(CodecError::NeedMoreBytes))"
-                )
-            } else {
-                format!("cursor.settle(usize::try_from(_len{offset}).map_err(|_| CodecError::NeedMoreBytes))")
+            // The check records a refusal in the frame's reader and the decode
+            // reads on (docs/adr/0128), so the offset is applied to a value the
+            // check refused as well, and is applied checked: a value it would
+            // take outside what a length is records `LengthOutOfRange`, the
+            // refusal the check has recorded already. Where the bound proves an
+            // accepted length fits, the offset of an accepted one never fails;
+            // where it does not, a length past what the host addresses is a
+            // frame longer than any buffer (`NeedMoreBytes`).
+            let narrow = match (fits, a) {
+                (true, 0) => "_len as usize".to_string(),
+                (true, n) if n > 0 => format!(
+                    "cursor.settle((_len as usize).checked_add({n}).ok_or(CodecError::LengthOutOfRange))"
+                ),
+                (true, n) => format!(
+                    "cursor.settle((_len as usize).checked_sub({}).ok_or(CodecError::LengthOutOfRange))",
+                    -n
+                ),
+                (false, 0) => {
+                    "cursor.settle(usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes))".to_string()
+                }
+                (false, n) if n > 0 => format!(
+                    "cursor.settle(usize::try_from(_len).ok().and_then(|v| v.checked_add({n})).ok_or(CodecError::NeedMoreBytes))"
+                ),
+                (false, n) => format!(
+                    "cursor.settle(_len.checked_sub({}).ok_or(CodecError::LengthOutOfRange).and_then(|v| usize::try_from(v).map_err(|_| CodecError::NeedMoreBytes)))",
+                    -n
+                ),
             };
             // A gated sibling's value is bound to `_len` by the head of the
             // block (`rust_gated_head`), not here.
@@ -27647,9 +27664,10 @@ fn generate_decode_expr(
                 // The length is the wire's, and a frame may hold fewer bytes
                 // than it says: a slice index would panic on it, where the
                 // decode refuses a short frame with `NeedMoreBytes`.
-                Language::Rust => {
-                    format!("cursor.settle(raw.get({byte_off}..{end}).ok_or(CodecError::NeedMoreBytes))")
-                }
+                Language::Rust => format!(
+                    "cursor.settle({}.ok_or(CodecError::NeedMoreBytes))",
+                    rust_length_ref_slice(field, fields)
+                ),
                 Language::Go => format!("raw[{byte_off}:{end}]"),
                 Language::Python => format!("raw[{byte_off}:{end}]"),
                 Language::C11 => String::new(),
@@ -27683,13 +27701,14 @@ fn generate_decode_expr(
 /// a carrier) holds, adjusted by `sce:length-arith`. The frame is long enough
 /// for the field exactly when it is at least this long, which the positional
 /// decode of C++, Kotlin, Go and Python checks before it slices
-/// (`length_ref_end` on the field) and the Rust one folds into its slice
-/// (`get(..)`).
+/// (`length_ref_end` on the field). The Rust one reads its slice by
+/// [`rust_length_ref_slice`], which forms no such sum.
 ///
 /// The sibling local was bound by an earlier statement of the same decode
 /// body (field order is parser-enforced by `validate_codec_length_field_refs`),
 /// so the language-natural identifier is all this writes. C11 reads the field in
-/// a statement block of its own and Swift has no emitter: both get nothing.
+/// a statement block of its own, Rust through [`rust_length_ref_slice`], and
+/// Swift has no emitter: the three get nothing.
 fn length_ref_end(
     field: &CodecField,
     fields: &[CodecField],
@@ -27738,15 +27757,6 @@ fn length_ref_end(
             };
             format!("{byte_off} + {len}{suffix_signed}")
         }
-        Language::Rust => {
-            let len = match bits {
-                Some((shift, mask)) => {
-                    format!("((({sibling_local} >> {shift}) & 0x{mask:X}) as usize)")
-                }
-                None => format!("{sibling_local} as usize"),
-            };
-            format!("{byte_off} + {len}{suffix_signed}")
-        }
         // Spelled as gofmt leaves it where the end stands: an operand of a
         // comparison, an index of a slice or an argument of `max`, each a
         // level below its statement, where gofmt writes no blank around an
@@ -27763,8 +27773,59 @@ fn length_ref_end(
             };
             format!("{byte_off}+{len}{arith}")
         }
-        Language::C11 | Language::Swift => String::new(),
+        Language::C11 | Language::Rust | Language::Swift => String::new(),
     }
+}
+
+/// The bytes of a length-referenced field of a positional Rust decode, as an
+/// `Option` of the slice of `raw` (the frame's fixed head and what follows
+/// it): `None` where the frame holds fewer bytes than the length says.
+///
+/// The slice is the frame past the field's offset, then that many bytes of it,
+/// so no sum of an offset and a length is formed, and the length a sibling (or
+/// the dotted-path flag of a carrier) holds is narrowed and adjusted by
+/// `sce:length-arith` with checked arithmetic. The decode checks the length
+/// against its bound first ([`positional_bound_guard`]) and reads on where
+/// the check refused it (docs/adr/0128), so the arithmetic is total over every
+/// value the carrier holds and not only over the values the check accepts: a
+/// length that leaves what the host addresses, or below what `-1` needs, is
+/// no slice. Where the bound does not prove the length fits the host's (a 32-
+/// or 64-bit length with no bound that small), it is narrowed by a checked
+/// conversion, so a 32-bit host does not read a length past it as its low bits.
+fn rust_length_ref_slice(field: &CodecField, fields: &[CodecField]) -> String {
+    let byte_off = field.byte_offset;
+    let name = field
+        .length_field
+        .as_deref()
+        .expect("LengthRef bit_size requires sce:length-field attribute");
+    let carried = match dotted_length_field(name) {
+        Some((c, f)) => {
+            let (shift, mask) = dotted_length_resolve(c, f, fields);
+            let local = codec_field_decode_local(c, crate::generator::Language::Rust);
+            format!("(({local} >> {shift}) & 0x{mask:X})")
+        }
+        None => codec_field_decode_local(name, crate::generator::Language::Rust),
+    };
+    let fits = length_guard::Guard::of(field, fields)
+        .expect("a length-ref field has a length bound")
+        .fits_host();
+    let past = format!("raw.get({byte_off}..)");
+    // The length as an `Option`, `None` where it is no length the host holds;
+    // a length the cast holds whole and no offset moves is taken as it is.
+    let len = match (fits, field.length_arith.unwrap_or(0)) {
+        (true, 0) => return format!("{past}.and_then(|_r| _r.get(..{carried} as usize))"),
+        (true, n) if n > 0 => format!("({carried} as usize).checked_add({n})"),
+        (true, n) => format!("({carried} as usize).checked_sub({})", -n),
+        (false, 0) => format!("usize::try_from({carried}).ok()"),
+        (false, n) if n > 0 => {
+            format!("usize::try_from({carried}).ok().and_then(|_v| _v.checked_add({n}))")
+        }
+        (false, n) => format!(
+            "{carried}.checked_sub({}).and_then(|_v| usize::try_from(_v).ok())",
+            -n
+        ),
+    };
+    format!("{past}.zip({len}).and_then(|(_r, _n)| _r.get(.._n))")
 }
 
 /// The value of a field that is part of a word of two bytes or more
