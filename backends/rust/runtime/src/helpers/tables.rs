@@ -713,7 +713,9 @@ pub struct DocumentTables<'t> {
     /// `&ROW_WALK`, which reads them from [`entry_rows`](Self::entry_rows), for
     /// a document with no `<history>`, no `<parallel>` and no transition of more
     /// than one target. A program none of whose documents carries the general
-    /// walk links none of it.
+    /// walk links none of it. A document printed as its own step function
+    /// carries `&NO_WALK` and no entry rows: its policy's step function takes
+    /// its microsteps, and no shared walk does (docs/adr/0129).
     pub walk: &'static WalkProcedures,
     /// For each transition, by [`TransitionId`], what it enters: one row each
     /// when [`walk`](Self::walk) is the row walk, none otherwise.

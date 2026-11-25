@@ -596,6 +596,10 @@ pub use engine::ScheduledRoute;
 #[cfg(feature = "std")]
 pub use engine::TargetSendOutcome;
 pub use engine::{Engine, EngineState};
+/// A document printed as its own step function (docs/adr/0129): the trait the
+/// generated policy implements, the calls its arms make on the engine, and the
+/// value `StatePolicy::STEP_FUNCTION` names it by.
+pub use engine::{StepFunction, StepFunctionForm, Steps};
 /// docs/adr/0090: the reply address an event carries, which the processor that
 /// delivers it writes and a host names in its own terms.
 #[cfg(feature = "std")]
@@ -614,8 +618,8 @@ pub use helpers::event_queue::{
 /// Appendix D's procedures read, named at the crate root because every
 /// generated machine spells them (docs/adr/0064).
 pub use helpers::microstep::{
-    state_scratch, HistoryProcedures, ParallelProcedures, WalkProcedures, Workspace, GENERAL_WALK,
-    HISTORY, PARALLEL, ROW_WALK,
+    state_scratch, Entered, HistoryProcedures, ParallelProcedures, WalkProcedures, Workspace,
+    GENERAL_WALK, HISTORY, NO_WALK, PARALLEL, ROW_WALK,
 };
 pub use helpers::run_store::{record_words, RunStore};
 pub use helpers::state_set::state_words;

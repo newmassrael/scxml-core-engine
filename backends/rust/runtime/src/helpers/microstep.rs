@@ -579,7 +579,8 @@ type EnterStates =
 /// How a microstep's exit and entry sets are formed, carried by every
 /// document's tables ([`DocumentTables::walk`]) and reached through them alone
 /// (docs/adr/0125): the general walk ([`GENERAL_WALK`]) or the row walk
-/// ([`ROW_WALK`]).
+/// ([`ROW_WALK`]); or, for a document printed as its own step function, no
+/// walk of this module at all ([`NO_WALK`], docs/adr/0129).
 ///
 /// Two procedures, the two of the appendix whose sets a document can fix:
 /// exitStates and enterStates. A microstep runs exitStates, then
@@ -591,6 +592,8 @@ type EnterStates =
 /// them, as it drops [`HISTORY`] and [`PARALLEL`] (docs/adr/0066). The fields
 /// are private, so the two constants are the only values there are.
 pub struct WalkProcedures {
+    /// The constant's name, which is what a reader of the tables is told.
+    name: &'static str,
     /// Whether the procedures read the tables' entry rows.
     reads_rows: bool,
     /// exitStates.
@@ -605,6 +608,7 @@ pub struct WalkProcedures {
 /// the configuration and the histories' records, for any document. A constant
 /// for the reason [`HISTORY`] is one.
 pub const GENERAL_WALK: WalkProcedures = WalkProcedures {
+    name: "GENERAL_WALK",
     reads_rows: false,
     exit_states,
     enter_states,
@@ -615,10 +619,59 @@ pub const GENERAL_WALK: WalkProcedures = WalkProcedures {
 /// than one target: the sets read from the entry rows the generator computed
 /// by the appendix's procedures (docs/adr/0125).
 pub const ROW_WALK: WalkProcedures = WalkProcedures {
+    name: "ROW_WALK",
     reads_rows: true,
     exit_states: exit_states_from_rows,
     enter_states: enter_states_from_rows,
 };
+
+/// The tables of a document printed as its own step function
+/// (docs/adr/0129), the value such a table writes as `walk: &NO_WALK`: its
+/// policy's step function takes every microstep from arms the generator wrote,
+/// and no procedure of this module walks one. The tables carry no entry rows,
+/// and a program whose documents are all printed that way references neither
+/// walk, so the link drops both.
+///
+/// Its two procedures stop the program: reaching one means the shared
+/// microstep was run over tables whose policy said it runs its own, which is a
+/// fault of whatever ran it, as tables that name a feature without its
+/// procedures are.
+pub const NO_WALK: WalkProcedures = WalkProcedures {
+    name: "NO_WALK",
+    reads_rows: false,
+    exit_states: exit_states_unwalked,
+    enter_states: enter_states_unwalked,
+};
+
+/// [`NO_WALK`]'s exitStates: a shared microstep over the tables of a step
+/// function, which nothing the engine runs makes.
+fn exit_states_unwalked(
+    _tables: &DocumentTables<'_>,
+    _machine: &mut dyn Behaviour,
+    _transitions: &[TransitionId],
+    _scratch: Scratch<'_>,
+) {
+    walked_step_function()
+}
+
+/// [`NO_WALK`]'s enterStates, for the reason of [`exit_states_unwalked`].
+fn enter_states_unwalked(
+    _tables: &DocumentTables<'_>,
+    _machine: &mut dyn Behaviour,
+    _transitions: &[TransitionId],
+    _scratch: Scratch<'_>,
+) -> Entered {
+    walked_step_function()
+}
+
+/// The shared procedures asked to walk a document printed as its own step
+/// function (docs/adr/0129). No formatted message, for the reason
+/// [`workspace_too_small`] has none.
+#[cold]
+#[inline(never)]
+fn walked_step_function() -> ! {
+    panic!("a document printed as its own step function was walked by the shared microstep")
+}
 
 impl WalkProcedures {
     /// Whether these are the row walk's, which read a document's entry rows.
@@ -630,11 +683,7 @@ impl WalkProcedures {
 
 impl core::fmt::Debug for WalkProcedures {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(if self.reads_rows {
-            "ROW_WALK"
-        } else {
-            "GENERAL_WALK"
-        })
+        f.write_str(self.name)
     }
 }
 

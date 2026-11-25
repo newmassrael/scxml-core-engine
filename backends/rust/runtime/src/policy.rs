@@ -47,6 +47,7 @@
 use core::fmt::Debug;
 use core::hash::Hash;
 
+use crate::engine::StepFunctionForm;
 use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueStorage;
@@ -321,6 +322,16 @@ pub trait StatePolicy: Sized + 'static {
 
     /// The number of `event`. The generated event enum's discriminant.
     fn event_id(event: Self::Event) -> EventId;
+
+    /// The form this document is printed in (docs/adr/0129): `None` for the
+    /// shared interpreter, whose main loop and Appendix D procedures are one
+    /// copy in the program and read [`TABLES`](StatePolicy::TABLES);
+    /// `Some(StepFunctionForm::of())` for a document of the static class the
+    /// build printed as its own step function, whose policy implements
+    /// [`StepFunction`](crate::StepFunction). The build that generates the
+    /// machines of an image chooses, document by document; a policy that says
+    /// nothing is interpreted.
+    const STEP_FUNCTION: Option<StepFunctionForm<Self>> = None;
 
     /// The buffers one call into Appendix D's procedures borrows, of the sizes
     /// this document needs (docs/adr/0056): `Workspace<STATES, ENABLED, WALK,
