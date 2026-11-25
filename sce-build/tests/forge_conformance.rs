@@ -3056,7 +3056,7 @@ fn forge_views_a_list_of_an_entry_with_inputs_shares_its_walk_rust() {
         "codec_chain_flag_entry's walk does not take its one input:\n{entry}"
     );
     assert!(
-        entry.contains("CodecChainFlagEntryView::decode(_c, _a[0])"),
+        entry.contains("CodecChainFlagEntryView::read(_r, _a[0])"),
         "codec_chain_flag_entry's walk does not hand its input over:\n{entry}"
     );
 }
@@ -5277,8 +5277,8 @@ fn a_signed_field_is_read_as_the_signed_type_of_its_width_on_every_backend() {
             &["from_underlying(raw[0] as i8)", "let trim = raw[1] as i8;"],
             &[
                 "from_underlying(raw[0] as i8)",
-                "let _v = raw[0] as i8;",
-                "let _v = (((raw[0] as u16) << 8) | raw[1] as u16) as i16;",
+                "Some(raw[0] as i8)",
+                "Some((((raw[0] as u16) << 8) | raw[1] as u16) as i16)",
             ],
         ),
         (
@@ -5619,8 +5619,8 @@ fn a_field_narrower_than_its_type_is_extended_into_it_on_every_backend() {
             ],
             &["(raw[0] & 0x0F) as u16", "((raw[0] >> 4) & 0x0F) as u32"],
             &[
-                "let _v = (raw[0] as i16 ^ 0x80) - 0x80;",
-                "let _v = ((raw[0] as u32) << 8) | raw[1] as u32;",
+                "(raw[0] as i16 ^ 0x80) - 0x80\n",
+                "((raw[0] as u32) << 8) | raw[1] as u32\n",
                 "from_underlying((raw[0] as i16 ^ 0x80) - 0x80)",
             ],
         ),
