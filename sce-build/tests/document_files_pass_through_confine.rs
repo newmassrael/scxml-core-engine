@@ -190,6 +190,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Operator,
         &[("load_with_digest", 1)],
     ),
+    // Looks for the generator's own tree (its templates, its schemas) by a path inside it,
+    // climbing from where the run starts.
+    ("src/source_tree.rs", Why::Installation, &[("search", 1)]),
     (
         "src/toolchain.rs",
         Why::Installation,
