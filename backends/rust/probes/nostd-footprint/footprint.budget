@@ -346,7 +346,12 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1478
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129). Over 32 symbols.
-CORE_BYTES=8638
+#
+# 8638 -> 8416 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): the delayed-send queue is sized by
+# what the document can leave waiting (docs/adr/0132) and its scans walk one
+# out-of-line slice for every capacity. Over 31 symbols.
+CORE_BYTES=8416
 
 # The same without the report.
 #
@@ -392,7 +397,12 @@ CORE_BYTES=8638
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129). Over 32 symbols.
-CORE_BYTES_NO_DIAGNOSTICS=8534
+#
+# 8534 -> 8312 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): the delayed-send queue is sized by
+# what the document can leave waiting (docs/adr/0132) and its scans walk one
+# out-of-line slice for every capacity. Over 31 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=8312
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -474,8 +484,13 @@ CORE_BYTES_NO_DIAGNOSTICS=8534
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129). A plain machine no longer carries its own selection, which the core now holds once. Images of 204408 and 205314.
+#
+# 3066 -> 2860 (the core of plain documents) (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): the delayed-send queue is sized by
+# what the document can leave waiting (docs/adr/0132) and its scans walk one
+# out-of-line slice for every capacity. Over 14 symbols.
 MACHINE_BYTES_PLAIN=906
-CORE_BYTES_PLAIN=3066
+CORE_BYTES_PLAIN=2860
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
