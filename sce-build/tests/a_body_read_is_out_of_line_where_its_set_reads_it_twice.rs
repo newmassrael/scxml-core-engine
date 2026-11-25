@@ -294,7 +294,7 @@ fn a_views_decode_answers_the_view_its_read_builds() {
             .unwrap_or_else(|| panic!("{name} has a view decode:\n{code}"));
         assert_eq!(
             statements(decode),
-            ["cursor.read_frame(|cursor| Self::read(cursor))"],
+            ["cursor.read_frame(Self::read)"],
             "{name}'s view decode is more than the read of its frame:\n{decode}"
         );
     }
@@ -318,7 +318,8 @@ fn an_eager_decode_of_a_value_answers_the_value_its_read_builds() {
         "codec_simple_frame's decode is more than the read of its frame:\n{decode}"
     );
     assert!(
-        said[0].starts_with("cursor.read_frame(|cursor| Self::read(cursor"),
+        said[0].starts_with("cursor.read_frame(Self::read")
+            || said[0].starts_with("cursor.read_frame(|cursor| Self::read(cursor"),
         "codec_simple_frame's decode does not answer the value its read builds:\n{decode}"
     );
 
