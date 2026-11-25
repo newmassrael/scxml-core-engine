@@ -1232,9 +1232,9 @@ fn a_message_of_every_part_its_content_reads_is_made_by_functions_on_c11() {
 #[test]
 fn the_parts_reader_holds_an_enum_in_its_type_and_shadows_no_local_on_c11() {
     let code = text_at(&profile_dir().join("received/parts_reader.scxml"));
-    let color = "(sce_forge_checked_index_from_i(&sce_failure_, 0, \
-                 (sm->pending_payload.as.received_parts.lines).len) ? \
-                 sm->pending_payload.as.received_parts.lines.data[0].color : 0)";
+    let color = "sce_forge_checked_index_from_i(&sce_failure_, 0, \
+                 sm->pending_payload.as.received_parts.lines.len) ? \
+                 sm->pending_payload.as.received_parts.lines.data[0].color : 0";
     let held = format!("__typeof__({color}) sce_value = {color};");
     assert!(code.contains(&held), "`{held}` in:\n{code}");
     assert!(

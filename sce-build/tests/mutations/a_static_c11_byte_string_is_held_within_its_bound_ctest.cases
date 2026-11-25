@@ -38,12 +38,12 @@ PY
 
 mutation_case "two byte strings are told equal by their content alone" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     "                    format!(\"{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0\")",
-     "                    format!(\"memcmp({lv}, {rv}, {cmp_len}) == 0\")")
+     "                        CExpr::binary(CBinOp::Eq, ll, rl),\n",
+     "                        CExpr::atom(\"1\"),\n")
 PY
 
 mutation_case "two byte strings are told equal by their length alone" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     "                    format!(\"{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0\")",
-     "                    format!(\"{ll} == {rl}\")")
+     "                        CExpr::binary(CBinOp::Eq, compared, zero),\n",
+     "                        CExpr::atom(\"1\"),\n")
 PY

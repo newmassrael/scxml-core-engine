@@ -144,8 +144,8 @@ fn a_c11_algorithm_reads_walks_and_builds_a_list_of_unions() {
     holds(
         &at,
         &format!(
-            "const {SHAPE} picked = (sce_forge_checked_index_from_u(&sce_failure_, at, \
-             (shapes).len) ? shapes.data[at] : (__typeof__(shapes.data[at])){{0}});"
+            "const {SHAPE} picked = sce_forge_checked_index_from_u(&sce_failure_, at, \
+             shapes.len) ? shapes.data[at] : (__typeof__(shapes.data[at])){{0}};"
         ),
     );
     let (_, widest) = unit("algorithm_shapes_widest.scxml");

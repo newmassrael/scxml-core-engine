@@ -72,9 +72,11 @@ use std::fmt;
 /// answers with, so the caller holding the attribute can place it.
 pub type Refusal = Spanned<ExprError>;
 
+pub(crate) mod c_tree;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
+use c_tree::{CBinOp, CExpr, CInit, CUnOp};
 use rust_tree::{RustBinOp, RustExpr, RustStmt, RustUnOp};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -628,9 +630,9 @@ fn lower_at(
         ExprTarget::Swift => swift::emit(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
         ExprTarget::C if position == Position::Owned && expected == InferredType::Bytes => {
-            emit_c_owned_bytes(&ast)?
+            emit_c_owned_bytes(&ast)?.to_string()
         }
-        ExprTarget::C => emit_c(&ast, expected)?,
+        ExprTarget::C => emit_c(&ast, expected)?.to_string(),
         ExprTarget::Js => {
             let text = emit_js(&ast, expected)?;
             if !ctx.exact_integers && js_value_may_be_wide(&ast, expected) {
@@ -835,7 +837,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
         check_integer_indexing(&mut ast, Discharge::AtRun);
         check_integer_narrowing(&mut ast, slot_type(expected));
     }
-    Ok(emit_c(&ast, expected.ty())?)
+    Ok(emit_c(&ast, expected.ty())?.to_string())
 }
 
 /// The passes between parsing and emission that every typed transpile
@@ -3105,13 +3107,21 @@ pub(crate) fn wide_literal_spelling(
 }
 
 /// `node`, of integer type `to`, as C and C++ spell it when it is a
-/// [`WideLiteral`]; `None` for anything else, which stands as emitted.
-fn c_family_wide_literal(raw: &str, to: InferredType, node: &TypedExpr) -> Option<String> {
+/// [`WideLiteral`]; `None` for anything else, which stands as emitted. The
+/// digits are the literal's own, as every backend reads them
+/// ([`portable_number_literal`]).
+fn c_family_wide_literal(to: InferredType, node: &TypedExpr) -> Option<String> {
     if !matches!(to.strip_quantity(), InferredType::Int { .. }) {
         return None;
     }
+    let wide = wide_literal(node)?;
+    let (digits, _) = integer_literal_parts(node)?;
     // C and C++ spell both the same way; either names the family.
-    wide_literal_spelling(crate::generator::Language::C11, wide_literal(node)?, raw)
+    wide_literal_spelling(
+        crate::generator::Language::C11,
+        wide,
+        &portable_number_literal(&digits),
+    )
 }
 
 /// `node`, an integer literal whose context gave it its type
@@ -3577,7 +3587,7 @@ pub fn transpile_lvalue(
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
-        ExprTarget::C => emit_c(&ast, InferredType::Unknown)?,
+        ExprTarget::C => emit_c(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?,
     };
     Ok((emitted, ty))
@@ -7716,6 +7726,80 @@ fn c_family_unary(
     }
 }
 
+/// How C and C++ write a left shift, of the node type `ty`, so it wraps at the
+/// width of its type (SCE_FORGE.md §3.4.1, "The width of a shift"), which
+/// neither language makes it do by itself: an operand narrower than `int` is
+/// promoted to `int`, so a `uint8` or `int16` shift keeps the bits it shifts out
+/// until its value is converted back to its type, and a left shift of a
+/// negative signed value is undefined. So a narrow unsigned shift is converted
+/// back to its type, and a signed one is made in the unsigned type of its width
+/// and converted back, which is its two's-complement value. Every other
+/// operator is written as it is.
+///
+/// Until 2026-11-19 a `uint8` `x << 4` stored in a `uint32` kept 12 bits in
+/// C, C++ and Kotlin and 8 in every other backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CFamilyShift {
+    /// The operator as it is.
+    AsWritten,
+    /// The shift converted back to the unsigned type of `bits`.
+    Narrowed { bits: u8 },
+    /// The left operand converted to the unsigned type of `bits`, and the shift
+    /// converted back to the signed one.
+    OnItsBits { bits: u8 },
+}
+
+/// [`CFamilyShift`] of `op` over operands of the node type `ty`.
+fn c_family_shift(op: BinOp, ty: InferredType) -> CFamilyShift {
+    if op != BinOp::Shl {
+        return CFamilyShift::AsWritten;
+    }
+    match ty.strip_quantity() {
+        InferredType::Int { signed: true, bits } => CFamilyShift::OnItsBits { bits },
+        InferredType::Int {
+            signed: false,
+            bits,
+        } if bits < 32 => CFamilyShift::Narrowed { bits },
+        _ => CFamilyShift::AsWritten,
+    }
+}
+
+/// The integer type, signed and wide, that `op` over an operand of the node
+/// type `ty` is converted back to in C and C++: a `~` of an operand narrower than
+/// `int`, as a left shift is ([`c_family_shift`]), since `~x` of a `uint8` is an
+/// `int` below 0 until it is. `None` for every other operator and type.
+fn c_family_complement(op: UnaryOp, ty: InferredType) -> Option<(bool, u8)> {
+    match (op, ty.strip_quantity()) {
+        (UnaryOp::BitNot, InferredType::Int { signed, bits }) if bits < 32 => Some((signed, bits)),
+        _ => None,
+    }
+}
+
+/// A number literal `node`, of type `from`, that lands in a real `to`, as C and
+/// C++ write it there, or `None` for any other node: a decimal integer literal
+/// with `.0`, so `9 / 5` in a real context is no integer division, and a real
+/// literal that lands in a 32-bit real with `f`, the single nearest to it, and
+/// not the double `0.2`, which would make the sum around it a double's and
+/// round it to a single only once it is stored. A decimal integer literal that
+/// lands in a single takes both.
+fn c_family_real_literal(from: InferredType, to: InferredType, node: &TypedExpr) -> Option<String> {
+    let ExprKind::NumberLit(text) = &node.kind else {
+        return None;
+    };
+    let written = portable_number_literal(text);
+    match (from, to) {
+        (InferredType::UntypedInt, InferredType::Float { bits })
+            if is_decimal_integer_literal(text) =>
+        {
+            Some(format!("{written}.0{}", single_suffix(bits)))
+        }
+        (InferredType::UntypedFloat, InferredType::Float { bits: 32 }) => {
+            Some(format!("{written}f"))
+        }
+        _ => None,
+    }
+}
+
 /// Wrap an emitted sub-expression in parens when it is used as the base of a
 /// postfix access (`.`, `[]`, `()`) and the underlying AST shape would
 /// otherwise bind differently than intended.
@@ -10506,7 +10590,7 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
     if to.is_optional() {
         return raw;
     }
-    if let Some(spelled) = c_family_wide_literal(&raw, to, node) {
+    if let Some(spelled) = c_family_wide_literal(to, node) {
         return spelled;
     }
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
@@ -11956,27 +12040,29 @@ fn emit_rust_owned_str(expr: &TypedExpr) -> Result<RustExpr, Refusal> {
 /// arms of a conditional one by one, since both arms of a C `?:` must be one type.
 /// Whoever writes the value copies from the view, so a variable assigned from
 /// another is two buffers and not one.
-fn emit_c_owned_bytes(expr: &TypedExpr) -> Result<String, ExprError> {
+fn emit_c_owned_bytes(expr: &TypedExpr) -> Result<CExpr, ExprError> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => Ok(format!(
-            "({} ? {} : {})",
+        } => Ok(CExpr::conditional(
             emit_c(condition, InferredType::Bool)?,
             emit_c_owned_bytes(consequent)?,
             emit_c_owned_bytes(alternate)?,
         )),
-        ExprKind::BytesLit { bytes } => Ok(format!(
-            "(sce_forge_bytes_view_t){{ (const uint8_t *){}, {} }}",
-            c_bytes_literal(bytes),
-            bytes.len()
+        ExprKind::BytesLit { bytes } => Ok(c_bytes_view(
+            CExpr::atom(c_bytes_literal(bytes)),
+            CExpr::atom(bytes.len().to_string()),
         )),
         _ => {
-            let held = wrap_postfix(expr, emit_c(expr, InferredType::Unknown)?);
-            Ok(format!(
-                "(sce_forge_bytes_view_t){{ ({held}).data, ({held}).len }}"
+            let held = emit_c(expr, InferredType::Unknown)?;
+            Ok(CExpr::compound(
+                "sce_forge_bytes_view_t",
+                vec![
+                    CInit::Value(held.clone().field("data")),
+                    CInit::Value(held.field("len")),
+                ],
             ))
         }
     }
@@ -14607,8 +14693,7 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
 // Emitter — C11
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
-// C and C++ share enough that emit_c reuses the cpp_binop / cpp_unary
-// operator strings and the same arithmetic-conversion rules (integer
+// C and C++ share the same arithmetic-conversion rules (integer
 // promotion, decimal-integer-to-float `.0` promotion in float context).
 // The differences vs emit_cpp:
 //
@@ -14624,18 +14709,74 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
 /// value or a `list<T>` parameter is a view (`{const T *data; size_t len}`),
 /// a buffer the algorithm is building is its own result struct
 /// (`{T items[N]; size_t len; …}` for a list, `{uint8_t bytes[N]; size_t
-/// len; …}` for bytes), and a build-time array is indexed as it is. Every
-/// named member carries the length as `len`.
-fn c_element_accessor(collection: InferredType) -> &'static str {
+/// len; …}` for bytes), and a build-time array is indexed as it is (`None`).
+/// Every named member carries the length as `len`.
+fn c_element_member(collection: InferredType) -> Option<&'static str> {
     match collection {
-        InferredType::Bytes | InferredType::List(_) => ".data",
-        InferredType::ListBuffer(_) => ".items",
-        InferredType::BytesBuffer => ".bytes",
-        _ => "",
+        InferredType::Bytes | InferredType::List(_) => Some("data"),
+        InferredType::ListBuffer(_) => Some("items"),
+        InferredType::BytesBuffer => Some("bytes"),
+        _ => None,
     }
 }
 
-fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+/// The C binary operator `op` is written as. `>>>` is `>>`: a logical shift of a
+/// signed value is settled into the runtime's shift before it reaches here
+/// ([`settle_shifts`]), and C's `>>` of an unsigned value is logical.
+fn c_binop(op: BinOp) -> CBinOp {
+    match op {
+        BinOp::Add => CBinOp::Add,
+        BinOp::Sub => CBinOp::Sub,
+        BinOp::Mul => CBinOp::Mul,
+        BinOp::Div => CBinOp::Div,
+        BinOp::Mod => CBinOp::Rem,
+        BinOp::StrictEq => CBinOp::Eq,
+        BinOp::StrictNeq => CBinOp::Ne,
+        BinOp::Lt => CBinOp::Lt,
+        BinOp::Gt => CBinOp::Gt,
+        BinOp::LtEq => CBinOp::Le,
+        BinOp::GtEq => CBinOp::Ge,
+        BinOp::And => CBinOp::And,
+        BinOp::Or => CBinOp::Or,
+        BinOp::BitAnd => CBinOp::BitAnd,
+        BinOp::BitOr => CBinOp::BitOr,
+        BinOp::BitXor => CBinOp::BitXor,
+        BinOp::Shl => CBinOp::Shl,
+        BinOp::Shr | BinOp::UShr => CBinOp::Shr,
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+    }
+}
+
+/// The C prefix operator `op` is written as.
+fn c_unop(op: UnaryOp) -> CUnOp {
+    match op {
+        UnaryOp::Neg => CUnOp::Neg,
+        UnaryOp::Pos => CUnOp::Plus,
+        UnaryOp::Not => CUnOp::Not,
+        UnaryOp::BitNot => CUnOp::BitNot,
+    }
+}
+
+/// The C integer type of `signed` and `bits`: `int16_t`, `uint64_t`.
+fn c_int_type(signed: bool, bits: u8) -> String {
+    format!("{}int{bits}_t", if signed { "" } else { "u" })
+}
+
+/// The address of the statement's failure, which a checked operation records
+/// into: `&sce_failure_`.
+fn c_failure_slot() -> CExpr {
+    CExpr::atom("sce_failure_").prefixed(CUnOp::Address)
+}
+
+/// The C11 expression `expr` is where a value of `expected` is wanted.
+///
+/// The expression is built as a tree of the C expressions it is made of
+/// ([`CExpr`], `expr/c_tree.rs`), a conversion a cast node of its own
+/// wherever it comes from, and printed once, where it leaves this layer: every
+/// parenthesis is the printer's, decided by the kinds of the nodes around it
+/// and the precedence C11 gives them, and no rule here groups anything or reads
+/// back what it has written.
+fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<CExpr, ExprError> {
     // `null` where an optional value is expected is its absent value, and a value
     // of `T` there is lifted into it (docs/adr/0055, section 2), each by the
     // constructor of the element's type. Asked before anything coerces the value:
@@ -14645,7 +14786,7 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     }
     if let Some(elem) = expr.ty.lifted_into(expected) {
         let present = emit_c(expr, elem.present())?;
-        return c_optional_constructor(elem, Some(&present));
+        return c_optional_constructor(elem, Some(present));
     }
     // Push-down: arithmetic + Float expectation propagates into operands so
     // decimal-integer literals pick up `.0` and avoid integer division.
@@ -14654,25 +14795,13 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_c(left, expected)?;
-            let r_raw = emit_c(right, expected)?;
+            let l = emit_c(left, expected)?;
             let l = if c_family_divides_integers(*op, left, right) {
-                format!("({})({l_raw})", c_family_float_name(expected))
-            } else if child_needs_parens(left, *op, true, ecma_precedence)
-                || c_family_clarity_parens(left, *op)
-            {
-                format!("({l_raw})")
+                l.cast(c_family_float_name(expected))
             } else {
-                l_raw
+                l
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence)
-                || c_family_clarity_parens(right, *op)
-            {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", cpp_binop(*op)));
+            return Ok(CExpr::binary(c_binop(*op), l, emit_c(right, expected)?));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — same rationale as emit_cpp.
@@ -14682,16 +14811,7 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_c(operand, expected)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{}({inner})", cpp_unary(*op))
-            } else {
-                format!("{}{inner}", cpp_unary(*op))
-            });
+            return Ok(emit_c(operand, expected)?.prefixed(c_unop(*op)));
         }
     }
     // Push-down: `len(x)` is a `size_t`, so against a signed integer it is a sign
@@ -14702,12 +14822,12 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) && matches!(expr.ty, InferredType::UntypedInt) {
             if let InferredType::Int { signed: true, bits } = expected {
-                return Ok(format!("(int{bits}_t){}", c_length(&args[0])?));
+                return Ok(c_length(&args[0])?.cast(c_int_type(true, bits)));
             }
         }
     }
     let raw = match typed_integer_literal(ExprTarget::C, expr) {
-        Some(literal) => literal,
+        Some(literal) => CExpr::atom(literal),
         None => c_emit_node(expr)?,
     };
     Ok(c_coerce(raw, expr.ty, expected, expr))
@@ -14746,8 +14866,8 @@ fn c_failed_part(read: InferredType) -> CFailedRead {
     }
 }
 
-/// A checked index read in C (SCE_FORGE.md §3.4.1), with `field` — empty, or
-/// `.name` — read from the element inside the same conditional: the failure is
+/// A checked index read in C (SCE_FORGE.md §3.4.1), with `field`, when there is
+/// one, read from the element inside the same conditional: the failure is
 /// recorded and the read gives `failed` when the index is outside the collection, and
 /// an index that is outside is never read, the collection's emptiness included.
 /// A `bytes` view and a `list<T>` view carry their length; a build-time array's is
@@ -14755,33 +14875,64 @@ fn c_failed_part(read: InferredType) -> CFailedRead {
 fn c_checked_index(
     left: &TypedExpr,
     index: &TypedExpr,
-    field: &str,
+    field: Option<&str>,
     failed: CFailedRead,
-) -> Result<String, ExprError> {
-    let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
+) -> Result<CExpr, ExprError> {
+    let object = emit_c(left, InferredType::Unknown)?;
     let idx = emit_c(index, InferredType::Unknown)?;
-    let accessor = c_element_accessor(left.ty);
-    let len = if accessor.is_empty() {
-        format!("(sizeof({object}) / sizeof(({object})[0]))")
-    } else {
-        format!("({object}).len")
+    let member = c_element_member(left.ty);
+    let len = match member {
+        None => CExpr::binary(
+            CBinOp::Div,
+            object.clone().size_of(),
+            object.clone().indexed(CExpr::atom("0")).size_of(),
+        ),
+        Some(_) => object.clone().field("len"),
     };
     let from = match index.ty {
         InferredType::Int { signed: false, .. } => "u",
         _ => "i",
     };
-    let read = format!("{object}{accessor}[{idx}]{field}");
+    let collection = match member {
+        Some(member) => object.field(member),
+        None => object,
+    };
+    let element = collection.indexed(idx.clone());
+    let read = match field {
+        Some(field) => element.field(field),
+        None => element,
+    };
+    // The type of the read, which the filler of a failed read is made in: the
+    // read printed inside the parentheses of `__typeof__`, where it stands whole.
+    let read_type = || format!("__typeof__({read})");
     let failed = match failed {
-        CFailedRead::Zero => "0".to_string(),
-        CFailedRead::Text => "\"\"".to_string(),
+        CFailedRead::Zero => CExpr::atom("0"),
+        CFailedRead::Text => CExpr::atom("\"\""),
         // A designated initializer: `{0}` over a struct whose first member is an array is
         // `-Wmissing-braces`, and the rest of the value is zeroed all the same.
-        CFailedRead::Aggregate => format!("(__typeof__({read})){{ .len = 0 }}"),
-        CFailedRead::Absent => format!("(__typeof__({read})){{ .present = false }}"),
-        CFailedRead::Whole => format!("(__typeof__({read})){{0}}"),
+        CFailedRead::Aggregate => CExpr::compound(
+            read_type(),
+            vec![CInit::Member {
+                member: "len".to_string(),
+                value: CExpr::atom("0"),
+            }],
+        ),
+        CFailedRead::Absent => CExpr::compound(
+            read_type(),
+            vec![CInit::Member {
+                member: "present".to_string(),
+                value: CExpr::atom("false"),
+            }],
+        ),
+        CFailedRead::Whole => CExpr::zeroed(read_type()),
     };
-    Ok(format!(
-        "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) ? {read} : {failed})"
+    Ok(CExpr::conditional(
+        CExpr::path_call(
+            format!("sce_forge_checked_index_from_{from}"),
+            vec![c_failure_slot(), idx, len],
+        ),
+        read,
+        failed,
     ))
 }
 
@@ -14790,13 +14941,29 @@ fn c_checked_index(
 /// `sce/text.h`, which the lowering of a string comparison already needs; a
 /// machine's core calls no hosted library, docs/adr/0110), and the `len` member
 /// of a list's or a byte string's view.
-fn c_length(arg: &TypedExpr) -> Result<String, ExprError> {
+fn c_length(arg: &TypedExpr) -> Result<CExpr, ExprError> {
     let measured = emit_c(arg, InferredType::Unknown)?;
     Ok(if arg.ty == InferredType::Str {
-        format!("sce_text_length({measured})")
+        CExpr::path_call("sce_text_length", vec![measured])
     } else {
-        format!("({measured}).len")
+        measured.field("len")
     })
+}
+
+/// The length a byte string `value` holds beside itself where it is no view: the
+/// `_len` sibling of the payload's field, or of the name it is read through. A
+/// byte string read any other way has no sibling, and is refused by name: the
+/// suffix pasted after it named nothing C compiles.
+fn c_sibling_length(value: CExpr) -> Result<CExpr, ExprError> {
+    let observed = value.to_string();
+    value
+        .sibling("_len")
+        .ok_or_else(|| ExprError::UnsupportedConstruct {
+            construct: "a byte string in C read as no name and no field, whose length has no \
+                        `_len` sibling to be read by (hold it in a variable or a field first)"
+                .to_string(),
+            observed: Some(observed),
+        })
 }
 
 /// A string literal's value as a C11 expression of type `const char *`
@@ -14824,7 +14991,19 @@ fn c_bytes_literal(bytes: &[u8]) -> String {
     format!("\"{}\"", crate::filters::escape_c(latin1(bytes)))
 }
 
-fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+/// The view `{ data, len }` of a byte string whose bytes begin at `data`, a
+/// pointer to bytes of any character type: `sce_forge_bytes_view_t`.
+fn c_bytes_view(data: CExpr, len: CExpr) -> CExpr {
+    CExpr::compound(
+        "sce_forge_bytes_view_t",
+        vec![
+            CInit::Value(data.cast("const uint8_t *")),
+            CInit::Value(len),
+        ],
+    )
+}
+
+fn c_emit_node(expr: &TypedExpr) -> Result<CExpr, ExprError> {
     if let Some(form) = optional_form(expr) {
         return c_optional(form, expr);
     }
@@ -14836,26 +15015,29 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // in the name.
         ExprKind::Total { op, rule, .. } => {
             let (signed, bits, operands) = total_parts(expr, "C11", emit_c)?;
-            format!(
-                "sce_forge_{}_{}_{}{bits}({})",
-                rule.helper(),
-                op.helper(),
-                if signed { "i" } else { "u" },
-                operands.join(", ")
+            CExpr::path_call(
+                format!(
+                    "sce_forge_{}_{}_{}{bits}",
+                    rule.helper(),
+                    op.helper(),
+                    if signed { "i" } else { "u" },
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value } => c_text_literal(value)?,
+        ExprKind::NumberLit(n) => CExpr::atom(portable_number_literal(n)),
+        ExprKind::StringLit { value } => CExpr::atom(c_text_literal(value)?),
         // Standalone fallback — the bytes-equality Binary branch renders
         // the literal and its byte count itself (a `bytes` value has no
         // length without its `_len` sibling). RFC §bytesguard-3 B5.
-        ExprKind::BytesLit { bytes } => c_bytes_literal(bytes),
-        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        ExprKind::NullLit => "NULL".to_string(),
+        ExprKind::BytesLit { bytes } => CExpr::atom(c_bytes_literal(bytes)),
+        ExprKind::BoolLit(b) => CExpr::atom(if *b { "true" } else { "false" }),
+        ExprKind::NullLit => CExpr::atom("NULL"),
         // The one spelling every C local takes, declaration and read alike
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::C.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => CExpr::atom(ExprTarget::C.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => CExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // A C string is a `const char *`: there is nowhere for the joined
             // text to live, and a returned pointer to a local buffer is a
@@ -14869,7 +15051,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // with no declared size is refused, by name, at the construct.
             for side in [left, right] {
                 if let ConcatOperand::Refused(what) = concat_operand(side.ty) {
-                    return Err(concat_refusal(what, emit_c(side, side.ty)?));
+                    return Err(concat_refusal(what, emit_c(side, side.ty)?.to_string()));
                 }
             }
             let (l, r) = (emit_c(left, left.ty)?, emit_c(right, right.ty)?);
@@ -14879,7 +15061,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                             to be joined into; declare `sce:capacity` on the variable, hold \
                             the pieces in separate outputs, or generate for another backend)"
                     .to_string(),
-                observed: Some(format!("{l} + {r}")),
+                observed: Some(CExpr::binary(CBinOp::Add, l, r).to_string()),
             });
         }
         ExprKind::Binary { op, left, right } => {
@@ -14896,10 +15078,13 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     || matches!(right.ty, InferredType::Bytes))
             {
                 let render =
-                    |operand: &TypedExpr| -> Result<(String, String, Option<usize>), ExprError> {
+                    |operand: &TypedExpr| -> Result<(CExpr, CExpr, Option<usize>), ExprError> {
                         if let ExprKind::BytesLit { bytes } = &operand.kind {
-                            let v = c_bytes_literal(bytes);
-                            Ok((v, bytes.len().to_string(), Some(bytes.len())))
+                            Ok((
+                                CExpr::atom(c_bytes_literal(bytes)),
+                                CExpr::atom(bytes.len().to_string()),
+                                Some(bytes.len()),
+                            ))
                         } else if let ExprKind::BytesView {
                             source,
                             len: Some(len),
@@ -14916,7 +15101,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         } else {
                             // A payload's field: the array and its `_len` sibling.
                             let v = emit_c(operand, InferredType::Unknown)?;
-                            let len = format!("{v}_len");
+                            let len = c_sibling_length(v.clone())?;
                             Ok((v, len, None))
                         }
                     };
@@ -14924,14 +15109,24 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 let (rv, rl, r_lit) = render(right)?;
                 let cmp_len = l_lit
                     .or(r_lit)
-                    .map(|n| n.to_string())
+                    .map(|n| CExpr::atom(n.to_string()))
                     .unwrap_or_else(|| ll.clone());
+                let compared = CExpr::path_call("memcmp", vec![lv, rv, cmp_len]);
+                let zero = CExpr::atom("0");
+                // The two tests are one operand of whatever stands around them,
+                // which the printer groups where it has to.
                 return Ok(if matches!(op, BinOp::StrictEq) {
-                    format!("{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0")
+                    CExpr::binary(
+                        CBinOp::And,
+                        CExpr::binary(CBinOp::Eq, ll, rl),
+                        CExpr::binary(CBinOp::Eq, compared, zero),
+                    )
                 } else {
-                    // Parenthesised, since a `||` read in a larger condition
-                    // would otherwise bind to whatever stands beside it.
-                    format!("({ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0)")
+                    CExpr::binary(
+                        CBinOp::Or,
+                        CExpr::binary(CBinOp::Ne, ll, rl),
+                        CExpr::binary(CBinOp::Ne, compared, zero),
+                    )
                 });
             }
             // String comparison lowering. C lacks operator
@@ -14947,54 +15142,48 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 && matches!(left.ty, InferredType::Str)
                 && matches!(right.ty, InferredType::Str)
             {
-                let l_raw = emit_c(left, InferredType::Str)?;
-                let r_raw = emit_c(right, InferredType::Str)?;
-                return Ok(format!(
-                    "sce_text_compare({l_raw}, {r_raw}) {} 0",
-                    cpp_binop(*op)
+                return Ok(CExpr::binary(
+                    c_binop(*op),
+                    CExpr::path_call(
+                        "sce_text_compare",
+                        vec![
+                            emit_c(left, InferredType::Str)?,
+                            emit_c(right, InferredType::Str)?,
+                        ],
+                    ),
+                    CExpr::atom("0"),
                 ));
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_c(left, operand_ty)?;
-            let r_raw = emit_c(right, right_operand_type(*op, operand_ty))?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence)
-                || c_family_clarity_parens(left, *op)
-            {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence)
-                || c_family_clarity_parens(right, *op)
-            {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            c_family_binary(CFamily::C, *op, expr.ty, &l, &r)
+            let l = emit_c(left, operand_ty)?;
+            let r = emit_c(right, right_operand_type(*op, operand_ty))?;
+            match c_family_shift(*op, expr.ty) {
+                CFamilyShift::AsWritten => CExpr::binary(c_binop(*op), l, r),
+                CFamilyShift::Narrowed { bits } => {
+                    CExpr::binary(c_binop(*op), l, r).cast(c_int_type(false, bits))
+                }
+                CFamilyShift::OnItsBits { bits } => {
+                    CExpr::binary(c_binop(*op), l.cast(c_int_type(false, bits)), r)
+                        .cast(c_int_type(true, bits))
+                }
+            }
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_c(operand, expr.ty)?;
-            c_family_unary(CFamily::C, *op, expr.ty, operand, &inner)
+            let written = emit_c(operand, expr.ty)?.prefixed(c_unop(*op));
+            match c_family_complement(*op, expr.ty) {
+                Some((signed, bits)) => written.cast(c_int_type(signed, bits)),
+                None => written,
+            }
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => {
-            // See `cpp_emit_node`: the condition that is a conditional is bracketed.
-            let cond = emit_c(condition, InferredType::Bool)?;
-            let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
-                format!("({cond})")
-            } else {
-                cond
-            };
-            format!(
-                "{cond} ? {} : {}",
-                emit_c(consequent, expr.ty)?,
-                emit_c(alternate, expr.ty)?,
-            )
-        }
+        } => CExpr::conditional(
+            emit_c(condition, InferredType::Bool)?,
+            emit_c(consequent, expr.ty)?,
+            emit_c(alternate, expr.ty)?,
+        ),
         // A field of the element a list of records is indexed at: the field is read
         // inside the checked conditional, which otherwise would be a struct against
         // the `0` of a failed read.
@@ -15021,13 +15210,10 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 InferredType::Str => CFailedRead::Text,
                 other => c_failed_part(other),
             };
-            c_checked_index(left, index, &format!(".{property}"), failed)?
+            c_checked_index(left, index, Some(property.as_str()), failed)?
         }
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_c(object, InferredType::Unknown)?)
-            )
+            emit_c(object, InferredType::Unknown)?.field(property.as_str())
         }
         ExprKind::Index { object, index } => {
             // A `bytes` operand lowers to `sce_forge_bytes_view_t`
@@ -15036,12 +15222,12 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // shape, so a random read projects through `.data` — mirroring
             // the foreach arm's `src.data[__i]`. Item C7 wildcard-keyexpr
             // lowering.
-            format!(
-                "{}{}[{}]",
-                wrap_postfix(object, emit_c(object, InferredType::Unknown)?),
-                c_element_accessor(object.ty),
-                emit_c(index, InferredType::Unknown)?,
-            )
+            let collection = emit_c(object, InferredType::Unknown)?;
+            let collection = match c_element_member(object.ty) {
+                Some(member) => collection.field(member),
+                None => collection,
+            };
+            collection.indexed(emit_c(index, InferredType::Unknown)?)
         }
         ExprKind::Call {
             callee,
@@ -15051,14 +15237,20 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             into_destination,
             storage,
         } => {
+            // The address of what a lowering handed to `&` as a callee
+            // ([`wrap_in_call`]): the map a lookup reads, which C's prefix `&`
+            // takes.
+            if let (ExprKind::Raw(name), [value]) = (&callee.kind, args.as_slice()) {
+                if name == "&" {
+                    return Ok(emit_c(value, argument_type(params, 0))?.prefixed(CUnOp::Address));
+                }
+            }
             if is_len_builtin(callee, args) {
                 let len = c_length(&args[0])?;
                 // A length typed as an integer width (`TypeCtx::lengths_are_uint32`)
                 // is that width: the cast is spelled here, where `size_t` meets it.
                 return Ok(match expr.ty {
-                    InferredType::Int { signed, bits } => {
-                        format!("({}int{bits}_t){len}", if signed { "" } else { "u" })
-                    }
+                    InferredType::Int { signed, bits } => len.cast(c_int_type(signed, bits)),
                     _ => len,
                 });
             }
@@ -15070,19 +15262,22 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 // makes the kind's template include `sce/forge/algorithm.h`
                 // (`std_imports::c_uses_forge_algorithm`).
                 let inner = emit_c(&args[0], InferredType::Float { bits: 64 })?;
-                return Ok(match op {
-                    RealToInt::Round => format!("sce_forge_real_round({inner})"),
-                    RealToInt::Floor => format!("sce_forge_real_floor({inner})"),
-                });
+                return Ok(CExpr::path_call(
+                    match op {
+                        RealToInt::Round => "sce_forge_real_round",
+                        RealToInt::Floor => "sce_forge_real_floor",
+                    },
+                    vec![inner],
+                ));
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_c(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?);
+            let symbol = emit_c(callee, InferredType::Unknown)?;
             // The storage the caller holds for the call follows the arguments it is
             // written with (docs/adr/0082): a machine's member of its `scratch`.
-            a.extend(storage.iter().cloned());
+            a.extend(storage.iter().cloned().map(CExpr::Atom));
             // A generated algorithm writes the list it returns into the destination
             // the caller holds, which is that storage, and records its failure in the
             // statement's `sce_failure_`: the call is whether it wrote. A list is taken
@@ -15096,12 +15291,19 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         observed: None,
                     });
                 }
-                a.push("&sce_failure_".to_string());
-                return Ok(format!("{symbol}({})", a.join(", ")));
+                a.push(c_failure_slot());
+                return Ok(CExpr::call(symbol, a));
             }
-            let call = format!("{symbol}({})", a.join(", "));
+            let call = CExpr::call(symbol.clone(), a);
             if *fails {
-                pass_failure_on(ExprTarget::C, &symbol, &call, expr.ty)?
+                // The one spelling of a failure handed on ([`pass_failure_on`]): a
+                // call of the callee's `_take`, which stands as one operand.
+                CExpr::atom(pass_failure_on(
+                    ExprTarget::C,
+                    &symbol.to_string(),
+                    &call.to_string(),
+                    expr.ty,
+                )?)
             } else {
                 call
             }
@@ -15119,9 +15321,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let s = emit_c(source, InferredType::Unknown)?;
             let len_expr = match len {
                 Some(l) => emit_c(l, InferredType::Unknown)?,
-                None => format!("{s}_len"),
+                None => c_sibling_length(s.clone())?,
             };
-            format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
+            c_bytes_view(s, len_expr)
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
         // not known below its width ([`settle_shifts`]).
@@ -15133,7 +15335,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         } if op.shift().is_some() => c_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read behind a range test, which
         // records an out-of-range failure and yields 0 instead of reading:
-        // `(inside ? xs[i] : 0)`. The index is written twice — algorithm
+        // `inside ? xs[i] : 0`. The index is written twice — algorithm
         // expressions have no side effects — so an index outside is never
         // read, an empty collection's included. A `bytes` view and a
         // `list<T>` parameter's view carry their length; a build-time
@@ -15156,7 +15358,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             } else {
                 c_failed_part(expr.ty)
             };
-            c_checked_index(left, index, "", failed)?
+            c_checked_index(left, index, None, failed)?
         }
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
@@ -15185,22 +15387,26 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         observed: None,
                     });
                 };
-                return Ok(format!(
-                    "sce_forge_checked_narrow_{}{bits}_from_{}(&sce_failure_, {})",
-                    if signed { "i" } else { "u" },
-                    if from_signed { "i" } else { "u" },
-                    emit_c(left, left.ty)?
+                return Ok(CExpr::path_call(
+                    format!(
+                        "sce_forge_checked_narrow_{}{bits}_from_{}",
+                        if signed { "i" } else { "u" },
+                        if from_signed { "i" } else { "u" },
+                    ),
+                    vec![c_failure_slot(), emit_c(left, left.ty)?],
                 ));
             }
-            let mut operands = vec!["&sce_failure_".to_string(), emit_c(left, expr.ty)?];
+            let mut operands = vec![c_failure_slot(), emit_c(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_c(right, expr.ty)?);
             }
-            format!(
-                "sce_forge_checked_{}_{}{bits}({})",
-                op.helper(),
-                if signed { "i" } else { "u" },
-                operands.join(", ")
+            CExpr::path_call(
+                format!(
+                    "sce_forge_checked_{}_{}{bits}",
+                    op.helper(),
+                    if signed { "i" } else { "u" },
+                ),
+                operands,
             )
         }
     })
@@ -15221,19 +15427,19 @@ fn c_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, ExprError> {
+) -> Result<CExpr, ExprError> {
     let (signed, bits) = settled_shift_width(expr)?;
     let width = format!("{}{bits}", if signed { "i" } else { "u" });
     let value = emit_c(left, expr.ty)?;
     let places = emit_c(count, InferredType::Unknown)?;
     Ok(match discharge {
-        Discharge::AtBuild | Discharge::Total => format!(
-            "sce_forge_wrapping_{}_{width}({value}, (uint64_t)({places}))",
-            op.helper()
+        Discharge::AtBuild | Discharge::Total => CExpr::path_call(
+            format!("sce_forge_wrapping_{}_{width}", op.helper()),
+            vec![value, places.cast("uint64_t")],
         ),
-        Discharge::AtRun => format!(
-            "sce_forge_checked_{}_{width}(&sce_failure_, {value}, (int64_t)({places}))",
-            op.helper()
+        Discharge::AtRun => CExpr::path_call(
+            format!("sce_forge_checked_{}_{width}", op.helper()),
+            vec![c_failure_slot(), value, places.cast("int64_t")],
         ),
     })
 }
@@ -15259,7 +15465,7 @@ fn c_optional_scalar_name(elem: OptionalElem) -> Option<String> {
 /// writes such a value whole where a variable or a field takes it, where the
 /// place names the type
 /// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
-fn c_optional_constructor(elem: OptionalElem, present: Option<&str>) -> Result<String, ExprError> {
+fn c_optional_constructor(elem: OptionalElem, present: Option<CExpr>) -> Result<CExpr, ExprError> {
     let Some(name) = c_optional_scalar_name(elem) else {
         return Err(ExprError::UnsupportedConstruct {
             construct: format!(
@@ -15276,8 +15482,8 @@ fn c_optional_constructor(elem: OptionalElem, present: Option<&str>) -> Result<S
         });
     };
     Ok(match present {
-        Some(value) => format!("sce_optional_{name}_some({value})"),
-        None => format!("sce_optional_{name}_none()"),
+        Some(value) => CExpr::path_call(format!("sce_optional_{name}_some"), vec![value]),
+        None => CExpr::path_call(format!("sce_optional_{name}_none"), Vec::new()),
     })
 }
 
@@ -15305,23 +15511,27 @@ pub(crate) fn c_present_read(subject: &str, ty: InferredType) -> String {
 /// flag the runtime's `SCE_OPTIONAL_*_OR` spells, which evaluates `d` only when
 /// `x` is absent, and total equality through `SCE_OPTIONAL_SAME` of two optional
 /// values or `SCE_OPTIONAL_HOLDS` of one and a present value, which name no type.
-fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprError> {
-    let subject = |node: &TypedExpr| -> Result<String, ExprError> {
-        Ok(wrap_postfix(node, emit_c(node, InferredType::Unknown)?))
-    };
+fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<CExpr, ExprError> {
     Ok(match form {
         OptionalForm::Test {
             subject: s,
             present,
         } => {
-            let test = format!("{}.present", subject(s)?);
+            let test = emit_c(s, InferredType::Unknown)?.field("present");
             if present {
                 test
             } else {
-                format!("!{test}")
+                test.prefixed(CUnOp::Not)
             }
         }
-        OptionalForm::Proven { subject: s } => c_present_read(&subject(s)?, s.ty),
+        // The one spelling of a present read ([`c_present_read`]), which reads
+        // members after the subject: the subject is handed to it printed as one
+        // operand, and what it answers, a member path or a compound literal,
+        // stands as one.
+        OptionalForm::Proven { subject: s } => CExpr::atom(c_present_read(
+            &emit_c(s, InferredType::Unknown)?.as_operand(),
+            s.ty,
+        )),
         OptionalForm::Otherwise { value, fallback } => {
             let read = if whole.ty.is_optional() {
                 "SCE_OPTIONAL_EITHER"
@@ -15332,10 +15542,12 @@ fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprE
                     _ => "SCE_OPTIONAL_VALUE_OR",
                 }
             };
-            format!(
-                "{read}({}, {})",
-                emit_c(value, InferredType::Unknown)?,
-                emit_c(fallback, whole.ty)?
+            CExpr::path_call(
+                read,
+                vec![
+                    emit_c(value, InferredType::Unknown)?,
+                    emit_c(fallback, whole.ty)?,
+                ],
             )
         }
         OptionalForm::Equality { left, right, equal } => {
@@ -15356,14 +15568,20 @@ fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprE
                     OptionalElem::Bytes => "SCE_OPTIONAL_SAME_BYTES",
                     _ => "SCE_OPTIONAL_SAME_VALUE",
                 };
-                format!(
-                    "SCE_OPTIONAL_SAME({held}, {}, {same})",
-                    emit_c(other, InferredType::Unknown)?
+                CExpr::path_call(
+                    "SCE_OPTIONAL_SAME",
+                    vec![
+                        held,
+                        emit_c(other, InferredType::Unknown)?,
+                        CExpr::atom(same),
+                    ],
                 )
             } else {
                 let value = emit_c(other, elem.present())?;
                 match elem {
-                    OptionalElem::Str => format!("SCE_OPTIONAL_HOLDS_TEXT({held}, {value})"),
+                    OptionalElem::Str => {
+                        CExpr::path_call("SCE_OPTIONAL_HOLDS_TEXT", vec![held, value])
+                    }
                     OptionalElem::Bytes => {
                         return Err(ExprError::UnsupportedConstruct {
                             construct: "`===` of an optional byte string and a present one in \
@@ -15373,44 +15591,33 @@ fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprE
                             observed: None,
                         })
                     }
-                    _ => format!("SCE_OPTIONAL_HOLDS({held}, {value})"),
+                    _ => CExpr::path_call("SCE_OPTIONAL_HOLDS", vec![held, value]),
                 }
             };
             if equal {
                 comparison
             } else {
-                format!("!{comparison}")
+                comparison.prefixed(CUnOp::Not)
             }
         }
-        OptionalForm::Constant(answer) => answer.to_string(),
+        OptionalForm::Constant(answer) => CExpr::atom(answer.to_string()),
     })
 }
 
-fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+fn c_coerce(raw: CExpr, from: InferredType, to: InferredType, node: &TypedExpr) -> CExpr {
     use InferredType::*;
-    if let Some(spelled) = c_family_wide_literal(&raw, to, node) {
-        return spelled;
+    if let Some(spelled) = c_family_wide_literal(to, node) {
+        return CExpr::atom(spelled);
     }
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
-    if let (UntypedInt, Float { bits }) = (from, to) {
-        if let ExprKind::NumberLit(text) = &node.kind {
-            if is_decimal_integer_literal(text) {
-                return format!("{raw}.0{}", single_suffix(bits));
-            }
-        }
-    }
-    // A real literal that lands in a 32-bit real is the single nearest to it,
-    // as it is in C++ (`cpp_coerce`).
-    if let (UntypedFloat, Float { bits: 32 }) = (from, to) {
-        if matches!(node.kind, ExprKind::NumberLit(_)) {
-            return format!("{raw}f");
-        }
+    if let Some(literal) = c_family_real_literal(from, to, node) {
+        return CExpr::atom(literal);
     }
     // An unsigned operand where the join of the two is signed, as in C++.
     if let Some(bits) = c_family_unsigned_to_signed(from, to) {
-        return format!("(int{bits}_t)({raw})");
+        return raw.cast(c_int_type(true, bits));
     }
     raw
 }
@@ -16496,7 +16703,7 @@ mod tests {
         );
         assert_eq!(
             eq("raw !== 'ack'"),
-            "(raw.len != 3 || memcmp(raw.data, \"ack\", 3) != 0)"
+            "raw.len != 3 || memcmp(raw.data, \"ack\", 3) != 0"
         );
         assert_eq!(
             eq("raw === other"),
@@ -16529,8 +16736,92 @@ mod tests {
         );
         assert_eq!(
             tp_with("raw !== 'ack'", ExprTarget::C, &ctx),
-            "(raw_len != 3 || memcmp(raw, \"ack\", 3) != 0)"
+            "raw_len != 3 || memcmp(raw, \"ack\", 3) != 0"
         );
+    }
+
+    /// A byte-string comparison is a `&&` of its length and its bytes in C (and
+    /// a `||` of the two for `!==`), which is grouped where it stands under the
+    /// other as GCC's `-Wparentheses` asks: the old text left the `&&` bare under
+    /// a `||`, which a build under `-Werror` refuses.
+    #[test]
+    fn c_groups_a_byte_string_comparison_where_it_stands() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("done", InferredType::Bool);
+        assert_eq!(
+            tp_with("done || raw === 'ack'", ExprTarget::C, &ctx),
+            "done || (raw_len == 3 && memcmp(raw, \"ack\", 3) == 0)"
+        );
+        assert_eq!(
+            tp_with("done && raw !== 'ack'", ExprTarget::C, &ctx),
+            "done && (raw_len != 3 || memcmp(raw, \"ack\", 3) != 0)"
+        );
+        assert_eq!(
+            tp_with("!(raw === 'ack')", ExprTarget::C, &ctx),
+            "!(raw_len == 3 && memcmp(raw, \"ack\", 3) == 0)"
+        );
+    }
+
+    /// A byte string compared in C is read beside its `_len` sibling, which only
+    /// a name or a field has: one read any other way is refused by name, where the
+    /// old text pasted `_len` after it and named nothing C compiles.
+    #[test]
+    fn c_refuses_a_byte_string_whose_length_has_no_sibling() {
+        let ctx = bytes_ctx();
+        let mut renames = HashMap::new();
+        renames.insert("raw", "(*raw)");
+        let refusal = transpile_typed(
+            "raw === 'ack'",
+            ExprTarget::C,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .expect_err("a byte string read through a pointer has no `_len` sibling");
+        assert!(refusal.to_string().contains("sibling"), "{refusal}");
+    }
+
+    /// A byte string a C place owns is written from the view of its buffer and
+    /// length, a conditional arm by arm, and a literal as the view of its bytes.
+    #[test]
+    fn c_makes_an_owned_byte_string_from_the_view_of_each_arm() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("other", InferredType::Bytes);
+        ctx.insert_var("pick", InferredType::Bool);
+        let owned = |expr: &str| {
+            transpile_into_owned(
+                expr,
+                ExprTarget::C,
+                &ctx,
+                &empty_renames(),
+                InferredType::Bytes,
+            )
+            .unwrap_or_else(|e| panic!("{expr} is owned on C11: {e:?}"))
+            .text
+        };
+        assert_eq!(
+            owned("raw"),
+            "(sce_forge_bytes_view_t){ raw.data, raw.len }"
+        );
+        assert_eq!(
+            owned("pick ? raw : other"),
+            "pick ? (sce_forge_bytes_view_t){ raw.data, raw.len } : \
+             (sce_forge_bytes_view_t){ other.data, other.len }"
+        );
+        assert_eq!(
+            owned("'ab'"),
+            "(sce_forge_bytes_view_t){ (const uint8_t *)\"ab\", 2 }"
+        );
+    }
+
+    /// A prefix operator before an operand that begins with the same sign is
+    /// grouped, where C would read the two as one `--`; a `!` that is the left
+    /// operand of a comparison is grouped as `-Wlogical-not-parentheses` asks.
+    #[test]
+    fn a_c_prefix_operator_is_grouped_where_the_build_would_misread_it() {
+        assert_eq!(tp("-(-a)", ExprTarget::C), "-(-a)");
+        assert_eq!(tp("!a === b", ExprTarget::C), "(!a) == b");
+        assert_eq!(tp("b === !a", ExprTarget::C), "b == !a");
     }
 
     // A non-ASCII / escape-bearing literal is NOT reinterpreted (RFC §bytesguard-3
@@ -16798,7 +17089,7 @@ mod tests {
         );
         assert_eq!(
             landed(source, ExprTarget::C, u64t),
-            "prev | sce_forge_wrapping_shl_u64(UINT64_C(1), (uint64_t)(m))"
+            "prev | sce_forge_wrapping_shl_u64(UINT64_C(1), (uint64_t)m)"
         );
         assert_eq!(
             landed(source, ExprTarget::Cpp, u64t),
@@ -16887,7 +17178,7 @@ mod tests {
                 ExprTarget::C,
                 "h >> m",
                 i16t,
-                "sce_forge_wrapping_shr_i16(h, (uint64_t)(m))",
+                "sce_forge_wrapping_shr_i16(h, (uint64_t)m)",
             ),
             (
                 ExprTarget::Cpp,
@@ -16936,7 +17227,7 @@ mod tests {
         let i32t = int(true, 32);
         assert_eq!(
             landed("s >>> 3", ExprTarget::C, i32t),
-            "sce_forge_wrapping_ushr_i32(s, (uint64_t)(3))"
+            "sce_forge_wrapping_ushr_i32(s, (uint64_t)3)"
         );
         assert_eq!(
             landed("s >>> 3", ExprTarget::Rust, i32t),
@@ -16971,7 +17262,7 @@ mod tests {
         );
         assert_eq!(
             checked(ExprTarget::C),
-            "sce_forge_checked_shl_i32(&sce_failure_, s, (int64_t)(s))"
+            "sce_forge_checked_shl_i32(&sce_failure_, s, (int64_t)s)"
         );
         assert_eq!(
             checked(ExprTarget::Cpp),
@@ -16989,7 +17280,7 @@ mod tests {
         assert_eq!(checked(ExprTarget::Swift), "(try Checked.shl(s, s))");
         assert_eq!(
             landed("s << s", ExprTarget::C, i32t),
-            "sce_forge_wrapping_shl_i32(s, (uint64_t)(s))"
+            "sce_forge_wrapping_shl_i32(s, (uint64_t)s)"
         );
         // An unsigned count is at least 0 by its type, and never checked.
         assert_eq!(
@@ -17012,7 +17303,7 @@ mod tests {
         );
         assert_eq!(
             transpile_into("s >> s", ExprTarget::C, &ctx, &empty_renames(), i32t).unwrap(),
-            "sce_forge_wrapping_shr_i32(s, (uint64_t)(s))"
+            "sce_forge_wrapping_shr_i32(s, (uint64_t)s)"
         );
     }
 
@@ -17097,9 +17388,9 @@ mod tests {
         );
         assert_eq!(
             landed("h << 8", ExprTarget::C, i32t),
-            "(int16_t)((uint16_t)(h) << 8)"
+            "(int16_t)((uint16_t)h << 8)"
         );
-        assert_eq!(landed("~m", ExprTarget::C, u32t), "(uint8_t)(~m)");
+        assert_eq!(landed("~m", ExprTarget::C, u32t), "(uint8_t)~m");
         assert_eq!(
             landed("m << 4", ExprTarget::Cpp, u32t),
             "static_cast<std::uint8_t>(m << 4)"
@@ -17116,7 +17407,7 @@ mod tests {
         // width is the runtime's total shift, which is made at its width.
         assert_eq!(
             landed("prev << m", ExprTarget::C, int(false, 64)),
-            "sce_forge_wrapping_shl_u64(prev, (uint64_t)(m))"
+            "sce_forge_wrapping_shl_u64(prev, (uint64_t)m)"
         );
         assert_eq!(
             landed("m << 4", ExprTarget::Kotlin, u32t),
@@ -19365,7 +19656,7 @@ mod tests {
             tp_with("len(frame)", ExprTarget::Kotlin, &bytes),
             "(frame).size"
         );
-        assert_eq!(tp_with("len(frame)", ExprTarget::C, &bytes), "(frame).len");
+        assert_eq!(tp_with("len(frame)", ExprTarget::C, &bytes), "frame.len");
     }
 
     #[test]

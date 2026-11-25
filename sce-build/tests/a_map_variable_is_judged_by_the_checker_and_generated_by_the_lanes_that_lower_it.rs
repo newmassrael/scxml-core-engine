@@ -777,11 +777,11 @@ fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
         "static inline void map_faces_peer_seen_payload_map_key(const void *key, sce_map_sink_t *sink)",
         "sce_map_seed_t map_seed",
         "sce_map_seed_derive(map_seed, 0u)",
-        "sce_map_holds(&(sm->policy.v_faces), &(sm->policy.v_peer), \
+        "sce_map_holds(&sm->policy.v_faces, &sm->policy.v_peer, \
          map_faces_record_peer_key_map_key)",
         "map_faces_peer_seen_payload_map_key)",
-        "sce_map_count(&(sm->policy.v_faces))",
-        "sce_map_lookup_take(&sce_failure_, sce_map_lookup(&(sm->policy.v_counts), SCE_MAP_KEY_UINT(",
+        "sce_map_count(&sm->policy.v_faces)",
+        "sce_map_lookup_take(&sce_failure_, sce_map_lookup(&sm->policy.v_counts, SCE_MAP_KEY_UINT(",
         "SCE_MAP_KEY_TEXT(",
         "SCE_MAP_VALUE_OF(sm->policy.v_faces, ",
         "sce_map_assign(&(sm->policy.v_spare), &(sm->policy.v_counts));",
@@ -893,7 +893,7 @@ fn a_c11_map_holds_its_records_in_the_types_their_units_declare() {
         "sce_value = map_faces_record_face_to_unit(sm->policy.v_face);",
         "map_faces_record_face_of_unit(SCE_MAP_VALUE_OF(sm->policy.v_faces, ",
         "map_faces_record_face_of_unit(f)",
-        "sce_map_holds(&(sm->policy.v_faces), &(k), NULL)",
+        "sce_map_holds(&sm->policy.v_faces, &k, NULL)",
     ] {
         assert!(
             code.contains(held),
@@ -1931,9 +1931,9 @@ fn c11_writes_a_nested_value_in_place() {
                 "sce_static_map_uint32_int32_2_remove(&((*sce_held_0_)), sce_key)",
                 "(void)sce_static_map_uint32_sce_static_map_uint32_int32_2_2_put_entry(\
                  &(sm->policy.v_slots), sce_key, &sce_put_);",
-                "sce_map_holds(&(SCE_MAP_VALUE_OF(",
+                "sce_map_holds(&SCE_MAP_VALUE_OF(",
                 "SCE_MAP_VALUE_OF(SCE_MAP_VALUE_OF(",
-                "sce_map_count(&(SCE_MAP_VALUE_OF(",
+                "sce_map_count(&SCE_MAP_VALUE_OF(",
                 "for (sce_forge_algorithm_failure_t sce_walk_failure_",
                 "sce_static_map_uint32_int32_2_t_saved_read(part, part_what, 1u, 1u, &(*value), \
                  NULL, err)",
@@ -2498,8 +2498,8 @@ fn c11_lends_an_algorithm_its_map_by_address_and_copies_none() {
     );
     let body = c11_function(&code, line);
     for held in [
-        "sce_map_holds(&((*resets))",
-        "SCE_MAP_VALUE_AS(uint64_t, sce_map_lookup_found(sce_map_lookup(&((*resets))",
+        "sce_map_holds(&(*resets)",
+        "SCE_MAP_VALUE_AS(uint64_t, sce_map_lookup_found(sce_map_lookup(&(*resets)",
         "sce_map_put(&(*resets), &sce_key_, sizeof(sce_key_), &sce_value_, sizeof(sce_value_))",
         "sce_put_ == SCE_MAP_PUT_INSERTED ? ",
     ] {

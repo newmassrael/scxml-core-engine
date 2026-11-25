@@ -152,7 +152,7 @@ fn c11_reads_the_text_of_the_present_record_through_its_buffer() {
             "sm->policy.v_answer.present",
             "sce_text_compare(sm->policy.v_answer.value.title.data, \"Week\") == 0",
             "sm->policy.v_answer.value.priority",
-            "(sm->policy.v_answer.value.items).len",
+            "sm->policy.v_answer.value.items.len",
         ],
     );
 }

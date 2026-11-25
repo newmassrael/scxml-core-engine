@@ -306,7 +306,7 @@ fn the_reads_lower_at_any_depth() {
         &code,
         &[
             "&sm->scratch.loop_0.of_batch_reader_record_item_list_3,",
-            "(sm->pending_payload.as.batch_sent.items).len",
+            "sm->pending_payload.as.batch_sent.items.len",
             "&sm->scratch.loop_1.of_sce_static_string_8_list_4,",
             "&sm->scratch.loop_0.of_sce_static_list_uint8_2_list_2,",
             "&sm->scratch.loop_1.of_sce_static_list_uint8_2,",

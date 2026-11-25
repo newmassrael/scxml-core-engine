@@ -368,12 +368,17 @@ pub(crate) fn c11_unit_union_read(
     left: &[&ScopedCase],
     member: &str,
 ) -> Result<String, String> {
+    use crate::forge::expr::c_tree::{CBinOp, CExpr};
     let field =
         crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::C11);
-    let read =
-        |case: &ScopedCase| format!("{holder}.{}.{field}", c11_case_read(&case.variant.name));
-    Ok(match unit_union_member_of(union, left, member)? {
-        UnionMember::Tag => format!("{holder}.{C11_UNION_TAG}"),
+    let held = || CExpr::atom(holder);
+    let read = |case: &ScopedCase| {
+        held()
+            .field(c11_case_read(&case.variant.name))
+            .field(field.as_str())
+    };
+    let read = match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => held().field(C11_UNION_TAG),
         UnionMember::Case(case) => read(case),
         UnionMember::Shared => {
             let tag_enum = union
@@ -396,19 +401,23 @@ pub(crate) fn c11_unit_union_read(
             };
             let mut conditional = read(last);
             for case in cases {
-                conditional = format!(
-                    "{holder}.{C11_UNION_TAG} == {} ? {} : {conditional}",
-                    crate::forge::enum_naming::variant_ident(
-                        crate::generator::Language::C11,
-                        tag_enum,
-                        &case.variant.name
-                    ),
-                    read(case)
+                let tag = CExpr::atom(crate::forge::enum_naming::variant_ident(
+                    crate::generator::Language::C11,
+                    tag_enum,
+                    &case.variant.name,
+                ));
+                conditional = CExpr::conditional(
+                    CExpr::binary(CBinOp::Eq, held().field(C11_UNION_TAG), tag),
+                    read(case),
+                    conditional,
                 );
             }
-            format!("({conditional})")
+            conditional
         }
-    })
+    };
+    // The read stands where the expression emitter splices it as it is
+    // (`ExprKind::Raw`), so it is printed as one operand.
+    Ok(read.as_operand())
 }
 
 /// The read of `member` of a C11 union where it may be in the cases `left`
