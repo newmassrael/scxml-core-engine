@@ -151,6 +151,38 @@ arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_sta
 place = "backends/rust/tests/src/integration/host_processor"
 keep = ["*_sm.rs"]
 
+# The documents of the static class printed both ways (docs/adr/0129): for
+# the shared interpreter into `step_function_interpreted`, and as their own
+# step functions into `step_function_printed`, each a module of the same
+# machines, which tests/a_step_function_runs_as_the_shared_interpreter_does.rs
+# drives side by side. The two consumer-shaped documents are in
+# tests/integration/step_function; the lifecycles are the class documents of
+# integration_resources, whose own directories hold them for the interpreter
+# alone.
+[[generation]]
+each = { list = ["unicast_session", "fragment_slot"], as = "document" }
+arguments = ["generate", "tests/integration/step_function/{document}.scxml", "-l", "rust", "-o", "{out}"]
+place = "backends/rust/tests/src/integration/step_function_interpreted"
+keep = ["*_sm.rs"]
+
+[[generation]]
+each = { list = ["unicast_session", "fragment_slot"], as = "document" }
+arguments = ["generate", "tests/integration/step_function/{document}.scxml", "-l", "rust", "-o", "{out}", "--step-function"]
+place = "backends/rust/tests/src/integration/step_function_printed"
+keep = ["*_sm.rs"]
+
+[[generation]]
+each = { list = ["flat_lifecycle", "nested_lifecycle"], as = "stem" }
+arguments = ["generate", "integration_resources/{stem}/{stem}.scxml", "-l", "rust", "-o", "{out}"]
+place = "backends/rust/tests/src/integration/step_function_interpreted"
+keep = ["*_sm.rs"]
+
+[[generation]]
+each = { list = ["flat_lifecycle", "nested_lifecycle"], as = "stem" }
+arguments = ["generate", "integration_resources/{stem}/{stem}.scxml", "-l", "rust", "-o", "{out}", "--step-function"]
+place = "backends/rust/tests/src/integration/step_function_printed"
+keep = ["*_sm.rs"]
+
 # Each directory's module index: a machine is a private module re-exported
 # whole, a transition function a public module of its own.
 [[index]]

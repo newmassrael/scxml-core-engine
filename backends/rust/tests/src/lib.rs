@@ -17,6 +17,9 @@
 //!   machine to the transition function generated beside it, which the
 //!   drivers of the stems that declare one (`docs/SCE_TRANSITION_FUNCTION.md`)
 //!   share.
+//! - [`step_function_differential`]: the drive that holds a document printed
+//!   as its own step function to the same document printed for the shared
+//!   interpreter (docs/adr/0129).
 //!
 //! ## Running
 //!
@@ -30,6 +33,7 @@
 
 pub mod harness;
 pub mod integration;
+pub mod step_function_differential;
 pub mod transition_function_equivalence;
 
 // The module `generated`, from the file the tree placed in OUT_DIR: `#[path]`

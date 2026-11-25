@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A unicast session machine of the static class (docs/adr/0129), shaped as the
+  session machine of a downstream bare-metal consumer's image is: 13 states, 2
+  of them compound, 30 transitions and 19 events; one cond, one <raise>, two
+  <send>s, nine <onentry> and two <onexit>; no <parallel>, <history> or
+  <invoke>. Its one <script> is an <sce:action> here, since the null data model
+  has no script language, and every other effect is one too, so a host that
+  records the calls sees every step the machine takes.
+
+  It reaches every rule a step function writes out as constants:
+  - a transition held by a compound state and taken from each atomic state
+    below it (close, reset and keepalive.missed in established);
+  - an atomic state's transition taken before its ancestor's for the same
+    event (keepalive in idle and in established);
+  - an external self-transition of a compound state, which exits it and enters
+    it again by default (reset in established);
+  - a <final> child of a compound state, whose entry raises done.state.opening;
+  - a cond that holds in one child only (drain in established);
+  - an internal event raised on entry and answered by a targetless transition
+    (failure.noted), and events sent to the session's own external queue
+    (hello.ack, closed.ack);
+  - a top-level <final>, which ends the run.
+
+  Generated twice by tools/codegen/trees/rust-integration.toml, for the shared
+  interpreter and as its own step function, and the two held to each other by
+  backends/rust/tests/tests/a_step_function_runs_as_the_shared_interpreter_does.rs.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       name="unicast_session"
+       initial="closed"
+       datamodel="null">
+  <state id="closed">
+    <onentry>
+      <sce:action name="on_closed" effect="notice"/>
+    </onentry>
+    <transition event="open" target="opening">
+      <sce:action name="open_requested" effect="notice"/>
+    </transition>
+    <transition event="reset">
+      <sce:action name="reset_counters" effect="notice"/>
+    </transition>
+    <transition event="close" target="terminated"/>
+  </state>
+  <state id="opening" initial="resolving">
+    <onentry>
+      <sce:action name="on_opening" effect="notice"/>
+    </onentry>
+    <onexit>
+      <sce:action name="left_opening" effect="notice"/>
+    </onexit>
+    <transition event="done.state.opening" target="established"/>
+    <transition event="close" target="closing"/>
+    <transition event="reset" target="closed"/>
+    <state id="resolving">
+      <onentry>
+        <sce:action name="on_resolving" effect="notice"/>
+      </onentry>
+      <transition event="resolved" target="handshaking"/>
+      <transition event="resolve.failed" target="failed"/>
+    </state>
+    <state id="handshaking">
+      <onentry>
+        <sce:action name="on_handshaking" effect="notice"/>
+      </onentry>
+      <transition event="hello">
+        <send event="hello.ack"/>
+      </transition>
+      <transition event="hello.ack" target="opened"/>
+      <transition event="handshake.timeout" target="resolving"/>
+    </state>
+    <final id="opened"/>
+  </state>
+  <state id="established" initial="idle">
+    <onentry>
+      <sce:action name="on_established" effect="notice"/>
+    </onentry>
+    <onexit>
+      <sce:action name="left_established" effect="notice"/>
+    </onexit>
+    <transition event="drain" cond="In('idle')" target="draining"/>
+    <transition event="close" target="closing"/>
+    <transition event="keepalive.missed" target="failed"/>
+    <transition event="reset" target="established"/>
+    <transition event="keepalive">
+      <sce:action name="note_keepalive" effect="notice"/>
+    </transition>
+    <state id="idle">
+      <onentry>
+        <sce:action name="on_idle" effect="notice"/>
+      </onentry>
+      <transition event="data" target="sending"/>
+      <transition event="keepalive" target="idle"/>
+    </state>
+    <state id="sending">
+      <onentry>
+        <sce:action name="on_sending" effect="notice"/>
+      </onentry>
+      <transition event="data.sent" target="awaiting_ack"/>
+      <transition event="nack" target="idle"/>
+    </state>
+    <state id="awaiting_ack">
+      <transition event="ack" target="idle">
+        <sce:action name="acknowledged" effect="notice"/>
+      </transition>
+      <transition event="nack" target="sending"/>
+      <transition event="data"/>
+    </state>
+    <state id="draining">
+      <transition event="drained" target="closing"/>
+      <transition event="data">
+        <sce:action name="drop_data" effect="notice"/>
+      </transition>
+    </state>
+  </state>
+  <state id="closing">
+    <onentry>
+      <send event="closed.ack"/>
+    </onentry>
+    <transition event="closed.ack" target="terminated"/>
+    <transition event="reset" target="closed"/>
+  </state>
+  <state id="failed">
+    <onentry>
+      <sce:action name="on_failed" effect="notice"/>
+      <raise event="failure.noted"/>
+    </onentry>
+    <transition event="failure.noted">
+      <sce:action name="report_failure" effect="notice"/>
+    </transition>
+    <transition event="reset" target="closed"/>
+    <transition event="close" target="terminated"/>
+  </state>
+  <final id="terminated"/>
+</scxml>
