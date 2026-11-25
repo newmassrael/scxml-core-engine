@@ -8,28 +8,36 @@
 # `static_bytes` assigns a bytes variable from a literal and from another one, and
 # expects a value past the bound to leave the variable as it was and `errors` to count
 # it. A C++ machine is not saved, so the bound is the assignment's, and the scenario reads
-# each value through its reader as its Latin-1 text; the test also asserts, where it is
-# compiled, that a published byte string is lent as a constant reference. The mutants take
-# one decision away each:
+# each value through its reader as its Latin-1 text.
+# `AStaticHostIsHandedTypedValuesTest.APublishedByteStringIsLentAsAConstantReference`
+# holds a reader's answer across an event and expects it to read what the machine holds
+# then. The mutants take one decision away each:
 #
 #   an assignment to a byte string is not held to its bound;
 #   a published byte string is handed out as a copy and not lent as a constant reference.
+#
+# A variable is an `OwnedBytes<N>` (docs/adr/0086, section 7.4), whose bound is its type's,
+# and every write goes through `Checked::held`: a generator that skipped the bound would
+# write a vector into it, which does not compile. So the bound is taken away where the
+# type holds it, in `Bounded::make`, for a byte string alone. A variable is lent through
+# the view of its storage (`bytes_storage`), not through `scalar_view`.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
+mutation_targets backends/cpp/forge-runtime/include/sce/forge/bounded.h
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json tests/integration/AStaticHostIsHandedTypedValuesTest.cpp
 
 mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "        } else if let Some(capacity) = self.bytes.get(location) {",
-     "        } else if let Some(capacity) = self.bytes.get(location).filter(|_| false) {")
+edit("backends/cpp/forge-runtime/include/sce/forge/bounded.h",
+     "        if (!admits(static_cast<std::size_t>(list.size()))) {",
+     "        if (!admits(static_cast<std::size_t>(list.size())) && !std::is_same<L, std::vector<std::uint8_t>>::value) {")
 PY
 
 mutation_case "a published byte string is handed out as a copy" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            SceType::Bytes => Some(\"const std::vector<uint8_t>&\".to_string()),",
-     "            SceType::Bytes => None,")
+     "            view: \"const std::vector<uint8_t>&\".to_string(),",
+     "            view: \"std::vector<uint8_t>\".to_string(),")
 PY

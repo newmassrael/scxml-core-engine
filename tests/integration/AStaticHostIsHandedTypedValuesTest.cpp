@@ -109,12 +109,28 @@ TEST(AStaticHostIsHandedTypedValuesTest, AnArgumentThatOverflowsStopsTheCallAndR
 }
 
 // A host is handed a byte string as a constant reference: the vector is the machine's own,
-// and a write into it would change the variable behind its bound. Checked where it is
-// compiled, since a reader that returned a copy or a mutable reference would be another
-// type.
-static_assert(std::is_same_v<decltype(std::declval<const G::static_bytes::static_bytes &>().frame()),
-                             const std::vector<std::uint8_t> &>,
-              "a published byte string is lent as a constant reference");
+// and a write into it would change the variable behind its bound. A reader that returned a
+// copy would be another type, and a host that kept its answer would go on reading the value
+// the variable held when it asked. Both are asserted when the test runs, so a reader that
+// copies is a test that fails and not a tree that stops compiling. `fill` assigns
+// `abcdefgh` to `frame`, which starts at `ab`.
+TEST(AStaticHostIsHandedTypedValuesTest, APublishedByteStringIsLentAsAConstantReference) {
+    namespace Sb = G::static_bytes;
+    using Lent = decltype(std::declval<const Sb::static_bytes &>().frame());
+    EXPECT_TRUE((std::is_same_v<Lent, const std::vector<std::uint8_t> &>))
+        << "a published byte string is lent as a constant reference";
+
+    Sb::static_bytes machine;
+    EXPECT_EQ(machine.initialize(), std::nullopt);
+    const std::vector<std::uint8_t> &lent = machine.frame();
+    EXPECT_EQ(std::string(lent.begin(), lent.end()), "ab");
+
+    machine.raiseExternal("fill");
+    machine.step();
+    EXPECT_EQ(std::string(machine.frame().begin(), machine.frame().end()), "abcdefgh");
+    EXPECT_EQ(std::string(lent.begin(), lent.end()), "abcdefgh")
+        << "the reader lent the vector the variable holds, so what was lent reads the new value";
+}
 
 }  // namespace
 }  // namespace SCE::Tests
