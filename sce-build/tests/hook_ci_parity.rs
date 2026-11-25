@@ -2026,8 +2026,11 @@ fn every_planned_shard_lane_and_its_gate_agree_on_the_shards() {
             "{gate_path} no longer reads {variable} and hands it to {SHARD_HELPER} \
              {named}, so the jobs of {lane_path}'s `{job}` would each run the whole suite"
         );
+        // A gate names the helper by a quoted path (`"$WT/scripts/lib/..." report`),
+        // so the shell's quotes are no part of what is asked.
+        let unquoted = gate.replace('"', "");
         assert!(
-            gate.contains("--out") && gate.contains(&format!("{CTEST_SHARD_HELPER} report")),
+            gate.contains("--out") && unquoted.contains(&format!("{CTEST_SHARD_HELPER} report")),
             "{gate_path} no longer writes its plan (`--out`) and reports what it ran \
              (`{CTEST_SHARD_HELPER} report`), so the verdict has nothing to hold"
         );
