@@ -4,7 +4,8 @@
   ignored. Sections 1, 2 and 4 are this record's decisions; section 3 records the runtime half that landed with ADR
   0128's integration (a3b833ee19b) and adds only the printer's half, and section 5 finishes the single ZInt read that
   landed there (25af0b8b61e) by giving the frame reader the same body.
-- Amended (2026-11-25): a chain hook's refusal is a kind of its own (section 2).
+- Amended (2026-11-25): a chain hook's refusal is a kind of its own (section 2), and a record handed out and not read
+  is skipped as the arm it was handed out as, not as the codec's view of every arm (section 1).
 - Amends: ADR 0049 (a decoded Rust codec is a view over its wire bytes): a view's read takes a chain hook. ADR 0128 (a
   frame's reads are total and its verdict is read once): a sequence of frames is read through one reader, whose first
   refusal ends the sequence.
@@ -47,8 +48,12 @@ after the other in `&'f [u8]`:
   the consumer's call holds the view of the one kind it reads and not the largest of them.
 - The size of the record is an invariant: `size_of::<{Codec}Record>()` is at most 64 bytes on every target, and the
   generated module asserts it at compile time. A handle is one pointer, so the record is two words.
-- A record handed out and not read is skipped by the next `next`, which reads it through the codec's own view and
-  drops the value.
+- A record handed out and not read is skipped by the next `next` as the arm it was handed out as. `record::<W>()`
+  records in the sequence the skip of its kind `W` (the runtime's `skip_record::<W>`, out of line, held as a function
+  pointer, so the handle stays one pointer), and the next head runs it: it reads that arm's view from where the record
+  starts and drops it. The skip reads the record's own extent and nothing else, so the stack under it holds that arm's
+  view and never the codec's view of every arm, which is the cost this section exists to avoid. A skipped record that
+  is malformed refuses the sequence as a record read does, and `consumed` stays before it.
 - The sequence ends at the end of the bytes, at a tag no arm names, and at the first refusal. A tag no arm names is the
   start of something else (a transport header after a batch's network messages), so the sequence ends before it and
   `consumed` says where; a codec's default arm takes such a tag when one frame is decoded, and is not a member of a
@@ -149,6 +154,9 @@ which `SceCursor::read_vle_*` and `SceReader::read_vle_*` both run, the reader r
   type, the one verdict type of ADR 0128 would become one per hook, and every mapping of a verdict to a status a caller
   of another language reads would be one per hook as well. The hook's reason is its state and needs no channel through
   the verdict. Refused.
+- **Skip a record not read as the codec's view.** It is a read of the enum of every arm, whose largest arm's view the
+  skip then puts on the stack, in exactly the case a record exists to avoid it. Refused: a record is skipped as the
+  kind it was handed out as.
 - **Give the hook the entry's view, typed.** Each chain would need a hook of its entry's type, and a hook threaded
   through every body would need a bound for every entry type a frame reaches. The bytes of the entry are what a
   judgement of a header reads. Refused.

@@ -881,7 +881,9 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 // The frames of `{{ struct_name }}` laid one after the other, read one record
 // at a time: `next` peeks the tag of a record and hands out a handle of the arm
 // it names, and the arm's view is read only when the handle is, so the stack
-// under the call that reads it holds that arm's view and no other.
+// under the call that reads it holds that arm's view and no other. A record
+// handed out and not read is skipped as the arm it was handed out as, never as
+// the view of every arm.
 {% for arm in variant.arms %}
 
 /// How a record of the arm `{{ arm.variant_name }}` is read: as
@@ -908,7 +910,7 @@ impl {{ runtime_codec }}::RecordRead for {{ struct_name }}{{ arm.variant_name }}
 /// One record of a [`{{ struct_name }}Records`], of the arm its tag names, not
 /// yet read: a borrow of the reader and nothing else. `read()` reads the arm's
 /// view and `read_with(hook)` shows `hook` each chain entry as it is read; a
-/// record not read is skipped by the next `next`.
+/// record not read is skipped by the next `next`, as its own arm.
 #[allow(dead_code)]
 pub enum {{ struct_name }}Record<'r, 'f> {
 {% for arm in variant.arms %}
@@ -956,7 +958,7 @@ impl<'f> {{ struct_name }}Records<'f> {
     // cannot say: the consumer reads one record and then asks for the next.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<{{ struct_name }}Record<'_, 'f>> {
-        let _peek = self.0.head(Self::skip)?;
+        let _peek = self.0.head()?;
         match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 {% if arm.rust_cfg %}
@@ -973,14 +975,6 @@ impl<'f> {{ struct_name }}Records<'f> {
 {% endfor %}
             _ => None,
         }
-    }
-
-    /// Read past a record handed out and not read, as the codec's view, which
-    /// is dropped: out of line, so `next` holds no view of any arm.
-    #[cold]
-    #[inline(never)]
-    fn skip(reader: &mut SceReader<'f>) {
-        {{ struct_name }}View::read(reader);
     }
 }
 {% endif %}

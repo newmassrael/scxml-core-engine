@@ -10,7 +10,9 @@
 //! hands the consumer a [`Record`], a borrow of the reader and nothing else; the
 //! body is read only when the consumer asks for it ([`Record::read`]), so the
 //! stack under the consumer's call holds the view of the one kind it reads. A
-//! record handed out and not read is skipped by the next head.
+//! record handed out and not read is skipped by the next head, as the kind it
+//! was handed out as and no other: the stack under the skip holds that kind's
+//! view, never the view of every kind.
 //!
 //! [`ChainHook`] is shown each entry of a `<sce:tlv-chain>` right after it is
 //! read, in the one read of the frame, and may refuse it ([`EntryRefused`]);
@@ -93,13 +95,28 @@ pub trait RecordRead {
     fn read_with<'f, H: ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f>;
 }
 
+/// Read past one record of the kind `W`, as that kind's view, which is
+/// dropped: the skip of a record handed out as `W` and not read. Out of line,
+/// so the stack of the head that runs it holds no view.
+#[cold]
+#[inline(never)]
+fn skip_record<W: RecordRead>(reader: &mut SceReader<'_>) {
+    let _ = W::read_with(reader, &mut ());
+}
+
+/// How the head reads past a record handed out and not read: the skip of the
+/// kind it was handed out as ([`skip_record`]).
+type SkipRecord<'f> = fn(&mut SceReader<'f>);
+
 /// The frames of one codec laid one after the other in `&'f [u8]`, read one
 /// record at a time through one reader (docs/adr/0130).
 #[derive(Debug, Clone)]
 pub struct Records<'f> {
     reader: SceReader<'f>,
     whole: usize,
-    unread: bool,
+    /// The skip of the record handed out and not read, recorded when it was
+    /// handed out; `None` when every record handed out was read.
+    unread: Option<SkipRecord<'f>>,
 }
 
 impl<'f> Records<'f> {
@@ -108,7 +125,7 @@ impl<'f> Records<'f> {
         Self {
             reader: SceReader::new(bytes),
             whole: 0,
-            unread: false,
+            unread: None,
         }
     }
 
@@ -124,11 +141,11 @@ impl<'f> Records<'f> {
     }
 
     /// The first byte of the next record, the record handed out before and not
-    /// read skipped through `skip` first; `None` at the end of the bytes and
-    /// once a record was refused.
+    /// read skipped first, as the kind it was handed out as; `None` at the end
+    /// of the bytes and once a record was refused, the skipped one among them.
     #[inline]
-    pub fn head(&mut self, skip: impl FnOnce(&mut SceReader<'f>)) -> Option<u8> {
-        if self.unread {
+    pub fn head(&mut self) -> Option<u8> {
+        if let Some(skip) = self.unread {
             skip(&mut self.reader);
             self.close();
         }
@@ -145,10 +162,11 @@ impl<'f> Records<'f> {
         self.reader.fail(refused);
     }
 
-    /// Hand out the record at the head, of the kind `W` its tag says.
+    /// Hand out the record at the head, of the kind `W` its tag says. Until it
+    /// is read, the next head skips it as a `W`.
     #[inline]
     pub fn record<W: RecordRead>(&mut self) -> Record<'_, 'f, W> {
-        self.unread = true;
+        self.unread = Some(skip_record::<W>);
         Record {
             records: self,
             kind: PhantomData,
@@ -158,7 +176,7 @@ impl<'f> Records<'f> {
     /// The record handed out has been read: the bytes read whole move past it
     /// where it was not refused.
     fn close(&mut self) {
-        self.unread = false;
+        self.unread = None;
         if !self.reader.failed() {
             self.whole = self.reader.position();
         }
@@ -220,15 +238,22 @@ mod tests {
         }
     }
 
-    fn skip(r: &mut SceReader<'_>) {
-        Counted::read_with(r, &mut ());
+    /// A record of a tag byte and one byte after it, whatever that byte says.
+    struct Pair;
+
+    impl RecordRead for Pair {
+        type View<'f> = &'f [u8; 2];
+
+        fn read_with<'f, H: ChainHook>(r: &mut SceReader<'f>, _hook: &mut H) -> &'f [u8; 2] {
+            r.take_array::<2>()
+        }
     }
 
     /// The records of `bytes` whose tag is below 0x10, each read.
     fn read_all(bytes: &[u8]) -> (usize, Result<(), CodecError>, usize) {
         let mut records = Records::new(bytes);
         let mut read = 0;
-        while let Some(tag) = records.head(skip) {
+        while let Some(tag) = records.head() {
             if tag >= 0x10 {
                 break;
             }
@@ -262,14 +287,47 @@ mod tests {
     fn a_record_handed_out_and_not_read_is_skipped() {
         let bytes = [1u8, 1, 9, 2, 1, 8];
         let mut records = Records::new(&bytes);
-        assert_eq!(records.head(skip), Some(1));
+        assert_eq!(records.head(), Some(1));
         let first = records.record::<Counted>();
         assert_eq!(first.header(), 1);
-        assert_eq!(records.head(skip), Some(2));
+        assert_eq!(records.head(), Some(2));
         assert_eq!(records.consumed(), 3);
         assert_eq!(records.record::<Counted>().read(), &[8]);
-        assert_eq!(records.head(skip), None);
+        assert_eq!(records.head(), None);
         assert_eq!(records.consumed(), 6);
+    }
+
+    #[test]
+    fn a_record_not_read_is_skipped_as_the_kind_it_was_handed_out_as() {
+        // As a `Pair` the first record is two bytes; as a `Counted` it would
+        // be five, and the head after it would be the end of the bytes.
+        let bytes = [1u8, 3, 7, 0, 0];
+        let mut records = Records::new(&bytes);
+        assert_eq!(records.head(), Some(1));
+        let _unread = records.record::<Pair>();
+        assert_eq!(records.head(), Some(7));
+        assert_eq!(records.consumed(), 2);
+        // The same bytes handed out as a `Counted` are skipped as one.
+        let mut records = Records::new(&bytes);
+        assert_eq!(records.head(), Some(1));
+        let _unread = records.record::<Counted>();
+        assert_eq!(records.head(), None);
+        assert_eq!((records.verdict(), records.consumed()), (Ok(()), 5));
+    }
+
+    #[test]
+    fn a_malformed_record_skipped_unread_refuses_the_sequence() {
+        // The second record says five bytes follow and two do.
+        let bytes = [1u8, 0, 2, 5, 9, 9];
+        let mut records = Records::new(&bytes);
+        assert_eq!(records.head(), Some(1));
+        records.record::<Counted>().read();
+        assert_eq!(records.head(), Some(2));
+        let _unread = records.record::<Counted>();
+        assert_eq!(records.head(), None);
+        assert_eq!(records.verdict(), Err(CodecError::NeedMoreBytes));
+        assert_eq!(records.consumed(), 2);
+        assert_eq!(records.head(), None);
     }
 
     #[test]
@@ -307,11 +365,11 @@ mod tests {
     fn a_sequence_refused_at_its_head_keeps_what_it_read_whole() {
         let bytes = [1u8, 0, 2, 0];
         let mut records = Records::new(&bytes);
-        assert_eq!(records.head(skip), Some(1));
+        assert_eq!(records.head(), Some(1));
         records.record::<Counted>().read();
-        assert_eq!(records.head(skip), Some(2));
+        assert_eq!(records.head(), Some(2));
         records.fail(CodecError::VariantArmNotBuilt);
-        assert_eq!(records.head(skip), None);
+        assert_eq!(records.head(), None);
         assert_eq!(records.verdict(), Err(CodecError::VariantArmNotBuilt));
         assert_eq!(records.consumed(), 2);
     }
@@ -338,7 +396,7 @@ mod tests {
         let bytes = [1u8, 1, 9, 3, 0];
         let mut records = Records::new(&bytes);
         let mut hook = Below { limit: 2, seen: 0 };
-        while records.head(skip).is_some() {
+        while records.head().is_some() {
             records.record::<Counted>().read_with(&mut hook);
         }
         assert_eq!(hook.seen, 2);

@@ -105,7 +105,7 @@ fn the_network_envelope_generates_its_records_and_bounds_their_size() {
         "pub enum CodecZenohNetworkEnvelopeRecord<'r, 'f> {",
         "const _: () = assert!(core::mem::size_of::<CodecZenohNetworkEnvelopeRecord<'static, 'static>>() <= 64);",
         "pub fn next(&mut self) -> Option<CodecZenohNetworkEnvelopeRecord<'_, 'f>> {",
-        "let _peek = self.0.head(Self::skip)?;",
+        "let _peek = self.0.head()?;",
         "type View<'f> = CodecZenohOamView<'f>;",
         "CodecZenohOamView::read_with(reader, hook)",
     ] {
@@ -134,15 +134,37 @@ fn the_network_envelope_generates_its_records_and_bounds_their_size() {
             "`next` does not hand out the arm {arm}:\n{code}"
         );
     }
-    // A record not read is skipped out of line, as the codec's own view.
-    let skip = code
-        .find("    fn skip(reader: &mut SceReader<'f>) {")
-        .expect("the records skip a record not read");
+    // A record not read is skipped by the runtime as the arm it was handed out
+    // as: nothing the records generate reads the envelope's own view, the enum
+    // of every arm, whose largest arm a skip would put on the stack.
+    let records = records_of(&code, "CodecZenohNetworkEnvelope");
     assert!(
-        code[..skip].ends_with("    #[cold]\n    #[inline(never)]\n"),
-        "the skip is not out of line"
+        !records.contains("CodecZenohNetworkEnvelopeView"),
+        "the records read the view of every arm:\n{records}"
     );
-    assert!(code[skip..].contains("CodecZenohNetworkEnvelopeView::read(reader);"));
+    assert!(
+        !records.contains("fn skip("),
+        "the records skip a record by a read of their own:\n{records}"
+    );
+}
+
+/// The code the records of `codec` generate: from the first arm's kind to the
+/// end of the reader's `impl`.
+fn records_of<'c>(code: &'c str, codec: &str) -> &'c str {
+    let start = code
+        .find(&format!(
+            "impl ::sce_forge_runtime::codec::RecordRead for {codec}"
+        ))
+        .unwrap_or_else(|| panic!("{codec} has no record kind:\n{code}"));
+    let records = &code[start..];
+    let reader = records
+        .find(&format!("impl<'f> {codec}Records<'f> {{"))
+        .unwrap_or_else(|| panic!("{codec} has no reader of its records:\n{code}"));
+    let end = reader
+        + records[reader..]
+            .find("\n}")
+            .expect("the reader's impl closes");
+    &records[..end]
 }
 
 /// A codec with a field of its own reads its frame from that field and is no
