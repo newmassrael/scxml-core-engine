@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// End-to-end probe for `sce-codegen verify-generator`.
+// End-to-end probe for `sce-codegen verify-generator`, and for what the
+// binary may carry besides the digest it checks (the section on what the
+// build hands the compiler, below).
 //
 // The unit tests beside `generator_witness.rs` pin the digest's algebra.
 // This target pins the thing that actually decides whether the check is
@@ -24,6 +26,7 @@
 // checkout it was built in could pass the second half and still be the
 // same defect.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -397,6 +400,323 @@ fn a_dep_info_line_is_read_path_by_path() {
             PathBuf::from("/r/c.rs"),
         ]
     );
+}
+
+// ── What the build hands the compiler, and what the binary carries ────
+//
+// A build output may carry only what is derived from the inputs that made
+// it. Then two builds of the same sources write the same bytes whatever
+// commit, worktree or machine they ran at, and a build system that compares
+// artifacts by content keeps the work downstream of a generator that did not
+// change instead of redoing it on every commit.
+//
+// The property itself (build the generator at two commits of the same
+// sources, generate one document with each, compare the bytes) is not a test
+// here, and cannot be one: it compiles the generator twice inside a test of
+// that same generator, each compile minutes long and near 5 GB at its peak,
+// under a cargo that already holds the target directory this test runs from.
+// It is held by the halves it is made of instead, each cheap to check:
+//
+// - the files the compiler reads are the witness set and the template tree
+//   (`every_file_of_this_tree_the_binary_compiles_in_is_witnessed`, with no
+//   exemption for git);
+// - every value the build script hands the compiler is one this tree
+//   determines (`the_build_script_hands_the_compiler_only_what_the_tree_determines`);
+// - the binary carries no commit (`the_binary_carries_no_commit`);
+// - a run reads no commit either: one document generates the same files and
+//   the same manifest at two commits
+//   (`a_document_generates_the_same_output_at_two_commits`), and two runs over
+//   one input agree (`codegen_invocation_determinism.rs`).
+//
+// What none of them reaches is the toolchain and the directory a build runs
+// in, which rustc writes into the binary for code that can panic; a build
+// that must match across machines pins those beside the sources.
+
+/// The instructions the build script printed for the compilation this test
+/// belongs to, as `(instruction, value)` pairs: `cargo:rustc-env=K=V` reads as
+/// `("rustc-env", "K=V")`.
+///
+/// Cargo keeps them in `output`, beside the `out` directory it hands every
+/// compilation of the package as `OUT_DIR`. They are the whole of what the
+/// script can tell the compiler; the files it writes into `OUT_DIR` only name
+/// files of the tree (`include_str!` of the templates and the standard
+/// library), which the dep-info test above holds to the witness.
+fn build_script_instructions() -> Vec<(String, String)> {
+    let output = Path::new(env!("OUT_DIR"))
+        .parent()
+        .expect("OUT_DIR has a parent")
+        .join("output");
+    let text = std::fs::read_to_string(&output).unwrap_or_else(|e| {
+        panic!(
+            "cargo keeps the build script's instructions at {}, beside OUT_DIR, \
+             and it could not be read: {e}",
+            output.display()
+        )
+    });
+    text.lines()
+        .filter_map(|line| {
+            let rest = line
+                .strip_prefix("cargo::")
+                .or_else(|| line.strip_prefix("cargo:"))?;
+            let (instruction, value) = rest.split_once('=')?;
+            Some((instruction.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+/// Whether `path` (canonical) is a file or directory of this checkout that
+/// the generator is built or run from: a member of the witness, inside one of
+/// its trees, or inside the template tree a run reads.
+fn is_an_input_of_the_tree(root: &Path, path: &Path) -> bool {
+    use sce_build::generator_witness::{RUN_TIME_TREE, WITNESS_FILES, WITNESS_TREES};
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    WITNESS_FILES.iter().any(|file| relative == Path::new(file))
+        || WITNESS_TREES
+            .iter()
+            .chain(std::iter::once(&RUN_TIME_TREE))
+            .any(|tree| relative.starts_with(tree))
+}
+
+/// The build script hands the compiler the digest of the witness and
+/// watches files of the tree, and nothing else.
+///
+/// The dep-info test above cannot see a value the script computes some other
+/// way and passes as an environment variable, because such a value is no
+/// file: the commit `git rev-parse` printed, a clock, a host name. Each would
+/// make the binary differ between two builds of the same sources. So every
+/// variable the script sets is named here with what it is derived from, and
+/// every path it watches has to be an input of the tree; a watch on a git ref
+/// is what the commit stamp needed, and it re-ran the script on every commit.
+#[test]
+fn the_build_script_hands_the_compiler_only_what_the_tree_determines() {
+    let root = repo_root()
+        .canonicalize()
+        .expect("the checkout has a canonical path");
+    let instructions = build_script_instructions();
+    assert!(
+        instructions.iter().any(|(kind, _)| kind == "rustc-env"),
+        "the build script's output sets no variable at all, so it is not the \
+         output of this build: {instructions:?}"
+    );
+
+    // Each variable the script may set, with the value this tree gives it.
+    let digest = sce_build::generator_witness::digest_hex(&root)
+        .expect("the witness set of this checkout is readable");
+    let derived = [("SCE_GENERATOR_SOURCE_DIGEST", digest.as_str())];
+
+    let mut stray = Vec::new();
+    for (kind, value) in &instructions {
+        match kind.as_str() {
+            "rustc-env" => {
+                let (name, set) = value.split_once('=').unwrap_or((value.as_str(), ""));
+                match derived.iter().find(|(known, _)| *known == name) {
+                    Some((_, expected)) => assert_eq!(
+                        set, *expected,
+                        "the build script set {name} to a value this tree does not give it"
+                    ),
+                    None => stray.push(format!("rustc-env {value}")),
+                }
+            }
+            "rerun-if-changed" => {
+                let path = Path::new(value).canonicalize().unwrap_or_else(|e| {
+                    panic!("the build script watches {value}, which is not on disk: {e}")
+                });
+                if !is_an_input_of_the_tree(&root, &path) {
+                    stray.push(format!("rerun-if-changed {}", path.display()));
+                }
+            }
+            _ => stray.push(format!("{kind} {value}")),
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "the build script hands the compiler something this tree does not \
+         determine, so two builds of the same sources can differ by it. Derive \
+         it from the sources (and name it in `derived` above with what it is \
+         derived from), or leave it out of the build:\n  {}",
+        stray.join("\n  ")
+    );
+}
+
+/// The commit `HEAD` names in this checkout.
+fn head_commit() -> String {
+    let out = Command::new("git")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .arg("-C")
+        .arg(repo_root())
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git rev-parse HEAD failed in the checkout: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("git prints an object name in ASCII")
+        .trim()
+        .to_string()
+}
+
+/// The binary does not carry the commit it was built at.
+///
+/// The consequence the two tests above are for, checked on the artifact
+/// itself, whatever route a commit would take into it: a build script, a
+/// dependency that reads git, a macro. Twelve hex digits are the shortest
+/// spelling the commit stamp used, so any longer one contains them; a source
+/// cannot contain the id of the commit that holds it, so nothing the binary
+/// legitimately embeds can.
+#[test]
+fn the_binary_carries_no_commit() {
+    let head = head_commit();
+    assert!(
+        head.len() >= 40 && head.chars().all(|c| c.is_ascii_hexdigit()),
+        "HEAD is not an object name: {head:?}"
+    );
+    let short = &head.as_bytes()[..12];
+    let binary = std::fs::read(sce_codegen_bin()).expect("read the binary");
+    assert!(
+        !binary.windows(short.len()).any(|window| window == short),
+        "sce-codegen carries the commit it was built at ({}), so every commit \
+         builds a new binary when no source of it changed. Name the generator \
+         by GENERATOR_SOURCE_DIGEST and leave the commit out of the build.",
+        &head[..12]
+    );
+}
+
+/// A statechart small enough to generate in a moment.
+const SAMPLE_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       initial="a" version="1.0" datamodel="ecmascript" name="sample">
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>
+"#;
+
+/// `git <args>` in `dir`, a scratch repository; its output, trimmed.
+fn git_in(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .args([
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?} in {}: {}",
+        dir.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// Every file under `dir`, by its path relative to `root`.
+fn files_under(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
+    for entry in std::fs::read_dir(dir).expect("read dir") {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            files_under(root, &path, out);
+        } else {
+            let relative = path
+                .strip_prefix(root)
+                .expect("a file under the root")
+                .to_path_buf();
+            out.insert(relative, std::fs::read(&path).expect("read a written file"));
+        }
+    }
+}
+
+/// `generate` of the sample in `repo` into `repo/out`: the manifest it
+/// printed, and every file it wrote by its path under `out`.
+fn generate_sample_in(repo: &Path) -> (String, BTreeMap<PathBuf, Vec<u8>>) {
+    let out_dir = repo.join("out");
+    if out_dir.exists() {
+        std::fs::remove_dir_all(&out_dir).expect("clear the output of the last run");
+    }
+    let run = Command::new(sce_codegen_bin())
+        .current_dir(repo)
+        .args([
+            "generate",
+            "sample.scxml",
+            "--language",
+            "rust",
+            "--output-dir",
+            "out",
+        ])
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        run.status.success(),
+        "generate refused the sample: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let mut files = BTreeMap::new();
+    files_under(&out_dir, &out_dir, &mut files);
+    assert!(
+        !files.is_empty(),
+        "generate wrote nothing, so a comparison of what it wrote proves nothing"
+    );
+    (String::from_utf8_lossy(&run.stdout).into_owned(), files)
+}
+
+/// One document generates the same files and the same manifest at two
+/// commits of the checkout that holds it.
+///
+/// The run half of the property this section is about: the binary is one
+/// build, so what differs between the two runs is the commit and nothing
+/// else. A generator that read the commit of the tree it generates in, to
+/// stamp a header or the manifest, would write two outputs here.
+#[test]
+fn a_document_generates_the_same_output_at_two_commits() {
+    let scratch = tempfile::tempdir().expect("scratch dir");
+    let repo = scratch.path();
+    std::fs::write(repo.join("sample.scxml"), SAMPLE_DOCUMENT).expect("write the sample");
+    git_in(repo, &["init", "-q"]);
+    git_in(repo, &["add", "sample.scxml"]);
+    git_in(repo, &["commit", "-q", "-m", "first"]);
+    let first_commit = git_in(repo, &["rev-parse", "HEAD"]);
+    let first = generate_sample_in(repo);
+
+    git_in(repo, &["commit", "-q", "--allow-empty", "-m", "second"]);
+    let second_commit = git_in(repo, &["rev-parse", "HEAD"]);
+    assert_ne!(
+        first_commit, second_commit,
+        "the second commit must be another commit, or the comparison below proves nothing"
+    );
+    let second = generate_sample_in(repo);
+
+    assert_eq!(
+        first.0, second.0,
+        "the manifest of one document differs between two commits of its checkout"
+    );
+    assert_eq!(
+        first.1.keys().collect::<Vec<_>>(),
+        second.1.keys().collect::<Vec<_>>(),
+        "one document wrote different files at two commits of its checkout"
+    );
+    for (path, bytes) in &first.1 {
+        assert!(
+            second.1.get(path) == Some(bytes),
+            "{} differs between two commits of the checkout that holds its document",
+            path.display()
+        );
+    }
 }
 
 // ── The CMake half ────────────────────────────────────────────────────

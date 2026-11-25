@@ -334,6 +334,9 @@ beside it to read (vendored crate, release tarball).
 *Tests:* `version_reports_the_generator_digest`,
 `manifest_generator_matches_version_output`
 (`sce-build/tests/error_format_json.rs`);
+`the_build_script_hands_the_compiler_only_what_the_tree_determines`,
+`the_binary_carries_no_commit`,
+`a_document_generates_the_same_output_at_two_commits`,
 `every_file_of_this_tree_the_binary_compiles_in_is_witnessed`
 (`sce-build/tests/generator_source_witness.rs`).
 
