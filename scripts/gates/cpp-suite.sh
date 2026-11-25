@@ -244,9 +244,9 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # loosened; the count comparison below covers a partial run. A shard adds its
 # selection (`-R` naming its tests, and the whole-tree build fixture's setup
 # left out), within the same label.
-ctest --test-dir "$BUILD_DIR" -LE c11 ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
-      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" 2>&1 | tee "$LOG/ctest.log"
-ctest_status="${PIPESTATUS[0]}"
+ctest_status=0
+sce_gate_tested --log "$LOG/ctest.log" -- ctest --test-dir "$BUILD_DIR" -LE c11 ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
+      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" || ctest_status=$?
 (( ctest_status == 0 )) || sce_gate_fail "C++ ctest suite failed"
 
 executed="$(grep -oE 'out of [0-9]+' "$LOG/ctest.log" | tail -1 | grep -oE '[0-9]+')"

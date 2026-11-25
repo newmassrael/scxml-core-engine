@@ -105,9 +105,10 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # `--no-tests=error` covers the zero case even if the floor above is ever
 # loosened; the count comparison below covers a partial run. A shard adds its
 # selection (`-R` naming its tests), within the same label.
-ctest --test-dir "$BUILD_DIR" -L c11 ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
-      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" 2>&1 | tee "$LOG/ctest.log"
-ctest_status="${PIPESTATUS[0]}"
+ctest_status=0
+sce_gate_tested --log "$LOG/ctest.log" -- ctest --test-dir "$BUILD_DIR" -L c11 \
+      ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
+      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" || ctest_status=$?
 (( ctest_status == 0 )) || sce_gate_fail "c11 ctest suite failed"
 
 executed="$(grep -oE 'out of [0-9]+' "$LOG/ctest.log" | tail -1 | grep -oE '[0-9]+')"

@@ -46,9 +46,13 @@ fi
 
 # Run from the suite's own directory: the fixtures are resolved relative to it.
 sce_gate_step "running the W3C conformance suite (Interpreter + AOT)"
+# A case that fails is rerun alone from the runner this gate builds above
+# (`sce_gate_tested`), after the configure the tree was registered with.
 status=0
-( cd "$BUILD_DIR/tests" && SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" \
-    ./w3c_test_cli --output "$REPORT/w3c_test_results.xml" ) >"$REPORT/w3c_test_output.log" 2>&1 || status=$?
+sce_gate_tested --quiet --log "$REPORT/w3c_test_output.log" --cwd "$BUILD_DIR/tests" \
+    --first "${SCE_GATE_TREES[$BUILD_DIR]:-}" --first "cmake --build $BUILD_DIR --target w3c_test_cli" \
+    -- env SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" ./w3c_test_cli --output "$REPORT/w3c_test_results.xml" \
+    || status=$?
 
 # The floor is 400 against a current 404 (the helper says what each verdict
 # guards against).

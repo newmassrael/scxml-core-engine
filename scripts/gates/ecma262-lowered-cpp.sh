@@ -151,10 +151,10 @@ JUNIT="$SCRATCH/ctest.xml"
 # the one program this case runs, so the setup is excluded by name here and
 # nowhere else; the case still runs through ctest, with its registered
 # command, environment and timeout.
-ctest --test-dir "$BUILD_DIR" -R '^LoweredEcma262$' \
+ctest_status=0
+sce_gate_tested --log "$LOG" -- ctest --test-dir "$BUILD_DIR" -R '^LoweredEcma262$' \
       --fixture-exclude-setup '^sce_built$' \
-      --verbose --no-tests=error --output-junit "$JUNIT" 2>&1 | tee "$LOG"
-ctest_status="${PIPESTATUS[0]}"
+      --verbose --no-tests=error --output-junit "$JUNIT" || ctest_status=$?
 (( ctest_status == 0 )) || sce_gate_fail "the lowered C++ artifact did not answer ECMA-262 through the build-time lowering"
 
 # `--no-tests=error` covers the zero case and the exit status covers a failing

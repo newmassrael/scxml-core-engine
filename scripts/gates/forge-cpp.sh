@@ -36,5 +36,5 @@ sce_gate_configure_tree backends/cpp/forge-runtime/tests/conformance "$BUILD_DIR
     || { tail -n 40 "$BUILD_DIR/sce_gate_configure.log" >&2; sce_gate_fail "C++ forge conformance configure"; }
 sce_gate_build "$BUILD_DIR" \
     || sce_gate_fail "C++ forge conformance build"
-ctest --test-dir "$BUILD_DIR" --output-on-failure \
+sce_gate_tested -- ctest --test-dir "$BUILD_DIR" --output-on-failure \
     || sce_gate_fail "C++ forge conformance"

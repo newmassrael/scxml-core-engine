@@ -104,7 +104,7 @@ sce_gate_step "run standard_host_scenario"
 # under the project's warning policy, the POSIX-only Mesh transports) is not
 # built on Windows yet, so the setup is excluded rather than left to fail on
 # what this lane does not hold.
-ctest --test-dir "$BUILD_DIR" -C "$CONFIG" -R '^standard_host_scenario$' \
+sce_gate_tested -- ctest --test-dir "$BUILD_DIR" -C "$CONFIG" -R '^standard_host_scenario$' \
     --fixture-exclude-setup sce_built --output-on-failure --no-tests=error ||
     sce_gate_fail "standard_host_scenario failed under MSVC"
 

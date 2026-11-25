@@ -78,7 +78,10 @@ w3c_wasm_run_tree() {
 
     sce_gate_step "running the W3C conformance suite under Node, $engine engine (Interpreter + AOT)"
     local status=0
-    ( cd "$run_dir" && node w3c_test_cli.js ) >"$run_dir/w3c_wasm_output.log" 2>&1 || status=$?
+    sce_gate_tested --quiet --log "$run_dir/w3c_wasm_output.log" --cwd "$run_dir" \
+        --first "${SCE_GATE_TREES[$dir]:-}" \
+        --first "cmake --build $dir --target w3c_test_cli comprehensive_interactive_test" \
+        -- node w3c_test_cli.js || status=$?
 
     # The floor is the native suite's: the WASM configure registers the same
     # set from the same registry, 404 cases today.

@@ -149,8 +149,9 @@ fi
 # left out).
 LOG="$SCE_WASM_BUILD_DIR/cpp_suite_wasm_ctest.log"
 ctest_status=0
-ctest --test-dir "$SCE_WASM_BUILD_DIR" ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
-      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" >"$LOG" 2>&1 \
+sce_gate_tested --quiet --log "$LOG" -- ctest --test-dir "$SCE_WASM_BUILD_DIR" \
+      ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
+      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" \
     || ctest_status=$?
 if (( ctest_status != 0 )); then
     sed -n '/tests passed,/,$p' "$LOG" >&2
