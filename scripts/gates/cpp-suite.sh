@@ -26,6 +26,15 @@
 # W3C C++ cases are not in it: they are not ctest cases at all, they are the
 # 404 the `w3c-cpp` binary runs, so nothing here is a second spelling of a run
 # another gate already makes.
+#
+# SHARDED, when `SCE_CTEST_SHARD=k/N` asks for one part: cpp-suite.yml runs the
+# suite as N jobs, since its build outgrew one hosted job (job 138540727626, on
+# fac3d022cf, was still compiling the default target when it reached its
+# 140-minute ceiling). scripts/lib/ctest_shards.py reads the tests from ctest
+# and their build closures from ninja, spreads them, and each job builds and
+# runs only its part; the lane's last job holds the parts together
+# (`ctest_shards.py verify`). Unset, the gate builds the default target and
+# runs every case, which is what the build machines and a developer run.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -41,70 +50,6 @@ BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 # A killed run leaves its log temporary behind forever; the gate that creates
 # them is the one that clears them.
 sce_prune_ctest_temporaries "$BUILD_DIR"
-
-# Where the build's time went, after it ended either way (the steps it
-# finished, the slowest of them, and the targets they belong to). Read, never
-# judged: a report that cannot be read says so and decides nothing.
-report_build_time() {
-    python3 scripts/lib/build_time_report.py "$BUILD_DIR" >&2 \
-        || sce_gate_step "the build-time report could not be read from $BUILD_DIR/.ninja_log"
-}
-
-# The default target, not a named one. These cases span the engine, the mesh
-# transports and the fixtures, and a target list here would be the same
-# list-shaped defect this gate exists to remove: a case whose target nobody
-# added would be registered, skipped by the build, and then reported by ctest
-# as a missing executable rather than as an untested one.
-sce_gate_step "building the main tree"
-if ! sce_gate_build "$BUILD_DIR"; then
-    report_build_time
-    sce_gate_fail "main tree build"
-fi
-report_build_time
-
-# The debug-info layout is a property of the binaries, not of CMakeLists.txt,
-# and this is the only gate that has both a configured tree and the built
-# executables in it.
-#
-# Both settings it checks are invisible to every other kind of check. A
-# `-Wl,--gdb-index` that stops reaching the link — moved outside the
-# `LLD_LINKER` guard, dropped by a toolchain that ignores it, or configured
-# into a cache CI then restores — leaves the whole suite green while every
-# executable regrows the 47 MB of pubname tables the flag exists to consume.
-# Reading the option out of CMakeLists.txt would only confirm that someone
-# wrote it down, which is the difference between a setting being declared and
-# a setting being in effect, so the assertion is made against what came out.
-#
-# Judged on the largest executable rather than all of them: the property is
-# per-link, one binary either carries the section or the flag did not reach
-# any link, and readelf over 129 binaries would cost more than it tells.
-sce_gate_step "debug-info layout of the emitted binaries"
-# `… | sort -rn | head -1` is a RACE, not a pipeline: `head` closes the pipe the
-# moment it has its line, and whether `sort` has finished writing by then
-# decides whether it dies of EPIPE. Under this file's `set -euo pipefail` that
-# death is the gate's verdict. Measured 2026-08-26: green on `6937e04f38`, red
-# on `12011b5e9d` with the same tree shape and no test failing —
-# `sort: fflush failed: 'standard output': Broken pipe`, and
-# `LastTestsFailed.log` absent, which is how a gate-script race disguises
-# itself as a suite failure.
-#
-# Taking the first line in the shell removes the reader that closes early, so
-# there is no pipe left to break. An empty listing still leaves `biggest`
-# empty and the check below still fires.
-listing="$(find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable -printf '%s\t%p\n' \
-    | sort -rn)"
-biggest="${listing%%$'\n'*}"
-biggest="${biggest#*$'\t'}"
-[[ -n "$biggest" ]] \
-    || sce_gate_fail "no test executable found under $BUILD_DIR/tests to judge"
-sections="$(readelf -S --wide "$biggest")"
-grep -q '\.gdb_index' <<<"$sections" \
-    || sce_gate_fail "$biggest carries no .gdb_index — -Wl,--gdb-index did not reach the link. Reconfigure with a build type of Debug or RelWithDebInfo and lld available; without it every binary regrows ~47 MB of pubname tables."
-if grep -qE '\.debug_gnu_pub(names|types)' <<<"$sections"; then
-    sce_gate_fail "$biggest still carries pubname tables alongside .gdb_index — the linker emitted the index without consuming them, so the binary pays for both indexes."
-fi
-grep -q '\.debug_line' <<<"$sections" \
-    || sce_gate_fail "$biggest carries no .debug_line — the tree was built without debug info at all, which is not what this lane is for."
 
 count_registered() {
     ctest --test-dir "$BUILD_DIR" -N "$@" | grep -cE '^ *Test +#'
@@ -154,12 +99,152 @@ if (( registered < 140 )); then
     sce_gate_fail "only $registered non-c11 test(s) registered (expected at least 140) — the gate would report on a smaller set than its name claims"
 fi
 
+# ONE SHARD OF THE SUITE, when `SCE_CTEST_SHARD=k/N` asks for one. The plan is
+# made from the configured tree before anything is built: the tests the same
+# selector registers (`--expect` holds the helper to the count above), the
+# outputs each one's command, environment and required files name, and the
+# compile and link steps under each in ninja's graph. Every job computes the
+# whole plan and writes it beside its own part, so the lane can hold the parts
+# to one plan and to the whole suite. The whole-tree build fixture's setup is
+# left out of the run: this gate builds the closure of what it runs below, and
+# that setup would rebuild everything the shard does not run.
+SHARD_PLAN=""
+SHARD_TESTS=()
+SHARD_TARGETS=()
+RUN_SELECTION=()
+expected="$registered"
+if [[ -n "${SCE_CTEST_SHARD:-}" ]]; then
+    SHARD_PLAN="$BUILD_DIR/ctest-shard"
+    rm -rf "$SHARD_PLAN"
+    plan_status=0
+    python3 scripts/lib/ctest_shards.py plan --build "$BUILD_DIR" --label-exclude c11 \
+        --expect "$registered" --out "$SHARD_PLAN" "$SCE_CTEST_SHARD" || plan_status=$?
+    case "$plan_status" in
+        0) ;;
+        3) sce_gate_cannot_run "scripts/lib/ctest_shards.py could not plan shard $SCE_CTEST_SHARD on this machine (above)" ;;
+        *) sce_gate_fail "scripts/lib/ctest_shards.py refused to plan shard $SCE_CTEST_SHARD (above)" ;;
+    esac
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && SHARD_TESTS+=("$line")
+    done <"$SHARD_PLAN/tests"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && SHARD_TARGETS+=("$line")
+    done <"$SHARD_PLAN/targets"
+    expected="${#SHARD_TESTS[@]}"
+    if (( expected == 0 )); then
+        python3 scripts/lib/ctest_shards.py report --out "$SHARD_PLAN" --executed 0 --disabled 0
+        sce_gate_step "shard $SCE_CTEST_SHARD holds no test; the other shards run the suite"
+        exit 0
+    fi
+    RUN_SELECTION=(-R "$(<"$SHARD_PLAN/run-regex")")
+    fixture_regex="$(<"$SHARD_PLAN/fixture-regex")"
+    if [[ -n "$fixture_regex" ]]; then
+        RUN_SELECTION+=(--fixture-exclude-setup "$fixture_regex")
+    fi
+fi
+
+# Where the build's time went, after it ended either way (the steps it
+# finished, the slowest of them, and the targets they belong to). Read, never
+# judged: a report that cannot be read says so and decides nothing.
+report_build_time() {
+    python3 scripts/lib/build_time_report.py "$BUILD_DIR" >&2 \
+        || sce_gate_step "the build-time report could not be read from $BUILD_DIR/.ninja_log"
+}
+
+# The default target, not a named one, when the gate runs whole. These cases
+# span the engine, the mesh transports and the fixtures, and a target list here
+# would be the same list-shaped defect this gate exists to remove: a case whose
+# target nobody added would be registered, skipped by the build, and then
+# reported by ctest as a missing executable rather than as an untested one. A
+# shard names targets, and none of them by hand: they are what ctest's own
+# registration names, so a case added anywhere brings its target with it, and
+# one whose program is not named that way fails in its shard, loudly.
+if [[ -n "$SHARD_PLAN" ]]; then
+    sce_gate_step "building the ${#SHARD_TARGETS[@]} output(s) shard $SCE_CTEST_SHARD runs and what they are built from"
+    if (( ${#SHARD_TARGETS[@]} > 0 )); then
+        if ! sce_gate_build "$BUILD_DIR" --target "${SHARD_TARGETS[@]}"; then
+            report_build_time
+            sce_gate_fail "shard $SCE_CTEST_SHARD build"
+        fi
+        report_build_time
+    fi
+else
+    sce_gate_step "building the main tree"
+    if ! sce_gate_build "$BUILD_DIR"; then
+        report_build_time
+        sce_gate_fail "main tree build"
+    fi
+    report_build_time
+fi
+
+# The debug-info layout is a property of the binaries, not of CMakeLists.txt,
+# and this is the only gate that has both a configured tree and the built
+# executables in it.
+#
+# Both settings it checks are invisible to every other kind of check. A
+# `-Wl,--gdb-index` that stops reaching the link — moved outside the
+# `LLD_LINKER` guard, dropped by a toolchain that ignores it, or configured
+# into a cache CI then restores — leaves the whole suite green while every
+# executable regrows the 47 MB of pubname tables the flag exists to consume.
+# Reading the option out of CMakeLists.txt would only confirm that someone
+# wrote it down, which is the difference between a setting being declared and
+# a setting being in effect, so the assertion is made against what came out.
+#
+# Judged on the largest executable rather than all of them: the property is
+# per-link, one binary either carries the section or the flag did not reach
+# any link, and readelf over 129 binaries would cost more than it tells.
+sce_gate_step "debug-info layout of the emitted binaries"
+# `… | sort -rn | head -1` is a RACE, not a pipeline: `head` closes the pipe the
+# moment it has its line, and whether `sort` has finished writing by then
+# decides whether it dies of EPIPE. Under this file's `set -euo pipefail` that
+# death is the gate's verdict. Measured 2026-08-26: green on `6937e04f38`, red
+# on `12011b5e9d` with the same tree shape and no test failing —
+# `sort: fflush failed: 'standard output': Broken pipe`, and
+# `LastTestsFailed.log` absent, which is how a gate-script race disguises
+# itself as a suite failure.
+#
+# Taking the first line in the shell removes the reader that closes early, so
+# there is no pipe left to break. An empty listing still leaves `biggest`
+# empty and the check below still fires.
+#
+# A shard judges the largest program it built itself: one it did not build is
+# whatever an earlier build left, which says nothing about this one's links.
+if [[ -n "$SHARD_PLAN" ]]; then
+    built=()
+    for target in ${SHARD_TARGETS[@]+"${SHARD_TARGETS[@]}"}; do
+        [[ "$target" == /* ]] || target="$BUILD_DIR/$target"
+        [[ -f "$target" && -x "$target" ]] && built+=("$target")
+    done
+    listing=""
+    if (( ${#built[@]} > 0 )); then
+        listing="$(find "${built[@]}" -maxdepth 0 -type f -executable -printf '%s\t%p\n' \
+            | sort -rn)"
+    fi
+else
+    listing="$(find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable -printf '%s\t%p\n' \
+        | sort -rn)"
+fi
+biggest="${listing%%$'\n'*}"
+biggest="${biggest#*$'\t'}"
+[[ -n "$biggest" ]] \
+    || sce_gate_fail "no test executable found ${SHARD_PLAN:+among the outputs shard $SCE_CTEST_SHARD built}${SHARD_PLAN:-under $BUILD_DIR/tests} to judge"
+sections="$(readelf -S --wide "$biggest")"
+grep -q '\.gdb_index' <<<"$sections" \
+    || sce_gate_fail "$biggest carries no .gdb_index — -Wl,--gdb-index did not reach the link. Reconfigure with a build type of Debug or RelWithDebInfo and lld available; without it every binary regrows ~47 MB of pubname tables."
+if grep -qE '\.debug_gnu_pub(names|types)' <<<"$sections"; then
+    sce_gate_fail "$biggest still carries pubname tables alongside .gdb_index — the linker emitted the index without consuming them, so the binary pays for both indexes."
+fi
+grep -q '\.debug_line' <<<"$sections" \
+    || sce_gate_fail "$biggest carries no .debug_line — the tree was built without debug info at all, which is not what this lane is for."
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
 # `--no-tests=error` covers the zero case even if the floor above is ever
-# loosened; the count comparison below covers a partial run.
-ctest --test-dir "$BUILD_DIR" -LE c11 \
+# loosened; the count comparison below covers a partial run. A shard adds its
+# selection (`-R` naming its tests, and the whole-tree build fixture's setup
+# left out), within the same label.
+ctest --test-dir "$BUILD_DIR" -LE c11 ${RUN_SELECTION[@]+"${RUN_SELECTION[@]}"} \
       --output-on-failure --no-tests=error -j "$(sce_build_jobs)" 2>&1 | tee "$LOG/ctest.log"
 ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "C++ ctest suite failed"
@@ -180,12 +265,19 @@ executed="$(grep -oE 'out of [0-9]+' "$LOG/ctest.log" | tail -1 | grep -oE '[0-9
 disabled_names="$(sed -n '/The following tests did not run:/,$p' "$LOG/ctest.log" \
     | grep -E '\(Disabled\)' || true)"
 disabled="$(printf '%s' "$disabled_names" | grep -c . || true)"
-if (( executed + disabled != registered )); then
-    sce_gate_fail "ran ${executed:-0} and skipped $disabled disabled of $registered registered non-c11 test(s) — $((registered - executed - disabled)) neither ran nor declared themselves disabled"
+if (( executed + disabled != expected )); then
+    sce_gate_fail "ran ${executed:-0} and skipped $disabled disabled of $expected registered non-c11 test(s)${SHARD_PLAN:+ of shard $SCE_CTEST_SHARD} — $((expected - executed - disabled)) neither ran nor declared themselves disabled"
 fi
 
 if (( disabled > 0 )); then
     sce_gate_step "$disabled disabled test(s) not run:"
     printf '      %s\n' $disabled_names >&2
 fi
-sce_gate_step "$executed C++ test(s) passed"
+sce_gate_step "$executed C++ test(s) passed${SHARD_PLAN:+ in shard $SCE_CTEST_SHARD}"
+
+# What this shard ran, for the lane's last job to hold beside the other
+# shards' (`ctest_shards.py verify`).
+if [[ -n "$SHARD_PLAN" ]]; then
+    python3 scripts/lib/ctest_shards.py report --out "$SHARD_PLAN" \
+        --executed "$executed" --disabled "$disabled"
+fi

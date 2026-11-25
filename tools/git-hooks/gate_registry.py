@@ -2542,8 +2542,12 @@ GATES: dict[str, dict] = {
                    "delegation, and `ci_owed` is where that is read.",
         # The transport SDKs' pin comes first: the build machines install them
         # with that script (`[platform.linux.tools.mesh-transports]`). Then
-        # the report of where the build's time went, which the gate runs.
+        # what spreads the suite over the lane's shards (`SCE_CTEST_SHARD`)
+        # and the reading of the tree it plans from, which the gate script
+        # runs, and the report of where the build's time went.
         "extra": ["scripts/install_mesh_transports.sh",
+                  "scripts/lib/ctest_shards.py",
+                  "scripts/lib/ctest_registered_commands.cmake",
                   "scripts/lib/build_time_report.py",
                   "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "examples/**", "resources/**", "tools/codegen/templates/**",
