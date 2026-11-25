@@ -6,3 +6,9 @@ commit = "05bf4c7117899a30818f8f8769e2b9da0ea56785"
 base = "91dd7bcf525bc2a240881c29a72e0e630eaf5c3b"
 machine = "mf977c53d872e"
 at = 1795600018
+
+[return]
+reason = "violated"
+detail = "no prefix of the queue that holds it passed (1 judged)"
+report = "m6a944ec3ba29:0000000435-fbcf9ac5c577/attempt-2.log"
+at = 1795601141
