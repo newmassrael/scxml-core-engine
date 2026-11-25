@@ -9617,6 +9617,29 @@ mod tests {
             printed.contains("(::sce_rust_runtime::TransitionId(2), _) => {"),
             "{printed}"
         );
+
+        // docs/adr/0127: the selection rows are table data of every machine,
+        // read by `DocumentTables::first_enabled` in both forms, so both carry
+        // the same rows and neither writes a selection of its own.
+        let selection = |text: &str| -> String {
+            let start = text
+                .find("selection: Some(SelectionRows {")
+                .unwrap_or_else(|| panic!("the tables carry selection rows: {text}"));
+            let end = start
+                + text[start..]
+                    .find("}),")
+                    .unwrap_or_else(|| panic!("the selection rows are closed: {text}"));
+            text[start..end].to_owned()
+        };
+        assert_eq!(selection(&printed), selection(&interpreted));
+        assert!(
+            !interpreted.contains("fn first_enabled_transition"),
+            "{interpreted}"
+        );
+        assert!(
+            !printed.contains("fn first_enabled_transition"),
+            "{printed}"
+        );
     }
 
     /// A step function asked of a document outside its class is refused with
