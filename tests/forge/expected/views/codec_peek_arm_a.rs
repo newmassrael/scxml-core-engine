@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -42,29 +42,54 @@ impl CodecPeekArmA {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let raw = cursor.peek_array::<2>()?;
-        let header = raw[0];
-        let payload = raw[1];
-        let value = Self {
-            header,
-            payload,
-        };
-        cursor.advance(2)?;
-        Ok(value)
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
     }
 
-    /// [`Self::decode`] into a destination the caller owns, so a codec that
-    /// embeds or dispatches to this one decodes it where it will live (see
-    /// `decode_into` on a codec that holds a bounded list). This body has no
-    /// list of its own to build in place, so it decodes and stores.
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
-        *_out = Self::decode(cursor)?;
-        Ok(())
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, as a value built
+    /// once from its fields: every read total, each refusal recorded in the
+    /// reader and the first of them the frame's verdict, which the reader says
+    /// once the frame is read (docs/adr/0128).
+    pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        let raw = cursor.take_array::<2>();
+        let header = raw[0];
+        let payload = raw[1];
+        Self {
+            header,
+            payload,
+        }
+    }
+
+    /// [`Self::read`] into a destination the caller owns, so a codec that
+    /// embeds or dispatches to this one reads it where it will live.
+    pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self) {
+        *_out = Self::read(cursor);
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -299,8 +324,9 @@ pub struct CodecPeekArmAWalk;
 impl ::sce_forge_runtime::codec::ListWalk<0> for CodecPeekArmAWalk {
     type Entry<'b> = CodecPeekArmAView;
 
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecPeekArmAView::decode(_c)
+    #[inline(always)]
+    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
+        CodecPeekArmAView::read(_r)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }

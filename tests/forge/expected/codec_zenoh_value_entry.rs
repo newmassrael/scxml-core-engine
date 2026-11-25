@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -172,10 +172,10 @@ impl<S: CodecZenohValueEntryStorage> CodecZenohValueEntryIn<S> {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>, after_shm: u8) -> Result<Self, CodecError> where S: CodecZenohValueEntryFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out, after_shm)?;
@@ -199,9 +199,15 @@ impl<S: CodecZenohValueEntryStorage> CodecZenohValueEntryIn<S> {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self, after_shm: u8) -> Result<(), CodecError> where S: CodecZenohValueEntryFrom<'f> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out, after_shm))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self, after_shm: u8) where S: CodecZenohValueEntryFrom<'f> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -209,50 +215,66 @@ impl<S: CodecZenohValueEntryStorage> CodecZenohValueEntryIn<S> {
         let _ = after_shm;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_array::<1>()?;
+        let raw = cursor.take_array::<1>();
         let header = raw[0];
-        cursor.advance(1)?;
-        // Dispatch on the tag field; each arm decodes its body codec
-        // from the cursor. The default arm (when declared) carries the
-        // runtime tag value so encode can round-trip it back onto the
-        // wire.
-        // Each arm is installed in `_out.body` holding its body's default and
-        // that body is decoded where it sits, so no arm body is returned up
-        // through the variant wrapper.
+        // Dispatch on the tag field; each arm reads its body codec from the
+        // reader where `_out.body` holds it, so no arm body is returned up
+        // through the variant wrapper (docs/adr/0049). An arm is installed,
+        // holding its body's default, only where `_out.body` holds another
+        // arm: a destination that holds the arm already, as one a caller
+        // reads frame after frame into does, is read into as it is, every
+        // field of the body written by its read (docs/adr/0128). The default
+        // arm (when declared) carries the runtime tag value so encode can
+        // round-trip it back onto the wire.
         match (header >> 5) & 0x03 {
             0u8 => {
-                _out.body = CodecZenohValueEntryVariantIn::CodecZenohExtUnit(CodecZenohExtUnit::default());
+                if !matches!(_out.body, CodecZenohValueEntryVariantIn::CodecZenohExtUnit(_)) {
+                    _out.body = CodecZenohValueEntryVariantIn::CodecZenohExtUnit(CodecZenohExtUnit::default());
+                }
                 if let CodecZenohValueEntryVariantIn::CodecZenohExtUnit(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecZenohExtUnit::decode_into(cursor, _b), &mut _over)?;
+                    CodecZenohExtUnit::read_into(cursor, _b);
                 }
             }
             1u8 => {
-                _out.body = CodecZenohValueEntryVariantIn::CodecZenohExtZint(CodecZenohExtZint::default());
+                if !matches!(_out.body, CodecZenohValueEntryVariantIn::CodecZenohExtZint(_)) {
+                    _out.body = CodecZenohValueEntryVariantIn::CodecZenohExtZint(CodecZenohExtZint::default());
+                }
                 if let CodecZenohValueEntryVariantIn::CodecZenohExtZint(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecZenohExtZint::decode_into(cursor, _b), &mut _over)?;
+                    CodecZenohExtZint::read_into(cursor, _b);
                 }
             }
             2u8 => {
-                _out.body = CodecZenohValueEntryVariantIn::CodecZenohValueZbuf(CodecZenohValueZbufOwned::<S>::default());
+                if !matches!(_out.body, CodecZenohValueEntryVariantIn::CodecZenohValueZbuf(_)) {
+                    _out.body = CodecZenohValueEntryVariantIn::CodecZenohValueZbuf(CodecZenohValueZbufOwned::<S>::default());
+                }
                 if let CodecZenohValueEntryVariantIn::CodecZenohValueZbuf(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecZenohValueZbufOwned::<S>::decode_into(cursor, _b, after_shm), &mut _over)?;
+                    CodecZenohValueZbufOwned::<S>::read_into(cursor, _b, after_shm);
                 }
             }
             other => {
-                _out.body = CodecZenohValueEntryVariantIn::Default {
-                    tag: CodecZenohValueEntryUnknownTag(other),
-                    body: CodecZenohExtUnit::default(),
-                };
+                if let CodecZenohValueEntryVariantIn::Default { tag, .. } = &mut _out.body {
+                    *tag = CodecZenohValueEntryUnknownTag(other);
+                } else {
+                    _out.body = CodecZenohValueEntryVariantIn::Default {
+                        tag: CodecZenohValueEntryUnknownTag(other),
+                        body: CodecZenohExtUnit::default(),
+                    };
+                }
                 if let CodecZenohValueEntryVariantIn::Default { body: _b, .. } = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecZenohExtUnit::decode_into(cursor, _b), &mut _over)?;
+                    CodecZenohExtUnit::read_into(cursor, _b);
                 }
             }
         }
         _out.header = header;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read<'f>(cursor: &mut SceReader<'f>, after_shm: u8) -> Self where S: CodecZenohValueEntryFrom<'f> {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out, after_shm);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -579,8 +601,9 @@ pub struct CodecZenohValueEntryWalk;
 impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohValueEntryWalk {
     type Entry<'b> = CodecZenohValueEntryView<'b>;
 
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohValueEntryView::decode(_c, _a[0])
+    #[inline(always)]
+    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 1]) -> Self::Entry<'b> {
+        CodecZenohValueEntryView::read(_r, _a[0])
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }
@@ -630,17 +653,26 @@ impl<'a> CodecZenohValueEntryView<'a> {
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
     /// errors of [`CodecZenohValueEntryIn::decode`], held as a view. On success the
-    /// cursor advances past the consumed bytes.
+    /// cursor advances past the consumed bytes; on a refusal it does not move.
     pub fn decode(cursor: &mut SceCursor<'a>, after_shm: u8) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out, after_shm)?;
         Ok(_out)
     }
 
-    /// [`Self::decode`] into a destination the caller owns, so a view that
-    /// embeds or dispatches to this one is filled where it will live. On
-    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`
+    /// holds what the reads made of the frame and is not to be read.
     pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, after_shm: u8) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| *_out = Self::read(cursor, after_shm))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, as a view built
+    /// once from what its reads return (docs/adr/0128): a view is a value of a
+    /// few words, so no field of it is written first with a default and then
+    /// with what the frame says, and no arm's body is installed before it is
+    /// read. Every read is total, each refusal is recorded in the reader and the
+    /// first of them is the frame's verdict.
+    pub fn read(cursor: &mut SceReader<'a>, after_shm: u8) -> Self {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -648,47 +680,32 @@ impl<'a> CodecZenohValueEntryView<'a> {
         let _ = after_shm;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_array::<1>()?;
+        let raw = cursor.take_array::<1>();
         let header = raw[0];
-        cursor.advance(1)?;
-        // Dispatch on the tag field; each arm decodes its body codec
-        // from the cursor. The default arm (when declared) carries the
-        // runtime tag value so encode can round-trip it back onto the
-        // wire.
-        // Each arm is installed in `_out.body` holding its body's default and
-        // that body is decoded where it sits, so no arm body is returned up
-        // through the variant wrapper.
-        match (header >> 5) & 0x03 {
-            0u8 => {
-                _out.body = CodecZenohValueEntryViewVariant::CodecZenohExtUnit(CodecZenohExtUnitView::default());
-                if let CodecZenohValueEntryViewVariant::CodecZenohExtUnit(_b) = &mut _out.body {
-                    CodecZenohExtUnitView::decode_into(cursor, _b)?;
-                }
-            }
-            1u8 => {
-                _out.body = CodecZenohValueEntryViewVariant::CodecZenohExtZint(CodecZenohExtZintView::default());
-                if let CodecZenohValueEntryViewVariant::CodecZenohExtZint(_b) = &mut _out.body {
-                    CodecZenohExtZintView::decode_into(cursor, _b)?;
-                }
-            }
-            2u8 => {
-                _out.body = CodecZenohValueEntryViewVariant::CodecZenohValueZbuf(CodecZenohValueZbufView::default());
-                if let CodecZenohValueEntryViewVariant::CodecZenohValueZbuf(_b) = &mut _out.body {
-                    CodecZenohValueZbufView::decode_into(cursor, _b, after_shm)?;
-                }
-            }
-            other => {
-                _out.body = CodecZenohValueEntryViewVariant::Default {
-                    tag: CodecZenohValueEntryUnknownTag(other),
-                    body: CodecZenohExtUnitView::default(),
-                };
-                if let CodecZenohValueEntryViewVariant::Default { body: _b, .. } = &mut _out.body {
-                    CodecZenohExtUnitView::decode_into(cursor, _b)?;
-                }
-            }
+        // Dispatch on the tag field; each arm reads its body's view as a value
+        // from the reader and is made of it once, so no arm is installed
+        // holding a default body before its body is read (docs/adr/0128). The
+        // default arm (when declared) carries the runtime tag value so encode
+        // can round-trip it back onto the wire.
+        let body = match (header >> 5) & 0x03 {
+            0u8 => CodecZenohValueEntryViewVariant::CodecZenohExtUnit(CodecZenohExtUnitView::read(cursor)),
+            1u8 => CodecZenohValueEntryViewVariant::CodecZenohExtZint(CodecZenohExtZintView::read(cursor)),
+            2u8 => CodecZenohValueEntryViewVariant::CodecZenohValueZbuf(CodecZenohValueZbufView::read(cursor, after_shm)),
+            other => CodecZenohValueEntryViewVariant::Default {
+                tag: CodecZenohValueEntryUnknownTag(other),
+                body: CodecZenohExtUnitView::read(cursor),
+            },
+        };
+        Self {
+            header,
+            body,
         }
-        _out.header = header;
-        Ok(())
+
+    }
+
+    /// [`Self::read`] into a destination the caller owns.
+    pub fn read_into(cursor: &mut SceReader<'a>, _out: &mut Self, after_shm: u8) {
+        *_out = Self::read(cursor, after_shm);
     }
 
     /// Fill `_out`, the builder form [`CodecZenohValueEntryIn`] a sender fills and

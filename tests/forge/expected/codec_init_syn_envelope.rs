@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -107,10 +107,10 @@ impl CodecInitSynEnvelope {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
@@ -134,43 +134,61 @@ impl CodecInitSynEnvelope {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self) {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_array::<1>()?;
+        let raw = cursor.take_array::<1>();
         let header = raw[0];
-        cursor.advance(1)?;
-        // Dispatch on the tag field; each arm decodes its body codec
-        // from the cursor. The default arm (when declared) carries the
-        // runtime tag value so encode can round-trip it back onto the
-        // wire.
-        // Each arm is installed in `_out.body` holding its body's default and
-        // that body is decoded where it sits, so no arm body is returned up
-        // through the variant wrapper.
+        // Dispatch on the tag field; each arm reads its body codec from the
+        // reader where `_out.body` holds it, so no arm body is returned up
+        // through the variant wrapper (docs/adr/0049). An arm is installed,
+        // holding its body's default, only where `_out.body` holds another
+        // arm: a destination that holds the arm already, as one a caller
+        // reads frame after frame into does, is read into as it is, every
+        // field of the body written by its read (docs/adr/0128). The default
+        // arm (when declared) carries the runtime tag value so encode can
+        // round-trip it back onto the wire.
         match header & 0x1F {
             1u8 => {
-                _out.body = CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::default());
+                if !matches!(_out.body, CodecInitSynEnvelopeVariant::CodecInitSynBody(_)) {
+                    _out.body = CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::default());
+                }
                 if let CodecInitSynEnvelopeVariant::CodecInitSynBody(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecInitSynBody::decode_into(cursor, _b, (header >> 6) & 0x1), &mut _over)?;
+                    CodecInitSynBody::read_into(cursor, _b, (header >> 6) & 0x1);
                 }
             }
             other => {
-                _out.body = CodecInitSynEnvelopeVariant::Default {
-                    tag: CodecInitSynEnvelopeUnknownTag(other),
-                    body: CodecInitSynBody::default(),
-                };
+                if let CodecInitSynEnvelopeVariant::Default { tag, .. } = &mut _out.body {
+                    *tag = CodecInitSynEnvelopeUnknownTag(other);
+                } else {
+                    _out.body = CodecInitSynEnvelopeVariant::Default {
+                        tag: CodecInitSynEnvelopeUnknownTag(other),
+                        body: CodecInitSynBody::default(),
+                    };
+                }
                 if let CodecInitSynEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecInitSynBody::decode_into(cursor, _b, (header >> 6) & 0x1), &mut _over)?;
+                    CodecInitSynBody::read_into(cursor, _b, (header >> 6) & 0x1);
                 }
             }
         }
         _out.header = header;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

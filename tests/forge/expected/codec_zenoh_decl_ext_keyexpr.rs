@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -88,10 +88,10 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprIn<S> {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecZenohDeclExtKeyexprFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
@@ -115,41 +115,44 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprIn<S> {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohDeclExtKeyexprFrom<'f> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecZenohDeclExtKeyexprFrom<'f> {
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let outer_header = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
-        let total_length = cursor.read_vle_u64()?;
-        {
-            let _len = total_length as usize;
-            let _raw = cursor.peek_slice(_len)?;
-            let mut _inner = SceCursor::new(_raw);
-            ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclExtKeyexprInnerOwned::<S>::decode_into(&mut _inner, &mut _out.inner), &mut _over)?;
-            cursor.advance(_len)?;
-        }
+        let total_length = cursor.read_vle_u64();
+        cursor.within(total_length as usize, |_inner| CodecZenohDeclExtKeyexprInnerOwned::<S>::read_into(_inner, &mut _out.inner));
         _out.outer_header = outer_header;
         _out.total_length = total_length;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read<'f>(cursor: &mut SceReader<'f>) -> Self where S: CodecZenohDeclExtKeyexprFrom<'f> {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -414,8 +417,9 @@ pub struct CodecZenohDeclExtKeyexprWalk;
 impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohDeclExtKeyexprWalk {
     type Entry<'b> = CodecZenohDeclExtKeyexprView<'b>;
 
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohDeclExtKeyexprView::decode(_c)
+    #[inline(always)]
+    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
+        CodecZenohDeclExtKeyexprView::read(_r)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
@@ -448,46 +452,57 @@ impl<'a> CodecZenohDeclExtKeyexprView<'a> {
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
     /// errors of [`CodecZenohDeclExtKeyexprIn::decode`], held as a view. On success the
-    /// cursor advances past the consumed bytes.
+    /// cursor advances past the consumed bytes; on a refusal it does not move.
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
     }
 
-    /// [`Self::decode`] into a destination the caller owns, so a view that
-    /// embeds or dispatches to this one is filled where it will live. On
-    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`
+    /// holds what the reads made of the frame and is not to be read.
     pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        cursor.read_frame(|cursor| *_out = Self::read(cursor))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, as a view built
+    /// once from what its reads return (docs/adr/0128): a view is a value of a
+    /// few words, so no field of it is written first with a default and then
+    /// with what the frame says, and no arm's body is installed before it is
+    /// read. Every read is total, each refusal is recorded in the reader and the
+    /// first of them is the frame's verdict.
+    pub fn read(cursor: &mut SceReader<'a>) -> Self {
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let outer_header = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
-        let total_length = cursor.read_vle_u64()?;
-        {
-            let _len = total_length as usize;
-            let _raw = cursor.peek_slice(_len)?;
-            let mut _inner = SceCursor::new(_raw);
-            CodecZenohDeclExtKeyexprInnerView::decode_into(&mut _inner, &mut _out.inner)?;
-            cursor.advance(_len)?;
+        let total_length = cursor.read_vle_u64();
+        #[allow(clippy::needless_late_init)]
+        let inner: CodecZenohDeclExtKeyexprInnerView<'a>;
+        inner = cursor.within(total_length as usize, |_inner| CodecZenohDeclExtKeyexprInnerView::read(_inner));
+        Self {
+            outer_header,
+            total_length,
+            inner,
         }
-        _out.outer_header = outer_header;
-        _out.total_length = total_length;
-        Ok(())
+
+    }
+
+    /// [`Self::read`] into a destination the caller owns.
+    pub fn read_into(cursor: &mut SceReader<'a>, _out: &mut Self) {
+        *_out = Self::read(cursor);
     }
 
     /// Fill `_out`, the builder form [`CodecZenohDeclExtKeyexprIn`] a sender fills and

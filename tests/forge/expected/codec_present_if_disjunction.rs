@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -41,10 +41,10 @@ impl CodecPresentIfDisjunction {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
@@ -68,35 +68,50 @@ impl CodecPresentIfDisjunction {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self) {
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let flags = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
         let seq = if (flags & 0x01u8) != 0 || (flags & 0x02u8) != 0 {
-            let raw = cursor.peek_array::<2>()?;
-            let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
-            cursor.advance(2)?;
-            Some(_v)
+            let raw = cursor.take_array::<2>();
+            Some(((raw[0] as u16) << 8) | raw[1] as u16)
         } else {
             None
         };
         _out.flags = flags;
-        _out.flags_wants_a_or_wants_b = match ((flags & 0x01u8) != 0, (flags & 0x02u8) != 0) { (true, false) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsA { seq: seq.unwrap_or_default() }), (false, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: seq.unwrap_or_default() }), (true, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { seq: seq.unwrap_or_default() }), _ => None, };
-        Ok(())
+        if cursor.clean() {
+            _out.flags_wants_a_or_wants_b = match ((flags & 0x01u8) != 0, (flags & 0x02u8) != 0) { (true, false) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsA { seq: seq.unwrap_or_default() }), (false, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: seq.unwrap_or_default() }), (true, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { seq: seq.unwrap_or_default() }), _ => None, };
+        }
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

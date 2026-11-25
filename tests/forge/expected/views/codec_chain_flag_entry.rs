@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -42,10 +42,10 @@ impl CodecChainFlagEntry {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>, wide: u8) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out, wide)?;
@@ -69,48 +69,61 @@ impl CodecChainFlagEntry {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self, wide: u8) -> Result<(), CodecError> {
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out, wide))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self, wide: u8) {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
         // declaration; consumption is a per-codec design choice.
         let _ = wide;
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let header = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
         let short_value = if (wide & 0x01u8) == 0 {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            Some(_v)
+            let raw = cursor.take_array::<1>();
+            Some(raw[0])
         } else {
             None
         };
         let long_value = if (wide & 0x01u8) != 0 {
-            let raw = cursor.peek_array::<2>()?;
-            let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
-            cursor.advance(2)?;
-            Some(_v)
+            let raw = cursor.take_array::<2>();
+            Some(((raw[0] as u16) << 8) | raw[1] as u16)
         } else {
             None
         };
         _out.header = header;
-        _out.wide = if (wide & 0x01u8) != 0 { CodecChainFlagEntryWide::Wide { long_value: long_value.unwrap_or_default() } } else { CodecChainFlagEntryWide::NotWide { short_value: short_value.unwrap_or_default() } };
-        Ok(())
+        if cursor.clean() {
+            _out.wide = if (wide & 0x01u8) != 0 { CodecChainFlagEntryWide::Wide { long_value: long_value.unwrap_or_default() } } else { CodecChainFlagEntryWide::NotWide { short_value: short_value.unwrap_or_default() } };
+        }
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read(cursor: &mut SceReader<'_>, wide: u8) -> Self {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out, wide);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -370,8 +383,9 @@ pub struct CodecChainFlagEntryWalk;
 impl ::sce_forge_runtime::codec::ListWalk<1> for CodecChainFlagEntryWalk {
     type Entry<'b> = CodecChainFlagEntryView;
 
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecChainFlagEntryView::decode(_c, _a[0])
+    #[inline(always)]
+    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 1]) -> Self::Entry<'b> {
+        CodecChainFlagEntryView::read(_r, _a[0])
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }

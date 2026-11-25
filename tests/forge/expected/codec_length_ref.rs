@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -94,48 +94,73 @@ impl<S: CodecLengthRefStorage> CodecLengthRefIn<S> {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecLengthRefFrom<'f> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecLengthRefFrom<'f> {
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, as a value built
+    /// once from its fields: every read total, each refusal recorded in the
+    /// reader and the first of them the frame's verdict, which the reader says
+    /// once the frame is read (docs/adr/0128).
+    pub fn read<'f>(cursor: &mut SceReader<'f>) -> Self where S: CodecLengthRefFrom<'f> {
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
-        // cursor remaining. Codecs WITH a tail field still consume
-        // to end (tail's definition forces it). The prior
-        // "consume entire cursor" behaviour deferred to "the first
-        // multi-frame consumer" — the TLV chain is that consumer,
-        // so length-ref entry codecs now decode-iterably from a
-        // shared cursor without each entry eating the next entry's
-        // bytes.
-        let _frame_len = cursor.remaining();
-        if _frame_len < 2 {
-            return Err(CodecError::NeedMoreBytes);
-        }
-        let raw = cursor.peek_slice(_frame_len)?;
+        // remaining input. Codecs WITH a tail field still consume
+        // to end (tail's definition forces it). The TLV chain is the
+        // multi-frame consumer, so length-ref entry codecs decode
+        // iterably from a shared reader without each entry eating the
+        // next entry's bytes. The fixed head is at least `min_bytes`
+        // bytes, zeros once the frame has failed (docs/adr/0128), so
+        // its reads by constant offsets below it hold on either.
+        let raw = cursor.peek_at_least::<2>();
+        let _frame_len = raw.len();
         let msg_id = raw[0];
         let len = raw[1];
         if len > 32 {
-            return Err(CodecError::LengthOutOfRange);
+            cursor.fail(CodecError::LengthOutOfRange);
         }
-        let payload = raw.get(2..2 + len as usize).ok_or(CodecError::NeedMoreBytes)?;
-        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
+        let payload = cursor.settle(raw.get(2..2 + len as usize).ok_or(CodecError::NeedMoreBytes));
+        let payload = cursor.settle(::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange));
         let _payload_read = payload.len();
-        let payload = ::sce_forge_runtime::codec::note_held(payload.store::<S, CodecLengthRefPayloadField>(), &mut _over)?;
+        let payload = cursor.hold(payload.store::<S, CodecLengthRefPayloadField>());
         let value = Self {
             msg_id,
             len,
             payload,
         };
-        // Stream-correct: advance only the bytes actually decoded.
+        // Stream-correct: consume only the bytes actually decoded.
         // For each length-ref field, end = byte_off + sibling local
         // value (the sibling let-binding ran before the payload's).
         // Take the max across all length-ref fields; min_bytes is the
-        // lower bound.
+        // lower bound. A frame shorter than that is refused by the
+        // consume, with `NeedMoreBytes`.
         let mut _consumed: usize = 2;
         {
             // The bytes read, which a field past what the profile holds does
@@ -143,23 +168,14 @@ impl<S: CodecLengthRefStorage> CodecLengthRefIn<S> {
             let _end = 2usize + _payload_read;
             if _end > _consumed { _consumed = _end; }
         }
-        if _consumed > _frame_len {
-            return Err(CodecError::NeedMoreBytes);
-        }
-        cursor.advance(_consumed)?;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(value)
+        cursor.advance(_consumed);
+        value
     }
 
-    /// [`Self::decode`] into a destination the caller owns, so a codec that
-    /// embeds or dispatches to this one decodes it where it will live (see
-    /// `decode_into` on a codec that holds a bounded list). This body has no
-    /// list of its own to build in place, so it decodes and stores.
-    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecLengthRefFrom<'f> {
-        *_out = Self::decode(cursor)?;
-        Ok(())
+    /// [`Self::read`] into a destination the caller owns, so a codec that
+    /// embeds or dispatches to this one reads it where it will live.
+    pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecLengthRefFrom<'f> {
+        *_out = Self::read(cursor);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

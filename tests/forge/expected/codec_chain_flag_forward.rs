@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -94,10 +94,10 @@ impl<S: CodecChainFlagForwardStorage> CodecChainFlagForwardIn<S> {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>, wide: u8) -> Result<Self, CodecError> where S: CodecChainFlagForwardFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out, wide)?;
@@ -121,62 +121,71 @@ impl<S: CodecChainFlagForwardStorage> CodecChainFlagForwardIn<S> {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self, wide: u8) -> Result<(), CodecError> where S: CodecChainFlagForwardFrom<'f> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out, wide))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self, wide: u8) where S: CodecChainFlagForwardFrom<'f> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
         // declaration; consumption is a per-codec design choice.
         let _ = wide;
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let head = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
         if (head & 0x01u8) != 0 {
-            ::sce_forge_runtime::codec::note_capacity(_out.entries.insert(Default::default()).refill_from((wide) != 0, |_vec| {
+            cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill_from((wide) != 0, |_vec| {
                 let mut _full = false;
                 let mut _more = false;
                 for _ in 0..4u32 {
-                    let mut _entry = CodecChainFlagEntry::default();
-                    ::sce_forge_runtime::codec::note_capacity(CodecChainFlagEntry::decode_into(cursor, &mut _entry, wide), &mut _full)?;
+                    if cursor.failed() { break; }
+                    let _entry = CodecChainFlagEntry::read(cursor, wide);
                     _more = _entry.z();
                     ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
                     if !_more { break; }
                 }
                 if _more && cursor.remaining() == 0 {
-                    return Err(CodecError::NeedMoreBytes);
+                    cursor.fail(CodecError::NeedMoreBytes);
                 }
                 if _more {
-                    return Err(CodecError::TooManyElements);
+                    cursor.fail(CodecError::TooManyElements);
                 }
                 if _full {
                     return Err(CodecError::CapacityExceeded);
                 }
                 Ok(())
-            }), &mut _over)?;
+            }));
         } else {
             _out.entries = None;
         }
         _out.head = head;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read<'f>(cursor: &mut SceReader<'f>, wide: u8) -> Self where S: CodecChainFlagForwardFrom<'f> {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out, wide);
+        _out
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

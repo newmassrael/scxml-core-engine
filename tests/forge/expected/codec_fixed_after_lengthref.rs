@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -96,10 +96,10 @@ impl<S: CodecFixedAfterLengthrefStorage> CodecFixedAfterLengthrefIn<S> {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecFixedAfterLengthrefFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
@@ -123,60 +123,62 @@ impl<S: CodecFixedAfterLengthrefStorage> CodecFixedAfterLengthrefIn<S> {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecFixedAfterLengthrefFrom<'f> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
-        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecFixedAfterLengthrefFrom<'f> {
+        // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
         // handles every codec where it is not — present-if-gated fields
         // (runtime presence), VLE / repeat / TLV-chain / embed fields
         // (runtime width), string fields (UTF-8 decode), and a fixed field
         // after a variable-length payload (offset depends on the payload
-        // length). Each field reads its own bytes from the cursor and
-        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // length). Each field reads its own bytes from the reader and
+        // consumes exactly what it read. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let header = {
-            let raw = cursor.peek_array::<1>()?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
+            let raw = cursor.take_array::<1>();
+            raw[0]
         };
         let payload_len = {
-            let raw = cursor.peek_array::<2>()?;
-            let _v = raw[0] as u16 | ((raw[1] as u16) << 8);
-            cursor.advance(2)?;
-            _v
+            let raw = cursor.take_array::<2>();
+            raw[0] as u16 | ((raw[1] as u16) << 8)
         };
         let payload = {
             let _len = payload_len;
             if _len > 1500 {
-                return Err(CodecError::LengthOutOfRange);
+                cursor.fail(CodecError::LengthOutOfRange);
             }
             let _n = _len as usize;
-            let raw = cursor.peek_slice(_n)?;
-            let _v = raw;
-            cursor.advance(_n)?;
-            _v
+            cursor.take_slice(_n)
         };
-        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
-        let payload = ::sce_forge_runtime::codec::note_held(payload.store::<S, CodecFixedAfterLengthrefPayloadField>(), &mut _over)?;
+        let payload = cursor.settle(::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange));
+        let payload = cursor.hold(payload.store::<S, CodecFixedAfterLengthrefPayloadField>());
         let crc32 = {
-            let raw = cursor.peek_array::<4>()?;
-            let _v = raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24);
-            cursor.advance(4)?;
-            _v
+            let raw = cursor.take_array::<4>();
+            raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24)
         };
         _out.header = header;
         _out.payload_len = payload_len;
         _out.payload = payload;
         _out.crc32 = crc32;
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read<'f>(cursor: &mut SceReader<'f>) -> Self where S: CodecFixedAfterLengthrefFrom<'f> {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out);
+        _out
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

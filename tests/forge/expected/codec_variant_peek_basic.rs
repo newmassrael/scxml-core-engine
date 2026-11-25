@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceReader, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
@@ -65,10 +65,10 @@ impl CodecVariantPeekBasic {
         Self::default()
     }
 
-    /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519).
+    /// Decode the next frame from `cursor`. On success the cursor advances
+    /// past the consumed bytes; on a refusal it does not move, so a caller that
+    /// receives `NeedMoreBytes` reads the frame again from the same place once
+    /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
@@ -92,9 +92,15 @@ impl CodecVariantPeekBasic {
     /// `_out` holds the fields decoded so far and is not to be read; each of
     /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
-        // A field past what the profile holds is read on and not held; the
-        // frame says so once it is read whole (docs/adr/0077 §7).
-        let mut _over = false;
+        cursor.read_frame(|cursor| Self::read_into(cursor, _out))
+    }
+
+    /// Read the frame through `cursor`, the frame's reader, into `_out`: every
+    /// read total, each refusal recorded in the reader and the first of them
+    /// the frame's verdict, which the reader says once the frame is read
+    /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
+    /// through its own reader, so one frame has one verdict.
+    pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self) {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -102,37 +108,48 @@ impl CodecVariantPeekBasic {
         // tag without advancing — the arm body decoder reads the peeked
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
-        let _peek = cursor.peek_u8()?;
-        // Dispatch on the tag field; each arm decodes its body codec
-        // from the cursor. The default arm (when declared) carries the
-        // runtime tag value so encode can round-trip it back onto the
-        // wire.
-        // Each arm is installed in `_out.body` holding its body's default and
-        // that body is decoded where it sits, so no arm body is returned up
-        // through the variant wrapper.
+        let _peek = cursor.peek_u8();
+        // Dispatch on the tag field; each arm reads its body codec from the
+        // reader where `_out.body` holds it, so no arm body is returned up
+        // through the variant wrapper (docs/adr/0049). An arm is installed,
+        // holding its body's default, only where `_out.body` holds another
+        // arm: a destination that holds the arm already, as one a caller
+        // reads frame after frame into does, is read into as it is, every
+        // field of the body written by its read (docs/adr/0128). The default
+        // arm (when declared) carries the runtime tag value so encode can
+        // round-trip it back onto the wire.
         match _peek & 0x01 {
             0u8 => {
-                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::default());
+                if !matches!(_out.body, CodecVariantPeekBasicVariant::CodecPeekArmA(_)) {
+                    _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::default());
+                }
                 if let CodecVariantPeekBasicVariant::CodecPeekArmA(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecPeekArmA::decode_into(cursor, _b), &mut _over)?;
+                    CodecPeekArmA::read_into(cursor, _b);
                 }
             }
             1u8 => {
-                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::default());
+                if !matches!(_out.body, CodecVariantPeekBasicVariant::CodecPeekArmB(_)) {
+                    _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::default());
+                }
                 if let CodecVariantPeekBasicVariant::CodecPeekArmB(_b) = &mut _out.body {
-                    ::sce_forge_runtime::codec::note_capacity(CodecPeekArmB::decode_into(cursor, _b), &mut _over)?;
+                    CodecPeekArmB::read_into(cursor, _b);
                 }
             }
             // Build-time `codec/variant-arm-unreachable` proves the
             // arm set covers the tag domain without a default, so no tag
             // read from its bits reaches here; a tag outside the arms is a
-            // value the tag's set does not hold, refused as one.
-            _ => return Err(CodecError::UndeclaredEnumValue),
+            // value the tag's set does not hold, recorded as that refusal.
+            _ => cursor.fail(CodecError::UndeclaredEnumValue),
         }
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-        Ok(())
+
+    }
+
+    /// [`Self::read_into`] of a value of its own: a list's entry, which the
+    /// list then holds.
+    pub fn read(cursor: &mut SceReader<'_>) -> Self {
+        let mut _out = Self::default();
+        Self::read_into(cursor, &mut _out);
+        _out
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
