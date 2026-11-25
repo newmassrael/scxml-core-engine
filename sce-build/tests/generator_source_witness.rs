@@ -436,20 +436,19 @@ fn a_dep_info_line_is_read_path_by_path() {
 /// belongs to, as `(instruction, value)` pairs: `cargo:rustc-env=K=V` reads as
 /// `("rustc-env", "K=V")`.
 ///
-/// Cargo keeps them in `output`, beside the `out` directory it hands every
-/// compilation of the package as `OUT_DIR`. They are the whole of what the
-/// script can tell the compiler; the files it writes into `OUT_DIR` only name
-/// files of the tree (`include_str!` of the templates and the standard
-/// library), which the dep-info test above holds to the witness.
+/// The script writes each instruction it prints to `build_instructions.txt`
+/// in `OUT_DIR` as well (`instruct!` in `build.rs`), because the file cargo
+/// keeps them in is in cargo's own build directory, whose layout moved between
+/// releases. They are the whole of what the script can tell the compiler; the
+/// other files it writes into `OUT_DIR` only name files of the tree
+/// (`include_str!` of the templates and the standard library), which the
+/// dep-info test above holds to the witness.
 fn build_script_instructions() -> Vec<(String, String)> {
-    let output = Path::new(env!("OUT_DIR"))
-        .parent()
-        .expect("OUT_DIR has a parent")
-        .join("output");
+    let output = Path::new(env!("OUT_DIR")).join("build_instructions.txt");
     let text = std::fs::read_to_string(&output).unwrap_or_else(|e| {
         panic!(
-            "cargo keeps the build script's instructions at {}, beside OUT_DIR, \
-             and it could not be read: {e}",
+            "the build script keeps its instructions at {}, and it could not \
+             be read: {e}",
             output.display()
         )
     });
