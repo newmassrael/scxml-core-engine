@@ -88,7 +88,7 @@ sce_gate_cannot_run() {
 # ── A landing counts no skip as a pass ─────────────────────────────
 #
 # main moves only through the bx landing queue, which judges a candidate by the
-# gates it reaches and lands it only when every one exits 0. A gate that skips
+# gates its push selects and lands it only when every one exits 0. A gate that skips
 # and exits 0 for want of a tool would be counted there as a pass that measured
 # nothing. So the runner exports SCE_GATE_LANDING for a landing's run
 # (`scripts/gate --landing`, which every unit of a landing's plan carries), and

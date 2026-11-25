@@ -11,11 +11,12 @@
 # lanes clone emsdk and install the release named below; this script is the
 # same install, written once, for the build machines.
 #
-# WHY A TOOL OF ITS OWN (2026-11-08). An update to main is judged on the build
-# machines with every gate it reaches, `ci_only` included. The emscripten gates
-# skip and pass where emsdk is absent (a developer without it still pushes), so
-# a landing judged on a machine without it would count three gates as passed
-# that ran nothing. Declared as `[platform.linux.tools.emsdk]` in bx.toml, the
+# WHY A TOOL OF ITS OWN (2026-11-08). From then until 2026-11-25 an update to
+# main was judged on the build machines with every gate it reached, `ci_only`
+# included; a full run on the fleet (`--all --landing`) still runs these
+# gates there. The emscripten gates skip and pass where emsdk is absent (a
+# developer without it still pushes), so a run as a landing's on a machine
+# without it would count three gates as passed that ran nothing. Declared as `[platform.linux.tools.emsdk]` in bx.toml, the
 # SDK is installed by bx and the units of those gates run only where it is.
 #
 # The unit is the RELEASE: `EMSDK_REV` below is the one home of the pin on the

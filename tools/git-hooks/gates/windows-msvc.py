@@ -27,12 +27,13 @@
                "runner.",
     "cost_s": 1500,
     "summary": "C++ host, COSE and generated machines with MSVC; Bazel channels",
-    # Off the fleet, so a landing leaves it to the hosted lane (see "Where
-    # a gate can run"). The host is the platform: every build machine is
-    # the Linux bx.toml declares, and the verdict is MSVC's on Windows, so
-    # a landing unit could never be placed and every item reaching the
-    # gate would come back unlanded. When bx.toml declares a Windows
-    # platform this attribute names it, and the gate joins the judgment.
+    # Off the fleet, so even a full fleet run (`--all --landing`) leaves it
+    # to the hosted lane (see "Where a gate can run"). The host is the
+    # platform: every build machine is the Linux bx.toml declares, and the
+    # verdict is MSVC's on Windows, so a unit of it could never be placed
+    # and a full run that kept it would come back unlanded. When bx.toml
+    # declares a Windows platform this attribute names it, and the gate
+    # joins a full fleet run.
     "platform": "github-hosted-windows-2022",
     "platform_reason": "the verdict is MSVC's, with Visual Studio 2022 and "
                        "vcpkg on the hosted windows-2022 image; every build "

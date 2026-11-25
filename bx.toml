@@ -471,9 +471,10 @@ needed_by = ["w3c-wasm", "cpp-suite-wasm", "visualizer-wasm", "visualizer-layout
 # `scripts/install_mesh_transports.sh` pins, the script the hosted cpp-suite lane installs them
 # with. `tests/CMakeLists.txt` registers the transport suites only where `find_package` finds the
 # three, and `cpp-suite` refuses (exit 3, could not run) a tree that registered fewer: measured
-# 2026-08-14 on a build machine, 49 mesh cases absent. An update to main is judged here with every
-# gate it reaches, `ci_only` included, so a machine without the SDKs would send every item that
-# reaches the engine back unmeasured (2026-11-08).
+# 2026-08-14 on a build machine, 49 mesh cases absent. From 2026-11-08 to 2026-11-25 an update to
+# main was judged here with every gate it reached, `ci_only` included, and a full run on the fleet
+# (`--all --landing`) still runs `cpp-suite` here, so a machine without the SDKs would send that
+# run back unmeasured.
 #
 # The script installs into the prefix it is given and writes a stamp, `bin/sce-mesh-transports`,
 # that prints its revision: none of the SDKs ships an executable that names the set, and bx tells
