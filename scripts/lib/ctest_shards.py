@@ -2,43 +2,65 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# The shards of the C++ ctest suite: which tests of the main tree one job of
-# cpp-suite.yml builds and runs.
+# The shards of a ctest suite: which tests of a configured tree one job of a
+# lane builds and runs. Three gates run their suite this way, each with its
+# own selection of the tests its tree registers and its own variable:
 #
-#   scripts/lib/ctest_shards.py plan --build <dir> --label-exclude <label> \
-#       --expect <count> --out <dir> <k>/<N>       plan shard k of N into <dir>
+#   gate            tree                selection  variable                  lane
+#   cpp-suite       build               -LE c11    SCE_CTEST_SHARD           cpp-suite.yml
+#   w3c-c11         build               -L c11     SCE_W3C_C11_SHARD         w3c-tests.yml
+#   cpp-suite-wasm  build_wasm          (every)    SCE_CPP_SUITE_WASM_SHARD  cpp-suite.yml
+#
+# Unset, each gate builds its whole suite and runs it, which is what the build
+# machines and a developer run.
+#
+#   scripts/lib/ctest_shards.py plan --build <dir> [--label <label> |
+#       --label-exclude <label>] --expect <count> --out <dir> <k>/<N>
+#                                                  plan shard k of N into <dir>
 #   scripts/lib/ctest_shards.py report --out <dir> --executed <n> --disabled <n>
 #   scripts/lib/ctest_shards.py verify <dir>       hold the shards of one run together
 #   scripts/lib/ctest_shards.py whole-tree-fixtures <build dir> < ctest JSON
 #   scripts/lib/ctest_shards.py --self-test
 #
-# WHY SHARDS. The suite's build outgrew one hosted job. The default target of
-# the main tree was 75 minutes cold on the run of 12321e8233 (job 126014197137,
-# 2026-11-03), and from 2026-11-21 every run of the lane ended at its
-# 140-minute ceiling inside that build (job 138540727626, fac3d022cf: the build
-# started at 15:24 and was still compiling at 17:26). The default target is
-# also more than the suite runs: it builds every example, the C11 half, which
-# the w3c-c11 gate runs, and every program no non-c11 test names. A shard
-# builds what its own tests run and runs them, so each job pays for its part.
+# WHY SHARDS. Each suite's build outgrew one hosted job, or was most of one.
+# The default target of the main tree was 75 minutes cold on the run of
+# 12321e8233 (job 126014197137, 2026-11-03), and from 2026-11-21 every run of
+# cpp-suite ended at its 140-minute ceiling inside that build (job
+# 138540727626, fac3d022cf: the build started at 15:24 and was still compiling
+# at 17:26). The default target is also more than the suite runs: it builds
+# every example, the C11 half, which the w3c-c11 gate runs, and every program
+# no non-c11 test names. The w3c-c11 job spent 13 of its 24 minutes building
+# `sce_c11_tests` and 43 seconds running it (job 138891691071, 4c71fb062c).
+# The emscripten tree built cold in 3328s before its tests ran at all (run
+# 41956988917), and its job ran 4745s before it failed (job 137573089028). A
+# shard builds what its own tests run and runs them, so each job pays for its
+# part, and a red shard is reproduced by building and running that part alone.
 #
 # WHAT A SHARD MAY NOT DO is lose a test. The tests are read from ctest, not
-# listed: `ctest --show-only=json-v1 -LE <label>` names every test the
-# unsharded gate runs, so a test registered anywhere is in some shard with no
-# edit here. `plan` refuses unless the tests it spread are exactly the count
-# the gate registered (`--expect`), every shard computes the whole plan, and
-# `verify` holds the plans of all the shards of a run to one digest and every
-# shard to a report that its tests ran. One kind of test is in no shard, and it
-# is named: the setup of a fixture whose command builds the whole tree
-# (`sce_build_is_current`). A shard builds the closure of what it runs itself,
-# so that setup would only rebuild everything the shard left out; the run
-# excludes it with `--fixture-exclude-setup`, as the mutation harness does.
+# listed: `ctest --show-only=json-v1` with the gate's own selection names every
+# test the unsharded gate runs, so a test registered anywhere is in some shard
+# with no edit here. `plan` refuses unless the tests it spread are exactly the
+# count the gate registered with the same selection (`--expect`), every shard
+# computes the whole plan, and `verify` holds the plans of all the shards of a
+# run to one digest and every shard to a report that its tests ran. One kind
+# of test is in no shard, and it is named: the setup of a fixture whose command
+# builds the whole tree (`sce_build_is_current`). A shard builds the closure of
+# what it runs itself, so that setup would only rebuild everything the shard
+# left out; the run excludes it with `--fixture-exclude-setup`, as the
+# mutation harness does.
 #
 # WHAT A TEST NEEDS BUILT is what its command, its ENVIRONMENT and its
 # REQUIRED_FILES name, where those are outputs of the build graph: an
 # executable, a `-DNAME=<path>` handed to a script, a program a variable
 # hands it to spawn. Ninja builds each such output with everything it is made
 # from. A test that runs a program it does not name gets no program in a fresh
-# shard and fails there, which is the loud way: name it in REQUIRED_FILES.
+# shard and fails there, which is the loud way: name it in REQUIRED_FILES. A
+# test that reads every file a directory of the build holds would fail the
+# quiet way, reading whatever its shard happened to build, so a directory of
+# the build tree named in REQUIRED_FILES needs every output under it built
+# (`c11_headers_are_cxx_consumable`, backends/c/tests, names the generated
+# trees it compiles every header of). Only REQUIRED_FILES is read that way: a
+# variable naming the build tree's root would otherwise need all of it.
 # Tests joined by a fixture (a setup, its cleanup and the tests that require
 # it) are one unit and go to one shard, since ctest adds the setup to any run
 # of a test that requires it.
@@ -171,6 +193,34 @@ def build_outputs(paths: list[str], build_real: str, outputs: set[str]) -> list[
                 if spelling not in named:
                     named.append(spelling)
                 break
+    return named
+
+
+def outputs_under(paths: list[str], build_real: str, outputs: set[str]) -> list[str]:
+    """Every output of the build graph under those of `paths` that are a
+    directory of the build tree: a path inside the tree that is no output
+    itself and has outputs beneath it."""
+    found: list[str] = []
+    for path in paths:
+        relative = os.path.relpath(os.path.realpath(path), build_real)
+        if relative == os.curdir or relative == os.pardir \
+                or relative.startswith(os.pardir + os.sep) or relative in outputs:
+            continue
+        prefix = relative.rstrip(os.sep) + "/"
+        found.extend(o for o in sorted(outputs) if o.startswith(prefix) and o not in found)
+    return found
+
+
+def needed_outputs(test: dict, registered: dict[str, list[str]], build_real: str,
+                   outputs: set[str]) -> list[str]:
+    """What a test needs built: the outputs its command, ENVIRONMENT and
+    REQUIRED_FILES name, and every output under a directory REQUIRED_FILES
+    names."""
+    named = build_outputs(named_paths(test, registered), build_real, outputs)
+    required = as_list(properties_of(test).get("REQUIRED_FILES"))
+    for output in outputs_under(required, build_real, outputs):
+        if output not in named:
+            named.append(output)
     return named
 
 
@@ -352,7 +402,7 @@ def plan_of(tests: list[dict], registered: dict[str, list[str]], build_real: str
             test = by_name[name]
             if properties_of(test).get("DISABLED"):
                 continue
-            for output in build_outputs(named_paths(test, registered), build_real, outputs):
+            for output in needed_outputs(test, registered, build_real, outputs):
                 if output not in unit.outputs:
                     unit.outputs.append(output)
                 if graph is not None:
@@ -389,7 +439,20 @@ def run(argv: list[str], what: str, stream: str = "stdout") -> str:
     return done.stdout if stream == "stdout" else done.stderr
 
 
-def read_tree(build: str, label: str) -> tuple[list[dict], dict[str, list[str]], str, set[str], Graph]:
+def selection_args(label: str | None, label_exclude: str | None) -> list[str]:
+    """The ctest arguments that select a gate's tests: its label, the
+    complement of a label, or every test the tree registers."""
+    if label and label_exclude:
+        raise Refused(f"a selection is one label or one excluded label, not both "
+                      f"({label!r} and {label_exclude!r})")
+    if label:
+        return ["-L", label]
+    if label_exclude:
+        return ["-LE", label_exclude]
+    return []
+
+
+def read_tree(build: str, selection: list[str]) -> tuple[list[dict], dict[str, list[str]], str, set[str], Graph]:
     build_real = os.path.realpath(build)
     cache = Path(build_real, "CMakeCache.txt")
     generator = ""
@@ -400,7 +463,7 @@ def read_tree(build: str, label: str) -> tuple[list[dict], dict[str, list[str]],
     if generator != "Ninja":
         raise CannotPlan(f"{build} is built by '{generator or 'no generator'}'; a shard "
                          f"reads its build closure from ninja")
-    listed = json.loads(run(["ctest", "--test-dir", build_real, "-LE", label,
+    listed = json.loads(run(["ctest", "--test-dir", build_real, *selection,
                              "--show-only=json-v1"], "ctest --show-only=json-v1"))
     tests = listed.get("tests", [])
     registered = read_registered(run(["cmake", f"-DSCE_CTEST_TREE={build_real}", "-P",
@@ -409,7 +472,7 @@ def read_tree(build: str, label: str) -> tuple[list[dict], dict[str, list[str]],
     outputs = parse_targets(run(["ninja", "-C", build_real, "-t", "targets", "all"],
                                 "ninja -t targets all"))
     named = sorted({o for t in tests
-                    for o in build_outputs(named_paths(t, registered), build_real, outputs)})
+                    for o in needed_outputs(t, registered, build_real, outputs)})
     graph = Graph(run(["ninja", "-C", build_real, "-t", "graph", *named], "ninja -t graph")
                   if named else "")
     return tests, registered, build_real, outputs, graph
@@ -565,6 +628,18 @@ def self_test() -> int:
     check(set(outputs) == {"tests/a", "tests/b", "/out/side.bin"},
           f"the named paths that are build outputs: {outputs}")
 
+    generated = targets | {"gen/x_sm.h", "gen/deep/y_sm.h", "general/z.h"}
+    scanner = test("scan", ["/usr/bin/cmake", "-DROOTS=/b/gen|/b/other", "-P", "s.cmake"],
+                   REQUIRED_FILES=["/b/gen", "/b", "/b/tests/a"],
+                   ENVIRONMENT=["SCE_TREE=/b/tests"])
+    needed = needed_outputs(scanner, {}, build, generated)
+    check(set(needed) == {"gen/x_sm.h", "gen/deep/y_sm.h", "tests/a"},
+          f"a directory REQUIRED_FILES names needs every output under it, and no "
+          f"sibling that shares its prefix, the tree's root or a directory a "
+          f"variable names: {needed}")
+    check(outputs_under(["/elsewhere/gen", "/b/missing"], build, generated) == [],
+          "a directory outside the tree, or one with no output under it, needs nothing")
+
     whole = test("sce_build_is_current", ["/usr/bin/cmake", "--build", "/b", "--parallel"],
                  FIXTURES_SETUP=["sce_built"])
     partial = test("builds_one", ["/usr/bin/cmake", "--build", "/b", "--target", "x"],
@@ -637,6 +712,15 @@ def self_test() -> int:
           "and nothing else")
     check(regex_of([]) == "", "no tests, no expression")
 
+    check(selection_args("c11", None) == ["-L", "c11"], "a label selects its tests")
+    check(selection_args(None, "c11") == ["-LE", "c11"], "an excluded label selects the rest")
+    check(selection_args(None, None) == [], "no label selects every test the tree registers")
+    try:
+        selection_args("c11", "c11")
+        check(False, "a label and its exclusion at once are refused")
+    except Refused:
+        check(True, "refused")
+
     import tempfile
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
@@ -677,7 +761,9 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     planning = sub.add_parser("plan", help="plan shard k of N into --out")
     planning.add_argument("--build", required=True)
-    planning.add_argument("--label-exclude", required=True)
+    planning.add_argument("--label", help="run only the tests carrying this label")
+    planning.add_argument("--label-exclude", help="run every test but those carrying "
+                                                  "this label")
     planning.add_argument("--expect", type=int, required=True,
                           help="the tests the gate counted with the same selector")
     planning.add_argument("--out", required=True)
@@ -715,7 +801,8 @@ def main() -> int:
 
     index, count = args.shard
     try:
-        tests, registered, build_real, outputs, graph = read_tree(args.build, args.label_exclude)
+        selection = selection_args(args.label, args.label_exclude)
+        tests, registered, build_real, outputs, graph = read_tree(args.build, selection)
         if len(tests) != args.expect:
             raise Refused(f"ctest's JSON names {len(tests)} test(s) where the gate counted "
                           f"{args.expect} with the same selector")
