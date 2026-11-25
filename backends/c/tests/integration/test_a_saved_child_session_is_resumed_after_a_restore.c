@@ -195,6 +195,36 @@ static void a_restored_tree_saves_the_text_it_was_restored_from(void) {
     static_invoke_destroy(&sm);
 }
 
+static void a_resumed_child_ends_under_the_id_the_author_wrote_for_its_events(void) {
+    // The id a child's events carry is the author's `id`, `worker`, apart from the id it was started
+    // under, `working.1.worker`, which names it in the saved text; a resumed child carries the
+    // author's as a started one does. The parent takes one external event per call here, so the
+    // `done.invoke.worker` the resumed child raises when it ends on `b` is still in the parent's
+    // queue when the tree is saved, and the text shows the id it carries.
+    static machine_t before;
+    static machine_t after;
+    static char text[TEXT_CAP];
+    started(&before);
+    send_to(&before, "a");
+    if (!saved(&before, text, sizeof(text))) {
+        return;
+    }
+    restores(&after, text);
+    CHECK(static_invoke_set_max_external_events_per_call(&after, 1u), "the parent takes a budget of one event");
+    send_to(&after, "b");
+    CHECK(completed(&after) == 0u, "the child's done.invoke waits in the parent's queue: completed is %u",
+          (unsigned)completed(&after));
+    if (saved(&after, text, sizeof(text))) {
+        CHECK(strstr(text, "\"invokes\":[]") != NULL, "the child ended: %s", text);
+        CHECK(strstr(text, "\"invokeid\":\"worker\"") != NULL,
+              "the resumed child's done.invoke carries the id the author wrote, `worker`: %s", text);
+        CHECK(strstr(text, "\"invokeid\":\"working.1.worker\"") == NULL,
+              "no event carries the id the child was started under: %s", text);
+    }
+    static_invoke_destroy(&before);
+    static_invoke_destroy(&after);
+}
+
 static void the_count_of_starts_is_carried_through_a_restore(void) {
     // The resumed child was not started again, and when it ends the count the restore carried on
     // is still its one start.
@@ -387,6 +417,7 @@ int main(void) {
     a_machine_is_saved_with_the_whole_state_of_the_child_it_is_running();
     a_child_that_had_taken_an_event_is_resumed_with_it_taken();
     a_restored_tree_saves_the_text_it_was_restored_from();
+    a_resumed_child_ends_under_the_id_the_author_wrote_for_its_events();
     the_count_of_starts_is_carried_through_a_restore();
     a_child_that_has_ended_is_not_resumed_or_started_again();
     a_machine_that_left_the_invoking_state_saves_no_invocation();

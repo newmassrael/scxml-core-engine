@@ -41,6 +41,12 @@ edit("tools/codegen/templates/c/saved.c.jinja2",
      "                (void)runtime_id;\n                sce_saved_write_member_text(w, \"invokeid\", sm->child_{{ inv.field_suffix }}_invoke_id);")
 PY
 
+# The id is read only off an event the resumed child makes: its `done.invoke`. The
+# round measured 2026-11-24 found the case SURVIVED, 0/1 red: every check ran the
+# parent until that event had been taken, and the parent's own transition is the
+# enum the event names, whatever id it carries. Killer:
+# `a_resumed_child_ends_under_the_id_the_author_wrote_for_its_events`, which takes
+# one external event per call so the event is still queued when the tree saves.
 mutation_case "a resumed child is not known by the id the author wrote for its events" <<'PY'
 edit("tools/codegen/templates/c/saved.c.jinja2",
      "        sce_copy_bounded_id(invoke_id, \"{{ inv.invoke_id | escape_c }}\");\n",
