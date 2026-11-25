@@ -97,10 +97,7 @@ impl<S: CodecLengthRefUint16LeStorage> CodecLengthRefUint16LeIn<S> {
     /// receives `NeedMoreBytes` reads the frame again from the same place once
     /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecLengthRefUint16LeFrom<'f> {
-        let mut _out = Self::default();
-        Self::decode_into(cursor, &mut _out)?;
-        Ok(_out)
-    }
+cursor.read_frame(Self::read)    }
 
     /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
     /// and the errors of [`Self::decode`], with each bounded list and embedded
@@ -126,9 +123,9 @@ impl<S: CodecLengthRefUint16LeStorage> CodecLengthRefUint16LeIn<S> {
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
     /// once the frame is read (docs/adr/0128). A codec that embeds or
-    /// dispatches to this one reads it through this one function, which is not
-    /// copied into each (docs/adr/0136).
-    #[inline(never)]
+    /// dispatches to this one reads it through this one function, out of line
+    /// where the set reads it from two sites or more so that no site holds a
+    /// copy (docs/adr/0136, docs/adr/0137).
     pub fn read<'f>(cursor: &mut SceReader<'f>) -> Self where S: CodecLengthRefUint16LeFrom<'f> {
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes

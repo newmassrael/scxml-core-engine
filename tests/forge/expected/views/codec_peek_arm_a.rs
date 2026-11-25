@@ -47,10 +47,7 @@ impl CodecPeekArmA {
     /// receives `NeedMoreBytes` reads the frame again from the same place once
     /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let mut _out = Self::default();
-        Self::decode_into(cursor, &mut _out)?;
-        Ok(_out)
-    }
+cursor.read_frame(Self::read)    }
 
     /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
     /// and the errors of [`Self::decode`], with each bounded list and embedded
@@ -76,8 +73,9 @@ impl CodecPeekArmA {
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
     /// once the frame is read (docs/adr/0128). A codec that embeds or
-    /// dispatches to this one reads it through this one function, which is not
-    /// copied into each (docs/adr/0136).
+    /// dispatches to this one reads it through this one function, out of line
+    /// where the set reads it from two sites or more so that no site holds a
+    /// copy (docs/adr/0136, docs/adr/0137).
     #[inline(never)]
     pub fn read(cursor: &mut SceReader<'_>) -> Self {
         let raw = cursor.take_array::<2>();

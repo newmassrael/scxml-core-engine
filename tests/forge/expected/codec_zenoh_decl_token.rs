@@ -121,8 +121,8 @@ impl<S: CodecZenohDeclTokenStorage> CodecZenohDeclTokenIn<S> {
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
     /// through its own reader, so one frame has one verdict, and through this
-    /// one function, which is not copied into each (docs/adr/0136).
-    #[inline(never)]
+    /// one function, out of line where the set reads it from two sites or more
+    /// so that no site holds a copy (docs/adr/0136, docs/adr/0137).
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self, n: u8) where S: CodecZenohDeclTokenFrom<'f> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
@@ -366,11 +366,10 @@ impl<'a> CodecZenohDeclTokenView<'a> {
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
     /// errors of [`CodecZenohDeclTokenIn::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes; on a refusal it does not move.
+    /// The view is the value its read builds, answered as it is: no default of
+    /// it is made first and copied over (docs/adr/0137).
     pub fn decode(cursor: &mut SceCursor<'a>, n: u8) -> Result<Self, CodecError> {
-        let mut _out = Self::default();
-        Self::decode_into(cursor, &mut _out, n)?;
-        Ok(_out)
-    }
+cursor.read_frame(|cursor| Self::read(cursor, n))    }
 
     /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`
     /// holds what the reads made of the frame and is not to be read.
@@ -393,8 +392,8 @@ impl<'a> CodecZenohDeclTokenView<'a> {
     /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
     /// The hook is generic, so a read with `()` is [`Self::read`] itself. A
     /// view that embeds, dispatches to or lists this one reads it through this
-    /// one function, which is not copied into each (docs/adr/0136).
-    #[inline(never)]
+    /// one function, out of line where the set reads it from two sites or more
+    /// so that no site holds a copy (docs/adr/0136, docs/adr/0137).
     pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, n: u8, _hook: &mut H) -> Self {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an

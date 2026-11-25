@@ -78,7 +78,8 @@ impl CodecChainPrevEntry {
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
     /// through its own reader, so one frame has one verdict, and through this
-    /// one function, which is not copied into each (docs/adr/0136).
+    /// one function, out of line where the set reads it from two sites or more
+    /// so that no site holds a copy (docs/adr/0136, docs/adr/0137).
     #[inline(never)]
     pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self, after_marker: u8, tagged: u8) {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
