@@ -1262,7 +1262,7 @@ impl DocumentTables<'_> {
 /// stops at [`row_missing`] as a row read past its table does; the pool is
 /// read through `get`, so no bounds check of its own formats an index.
 #[inline]
-fn listed<'p, T>(pool: &'p [T], position: usize, count: impl FnOnce(&T) -> u16) -> &'p [T] {
+fn listed<T>(pool: &[T], position: usize, count: impl FnOnce(&T) -> u16) -> &[T] {
     let first = position + 1;
     match pool
         .get(position)
