@@ -3070,6 +3070,31 @@ fn forge_views_a_list_of_an_entry_with_inputs_shares_its_walk_rust() {
     );
 }
 
+/// A gated list is settled in the frame's reader as the `Option` it is held in
+/// (docs/adr/0128), whose default is the absent list. The extensions of a Put
+/// are gated by its `Z` flag and hold one entry or more, and a `ListView` of one
+/// entry or more has no default: a list settled inside its `Some` is refused
+/// where the build reaches it (`Fewest`), as a deployment of the Put was. The
+/// view reads the list into a local of its own, named for the field, and
+/// builds itself from its locals once (`rust_view_locals`).
+#[test]
+fn forge_views_settle_a_gated_list_as_its_option_rust() {
+    let options = golden_options_of_document(
+        sce_build::generator::Language::Rust,
+        "codec_zenoh_msg_put.scxml",
+    );
+    let text = render_rust_with("codec_zenoh_msg_put", &options);
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("extensions = cursor.settle("))
+        .unwrap_or_else(|| panic!("codec_zenoh_msg_put settles no extensions list:\n{text}"));
+    assert!(
+        line.ends_with(".map(Some));"),
+        "codec_zenoh_msg_put settles its gated extensions inside their Some: {line}"
+    );
+}
+
 /// A chain that carries a value from one entry to the next reads by a walk of
 /// its own, since what it carries is its own: the entry's walk carries nothing.
 #[test]
