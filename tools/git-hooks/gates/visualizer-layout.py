@@ -19,7 +19,11 @@
 # which a push does not build.
 {
     "workflows": ["deploy-visualizer.yml"],
-    "runner_workflow": True,
+    # Not delegated: deploy-visualizer.yml runs this gate's script in a job of
+    # its own, on the two modules the lane's build jobs made from the commit
+    # (`visualizer-wasm`, one part a job) and handed over. `scripts/gate` would
+    # build its dependency first, all three parts again in that job: 15.2 min
+    # (job 139033453523) ahead of a measurement of seconds.
     "ci_only": "needs the codegen and engine WASMs that visualizer-wasm "
                "builds in the same workflow; a push builds no WASM, so the "
                "measurement would have nothing to turn a document into a "
@@ -38,9 +42,9 @@
     # directories, so that gate runs first: a landing unit runs on a
     # build machine's checkout, where they are absent (the gate ends 3,
     # and the item would never land) or left by an older tree (a verdict
-    # about WASMs this change did not build). deploy-visualizer.yml runs
-    # the two as steps of one job, so there the second run of
-    # `visualizer-wasm` finds its output built.
+    # about WASMs this change did not build). deploy-visualizer.yml builds
+    # them in the jobs before the one that measures, from the same commit,
+    # and runs this script there without the runner (the note above).
     "deps": ["visualizer-wasm"],
     # 22s measured 2026-09-18, up from 6s: the lane gained a stress half
     # that replays 25 seeded gestures per fixture over all ten. The seed

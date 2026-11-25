@@ -98,12 +98,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build and Deploy Visualizer
+  # The site's three WebAssembly builds, one job each: the codegen WASM
+  # (wasm-pack), the visualizer's engine and the DOOM example (both
+  # emscripten). Each job runs the visualizer-wasm gate with
+  # `SCE_VISUALIZER_WASM_SHARD`, which runs one line of the gate's
+  # VISUALIZER_WASM_PARTS (the order of the lines is the order of the shards
+  # below); `hook_ci_parity` holds the matrix to the number of lines.
+  #
+  # Run one after another in one job they took 15.2 min of a 25.1 min run (job
+  # 139033453523): the codegen WASM 8.9 (the release compile of sce-build 5.4,
+  # wasm-opt 3.2), the engine 3.3 and DOOM 3.1, behind a generator build of 3.5
+  # that only the emscripten builds read. The layout step then ran
+  # visualizer-wasm again as its dependency, and wasm-pack's wasm-opt again
+  # with it (3.6 min, "Done in 3m 34s"). Apart, the codegen WASM is the longest
+  # part, about 10 min on its own, and the others build the generator beside it.
+  #
+  # No compiler cache: the emscripten parts (about 9 min each, the generator's
+  # 3.5 with them) end before the codegen WASM does, so a cache of their
+  # objects would take room in the repository's caches and shorten no run. The
+  # codegen WASM's time is a release compile of sce-build and wasm-opt over its
+  # output: a compiler cache answers the first only for a commit that left
+  # sce-build as it was, and nothing here caches the second.
+  build:
+    name: Visualizer WebAssembly (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
     - name: Checkout Repository
@@ -111,7 +137,12 @@ jobs:
       with:
         submodules: recursive
 
+    # clang-format-19: the emscripten builds generate their state machines
+    # through `sce-codegen`, which formats C++ with clang-format pinned to major
+    # 19 and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9). The codegen
+    # WASM (part 1) builds `sce-build` without libxml2 and runs no generator.
     - name: Install Dependencies
+      if: matrix.shard != 1
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -125,14 +156,14 @@ jobs:
           libfmt-dev \
           libboost-dev \
           clang-format-19
-    # clang-format-19: the WASM build generates its state machines through
-    # `sce-codegen`, which formats C++ with clang-format pinned to major 19
-    # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9).
 
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
+    # The jobs that build the generator restore and save the shared Cargo
+    # cache, as every lane that builds it does.
     - name: Cache Cargo (codegen)
+      if: matrix.shard != 1
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
@@ -143,7 +174,25 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
+    # The codegen WASM job restores the same entry (cargo's registry, and the
+    # host build state of the build scripts and macros it shares) and never
+    # saves it: its `target` holds the wasm32 build and not the generator's, and
+    # saved under the shared key it would hand every lane that restores it a
+    # generator to build from nothing.
+    - name: Restore Cargo (codegen)
+      if: matrix.shard == 1
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+
     - name: Build sce-codegen
+      if: matrix.shard != 1
       run: |
         # The Cargo cache restores all of `target`, but this step only
         # builds the debug profile, so a release binary the cache still
@@ -181,6 +230,7 @@ jobs:
     # no reply to go missing. v0.15.0 is the version the last green run
     # actually installed, so the pin changes nothing but the nondeterminism.
     - name: Install wasm-pack
+      if: matrix.shard == 1
       uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
       with:
         version: 'v0.15.0'
@@ -191,13 +241,14 @@ jobs:
     # the jobs that build with it share the one entry.
     - name: Cache Emscripten (emsdk)
       id: emsdk-cache
+      if: matrix.shard != 1
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: emsdk
         key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
 
     - name: Setup Emscripten (emsdk)
-      if: steps.emsdk-cache.outputs.cache-hit != 'true'
+      if: matrix.shard != 1 && steps.emsdk-cache.outputs.cache-hit != 'true'
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
         cd emsdk
@@ -205,31 +256,143 @@ jobs:
         ./emsdk install 6.0.13
         ./emsdk activate 6.0.13
 
-    # All three WASM builds are one gate — the same one the pre-push hook
-    # runs. SCE_REQUIRE_TOOLS turns the gate's "emscripten not installed,
-    # skipping" into a failure here: a lane that claims to build the
-    # visualizer must not report green because emsdk went missing.
-    - name: Build WASM Artifacts
+    # One part of the gate the pre-push hook runs whole. SCE_REQUIRE_TOOLS
+    # turns the gate's "emscripten not installed, skipping" into a failure
+    # here: a lane that claims to build the visualizer must not report green
+    # because emsdk went missing. The codegen WASM job has no SDK and needs
+    # none; its part never asks for one.
+    - name: Build this part's WebAssembly
       env:
         SCE_REQUIRE_TOOLS: 1
+        SCE_VISUALIZER_WASM_SHARD: ${{ matrix.shard }}/3
       run: |
-        source emsdk/emsdk_env.sh
-        chmod +x examples/doom_wasm/build.sh
+        if [[ -f emsdk/emsdk_env.sh ]]; then
+          source emsdk/emsdk_env.sh
+        fi
         scripts/gate visualizer-wasm
 
+    # Each part's output, for the layout measurement and the publish below.
+    # The browser module is built in the tree without threads, and its build
+    # copies it beside the page (scripts/gates/lib.sh, the two emscripten
+    # trees; `visualizer` in tests/CMakeLists.txt).
+    - name: Upload the codegen WASM
+      if: matrix.shard == 1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: visualizer-codegen-wasm
+        path: web/visualizer/wasm/
+        retention-days: 1
+        if-no-files-found: error
+
+    - name: Upload the visualizer's engine
+      if: matrix.shard == 2
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: visualizer-engine
+        path: |
+          web/visualizer/visualizer.js
+          web/visualizer/visualizer.wasm
+        retention-days: 1
+        if-no-files-found: error
+
+    - name: Upload the DOOM example
+      if: matrix.shard == 3
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: visualizer-doom
+        path: |
+          examples/doom_wasm/build/index.html
+          examples/doom_wasm/build/doom_sce.js
+          examples/doom_wasm/build/doom_sce.wasm
+          examples/doom_wasm/build/doom_sce.data
+        retention-days: 1
+        if-no-files-found: error
+
+  # The diagram's layout, measured on the two modules the page loads: the
+  # codegen WASM turns a document into a structure through `gui_structure()`,
+  # the call the page makes, and the engine is compared with it through
+  # `visualizer.js`. Before the publish, because a drawing whose edges reach
+  # nothing should not be published. It runs `visualizer.js` on the node the
+  # SDK ships (`em-config NODE_JS`), so the job restores the SDK the build
+  # saved; the gate refuses to run without one.
+  #
+  # The gate's script, not `scripts/gate visualizer-layout`: the runner would
+  # build its dependency, visualizer-wasm, whole first, all three parts again
+  # (the 3.6 min the single job spent on a second wasm-opt, and the rest of
+  # the 15.2 with it here, where no part was built), and the parts this
+  # measures are the ones the jobs above built from this commit
+  # (tools/git-hooks/gates/visualizer-layout.py, "Not delegated").
+  layout:
+    name: Verify diagram layout
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        submodules: recursive
+
+    - name: Restore Emscripten (emsdk)
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: emsdk
+        key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
+        fail-on-cache-miss: true
+
+    - name: Download the codegen WASM
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: visualizer-codegen-wasm
+        path: web/visualizer/wasm
+
+    - name: Download the visualizer's engine
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: visualizer-engine
+        path: web/visualizer
+
     - name: Verify diagram layout
-      # After the WASM build, because the measurement turns a document into
-      # a structure through `gui_structure()` in the codegen WASM — the same
-      # call the page makes — and compares it with the engine's through
-      # `visualizer.js`. Before the deploy, because a drawing whose edges
-      # reach nothing should not be published. It runs `visualizer.js` on
-      # the node the SDK ships (`em-config NODE_JS`), so the step has the
-      # SDK as the build step has it; the gate refuses to run without one.
-      env:
-        SCE_REQUIRE_TOOLS: 1
       run: |
         source emsdk/emsdk_env.sh
-        scripts/gate visualizer-layout
+        bash scripts/gates/visualizer-layout.sh
+
+  # The site, assembled from what the jobs above built and published once the
+  # layout passed. The one job that writes to the repository (gh-pages).
+  publish:
+    name: Deploy Visualizer
+    needs: [build, layout]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        submodules: recursive
+
+    - name: Download the codegen WASM
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: visualizer-codegen-wasm
+        path: web/visualizer/wasm
+
+    - name: Download the visualizer's engine
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: visualizer-engine
+        path: web/visualizer
+
+    - name: Download the DOOM example
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: visualizer-doom
+        path: examples/doom_wasm/build
 
     - name: Prepare Deployment Directory
       run: |
@@ -241,16 +404,11 @@ jobs:
         cp web/site/sitemap.xml gh-pages/
         cp web/site/robots.txt gh-pages/
 
-        # Copy visualizer source files
-        echo "Copying visualizer source files..."
+        # Copy visualizer source files, with the codegen WASM (wasm/) and the
+        # engine (visualizer.js, visualizer.wasm) the build jobs put beside
+        # them
+        echo "Copying visualizer source files and WASM build outputs..."
         cp -r web/visualizer/* gh-pages/visualizer/
-
-        # Copy WASM build outputs (overwrite placeholder files if present).
-        # The browser module is built in the tree without threads
-        # (scripts/gates/lib.sh, the two emscripten trees).
-        echo "Copying WASM build outputs..."
-        cp build_wasm_web/tests/visualizer.wasm gh-pages/visualizer/
-        cp build_wasm_web/tests/visualizer.js gh-pages/visualizer/
 
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."

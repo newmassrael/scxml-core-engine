@@ -9,6 +9,14 @@
     # codegen WASM is `sce-build-wasm` built by wasm-pack.
     "builds": ["main-tree", "codegen-wasm"],
     "runner_workflow": True,
+    # Its script builds one of its three parts when SCE_VISUALIZER_WASM_SHARD
+    # names `k/N` (the `VISUALIZER_WASM_PARTS` lines of
+    # scripts/gates/visualizer-wasm.sh), as the lane's three jobs do: one after
+    # another they took 15.2 min of a 25.1 min hosted job (job 139033453523),
+    # 8.9 of it the codegen WASM. No `shard_env`, so a plan runs it whole:
+    # `visualizer-layout` depends on it, and the unit that runs the layout
+    # builds what it measures in its own checkout first, where a part built
+    # by another unit on another machine is not there to measure.
     "ci_only": "77s measured 2026-08-22 (declared 42) building three "
                "WASM artifacts. deploy-visualizer.yml runs it, and this "
                "gate declares no trigger of its own, so the workflow's "

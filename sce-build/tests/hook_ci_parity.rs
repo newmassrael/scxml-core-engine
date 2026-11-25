@@ -516,6 +516,16 @@ const CI_ONLY: &[(&str, &str)] = &[
          the lane does not go through `scripts/gate` there.",
     ),
     (
+        "scripts/gates/visualizer-layout.sh",
+        "measures the two modules deploy-visualizer.yml's build jobs made from \
+         the commit and handed to the job that runs it, so that job runs the \
+         gate's script itself: `scripts/gate` would build the dependency, \
+         visualizer-wasm, whole again first. A landing's unit and a local run \
+         go through the runner, the dependency first, and the gate's entry \
+         (tools/git-hooks/gates/visualizer-layout.py) says why the lane does \
+         not delegate.",
+    ),
+    (
         "xml_to_html.py",
         "publication, not verification. The report job turns the C++ JUnit \
          XML into the HTML deployed to Pages; it reaches no verdict of its \
@@ -2409,61 +2419,89 @@ fn the_swift_backend_parts_are_its_default_list_each_package_once() {
     );
 }
 
-// ── The embed-vendor lane runs its gate in parts ────────────────────────────
+// ── A gate whose parts are functions runs one a job ─────────────────────────
 //
-// `embed-vendor` runs one line of `EMBED_VENDOR_PARTS` when
-// `SCE_EMBED_VENDOR_SHARD` names `k/N`, and every line when it is unset. Each
-// line names a `part_<name>` function of the script, so a part is held to
-// exist, to be run once, and the lane to run as many jobs as there are parts.
+// `embed-vendor` and `visualizer-wasm` each run one line of an array of parts
+// when their variable names `k/N`, and every line when it is unset. Each line
+// names a `part_<name>` function of the script, so a part is held to exist, to
+// be run once, and the lane to run as many jobs as there are parts: together
+// the jobs run the whole gate, and no part runs in two.
 
-const EMBED_LANE: &str = ".github/workflows/embed-vendor-smoke.yml";
-const EMBED_GATE: &str = "scripts/gates/embed-vendor.sh";
-
-#[test]
-fn the_embed_vendor_parts_are_its_checks_each_once() {
-    let parts = gate_parts(EMBED_GATE, "EMBED_VENDOR_PARTS");
+/// The parts of `gate` (one line of `array` each, each a `part_<name>`
+/// function) are its functions each once, and the job of `lane` that sets
+/// `variable` runs a matrix of one shard per part.
+fn assert_parts_are_its_functions_each_once(lane: &str, gate: &str, array: &str, variable: &str) {
+    let parts = gate_parts(gate, array);
     let names: Vec<&String> = parts.iter().flatten().collect();
     assert!(
         parts.len() >= 2 && parts.iter().all(|p| p.len() == 1),
-        "{EMBED_GATE} declares the parts {parts:?}; each line is one part, a job of the lane"
+        "{gate} declares the parts {parts:?}; each line is one part, a job of the lane"
     );
     let once: BTreeSet<&String> = names.iter().copied().collect();
     assert_eq!(
         once.len(),
         names.len(),
-        "a part is listed twice in {EMBED_GATE}, so two jobs run it: {parts:?}"
+        "a part is listed twice in {gate}, so two jobs run it: {parts:?}"
     );
-    let gate = uncommented(&read(EMBED_GATE));
+    let script = uncommented(&read(gate));
     for name in &names {
         let opening = format!("part_{name}() {{");
         assert!(
-            gate.lines().any(|l| l.trim() == opening),
-            "{EMBED_GATE} lists the part {name} and defines no `part_{name}`, so its job \
+            script.lines().any(|l| l.trim() == opening),
+            "{gate} lists the part {name} and defines no `part_{name}`, so its job \
              fails without running a check"
         );
     }
-    let defined = gate
+    let defined = script
         .lines()
         .filter(|l| l.trim_start().starts_with("part_") && l.trim_end().ends_with("() {"))
         .count();
     assert_eq!(
         defined,
         names.len(),
-        "{EMBED_GATE} defines a `part_` function no line of EMBED_VENDOR_PARTS lists, so no \
-         job runs that check"
+        "{gate} defines a `part_` function no line of {array} lists, so no job runs it"
     );
-    let lane = read(EMBED_LANE);
-    let (job, (count, matrix)) = sharded_job(EMBED_LANE, &lane, "SCE_EMBED_VENDOR_SHARD:");
+    let workflow = read(lane);
+    let (job, (count, matrix)) = sharded_job(lane, &workflow, variable);
     assert_eq!(
         count,
         parts.len(),
-        "{EMBED_LANE}'s job `{job}` names {count} shard(s) and {EMBED_GATE} has {} parts",
+        "{lane}'s job `{job}` names {count} shard(s) and {gate} has {} parts",
         parts.len()
     );
     assert_eq!(
         matrix,
         (1..=count).collect::<Vec<_>>(),
-        "{EMBED_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
+        "{lane}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
+    );
+}
+
+const EMBED_LANE: &str = ".github/workflows/embed-vendor-smoke.yml";
+const EMBED_GATE: &str = "scripts/gates/embed-vendor.sh";
+
+/// The embed-vendor parts: the drift check, the lag check and the consumers.
+#[test]
+fn the_embed_vendor_parts_are_its_checks_each_once() {
+    assert_parts_are_its_functions_each_once(
+        EMBED_LANE,
+        EMBED_GATE,
+        "EMBED_VENDOR_PARTS",
+        "SCE_EMBED_VENDOR_SHARD:",
+    );
+}
+
+const VISUALIZER_LANE: &str = ".github/workflows/deploy-visualizer.yml";
+const VISUALIZER_GATE: &str = "scripts/gates/visualizer-wasm.sh";
+
+/// The visualizer-wasm parts: the codegen WASM, the engine and the DOOM
+/// example, the three artifacts the site publishes.
+#[test]
+fn the_visualizer_wasm_parts_are_its_builds_each_once() {
+    assert_parts_are_its_functions_each_once(
+        VISUALIZER_LANE,
+        VISUALIZER_GATE,
+        "VISUALIZER_WASM_PARTS",
+        "SCE_VISUALIZER_WASM_SHARD:",
     );
 }
 
