@@ -109,19 +109,48 @@ fn written_keys(source: &str) -> Vec<String> {
         .collect()
 }
 
-/// The keys of an object the table writes out, in the order it writes them.
+/// The keys of an object the table writes out, in the order its text writes
+/// them.
+///
+/// A `serde_json::Value` holds an object's members in a map sorted by key, so a
+/// key list read off one is the sorted order whatever the table's text says: a
+/// table written down wrongly read as right, and the test held C to an order it
+/// computed rather than to the table (measured 2026-11-24, the mutation round of
+/// `c_reads_the_shared_key_order_table.cases` survived). The text is walked
+/// instead, each key kept as it comes and every value skipped.
 fn keys_of(data: &str) -> Vec<String> {
-    let object: serde_json::Value = serde_json::from_str(data).expect("the table's own JSON");
-    // The table writes the members in the order under test, and `serde_json`
-    // returns them either in that text's order or sorted by key — the same order,
-    // since the table's text is sorted. The assertion is the match against what the
-    // generated code lists, so the table is read back, never recomputed here.
-    object
-        .as_object()
-        .expect("a flat object")
-        .keys()
-        .cloned()
-        .collect()
+    struct KeysInTextOrder(Vec<String>);
+
+    struct Walk;
+
+    impl<'de> serde::de::Visitor<'de> for Walk {
+        type Value = KeysInTextOrder;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a flat object")
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut keys = Vec::new();
+            while let Some((key, _)) = map.next_entry::<String, serde::de::IgnoredAny>()? {
+                keys.push(key);
+            }
+            Ok(KeysInTextOrder(keys))
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for KeysInTextOrder {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            deserializer.deserialize_map(Walk)
+        }
+    }
+
+    serde_json::from_str::<KeysInTextOrder>(data)
+        .expect("the table's own JSON")
+        .0
 }
 
 #[test]
