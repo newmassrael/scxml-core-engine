@@ -943,11 +943,17 @@ impl DocumentTables<'_> {
     /// and a transition that `event` does not enable runs none. Tables written
     /// by hand carry no rows, and the machine answers
     /// ([`Behaviour::first_enabled_transition`]).
-    pub fn first_enabled(
+    ///
+    /// Both forms of a document read it (docs/adr/0129). The shared selection
+    /// asks it with the machine as `&mut dyn Behaviour`, one copy for every
+    /// machine it serves; a document printed as its own step function asks it
+    /// from its arms (`Steps::enabled`) with the engine itself, so its guards
+    /// are direct calls. Either way the rows are the same and so is the answer.
+    pub fn first_enabled<M: Behaviour + ?Sized>(
         &self,
         state: StateId,
         event: EventId,
-        machine: &mut dyn Behaviour,
+        machine: &mut M,
     ) -> Option<TransitionId> {
         let Some(selection) = &self.selection else {
             return machine.first_enabled_transition(state, event);

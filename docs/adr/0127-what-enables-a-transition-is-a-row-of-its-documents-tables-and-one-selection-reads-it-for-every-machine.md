@@ -81,6 +81,13 @@ document with no guard. The policy's `first_enabled_transition` stays for hand-w
 write it either, with a message that says so. This is the same split as `GENERAL_WALK` and `ROW_WALK` (ADR 0125
 decision 3): each document's tables decide, not the build.
 
+The rows are the selection of both forms of ADR 0129. A document printed as its own step function keeps them in its
+tables: its arms name which states a selection asks, and each is answered by this same `first_enabled`, through
+`Steps::enabled`, so a printed policy writes no `first_enabled_transition` either and its guards run where the
+shared selection would run them. `first_enabled` is generic over the machine it asks (`M: Behaviour + ?Sized`): the
+shared selection passes `&mut dyn Behaviour` and is one copy for the program, and a step function passes the engine
+itself, whose guard calls are then direct.
+
 ### 3. What it costs and saves
 
 The turn makes the same walk over the configuration. For each state it visits, it reads a range and compares the

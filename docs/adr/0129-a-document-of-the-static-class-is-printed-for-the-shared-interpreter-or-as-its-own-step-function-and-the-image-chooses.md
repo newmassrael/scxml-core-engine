@@ -9,7 +9,8 @@
 - Related: ADR 0053 (the runtime's features only add), ADR 0066 (a program pays for what its documents use), ADR 0068
   (the main loop is one copy), ADR 0076 (the internal queue's proven depth), ADR 0118 (Proposed: a document's cost is
   computed from its plan), ADR 0123 (the core decides where a run ends), ADR 0125 (what a document fixes of a
-  microstep is computed when it is built), ADR 0127 (Proposed: one selection reads the rows of every machine).
+  microstep is computed when it is built), ADR 0127 (one selection reads the rows of every machine; both forms read
+  it, decision 2).
 - Requested by: a downstream bare-metal consumer, 2026-11-25.
 
 ## Context
@@ -99,8 +100,18 @@ replace the main loop, and it does not replace the policy.
   processed before the next external event, the macrostep and external-event budgets bound both, the error chain is
   counted, the external queue is drained unseen at the end of a run and the interpreter is exited: by the same lines
   in both forms.
+- **One selection.** The arms of `select_transition` name which states a selection asks and in what order, the atomic
+  state first and each ancestor with transitions outward, which is the walk the shared `select_transitions` makes up
+  the tree. Each state asked is answered by `Steps::enabled`, which is `DocumentTables::first_enabled` over the
+  selection rows of the policy's own tables (ADR 0127): the rows say which of the state's transitions the event
+  enables, in the order written, and the policy's `guard_holds` is asked for each of those until one holds. That is
+  the call the shared selection makes for each state of its chain, over the same rows, so the two forms ask the same
+  guards in the same order by construction, and neither form generates a `first_enabled_transition`: the selection
+  rows are table data of every generated machine, written in both forms. `first_enabled` is generic over the
+  machine it asks: the shared selection calls it with `&mut dyn Behaviour`, one copy for every interpreted machine,
+  and a step function with the engine itself, so its guard calls are direct.
 - **The same hooks.** Each arm calls the engine's `Steps`: `enabled`, `exit`, `content` and `enter`, which run the
-  generated policy's `first_enabled_transition`, `execute_exit_actions`, `execute_transition_content` and
+  generated policy's `guard_holds`, `execute_exit_actions`, `execute_transition_content` and
   `execute_entry_actions` exactly as the shared procedures do, and keep the run store as they do. So the guards and
   their errors (a `cond` that fails is false and raises `error.execution`, §scxml-5.9), the order of `<onexit>`,
   transition content and `<onentry>`, `done.state.<id>` raised on entering a `<final>` child of a compound state
@@ -123,8 +134,8 @@ In the runtime this is:
 - `NO_WALK`, the value a printed document's tables carry as their walk, with no entry rows: no shared procedure walks
   its microsteps, and the two procedures it holds stop the program if one is ever asked to, as tables that name a
   feature without its procedures do. The tables are otherwise the document's, as the interpreted form has them, so
-  what reads them besides the walks (the transition observer of ADR 0089, `is_in_final_state`, `enter_at`'s check,
-  the error events) reads the same rows;
+  what reads them besides the walks (the selection rows of ADR 0127, which `Steps::enabled` reads, the transition
+  observer of ADR 0089, `is_in_final_state`, `enter_at`'s check, the error events) reads the same rows;
 - the workspace of a printed document holds one transition and nothing else.
 
 The atomic state an arm is chosen by is read from the configuration the engine keeps: the state of the largest number
@@ -198,8 +209,11 @@ applies:
   machines.
 - `StatePolicy` gains a defaulted constant, so a hand-written policy compiles unchanged and is interpreted.
 - `DocumentTables::walk` gains a third value, `NO_WALK`; the debug name of a walk is its constant's name.
-- ADR 0127 stays the interpreted form's selection. A printed document's selection is its arms, which ask the policy's
-  `first_enabled_transition` for each state of the chain; when ADR 0127 lands, its guard hook is what the arms ask.
+- ADR 0127's selection rows are the selection of both forms. A printed document's arms choose which states are asked,
+  and each is answered by `DocumentTables::first_enabled` over the rows, which asks `guard_holds`; no generated
+  policy of either form writes `first_enabled_transition`, which stays for tables written by hand. The runtime test
+  `a_printed_step_function_selects_by_the_rows_of_its_tables` runs one hand-written document in both forms over
+  the same rows and holds every hook call of the one to the other.
 
 ## Alternatives considered
 

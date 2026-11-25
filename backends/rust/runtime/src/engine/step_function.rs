@@ -22,11 +22,15 @@
 //!
 //! The two forms run one main loop, written once (`engine::Turn`), and call
 //! the same hooks of the generated policy for every guard, every `<onexit>`,
-//! every transition's content and every `<onentry>`. What differs is how the
-//! enabled transition is found and how its sets are walked: by the shared
-//! procedures over the tables, or by the arms the generator printed. The
-//! differential test of docs/adr/0129 drives both forms of one document with
-//! the same events and holds every observation of the one to the other.
+//! every transition's content and every `<onentry>`. They read one selection
+//! too: each state a selection asks is answered by
+//! [`DocumentTables::first_enabled`] over the selection rows of the tables
+//! (docs/adr/0127), so no generated policy of either form writes a selection
+//! of its own. What differs is which states a selection asks and how a
+//! transition's sets are walked: by the shared procedures over the tables, or
+//! by the arms the generator printed. The differential test of docs/adr/0129
+//! drives both forms of one document with the same events and holds every
+//! observation of the one to the other.
 //!
 //! A policy chooses by its `StatePolicy::STEP_FUNCTION`: `None`, the default,
 //! for the shared interpreter, and [`StepFunctionForm::of`] for its own step
@@ -49,8 +53,12 @@ use crate::policy::StatePolicy;
 pub trait Steps {
     /// The first transition of `state`, in document order, that `event`
     /// enables and whose guard holds; for the machine's "no event", its first
-    /// eventless transition whose guard holds. The guard is the generated
-    /// policy's, evaluated here and nowhere else.
+    /// eventless transition whose guard holds. Answered by
+    /// [`DocumentTables::first_enabled`] over the policy's tables, as the
+    /// shared selection answers it for each state it asks (docs/adr/0127): the
+    /// selection rows say which transitions the event enables, and the guard
+    /// is the generated policy's `guard_holds`, evaluated there and nowhere
+    /// else.
     fn enabled(&mut self, state: StateId, event: EventId) -> Option<TransitionId>;
 
     /// Exit `state`: its `<onexit>`, then it leaves the configuration, so a
@@ -179,9 +187,14 @@ fn exit_configuration<P: StepFunction>(host: &mut EngineHost<'_, '_, P>, atomic:
 }
 
 impl<P: StatePolicy> Steps for EngineHost<'_, '_, P> {
+    // docs/adr/0127: the one selection over the rows of the policy's tables,
+    // which asks the policy's `guard_holds` for each transition the event
+    // enables. The call the shared selection makes for each state of its
+    // chain, over the same tables (`P::TABLES` is what a turn holds), so a
+    // printed machine writes no selection of its own.
     #[inline]
     fn enabled(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
-        Behaviour::first_enabled_transition(self, state, event)
+        P::TABLES.first_enabled(state, event, self)
     }
 
     #[inline]
@@ -211,9 +224,10 @@ fn atomic_state<P: StatePolicy>(host: &mut EngineHost<'_, '_, P>) -> Option<Stat
 }
 
 /// The step function of a machine printed as its own, run by the main loop
-/// every machine shares the source of. The tables and the scratch are the
-/// shared procedures' and are read by none of these: a step function's sets
-/// are its arms.
+/// every machine shares the source of. The scratch is the shared procedures'
+/// and is read by none of these: a step function's sets are its arms. Of the
+/// tables only the selection rows are read, by [`Steps::enabled`], as
+/// `P::TABLES`, the value a turn hands here.
 impl<'e, 'd, P: StatePolicy> Form<EngineHost<'e, 'd, P>> for StepFunctionForm<P> {
     fn enter_initial_configuration(
         &self,
