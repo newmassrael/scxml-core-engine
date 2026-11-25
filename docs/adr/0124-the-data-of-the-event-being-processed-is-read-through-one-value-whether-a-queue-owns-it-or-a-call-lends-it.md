@@ -79,8 +79,9 @@ type system: the parts are read off the payload struct, and the payload sum is s
   - lent data meets the door a wire delivery meets (docs/adr/0086, section 4.2): data that enters a machine has one
     contract whichever route it takes, or D1's readers could tell the two forms apart. `StatePolicy::admit_event_data`
     holds it to what `lift_event_payload` holds the same data to from the wire: each text and byte string of a schema
-    of entries to its bound, refused in the lift's words, code, pointer and bound
-    (`event_payload::lent_within`); every other field is held by its type in the parts. A refusal follows the queued
+    of entries to its bound; the breach is a value of every profile (`LentBreach`), so the door has one signature
+    whether or not the build has `std` (ADR 0053), and a `std` build words it in the lift's words, code, pointer
+    and bound (`event_payload::lent_refusal`); every other field is held by its type in the parts. A refusal follows the queued
     path exactly: `error.execution` carrying it is taken in the event's place where the document declares one, and
     otherwise the delivery is dropped and counted as a discarded external event. A `no_std` build has no wire and no
     door that refuses, on either route; there lent data past its bound is taken as a delivery that carries no data, as

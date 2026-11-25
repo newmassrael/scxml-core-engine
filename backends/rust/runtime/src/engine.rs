@@ -5533,7 +5533,9 @@ impl<P: StatePolicy> Engine<P> {
         #[cfg(feature = "std")]
         {
             let read = match lent {
-                Some(event_data) => P::admit_event_data(event_data),
+                Some(event_data) => {
+                    P::admit_event_data(event_data).map_err(crate::event_payload::lent_refusal)
+                }
                 None => {
                     P::lift_event_payload(Self::event_of(delivered), &metadata.data, &mut payload)
                 }
@@ -6259,7 +6261,7 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
         // build takes any delivery its typed payload did not ride with
         // (docs/adr/0124, D2).
         #[cfg(not(feature = "std"))]
-        let lent = lent.filter(|event_data| P::admit_event_data(*event_data));
+        let lent = lent.filter(|event_data| P::admit_event_data(*event_data).is_ok());
         let (bound, payload) = self.engine.bind_queued(queued, external, lent);
         // The data lent is `_event.data` only where its door delivered it: one
         // refused, or replaced by the `error.execution` that says why, binds

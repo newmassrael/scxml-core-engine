@@ -175,8 +175,8 @@ impl StatePolicy for LtPolicy {
     // four bytes (docs/adr/0124, D2).
     fn admit_event_data(
         event_data: Self::EventData<'_>,
-    ) -> Result<(), sce_rust_runtime::event_payload::PayloadRefusal> {
-        sce_rust_runtime::event_payload::lent_within("bytes", event_data.map_or(0, <[u8]>::len), 4)
+    ) -> Result<(), sce_rust_runtime::LentBreach> {
+        sce_rust_runtime::LentBreach::within("bytes", event_data.map_or(0, <[u8]>::len), 4)
     }
 
     fn first_enabled_transition(

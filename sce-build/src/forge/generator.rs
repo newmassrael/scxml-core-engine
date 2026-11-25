@@ -5846,8 +5846,8 @@ pub struct RustEventPayload {
     pub lift: String,
     /// The `admit_event_data` override body: the door of data a host lends,
     /// holding each text and byte string of a schema of entries to the bound
-    /// the lift holds it to (docs/adr/0124, D2). A `Result` with the lift's
-    /// refusal on a `std` build, a `bool` on a `no_std` one. `""` when no
+    /// the lift holds it to (docs/adr/0124, D2), answering the field that breaks
+    /// its bound (`LentBreach`) in one signature on every profile. `""` when no
     /// lendable field has a bound its type does not hold.
     pub admit: String,
 }
@@ -6153,7 +6153,7 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
         };
         data_variant_lines.push_str(&format!("    {variant}({held_type}),\n"));
         if let Some(schema) = entry_schemas.get(event) {
-            admit_arms.push_str(&rust_admit_arm(schema, &data_enum, &variant, no_std));
+            admit_arms.push_str(&rust_admit_arm(schema, &data_enum, &variant));
         }
         data_arms.push_str(&format!(
             "            {enum_name}::{variant}(payload) => {data_enum}::{variant}({arm}),\n"
@@ -6253,17 +6253,14 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
     // docs/adr/0124, D2: data a host lends meets the door a wire delivery
     // meets, its texts and byte strings held to the bounds the lift holds them
     // to, and refused in the lift's words.
+    // One signature on every profile (docs/adr/0053): a machine generated
+    // without `std` still compiles in a build another crate turns it on in.
     let admit = if admit_arms.is_empty() {
         String::new()
-    } else if no_std {
-        format!(
-            "    fn admit_event_data(event_data: Self::EventData<'_>) -> bool {{\n        \
-match event_data {{\n{admit_arms}            _ => true,\n        }}\n    }}\n"
-        )
     } else {
         format!(
             "    fn admit_event_data(\n        event_data: Self::EventData<'_>,\n    ) -> \
-::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {{\n        \
+::core::result::Result<(), ::sce_rust_runtime::LentBreach> {{\n        \
 match event_data {{\n{admit_arms}            _ => {{}}\n        }}\n        Ok(())\n    }}\n"
         )
     };
@@ -6284,7 +6281,7 @@ match event_data {{\n{admit_arms}            _ => {{}}\n        }}\n        Ok((
 /// ([`lift_text_bound`], [`lift_bytes_bound`]), an optional one where it is
 /// present. Every other field is held by its type. Empty for a schema with
 /// no such field.
-fn rust_admit_arm(schema: &EntrySchema, data_enum: &str, variant: &str, no_std: bool) -> String {
+fn rust_admit_arm(schema: &EntrySchema, data_enum: &str, variant: &str) -> String {
     let mut checks: Vec<String> = Vec::new();
     for f in &schema.fields {
         let bound = match f.sce_type.present_type() {
@@ -6294,33 +6291,23 @@ fn rust_admit_arm(schema: &EntrySchema, data_enum: &str, variant: &str, no_std: 
         };
         let id = &f.id;
         let optional = matches!(f.sce_type, EntryType::Optional { .. });
-        checks.push(match (no_std, optional) {
-            (false, false) => format!(
-                "::sce_rust_runtime::event_payload::lent_within(\"{id}\", ev.{id}.len(), {bound})?;"
-            ),
-            (false, true) => format!(
+        checks.push(if optional {
+            format!(
                 "if let Some(held) = ev.{id} {{ \
-::sce_rust_runtime::event_payload::lent_within(\"{id}\", held.len(), {bound})?; }}"
-            ),
-            (true, false) => format!("ev.{id}.len() <= {bound}"),
-            (true, true) => format!("ev.{id}.map_or(true, |held| held.len() <= {bound})"),
+::sce_rust_runtime::LentBreach::within(\"{id}\", held.len(), {bound})?; }}"
+            )
+        } else {
+            format!("::sce_rust_runtime::LentBreach::within(\"{id}\", ev.{id}.len(), {bound})?;")
         });
     }
     if checks.is_empty() {
         return String::new();
     }
-    if no_std {
-        format!(
-            "            {data_enum}::{variant}(ev) => {},\n",
-            checks.join(" && ")
-        )
-    } else {
-        let body: String = checks
-            .iter()
-            .map(|check| format!("                {check}\n"))
-            .collect();
-        format!("            {data_enum}::{variant}(ev) => {{\n{body}            }}\n")
-    }
+    let body: String = checks
+        .iter()
+        .map(|check| format!("                {check}\n"))
+        .collect();
+    format!("            {data_enum}::{variant}(ev) => {{\n{body}            }}\n")
 }
 
 /// What the Rust typed channel holds and reads of one event's payload

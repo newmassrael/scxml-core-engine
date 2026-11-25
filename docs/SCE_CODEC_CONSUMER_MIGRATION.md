@@ -3933,7 +3933,8 @@ regenerates every Rust machine it generates.
   admitting everything, holds what a host lends to what `lift_event_payload` holds the same data to; a generated
   machine holds each text and byte string to its bound there, and a refusal is answered as a lifted one is
   (`error.execution` in its place, or dropped and counted). A hand-written policy whose data has a bound its type does
-  not hold writes it, with `event_payload::lent_within` for the lift's words.
+  not hold writes it, answering `sce_rust_runtime::LentBreach::within(field, held, bound)`: one signature on every
+  profile (`-> Result<(), LentBreach>`), which a `std` build words as the lift does.
 - **`populate_event_payload` is gone.** The engine no longer copies a payload into the policy; a hook reads it from
   its `event_data`. A policy that stored the payload in a field reads the argument instead.
 - **`lift_event_payload` takes the payload it fills** and no `self`:

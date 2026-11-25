@@ -74,7 +74,10 @@ fn a_text_past_its_bound_is_refused_alike_queued_or_lent() {
         }),
     )
     .expect_err("a note past its bound, lent");
-    assert_eq!(lifted, admitted);
+    assert_eq!(
+        lifted,
+        sce_rust_runtime::event_payload::lent_refusal(admitted)
+    );
     assert_eq!(
         lifted.reason(),
         "'note' is 9 bytes, past the 8 its type declares"

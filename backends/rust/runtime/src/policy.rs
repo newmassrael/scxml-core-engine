@@ -56,6 +56,33 @@ use crate::helpers::run_store::RunStorage;
 use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
 use crate::Engine;
 
+/// A text or byte string of data a host lent that is past the bound its schema
+/// states (docs/adr/0124, D2): the field, the bytes it holds and the bound.
+/// A value of every profile and of no allocation, so a policy answers the door
+/// of lent data in one signature (`StatePolicy::admit_event_data`); a `std`
+/// build words it as the lift of the same field from the wire refuses it
+/// (`event_payload::lent_refusal`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LentBreach {
+    /// The field, as its schema names it.
+    pub field: &'static str,
+    /// The bytes it holds.
+    pub held: usize,
+    /// The bound its type declares.
+    pub bound: usize,
+}
+
+impl LentBreach {
+    /// `held` bytes of `field` within `bound`, or the breach.
+    pub const fn within(field: &'static str, held: usize, bound: usize) -> Result<(), Self> {
+        if held <= bound {
+            Ok(())
+        } else {
+            Err(Self { field, held, bound })
+        }
+    }
+}
+
 /// What the engine holds as the data of the event being processed, from the
 /// moment it takes the event to the moment it takes the next one
 /// (docs/adr/0124). Read by every hook through
@@ -949,21 +976,15 @@ pub trait StatePolicy: Sized + 'static {
     /// document that declares none, it is dropped and counted. The default
     /// admits everything, which is right for a policy whose data has no bound
     /// its type does not already hold.
-    #[cfg(feature = "std")]
-    fn admit_event_data(
-        _event_data: Self::EventData<'_>,
-    ) -> Result<(), crate::event_payload::PayloadRefusal> {
+    ///
+    /// One signature on every profile (docs/adr/0053: a crate built without
+    /// `std` still compiles where another crate of the build turns it on): the
+    /// breach is a value of no allocation, which a `std` build words as the
+    /// lift's refusal and a `no_std` build, which has no wire and no refusal to
+    /// answer with, takes as a delivery that carries no data, as it takes any
+    /// delivery whose typed payload is not there.
+    fn admit_event_data(_event_data: Self::EventData<'_>) -> Result<(), LentBreach> {
         Ok(())
-    }
-
-    /// The door of data a host lends with its event, on a `no_std` build
-    /// (docs/adr/0124, D2): whether it is held within what its schema states.
-    /// Such a build has no wire and no refusal to answer with, and takes any
-    /// delivery whose typed payload is not there as one that carries no data;
-    /// lent data this answers `false` for is taken the same way.
-    #[cfg(not(feature = "std"))]
-    fn admit_event_data(_event_data: Self::EventData<'_>) -> bool {
-        true
     }
 
     /// Forward external events to autoforward children (§scxml-6.4.1).
