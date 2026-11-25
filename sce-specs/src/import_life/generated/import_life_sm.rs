@@ -305,6 +305,23 @@ pub struct ImportLifeAcceptPayload {
     pub undecided: u32,
 }
 
+/// The data of `schema_accept` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct ImportLifeAcceptRef {
+    pub headMatches: bool,
+    pub undecided: u32,
+}
+
+impl ImportLifeAcceptPayload {
+    /// This payload, read as `ImportLifeAcceptRef` (docs/adr/0124).
+    pub fn data(&self) -> ImportLifeAcceptRef {
+        ImportLifeAcceptRef {
+            headMatches: self.headMatches,
+            undecided: self.undecided,
+        }
+    }
+}
+
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum ImportLifePayload {
@@ -314,14 +331,36 @@ pub enum ImportLifePayload {
     Accept(ImportLifeAcceptPayload),
 }
 
+/// The data of the event being processed, as every guard, `<sce:arg>` and transition content reads it: the payload a queue owns or the data a host lent, borrowed (docs/adr/0124).
+#[derive(Clone, Copy, Debug)]
+pub enum ImportLifeEventData {
+    /// An event that carries no data.
+    None,
+    Accept(ImportLifeAcceptRef),
+}
+
+impl ImportLifePayload {
+    /// The data this payload holds, read as `ImportLifeEventData` (docs/adr/0124).
+    pub fn data(&self) -> ImportLifeEventData {
+        match self {
+            ImportLifePayload::None => ImportLifeEventData::None,
+            ImportLifePayload::Accept(payload) => ImportLifeEventData::Accept(payload.data()),
+        }
+    }
+}
+
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
 /// Bring into scope with `use …::ImportLifeInject;` to call the
-/// `raise_<event>` methods on the engine.
+/// `raise_<event>` methods on the engine, and the `process_<event>_with`
+/// methods that lend an event's data for one call (docs/adr/0124).
 pub trait ImportLifeInject {
     /// Typed `_event.data` inject for `accept`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_accept(&mut self, payload: ImportLifeAcceptPayload);
+    /// `accept` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_accept_with(&mut self, event_data: ImportLifeAcceptRef);
 }
 
 impl ImportLifeInject for ::sce_rust_runtime::Engine<ImportLifePolicy> {
@@ -334,6 +373,12 @@ impl ImportLifeInject for ::sce_rust_runtime::Engine<ImportLifePolicy> {
             ImportLifeEvent::Accept,
             ImportLifePayload::Accept(payload),
             &data,
+        );
+    }
+    fn process_accept_with(&mut self, event_data: ImportLifeAcceptRef) {
+        self.process_event_with(
+            ImportLifeEvent::Accept,
+            ImportLifeEventData::Accept(event_data),
         );
     }
 }
@@ -727,10 +772,6 @@ impl ::sce_rust_runtime::saved_state::PersistentPolicy for ImportLifePolicy {
 // ======================================================================
 
 pub struct ImportLifePolicy {
-    // NL→IR Item C1 Path A: typed `_event.data` payload for the current
-    // event, stored by `populate_event_payload` and read by native
-    // transition guards (`matches!(&self.pending_payload, …)`).
-    pending_payload: ImportLifePayload,
     /// W3C SCXML 5.2: the `verdict` datamodel variable, published (`sce:direction="out"`).
     verdict: ImportLifeVerdictEnum,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -761,7 +802,6 @@ impl ImportLifePolicy {
         let verdict: ImportLifeVerdictEnum = ImportLifeVerdictEnum::Unanswered;
 
         Self {
-            pending_payload: ImportLifePayload::default(),
             verdict,
             session_id: Some(session_id),
             parent_external_queue: None,
@@ -852,6 +892,9 @@ impl StatePolicy for ImportLifePolicy {
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = ImportLifePayload;
+    // docs/adr/0124: the data of the event being processed, as every guard,
+    // `<sce:arg>` and transition content reads it, queued or lent alike.
+    type EventData<'e> = ImportLifeEventData;
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML Appendix D externalQueue: what the host and other sessions
@@ -1038,13 +1081,17 @@ impl StatePolicy for ImportLifePolicy {
         ImportLifeEvent::Null
     }
 
-    // NL→IR Item C1 Path A: store the current event's typed `_event.data`
-    // payload so native transition guards can read it without a script
-    // engine. Called by the engine's pop loop for every dequeued event;
-    // events injected without a typed payload carry the `#[default] None`
-    // variant, against which the variant-specific guards simply fail.
-    fn populate_event_payload(&mut self, payload: &Self::Payload) {
-        self.pending_payload = payload.clone();
+    // docs/adr/0124: the data the engine holds for the event being processed,
+    // read as `ImportLifeEventData`: a payload a queue owned, read in
+    // place, or the data a host lent, as it is. Events injected without a typed
+    // payload read as `None`, against which the variant-specific guards fail.
+    fn event_data<'a>(
+        held: &'a ::sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+        match held {
+            ::sce_rust_runtime::CurrentEventData::Queued(payload) => payload.data(),
+            ::sce_rust_runtime::CurrentEventData::Lent(event_data) => *event_data,
+        }
     }
 
     // NL→IR Item C1 Path A: …and when no typed payload rode with the event,
@@ -1054,19 +1101,19 @@ impl StatePolicy for ImportLifePolicy {
     // a refusal, on which the engine refuses the delivery whole and takes an
     // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
-        &mut self,
         event: Self::Event,
         data: &str,
+        payload: &mut Self::Payload,
     ) -> ::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {
-        // A typed payload already bound the view, so the producer was the inject
-        // seam and there is nothing to read out of `data`.
-        if self.pending_payload != ImportLifePayload::None {
+        // A typed payload already rode with the event, so the producer was the
+        // inject seam and there is nothing to read out of `data`.
+        if *payload != ImportLifePayload::None {
             return Ok(());
         }
         match event {
             ImportLifeEvent::Accept => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = ImportLifePayload::Accept(ImportLifeAcceptPayload {
+                *payload = ImportLifePayload::Accept(ImportLifeAcceptPayload {
                     headMatches: fields.truth("headMatches")?,
                     undecided: fields.unsigned::<u32>("undecided")?,
                 });
@@ -1086,6 +1133,7 @@ impl StatePolicy for ImportLifePolicy {
     fn execute_entry_actions(
         &mut self,
         state: ::sce_rust_runtime::StateId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
@@ -1103,6 +1151,7 @@ impl StatePolicy for ImportLifePolicy {
     fn execute_exit_actions(
         &mut self,
         state: ::sce_rust_runtime::StateId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1125,6 +1174,7 @@ impl StatePolicy for ImportLifePolicy {
         &mut self,
         state: ::sce_rust_runtime::StateId,
         event: ::sce_rust_runtime::EventId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
@@ -1166,14 +1216,14 @@ impl StatePolicy for ImportLifePolicy {
             }
             ImportLifeState::ID_Pending => {
                 if event == ImportLifeEvent::ID_Accept {
-                    if matches!(&self.pending_payload, ImportLifePayload::Accept(ev) if !ev.headMatches)
+                    if matches!(sce_event_data, ImportLifeEventData::Accept(ev) if !ev.headMatches)
                     {
                         // pending, transition 0
                         return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == ImportLifeEvent::ID_Accept {
-                    if matches!(&self.pending_payload, ImportLifePayload::Accept(ev) if ev.undecided > 0)
+                    if matches!(sce_event_data, ImportLifeEventData::Accept(ev) if ev.undecided > 0)
                     {
                         // pending, transition 1
                         return Some(::sce_rust_runtime::TransitionId(1));
@@ -1226,6 +1276,7 @@ impl StatePolicy for ImportLifePolicy {
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         match transition.0 {
