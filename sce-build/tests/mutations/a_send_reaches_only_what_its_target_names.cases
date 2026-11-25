@@ -79,20 +79,35 @@ edit("tools/codegen/templates/actions/send.jinja2",
 PY
 
 # ── C11: the child gets the event but not its payload ──────────────
+#
+# The payload is still evaluated into `_ed`, and only the view the child copies
+# is left out: dropping the assignment alone left `_ed` set and never read, and
+# `-Werror=unused-but-set-variable` refused the mutant before any test ran
+# (measured 2026-11-24). The `(void)` is the defect's own shape: the value was
+# computed and then not sent.
 
 mutation_case "C11 sends an invoked child no payload" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% if has_payload %}\n                    /* A view of the payload, which the child copies. */\n                    _send_fwd.data = _ed;\n",
-     "{% if has_payload %}\n")
+     "{% if has_payload %}\n                    (void)_ed;\n")
 PY
 
 # ── C11: a target naming no invocation does not end the block ──────
+#
+# As on the C++ AOT, the block ends twice over: the `return` at run time, and
+# `flow.ended` at build time, which stops the list from emitting the elements
+# after the refusal at all. Dropping the `return` alone left nothing after it
+# to run, so every test binary was byte-identical to the baseline (measured
+# 2026-11-24). Both go, and the `<assign>` after `#_nobody` is emitted and runs.
 
 mutation_case "C11 runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                {{ reason("send_target_no_invocation", static_target) }},
                 {{ send_id_c }});
-            return;""",
+            return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}""",
      """                {{ reason("send_target_no_invocation", static_target) }},
                 {{ send_id_c }});""")
 PY
