@@ -164,11 +164,11 @@ promises it does not make and enforcement that does not exist.
    version bump. **Consumers MUST pin to a specific SCE commit** rather
    than rely on a version number alone. (This is why, for example, a
    forge-AST consumer pins the exact commit it deserializes against.)
-2. **A payload names the commit that produced it.** A MUST the consumer
-   cannot check is a convention, so every surface a consumer reads
-   without a second invocation carries the generator commit in-band
-   under one name — `generator`, matching
-   `^([0-9a-f]{7,40}|unknown)$` — on the stdout manifest, on every
+2. **A payload names the generator that produced it.** A MUST the
+   consumer cannot check is a convention, so every surface a consumer
+   reads without a second invocation carries the producer's identity
+   in-band under one name — `generator`, matching
+   `^([0-9a-f]{64}|unavailable)$` — on the stdout manifest, on every
    diagnostic record, on every symbol-lookup record, and on every
    forge-AST export. One name across surfaces means a consumer reading
    two of them from the same run does not need a per-surface key to ask
@@ -178,7 +178,23 @@ promises it does not make and enforcement that does not exist.
    loop iterates on, the diagnostic is the only record the consumer
    receives.
 
-   `wire_surface_stability.rs::every_json_surface_names_the_commit_that_produced_it`
+   The identity is the SHA-256 of the sources the producer was built
+   from, never the commit. For `sce-codegen` it is the digest
+   `sce-build/src/generator_witness.rs` takes of the generator's sources
+   (`GENERATOR_SOURCE_DIGEST`), which `--version` reports in parentheses
+   and `sce-codegen verify-generator --root <checkout>` recomputes from a
+   checkout; for the C++ runtime it is the digest its build takes of the
+   files under `sce/`. A consumer checks a payload against the commit it
+   pinned by comparing `generator` with what the build of that commit
+   reports. A build output may carry only what is derived from the inputs
+   that made it: two builds of the same sources stamp the same value
+   whatever commit they were made at, so the stamp neither changes every
+   build's bytes on every commit nor names a committed state the build did
+   not compile, and an edit to any of those sources moves it. `unavailable`
+   is a build that could not read its sources (a vendored crate, a release
+   tarball). The commit stood here until 2026-11.
+
+   `wire_surface_stability.rs::every_json_surface_names_the_generator_that_produced_it`
    enforces this per surface, including the pattern: a required stamp
    whose shape is unconstrained is discharged by a value that names
    nothing. The forge-AST export is why the check exists — it reached
@@ -188,26 +204,27 @@ promises it does not make and enforcement that does not exist.
    all stayed green because none of them looks at attribution.
 
    The sourcemap sidecar deliberately does **not** carry it. The sidecar
-   is a committed artifact, so a commit stamp would be invalidated by
-   the very commit that wrote it, and every commit touching any tree
-   would have to regenerate all of them; its `source_hash` identifies the
-   inputs instead, per `build.rs` on why a stamp that goes stale is worse
-   than no stamp. A consumer needing the
-   emitting commit for a sidecar reads it from the manifest of the run
-   that produced it, or from a lookup record naming that sidecar. That
+   is a committed artifact, so a generator stamp would move whenever any
+   generator source moved, and every change to the generator would have
+   to regenerate all of them with no byte of output changed; its
+   `source_hash` identifies the inputs instead, and whether a sidecar is
+   current is judged on its bytes. A consumer needing the emitting
+   generator for a sidecar reads it from the manifest of the run that
+   produced it, or from a lookup record naming that sidecar. That
    exemption is registered in the same test (`ATTRIBUTION_EXEMPT`, with
    its reason) and checked both ways: the sidecar must not carry the
    field, and this registry must state why.
 
    The saved state deliberately does **not** carry it either. It is
-   written by generated code, which would have to embed the commit, so
-   every committed machine and every shared saved-state fixture would
-   change on every commit. What a saved state must identify is what it
+   written by generated code, which would have to embed the generator's
+   stamp, so every committed machine and every shared saved-state fixture
+   would change whenever a generator source did. What a saved state must
+   identify is what it
    restores into, and its `shape` does that — a digest of the states and
    typed variables it names, which a machine checks before it reads
    anything else, with `revisions` naming the revision of each record
    schema past its first (docs/adr/0044, an optional member added
-   additively); the commit that built the machine is the build's to
+   additively); the generator that built the machine is the build's to
    record (the `generate` manifest names it). Registered the same way.
    Format 2 of the saved state deliberately does not carry it either, for
    the same reason: the same generated code writes it, and each session
@@ -215,16 +232,17 @@ promises it does not make and enforcement that does not exist.
    its own entry. Format 3 of the saved state deliberately does not carry
    it either: it is format 2's tree written by the same generated code,
    with only the origin of its events changed, and every shared fixture
-   would again change on every commit. Registered with its own entry.
+   would again change whenever a generator source did. Registered with
+   its own entry.
    Format 4 of the saved state deliberately does not carry it either: it is
    format 3's tree written by the same generated code, with only each
    host-run invocation's start number and each session's count of them
-   added, and every shared fixture would again change on every commit.
-   Registered with its own entry.
+   added, and every shared fixture would again change whenever a
+   generator source did. Registered with its own entry.
 
    The authoring profile deliberately does **not** carry it. It is written
    by the specification's owner and never emitted by SCE, so there is no
-   run to stamp, and a commit the owner never chose would sit in a file
+   run to stamp, and a generator stamp the owner never chose would sit in a file
    whose bytes are what an acceptance record pins — every regeneration
    would change the digest that names the profile. What identifies a
    profile is its own sha256, which the manifest's `profile` and the
@@ -233,7 +251,7 @@ promises it does not make and enforcement that does not exist.
    The scenario set deliberately does **not** carry it. It is written by
    the specification's owner, or proposed by an AI client for the owner to
    confirm, and never emitted by SCE, so there is no run to stamp, and a
-   commit nobody chose would sit in a file whose bytes an acceptance can
+   generator stamp nobody chose would sit in a file whose bytes an acceptance can
    pin. What identifies a scenario set is its own sha256, and the
    specification it quotes is named by `specification.doc_id` and `rev`.
    Registered the same way.
@@ -246,33 +264,34 @@ promises it does not make and enforcement that does not exist.
    of the scenario set in `scenario_set.sha256`. Registered the same way.
 
    The transition table deliberately does **not** carry it on its rows. The
-   export is diffed across commits, so a commit on every line would change
-   every line of it. The stamp rides on the one `header` record, which
+   export is diffed across generator changes, so a stamp on every line would
+   change every line of it. The stamp rides on the one `header` record, which
    `--header` adds and which is what ties an export to a machine: its
-   `source_hash` identifies the inputs, and `generator` the commit that wrote
-   the stream. Registered the same way.
+   `source_hash` identifies the inputs, and `generator` the generator that
+   wrote the stream. Registered the same way.
 
    The payload schema deliberately does **not** carry it either. It is a
-   constant of committed generated units (`JSON_SCHEMA`), so a commit stamp
-   would change every committed tree on every commit, as it would every
-   sidecar. Its `x-sce-source-hash`, the `source-hash` of the files it is
+   constant of committed generated units (`JSON_SCHEMA`), so a generator
+   stamp would change every committed tree whenever a generator source
+   moved, as it would every sidecar. Its `x-sce-source-hash`, the `source-hash` of the files it is
    written into, names its inputs instead, for the reason the sourcemap
    sidecar's `source_hash` does; `payload-schema` prints the same text when it
    is given the source set `generate` was. Registered the same way.
 
    The TTCN-3 types manifest deliberately does **not** carry it either. It is
    written beside the types module it describes, as part of an export a
-   consumer commits and regenerates expecting no diff, so a commit stamp would
-   change it on every commit with no type changed, which
+   consumer commits and regenerates expecting no diff, so a generator stamp
+   would change it on every generator change with no type changed, which
    `docs/SCE_CODEGEN_DETERMINISM.md` §3 rules out for a written file. It states
    the structure of the module and nothing of the run: the module's own header
-   names its inputs (`source-hash`), and a consumer needing the emitting commit
-   reads it from the run. Registered the same way.
+   names its inputs (`source-hash`), and a consumer needing the emitting
+   generator reads it from the run. Registered the same way.
 
    The TTCN-3 correspondence witness deliberately does **not** carry it
    either, for the manifest's reason: it is written beside the two modules
-   it relates the documents to, as part of the same export, and a commit
-   stamp would change it on every commit with no construct changed. It states
+   it relates the documents to, as part of the same export, and a generator
+   stamp would change it on every generator change with no construct
+   changed. It states
    the correspondence and nothing of the run; the modules' headers name their
    inputs. Registered the same way.
 
@@ -294,8 +313,8 @@ promises it does not make and enforcement that does not exist.
    written by a host core while it runs, as often as its machine steps, and
    read back by a later build of the same program after a crash: what a
    restore must know is that it reads the format (`format`) and that the saved
-   tree fits the machine (the state's own `shape`), and the commit that built
-   the writer is the host's to record. A stamp would also make two checkpoints
+   tree fits the machine (the state's own `shape`), and the build of the
+   writer is the host's to record. A stamp would also make two checkpoints
    of the same state differ by build. Registered the same way.
 3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
@@ -450,9 +469,10 @@ promises it does not make and enforcement that does not exist.
    is pinned to that change:
    - Diagnostics — `diagnostic_schema_rejects_a_missing_required_field`
    - Forge AST — `ast_schema_rejects_an_envelope_missing_a_required_field`
-     and `ast_schema_rejects_a_generator_that_names_no_commit` (which
-     pins both ways the stamp can fail: absent, and present-but-naming-
-     nothing — the crate version this surface used to emit)
+     and `ast_schema_rejects_a_generator_that_names_no_sources` (which
+     pins each way the stamp can fail: absent, present-but-naming-
+     nothing — the crate version this surface used to emit — and a
+     commit, which it held next)
    - Sourcemap sidecar — `sourcemap_schema_rejects_a_missing_required_field`
    - Stdout manifest — `schema_rejects_a_missing_required_field`
    - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
@@ -482,7 +502,7 @@ promises it does not make and enforcement that does not exist.
      without its `index` or `targets`, a state row carrying an `index`, a kind
      the product does not have, a row without its `node_path`, a `presence` of
      no term, of an empty term or naming what is no feature name, and a header
-     whose `generator` names no commit, whose `source_hash` is no sha256, or
+     whose `generator` names no generator, whose `source_hash` is no sha256, or
      which lacks its `machine`)
    - Payload schema — the same name in `sce-build/src/forge/payload_schema.rs`
      (nine changes to the schema of the decision's example it first shows
@@ -607,9 +627,10 @@ surface's shape-governance doc for the exact rule.
 ## Announcing changes
 
 - Every surface a consumer reads without a second invocation stamps the
-  producing commit in-band (policy item 2), so an issue report can name
-  the exact generator that produced the payload it quotes — including
-  the failure path, where there is no manifest to correlate against.
+  digest of its producer's sources in-band (policy item 2), so an issue
+  report can name the exact generator that produced the payload it
+  quotes — including the failure path, where there is no manifest to
+  correlate against.
 - Surface changes are tracked in git history against the schema file
   and this registry. There is no separate changelog feed while
   `pre-release`; the commit-pin discipline in policy items 1-2 is the

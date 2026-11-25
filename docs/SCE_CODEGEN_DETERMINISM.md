@@ -79,8 +79,8 @@ on which build of it ran.
 
 - **No generator identity.** That is a fact about a run, not a file, and
   the run's stdout manifest carries it (§7). Stamped into a committed file
-  it would change with every generator commit, whether the output did or
-  not.
+  it would change with every edit to the generator's sources, whether the
+  output did or not.
 
 A file generated before the change still carries the two retired lines;
 regenerating it writes the current header in place of the old one.
@@ -288,11 +288,12 @@ header's `template-hash` was computed over, and that line is retired (§3).
 ## 7. Which generator produced this artifact
 
 The crate version is frozen at `0.1.0` pre-1.0 and identifies nothing.
-The commit is the field to record:
+The generator names itself by the SHA-256 of the sources it was compiled
+from, and that digest is the field to record:
 
 ```console
 $ sce-codegen --version
-sce-codegen 0.1.0 (619ff5be8834)
+sce-codegen 0.1.0 (6c1e0b7a9f2d4c58e3a1b0d9c7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8)
 ```
 
 It is also in the stdout manifest of every `generate` run, so a build
@@ -300,23 +301,41 @@ system capturing that JSON attributes its output with no extra
 invocation:
 
 ```json
-{"v":1,"kind":"generate","generator":"619ff5be8834","artifacts":[…]}
+{"v":1,"kind":"generate","generator":"6c1e0b7a9f2d4c58e3a1b0d9c7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8","artifacts":[…]}
 ```
 
 If you keep a version sidecar next to committed output, derive it from
 one of these rather than maintaining it by hand — a hand-maintained
 record drifts silently, and a tree whose recorded generator no longer
-reproduces it is a tree nobody can audit.
+reproduces it is a tree nobody can audit. `sce-codegen verify-generator
+--root <checkout>` says whether a checkout holds the sources a binary was
+built from.
 
-`"unknown"` appears when the generator was built without a git checkout
-to read (vendored crate, release tarball). The value names the *committed*
-state the generator was built from; uncommitted edits to the generator
-itself are not reflected, which is why whether a tree is current is judged
-on its bytes (§8) rather than trusted from the binary's identity.
+The digest covers the generator's own sources, the local packages it links,
+the standard library and the files it compiles in, uncommitted edits
+included (`sce-build/src/generator_witness.rs` lists them); the templates are
+read from disk by each run and are inputs of the output instead (§5). It is
+never the commit, and nothing else the build reads goes into the binary
+either: no commit, clock, host name or environment variable. So two builds
+of the same sources write the same binary, whatever commit, worktree or
+machine they ran at, and report the same `generator`; a build system that
+compares artifacts by content keeps everything downstream of a generator
+that did not change. The commit stood here until 2026-11: it made every
+commit a new binary with no source changed, and named a committed state
+rather than the tree the build compiled.
 
-*Tests:* `version_reports_the_generator_commit`,
+What the digest does not pin is the toolchain and the directory the build
+ran in, which rustc writes into the binary for code that can panic; builds
+that must match across machines pin those beside the sources.
+
+`"unavailable"` appears when the generator was built without its sources
+beside it to read (vendored crate, release tarball).
+
+*Tests:* `version_reports_the_generator_digest`,
 `manifest_generator_matches_version_output`
-(`sce-build/tests/error_format_json.rs`).
+(`sce-build/tests/error_format_json.rs`);
+`every_file_of_this_tree_the_binary_compiles_in_is_witnessed`
+(`sce-build/tests/generator_source_witness.rs`).
 
 ---
 

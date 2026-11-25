@@ -50,7 +50,7 @@ fatal, for authors who have no conformance excuse for carrying them.
 {
   "v": 1,
   "id": "fnv1a:dd04a37de468ffb4",
-  "generator": "5c428c71e991",
+  "generator": "6c1e0b7a9f2d4c58e3a1b0d9c7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8",
   "code": "validation/invalid-attribute",
   "stage": "validation",
   "message": "sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)",
@@ -71,7 +71,7 @@ compatibility.
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. First key in every record. |
 | `id` | `fnv1a:<16hex>` | Content hash over `(code, stage, location.file, key_fragments)`. Same semantic error → same id, **independent of message rewording**. Use for dedup, caching, "seen this before" checks. Shared across producers — see [§2.1.1](#211-key-fragments-and-the-id-namespace). |
-| `generator` | short commit, or `unknown` | Commit of the generator that emitted the record — the same value [§10](#10-stdout-manifest)'s manifest carries as `generator` and `--version` reports in parentheses. Present on **every** record, because a rejected run writes no manifest (stdout is empty, [§1](#1-streams)): on the failure path this record is the only thing the consumer receives. [§8.1](#81-stability) tells consumers to pin a specific commit rather than rely on `v1` while the schema is `pre-release`, and that is unfollowable if the payload does not name the commit it came from. `unknown` when the build had no git checkout to read (vendored crate, release tarball). |
+| `generator` | 64 lowercase hex digits, or `unavailable` | Digest of the sources the producer that emitted the record was built from — for `sce-codegen`, the same value [§10](#10-stdout-manifest)'s manifest carries as `generator` and `--version` reports in parentheses; for the C++ runtime, the digest its build takes of the files under `sce/`. Two builds of the same sources stamp the same value whatever commit they were made at, and an edit to any of them moves it; the stamp is never the commit. Present on **every** record, because a rejected run writes no manifest (stdout is empty, [§1](#1-streams)): on the failure path this record is the only thing the consumer receives. [§8.1](#81-stability) tells consumers to pin a specific commit rather than rely on `v1` while the schema is `pre-release`, and that is unfollowable if the payload does not name the generator it came from. `unavailable` when the build could not read its sources (vendored crate, release tarball). |
 | `code` | slash-path string | Closed enum. See [§5 Code Catalog](#5-code-catalog). Consumers dispatch on `code`, never on `message`. |
 | `stage` | lowercase / kebab-case string | Pipeline stage. Routes to the correct repair loop. See [§4 Stage Taxonomy](#4-stage-taxonomy). |
 | `spec` | string | Specification anchor (e.g. `"W3C SCXML 3.13"`). Present when the rule is spec-derived. Enables LLM grounding. |
@@ -1418,12 +1418,13 @@ minor release behind a compatibility flag.
 Schema `v1` is currently marked `pre-release`. While `pre-release`,
 non-additive shape changes are permitted without a `v` bump —
 downstream consumers should pin to a specific commit rather than rely
-on `v1` stability. Every record names the commit that produced it in
-`generator` ([§2.1](#21-field-semantics)), so a consumer can check a
-payload against the commit it pinned instead of assuming they match;
+on `v1` stability. Every record names the generator that produced it in
+`generator` ([§2.1](#21-field-semantics)), as the digest of its sources,
+so a consumer can check a payload against the commit it pinned (the build
+of that commit reports the same digest) instead of assuming they match;
 without that field the instruction in this paragraph would be one a
 consumer had no way to act on, since a rejected run writes no manifest
-to read the commit from. The flip to `stable` is a deliberate editorial act,
+to read the generator from. The flip to `stable` is a deliberate editorial act,
 not an automated threshold: a maintainer decides the schema has
 settled (e.g. an external consumer has committed to the format, or
 the surface has been stable long enough that further churn is
@@ -1491,7 +1492,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 {
   "v": 1,
   "kind": "generate",
-  "generator": "619ff5be8834",
+  "generator": "6c1e0b7a9f2d4c58e3a1b0d9c7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8",
   "artifacts": [
     {"path": "/abs/path/foo_sm.rs"}
   ],
@@ -1514,7 +1515,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. Bumped under the same policy as the error contract ([§8](#8-evolution-policy)). |
 | `kind` | string | Which subcommand produced this manifest. Consumers branch on this before deserialising into a subcommand-specific shape. `"generate"` or `"check"`; the enumeration is `ManifestKind` and the schema's `kind.enum` is pinned to it. |
-| `generator` | string | Commit of the `sce-codegen` build that produced these artifacts, or `"unknown"` when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing, so this is the field to record when attributing a committed artifact to a generator — reading it here costs no extra invocation and replaces a hand-maintained version sidecar. Identifies the committed state the generator was built from; uncommitted edits to the generator are not reflected (the §6.2.6 hashes cover the inputs, not the binary). Also available as `sce-codegen --version`. |
+| `generator` | string | Digest of the sources of the `sce-codegen` build that produced these artifacts (64 lowercase hex digits), or `"unavailable"` when the build could not read its sources (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing, so this is the field to record when attributing a committed artifact to a generator — reading it here costs no extra invocation and replaces a hand-maintained version sidecar. Identifies the sources the generator was compiled from, uncommitted edits included: two builds of the same sources report the same value whatever commit they were made at. `sce-codegen verify-generator --root <checkout>` says whether a checkout holds those sources. Also available as `sce-codegen --version`. |
 | `document_kind` | optional object `{name, declared, basis_recorded}` | Which kind the run read its one document as: `name` is the `sce:kind` spelling of the kind it compiled, `declared` is `false` exactly when the root carries no `sce:kind` and the document was read as a statechart by default (SCE_FORGE.md §3.2), and `basis_recorded` is whether the root states why the document is that kind in a `<sce:kind-basis>` (docs/SCE_ACCEPTED_SUBSET.md §2.10.1). Published because the default is silent — a well-formed statechart produces no diagnostic, so an author who meant a forge kind and forgot the attribute, or wrote it outside the SCE namespace, received an acceptance about a different kind with nothing on it saying so. Present on a single-document `generate` or `check`; a document set holds several kinds and omits it, and so does `generate --with-imports`, whose run is the set of documents it reached. |
 | `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |

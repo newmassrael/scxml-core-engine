@@ -232,65 +232,6 @@ if(SCE_USE_SPDLOG)
     target_compile_definitions(sce_base PUBLIC SCE_USE_SPDLOG)
 endif()
 
-# Commit this build was made from, embedded so the C++ diagnostic
-# producer can stamp `generator` on every record it emits.
-#
-# `schemas/sce-diagnostic.v1.schema.json` requires that field, and
-# `include/parsing/Diagnostic.h` declares this side conforms to that
-# schema field-for-field, so a C++ producer without the value would emit
-# records the shared schema rejects. `unknown` is the honest answer for a
-# build with no git checkout to read (release tarball, vendored tree) and
-# is what the schema's pattern allows alongside a hex commit.
-#
-# Applied to `src/parsing/Diagnostic.cpp` alone, the source of `sce_runtime`
-# whose envelope helper is the only reader — attached below, after that
-# target exists. A consumer compiling against the installed headers never
-# needs the macro.
-#
-# The ref files are configure-dependencies for the same reason
-# `sce-build/build.rs` watches them on the Rust side: resolved once and
-# never re-resolved, the value would go on describing whichever commit
-# happened to be checked out when the build tree was first configured —
-# a stamp that silently names the wrong commit is worse than none.
-set(SCE_GIT_COMMIT "unknown")
-find_package(Git QUIET)
-if(Git_FOUND)
-    execute_process(
-        COMMAND "${GIT_EXECUTABLE}" rev-parse --git-dir
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        OUTPUT_VARIABLE _sce_git_dir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE _sce_git_dir_rc)
-    if(_sce_git_dir_rc EQUAL 0 AND _sce_git_dir)
-        if(NOT IS_ABSOLUTE "${_sce_git_dir}")
-            set(_sce_git_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_git_dir}")
-        endif()
-        # HEAD moves on checkout; the branch ref moves on commit; a ref
-        # living in packed-refs has no file of its own.
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sce_git_dir}/HEAD")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sce_git_dir}/packed-refs")
-        if(EXISTS "${_sce_git_dir}/HEAD")
-            file(READ "${_sce_git_dir}/HEAD" _sce_head_contents)
-            string(STRIP "${_sce_head_contents}" _sce_head_contents)
-            if(_sce_head_contents MATCHES "^ref: (.+)$")
-                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                    "${_sce_git_dir}/${CMAKE_MATCH_1}")
-            endif()
-        endif()
-        execute_process(
-            COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE _sce_git_commit
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-            RESULT_VARIABLE _sce_git_commit_rc)
-        if(_sce_git_commit_rc EQUAL 0 AND _sce_git_commit)
-            set(SCE_GIT_COMMIT "${_sce_git_commit}")
-        endif()
-    endif()
-endif()
-
 # Force include DisableStdOut.h for sce_base source files only.
 # ExternTemplates.h suppresses implicit std::basic_string<char>
 # instantiation so consumers don't drag sce_base archive members via
@@ -658,21 +599,82 @@ target_include_directories(sce_runtime
 # Force include DisableStdOut.h for sce_runtime source files only
 sce_force_include(sce_runtime PRIVATE common/DisableStdOut.h)
 
-# Commit stamp for the C++ diagnostic producer. Resolved further up (see
-# the SCE_GIT_COMMIT block); attached here because `src/parsing/Diagnostic.cpp`
-# is compiled into this target, not `sce_base`. Attaching it to the wrong
-# target is not a build error — `beginDiagnosticRecord` falls through to
-# its `unknown` branch and every record still validates, because `unknown`
-# is a legal value for a checkout-less build. `DiagnosticWire.GeneratorStampNamesThisCheckout`
-# is what distinguishes "no checkout to read" from "read the wrong target".
+# Identity of the C++ diagnostic producer: the digest of the sources this
+# library is built from, which `src/parsing/Diagnostic.cpp` stamps as
+# `generator` on every record it emits.
 #
-# On the one source that reads it, not on the target. The value is new with
-# every commit, and a definition on the target is on the command line of every
-# source the target compiles, so each commit changed the compile of all of
-# them: a compiler cache keyed on the command line missed on every one, and an
-# incremental build recompiled the whole library for one string.
-set_property(SOURCE src/parsing/Diagnostic.cpp APPEND PROPERTY
-    COMPILE_DEFINITIONS "SCE_GIT_COMMIT=\"${SCE_GIT_COMMIT}\"")
+# `schemas/sce-diagnostic.v1.schema.json` requires that field, and
+# `include/parsing/Diagnostic.h` declares this side conforms to that schema
+# field-for-field. The value is a SHA-256 of every file under this directory
+# (`sce/`), keyed by its path relative to it, so it is a function of the
+# sources alone: two builds of the same sources stamp the same value whatever
+# commit, checkout or machine they were made at, and an edit to any of them
+# moves it. It was the commit until 2026-11, and that made every commit a new
+# `Diagnostic.cpp` object, a new library and a relink of every program linking
+# it, with no source changed; the git refs it watched also re-ran this
+# configure on every commit. The third-party trees this library compiles are
+# pinned by the superproject's submodule records, which the digest does not
+# read: reading them needs git and the commit, the dependency this replaced.
+#
+# Taken at build time, not at configure time: a configure-time digest would
+# have to re-run the configure on every edit of any source. The listing is
+# written at configure time (the glob re-checks itself on every build, so an
+# added or removed file reconfigures), and the custom command hashes the files
+# it names whenever one of them changes. `SourceDigest.cmake` rewrites the
+# header only when the digest moves, so an edit that leaves it where it was
+# recompiles nothing (Ninja re-reads the header's time after the command).
+#
+# The header goes to a directory only `Diagnostic.cpp` is given, so no other
+# translation unit of the target depends on it. Compiled without it (outside
+# this project) the file answers `unavailable`, which the schema allows; the
+# test `DiagnosticWire.GeneratorStampIsTheSourceDigestOfThisBuild` is what
+# tells that apart from a build here that lost the header.
+set(_SCE_DIGEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/source_digest")
+set(_SCE_DIGEST_HEADER "${_SCE_DIGEST_DIR}/SceRuntimeSourceDigest.h")
+set(_SCE_DIGEST_LISTING "${_SCE_DIGEST_DIR}/inputs.txt")
+file(GLOB_RECURSE _sce_digest_inputs CONFIGURE_DEPENDS LIST_DIRECTORIES false
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/*")
+# A build tree placed inside this directory holds outputs, the header among
+# them, and a digest of its own output would never settle.
+file(RELATIVE_PATH _sce_digest_build_tree "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+if(_sce_digest_build_tree AND NOT _sce_digest_build_tree MATCHES "^\\.\\./"
+   AND NOT IS_ABSOLUTE "${_sce_digest_build_tree}")
+    set(_sce_digest_sources "")
+    foreach(_sce_digest_input IN LISTS _sce_digest_inputs)
+        string(FIND "${_sce_digest_input}" "${_sce_digest_build_tree}/" _sce_digest_at)
+        if(NOT _sce_digest_at EQUAL 0)
+            list(APPEND _sce_digest_sources "${_sce_digest_input}")
+        endif()
+    endforeach()
+    set(_sce_digest_inputs "${_sce_digest_sources}")
+endif()
+list(SORT _sce_digest_inputs)
+list(JOIN _sce_digest_inputs "\n" _sce_digest_listing)
+string(APPEND _sce_digest_listing "\n")
+# Written only when it changes, so a reconfigure that found the same files
+# does not re-run the digest.
+set(_sce_digest_previous "")
+if(EXISTS "${_SCE_DIGEST_LISTING}")
+    file(READ "${_SCE_DIGEST_LISTING}" _sce_digest_previous)
+endif()
+if(NOT _sce_digest_previous STREQUAL _sce_digest_listing)
+    file(WRITE "${_SCE_DIGEST_LISTING}" "${_sce_digest_listing}")
+endif()
+list(TRANSFORM _sce_digest_inputs PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/" OUTPUT_VARIABLE _sce_digest_paths)
+add_custom_command(
+    OUTPUT "${_SCE_DIGEST_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+        -D "SCE_DIGEST_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+        -D "SCE_DIGEST_LISTING=${_SCE_DIGEST_LISTING}"
+        -D "SCE_DIGEST_HEADER=${_SCE_DIGEST_HEADER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SourceDigest.cmake"
+    DEPENDS ${_sce_digest_paths} "${_SCE_DIGEST_LISTING}"
+    COMMENT "Taking the digest of the sources of the C++ diagnostic producer"
+    VERBATIM
+)
+target_sources(sce_runtime PRIVATE "${_SCE_DIGEST_HEADER}")
+set_source_files_properties(src/parsing/Diagnostic.cpp PROPERTIES
+    INCLUDE_DIRECTORIES "${_SCE_DIGEST_DIR}")
 
 # sce_runtime links sce_scripting (which transitively provides sce_base → sce_core)
 # This makes sce_runtime an umbrella target: linking sce_runtime gives you everything.

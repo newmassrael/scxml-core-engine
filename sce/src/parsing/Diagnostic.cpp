@@ -13,6 +13,14 @@
 #include <utility>
 #include <vector>
 
+// `SCE_RUNTIME_SOURCE_DIGEST`, written at build time by
+// `sce/cmake/SourceDigest.cmake` into a directory only this source is given
+// (see the digest block of `sce/CMakeLists.txt`). A build of these sources
+// outside that project has no such header, and its records say `unavailable`.
+#if __has_include("SceRuntimeSourceDigest.h")
+#include "SceRuntimeSourceDigest.h"
+#endif
+
 namespace SCE::parsing {
 
 namespace {
@@ -87,26 +95,27 @@ std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view sta
 // subtype's fixture stayed green. One assembly point makes the required
 // set a property of this function rather than of whoever remembered.
 //
-// `generator` is the commit the library was built from, supplied by
-// `SCE_GIT_COMMIT` from `sce/CMakeLists.txt`; see there for why the git
-// refs are configure-dependencies. `unknown` when the build had no
-// checkout to read — the value the schema's pattern allows alongside a
-// hex commit, and the honest answer rather than a fabricated one.
+// `generator` is the digest of the sources this library was built from (the
+// files under `sce/`), so two builds of the same sources stamp the same value
+// whatever commit they were made at, and an edit to any of them moves it. It
+// is never the commit: a commit compiled into this file made every commit a
+// new library when no source had changed. `unavailable` when the build could
+// not take the digest, the value the schema's pattern allows beside one, and
+// the honest answer rather than a fabricated one.
 nlohmann::ordered_json beginDiagnosticRecord(std::string_view code, std::string_view stage, const std::string &id) {
-#ifdef SCE_GIT_COMMIT
-    constexpr std::string_view kGeneratorCommit = SCE_GIT_COMMIT;
+#ifdef SCE_RUNTIME_SOURCE_DIGEST
+    constexpr std::string_view kGenerator = SCE_RUNTIME_SOURCE_DIGEST;
 #else
-    // Reached only when this translation unit is compiled outside the
-    // `sce_base` target that defines the macro. Answering `unknown` is
-    // what the schema's pattern allows for a build with no commit to
-    // report; fabricating one would put a wrong commit on the wire.
-    constexpr std::string_view kGeneratorCommit = "unknown";
+    // Reached when this translation unit is compiled without the header
+    // the `sce_runtime` target generates for it. Fabricating a digest
+    // would put a wrong producer on the wire.
+    constexpr std::string_view kGenerator = "unavailable";
 #endif
 
     nlohmann::ordered_json out;
     out["v"] = 1;
     out["id"] = id;
-    out["generator"] = std::string{kGeneratorCommit};
+    out["generator"] = std::string{kGenerator};
     out["code"] = std::string{code};
     out["stage"] = std::string{stage};
     return out;

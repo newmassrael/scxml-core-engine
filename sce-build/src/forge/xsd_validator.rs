@@ -108,7 +108,7 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                 Diagnostic {
                     schema_version: SCHEMA_VERSION,
                     id,
-                    generator: crate::GENERATOR_COMMIT,
+                    generator: crate::GENERATOR_SOURCE_DIGEST,
                     code,
                     stage,
                     // Schema-validation rows are already mapped back to

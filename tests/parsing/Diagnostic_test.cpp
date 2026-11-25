@@ -107,11 +107,6 @@ bool matchesIdRegex(const std::string &id) {
     return std::regex_match(id, kPattern);
 }
 
-bool matchesGeneratorRegex(const std::string &generator) {
-    static const std::regex kPattern{R"(^([0-9a-f]{7,40}|unknown)$)"};
-    return std::regex_match(generator, kPattern);
-}
-
 // ── schema-derived key sets ─────────────────────────────────────────
 //
 // The envelope's legal and required keys are READ from
@@ -138,6 +133,22 @@ const nlohmann::json &diagnosticSchema() {
         return parsed;
     }();
     return schema;
+}
+
+// The `generator` pattern, read from the schema like the key sets below, so
+// the value this producer stamps is held to the shape the schema declares
+// rather than to a copy of it that drifts when the schema moves. JSON Schema
+// patterns are ECMA-262 expressions, the grammar `std::regex` reads by
+// default.
+const std::string &generatorPattern() {
+    static const std::string pattern =
+        diagnosticSchema().at(nlohmann::json::json_pointer{"/properties/generator/pattern"}).get<std::string>();
+    return pattern;
+}
+
+bool matchesGeneratorRegex(const std::string &generator) {
+    static const std::regex kPattern{generatorPattern()};
+    return std::regex_match(generator, kPattern);
 }
 
 // Keys the schema declares under a `properties` object, addressed by
@@ -188,7 +199,7 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_vie
     EXPECT_TRUE(matchesIdRegex(j.at("id").get<std::string>()))
         << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
     EXPECT_TRUE(matchesGeneratorRegex(j.at("generator").get<std::string>()))
-        << "generator '" << j.at("generator").get<std::string>() << "' does not match ^([0-9a-f]{7,40}|unknown)$";
+        << "generator '" << j.at("generator").get<std::string>() << "' does not match " << generatorPattern();
     EXPECT_FALSE(j.at("message").get<std::string>().empty());
 }
 
@@ -1627,31 +1638,34 @@ TEST(SCXMLParserBoundary, TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody) {
 
 // ── generator stamp resolution ──────────────────────────────────────
 
-// A build made from this checkout must report a commit, not `unknown`.
+// A build made in this project must report the digest of its sources, not
+// `unavailable`.
 //
-// `unknown` is a legal schema value and the honest answer for a build
-// with no git checkout to read, so every schema-shaped assertion in this
-// file accepts it. That acceptance is exactly what makes the value
-// unable to police itself: when `SCE_GIT_COMMIT` was first attached to
-// `sce_base` — which does not compile `Diagnostic.cpp` — the macro was
-// simply undefined here, `beginDiagnosticRecord` took its fallback
-// branch, and all 65 tests passed while every record on the wire
-// claimed an unidentifiable producer.
+// `unavailable` is a legal schema value and the honest answer for a build
+// of these sources outside their CMake project, so every schema-shaped
+// assertion in this file accepts it. That acceptance is exactly what makes
+// the value unable to police itself: when the stamp's definition was first
+// attached to `sce_base` — which does not compile `Diagnostic.cpp` — it
+// was simply missing here, `beginDiagnosticRecord` took its fallback
+// branch, and all 65 tests passed while every record on the wire claimed
+// an unidentifiable producer.
 //
-// This test is the one place that knows something the schema cannot:
-// this suite runs inside the repository, so a checkout exists, so
-// `unknown` means the resolution broke rather than that there was
-// nothing to resolve.
-TEST(DiagnosticWire, GeneratorStampNamesThisCheckout) {
+// This test is the one place that knows something the schema cannot: this
+// suite is built by the project that generates the digest header for
+// `Diagnostic.cpp`, so `unavailable` means the header stopped reaching it
+// rather than that there was nothing to digest. A commit is refused too:
+// the stamp names the sources, and a commit compiled into the library made
+// every commit a new library.
+TEST(DiagnosticWire, GeneratorStampIsTheSourceDigestOfThisBuild) {
     const TemplateNotFound err("probe.sce-template.xml", "/project/probe.sce-template.xml");
     const auto j = err.to_json();
     ASSERT_TRUE(j.contains("generator")) << j.dump();
     const auto generator = j.at("generator").get<std::string>();
-    EXPECT_NE(generator, "unknown") << "this suite builds from a git checkout, so `unknown` means the "
-                                       "SCE_GIT_COMMIT definition is not reaching the target that "
-                                       "compiles src/parsing/Diagnostic.cpp — see sce/CMakeLists.txt";
-    EXPECT_TRUE(std::regex_match(generator, std::regex{R"(^[0-9a-f]{7,40}$)"}))
-        << "generator '" << generator << "' is neither a hex commit nor `unknown`";
+    EXPECT_NE(generator, "unavailable") << "this suite is built by the project that writes the digest header, so "
+                                           "`unavailable` means SceRuntimeSourceDigest.h is not reaching "
+                                           "src/parsing/Diagnostic.cpp — see the digest block of sce/CMakeLists.txt";
+    EXPECT_TRUE(std::regex_match(generator, std::regex{R"(^[0-9a-f]{64}$)"}))
+        << "generator '" << generator << "' is not a SHA-256 in lowercase hex";
 }
 
 // ── Declared-vs-exercised wire code coverage ───────────────────────

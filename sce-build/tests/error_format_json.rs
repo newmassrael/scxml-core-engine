@@ -1207,9 +1207,9 @@ fn stdout_emits_single_json_manifest_on_success() {
     // Generator identity: the crate version is frozen pre-1.0, so this is
     // the only field that says which build produced the artifacts. A
     // consumer that commits generated output reads it here instead of
-    // hand-maintaining a version sidecar. `unknown` is the honest answer
-    // on a build with no git checkout, so both shapes are legal — what is
-    // not legal is the field being absent or empty.
+    // hand-maintaining a version sidecar. `unavailable` is the honest
+    // answer on a build that could not read its sources, so both shapes
+    // are legal — what is not legal is the field being absent or empty.
     let generator = obj["generator"]
         .as_str()
         .unwrap_or_else(|| panic!("generator must be a string: {line}"));
@@ -1736,50 +1736,51 @@ fn loose_equality_outside_the_typed_path_still_generates() {
     assert_eq!(manifest["needs_script_engine"], true);
 }
 
-/// `--version` must name the commit, not just the frozen crate version.
+/// `--version` must name the generator's sources, not just the frozen
+/// crate version.
 ///
 /// The reported failure downstream was a committed generated tree that no
-/// single generator commit reproduced, kept undetected because the
-/// generator commit was recorded by hand in a sidecar file. `0.1.0` alone
-/// cannot distinguish two generators three months apart; the commit can,
+/// single generator reproduced, kept undetected because the generator was
+/// recorded by hand in a sidecar file. `0.1.0` alone cannot distinguish
+/// two generators three months apart; the digest of their sources can,
 /// and being able to ask the binary is what removes the hand-maintained
 /// record that drifted.
 #[test]
-fn version_reports_the_generator_commit() {
+fn version_reports_the_generator_digest() {
     let out = Command::new(sce_codegen_bin())
         .arg("--version")
         .output()
         .expect("sce-codegen must be runnable");
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
-    let commit = text
+    let digest = text
         .split_once('(')
         .and_then(|(_, rest)| rest.split_once(')'))
         .map(|(c, _)| c)
-        .unwrap_or_else(|| panic!("--version must carry a parenthesised commit, got: {text}"));
-    assert!(
-        !commit.is_empty(),
-        "--version commit field must not be blank: {text}"
-    );
-    // In this repo the build has a checkout, so the fallback would mean
-    // build.rs stopped resolving it — the exact silent degradation that
+        .unwrap_or_else(|| panic!("--version must carry a parenthesised digest, got: {text}"));
+    // In this repo the build has its sources, so the fallback would mean
+    // build.rs stopped reading them — the exact silent degradation that
     // makes a stamp untrustworthy.
     assert_ne!(
-        commit, "unknown",
-        "build.rs must resolve the commit in a git checkout: {text}"
+        digest,
+        sce_build::generator_witness::DIGEST_UNAVAILABLE,
+        "build.rs must read the generator's sources in this repository: {text}"
     );
     assert!(
-        commit.chars().all(|c| c.is_ascii_hexdigit()),
-        "commit must be a hex object name: {text}"
+        digest.len() == 64
+            && digest
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "the digest must be a SHA-256 in lowercase hex: {text}"
     );
 }
 
-/// The commit `--version` reports, parsed once.
+/// The generator `--version` reports, parsed once.
 ///
 /// Every wire surface that stamps its producer has to agree with this
 /// value, so the parse lives here rather than being spelled again per
 /// surface — a second spelling is a second thing that can drift.
-fn generator_commit_from_version() -> String {
+fn generator_from_version() -> String {
     let out = Command::new(sce_codegen_bin())
         .arg("--version")
         .output()
@@ -1788,14 +1789,14 @@ fn generator_commit_from_version() -> String {
     text.split_once('(')
         .and_then(|(_, rest)| rest.split_once(')'))
         .map(|(c, _)| c.to_string())
-        .unwrap_or_else(|| panic!("--version must carry a parenthesised commit, got: {text}"))
+        .unwrap_or_else(|| panic!("--version must carry a parenthesised digest, got: {text}"))
 }
 
 /// The manifest and `--version` must agree — two spellings of the same
 /// fact that can disagree are worse than one.
 #[test]
 fn manifest_generator_matches_version_output() {
-    let from_version = generator_commit_from_version();
+    let from_version = generator_from_version();
 
     let (dir, scxml) = write_trivial_statechart_fixture();
     let out = Command::new(sce_codegen_bin())
@@ -1818,7 +1819,7 @@ fn manifest_generator_matches_version_output() {
 /// `SCE_ERROR_CONTRACT.md` §8.1 tells consumers not to rely on `v1`
 /// stability while the schema is `pre-release` and to pin a specific SCE
 /// commit instead; `SCE_WIRE_CONTRACTS.md` policy 1 states the same rule
-/// as a MUST. Honouring it requires the payload to name the commit it
+/// as a MUST. Honouring it requires the payload to name the generator it
 /// came from, which is why the stdout manifest carries `generator`.
 ///
 /// A rejected run writes no manifest at all — stdout is empty and the
@@ -1827,10 +1828,10 @@ fn manifest_generator_matches_version_output() {
 /// receives. Without the stamp there, a consumer that chokes on a `fix`
 /// shape cannot say which generator produced it, and attribution falls
 /// back to the hand-maintained sidecar that
-/// [`version_reports_the_generator_commit`] exists to remove.
+/// [`version_reports_the_generator_digest`] exists to remove.
 #[test]
-fn rejected_run_diagnostics_name_the_generator_commit() {
-    let from_version = generator_commit_from_version();
+fn rejected_run_diagnostics_name_the_generator() {
+    let from_version = generator_from_version();
     let (dir, scxml) = write_missing_datamodel_fixture();
     let out = Command::new(sce_codegen_bin())
         .args([
@@ -1864,7 +1865,7 @@ fn rejected_run_diagnostics_name_the_generator_commit() {
             .unwrap_or_else(|e| panic!("NDJSON line must parse: {e}\n{line}"));
         assert_eq!(
             record["generator"], from_version,
-            "every diagnostic record must name the generator commit: {line}"
+            "every diagnostic record must name the generator: {line}"
         );
     }
 }

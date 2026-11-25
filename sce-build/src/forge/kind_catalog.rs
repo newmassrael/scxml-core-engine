@@ -1135,7 +1135,7 @@ impl KindCatalog {
             .collect();
         KindCatalog {
             v: KIND_CATALOG_SCHEMA_VERSION,
-            generator: crate::GENERATOR_COMMIT,
+            generator: crate::GENERATOR_SOURCE_DIGEST,
             declaration: Declaration {
                 attribute: "kind",
                 namespace: SCE_NAMESPACE,

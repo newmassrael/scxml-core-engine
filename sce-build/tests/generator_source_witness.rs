@@ -356,20 +356,16 @@ fn every_file_of_this_tree_the_binary_compiles_in_is_witnessed() {
          binary's: {sources:?}"
     );
 
-    // Two exemptions, each a file the binary reads that no generated file
-    // depends on. The template tree is read by every run from disk and is an
-    // input of each generation (`RUN_TIME_TREE`). The git HEAD and the ref it
-    // names are watched by the build script for the commit stamp
-    // (`GENERATOR_COMMIT`), a label of diagnostics and exports that no
-    // generated file carries: the drift header leaves it out on purpose
-    // (`forge::drift`), since it would re-stamp every committed tree on every
-    // commit.
+    // One exemption: the template tree, which every run reads from disk and
+    // which is an input of each generation (`RUN_TIME_TREE`). Nothing of git
+    // is exempt. The build script read the HEAD and the ref it names until
+    // 2026-11, for a commit stamp, and that made every commit a new binary; a
+    // file of `.git` in this list now means the build reads the commit again.
     let unwitnessed: Vec<&PathBuf> = sources
         .iter()
         .filter(|path| {
             !witnessed.contains(*path)
                 && !path.starts_with(sce_build::generator_witness::RUN_TIME_TREE)
-                && !path.starts_with(".git")
         })
         .collect();
     assert!(

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Embeds the generator's own commit and its Jinja2 template tree into
-//! the binary.
+//! Embeds the digest of the generator's sources and its Jinja2 template
+//! tree into the binary.
 //!
 //! # Template registry
 //!
@@ -21,21 +21,26 @@
 //! targets resolve, since minijinja binds those at render time; that is
 //! the job of `template_registry::tests` in the library crate.
 //!
-//! The crate version is frozen at `0.1.0` under the pre-1.0 no-versioning
-//! rule, so it identifies nothing. Without a second signal a consumer that
-//! commits generated output has no way to ask a binary which generator it
-//! is, and must hand-maintain a version sidecar instead — bookkeeping that
-//! drifts silently and leaves a committed tree unattributable to any
-//! single commit.
+//! # Generator identity
 //!
-//! Scope is deliberately the commit alone. A dirty-worktree flag cannot be
-//! kept honest here: the rerun triggers below watch the ref, not the
-//! worktree, so a flag computed at build time would go stale on the next
-//! edit — and a stale "clean" claim is worse than no claim. The stamp
-//! therefore names the committed state the build started from, which is
-//! exactly what a pinned or hermetic build has. Uncommitted edits are the
-//! job of the §synth-6.2.6 source/template hashes, which are recomputed
-//! per run from the actual bytes.
+//! The crate version is frozen at `0.1.0` under the pre-1.0 no-versioning
+//! rule, so it identifies nothing. The binary names itself by the digest
+//! `src/generator_witness.rs` takes of the sources it is compiled from
+//! (`SCE_GENERATOR_SOURCE_DIGEST`), and by nothing else this script reads:
+//! no commit, no clock, no host name, no environment variable. A build
+//! output may carry only what is derived from the inputs that made it, so
+//! two builds of the same sources write the same binary whatever commit,
+//! worktree or machine they ran at, and a build system that compares
+//! artifacts by content keeps the work downstream of a generator that did
+//! not change.
+//!
+//! The commit stood here until 2026-11. It made every commit a new binary
+//! (and re-ran this script, and recompiled the crate) when no source of the
+//! generator had moved, and it was the wrong identity besides: a build
+//! compiles the tree in front of it, uncommitted edits included, so two
+//! binaries could agree on the commit and differ in every line the
+//! generator runs. `sce-build/tests/generator_source_witness.rs` holds this
+//! script to what it may hand the compiler.
 
 use std::path::{Path, PathBuf};
 
@@ -53,16 +58,7 @@ mod generator_witness {
 }
 use generator_witness::{digest_hex, witness_paths, DIGEST_UNAVAILABLE, RUN_TIME_TREE};
 
-// Included for the same reason as the witness: the library's tests hold
-// the watch set to what git does in a linked worktree and a packed ref,
-// and a build script cannot be tested any other way.
-mod commit_stamp {
-    include!("src/commit_stamp.rs");
-}
-
 fn main() {
-    let commit = git_commit().unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=SCE_GIT_COMMIT={commit}");
     emit_source_digest();
     emit_template_registry();
     emit_stdlib_registry();
@@ -216,31 +212,13 @@ fn collect_tree(root: &Path, current: &Path, extension: &str, out: &mut Vec<(Str
     }
 }
 
-/// Short commit of `HEAD`, or `None` when this is not a git checkout (a
-/// vendored crate, a release tarball, a Bazel-style fetched dependency).
-/// Absence is a normal build shape, not a failure — the build must not
-/// break just because provenance is unavailable.
-///
-/// A linked worktree has to work as well as the main one: the field
-/// report's own repro pins a generator via `git worktree add`.
-fn git_commit() -> Option<String> {
-    // Cargo runs a build script from its package's directory.
-    let here = std::env::current_dir().ok()?;
-    // Rebuild when the ref moves, so the embedded value cannot go stale
-    // within a working session. A stamp that silently describes the wrong
-    // commit is the failure mode this whole surface exists to remove.
-    for path in commit_stamp::head_watch_paths(&here)? {
-        watch(&path);
-    }
-    commit_stamp::head_commit(&here)
-}
-
 /// Ask cargo to re-run this script when `path` changes.
 ///
 /// ⚠ `path` must exist. Cargo reads a watched path that does not as
 /// changed on every build, so the script re-runs each time and everything
-/// compiled from its output is rebuilt after it. Measured 2026-09-24: the
-/// branch-ref watch named a file absent from every linked worktree, so each
+/// compiled from its output is rebuilt after it. Measured 2026-09-24: a
+/// watch on the git branch ref (gone with the commit stamp) named a file
+/// absent from every linked worktree, so each
 /// cargo invocation in one recompiled this crate, and each throwaway crate
 /// `forge_conformance` compiles against the forge runtime re-ran that
 /// runtime's build script behind it — one every four and a half minutes,

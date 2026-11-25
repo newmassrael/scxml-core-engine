@@ -147,15 +147,6 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     ),
     ("src/authoring_profile.rs", Why::Operator, &[("load", 1)]),
     (
-        "src/commit_stamp.rs",
-        Why::Repository,
-        &[
-            ("head_watch_paths", 2),
-            ("files_backend_ref_paths", 2),
-            ("symbolic_target", 1),
-        ],
-    ),
-    (
         "src/conformance.rs",
         Why::Repository,
         &[
@@ -712,10 +703,10 @@ fn a<'x>(s: &'x str) -> bool {
 
 #[test]
 fn a_test_module_without_a_body_does_not_end_the_part_that_is_read() {
-    // `lib.rs` declares test-only modules near its top: `#[cfg(test)] mod name;`.
+    // `lib.rs` declares test-only modules among its others: `#[cfg(test)] mod name;`.
     let source = "
 #[cfg(test)]
-mod commit_stamp;
+mod unreachable_statements;
 fn after() { std::fs::read(p); }
 #[cfg(test)]
 mod tests {

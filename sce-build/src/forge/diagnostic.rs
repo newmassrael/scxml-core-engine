@@ -131,7 +131,7 @@ pub trait SingleDiagnostic: ToDiagnostics {
         Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
-            generator: crate::GENERATOR_COMMIT,
+            generator: crate::GENERATOR_SOURCE_DIGEST,
             code: payload.code,
             stage: payload.stage,
             spec: payload.code.spec_anchor(),
@@ -386,18 +386,19 @@ pub struct Diagnostic {
     /// that pattern-match the format.
     pub id: String,
 
-    /// Commit of the generator that emitted this record — the same value
-    /// the stdout manifest carries as `generator` and `--version` reports
-    /// in parentheses. `"unknown"` on a build with no git checkout to
-    /// read; see [`crate::GENERATOR_COMMIT`].
+    /// Digest of the sources of the generator that emitted this record —
+    /// the same value the stdout manifest carries as `generator` and
+    /// `--version` reports in parentheses. `"unavailable"` on a build
+    /// that could not read its sources; see
+    /// [`crate::GENERATOR_SOURCE_DIGEST`].
     ///
     /// Present on **every** record because a rejected run writes no
     /// manifest at all: stdout stays empty and the exit code carries the
     /// failure, so on the path a repair loop actually iterates on, this
     /// record is the only thing the consumer receives. §8.1 tells
-    /// consumers to pin a specific commit rather than rely on `v1` while
+    /// consumers to pin the SCE they read rather than rely on `v1` while
     /// the schema is `pre-release` — an instruction that cannot be
-    /// followed if the payload does not name the commit it came from.
+    /// followed if the payload does not name the generator it came from.
     ///
     /// Per-record rather than once per stream: a consumer that quotes a
     /// single NDJSON line in a bug report must carry the attribution
@@ -4792,7 +4793,7 @@ impl Diagnostic {
         Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
-            generator: crate::GENERATOR_COMMIT,
+            generator: crate::GENERATOR_SOURCE_DIGEST,
             code,
             stage,
             // A meta failure has no document behind it, so nothing
@@ -4831,7 +4832,7 @@ impl Diagnostic {
     /// consumer's validator would have accepted.
     ///
     /// `generator` is spliced with `concat!`/`env!` rather than read
-    /// from [`crate::GENERATOR_COMMIT`] because `concat!` takes
+    /// from [`crate::GENERATOR_SOURCE_DIGEST`] because `concat!` takes
     /// literals, not constants. Both read the same build-script
     /// variable in the same compilation, and
     /// [`terminal_fallback_line_matches_what_serde_would_emit`] pins
@@ -4841,7 +4842,7 @@ impl Diagnostic {
     /// else about the diagnostic pipeline has already failed.
     pub const TERMINAL_FALLBACK_NDJSON: &'static str = concat!(
         "{\"v\":1,\"id\":\"fnv1a:2d6d674d44088d0d\",\"generator\":\"",
-        env!("SCE_GIT_COMMIT"),
+        env!("SCE_GENERATOR_SOURCE_DIGEST"),
         "\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}"
     );
 }
@@ -21031,11 +21032,11 @@ mod tests {
     /// Assert the generator stamp is present and correct, and return the
     /// line without it.
     ///
-    /// The goldens pin the wire *shape*, which is a property of the
-    /// source tree. The generator stamp is a property of the *build*:
-    /// its value changes on every commit, so a golden that spelled it
-    /// would have to be rewritten by every commit — and a golden table
-    /// rewritten that often stops being read.
+    /// The goldens pin the wire *shape* of each record. The generator
+    /// stamp names the whole generator: its value changes with every edit
+    /// to any generator source, so a golden that spelled it would have to
+    /// be rewritten by nearly every change — and a golden table rewritten
+    /// that often stops being read.
     ///
     /// Removing it here rather than dropping the field from golden
     /// coverage keeps the assertion strictly stronger than a byte match
@@ -21043,7 +21044,7 @@ mod tests {
     /// stamp *and* for its exact value, against a value no golden could
     /// have written down.
     fn without_generator_stamp(line: &str) -> String {
-        let stamp = format!(",\"generator\":\"{}\"", crate::GENERATOR_COMMIT);
+        let stamp = format!(",\"generator\":\"{}\"", crate::GENERATOR_SOURCE_DIGEST);
         assert!(
             line.contains(&stamp),
             "every diagnostic record must carry {stamp}: {line}"
@@ -21059,7 +21060,8 @@ mod tests {
     /// Update the goldens deliberately (alongside a schema-version
     /// bump, when appropriate), never silently.
     ///
-    /// The build-varying `generator` stamp is asserted and stripped by
+    /// The `generator` stamp, which moves with every generator source, is
+    /// asserted and stripped by
     /// [`without_generator_stamp`] before the comparison; see there for
     /// why it is not part of the pinned bytes.
     #[test]
@@ -26811,8 +26813,9 @@ mod anchor_contract_tests {
     ///
     /// Serialising here rather than handing back the pinned table entry
     /// is what keeps these callers looking at a whole record. The table
-    /// entries deliberately omit the build-varying `generator` stamp
-    /// (see [`without_generator_stamp`] for why it cannot be written
+    /// entries deliberately omit the `generator` stamp, which moves with
+    /// every generator source (see [`without_generator_stamp`] for why it
+    /// cannot be written
     /// down), so a schema check run against them would be certifying a
     /// shape no producer emits — and the negative cases below would be
     /// mutating a control that was already invalid.
@@ -27106,11 +27109,25 @@ mod anchor_contract_tests {
     /// records every consumer's validator still accepts — documented
     /// and unenforced. That gap is precisely the state this surface was
     /// in before the field existed: the contract told consumers to pin
-    /// a commit, and nothing made the payload name one.
+    /// the SCE they read, and nothing made the payload name it.
     #[test]
     fn diagnostic_schema_rejects_a_missing_generator_stamp() {
         assert_one_change_is_rejected("generator absent", |obj| {
             obj.remove("generator");
+        });
+    }
+
+    /// The stamp is the generator's source digest, and a commit is not
+    /// one. Commit-shaped hex is what the field held before it named the
+    /// sources, and a pattern that still admitted it would let a producer
+    /// built the old way pass for one built from a known set of sources.
+    #[test]
+    fn diagnostic_schema_rejects_a_generator_that_is_a_commit() {
+        assert_one_change_is_rejected("generator holding a short commit", |obj| {
+            obj.insert(
+                "generator".to_string(),
+                serde_json::Value::String("619ff5be8834".to_string()),
+            );
         });
     }
 
