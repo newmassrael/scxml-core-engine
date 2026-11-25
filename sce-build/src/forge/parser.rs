@@ -4783,6 +4783,13 @@ fn parse_codec(
     // codegen-time lookup).
     validate_codec_length_field_refs(&fields, label, &datamodel)?;
 
+    // The co-gating constraint of a repeat's count, for a length-ref
+    // field's length: a gated length source must gate the field
+    // it measures with the IDENTICAL predicate, so the decode reads the
+    // length as the value its absent-or-present local holds exactly where it
+    // reads the field.
+    validate_codec_length_present_if_co_gating(&fields, label, &datamodel)?;
+
     // A `tail` field consumes the rest of the frame by definition, so no
     // field may follow it. Reject the contradictory layout at parse time
     // rather than emitting a codec that silently fails to decode.
@@ -8076,6 +8083,83 @@ fn validate_codec_repeat_present_if_co_gating(
                         "<sce:repeat id='{}'> in codec '{}'",
                         field.id, label.identifier
                     ),
+                    attr: "sce:present-if".into(),
+                    value,
+                    rule,
+                },
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The co-gating rule of
+/// [`validate_codec_repeat_present_if_co_gating`], for the sibling a
+/// `sce:length-field="X"` names. A gated `X` is absent from the wire where
+/// its gate is off, so the field it measures must be gated by the IDENTICAL
+/// predicate: the two are then present together, and the decode reads the
+/// length as the value `X`'s local holds, under the one test of that value,
+/// with no unwrap that a frame could reach. Two shapes are rejected:
+///   * the field UNCONDITIONAL — it would be read with no length when `X`'s
+///     gate is off;
+///   * the field gated by `P != Q` — the length could be absent while the
+///     field is present.
+///
+/// An unconditional `X` suits any field, gated or not. A dotted
+/// `<carrier>.<flag>` length is bits of a carrier, which no predicate gates,
+/// and is not checked here.
+fn validate_codec_length_present_if_co_gating(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    for field in fields {
+        let Some(target) = field.length_field.as_deref().map(str::trim) else {
+            continue;
+        };
+        if target.contains('.') {
+            continue;
+        }
+        let Some(length_pred) = fields
+            .iter()
+            .find(|f| f.id.as_str() == target)
+            .and_then(|f| f.present_if.as_ref())
+        else {
+            continue;
+        };
+        let reject = match &field.present_if {
+            Some(field_pred) if field_pred == length_pred => None,
+            Some(field_pred) => Some((
+                format!(
+                    "field='{}' vs length='{}'",
+                    format_present_if_predicate_for_diag(field_pred),
+                    format_present_if_predicate_for_diag(length_pred)
+                ),
+                format!(
+                    "co-gating contract: length source field '{target}' MUST carry \
+                     the IDENTICAL sce:present-if predicate as the field it \
+                     measures — scope, field_id, flag_name, and negate must match"
+                ),
+            )),
+            None => Some((
+                format!(
+                    "field unconditional, length='{target}' gated on '{}'",
+                    format_present_if_predicate_for_diag(length_pred)
+                ),
+                format!(
+                    "co-gating contract: an unconditional field is always on the \
+                     wire, so its length source '{target}' must also be \
+                     unconditional — gate the field with the same sce:present-if \
+                     as '{target}', or drop the present-if on '{target}'"
+                ),
+            )),
+        };
+        if let Some((value, rule)) = reject {
+            return Err(located(
+                &field_element(datamodel, &field.id),
+                label.diagnostic_label,
+                ValidationError::AttributeRuleViolated {
+                    element: format!("field '{}' in codec '{}'", field.id, label.identifier),
                     attr: "sce:present-if".into(),
                     value,
                     rule,

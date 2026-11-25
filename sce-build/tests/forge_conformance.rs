@@ -9220,6 +9220,124 @@ fn forge_codec_repeat_unconditional_with_gated_count_rejects() {
     );
 }
 
+/// The co-gating contract of a length-ref field's length. The rule
+/// of a repeat's count, for the sibling `sce:length-field` names: a gated
+/// length must gate the field it measures with the IDENTICAL predicate, so
+/// the decode reads the length as the value its local holds under the one test
+/// of that value, and no frame reaches an unwrap of an absent length.
+///
+/// Case 1: the identical predicate on both — ACCEPTED.
+#[test]
+fn forge_codec_length_present_if_identical_predicate_accepts() {
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="length_cogated">
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_body" bit="0"/>
+      <sce:flag name="has_len"  bit="1"/>
+    </sce:flags>
+    <sce:field id="body_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_body"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="body_len" sce:max-size="8"
+               sce:present-if="carrier.has_body"/>
+  </datamodel>
+</scxml>"#;
+    sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("length_cogated"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("a length gated as the field it measures must be accepted");
+}
+
+/// Case 2: the length gated by a DIFFERENT predicate than the field: the
+/// field could be on the wire with no length to read it by.
+#[test]
+fn forge_codec_length_present_if_predicate_mismatch_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="length_mismatch">
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_body" bit="0"/>
+      <sce:flag name="has_len"  bit="1"/>
+    </sce:flags>
+    <sce:field id="body_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_len"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="body_len" sce:max-size="8"
+               sce:present-if="carrier.has_body"/>
+  </datamodel>
+</scxml>"#;
+    let err = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("length_mismatch"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .err()
+    .expect("a length gated apart from the field it measures must be rejected");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, ref rule, .. }
+                    if attr == "sce:present-if" && rule.contains("length source field 'body_len'"))
+        ),
+        "must surface as AttributeRuleViolated on sce:present-if naming the length; got: {:?}",
+        err.error
+    );
+}
+
+/// Case 3: the field UNCONDITIONAL, its length gated: an always-present field
+/// would be read with no length when the gate is off.
+#[test]
+fn forge_codec_length_gated_for_an_unconditional_field_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="length_gated_field_not">
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_body" bit="0"/>
+      <sce:flag name="has_len"  bit="1"/>
+    </sce:flags>
+    <sce:field id="body_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_len"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="body_len" sce:max-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let err = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("length_gated_field_not"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .err()
+    .expect("an unconditional field with a gated length must be rejected");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, ref rule, .. }
+                    if attr == "sce:present-if" && rule.contains("an unconditional field"))
+        ),
+        "must surface as AttributeRuleViolated on sce:present-if; got: {:?}",
+        err.error
+    );
+}
+
 // ── RFC §synth-5-B dotted-path length-field parser-validation rejects ──
 //
 // Mirrors present-if's reject coverage (forward-reference,
