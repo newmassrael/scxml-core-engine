@@ -16,6 +16,15 @@
 #   a value that is none of the declared routes is let through;
 #   a value that names no route raises nothing.
 #
+# A value in none of the declared routes leaves the target empty, and an empty target is
+# refused twice in a row: by the template's own `isUnreachableTarget` test, and then by
+# `StaticExecutionEngine::sendToTarget`, whose `SendHelper::classifyTarget` reads it as
+# unreachable, and whose answer the template reports as the same error.communication
+# (6738c8b2b3a). Taking the first away alone left the second to raise it, so the round of
+# 2026-11-24 (run 45318713297) read SURVIVED. The mutant takes both away for an empty
+# target, and leaves the second to report a declared route nobody answers at (`#_parent`
+# with no parent), which is another decision.
+#
 # The template is read by the generator binary CMake already holds, so the build the
 # ctest names carries a mutated template into the generated machine. Anchors are
 # literal slices of the template; an edit that moves one is reported INCONCLUSIVE
@@ -35,4 +44,7 @@ mutation_case "a value that names no route raises nothing" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
      "if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {",
      "if (false && ::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {")
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    if (routed == Engine::TargetSendOutcome::Unreachable) {",
+     "    if (routed == Engine::TargetSendOutcome::Unreachable && !dynamicTarget.empty()) {")
 PY
