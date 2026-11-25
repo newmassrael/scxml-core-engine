@@ -400,7 +400,11 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Self::decode_into(cursor, &mut _out{{ decode_forward_args_with_comma }})?;
         Ok(_out)
 {% else %}
-        {% if decode_forward_args_with_comma %}cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }})){% else %}cursor.read_frame(Self::read){% endif %}
+{% if decode_forward_args_with_comma %}
+        cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }}))
+{% else %}
+        cursor.read_frame(Self::read)
+{% endif %}
 {% endif %}
     }
 
@@ -746,7 +750,11 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// The view is the value its read builds, answered as it is: no default of
     /// it is made first and copied over (docs/adr/0137).
     pub fn decode(cursor: &mut SceCursor<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
-        {% if decode_forward_args_with_comma %}cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }})){% else %}cursor.read_frame(Self::read){% endif %}
+{% if decode_forward_args_with_comma %}
+        cursor.read_frame(|cursor| Self::read(cursor{{ decode_forward_args_with_comma }}))
+{% else %}
+        cursor.read_frame(Self::read)
+{% endif %}
     }
 
     /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`
