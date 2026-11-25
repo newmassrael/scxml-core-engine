@@ -344,3 +344,33 @@ fn a_scan_counts_the_entries_it_read_whole() {
         }
     }
 }
+
+/// A body a length bounds is read from those bytes by a function of the
+/// reader. A view's body that takes nothing else is that function, its own
+/// `read`, named: a closure that only passes the reader on is one Clippy
+/// refuses (`redundant_closure`), and every other closure adds something, the
+/// destination it fills, the `Some` of a gated body or the flags it hands on.
+#[test]
+fn a_body_a_length_bounds_is_read_by_its_own_read() {
+    let code = rust_of("codec_zenoh_decl_ext_keyexpr");
+    assert!(
+        code.contains(
+            "cursor.within(total_length as usize, CodecZenohDeclExtKeyexprInnerView::read);"
+        ),
+        "the view does not read its bounded body by the body's own read:\n{code}"
+    );
+    for line in code.lines().filter(|line| line.contains("|_inner| ")) {
+        let (_, body) = line
+            .split_once("|_inner| ")
+            .expect("the line holds the closure");
+        let forwards = body
+            .strip_suffix(");")
+            .and_then(|call| call.strip_suffix("(_inner)"))
+            .is_some_and(|path| !path.contains('('));
+        assert!(
+            !forwards,
+            "a closure only passes its reader on: {}",
+            line.trim()
+        );
+    }
+}

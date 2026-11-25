@@ -20146,7 +20146,18 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                     Some((assign, value)) if !stores => (format!("{assign} = "), value.to_string()),
                     _ => (String::new(), body.to_string()),
                 };
-                format!("{assign}cursor.within({sibling} as usize, |_inner| {value});")
+                // A view's body that is always present and takes no flag input
+                // is its own `read` of the bytes, handed over as that function:
+                // a closure that only passes its reader on is one Clippy refuses
+                // (`redundant_closure`). Every other read holds what the closure
+                // adds, the destination it fills, the `Some` of a gated body or
+                // the flags it is handed.
+                let read = if !stores && !gated && thread_arg.is_empty() {
+                    format!("{body_type}::read")
+                } else {
+                    format!("|_inner| {value}")
+                };
+                format!("{assign}cursor.within({sibling} as usize, {read});")
             };
             match (&test_lit, len_expr(Language::Rust)) {
                 (None, None) => into_field("cursor", false),
