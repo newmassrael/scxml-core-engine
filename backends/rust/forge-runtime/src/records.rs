@@ -13,8 +13,8 @@
 //! record handed out and not read is skipped by the next head.
 //!
 //! [`ChainHook`] is shown each entry of a `<sce:tlv-chain>` right after it is
-//! read, in the one read of the frame, and may refuse it; what it refuses is the
-//! frame's refusal.
+//! read, in the one read of the frame, and may refuse it ([`EntryRefused`]);
+//! what it refuses is the frame's refusal, [`CodecError::ChainEntryRefused`].
 
 use core::marker::PhantomData;
 
@@ -31,20 +31,36 @@ pub struct ChainSite {
     pub field: &'static str,
 }
 
+/// A chain hook's refusal of an entry: the entry is well formed and the
+/// consumer does not admit it. It is the one thing a hook can answer besides
+/// admitting, so a hook cannot say a frame is short or malformed when the
+/// frame is neither; why the hook refused is the hook's own to keep. The
+/// frame's verdict says it as [`CodecError::ChainEntryRefused`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryRefused;
+
+impl From<EntryRefused> for CodecError {
+    #[inline]
+    fn from(_: EntryRefused) -> Self {
+        CodecError::ChainEntryRefused
+    }
+}
+
 /// What a generated read shows each chain entry to: `entry` is the bytes the
 /// entry occupies in the frame, shown right after it is read and before the
-/// next one is. An `Err` refuses the frame there, with that error as its
-/// verdict; an entry admitted is kept or skipped as the reading form keeps it.
+/// next one is. An `Err` refuses the frame there, its verdict
+/// [`CodecError::ChainEntryRefused`]; an entry admitted is kept or skipped as
+/// the reading form keeps it.
 ///
 /// `()` admits every entry, and a read with `()` is the read without a hook.
 pub trait ChainHook {
     /// Admit or refuse one entry of the chain `site`.
-    fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), CodecError>;
+    fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), EntryRefused>;
 }
 
 impl ChainHook for () {
     #[inline(always)]
-    fn entry(&mut self, _site: ChainSite, _entry: &[u8]) -> Result<(), CodecError> {
+    fn entry(&mut self, _site: ChainSite, _entry: &[u8]) -> Result<(), EntryRefused> {
         Ok(())
     }
 }
@@ -64,7 +80,7 @@ pub fn show_entry<H: ChainHook>(
     }
     let entry = reader.since(at);
     if let Err(refused) = hook.entry(site, entry) {
-        reader.fail(refused);
+        reader.fail(refused.into());
     }
 }
 
@@ -257,6 +273,29 @@ mod tests {
     }
 
     #[test]
+    fn a_hooks_refusal_is_its_own_kind_of_verdict() {
+        assert_eq!(
+            CodecError::from(EntryRefused),
+            CodecError::ChainEntryRefused
+        );
+        let mut r = SceReader::new(&[1u8, 0]);
+        let at = r.mark();
+        r.take_array::<2>();
+        let mut hook = Below { limit: 0, seen: 0 };
+        show_entry(
+            &mut r,
+            &mut hook,
+            ChainSite {
+                codec: "counted",
+                field: "body",
+            },
+            at,
+        );
+        assert_eq!(hook.seen, 1);
+        assert_eq!(r.verdict(), Err(CodecError::ChainEntryRefused));
+    }
+
+    #[test]
     fn a_record_is_one_pointer() {
         assert_eq!(
             core::mem::size_of::<Record<'_, '_, Counted>>(),
@@ -284,12 +323,12 @@ mod tests {
     }
 
     impl ChainHook for Below {
-        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), CodecError> {
+        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), EntryRefused> {
             assert_eq!(site.codec, "counted");
             self.seen += 1;
             match entry.first() {
                 Some(&b) if b < self.limit => Ok(()),
-                _ => Err(CodecError::TooManyElements),
+                _ => Err(EntryRefused),
             }
         }
     }
@@ -303,7 +342,7 @@ mod tests {
             records.record::<Counted>().read_with(&mut hook);
         }
         assert_eq!(hook.seen, 2);
-        assert_eq!(records.verdict(), Err(CodecError::TooManyElements));
+        assert_eq!(records.verdict(), Err(CodecError::ChainEntryRefused));
         assert_eq!(records.consumed(), 3);
     }
 

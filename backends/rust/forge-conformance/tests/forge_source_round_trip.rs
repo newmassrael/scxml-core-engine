@@ -1292,7 +1292,7 @@ mod records {
         CodecZenohNetworkEnvelopeRecord as Record, CodecZenohNetworkEnvelopeRecords as Records,
     };
     use super::codecs::codec_zenoh_oam::CodecZenohOamView;
-    use sce_forge_runtime::codec::{ChainHook, ChainSite, CodecError, SceCursor};
+    use sce_forge_runtime::codec::{ChainHook, ChainSite, CodecError, EntryRefused, SceCursor};
 
     const OAM_EXTENSIONS: ChainSite = ChainSite {
         codec: "codec_zenoh_oam",
@@ -1323,12 +1323,10 @@ mod records {
     }
 
     impl ChainHook for Seen {
-        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), CodecError> {
+        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), EntryRefused> {
             self.entries.push((site, entry.to_vec()));
             match (self.refuse, entry.first()) {
-                (Some(refused), Some(&first)) if refused == first => {
-                    Err(CodecError::TooManyElements)
-                }
+                (Some(refused), Some(&first)) if refused == first => Err(EntryRefused),
                 _ => Ok(()),
             }
         }
@@ -1417,7 +1415,7 @@ mod records {
         let mut hook = Seen::refusing(0x02);
         assert_eq!(
             oam_ids(&[0x9f, 0x05, 0x81, 0x02, 0x1f, 0x07], &mut hook),
-            (vec![], Err(CodecError::TooManyElements), 0)
+            (vec![], Err(CodecError::ChainEntryRefused), 0)
         );
         assert_eq!(hook.entries.len(), 2);
     }
@@ -1447,7 +1445,7 @@ mod records {
         let mut cursor = SceCursor::new(&bytes);
         assert_eq!(
             CodecZenohOamView::decode_with(&mut cursor, &mut view, &mut refusing),
-            Err(CodecError::TooManyElements)
+            Err(CodecError::ChainEntryRefused)
         );
         assert_eq!(cursor.remaining(), 4);
         assert_eq!(refusing.entries, vec![(OAM_EXTENSIONS, vec![0x81])]);

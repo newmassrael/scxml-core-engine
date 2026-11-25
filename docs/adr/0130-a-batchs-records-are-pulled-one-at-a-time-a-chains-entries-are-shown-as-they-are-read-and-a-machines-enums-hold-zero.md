@@ -4,6 +4,7 @@
   ignored. Sections 1, 2 and 4 are this record's decisions; section 3 records the runtime half that landed with ADR
   0128's integration (a3b833ee19b) and adds only the printer's half, and section 5 finishes the single ZInt read that
   landed there (25af0b8b61e) by giving the frame reader the same body.
+- Amended (2026-11-25): a chain hook's refusal is a kind of its own (section 2).
 - Amends: ADR 0049 (a decoded Rust codec is a view over its wire bytes): a view's read takes a chain hook. ADR 0128 (a
   frame's reads are total and its verdict is read once): a sequence of frames is read through one reader, whose first
   refusal ends the sequence.
@@ -65,12 +66,23 @@ The rest of the codec does not change: `{Codec}View::decode` still reads one fra
 
 The runtime gains `ChainHook` (`backends/rust/forge-runtime/src/records.rs`, re-exported from `codec`):
 
+    pub struct EntryRefused;
+
     pub trait ChainHook {
-        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), CodecError>;
+        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), EntryRefused>;
     }
 
 `ChainSite` names the chain (`codec`, `field`) and `entry` is the bytes the entry occupies. `()` is the hook that
 admits every entry, inlined to nothing.
+
+A hook's refusal is a kind of its own. A hook answers admit or `EntryRefused` and nothing else, so it cannot say a
+frame is short or malformed when the frame is neither; the frame's reader records the refusal as
+`CodecError::ChainEntryRefused`, a variant of the one error type every verdict is (ADR 0128), and a consumer tells its
+own refusal from the frame's by that variant. Why the hook refused is the hook's own state, which the consumer holds
+after the read. The kind is the Rust runtime's alone: only a Rust view reads with a hook, and the document's grammar
+never decides it, so it is no kind of the decode vocabulary every runtime declares (ADR 0099) and no reject vector
+names it. `CodecError` is `#[non_exhaustive]`, and no code of the repository maps its kinds one by one to another
+name (the bare-metal probe answers every refusal as one status), so the variant is total wherever a verdict is read.
 
 Every Rust view gains `read_with(cursor, .., hook)` and `decode_with`; `read` is `read_with` with `()`. A view
 hands the hook to every body it reads (an embedded body, an arm, a list's entry), so one hook sees every chain of a
@@ -130,6 +142,13 @@ which `SceCursor::read_vle_*` and `SceReader::read_vle_*` both run, the reader r
   largest arm's view on the stack of every call, whatever the record is. Refused for the sequence; kept for one frame.
 - **Find a record's extent in `next` and hand the consumer its bytes.** A frame of ZInts and chains has no extent
   until it is read, so the record would be read twice. Refused.
+- **Let a hook refuse with any `CodecError`.** A hook could then answer `TooManyElements` or `NeedMoreBytes` for a
+  frame that is neither, and a consumer reading the verdict could not tell its own refusal from the frame's. Refused.
+- **Give the hook an error type of its own (`type Error`).** The verdict of a frame read with a hook would be
+  `CodecError` or `H::Error`, so `SceReader`, `Records`, `decode_with` and every view's read would carry the hook's
+  type, the one verdict type of ADR 0128 would become one per hook, and every mapping of a verdict to a status a caller
+  of another language reads would be one per hook as well. The hook's reason is its state and needs no channel through
+  the verdict. Refused.
 - **Give the hook the entry's view, typed.** Each chain would need a hook of its entry's type, and a hook threaded
   through every body would need a bound for every entry type a frame reaches. The bytes of the entry are what a
   judgement of a header reads. Refused.

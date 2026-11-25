@@ -181,6 +181,15 @@ pub enum CodecError {
     /// the frame is refused rather than read as another arm's body: the tag is
     /// one the document knows, not one for its catch-all `<sce:default>`.
     VariantArmNotBuilt,
+    /// Decode-side (docs/adr/0130 §2): the chain hook a frame was read with
+    /// refused an entry of a `<sce:tlv-chain>` ([`crate::records::EntryRefused`]).
+    /// The frame is well formed and its consumer does not admit it: an
+    /// extension the consumer does not know and its protocol marks mandatory.
+    /// Only a read with a hook raises it, which a Rust view has and the
+    /// document's grammar never decides, so it is no kind of the decode
+    /// vocabulary every runtime declares (docs/adr/0099) and no reject vector
+    /// names it. Why the hook refused is the hook's own to keep.
+    ChainEntryRefused,
 }
 
 /// Project an owned list into the bounded inline list
@@ -295,7 +304,9 @@ pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // The reader a generated decode reads one frame through (docs/adr/0128), spelled
 // from the same path as the cursor it starts from.
 pub use crate::reader::SceReader;
-pub use crate::records::{show_entry, ChainHook, ChainSite, Record, RecordRead, Records};
+pub use crate::records::{
+    show_entry, ChainHook, ChainSite, EntryRefused, Record, RecordRead, Records,
+};
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};
