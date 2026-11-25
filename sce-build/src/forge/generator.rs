@@ -12757,28 +12757,39 @@ fn rust_group_storage(
         // one gate on a bare entry holds, placed at its first entry of the
         // kind. A view of a bare entry's chain holds it over its bytes, so it
         // reads the others without the named entry. The gates the decode
-        // tested say which, so no construction can fail.
+        // tested say which, so no construction fails on a frame the reader
+        // read whole; each is still a `Result`, whose refusal the frame's
+        // reader records ([`rust_arm_made`]), so the decode stays total
+        // (docs/adr/0128).
         let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
             let local = codec_field_decode_local(&f.id, l.lang);
             let bound = rust_bound_most(crate::forge::codec_totality::list_bound(f, &m.fields));
-            let list = if f.present_if.is_some() {
-                format!("{local}.ok_or(CodecError::PresentIfMismatch)?.into_inner()")
-            } else {
-                format!("{local}.into_inner()")
+            // A construction `make` of the list the chain was read as: a gated
+            // chain's local holds the list where the arm says it is present.
+            let from_list = |make: &dyn Fn(&str) -> String| -> String {
+                if f.present_if.is_some() {
+                    format!(
+                        "{local}.ok_or(CodecError::PresentIfMismatch).and_then(|_l| {})",
+                        make("_l.into_inner()")
+                    )
+                } else {
+                    make(&format!("{local}.into_inner()"))
+                }
             };
             let bare = group.member_is_bare();
             let (held, _) = group.kinds_in(arm);
             if bare && !held.is_empty() {
                 let key = key_type(&struct_name, &f.id, held[0]);
-                let place = if view {
-                    format!("{RUNTIME_CODEC}::place_first_in::<_, {key}, {bound}>({list})")
+                let door = if view {
+                    "place_first_in"
                 } else {
-                    format!("{RUNTIME_CODEC}::place_first::<_, {key}, {bound}>({list})")
+                    "place_first"
                 };
-                return format!(
-                    "{}: {place}.map_err(|_| CodecError::PresentIfMismatch)?",
-                    acc(f)
-                );
+                return from_list(&|list: &str| {
+                    format!(
+                        "{RUNTIME_CODEC}::{door}::<_, {key}, {bound}>({list}).map_err(|_| CodecError::PresentIfMismatch)"
+                    )
+                });
             }
             let refined = |list: &str| {
                 let list = if view && bare {
@@ -12790,49 +12801,70 @@ fn rust_group_storage(
             };
             if chain_optional_in(group, f, arm) {
                 format!(
-                    "{}: {local}.map(|_l| {}).transpose()?",
-                    acc(f),
+                    "{local}.map(|_l| {}).transpose()",
                     refined("_l.into_inner()")
                 )
             } else {
-                format!("{}: {}?", acc(f), refined(&list))
+                from_list(&refined)
             }
         };
-        let build = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| -> String {
+        // Each element of an arm as the arm is built of it: its name in the
+        // arm, and its value or the construction that makes it.
+        let elements = |arm: &ArmOfGroup<'_>, view: bool| -> Vec<RustArmElement> {
             arm.1
                 .iter()
                 .map(|f| {
                     let local = codec_field_decode_local(&f.id, l.lang);
                     if holds_chain(group, f) {
-                        chain_built(f, arm.0, view)
+                        RustArmElement::Made {
+                            name: acc(f),
+                            made: chain_built(f, arm.0, view),
+                        }
                     } else if let Some(second) = second_in(arm.0, f) {
                         // The one count read both lists, and the gate the second.
-                        format!(
-                            "{}: {RUNTIME_CODEC}::Aligned::new({local}, {}.ok_or(CodecError::PresentIfMismatch)?).ok_or(CodecError::InconsistentSource)?",
-                            held_name(arm.0, f),
-                            codec_field_decode_local(&second.id, l.lang),
-                        )
+                        RustArmElement::Made {
+                            name: held_name(arm.0, f),
+                            made: format!(
+                                "{}.ok_or(CodecError::PresentIfMismatch).and_then(|_s| {RUNTIME_CODEC}::Aligned::new({local}, _s).ok_or(CodecError::InconsistentSource))",
+                                codec_field_decode_local(&second.id, l.lang),
+                            ),
+                        }
                     } else if f.present_if.is_some() {
-                        format!("{}: {local}.unwrap_or_default()", acc(f))
+                        RustArmElement::Value {
+                            name: acc(f),
+                            value: format!("{local}.unwrap_or_default()"),
+                        }
                     } else {
-                        shorthand(&acc(f), &local)
+                        RustArmElement::Value {
+                            name: acc(f),
+                            value: local,
+                        }
                     }
                 })
-                .collect::<Vec<_>>()
-                .join(", ")
+                .collect()
         };
-        let built = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| {
-            held(format!("{} {{ {} }}", arm.2, build(arm, view)))
-        };
+        // Whether an arm is made of a construction: then every arm, and the
+        // value of no arm, is a `Result` the frame's reader settles.
+        let made = arms.iter().any(|arm| {
+            elements(arm, false)
+                .iter()
+                .any(|e| matches!(e, RustArmElement::Made { .. }))
+        });
         // One gate: the arm it holds in, and the other arm or none. A
         // disjunction: each arm under the values it names, and none under the
         // one assignment that does not satisfy it. A chain's memberships have
         // an arm under every assignment.
         let arm_refs: Vec<&ArmOfGroup<'_>> = arms.iter().collect();
         let assign_in = |view: bool| -> String {
-            arm_by_gates(&tests, &arm_refs, optional.then_some("None"), &|arm| {
-                built(arm, view)
-            })
+            let none = if made { "Ok(None)" } else { "None" };
+            let select = arm_by_gates(&tests, &arm_refs, optional.then_some(none), &|arm| {
+                rust_arm_made(&arm.2, &elements(arm, view), optional, made)
+            });
+            if made {
+                format!("cursor.settle({select})")
+            } else {
+                select
+            }
         };
         entry.insert("assign_expr".into(), assign_in(false).into());
         // A view builds the chain of the memberships over its bytes, which the
@@ -13643,16 +13675,23 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                 )
             };
             // A chain's memberships name an arm under every assignment of the
-            // gates; no other case is written where they do.
+            // gates; no other case is written where they do. Where one is, it
+            // records the contradiction and answers that the chain neither
+            // settled nor filled, which the loop leaves at, the reader having
+            // failed.
             let every_assignment = arms.len() == 1usize << tests.len();
+            let not_held = format!("{{ {RUST_ARM_NOT_HELD}; (false, false) }}");
             let present_select = arm_by_gates(
                 tests,
                 &arm_refs,
-                (!every_assignment).then_some(RUST_ARM_NOT_HELD),
+                (!every_assignment).then_some(not_held.as_str()),
                 &read_into,
             );
             // An absent chain holds no entry of any kind, so its arm is one
-            // where every membership is clear.
+            // where every membership is clear. The arm is stored by the case
+            // the gates select, and an assignment that names no arm where the
+            // chain is absent records the contradiction and stores nothing,
+            // so no value is written over the destination for a refused frame.
             let select_read = match chain.present_if.as_ref() {
                 None => present_select,
                 Some(pred) => {
@@ -13660,12 +13699,15 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                         .iter()
                         .filter(|a| chain_optional_in(group, chain, a.0))
                         .collect();
-                    let absent_value =
+                    let absent_store =
                         arm_by_gates(tests, &absent, Some(RUST_ARM_NOT_HELD), &|arm| {
-                            defaults_but(arm, Some("None"))
+                            format!(
+                                "{RUST_DECODE_OUT}.{accessor} = {}",
+                                defaults_but(arm, Some("None"))
+                            )
                         });
                     format!(
-                        "if {} {{\n                {present_select}\n            }} else {{\n                {RUST_DECODE_OUT}.{accessor} = {absent_value};\n                (true, false)\n            }}",
+                        "if {} {{\n                {present_select}\n            }} else {{\n                {absent_store}\n                (true, false)\n            }}",
                         present_if_test_literal(&m.fields, pred, l.lang)
                     )
                 }
@@ -13727,7 +13769,8 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                              // Read again into the arm its kinds name, the chain holds them\n                \
                              // all unless it had no room for one of each: the value cannot\n                \
                              {unheld}\n                \
-                             {RUST_ARM_NOT_HELD};\n            \
+                             {RUST_ARM_NOT_HELD};\n                \
+                             break;\n            \
                          }}\n            \
                          {first} = false;\n            \
                          cursor.rewind({at});\n        \
@@ -13835,15 +13878,18 @@ fn in_arms_of(group: &str, cases: &[(String, String)], others: bool) -> String {
     }
 }
 
-/// What a Rust decode answers on a branch its own gates leave no frame to
+/// What a Rust decode records on a branch its own gates leave no frame to
 /// take: a group's arm that does not hold what the gates read, a chain read
 /// again that does not hold the kinds it was read with, an assignment of the
 /// gates that names no arm. The gates are read off the same frame, so no
 /// frame reaches it; it is the chain and the gates contradicting each other,
-/// answered as the refusal of that contradiction rather than as a panic,
-/// whose message an image without formatting would still carry the
-/// machinery for.
-const RUST_ARM_NOT_HELD: &str = "return Err(CodecError::PresentIfMismatch)";
+/// recorded in the frame's reader as the refusal of that contradiction
+/// (docs/adr/0128) rather than raised as a panic, whose message an image
+/// without formatting would still carry the machinery for. It is an
+/// expression of type `()`: the place it stands in adds what the code around
+/// it needs (a `break` out of a loop, the value a selection answers), and
+/// every read after it is a no-op.
+const RUST_ARM_NOT_HELD: &str = "cursor.fail(CodecError::PresentIfMismatch)";
 
 /// `stmt`, which reads an element into its field `place` (`_out.<id>`) as an
 /// element outside a group is read, as it reads it into `_p`, the field of the
@@ -13975,6 +14021,58 @@ fn bounded_list(ty: &str) -> String {
         }
     }
     unreachable!("a Bounded names its list and its bound")
+}
+
+/// An element of an arm of a group as a Rust decode builds the arm of it
+/// ([`rust_group_storage`]): a value it is set to, or a construction that
+/// answers `Result<_, CodecError>` and holds on every frame the reader read
+/// whole, the gates having been read off the same frame.
+enum RustArmElement {
+    /// The element's name in the arm and the value it is set to.
+    Value { name: String, value: String },
+    /// The element's name in the arm and the construction that makes it.
+    Made { name: String, made: String },
+}
+
+/// The arm whose path is `path` built of `elements`, in `Some` where the group
+/// is `optional`, as a total decode reads it (docs/adr/0128). Where
+/// `in_result` (some arm of the group is made of a construction) it is a
+/// `Result` that holds the arm: each construction taken in order where those
+/// before it held, and the first refusal answered. The caller settles that
+/// `Result` in the frame's reader, so no construction is answered with `?`
+/// and none panics. Otherwise it is the arm itself.
+fn rust_arm_made(
+    path: &str,
+    elements: &[RustArmElement],
+    optional: bool,
+    in_result: bool,
+) -> String {
+    let mut fields: Vec<String> = Vec::new();
+    let mut steps: Vec<(String, &str)> = Vec::new();
+    for element in elements {
+        match element {
+            RustArmElement::Value { name, value } => fields.push(shorthand(name, value)),
+            RustArmElement::Made { name, made } => {
+                let binding = format!("_m{}", steps.len());
+                fields.push(shorthand(name, &binding));
+                steps.push((binding, made.as_str()));
+            }
+        }
+    }
+    let literal = format!("{path} {{ {} }}", fields.join(", "));
+    let literal = if optional {
+        format!("Some({literal})")
+    } else {
+        literal
+    };
+    match steps.split_last() {
+        None if in_result => format!("Ok({literal})"),
+        None => literal,
+        Some(((binding, last), before)) => before.iter().rev().fold(
+            format!("{last}.map(|{binding}| {literal})"),
+            |inner, (binding, step)| format!("{step}.and_then(|{binding}| {inner})"),
+        ),
+    }
 }
 
 /// The field `name` of a struct literal set to `value`: the shorthand where the

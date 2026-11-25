@@ -188,6 +188,109 @@ fn a_frame_is_read_into_place_without_a_default_written_first() {
     }
 }
 
+/// Codecs whose decode has a branch no frame takes, a contradiction of its own
+/// gates, which are read off the same frame, and what each records there: a
+/// chain whose memberships are gates, read in place and read again; a gated
+/// list or body read where the arm its gates installed holds it; two lists of
+/// one count paired by value; a variant whose arms cover its tag's domain.
+const CONTRADICTIONS: [(&str, &[&str]); 7] = [
+    (
+        "codec_chain_has_envelope",
+        &["cursor.fail(CodecError::PresentIfMismatch)"],
+    ),
+    (
+        "codec_chain_has_marker",
+        &["cursor.fail(CodecError::PresentIfMismatch)"],
+    ),
+    (
+        "codec_chain_has_tagged",
+        &["cursor.fail(CodecError::PresentIfMismatch); break;"],
+    ),
+    (
+        "codec_repeat_unconditional_count",
+        &["cursor.fail(CodecError::PresentIfMismatch);"],
+    ),
+    (
+        "codec_zenoh_value_zbuf",
+        &["cursor.fail(CodecError::PresentIfMismatch);"],
+    ),
+    (
+        "codec_repeat_flag_aligned_group",
+        &[
+            "cursor.settle(",
+            ".and_then(|_s| ::sce_forge_runtime::codec::Aligned::new(links, _s)",
+        ],
+    ),
+    (
+        "codec_variant_peek_basic",
+        &["_ => cursor.fail(CodecError::UndeclaredEnumValue),"],
+    ),
+];
+
+/// A branch of a decode its own gates leave no frame to take records the
+/// contradiction in the frame's reader, as every other refusal is recorded
+/// (docs/adr/0128): no read propagates it with `?` or returns it, and none
+/// panics on it, so a bare-metal image carries no panic path for a frame that
+/// cannot arrive. Each codec's reads hold what it records there, read with
+/// their whitespace as one space.
+#[test]
+fn a_contradiction_of_the_gates_is_recorded_in_the_reader() {
+    for (name, records) in CONTRADICTIONS {
+        let code = rust_of(name);
+        let reads: Vec<&str> = ["read", "read_into"]
+            .into_iter()
+            .flat_map(|fun| bodies(&code, fun))
+            .collect();
+        assert!(!reads.is_empty(), "{name} has no read");
+        for body in &reads {
+            for answer in [")?", "]?"] {
+                assert!(
+                    !body.contains(answer),
+                    "{name} answers a verdict inside its read (`{answer}`):\n{body}"
+                );
+            }
+            for (at, _) in body.match_indices("return Err(") {
+                assert!(
+                    body[at..].starts_with("return Err(CodecError::CapacityExceeded)"),
+                    "{name} returns a refusal the reader should hold:\n{body}"
+                );
+            }
+            for panic in ["unreachable!(", "panic!(", ".expect(", ".unwrap()"] {
+                assert!(
+                    !body.contains(panic),
+                    "{name} panics on a frame its gates contradict (`{panic}`):\n{body}"
+                );
+            }
+        }
+        // Read with its whitespace as one space, so a record is found however
+        // the statement around it is laid out.
+        let flat: Vec<String> = reads
+            .iter()
+            .map(|body| body.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        for record in records {
+            assert!(
+                flat.iter().any(|body| body.contains(record)),
+                "{name} does not record its contradiction as `{record}`:\n{}",
+                reads.join("\n")
+            );
+        }
+    }
+    // A view of a variant reads its arm as a value, so where the tag is outside
+    // the arms it records the refusal and is the arm the verdict discards.
+    let code = rust_of("codec_variant_peek_basic");
+    let recorded = ["read", "read_into"]
+        .into_iter()
+        .flat_map(|fun| bodies(&code, fun))
+        .filter(|body| body.contains("cursor.fail(CodecError::UndeclaredEnumValue)"))
+        .count();
+    assert!(
+        recorded >= 2,
+        "codec_variant_peek_basic records an undeclared tag in fewer than its eager \
+         and its view read:\n{code}"
+    );
+}
+
 /// A walk reads each entry with the view's total read, inlined, and tests no
 /// refusal of its own: the list's walk names no `Result`.
 #[test]

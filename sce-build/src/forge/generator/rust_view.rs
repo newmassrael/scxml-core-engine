@@ -248,9 +248,9 @@ impl ViewList<'_> {
     /// constructor. The scan has refused an entry past the bound already, with
     /// the error the eager decode gives, and a chain closed by an entry flag
     /// with no entry as short (R7), so the constructor's refusal is never
-    /// reached on a frame read whole. The constructors are one chain settled in
-    /// the frame's reader once (docs/adr/0128): on a frame that failed they make
-    /// the list's default, and the reader keeps the first refusal.
+    /// reached on a frame read whole. The constructors are one chain, a
+    /// `Result` the field's value settles in the frame's reader
+    /// ([`Self::value`]).
     fn build(&self) -> String {
         let args = self
             .inputs
@@ -272,22 +272,28 @@ impl ViewList<'_> {
         };
         // Each entry the scan read was read under the start, so the list follows
         // its law and this refusal is never reached either (docs/adr/0065 §6 R8).
-        let made = match self.law_start {
+        match self.law_start {
             Some(start) => format!(
                 "{bounded}.and_then(|_l| {RUNTIME_CODEC}::Lawful::new({start}, _l).ok_or(CodecError::PresentIfMismatch))"
             ),
             None => bounded,
-        };
-        format!("cursor.settle({made})")
+        }
     }
 
-    /// The field's value, from `build`, as the field holds it.
+    /// The field's value, from `build`, as the field holds it, settled in the
+    /// frame's reader (docs/adr/0128): on a frame that failed it is the
+    /// field's default, and the reader keeps the first refusal.
+    ///
+    /// A gated list is settled as the `Option` the field holds, whose default
+    /// is the absent list: a gated list of one entry or more is a `ListView`
+    /// held to that fewest ([`list_type`]), which has no default of its own,
+    /// so settling the list itself would ask the build for one.
     fn value(&self) -> String {
         let list = self.build();
         if self.field.present_if.is_some() {
-            format!("Some({list})")
+            format!("cursor.settle({list}.map(Some))")
         } else {
-            list
+            format!("cursor.settle({list})")
         }
     }
 }

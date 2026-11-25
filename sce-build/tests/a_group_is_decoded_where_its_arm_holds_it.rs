@@ -244,7 +244,9 @@ fn two_lists_of_one_count_are_filled_where_their_arm_holds_them() {
 /// pair: the pair's door gives the second as many default entries as the first,
 /// which need not follow the law (docs/adr/0065 §6 R8), so the decode reads both
 /// lists into locals, the second from the flag it hands its entries, and pairs
-/// them by value, where the one count is held with the law.
+/// them by value, where the one count is held with the law. The pairing is a
+/// construction the gates make hold, settled in the frame's reader rather than
+/// answered with `?` (docs/adr/0128).
 #[test]
 fn two_lists_of_one_count_whose_second_is_lawful_are_paired_by_value() {
     let name = "codec_repeat_flag_aligned_group";
@@ -258,11 +260,13 @@ fn two_lists_of_one_count_whose_second_is_lawful_are_paired_by_value() {
         &body,
         "weights.get_or_insert_with(Default::default).refill_from(",
     );
+    assert_contains(name, &body, "_out.head_h = cursor.settle(");
+    assert_contains(name, &body, "links_weights: _m0");
     assert_contains(
         name,
         &body,
-        "links_weights: ::sce_forge_runtime::codec::Aligned::new(links, \
-         weights.ok_or(CodecError::PresentIfMismatch)?).ok_or(CodecError::InconsistentSource)?",
+        "weights.ok_or(CodecError::PresentIfMismatch).and_then(|_s| \
+         ::sce_forge_runtime::codec::Aligned::new(links, _s).ok_or(CodecError::InconsistentSource))",
     );
 }
 
