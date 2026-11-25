@@ -640,11 +640,15 @@ fn lower_at(
         }
         ExprTarget::C => emit_c(&ast, expected)?.to_string(),
         ExprTarget::Js => {
-            let text = emit_js(&ast, expected)?;
+            let value = emit_js(&ast, expected)?;
             if !ctx.exact_integers && js_value_may_be_wide(&ast, expected) {
-                format!("{}.out({text})", crate::forge::static_js::RUNTIME_GLOBAL)
+                JsExpr::path_call(
+                    format!("{}.out", crate::forge::static_js::RUNTIME_GLOBAL),
+                    vec![value],
+                )
+                .to_string()
             } else {
-                text
+                value.to_string()
             }
         }
     };
@@ -3613,7 +3617,7 @@ pub fn transpile_lvalue(
         ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::C => emit_c(&ast, InferredType::Unknown)?.to_string(),
-        ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?,
+        ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?.to_string(),
     };
     Ok((emitted, ty))
 }
@@ -14033,33 +14037,54 @@ const PYTHON_COALESCE_IS_A_CALL: &str =
 //   their width: a Number's own are 32-bit and signed, so `x & 0xFFFFFFFF` would
 //   read as -1 where every backend reads 4294967295.
 
+// * The expression is built as a tree of the ECMAScript expressions it is made
+//   of ([`JsExpr`], `expr/js_tree.rs`) and printed once, where it leaves
+//   this layer: every parenthesis is the printer's, decided by the kinds of the
+//   nodes around it and the precedence ECMA-262's grammar gives them, and no
+//   rule here groups anything or reads back what it has written.
+
+pub(crate) mod js_tree;
+
+use js_tree::{JsBinOp, JsExpr, JsUnOp};
+
 /// The largest integer a Number holds exactly, 2^53 - 1 — the largest an integer
 /// literal is written as a Number, and the largest the runtime library hands
 /// back as one.
 const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
-fn js_binop(op: BinOp) -> &'static str {
+fn js_binop(op: BinOp) -> JsBinOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "===",
-        BinOp::StrictNeq => "!==",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>>",
+        BinOp::Add => JsBinOp::Add,
+        BinOp::Sub => JsBinOp::Sub,
+        BinOp::Mul => JsBinOp::Mul,
+        BinOp::Div => JsBinOp::Div,
+        BinOp::Mod => JsBinOp::Mod,
+        BinOp::StrictEq => JsBinOp::StrictEq,
+        BinOp::StrictNeq => JsBinOp::StrictNe,
+        BinOp::Lt => JsBinOp::Lt,
+        BinOp::Gt => JsBinOp::Gt,
+        BinOp::LtEq => JsBinOp::Le,
+        BinOp::GtEq => JsBinOp::Ge,
+        BinOp::And => JsBinOp::And,
+        BinOp::Or => JsBinOp::Or,
+        BinOp::BitAnd => JsBinOp::BitAnd,
+        BinOp::BitOr => JsBinOp::BitOr,
+        BinOp::BitXor => JsBinOp::BitXor,
+        BinOp::Shl => JsBinOp::Shl,
+        BinOp::Shr => JsBinOp::Shr,
+        BinOp::UShr => JsBinOp::UShr,
         BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+    }
+}
+
+fn js_unop(op: UnaryOp) -> JsUnOp {
+    match op {
+        UnaryOp::Neg => JsUnOp::Neg,
+        UnaryOp::Pos => JsUnOp::Pos,
+        UnaryOp::Not => JsUnOp::Not,
+        UnaryOp::BitNot => {
+            unreachable!("a `~` is the library's `not` before an operator is looked up")
+        }
     }
 }
 
@@ -14150,7 +14175,8 @@ fn js_integer_namespace(ty: InferredType, what: &str) -> Result<String, ExprErro
     ))
 }
 
-fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+/// The ECMAScript expression `expr` is where a value of `expected` is wanted.
+fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<JsExpr, ExprError> {
     use crate::forge::static_js::{INTEGER_WIDTHS, PAYLOAD_ACCESSOR, RUNTIME_GLOBAL};
     // An optional value (docs/adr/0055) is `null` where it is absent and the
     // value itself where it is present, so `null` is the literal, a value of `T`
@@ -14168,10 +14194,12 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         // engine's own `??`, which the lowered document would then need an
         // engine of that edition to read.
         Some(OptionalForm::Otherwise { value, fallback }) => {
-            return Ok(format!(
-                "{RUNTIME_GLOBAL}.otherwise({}, function () {{ return {}; }})",
-                emit_js(value, value.ty)?,
-                emit_js(fallback, expr.ty.unwrap_optional())?
+            return Ok(JsExpr::path_call(
+                format!("{RUNTIME_GLOBAL}.otherwise"),
+                vec![
+                    emit_js(value, value.ty)?,
+                    JsExpr::function(emit_js(fallback, expr.ty.unwrap_optional())?),
+                ],
             ))
         }
         Some(
@@ -14188,18 +14216,22 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             if !INTEGER_WIDTHS.contains(&bits) {
                 return Err(total_unlowered(*op, *rule, "Interpreter"));
             }
-            format!(
-                "{RUNTIME_GLOBAL}.{}{bits}.{}({})",
-                if signed { "I" } else { "U" },
-                camel_helper(*op, *rule),
-                operands.join(", ")
+            JsExpr::path_call(
+                format!(
+                    "{RUNTIME_GLOBAL}.{}{bits}.{}",
+                    if signed { "I" } else { "U" },
+                    camel_helper(*op, *rule)
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => js_number_literal(n)?,
+        ExprKind::NumberLit(n) => JsExpr::atom(js_number_literal(n)?),
         // The value, written as an ECMAScript literal again: the lexer read the
         // author's escapes, so the spelling is the one escaper's, not the
         // author's.
-        ExprKind::StringLit { value } => crate::filters::ecmascript_string_literal(value),
+        ExprKind::StringLit { value } => {
+            JsExpr::atom(crate::filters::ecmascript_string_literal(value))
+        }
         // An algorithm holds bytes as an array of numbers, which no literal spells
         // ([`bytes_literals_as_text`] makes a statechart's data model's constants
         // text before they reach here).
@@ -14209,9 +14241,11 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 observed: None,
             })
         }
-        ExprKind::BoolLit(b) => b.to_string(),
-        ExprKind::NullLit => "null".to_string(),
-        ExprKind::Ident(s) | ExprKind::Raw(s) => s.clone(),
+        ExprKind::BoolLit(b) => JsExpr::atom(b.to_string()),
+        ExprKind::NullLit => JsExpr::atom("null"),
+        // A name as authored, or a fragment another pass wrote whole, which
+        // stands as one operand.
+        ExprKind::Ident(s) | ExprKind::Raw(s) => JsExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } => {
             // Bitwise operations and shifts are outside the integer contract and
             // wrap at their width (SCE_FORGE.md §3.4.1), which is the library's
@@ -14219,13 +14253,11 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             if op.is_bitwise() {
                 let namespace = js_integer_namespace(
                     expr.ty,
-                    &format!("the bitwise operator `{}`", js_binop(*op)),
+                    &format!("the bitwise operator `{}`", js_binop(*op).token()),
                 )?;
-                return Ok(format!(
-                    "{namespace}.{}({}, {})",
-                    js_bitwise_helper(*op),
-                    emit_js(left, expr.ty)?,
-                    emit_js(right, expr.ty)?
+                return Ok(JsExpr::path_call(
+                    format!("{namespace}.{}", js_bitwise_helper(*op)),
+                    vec![emit_js(left, expr.ty)?, emit_js(right, expr.ty)?],
                 ));
             }
             // A real division is `/`; between two integers it is the truncating
@@ -14249,10 +14281,9 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 let helper = CheckedOp::of_binary(*op)
                     .expect("an arithmetic operator has a checked form")
                     .helper();
-                return Ok(format!(
-                    "{namespace}.{helper}({}, {})",
-                    emit_js(left, operand_ty)?,
-                    emit_js(right, operand_ty)?
+                return Ok(JsExpr::path_call(
+                    format!("{namespace}.{helper}"),
+                    vec![emit_js(left, operand_ty)?, emit_js(right, operand_ty)?],
                 ));
             }
             // Two integers ordered by `<` where one may be a BigInt are ordered
@@ -14269,86 +14300,46 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             // A 64-bit integer that meets a real is the real nearest to it, as
             // on every backend (`Number(big)` rounds to nearest, ties to even),
             // and a bare operator over a BigInt and a real throws a TypeError.
-            let as_real = |child: &TypedExpr, text: String| {
-                if matches!(operand_ty, InferredType::Float { .. })
+            let operand = |child: &TypedExpr| -> Result<JsExpr, ExprError> {
+                let value = emit_js(child, operand_ty)?;
+                Ok(if ordered_as_big {
+                    JsExpr::path_call("BigInt", vec![value])
+                } else if matches!(operand_ty, InferredType::Float { .. })
                     && matches!(child.ty, InferredType::Int { bits: 64, .. })
                 {
-                    format!("Number({text})")
+                    JsExpr::path_call("Number", vec![value])
                 } else {
-                    text
-                }
+                    value
+                })
             };
-            let operand = |child: &TypedExpr, left_side: bool| -> Result<String, ExprError> {
-                let text = emit_js(child, operand_ty)?;
-                if ordered_as_big {
-                    return Ok(format!("BigInt({text})"));
-                }
-                let converted = as_real(child, text.clone());
-                if converted != text {
-                    return Ok(converted);
-                }
-                Ok(
-                    if child_needs_parens(child, *op, left_side, ecma_precedence) {
-                        format!("({text})")
-                    } else {
-                        text
-                    },
-                )
-            };
-            let l = operand(left, true)?;
-            let r = operand(right, false)?;
+            let l = operand(left)?;
+            let r = operand(right)?;
             let integer_operands = matches!(
                 operand_ty,
                 InferredType::Int { .. } | InferredType::UntypedInt
             );
             if *op == BinOp::Div && integer_operands {
-                format!("Math.trunc({l} / {r})")
+                JsExpr::path_call("Math.trunc", vec![JsExpr::binary(JsBinOp::Div, l, r)])
             } else {
-                format!("{l} {} {r}", js_binop(*op))
+                JsExpr::binary(js_binop(*op), l, r)
             }
         }
-        ExprKind::Unary { op, operand } => {
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                UnaryOp::Not => "!",
-                UnaryOp::BitNot => {
-                    let namespace = js_integer_namespace(expr.ty, "the bitwise operator `~`")?;
-                    return Ok(format!("{namespace}.not({})", emit_js(operand, expr.ty)?));
-                }
-            };
-            let inner = emit_js(operand, expr.ty)?;
-            // `- -x` is one token, `--x`, in ECMAScript: a sign in front of a
-            // sign is wrapped as an operand of an operator is.
-            let sign = matches!(op, UnaryOp::Neg | UnaryOp::Pos);
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            ) || (sign && matches!(&operand.kind, ExprKind::Unary { .. }));
-            if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            }
+        ExprKind::Unary {
+            op: UnaryOp::BitNot,
+            operand,
+        } => {
+            let namespace = js_integer_namespace(expr.ty, "the bitwise operator `~`")?;
+            JsExpr::path_call(format!("{namespace}.not"), vec![emit_js(operand, expr.ty)?])
         }
+        ExprKind::Unary { op, operand } => emit_js(operand, expr.ty)?.prefixed(js_unop(*op)),
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
         } => {
-            let wrap = |e: &TypedExpr, s: String| {
-                if matches!(&e.kind, ExprKind::Conditional { .. }) {
-                    format!("({s})")
-                } else {
-                    s
-                }
-            };
-            format!(
-                "{} ? {} : {}",
-                wrap(condition, emit_js(condition, InferredType::Bool)?),
-                wrap(consequent, emit_js(consequent, expr.ty)?),
-                emit_js(alternate, expr.ty)?,
-            )
+            let condition = emit_js(condition, InferredType::Bool)?;
+            let consequent = emit_js(consequent, expr.ty)?;
+            JsExpr::conditional(condition, consequent, emit_js(alternate, expr.ty)?)
         }
         // A field of the event's data. Under `sce-static` it is typed by the
         // event's schema, and an event's data reaches the Interpreter as
@@ -14368,22 +14359,26 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                     observed: Some(format!("{PAYLOAD_ACCESSOR}.{property}")),
                 });
             };
-            format!("{RUNTIME_GLOBAL}.field({PAYLOAD_ACCESSOR}, '{property}', '{kind}')")
+            JsExpr::path_call(
+                format!("{RUNTIME_GLOBAL}.field"),
+                vec![
+                    JsExpr::atom(PAYLOAD_ACCESSOR),
+                    JsExpr::atom(format!("'{property}'")),
+                    JsExpr::atom(format!("'{kind}'")),
+                ],
+            )
         }
-        ExprKind::Member { object, property } => format!(
-            "{}.{property}",
-            wrap_postfix(object, emit_js(object, InferredType::Unknown)?)
-        ),
-        ExprKind::Index { object, index } => format!(
-            "{}[{}]",
-            wrap_postfix(object, emit_js(object, InferredType::Unknown)?),
-            emit_js(index, InferredType::Unknown)?,
-        ),
+        ExprKind::Member { object, property } => {
+            emit_js(object, InferredType::Unknown)?.member(property.as_str())
+        }
+        ExprKind::Index { object, index } => {
+            let object = emit_js(object, InferredType::Unknown)?;
+            object.indexed(emit_js(index, InferredType::Unknown)?)
+        }
         ExprKind::Call {
             callee,
             args,
             params,
-            fails,
             ..
         } => {
             if is_len_builtin(callee, args) {
@@ -14392,9 +14387,9 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 // `length` (UTF-16 units) is not; a list and a byte string (one
                 // character to a byte) by their `length`.
                 return Ok(if args[0].ty == InferredType::Str {
-                    format!("{RUNTIME_GLOBAL}.utf8Length({measured})")
+                    JsExpr::path_call(format!("{RUNTIME_GLOBAL}.utf8Length"), vec![measured])
                 } else {
-                    format!("{}.length", wrap_postfix(&args[0], measured))
+                    measured.member("length")
                 });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
@@ -14407,23 +14402,23 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 // real past 2^53 is a whole number a Number holds, and a BigInt
                 // is how the rest of the lowering holds it (`fromReal`).
                 return Ok(match op {
-                    RealToInt::Round => format!("{RUNTIME_GLOBAL}.round({inner})"),
-                    RealToInt::Floor => {
-                        format!("{RUNTIME_GLOBAL}.fromReal(Math.floor({inner}))")
+                    RealToInt::Round => {
+                        JsExpr::path_call(format!("{RUNTIME_GLOBAL}.round"), vec![inner])
                     }
+                    RealToInt::Floor => JsExpr::path_call(
+                        format!("{RUNTIME_GLOBAL}.fromReal"),
+                        vec![JsExpr::path_call("Math.floor", vec![inner])],
+                    ),
                 });
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_js(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_js(callee, InferredType::Unknown)?);
-            let call = format!("{symbol}({})", a.join(", "));
-            if *fails {
-                pass_failure_on(ExprTarget::Js, &symbol, &call, expr.ty)?
-            } else {
-                call
-            }
+            // A call of a `may-fail` function throws its failure, which passes
+            // itself on, as [`pass_failure_on`] spells it for the Interpreter:
+            // the call is written as it is.
+            JsExpr::call(emit_js(callee, InferredType::Unknown)?, a)
         }
         // SCE_FORGE.md §3.4.1: an index read through the library's `at`, which
         // refuses an index outside the collection where a bare read would give
@@ -14437,10 +14432,12 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             left,
             right: Some(index),
             ..
-        } => format!(
-            "{RUNTIME_GLOBAL}.at({}, {})",
-            emit_js(left, InferredType::Unknown)?,
-            emit_js(index, InferredType::Unknown)?,
+        } => JsExpr::path_call(
+            format!("{RUNTIME_GLOBAL}.at"),
+            vec![
+                emit_js(left, InferredType::Unknown)?,
+                emit_js(index, InferredType::Unknown)?,
+            ],
         ),
         // SCE_FORGE.md §3.4.1: the library's method for the operation's own
         // width, which computes exactly and throws for a result the width does
@@ -14472,11 +14469,13 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             if let Some(right) = right {
                 operands.push(emit_js(right, expr.ty)?);
             }
-            format!(
-                "{RUNTIME_GLOBAL}.{}{bits}.{}({})",
-                if signed { "I" } else { "U" },
-                op.helper(),
-                operands.join(", ")
+            JsExpr::path_call(
+                format!(
+                    "{RUNTIME_GLOBAL}.{}{bits}.{}",
+                    if signed { "I" } else { "U" },
+                    op.helper()
+                ),
+                operands,
             )
         }
     })
@@ -19342,14 +19341,21 @@ mod tests {
     fn js_parenthesises_by_ecmascript_precedence() {
         assert_eq!(js("(ready || false) && ready"), "(ready || false) && ready");
         assert_eq!(js("ready || (false && ready)"), "ready || false && ready");
+        // A branch of a conditional is an AssignmentExpression, which a
+        // conditional is; its condition is not.
         assert_eq!(
             js("ready ? (ready ? 1 : 2) : 3"),
-            "ready ? (ready ? 1 : 2) : 3"
+            "ready ? ready ? 1 : 2 : 3"
+        );
+        assert_eq!(
+            js("(ready ? ready : false) ? 1 : 2"),
+            "(ready ? ready : false) ? 1 : 2"
         );
         assert_eq!(js("!(level === 1)"), "!(level === 1)");
-        // A comparison under a comparison keeps its parentheses here too,
-        // where they change nothing (`child_needs_parens`).
-        assert_eq!(js("(level === 1) === ready"), "(level === 1) === ready");
+        // An equality associates to the left in ECMAScript, so one that is the
+        // left operand of another stands bare and one on the right is grouped.
+        assert_eq!(js("(level === 1) === ready"), "level === 1 === ready");
+        assert_eq!(js("ready === (level === 1)"), "ready === (level === 1)");
     }
 
     /// A sign in front of a sign is one token, `--`, in ECMAScript.
