@@ -40,9 +40,10 @@ case "$1" in
 esac
 "#;
 
-/// The files of this checkout the script needs to run in a repository of its
-/// own: itself, and the locator it resolves the generator through.
-const SCRIPTS: &[&str] = &["scripts/generated_diff.sh", "scripts/lib/sce_codegen.sh"];
+/// The script under test. The fixture holds it and every file it sources, as
+/// [`sourced_closure`] reads them from the scripts themselves, so a file a
+/// script comes to source is in the fixture without this test being told.
+const SCRIPT: &str = "scripts/generated_diff.sh";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -100,15 +101,70 @@ fn make_executable(path: &Path) {
 #[cfg(not(unix))]
 fn make_executable(_path: &Path) {}
 
-/// A repository holding the script, its locator and the fixture generator.
+/// The files `text`, the checkout's file `file`, sources, as paths of the
+/// checkout. The two spellings the scripts use are read: a path under
+/// `$REPO_ROOT`, and a file beside the sourcing one. Any other spelling
+/// fails here, naming the line, rather than leaving a sourced file out of the
+/// fixture.
+fn sourced_by(file: &str, text: &str) -> Vec<String> {
+    const BESIDE: &str = "\"$(dirname \"${BASH_SOURCE[0]}\")/";
+    const UNDER_ROOT: &str = "\"$REPO_ROOT/";
+    let dir = Path::new(file)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or_default();
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim_start();
+            let argument = line
+                .strip_prefix("source ")
+                .or_else(|| line.strip_prefix(". "))?
+                .trim_start();
+            let (base, rest) = if let Some(rest) = argument.strip_prefix(BESIDE) {
+                (dir, rest)
+            } else if let Some(rest) = argument.strip_prefix(UNDER_ROOT) {
+                ("", rest)
+            } else {
+                panic!("{file}: a source this fixture cannot place: {line}")
+            };
+            let (name, _) = rest
+                .split_once('"')
+                .unwrap_or_else(|| panic!("{file}: an unclosed quote: {line}"));
+            Some(if base.is_empty() {
+                name.to_string()
+            } else {
+                format!("{base}/{name}")
+            })
+        })
+        .collect()
+}
+
+/// `entry` and every file it sources, directly or through another, as paths
+/// of the checkout, `entry` first.
+fn sourced_closure(entry: &str) -> Vec<String> {
+    let mut files = vec![entry.to_string()];
+    let mut next = 0;
+    while let Some(file) = files.get(next).cloned() {
+        let text = read(&repo_root().join(&file));
+        for sourced in sourced_by(&file, &text) {
+            if !files.contains(&sourced) {
+                files.push(sourced);
+            }
+        }
+        next += 1;
+    }
+    files
+}
+
+/// A repository holding the script, what it sources and the fixture generator.
 fn fixture() -> TempDir {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
-    for script in SCRIPTS {
-        let to = root.join(script);
+    for script in sourced_closure(SCRIPT) {
+        let to = root.join(&script);
         fs::create_dir_all(to.parent().expect("a script has a directory"))
             .expect("create the script's directory");
-        fs::copy(repo_root().join(script), &to).expect("copy the script");
+        fs::copy(repo_root().join(&script), &to).expect("copy the script");
     }
     let generator = root.join("target/debug/sce-codegen");
     fs::create_dir_all(generator.parent().expect("the generator has a directory"))
@@ -139,7 +195,7 @@ fn commit_trees(root: &Path, trees: &[(&str, &str)]) -> String {
 fn render(root: &Path, out: &Path, base: &str, head: &str) -> Output {
     let mut command = hermetic(Command::new("bash"));
     command
-        .arg("scripts/generated_diff.sh")
+        .arg(SCRIPT)
         .arg("--out")
         .arg(out)
         .args([base, head])
@@ -280,4 +336,40 @@ fn a_tree_the_base_cannot_materialize_is_named_and_the_render_goes_on() {
     );
     assert!(!out.join("alpha.patch").exists());
     assert!(read(&out.join("beta.patch")).contains("+two"));
+}
+
+/// Both spellings of a sourced file are placed in the checkout, beside the
+/// sourcing file or under its root, and a comment that reads like one is not
+/// a source.
+#[test]
+fn a_sourced_file_is_placed_where_the_script_finds_it() {
+    let text = "source \"$REPO_ROOT/scripts/lib/a.sh\"\n    . \"$(dirname \"${BASH_SOURCE[0]}\")/b.sh\"\n# source \"$ELSEWHERE/c.sh\"\n";
+
+    let sourced = sourced_by("scripts/lib/x.sh", text);
+
+    assert_eq!(sourced, vec!["scripts/lib/a.sh", "scripts/lib/b.sh"]);
+}
+
+/// A spelling the fixture cannot place fails, rather than leaving the file
+/// out of the fixture.
+#[test]
+#[should_panic(expected = "a source this fixture cannot place")]
+fn a_source_the_fixture_cannot_place_fails() {
+    sourced_by("scripts/x.sh", "source \"$ELSEWHERE/c.sh\"\n");
+}
+
+/// The fixture holds what the script reaches through its locator: the locator
+/// sources the file that keeps Cargo's home out of a build, and a fixture
+/// without it fails every render before it starts.
+#[test]
+fn the_fixture_holds_what_the_script_sources_through_another() {
+    let files = sourced_closure(SCRIPT);
+
+    assert_eq!(files.first().map(String::as_str), Some(SCRIPT));
+    for needed in [
+        "scripts/lib/sce_codegen.sh",
+        "scripts/lib/reproducible_paths.sh",
+    ] {
+        assert!(files.iter().any(|f| f == needed), "{needed}: {files:?}");
+    }
 }
