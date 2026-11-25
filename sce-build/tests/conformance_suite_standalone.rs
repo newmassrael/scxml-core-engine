@@ -85,6 +85,31 @@ fn emit(language: &str, name: Option<&str>, out: &Path) {
     );
 }
 
+/// A tool of the toolchain whose cargo built this test, by its path beside
+/// that cargo, for the nested `cargo test` to run instead of what `PATH`
+/// names.
+///
+/// `env!("CARGO")` is that toolchain's own cargo, but cargo does not choose
+/// its compiler: unless told, it runs `rustc` and `rustdoc` off `PATH`, and
+/// on a rustup host those are proxies that choose a toolchain for each run. A
+/// proxy started below another one inherits the toolchain that one chose
+/// (rustup exports `RUSTUP_TOOLCHAIN` to what it starts), which is the case
+/// under `cargo test`. A test binary run on its own, as `scripts/mutate` runs
+/// it, inherits nothing, and each proxy reads the `rust-toolchain.toml` above
+/// the directory it runs in. Cargo compiles a registry crate from that crate's
+/// own directory, and `quote`, `proc-macro2`, `anyhow` and `thiserror` each
+/// ship one asking for `components = ["rust-src"]`. So the proxies installed
+/// rust-src into the default toolchain in the middle of the build, two at
+/// once, and the second install failed on the first one's download ("could
+/// not rename 'downloaded' file", mutation sweep 45318713297, both shards). A
+/// crate whose file named a channel would have changed compilers mid-build.
+///
+/// Naming the tools by path takes the proxies out: the suite is compiled by
+/// the release that compiled this test, and nothing is installed during it.
+fn toolchain_tool(name: &str) -> PathBuf {
+    Path::new(env!("CARGO")).with_file_name(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
@@ -126,13 +151,25 @@ fn an_emitted_rust_suite_builds_and_passes_under_the_callers_own_crate_name() {
         // full rebuild of every shared dependency under a different
         // fingerprint.
         .env_remove("RUSTFLAGS")
+        .env("RUSTC", toolchain_tool("rustc"))
+        .env("RUSTDOC", toolchain_tool("rustdoc"))
         .output()
         .expect("spawn cargo test in the emitted suite");
+    // rustup prints this line when a proxy installs a component the
+    // directory it ran in asks for. A host that already has the component
+    // prints nothing either way; one that lacks it, as a hosted runner's
+    // minimal install does, prints it whenever a proxy compiled the suite.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("downloading component"),
+        "the emitted suite must be compiled by the toolchain that built this \
+         test, not by a rustup proxy that installs what a dependency's \
+         rust-toolchain.toml asks for.\nstderr:\n{stderr}",
+    );
     assert!(
         output.status.success(),
-        "the emitted suite must build and pass on its own.\nstdout:\n{}\nstderr:\n{}",
+        "the emitted suite must build and pass on its own.\nstdout:\n{}\nstderr:\n{stderr}",
         String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -140,6 +177,51 @@ fn an_emitted_rust_suite_builds_and_passes_under_the_callers_own_crate_name() {
         "the fixture must actually run — a suite that compiles and \
          collects nothing passes for the wrong reason.\nstdout:\n{stdout}",
     );
+}
+
+/// The tools the nested build above is given are the ones of the toolchain
+/// whose cargo runs it: present beside that cargo, and of its release.
+///
+/// A pin to a path that is not there would fail that build for a reason that
+/// is not the suite, and a pin to another release would compile the suite
+/// with a compiler this test was not built by.
+#[test]
+fn the_nested_build_is_given_the_tools_of_the_cargo_that_built_this_test() {
+    fn release(tool: &Path) -> String {
+        let output = Command::new(tool)
+            .arg("-V")
+            .output()
+            .unwrap_or_else(|e| panic!("spawn {} -V: {e}", tool.display()));
+        assert!(
+            output.status.success(),
+            "{} -V must succeed",
+            tool.display()
+        );
+        // `cargo 1.100.0 (...)`, `rustc 1.100.0 (...)`: the second word.
+        String::from_utf8_lossy(&output.stdout)
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or_else(|| panic!("{} -V printed no release", tool.display()))
+            .to_string()
+    }
+    let cargo = Path::new(env!("CARGO"));
+    let cargo_release = release(cargo);
+    for name in ["rustc", "rustdoc"] {
+        let tool = toolchain_tool(name);
+        assert!(
+            tool.is_file(),
+            "{} is not there, beside {}",
+            tool.display(),
+            cargo.display(),
+        );
+        assert_eq!(
+            release(&tool),
+            cargo_release,
+            "{} is not of the release of {}",
+            tool.display(),
+            cargo.display(),
+        );
+    }
 }
 
 /// The emitted Go module names the caller's module and carries what it
