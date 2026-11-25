@@ -23,21 +23,22 @@
 # What stays here is what only a push knows: which refs are being pushed and
 # what they change relative to the remote.
 #
-# A push of a ref other than main is bounded. `PUSH_BUDGET_S` in the registry
-# is the ceiling on what this hook may cost — the owner set it at five minutes
-# — and the gates that did not fit are marked `ci_only`: no push of another ref
-# runs them, and CI does. The hook prints which ones it handed over at the end
-# of a run, because a delegation nobody is told about is how a CI lane stays
-# red for eight pushes.
+# Every push is bounded. `PUSH_BUDGET_S` in the registry is the ceiling on
+# what this hook may cost — the owner set it at five minutes — and the gates
+# that did not fit are marked `ci_only`: no push runs them, and CI does. The
+# hook prints which ones it handed over at the end of a run, because a
+# delegation nobody is told about is how a CI lane stays red for eight pushes.
 #
-# A push that UPDATES MAIN is the landing queue's judgment, and it runs every
-# gate its change reaches, `ci_only` included (`--landing`), on the build
-# machines. Only the queue's integrator can make that push (a GitHub ruleset
-# refuses any other), and it runs this hook for the landing push's own line to
-# judge each candidate. The gates whose platform the fleet does not have, and
-# those whose cost has no bound in the tree (`audited_after_landing` in the
-# registry), are left to hosted CI's audit and named. prepush-gates.sh says
-# why; the registry makes the selection.
+# A push that UPDATES MAIN is the landing queue's judgment. Only the queue's
+# integrator can make that push (a GitHub ruleset refuses any other), and it
+# runs this hook for the landing push's own line to judge each candidate. It
+# selects what any push selects, on the owner's decision of 2026-11-25: before
+# landing only the fast, deterministic gates that fit the budget, and no
+# automatic revert; hosted CI audits the `ci_only` gates on main after
+# landing, and a red there is repaid by a follow-up commit. What a landing
+# changes is how its units run (`--landing`: a skip is not a pass), and the
+# registry names the gates it left to that audit. prepush-gates.sh says why;
+# the registry makes the selection.
 #
 # `PREPUSH_FULL=1` runs every gate regardless of paths, `ci_only` included,
 # so it is NOT bounded by the budget and is the deliberate way to verify a
@@ -257,7 +258,7 @@ fi
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prepush-gates.sh"
 prepush_select_refs <<<"$GATED_REFS"
 if (( ${#PREPUSH_SELECT_ARGS[@]} )); then
-    printf '\n==> pre-push: this push updates refs/heads/main — the landing selection, ci_only gates included\n' >&2
+    printf '\n==> pre-push: this push updates refs/heads/main — judged as a landing, ci_only gates audited after it lands\n' >&2
 fi
 
 if [[ "${PREPUSH_FULL:-0}" == "1" ]]; then
@@ -351,8 +352,8 @@ run_gates "${PREPUSH_SELECT_ARGS[@]}" "${RANGE_ARGS[@]}" || gate_rc=$?
 # nothing said they were now the only thing looking. Printing the delegation
 # names the outstanding verdicts and the workflow that owns each, in the
 # terminal where the decision was made. On an update to main the list is the
-# gates the landing left to hosted CI because the fleet cannot run them: the
-# registry derives it from the same selection the push ran.
+# gates hosted CI audits after landing, whose red the next round repays with
+# a commit: the registry derives it from the same selection the push ran.
 #
 # Only on the path-scoped branch: `--all` above runs the ci_only gates too,
 # so on those branches nothing is owed. Failures here are swallowed — a

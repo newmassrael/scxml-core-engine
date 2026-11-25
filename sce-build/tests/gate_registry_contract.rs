@@ -1437,8 +1437,9 @@ fn registry_stdout(root: &Path, args: &[&str]) -> String {
 /// bx for the largest memory peak among the gates it runs.
 ///
 /// Each change is asked twice: as a push of another ref, and as an update to
-/// main (`--landing`), the landing queue's judgment, whose every unit says
-/// `--landing` so the runner counts no skip as a pass.
+/// main (`--landing`), the landing queue's judgment, which selects what any
+/// push selects and whose every unit says `--landing` so the runner counts no
+/// skip as a pass.
 #[test]
 fn the_push_hands_bx_the_set_the_registry_plans() {
     let root = repo_root();
@@ -1511,6 +1512,9 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
         // `--at` is asked of at least one unit.
         &["embed/MANIFEST.inputs"][..],
     ];
+    // What the push of another ref selected for the change asked just before,
+    // which its update to main must select as well.
+    let mut branch_selected: Option<BTreeSet<String>> = None;
     for (changed, landing) in changes.iter().flat_map(|c| [(*c, false), (*c, true)]) {
         let mut ask = vec!["--changed"];
         ask.extend_from_slice(changed);
@@ -1522,17 +1526,26 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
             .map(str::to_string)
             .collect();
 
-        // A Rust edit reaches `workspace-tests`, which is `ci_only`: a push of
-        // another ref leaves it to CI, and the landing queue's judgment runs
-        // it. Item 290 landed two errors of a `ci_only` gate on main while the
-        // landing left that gate out.
+        // An update to main selects what any push selects (the owner's
+        // decision of 2026-11-25, "What `ci_only` means" in the registry). A
+        // Rust edit reaches `workspace-tests`, which is `ci_only`: no push
+        // runs it, and hosted CI audits it after landing.
         if changed == ["sce-build/src/lib.rs"] {
-            assert_eq!(
-                selected.contains("workspace-tests"),
-                landing,
-                "{changed:?} (landing: {landing}): workspace-tests is selected \
-                 exactly when the push updates main: {selected:?}"
+            assert!(
+                !selected.contains("workspace-tests"),
+                "{changed:?} (landing: {landing}): workspace-tests is ci_only, \
+                 and no push selects it: {selected:?}"
             );
+        }
+        if landing {
+            assert_eq!(
+                Some(&selected),
+                branch_selected.as_ref(),
+                "{changed:?}: an update to main selects {selected:?}, not what a \
+                 push of another ref selects"
+            );
+        } else {
+            branch_selected = Some(selected.clone());
         }
 
         let mut plan_ask = vec!["--plan", "--rust", "1.0.0", "--changed"];

@@ -6,14 +6,14 @@
 # bx and a stand-in runner that record what they were asked and end with a status the case chooses.
 #
 # The selection:
-#   1. an update to refs/heads/main asks for the landing selection (--landing)
+#   1. an update to refs/heads/main says it is a landing (--landing)
 #   2. a push of another branch does not
 #   3. a deletion of main publishes nothing and does not
 #   4. a branch whose name only starts with main does not
 #   5. a push of a branch and main together does
 #
 # The whole hook, run as git runs it, so the wiring is what is tested and not a copy of it:
-#   6. a main update through bx plans the landing selection of its range
+#   6. a main update through bx plans its range as a landing
 #   7. bx's 2 (a unit not measured) is the hook's 2, never a 0 that would land the item
 #   8. bx's 1 is the hook's 1, and its 0 the hook's 0
 #   9. a branch push through bx plans without --landing
@@ -60,7 +60,7 @@ select_case() {
     if [[ "$got" == "$want" ]]; then pass "$name"; else fail "$name" "selection '$got', want '$want'"; fi
 }
 
-select_case "1 an update to main asks for the landing selection" landing "refs/heads/main $A refs/heads/main $B"
+select_case "1 an update to main says it is a landing" landing "refs/heads/main $A refs/heads/main $B"
 select_case "2 a push of another branch does not" none "refs/heads/topic $A refs/heads/topic $B"
 select_case "3 a deletion of main does not" none "(delete) $Z refs/heads/main $B"
 select_case "4 a branch named mainline does not" none "refs/heads/mainline $A refs/heads/mainline $B"
@@ -142,7 +142,7 @@ MAIN="refs/heads/main $TIP refs/heads/main $BASE"
 TOPIC="refs/heads/topic $TIP refs/heads/topic $BASE"
 PLAN="bx --checks prepush -- bash scripts/gate --plan"
 
-hook_case "6 a main update through bx plans the landing selection" 0 \
+hook_case "6 a main update through bx plans its range as a landing" 0 \
     "$PLAN --landing --changed-in $BASE..$TIP" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=0
 hook_case "7 bx's 2, a unit not measured, is the hook's 2" 2 \
     "$PLAN --landing --changed-in $BASE..$TIP" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=2

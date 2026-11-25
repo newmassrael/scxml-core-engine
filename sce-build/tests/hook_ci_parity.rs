@@ -51,9 +51,9 @@ fn read(rel: &str) -> String {
 /// alone would find no `cargo test` at all and pass by reading nothing.
 ///
 /// The hook hands the gates over through `run_gates` in
-/// `tools/git-hooks/prepush-gates.sh`, which it sources, and the selection it
-/// asks for (`--landing` for an update to main) is chosen there; that file is
-/// part of the surface for the same reason the gate scripts are.
+/// `tools/git-hooks/prepush-gates.sh`, which it sources, and whether the push
+/// is a landing (`--landing` for an update to main) is decided there; that file
+/// is part of the surface for the same reason the gate scripts are.
 fn hook_surface() -> String {
     let mut out = read("tools/git-hooks/pre-push");
     out.push('\n');

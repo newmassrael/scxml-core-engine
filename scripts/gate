@@ -12,7 +12,7 @@
 #   scripts/gate --measure --all      run and report each gate's wall clock
 #   scripts/gate --plan <selection>   print the bx check units for a selection
 #   scripts/gate --landing ...        run or plan as the judgment of an update
-#                                     to main: ci_only gates included, no skip
+#                                     to main: the push's gates, no skip
 #   scripts/gate --rust <release> ... run on that installed Rust release only
 #   scripts/gate --at <commit> ...    refuse to run unless HEAD is that commit
 #   scripts/gate --change-set A..B <slug>...
@@ -42,12 +42,12 @@
 # be kept" and `plan_units` in the registry for when a unit's pass is kept.
 #
 # `--landing` is the judgment of an update to main, which only the landing
-# queue's integrator can make. It changes which gates a change set (or
-# `--all`) selects: every gate the change reaches, `ci_only` included, less
-# the gates whose platform bx.toml does not declare, which it names. The
-# registry makes that choice (`push_keeps`), and a landing's plan puts the
-# flag in every unit. And it makes a skip a refusal: a gate that would skip
-# and exit 0 for want of a tool ends with 3, could not run, instead.
+# queue's integrator can make. A change set selects what it selects for any
+# push (the registry's `select`; the `ci_only` gates are hosted CI's to audit
+# after landing, and the plan names them), and `--all` selects every gate
+# the fleet can run. A landing's plan puts the flag in every unit, and it
+# makes a skip a refusal: a gate that would skip and exit 0 for want of a
+# tool ends with 3, could not run, instead.
 #
 # `--change-set` is how a plan's unit hands a gate that works per changed path
 # (`commits: ["CHANGES"]` in the registry) the push's ranges. It selects
@@ -379,8 +379,9 @@ case "$MODE" in
         ;;
     all)
         # Captured and THEN split, for the reason the `named` branch gives. A
-        # landing leaves out the gates hosted CI audits (`drop_hosted_only`), the
-        # same answer `--plan --all --landing` gives.
+        # full run as a landing's leaves out the gates the fleet cannot place
+        # or bound (`drop_hosted_only`), the answer `--plan --all --landing`
+        # gives.
         if ! ORDER_TEXT="$(python3 - "$REGISTRY" "$REPO_ROOT" "$LANDING" <<'PYEOF'
 import runpy, sys
 from pathlib import Path

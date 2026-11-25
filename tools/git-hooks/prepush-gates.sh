@@ -6,24 +6,25 @@
 # where the gates run. Sourced by `pre-push`, and by `test-prepush-gates.sh`,
 # which drives both functions with a stand-in bx and a stand-in runner.
 #
-# ## Which selection: an update to main is the landing queue's judgment
+# ## Whether the push is a landing: an update to main is the queue's judgment
 #
 # main moves only through the bx landing queue (bx RFC 0024): a GitHub ruleset
 # lets the queue's integrator alone update `refs/heads/main`, and the integrator
 # judges each candidate by running this hook for the landing push's own line,
-# `refs/heads/main <candidate> refs/heads/main <base>`. Measured 2026-11-08: a
-# landed item (cdba8e0eb0) was judged on 7 gates while 34 `ci_only` gates it
-# reached ran only after it landed, and main went red. So a push that updates
-# main asks for the landing selection (`--landing`): every gate the change
-# reaches, `ci_only` included, less the gates hosted CI audits in its place:
-# those whose platform the fleet does not have, and those whose cost the change
-# sets without a bound (`audited_after_landing`). A push of any other ref keeps
-# the selection it had, and the refs of the queue itself keep bx-land-refs.sh's
-# rules (a genuine item is not gated at all).
+# `refs/heads/main <candidate> refs/heads/main <base>`. Such a push says so
+# (`--landing`): it selects what any push selects, the gates that fit
+# `PUSH_BUDGET_S`, and every unit counts no skip as a pass. The `ci_only` gates
+# it reaches are audited by hosted CI after landing, and named. That is the
+# owner's decision of 2026-11-25, which replaced a judgment of every reached
+# gate (`ci_only` included, from 2026-11-08) that took about 1.5 h on the
+# fleet: before landing only fast, deterministic gates, no automatic revert,
+# and a red found after landing repaid by a follow-up commit (ADR 0120,
+# amendment of 2026-11-25). The refs of the queue itself keep
+# bx-land-refs.sh's rules (a genuine item is not gated at all).
 #
-# The flag is all this file decides. WHICH gates it selects is the registry's
-# (`push_keeps` in gate_registry.py), so the hook, the runner and the plan
-# cannot select differently.
+# The flag is all this file decides. WHICH gates are selected is the
+# registry's (`select` in gate_registry.py), so the hook, the runner and the
+# plan cannot select differently.
 #
 # ## Where: bx when `$BX` names it, else the runner in place
 #
