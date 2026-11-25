@@ -109,8 +109,16 @@ if [[ -n "${SCE_INTERFACE_STANDARD_SHARD:-}" ]]; then
     rm -rf "$SHARD_DIR"
     mkdir -p "$SHARD_DIR"
     sce_gate_step "planning shard $SCE_INTERFACE_STANDARD_SHARD of the measurement"
-    ninja -C "$BUILD_DIR" -t graph "${OUTPUTS[@]}" >"$WORK/generation.dot" \
-        || sce_gate_fail "could not read the generation rules' graph"
+    # The graph of the generation rules and of every compile's object: what
+    # ninja makes before an object is what that compile may include, and a
+    # generated header includes others no reader can see before it is written
+    # (`shard-plan` in the tool).
+    python3 "$TOOL" objects --compile-commands "$BUILD_DIR/compile_commands.json" \
+            --build-dir "$BUILD_DIR" --out "$WORK/objects.txt" \
+        || sce_gate_fail "could not list the objects the compile database names"
+    mapfile -t OBJECTS <"$WORK/objects.txt"
+    ninja -C "$BUILD_DIR" -t graph "${OUTPUTS[@]}" "${OBJECTS[@]}" >"$WORK/generation.dot" \
+        || sce_gate_fail "could not read the build graph of the generation rules and the objects"
     python3 "$TOOL" shard-plan --compile-commands "$BUILD_DIR/compile_commands.json" \
             --build-dir "$BUILD_DIR" --generation "$WORK/generation.txt" \
             --ninja-graph "$WORK/generation.dot" --std c++17 --std c++20 \

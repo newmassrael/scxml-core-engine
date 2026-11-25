@@ -806,6 +806,107 @@ class AShardPlanGivesEverySubjectToOneShard(unittest.TestCase):
         self.assertEqual(mine["accounting"]["gen:<build>/tests/gen/n_sm.h"], "absent")
 
 
+# Two generations ninja runs apart, one compile's: the parent's header includes
+# the child's, and neither command waits for the other. Only the build says
+# they belong together, by making both before the unit's object (a target's
+# generated sources are order-only prerequisites of each of its objects).
+DECLARED_GRAPH = "\n".join([
+    "digraph ninja {",
+    'rankdir="LR"',
+    '"0x1" [label="cgen/p_sm.h"]',
+    '"0x2" -> "0x1" [label=" CUSTOM_COMMAND"]',
+    '"0x2" [label="/src/p.scxml"]',
+    '"0x3" [label="cgen/p_child_sm.h"]',
+    '"0x4" -> "0x3" [label=" CUSTOM_COMMAND"]',
+    '"0x4" [label="/src/p_child.scxml"]',
+    # The target's order-only gathering of what it generates.
+    '"0x5" [label="cmake_object_order_depends_target_pv"]',
+    '"0xe5" [label="phony", shape=ellipse]',
+    '"0xe5" -> "0x5"',
+    '"0x1" -> "0xe5" [arrowhead=none style=dotted]',
+    '"0x3" -> "0xe5" [arrowhead=none style=dotted]',
+    # The unit's compile: its source, and the target's gathering order-only.
+    '"0x6" [label="backends/c/tests/CMakeFiles/pv.dir/v.c.o"]',
+    '"0xe6" [label="C_COMPILER__pv_unscanned_Release", shape=ellipse]',
+    '"0xe6" -> "0x6"',
+    '"0x7" -> "0xe6" [arrowhead=none]',
+    '"0x5" -> "0xe6" [arrowhead=none style=dotted]',
+    '"0x7" [label="/root/backends/c/tests/v.c"]',
+    "}",
+])
+
+DECLARED_PLANNED = ["cgen/p_child_sm.h", "cgen/p_sm.h"]
+
+
+class AShardGeneratesWhatTheBuildMakesBeforeACompile(unittest.TestCase):
+    """A compile that reaches a planned header needs what that header will
+    include, which only the build's prerequisites of the compile say."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        base = Path(self._tmp.name).resolve()
+        self.root = base / "root"
+        self.build = base / "build"
+        source = write(self.root / "backends/c/tests/v.c", '#include "p_sm.h"\n')
+        track(self.root)
+        self.build.mkdir(parents=True)
+        obj = "backends/c/tests/CMakeFiles/pv.dir/v.c.o"
+        self.entry = tool.Entry(str(self.build), str(source),
+                                ["cc", f"-I{self.build}/cgen", "-o", obj, "-c", str(source)],
+                                "pv", "backends/c/tests", "c", str(self.build / obj))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def graph(self):
+        return tool.ctest_shards_module().Graph(DECLARED_GRAPH)
+
+    def test_the_objects_are_named_as_ninja_names_them(self):
+        outside = tool.Entry("/elsewhere", "/s/w.c", ["cc"], "t", "", "c", "/elsewhere/w.c.o")
+        unknown = tool.Entry(str(self.build), "/s/x.c", ["cc"], "t", "", "c", "")
+        self.assertEqual(tool.object_nodes([self.entry, outside, unknown, self.entry],
+                                           self.build),
+                         ["backends/c/tests/CMakeFiles/pv.dir/v.c.o"])
+
+    def test_the_steps_before_an_object_are_its_prerequisites_custom_commands(self):
+        graph = self.graph()
+        steps = tool.CustomSteps(graph)
+        node = graph.node_of["backends/c/tests/CMakeFiles/pv.dir/v.c.o"]
+        self.assertEqual(steps.of(node), frozenset({"s:0x1", "s:0x3"}))
+        self.assertEqual(steps.of(graph.node_of["cgen/p_sm.h"]), frozenset({"s:0x1"}))
+        self.assertEqual(steps.of(graph.node_of["/src/p.scxml"]), frozenset())
+
+    def test_the_child_the_build_makes_first_is_generated_where_the_unit_compiles(self):
+        # Two units: the C unit, which owns the parent's family, and the child's
+        # family, which nothing reaches before generation. Spread over two
+        # shards they land apart, so the unit's shard holds the child only
+        # because the build makes it before the unit's object.
+        plan = tool.plan_shards(self.root, self.build, [self.entry], DECLARED_PLANNED,
+                                self.graph(), 2)
+        unit = [part for part in plan["shards"]
+                if "ctu:backends/c/tests/v.c@pv" in part["subjects"]]
+        self.assertEqual(len(unit), 1)
+        self.assertIn("gen:<build>/cgen/p_sm.h", unit[0]["subjects"])
+        self.assertEqual(unit[0]["outputs"], ["cgen/p_child_sm.h", "cgen/p_sm.h"])
+        child = [part for part in plan["shards"]
+                 if "gen:<build>/cgen/p_child_sm.h" in part["subjects"]]
+        self.assertEqual(len(child), 1)
+        self.assertIn("cgen/p_child_sm.h", child[0]["outputs"])
+
+    def test_a_unit_the_graph_does_not_hold_needs_only_its_reach(self):
+        bare = tool.Entry(*[getattr(self.entry, f) for f in
+                            ("directory", "file", "args", "target", "declared_in", "language")])
+        plan = tool.plan_shards(self.root, self.build, [bare], DECLARED_PLANNED,
+                                self.graph(), 1)
+        self.assertEqual(plan["shards"][0]["outputs"], DECLARED_PLANNED,
+                         "one shard generates every planned family whoever needs it")
+        plan = tool.plan_shards(self.root, self.build, [bare], DECLARED_PLANNED,
+                                self.graph(), 2)
+        unit = [part for part in plan["shards"]
+                if "ctu:backends/c/tests/v.c@pv" in part["subjects"]][0]
+        self.assertEqual(unit["outputs"], ["cgen/p_sm.h"])
+
+
 class AShardRunsItsPart(unittest.TestCase):
     def test_a_header_generated_in_another_shard_is_a_failure_not_a_miss(self):
         job = {"kind": "gen", "subject": "g", "target": "t",
@@ -818,6 +919,15 @@ class AShardRunsItsPart(unittest.TestCase):
             self.assertEqual(outcome.verdict, "fail")
             self.assertIn("another shard", outcome.detail)
             self.assertEqual(tool.classify(job, "c++17", 1, output, index).verdict, "unmeasured")
+
+    def test_a_late_header_only_c_units_reach_here_is_said_to_the_verdict(self):
+        plan = {"shard": 1, "count": 1, "digest": "0" * 64, "late": ["gen:c/error_reason.h"],
+                "totals": {}, "shards": [{"subjects": [], "outputs": [], "counts": {}}]}
+        doc = {"jobs": [], "not_measured": [], "c_only": ["c/error_reason.h", "c/other.h"]}
+        with tempfile.TemporaryDirectory() as scratch:
+            mine = tool.filter_for_shard(doc, plan, [], Path(scratch), Path(scratch), [])
+        self.assertEqual(mine["late_c_only"], ["gen:c/error_reason.h"])
+        self.assertEqual(mine["accounting"], {})
 
     def test_a_shards_floors_are_its_share_of_the_whole(self):
         floors = dict(tool.DEFAULT_FLOORS)
@@ -888,7 +998,7 @@ class TheVerdictHoldsTheShardsTogether(unittest.TestCase):
                  "how": (late or {}).get("how", "included"), "tu": "a.cpp", "late": late}
                 for std in ("c++17", "c++20")]
 
-    def leave(self, index, digest=None, accounting=None, results=True):
+    def leave(self, index, digest=None, accounting=None, results=True, **doc):
         shard = self.dir / f"shard-{index}"
         shard.mkdir(parents=True, exist_ok=True)
         plan = {**self.plan, "shard": index, "digest": digest or self.DIGEST}
@@ -896,7 +1006,8 @@ class TheVerdictHoldsTheShardsTogether(unittest.TestCase):
         mine = self.plan["shards"][index - 1]["subjects"]
         account = accounting if accounting is not None else {k: "measured" for k in mine}
         (shard / "jobs.json").write_text(json.dumps({"accounting": account,
-                                                     "not_measured": []}), encoding="utf-8")
+                                                     "not_measured": [], **doc}),
+                                         encoding="utf-8")
         if results:
             flat = [r for group in self.outcomes[index] for r in group]
             (shard / "results.json").write_text(json.dumps({"outcomes": flat}), encoding="utf-8")
@@ -964,6 +1075,38 @@ class TheVerdictHoldsTheShardsTogether(unittest.TestCase):
         floors["hdr"] = 3
         _, verdict = tool.verify_shards(self.dir, floors)
         self.assertEqual(verdict["breaches"], [])
+
+    def test_a_late_header_only_c_units_reach_is_counted_as_the_whole_run_counts_it(self):
+        self.plan["late"] = ["hdr:late.h", "gen:c/error_reason.h"]
+        self.leave(1, late_c_only=["gen:c/error_reason.h"])
+        self.leave(2)
+        faults, verdict = self.verify()
+        self.assertEqual(faults, [])
+        self.assertEqual(verdict["unmeasured_late"], [])
+        self.leave(1)
+        _, verdict = self.verify()
+        self.assertEqual([k for k, _ in verdict["unmeasured_late"]], ["gen:c/error_reason.h"])
+
+    def test_what_a_shard_could_not_measure_is_counted_as_the_whole_run_counts_it(self):
+        self.plan["subjects"] = 3
+        self.plan["shards"][1]["subjects"] = ["gen:<build>/m.h", "hdr:b.h"]
+        item = {"kind": "gen", "subject": "<build>/m.h", "key": "gen:<build>/m.h",
+                "reason": "no C++ translation unit of this configure includes it"}
+        late = {"kind": "hdr", "subject": "late.h", "key": "hdr:late.h", "late": True,
+                "reason": "no C++ translation unit of this configure includes it"}
+        self.leave(1, not_measured=[late])
+        self.leave(2, accounting={"hdr:b.h": "measured", "gen:<build>/m.h": "not measured"},
+                   not_measured=[item, late])
+        faults, verdict = self.verify()
+        self.assertEqual(faults, [])
+        self.assertEqual(verdict["not_measured"], [item],
+                         "counted by the shard that owns it, once; a late one is not its own")
+        self.assertEqual(verdict["unowned"], {"gen": 1})
+        status, out, _ = run_main(["verify-shards", str(self.dir), "--floor", "hdr=0",
+                                   "--floor", "tu=0", "--floor", "gen=0", "--floor", "forge=0",
+                                   "--floor", "ctu=0"])
+        self.assertEqual(status, 0, out)
+        self.assertIn("NOT MEASURED [gen] <build>/m.h", out)
 
     def test_no_shard_at_all_is_not_a_pass(self):
         faults, verdict = self.verify()

@@ -54,6 +54,11 @@ In shards (the gate's SCE_INTERFACE_STANDARD_SHARD), `shard-plan` runs after
 `generation-outputs`, the generation builds only the shard's part, `jobs` is
 given the plan, and `verify-shards` holds the shards of one run together:
 
+``objects``
+    List the object every compile of the tree writes, as ninja names it: the
+    plan reads ninja's graph of them beside the generation rules', since what
+    the build makes before a compile is what that compile may include.
+
 ``shard-plan``
     Plan the whole measurement of the configured tree as N shards, before
     anything is generated, and write the plan and this shard's outputs.
@@ -436,6 +441,10 @@ class Entry:
     target: str
     declared_in: str
     language: str
+    # The object file the compile writes, absolute: the node of ninja's graph
+    # whose prerequisites are what the build makes before this compile
+    # (`plan_shards`). Empty where the compile database does not say.
+    obj: str = ""
 
     @property
     def is_library(self) -> bool:
@@ -524,8 +533,9 @@ def load_entries(compile_commands: Path, build_dir: Path) -> List[Entry]:
         language = language_of(file)
         if language is None:
             continue
-        target, declared = target_of(object_path(item, args, directory), build_dir)
-        entries.append(Entry(directory, file, args, target, declared, language))
+        obj = object_path(item, args, directory)
+        target, declared = target_of(obj, build_dir)
+        entries.append(Entry(directory, file, args, target, declared, language, obj))
     return entries
 
 
@@ -1478,6 +1488,19 @@ def cmd_run(args: argparse.Namespace) -> int:
 # WHAT A SHARD BUILDS is the families its subjects need (a translation unit's
 # reach, a header's reach under its owner's flags, an owned family) and the
 # families the library reaches, which every compile of the interface needs.
+# What a planned header includes is not readable before it is written, and
+# two generations the build runs apart can still be one compile's: a parent
+# machine's header includes its child's, a document's header
+# includes the types of the document it imports, each written by a command of
+# its own that waits for no other. The build says what such a compile needs:
+# the planned outputs ninja makes before the compile, its object's
+# prerequisites (a target's generated sources, order-only for each of its
+# objects). So a compile whose reach holds a planned header needs, beside its
+# reach, every family the build makes before its object (`CustomSteps`); a
+# family owned under a unit's flags needs them when the build makes the
+# family before that unit too. A header the build makes before no compile
+# that reaches it is one a whole build only reaches by luck of ordering, and
+# the shard that misses it names it.
 #
 # HOW THE UNITS ARE SPREAD is `scripts/lib/ctest_shards.py`'s rule over
 # unions: a unit's cost is its compiles and its generation steps, a step
@@ -1561,6 +1584,77 @@ class PlannedIncludeGraph(IncludeGraph):
         return seen
 
 
+def graph_node(graph, build_dir: Path, path: str) -> Optional[str]:
+    """How ninja's graph spells `path`, build-relative or absolute, or None
+    when the graph does not hold it."""
+    spellings = [path]
+    if os.path.isabs(path):
+        relative = build_relative(path, build_dir)
+        if relative is not None:
+            spellings.insert(0, relative)
+    else:
+        spellings.append(str(build_dir / path))
+    for spelling in spellings:
+        if spelling in graph.node_of:
+            return spelling
+    return None
+
+
+def build_relative(path: str, build_dir: Path) -> Optional[str]:
+    """`path` relative to the build tree, as ninja spells what is in it, read
+    through symbolic links on either side; None for a path outside it."""
+    for candidate, base in ((path, str(build_dir)),
+                            (os.path.realpath(path), os.path.realpath(build_dir))):
+        relative = os.path.relpath(candidate, base)
+        if relative != os.curdir and not relative.startswith(os.pardir):
+            return Path(relative).as_posix()
+    return None
+
+
+def object_nodes(entries: Sequence[Entry], build_dir: Path) -> List[str]:
+    """The object of every entry, as ninja names it (build-relative): what the
+    shard plan's graph is read for beside the generation rules (`objects`)."""
+    found: Set[str] = set()
+    for entry in entries:
+        if not entry.obj or os.path.normpath(entry.obj) == os.path.normpath(entry.directory):
+            continue
+        relative = build_relative(entry.obj, build_dir)
+        if relative is not None:
+            found.add(relative)
+    return sorted(found)
+
+
+class CustomSteps:
+    """The custom-command steps ninja runs before it makes a node, read from
+    its graph once per node: the objects of one target share their
+    prerequisites, so each is walked once however many objects reach it."""
+
+    def __init__(self, graph):
+        self._graph = graph
+        self._memo: Dict[str, FrozenSet[str]] = {}
+
+    def of(self, node: str) -> FrozenSet[str]:
+        """The custom-command edges building node `node` (an id) takes."""
+        stack = [(node, False)]
+        while stack:
+            current, expanded = stack.pop()
+            if current in self._memo:
+                continue
+            edge = self._graph.made_by.get(current)
+            inputs = self._graph.inputs.get(edge, []) if edge else []
+            if not expanded:
+                stack.append((current, True))
+                stack.extend((n, False) for n in inputs if n not in self._memo)
+                continue
+            found: Set[str] = set()
+            if edge and self._graph.rule.get(edge, "") == CUSTOM_COMMAND:
+                found.add(edge)
+            for n in inputs:
+                found |= self._memo[n]
+            self._memo[current] = frozenset(found)
+        return self._memo[node]
+
+
 def generation_families(outputs: Sequence[str], graph,
                         build_dir: Path) -> Tuple[Dict[str, str], Dict[str, FrozenSet[str]]]:
     """Each planned output's family, and each family's custom-command steps.
@@ -1569,16 +1663,10 @@ def generation_families(outputs: Sequence[str], graph,
     that writes a planned output and builds the other too. A family is named by
     its least output.
     """
-    def spelled(rel: str) -> Optional[str]:
-        for spelling in (rel, str(build_dir / rel)):
-            if spelling in graph.node_of:
-                return spelling
-        return None
-
     steps: Dict[str, FrozenSet[str]] = {}
     writers: Set[str] = set()
     for rel in outputs:
-        name = spelled(rel)
+        name = graph_node(graph, build_dir, rel)
         if name is None:
             steps[rel] = frozenset()
             continue
@@ -1648,6 +1736,33 @@ def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
     def families_in(paths: Iterable[str]) -> Set[str]:
         return {family_of[planned[p]] for p in paths if p in planned}
 
+    # Which family each planned output's step writes, and the families the
+    # build makes before each unit's object (WHAT A SHARD BUILDS, above).
+    written: Dict[str, Set[str]] = collections.defaultdict(set)
+    for rel in outputs:
+        name = graph_node(graph, build_dir, rel)
+        writer = graph.made_by.get(graph.node_of[name]) if name else None
+        if writer:
+            written[writer].add(family_of[rel])
+    custom_steps = CustomSteps(graph)
+    declared_before: Dict[int, FrozenSet[str]] = {}
+
+    def declared(i: int) -> FrozenSet[str]:
+        """The families the build makes before it compiles `ordered[i]`."""
+        if i not in declared_before:
+            name = graph_node(graph, build_dir, ordered[i].obj) if ordered[i].obj else None
+            steps = custom_steps.of(graph.node_of[name]) if name else frozenset()
+            declared_before[i] = frozenset(f for step in steps for f in written.get(step, ()))
+        return declared_before[i]
+
+    def needs(i: int, paths: Iterable[str]) -> Set[str]:
+        """The families a compile under `ordered[i]`'s flags that reaches
+        `paths` before generation needs generated: those it reaches, and when
+        it reaches any, what the build makes before that unit's object, which
+        holds every planned header those include."""
+        reached = families_in(paths)
+        return reached | declared(i) if reached else reached
+
     first_cxx: Dict[str, int] = {}
     first_cxx_rel: Dict[str, int] = {}
     first_cxx_dir: Dict[str, int] = {}
@@ -1665,7 +1780,7 @@ def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
     always: Set[str] = set()
     for i, entry in enumerate(cxx):
         if entry.is_library:
-            always |= families_in(reach[i])
+            always |= needs(i, reach[i])
 
     units: Dict[str, dict] = {}
 
@@ -1691,7 +1806,7 @@ def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
         held = entry_unit(i)
         key = f"{kind}:{subject(entry.file)}@{entry.target}"
         held["subjects"].add(key)
-        held["families"] |= families_in(reach[i])
+        held["families"] |= needs(i, reach[i])
         held["compiles"] += compiles
         floor_keys.add(key)
 
@@ -1706,7 +1821,7 @@ def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
             continue
         held = entry_unit(owner)
         held["subjects"].add(key)
-        held["families"] |= families_in(includes.reach(cxx[owner], path))
+        held["families"] |= needs(owner, includes.reach(cxx[owner], path))
         held["compiles"] += len(stds)
         floor_keys.add(key)
 
@@ -1730,6 +1845,10 @@ def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
                     measured_by_cxx = False
         held = entry_unit(owner) if owner is not None else unit(f"family:{family}")
         held["families"].add(family)
+        if owner is not None and family in declared(owner):
+            # Compiled under the owner's flags, and made before the owner's
+            # object, so the build makes what its headers include there too.
+            held["families"] |= declared(owner)
         for rel in rels:
             key = f"{KIND_GEN}:{BUILD_PREFIX}{rel}"
             held["subjects"].add(key)
@@ -1813,6 +1932,20 @@ def describe_plan(plan: dict, index: int) -> str:
     return "\n".join(lines)
 
 
+def cmd_objects(args: argparse.Namespace) -> int:
+    compile_commands = Path(args.compile_commands).resolve()
+    build_dir = Path(args.build_dir).resolve() if args.build_dir else compile_commands.parent
+    found = object_nodes(load_entries(compile_commands, build_dir), build_dir)
+    Path(args.out).write_text("".join(f"{rel}\n" for rel in found), encoding="utf-8")
+    print(f"objects: {len(found)} object(s) in the compile database", file=sys.stderr)
+    if not found:
+        print("objects: the compile database names no object inside the build tree, so the "
+              "shard plan could not read what the build makes before a compile",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_shard_plan(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     compile_commands = Path(args.compile_commands).resolve()
@@ -1871,10 +2004,15 @@ def filter_for_shard(doc: dict, plan: dict, entries: Sequence[Entry], root: Path
             accounting[key] = "not measured"
         elif key in late:
             not_measured.append({**item, "key": key, "late": True})
+    late_c_only: List[str] = []
     for header in doc.get("c_only", []):
         key = f"{KIND_GEN}:{header}"
         if key in mine:
             accounting.setdefault(key, "compiled through C units")
+        elif key in late:
+            # Reached here by C units alone: the whole run compiles it through
+            # them unless a C++ unit reaches it, which another shard may say.
+            late_c_only.append(key)
     marked = {display(p, root, build_dir) for p in generated}
     for key in sorted(mine - set(accounting)):
         kind, _, rest = key.partition(":")
@@ -1892,7 +2030,7 @@ def filter_for_shard(doc: dict, plan: dict, entries: Sequence[Entry], root: Path
     built = set(part["outputs"])
     everywhere = {rel for other in plan["shards"] for rel in other["outputs"]}
     return {**doc, "jobs": jobs, "not_measured": not_measured, "accounting": accounting,
-            "unbuilt": sorted(everywhere - built),
+            "unbuilt": sorted(everywhere - built), "late_c_only": late_c_only,
             "shard": {"index": index, "count": plan["count"], "digest": plan["digest"],
                       "counts": part["counts"], "totals": plan["totals"]}}
 
@@ -1939,6 +2077,10 @@ def verify_shards(directory: Path, floors: Dict[str, int]) -> Tuple[List[str], d
     counted: List[Outcome] = []
     late: Dict[str, List[Tuple[Tuple[int, int, int], dict]]] = collections.defaultdict(list)
     late_reasons: Dict[str, str] = {}
+    late_through_c: Set[str] = set()
+    # What a shard's own account says it could not measure before compiling
+    # (no unit carries the flags), counted as the whole run counts it.
+    not_measured: List[dict] = []
     for index in range(1, count + 1):
         if index not in plans:
             faults.append(f"shard {index} of {count} left no plan")
@@ -1960,6 +2102,9 @@ def verify_shards(directory: Path, floors: Dict[str, int]) -> Tuple[List[str], d
         for item in docs[index].get("not_measured", []):
             if item.get("late"):
                 late_reasons.setdefault(item["key"], item.get("reason", ""))
+            elif item.get("key") in mine:
+                not_measured.append(item)
+        late_through_c.update(docs[index].get("late_c_only", []))
         for record in results[index].get("outcomes", []):
             job = {"kind": record["kind"], "subject": record["subject"],
                    "target": record["target"], "via": {"how": record.get("how", ""),
@@ -1978,6 +2123,10 @@ def verify_shards(directory: Path, floors: Dict[str, int]) -> Tuple[List[str], d
     unmeasured_late = []
     for key in plan["late"]:
         candidates = late.get(key)
+        if not candidates and key in late_through_c:
+            # No shard's C++ unit reached it and a C unit did: the whole run
+            # compiles it through its C units and measures it no other way.
+            continue
         if not candidates:
             unmeasured_late.append((key, late_reasons.get(key, "no shard could own it")))
             continue
@@ -1989,7 +2138,9 @@ def verify_shards(directory: Path, floors: Dict[str, int]) -> Tuple[List[str], d
     failures = [o for o in counted if o.verdict == "fail"]
     breaches = floor_breaches(table, stds, floors)
     return faults, {"table": table, "stds": stds, "failures": failures, "breaches": breaches,
-                    "unmeasured_late": unmeasured_late, "count": count,
+                    "unmeasured_late": unmeasured_late, "not_measured": not_measured,
+                    "unowned": dict(collections.Counter(i["kind"] for i in not_measured)),
+                    "count": count,
                     "digest": plan.get("digest", "")}
 
 
@@ -2005,8 +2156,10 @@ def cmd_verify_shards(args: argparse.Namespace) -> int:
     if not verdict:
         return 1
     print(f"verify-shards: plan {verdict['digest'][:16]}, {verdict['count']} shard(s)")
-    print_table(verdict["table"], verdict["stds"], {}, {})
+    print_table(verdict["table"], verdict["stds"], verdict["unowned"], {})
     print_failures(verdict["failures"])
+    for item in verdict["not_measured"]:
+        print(f"  NOT MEASURED [{item['kind']}] {item['subject']}: {item['reason']}")
     for key, reason in verdict["unmeasured_late"]:
         print(f"  NOT MEASURED (late) {key}: {reason}")
     for breach in verdict["breaches"]:
@@ -2049,6 +2202,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                      "jobs and the late ones, and account for each subject")
     jobs.set_defaults(func=cmd_jobs)
 
+    objects = sub.add_parser("objects",
+                             help="the object of every compile, as ninja names it, for the "
+                                  "graph a shard plan reads")
+    objects.add_argument("--compile-commands", required=True)
+    objects.add_argument("--build-dir", help="default: the directory of compile_commands.json")
+    objects.add_argument("--out", required=True)
+    objects.set_defaults(func=cmd_objects)
+
     plan = sub.add_parser("shard-plan",
                           help="plan the measurement of a configured tree as N shards")
     plan.add_argument("--compile-commands", required=True)
@@ -2057,7 +2218,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     plan.add_argument("--generation", required=True,
                       help="the file `generation-outputs` wrote: every planned output")
     plan.add_argument("--ninja-graph", required=True,
-                      help="`ninja -t graph` of those outputs")
+                      help="`ninja -t graph` of those outputs and of the objects "
+                           "`objects` names")
     plan.add_argument("--std", action="append",
                       help="a C++ standard the run measures at (default: c++17 and c++20)")
     plan.add_argument("--out", required=True,

@@ -2318,6 +2318,14 @@ fn the_interface_standard_lane_and_its_gate_agree_on_the_shards() {
              would not plan, keep or record its own part"
         );
     }
+    // The plan reads what the build makes before each compile from the graph
+    // of the compiles' objects; a graph of the generation rules alone splits a
+    // parent machine's header from the child's it includes (run 45567169995).
+    assert!(
+        gate.contains("objects --compile-commands") && gate.contains("\"${OBJECTS[@]}\""),
+        "{INTERFACE_GATE} no longer hands the shard plan the graph of the compiles' objects, \
+         so a shard can generate a header and not the headers it includes"
+    );
     assert!(
         read(INTERFACE_ENTRY).contains(&format!("\"shard_env\": \"{INTERFACE_VARIABLE}\"")),
         "{INTERFACE_ENTRY} does not declare `shard_env` {INTERFACE_VARIABLE}, so a landing \
