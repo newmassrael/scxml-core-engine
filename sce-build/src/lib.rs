@@ -299,6 +299,9 @@ pub mod scenario_replay;
 /// words: the file format, and whether a set of them is usable. The
 /// evidence column `Outcome::NeedsScenario` is waiting for.
 pub mod scenario_set;
+/// How many delayed events a Rust machine's delayed-send queue can hold at once,
+/// proven from its document, or why no capacity is proven (docs/adr/0132).
+pub mod scheduler_bound;
 pub mod script_engine_analyzer;
 /// The unqualified attributes the SCXML Recommendation defines for each
 /// element, and the refusal of one it does not: `<state type="parallel">`
