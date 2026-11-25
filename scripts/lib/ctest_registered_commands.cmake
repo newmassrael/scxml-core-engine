@@ -18,8 +18,10 @@
 # instead of to register. A file that calls anything else stops the reading
 # with an error, and a caller takes that as "the commands cannot be named".
 #
-# Read by scripts/lib/ctest_shards.py, which builds only what one shard of the
-# C++ suite runs.
+# Two readers: the mutation harness (`mutation_ctest_registered_commands` in
+# scripts/mutate), which builds only what a round's tests run, and
+# scripts/lib/ctest_shards.py, which builds only what one shard of the C++
+# suite runs.
 function(add_test name)
   string(REPLACE ";" "\t" command "${ARGN}")
   message("${name}\t${command}")
