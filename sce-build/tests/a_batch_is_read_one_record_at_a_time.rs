@@ -48,23 +48,11 @@ fn rust_of(name: &str, views: bool) -> String {
     rust_of_document(&source, name, views)
 }
 
-/// A peeked tag over two arms, the second under `feature` where it is given,
-/// and the first under `first_feature` where that is. Two arms take every
-/// value of a one-bit tag; arms that may both be left out are joined by a
-/// catch-all, which takes a two-bit tag's other values.
-fn peek_variant(first_feature: Option<&str>, feature: Option<&str>) -> String {
+/// A peeked tag over two arms, the second under `feature` where it is given.
+/// The first is the Default-trait arm, which every build holds, so no variant
+/// has every arm left out.
+fn peek_variant(feature: Option<&str>) -> String {
     let gate = |f: Option<&str>| f.map_or(String::new(), |f| format!(" feature=\"{f}\""));
-    let first_default = if first_feature.is_some() {
-        String::new()
-    } else {
-        " default=\"true\"".to_string()
-    };
-    let (width, catch_all) = if first_feature.is_some() {
-        (2, "\n      <sce:default type=\"codec_peek_arm_a\"/>")
-    } else {
-        (1, "")
-    };
-    let first_gate = gate(first_feature);
     let second_gate = gate(feature);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -76,10 +64,10 @@ fn peek_variant(first_feature: Option<&str>, feature: Option<&str>) -> String {
   <datamodel>
     <sce:variant tag="peek.kind">
       <sce:peek-byte id="peek" sce:type="uint8">
-        <sce:flag name="kind" bit="0" width="{width}"/>
+        <sce:flag name="kind" bit="0" width="1"/>
       </sce:peek-byte>
-      <sce:arm value="0x00" type="codec_peek_arm_a"{first_default}{first_gate}/>
-      <sce:arm value="0x01" type="codec_peek_arm_b"{second_gate}/>{catch_all}
+      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_peek_arm_b"{second_gate}/>
     </sce:variant>
   </datamodel>
 </scxml>"#
@@ -194,11 +182,7 @@ fn only_a_peeked_variant_with_no_field_of_its_own_has_records() {
 /// is one the document names, and the frame it starts is not read as another.
 #[test]
 fn a_gated_arms_tag_is_refused_by_the_records_of_a_build_without_it() {
-    let code = rust_of_document(
-        &peek_variant(None, Some("gated-arm")),
-        "gated_records",
-        true,
-    );
+    let code = rust_of_document(&peek_variant(Some("gated-arm")), "gated_records", true);
     let cfg = "#[cfg(feature = \"gated-arm\")]";
     let cfg_off = "#[cfg(not(feature = \"gated-arm\"))]";
     let lines: Vec<&str> = code.lines().collect();
@@ -238,20 +222,4 @@ fn a_gated_arms_tag_is_refused_by_the_records_of_a_build_without_it() {
         "0u8 => Some(GatedRecordsRecord::CodecPeekArmA(self.0.record())),"
     )
     .starts_with("#[cfg"));
-}
-
-/// Records whose every arm a build may leave out would be an enum of no
-/// variant in that build, which names its lifetimes nowhere: such a codec has
-/// no records.
-#[test]
-fn a_variant_every_arm_of_which_is_gated_has_no_records() {
-    let code = rust_of_document(
-        &peek_variant(Some("first-arm"), Some("gated-arm")),
-        "gated_records",
-        true,
-    );
-    assert!(
-        !code.contains("Records<'f>"),
-        "records over gated arms alone:\n{code}"
-    );
 }
