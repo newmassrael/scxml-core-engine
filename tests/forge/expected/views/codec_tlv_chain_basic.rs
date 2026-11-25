@@ -432,7 +432,7 @@ impl<'a> CodecTlvChainBasicView<'a> {
                 if cursor.failed() { break; }
                 if cursor.remaining() == 0 { break; }
                 CodecTlvEntryView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             if cursor.remaining() > 0 {
                 cursor.fail(CodecError::TooManyElements);

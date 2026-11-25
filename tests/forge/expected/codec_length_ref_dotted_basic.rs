@@ -140,7 +140,7 @@ impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicIn<S> {
         let raw = cursor.peek_at_least::<1>();
         let _frame_len = raw.len();
         let carrier = raw[0];
-        let payload = cursor.settle(raw.get(1..1 + (((carrier >> 4) & 0xF) as usize)).ok_or(CodecError::NeedMoreBytes));
+        let payload = cursor.settle(raw.get(1..).and_then(|_r| _r.get(..((carrier >> 4) & 0xF) as usize)).ok_or(CodecError::NeedMoreBytes));
         let payload = cursor.settle(::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange));
         let _payload_read = payload.len();
         let payload = cursor.hold(payload.store::<S, CodecLengthRefDottedBasicPayloadField>());

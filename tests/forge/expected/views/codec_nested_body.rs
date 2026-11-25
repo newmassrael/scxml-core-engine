@@ -423,7 +423,7 @@ impl<'a> CodecNestedBodyView<'a> {
                     cursor.fail(CodecError::TooManyElements);
                 }
                 CodecZenohLocatorView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             locs = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements));
         }

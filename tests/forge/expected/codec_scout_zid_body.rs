@@ -143,7 +143,7 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodyIn<S> {
         if zid_len_m1 > 15 {
             cursor.fail(CodecError::LengthOutOfRange);
         }
-        let zid = cursor.settle(raw.get(1..1 + zid_len_m1 as usize + 1).ok_or(CodecError::NeedMoreBytes));
+        let zid = cursor.settle(raw.get(1..).zip((zid_len_m1 as usize).checked_add(1)).and_then(|(_r, _n)| _r.get(.._n)).ok_or(CodecError::NeedMoreBytes));
         let zid = cursor.settle(::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange));
         let _zid_read = zid.len();
         let zid = cursor.hold(zid.store::<S, CodecScoutZidBodyZidField>());

@@ -177,7 +177,7 @@ impl<S: CodecZenohHelloStorage> CodecZenohHelloIn<S> {
         };
         let zid = {
             let _len = (cbyte >> 4) & 0xF;
-            let _n = (_len as usize) + 1;
+            let _n = cursor.settle((_len as usize).checked_add(1).ok_or(CodecError::LengthOutOfRange));
             cursor.take_slice(_n)
         };
         let zid = cursor.settle(::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange));
@@ -549,7 +549,7 @@ impl<'a> CodecZenohHelloView<'a> {
         };
         let zid = {
             let _len = (cbyte >> 4) & 0xF;
-            let _n = (_len as usize) + 1;
+            let _n = cursor.settle((_len as usize).checked_add(1).ok_or(CodecError::LengthOutOfRange));
             cursor.take_slice(_n)
         };
         let zid = cursor.settle(::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange));
@@ -569,7 +569,7 @@ impl<'a> CodecZenohHelloView<'a> {
                     break;
                 }
                 CodecZenohLocatorView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             locators = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {

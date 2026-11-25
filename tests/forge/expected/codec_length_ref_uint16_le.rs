@@ -143,7 +143,7 @@ impl<S: CodecLengthRefUint16LeStorage> CodecLengthRefUint16LeIn<S> {
         if payload_len > 1024 {
             cursor.fail(CodecError::LengthOutOfRange);
         }
-        let payload = cursor.settle(raw.get(2..2 + payload_len as usize).ok_or(CodecError::NeedMoreBytes));
+        let payload = cursor.settle(raw.get(2..).and_then(|_r| _r.get(..payload_len as usize)).ok_or(CodecError::NeedMoreBytes));
         let payload = cursor.settle(::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange));
         let _payload_read = payload.len();
         let payload = cursor.hold(payload.store::<S, CodecLengthRefUint16LePayloadField>());

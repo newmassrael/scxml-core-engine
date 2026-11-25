@@ -150,7 +150,7 @@ impl<S: CodecZenohSourceInfoStorage> CodecZenohSourceInfoIn<S> {
         };
         let zid = {
             let _len = (header >> 4) & 0xF;
-            let _n = (_len as usize) + 1;
+            let _n = cursor.settle((_len as usize).checked_add(1).ok_or(CodecError::LengthOutOfRange));
             cursor.take_slice(_n)
         };
         let zid = cursor.settle(::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange));

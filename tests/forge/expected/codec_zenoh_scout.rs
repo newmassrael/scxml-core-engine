@@ -152,7 +152,7 @@ impl<S: CodecZenohScoutStorage> CodecZenohScoutIn<S> {
         };
         let zid = if (cbyte & 0x08u8) != 0 {
             let _len = (cbyte >> 4) & 0xF;
-            let _n = (_len as usize) + 1;
+            let _n = cursor.settle((_len as usize).checked_add(1).ok_or(CodecError::LengthOutOfRange));
             Some(cursor.take_slice(_n))
         } else {
             None

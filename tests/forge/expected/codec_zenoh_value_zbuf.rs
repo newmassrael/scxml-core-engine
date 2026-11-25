@@ -570,7 +570,7 @@ impl<'a> CodecZenohValueZbufView<'a> {
                     break;
                 }
                 CodecZenohValueSliceView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             slices = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {

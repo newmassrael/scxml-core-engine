@@ -451,7 +451,7 @@ impl<'a> CodecZenohQueryValueView<'a> {
                 let _entry = CodecZenohValueEntryView::read(cursor, _prev_exts_after_shm);
                 _more = _entry.z();
                 _prev_exts_after_shm = u8::from(u64::from(_entry.ext_id()) == 4u64);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {

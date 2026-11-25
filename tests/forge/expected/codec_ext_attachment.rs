@@ -143,7 +143,7 @@ impl<S: CodecExtAttachmentStorage> CodecExtAttachmentIn<S> {
         if length > 64 {
             cursor.fail(CodecError::LengthOutOfRange);
         }
-        let body = cursor.settle(raw.get(1..1 + length as usize).ok_or(CodecError::NeedMoreBytes));
+        let body = cursor.settle(raw.get(1..).and_then(|_r| _r.get(..length as usize)).ok_or(CodecError::NeedMoreBytes));
         let body = cursor.settle(::sce_forge_runtime::codec::Bounded::new(body).ok_or(CodecError::LengthOutOfRange));
         let _body_read = body.len();
         let body = cursor.hold(body.store::<S, CodecExtAttachmentBodyField>());

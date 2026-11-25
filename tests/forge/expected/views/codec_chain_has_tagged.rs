@@ -702,7 +702,7 @@ impl<'a> CodecChainHasTaggedView<'a> {
                 if cursor.failed() { break; }
                 let _entry = CodecChainHasTaggedEntryView::read(cursor);
                 _more = _entry.more();
-                _count += 1;
+                _count += u32::from(!cursor.failed());
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {

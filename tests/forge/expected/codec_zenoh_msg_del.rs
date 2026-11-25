@@ -567,7 +567,7 @@ impl<'a> CodecZenohMsgDelView<'a> {
                 if cursor.failed() { break; }
                 let _entry = CodecZenohExtEntryView::read(cursor);
                 _more = _entry.z();
-                _count += 1;
+                _count += u32::from(!cursor.failed());
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {

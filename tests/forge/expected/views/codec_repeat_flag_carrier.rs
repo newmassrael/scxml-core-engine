@@ -496,7 +496,7 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
                     cursor.fail(CodecError::TooManyElements);
                 }
                 CodecChainFlagEntryView::read(cursor, head & 0x1);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             entries = cursor.settle(Bounded::new(ListView::new(_rest, _count, [head & 0x1])).ok_or(CodecError::TooManyElements).and_then(|_l| ::sce_forge_runtime::codec::Lawful::new((head & 0x1) != 0, _l).ok_or(CodecError::PresentIfMismatch)));
         }

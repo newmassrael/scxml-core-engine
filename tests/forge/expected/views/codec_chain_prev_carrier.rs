@@ -519,7 +519,7 @@ impl<'a> CodecChainPrevCarrierView<'a> {
                 let _entry = CodecChainPrevEntryView::read(cursor, _prev_entries_after_marker, head & 0x1);
                 _more = _entry.z();
                 _prev_entries_after_marker = u8::from(u64::from(_entry.ext_id()) == 4u64);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {

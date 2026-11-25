@@ -486,7 +486,7 @@ impl<'a> CodecRepeatPresentIfBasicView<'a> {
                     cursor.fail(CodecError::TooManyElements);
                 }
                 CodecRepeatElemView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             elems = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {

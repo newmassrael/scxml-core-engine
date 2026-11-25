@@ -606,7 +606,7 @@ impl<'a> CodecZenohQueryView<'a> {
                 if cursor.failed() { break; }
                 if cursor.remaining() == 0 { break; }
                 CodecZenohExtEntryView::read(cursor);
-                _count += 1;
+                _count += u32::from(!cursor.failed());
             }
             extensions = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {
