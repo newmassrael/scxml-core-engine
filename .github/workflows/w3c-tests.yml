@@ -473,10 +473,30 @@ jobs:
   # ============================================================
   # Rust AOT — 202 tests
   # ============================================================
-  test-rust:
-    name: Rust W3C Tests
+  # The Rust arm in four shards, one job each, and a last job, `test-rust`,
+  # that holds them together, as `test-c11` does for the C11 arm. Run whole,
+  # the job took 1605 s (job 138891691369, 4c71fb062c): 7 minutes building the
+  # target `w3c` with the crate's dependencies and library, 15 building every
+  # other target of sce-rust-tests under the release profile's thin LTO and one
+  # codegen unit, and about ten seconds of tests. Each job runs the w3c-rust
+  # gate with `SCE_W3C_RUST_SHARD`, which builds and runs only its part of the
+  # crate's targets (scripts/lib/workspace_shards.py); `hook_ci_parity` holds
+  # the matrix and the variable to one count and the parts to every target.
+  # Four, because what every job pays whatever its share (the dependencies,
+  # the build script's trees and the library) is most of the 7 minutes, which
+  # leaves the 15 minutes of targets about four to a job, near the ten minutes
+  # a job is sized to; a fifth would save under a minute against another
+  # build of the library. No generator step: the crate's build script is the
+  # generator of its trees, and the gate starts no `sce-codegen`. The ceiling
+  # is the whole arm's until a sharded run is measured.
+  test-rust-shard:
+    name: Rust W3C Tests (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
     timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
     - name: Checkout Repository
@@ -496,29 +516,78 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-
 
-    - name: Build sce-codegen
-      run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
-
     # Generation, the fixture server and the suite are one gate, the shape
     # `test-go` has, so a developer runs this job's check by name with the
     # same command. The gate is `ci_only` in the registry: no push selects
-    # it, and this job is where its verdict is reached. The server used to be
-    # started here with a one-second sleep and stopped by a step of its own;
-    # the gate waits for the server's own ready line, exports the port the
-    # harness reads, and stops it on exit. The gate also holds the run to a
+    # it, and this lane is where its verdict is reached. The gate waits for the
+    # server's own ready line, exports the port the harness reads, and stops it
+    # on exit. The shard holding the target `w3c` also holds the run to a
     # floor: every W3C test file the generator wrote has to report a pass.
     - name: Run W3C Tests
+      env:
+        SCE_W3C_RUST_SHARD: ${{ matrix.shard }}/4
       run: |
         set -o pipefail
         scripts/gate w3c-rust 2>&1 | tee rust_test_output.log
+
+    # The plan and what this shard ran (`test-rust` reads them), and the log
+    # its summary is read from.
+    - name: Upload this shard's plan and log
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: always()
+      with:
+        name: w3c-rust-shard-${{ matrix.shard }}
+        path: |
+          rust_test_output.log
+          target/w3c-rust-shard/
+        retention-days: 30
+        if-no-files-found: warn
+
+  # The verdict of the Rust arm: every shard planned the suite alike and ran
+  # every unit of its part, for the reason `cpp-suite-verdict` gives. It keeps
+  # the job's id and name, so the report below and the arm's readers find it
+  # where the unsharded job was, and it writes the arm's summary and results
+  # from the four shards' logs together.
+  test-rust:
+    name: Rust W3C Tests
+    needs: test-rust-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    - name: Download the shards' plans and logs
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: w3c-rust-shard-*
+        path: shards
+
+    - name: Hold the shards to one plan and the whole suite
+      env:
+        SHARDS_RESULT: ${{ needs.test-rust-shard.result }}
+      run: |
+        status=0
+        python3 scripts/lib/ctest_shards.py verify shards || status=1
+        if [[ "$SHARDS_RESULT" != success ]]; then
+          echo "::error title=w3c-rust::a shard job ended $SHARDS_RESULT"
+          status=1
+        fi
+        exit "$status"
+
+    # The shards' logs, one after another, under the name the unsharded job's
+    # log had.
+    - name: Join the shards' logs
+      if: always()
+      run: |
+        : > rust_test_output.log
+        for log in shards/w3c-rust-shard-*/rust_test_output.log; do
+          [ -f "$log" ] || continue
+          echo "===== $log" >> rust_test_output.log
+          cat "$log" >> rust_test_output.log
+        done
 
     - name: Upload Test Log
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -528,6 +597,8 @@ jobs:
         path: rust_test_output.log
         retention-days: 30
 
+    # Summed over the shards: each shard's log holds cargo's own count of
+    # what each of its test binaries ran.
     - name: Generate Test Summary
       if: always()
       run: |

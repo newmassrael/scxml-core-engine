@@ -15,6 +15,11 @@
 # from the lane's timeout would be a guess wearing a measurement's unit.
 # `run_order` sorts an unmeasured gate last, and UNMEASURED_COST_CEILING
 # counts it, which is the honest place for it until a run is read.
+#
+# Its script runs one shard of the crate's targets when SCE_W3C_RUST_SHARD
+# names `k/N`, as w3c-tests.yml's four jobs do (scripts/lib/workspace_shards.py
+# plans the part from cargo). No `shard_env`: the build machines run it
+# whole, as they run `w3c-c11`.
 {
     "workflows": ["w3c-tests.yml"],
     "runner_workflow": True,
@@ -33,7 +38,11 @@
               # the documents outside the fixture directories.
               "tools/codegen/trees/**", "stdlib/**",
               "integration_resources/**", "tests/integration/**",
-              "examples/ai_loop/**"],
+              "examples/ai_loop/**",
+              # What spreads the crate's targets over the lane's shards and
+              # writes and reports each shard's plan, which the gate script
+              # runs.
+              "scripts/lib/workspace_shards.py", "scripts/lib/ctest_shards.py"],
     # No `deps`: the crate's build script is the generator of its own
     # trees, built from sce-build as a build-dependency, so no gate's
     # sce-codegen is executed.

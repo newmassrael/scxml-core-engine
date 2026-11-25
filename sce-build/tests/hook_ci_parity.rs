@@ -1963,3 +1963,101 @@ fn the_ctest_shard_helpers_pass_their_own_cases() {
         );
     }
 }
+
+// ── The lanes whose shards workspace_shards.py plans ───────────────────────
+//
+// A gate that runs a suite as N jobs of a lane with a part that
+// scripts/lib/workspace_shards.py plans, and a last job that holds the parts
+// together: w3c-rust (the targets of sce-rust-tests, `SCE_W3C_RUST_SHARD`) in
+// w3c-tests.yml. The build machines run it whole. Every job writes the whole
+// plan beside its part (`--out`), in the form ctest_shards.py writes, and the
+// lane's verdict job holds the plans of all the shards to one digest and every
+// shard to a report that its part ran (`ctest_shards.py verify`). What is held
+// here is that those pieces stay wired, and that the parts are the whole suite,
+// each unit once, read by a reading of its own: cargo's for the targets.
+
+/// Each lane whose shards workspace_shards.py plans: its workflow, the gate
+/// script its jobs run, the variable that hands the gate its shard, and the
+/// arguments that name the suite to the helper.
+const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 1] = [(
+    ".github/workflows/w3c-tests.yml",
+    "scripts/gates/w3c-rust.sh",
+    "SCE_W3C_RUST_SHARD",
+    &["--package", "sce-rust-tests"],
+)];
+
+/// Each such lane's matrix and its variable name one shard count, its gate
+/// reads the variable and hands it to the helper with the suite's arguments and
+/// a directory for the plan, and a job of the same workflow that needs the
+/// sharded job runs the verdict over what the shards left. No variable is read
+/// by two sharded gates.
+#[test]
+fn every_planned_shard_lane_and_its_gate_agree_on_the_shards() {
+    for (lane_path, gate_path, variable, args) in PLANNED_SHARD_LANES {
+        let lane = read(lane_path);
+        let (job, (count, listed)) = sharded_job(lane_path, &lane, &format!("{variable}:"));
+        assert!(
+            count >= 2,
+            "{lane_path}'s job `{job}` runs its suite in {count} shard(s); one is the \
+             whole suite"
+        );
+        assert_eq!(
+            listed,
+            (1..=count).collect::<Vec<_>>(),
+            "{lane_path}'s job `{job}` has a `shard:` matrix that is not 1..={count}, the \
+             count its `{variable}` names: a shard it lists past the count is refused by \
+             the helper, and one it leaves out runs in no job"
+        );
+        let gate = uncommented(&read(gate_path));
+        let named = args.join(" ");
+        assert!(
+            gate.contains(variable) && gate.contains(SHARD_HELPER) && gate.contains(&named),
+            "{gate_path} no longer reads {variable} and hands it to {SHARD_HELPER} \
+             {named}, so the jobs of {lane_path}'s `{job}` would each run the whole suite"
+        );
+        assert!(
+            gate.contains("--out") && gate.contains(&format!("{CTEST_SHARD_HELPER} report")),
+            "{gate_path} no longer writes its plan (`--out`) and reports what it ran \
+             (`{CTEST_SHARD_HELPER} report`), so the verdict has nothing to hold"
+        );
+        let verify = format!("{CTEST_SHARD_HELPER} verify");
+        let held = workflow_jobs(&lane).iter().any(|(_, lines)| {
+            needs_of(lines).contains(&job) && lines.iter().any(|l| l.contains(&verify))
+        });
+        assert!(
+            held,
+            "no job of {lane_path} needs `{job}` and runs `{CTEST_SHARD_HELPER} verify`, \
+             so nothing holds its shards to one plan: a unit that fell between two plans \
+             would leave every shard green"
+        );
+    }
+    let variables: BTreeSet<&str> = PLANNED_SHARD_LANES
+        .iter()
+        .map(|(_, _, v, _)| *v)
+        .chain(CTEST_SHARDED_LANES.iter().map(|(_, _, v)| *v))
+        .chain(["SCE_WORKSPACE_SHARD"])
+        .collect();
+    assert_eq!(
+        variables.len(),
+        PLANNED_SHARD_LANES.len() + CTEST_SHARDED_LANES.len() + 1,
+        "two sharded lanes read one variable: a job that set it would hand the same \
+         part to two gates, each counting its own suite"
+    );
+}
+
+/// Every unit `cargo test -p sce-rust-tests` runs is in exactly one shard of the
+/// Rust W3C arm, and no shard holds a unit that run does not.
+#[test]
+fn every_target_the_rust_w3c_arm_runs_is_in_exactly_one_shard() {
+    let (lane_path, _, variable, args) = PLANNED_SHARD_LANES[0];
+    let (_, (count, _)) = sharded_job(lane_path, &read(lane_path), &format!("{variable}:"));
+    let expected = suite_units(None, Some("sce-rust-tests"));
+    assert!(
+        expected.contains("test w3c") && expected.len() > 100,
+        "cargo metadata names {} unit(s) of sce-rust-tests, without its target `w3c` or \
+         under the hundred it has held since the arm was sharded; the reading broke",
+        expected.len()
+    );
+    let seen = units_of_each_shard(args, count);
+    assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
+}
