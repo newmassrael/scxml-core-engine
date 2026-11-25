@@ -835,6 +835,24 @@ sce_main_build_dir() {
             tail -40 "$SCE_MAIN_BUILD_DIR/sce_gate_configure.log" >&2
             sce_gate_fail "cmake configure (the whole output: $SCE_MAIN_BUILD_DIR/sce_gate_configure.log)"
         fi
+    else
+        # A tree configured before is reused, and its build system is brought up
+        # to date with the sources here: the generator's own rule regenerates it
+        # when a CMake input changed and returns at once when none did. A gate
+        # that reads what the tree registers before it builds anything (ctest's
+        # list, a shard's plan) would otherwise read the registrations of the
+        # last configure: measured 2026-11-25, `w3c-cpp` counted 0 `w3c_cpp`
+        # tests on a build machine whose tree predated the per-number programs,
+        # because no build had yet regenerated it.
+        local refresh=()
+        case "$generator" in
+            Ninja*) refresh=(ninja -C "$SCE_MAIN_BUILD_DIR" build.ninja) ;;
+            *) refresh=(make -C "$SCE_MAIN_BUILD_DIR" cmake_check_build_system) ;;
+        esac
+        if ! "${refresh[@]}" >>"$SCE_MAIN_BUILD_DIR/sce_gate_configure.log" 2>&1; then
+            tail -40 "$SCE_MAIN_BUILD_DIR/sce_gate_configure.log" >&2
+            sce_gate_fail "bringing $SCE_MAIN_BUILD_DIR's build system up to date (the whole output: $SCE_MAIN_BUILD_DIR/sce_gate_configure.log)"
+        fi
     fi
 }
 
