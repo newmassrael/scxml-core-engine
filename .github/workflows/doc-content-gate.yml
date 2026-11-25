@@ -66,6 +66,9 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/doc-content-gate.yml'
+      # What says which part runs which tests, and what holds the parts.
+      - 'scripts/lib/workspace_shards.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
   pull_request:
@@ -92,6 +95,9 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/doc-content-gate.yml'
+      # What says which part runs which tests, and what holds the parts.
+      - 'scripts/lib/workspace_shards.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
   workflow_dispatch:
@@ -101,10 +107,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  doc-content:
-    name: cargo test -p sce-build --features cli --lib
+  # The library's tests in three parts, one job each, and a last job,
+  # `doc-content`, that holds them together. Whole, the job took 14 minutes
+  # (job 139036333453, 2026-11-25): a 283 s build of the test binary and 463 s
+  # of tests, whose length two tests set, one in `forge` (ended at 463 s) and
+  # one in `conformance` (ended at 421 s), while every other module had finished
+  # by 240 s. Each part runs the doc-content gate with `SCE_DOC_CONTENT_SHARD`,
+  # which builds the binary, lists its tests and runs its part of them by top
+  # module (scripts/lib/workspace_shards.py `--lib-list`). Three, one for each
+  # of the two modules that hold a long test and one for the rest: a fourth
+  # would split the rest, which is not what sets a part's length, for another
+  # build of the binary.
+  doc-content-shard:
+    name: cargo test -p sce-build --features cli --lib (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
     - name: Checkout Repository
@@ -128,4 +149,48 @@ jobs:
     # Delegates to the gate runner rather than restating the command, so
     # the scope has one spelling for both callers.
     - name: cargo test -p sce-build --features cli --lib
+      env:
+        SCE_DOC_CONTENT_SHARD: ${{ matrix.shard }}/3
       run: scripts/gate doc-content
+
+    # The plan and what this part ran (`doc-content` reads them).
+    - name: Upload this part's plan
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: always()
+      with:
+        name: doc-content-shard-${{ matrix.shard }}
+        path: target/doc-content-shard/
+        retention-days: 30
+        if-no-files-found: warn
+
+  # The verdict of the library's tests: every part planned the modules alike
+  # and ran every module of its part (`ctest_shards.py verify`). It keeps the
+  # job's id and name, so the lane's readers find it where the unsplit job was.
+  doc-content:
+    name: cargo test -p sce-build --features cli --lib
+    needs: doc-content-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    - name: Download the parts' plans
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: doc-content-shard-*
+        path: shards
+
+    - name: Hold the parts to one plan and the whole suite
+      env:
+        SHARDS_RESULT: ${{ needs.doc-content-shard.result }}
+      run: |
+        status=0
+        python3 scripts/lib/ctest_shards.py verify shards || status=1
+        if [[ "$SHARDS_RESULT" != success ]]; then
+          echo "::error title=doc-content::a part's job ended $SHARDS_RESULT"
+          status=1
+        fi
+        exit "$status"

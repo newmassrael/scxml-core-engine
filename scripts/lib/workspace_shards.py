@@ -12,6 +12,7 @@
 #   regen-reproduces  the regeneration's steps              SCE_REGEN_SHARD       regen-reproduces.yml
 #   tree-hygiene      the targets its `cargo test` names     SCE_TREE_HYGIENE_SHARD tree-hygiene.yml
 #   authoring-core    the suite's unittest modules           SCE_AUTHORING_CORE_SHARD authoring-core.yml
+#   doc-content       sce-build's library tests, by module   SCE_DOC_CONTENT_SHARD doc-content-gate.yml
 #
 # Unset, each gate runs its whole suite, which is what the build machines and a
 # developer run. (scripts/lib/ctest_shards.py is the same for a ctest suite.)
@@ -24,6 +25,8 @@
 #                                     the targets a gate script's cargo command names
 #   scripts/lib/workspace_shards.py --unittest-modules <dir> <k>/<N>
 #                                     the test modules unittest discovers under <dir>
+#   scripts/lib/workspace_shards.py --lib-list <file> --out <dir> <k>/<N>
+#                                     a library's tests by top module, from its --list
 #   scripts/lib/workspace_shards.py ... --out <dir> <k>/<N>     and write the plan there
 #   scripts/lib/workspace_shards.py --measure <job log>         the costs a run measured
 #   scripts/lib/workspace_shards.py --self-test
@@ -41,7 +44,12 @@
 # `cargo test` command, which is the one list of what that gate runs. For
 # `--unittest-modules`, `module <name>` is a module `python -m unittest
 # discover` loads from the directory, named from the directory's parent, which
-# is the top level the suite is discovered from.
+# is the top level the suite is discovered from. For `--lib-list`, `module
+# <name>` is every test of a library's unit-test binary under that top-level
+# module (or the one test of that name at the crate root), read from what the
+# binary's `--list` printed; the part's exact test names are written beside
+# the plan (`libtest-names`), because libtest matches a filter anywhere in a
+# name, so `tests::` would select every nested `tests` module of the crate.
 #
 # WHY SHARDS. The workspace suite outgrew one job. Measured on the run of
 # 293defb01c (Rust Workspace Tests, job 132834013098): 29 minutes of build and
@@ -232,6 +240,16 @@ GATE_UNMEASURED_SECONDS = 1.0
 # generator built (job 139000500233, 2026-11-25), and its runner prints dots, so
 # no module's time is in a log; the job runs each part with `--durations`, which
 # names the slowest tests, for the measurement that replaces this.
+# Seconds per top module of sce-build's library tests, from the whole run
+# (job 139036333453, 2026-11-25: 3730 tests in 463 s on the runner's threads).
+# Two modules hold the tests that ran longest, one each, and set the run's
+# length: `forge` (`payload_schema`'s fixture test ended at 463 s) and
+# `conformance` (`render_harness_all_languages` ended at 421 s); every other
+# module had finished by 240 s. A module the table does not hold costs a tenth
+# of a second a test.
+LIB_SECONDS: dict[str, float] = {"forge": 463, "conformance": 421}
+LIB_SECONDS_PER_TEST = 0.1
+
 UNITTEST_TEST = re.compile(r"^\s*(?:async\s+)?def test", re.M)
 
 CORE = "core"
@@ -411,6 +429,25 @@ def unittest_modules(directory: Path) -> dict[str, float]:
     return found
 
 
+def lib_tests(listing: str) -> list[str]:
+    """The tests a libtest binary's `--list` printed (`<name>: test`), sorted.
+    Refused when it printed none, which is a list that was not read."""
+    names = sorted({m.group(1) for m in re.finditer(r"^(\S+): test$", listing, re.M)})
+    if not names:
+        raise SystemExit("workspace_shards: the --list names no test")
+    return names
+
+
+def lib_top(name: str) -> str:
+    return f"module {name.split('::', 1)[0]}"
+
+
+def lib_names(names: list[str], part: list[str]) -> list[str]:
+    """The exact names of the tests whose top module is a unit of `part`."""
+    held = set(part)
+    return [name for name in names if lib_top(name) in held]
+
+
 def shards(all_units: list[str], count: int, cost: Cost) -> list[list[str]]:
     """`all_units` spread over `count` shards: longest first, each to the
     shard with the least work so far, the lowest-numbered of equals. Each
@@ -573,6 +610,30 @@ def self_test() -> int:
             check(sorted(assigned) == named and len(assigned) == len(set(assigned)),
                   f"{count}: the parts of tree-hygiene are every target once")
 
+    listing = "\n".join([
+        "tests::a: test", "forge::tests::b: test", "forge::generator::c: test",
+        "generator::d: test", "root_fn: test", "forge::e: bench", "",
+        "5 tests, 1 benchmark",
+    ])
+    names = lib_tests(listing)
+    check(names == ["forge::generator::c", "forge::tests::b", "generator::d", "root_fn",
+                    "tests::a"], f"the tests of a --list, no benchmark: {names}")
+    tops = sorted({lib_top(n) for n in names})
+    check(tops == ["module forge", "module generator", "module root_fn", "module tests"],
+          f"a test's unit is its top module: {tops}")
+    for count in (1, 2, 3, 4):
+        spread = shards(tops, count, lambda u: 1.0)
+        exact = [n for part in spread for n in lib_names(names, part)]
+        check(sorted(exact) == names and len(exact) == len(set(exact)),
+              f"{count}: the parts' exact names are every test once: {exact}")
+    check(lib_names(names, ["module tests"]) == ["tests::a"],
+          "a top module named `tests` holds its own tests and no nested one")
+    try:
+        lib_tests("running 0 tests\n")
+        check(False, "a list naming no test is refused")
+    except SystemExit:
+        check(True, "refused")
+
     authoring = REPO_ROOT / "tools/authoring/tests"
     if authoring.is_dir():
         modules = unittest_modules(authoring)
@@ -668,6 +729,9 @@ def main() -> int:
     parser.add_argument("--package", help="one package's suite, not the workspace's")
     parser.add_argument("--regen", action="store_true",
                         help="the regeneration's steps, not a cargo suite")
+    parser.add_argument("--lib-list", metavar="FILE",
+                        help="a library's tests, from what its test binary's --list "
+                             "printed")
     parser.add_argument("--unittest-modules", metavar="DIR",
                         help="the unittest modules discovered under DIR, a package "
                              "path from the repository root")
@@ -697,7 +761,19 @@ def main() -> int:
     if args.unittest_modules and (args.gate_targets or args.regen or args.package
                                   or args.features):
         parser.error("--unittest-modules spreads a Python suite; it takes no other suite")
-    if args.unittest_modules:
+    if args.lib_list and (args.unittest_modules or args.gate_targets or args.regen
+                          or args.package or args.features):
+        parser.error("--lib-list spreads a library's tests; it takes no other suite")
+    names: list[str] = []
+    if args.lib_list:
+        names = lib_tests(Path(args.lib_list).read_text(encoding="utf-8", errors="replace"))
+        tests_of: dict[str, int] = {}
+        for name in names:
+            tests_of[lib_top(name)] = tests_of.get(lib_top(name), 0) + 1
+        every = sorted(tests_of)
+        cost = lambda unit: LIB_SECONDS.get(  # noqa: E731  (one table, read once)
+            unit_name(unit), LIB_SECONDS_PER_TEST * tests_of.get(unit, 1))
+    elif args.unittest_modules:
         modules = unittest_modules(REPO_ROOT / args.unittest_modules)
         every = sorted(modules)
         cost = lambda unit: modules.get(unit, 1.0)  # noqa: E731  (one table, read once)
@@ -731,6 +807,10 @@ def main() -> int:
     part = plan["shards"][index - 1]["tests"]
     if args.out:
         write_plan(Path(args.out), plan, index, regen_outputs(part) if args.regen else None)
+        if args.lib_list:
+            mine = lib_names(names, part)
+            (Path(args.out) / "libtest-names").write_text(
+                "".join(f"{n}\n" for n in mine), encoding="utf-8")
     print("\n".join(part))
     return 0
 

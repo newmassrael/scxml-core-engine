@@ -2000,7 +2000,7 @@ fn the_ctest_shard_helpers_pass_their_own_cases() {
 /// Each lane whose shards workspace_shards.py plans: its workflow, the gate
 /// script its jobs run, the variable that hands the gate its shard, and the
 /// arguments that name the suite to the helper.
-const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 4] = [
+const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 5] = [
     (
         ".github/workflows/w3c-tests.yml",
         "scripts/gates/w3c-rust.sh",
@@ -2024,6 +2024,16 @@ const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 4] = [
         "scripts/gates/authoring-core.sh",
         "SCE_AUTHORING_CORE_SHARD",
         &["--unittest-modules", "tools/authoring/tests"],
+    ),
+    // Its units are read from the test binary's `--list`, which needs the
+    // binary built, so what is held without a tree is the wiring above; the
+    // helper's own cases hold the parts' exact names to every listed test once,
+    // and each part holds libtest's count to the names it was given.
+    (
+        ".github/workflows/doc-content-gate.yml",
+        "scripts/gates/doc-content.sh",
+        "SCE_DOC_CONTENT_SHARD",
+        &["--lib-list"],
     ),
 ];
 

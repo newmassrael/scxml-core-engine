@@ -17,6 +17,12 @@
 {
     "workflows": ["doc-content-gate.yml"],
     "runner_workflow": True,
+    # Its tests are spread over the lane's three jobs by top-level module when
+    # SCE_DOC_CONTENT_SHARD names `k/N` (`--lib-list` in
+    # scripts/lib/workspace_shards.py): whole, the job took 14 minutes on a
+    # hosted runner (job 139036333453). A plan makes one unit per part
+    # (`shard_count`).
+    "shard_env": "SCE_DOC_CONTENT_SHARD",
     "include_str_roots": ["sce-build"],
     "ci_only": "the library suite plus its build, on a filter wide "
                "enough to reach every compiled-in input. It is here "
