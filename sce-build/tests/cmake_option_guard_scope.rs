@@ -59,6 +59,21 @@
 //! a variable this scan cannot expand still counts, and an include outside
 //! the guard of any file of that name leaves the fragment unguarded: a
 //! missed guard, never an invented one.
+//!
+//! A test family is a guard too. `cmake/SCETestFamilies.cmake` declares
+//! each family with `sce_test_family(<name> ...)`, the block of the test
+//! tree that registers a family's tests opens with
+//! `if(SCE_TEST_FAMILY_<NAME>)`, and a tree configured with
+//! `SCE_TEST_FAMILIES` naming other families declares nothing of that
+//! block. So a family's guard is held here as an option's is. Two more
+//! claims are held, because a family list scopes a tree correctly only
+//! while they hold: every test the test tree registers lies under exactly
+//! one family's guard, or is one of `SHARED_TESTS`, so a list registers
+//! each test of the families it names and the empty list every test the
+//! tree had before families existed; and every family a guard names is
+//! declared, since a misspelt guard is false in every tree, the default
+//! one included. For those two, a directory `add_subdirectory` adds only
+//! under a guard is under it as a whole, as an included fragment is.
 
 mod common;
 
@@ -97,6 +112,14 @@ pattern!(
     r"\badd_(?:library|executable|custom_target)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)"
 );
 pattern!(RE_INCLUDE, r#"\binclude\s*\(\s*"?([^")\s]+)"#);
+pattern!(RE_SUBDIRECTORY, r#"\badd_subdirectory\s*\(\s*"?([^")\s]+)"#);
+pattern!(
+    RE_TEST_FAMILY,
+    r"\bsce_test_family\s*\(\s*([a-z][a-z0-9_]*)"
+);
+pattern!(RE_TEST_FAMILY_READ, r"\bSCE_TEST_FAMILY_([A-Z0-9_]+)\b");
+pattern!(RE_ADD_TEST, r"\badd_test\s*\(");
+pattern!(RE_TEST_NAME, r"\badd_test\s*\(\s*(?:NAME\s+)?([^\s)]+)");
 
 /// A clean result has to be earned. If the pathspec, the option
 /// scanner or the region scanner ever stops matching, every count
@@ -109,6 +132,23 @@ const MIN_DECLARED_OPTIONS: usize = 10;
 const MIN_GUARDED_OPTIONS: usize = 5;
 const MIN_SCOPED_VARIABLES: usize = 70;
 const MIN_SCOPED_TARGETS: usize = 100;
+/// Measured on the tree that introduced test families: 8 families, and 351
+/// `add_test` calls in the test tree.
+const MIN_TEST_FAMILIES: usize = 6;
+const MIN_TEST_TREE_REGISTRATIONS: usize = 250;
+
+/// The tests registered outside every family's guard, each with why: every
+/// family's tree has them, whichever families it registers.
+const SHARED_TESTS: &[(&str, &str)] = &[
+    (
+        "sce_build_is_current",
+        "the staleness fixture's setup, which every registered test requires",
+    ),
+    (
+        "install_tree_consumer",
+        "an opt-in of its own (SCE_BUILD_INSTALL_CONSUMER_TEST), off by default",
+    ),
+];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -175,7 +215,7 @@ fn documents() -> Vec<Doc> {
 /// Every option the project declares. Vendored options never reach
 /// here because their files are not scanned.
 fn declared_options(docs: &[Doc]) -> BTreeSet<String> {
-    let opts: BTreeSet<String> = docs
+    let mut opts: BTreeSet<String> = docs
         .iter()
         .flat_map(|d| d.lines.iter())
         .filter_map(|l| RE_OPTION.captures(l))
@@ -187,7 +227,18 @@ fn declared_options(docs: &[Doc]) -> BTreeSet<String> {
         opts.len(),
         MIN_DECLARED_OPTIONS,
     );
+    opts.extend(declared_test_families(docs));
     opts
+}
+
+/// The guard of every test family `cmake/SCETestFamilies.cmake` declares:
+/// `SCE_TEST_FAMILY_<NAME>` for each `sce_test_family(<name> ...)`.
+fn declared_test_families(docs: &[Doc]) -> BTreeSet<String> {
+    docs.iter()
+        .flat_map(|d| d.lines.iter())
+        .filter_map(|l| RE_TEST_FAMILY.captures(l))
+        .map(|c| format!("SCE_TEST_FAMILY_{}", c[1].to_uppercase()))
+        .collect()
 }
 
 /// Whether an `if(...)` condition guarantees `opt` is true inside it.
@@ -252,7 +303,58 @@ fn file_name(path: &str) -> &str {
 /// A document no include names (a directory's `CMakeLists.txt`, which
 /// `add_subdirectory` reaches) keeps its own blocks only.
 fn guard_regions_in(docs: &[Doc], opt: &str) -> Vec<Vec<(usize, usize)>> {
+    guarded_regions(docs, opt, false)
+}
+
+/// As `guard_regions_in`, and a directory's `CMakeLists.txt` is guarded as
+/// a whole too where every `add_subdirectory` that adds it lies in a block
+/// guarding `opt` or in a document so guarded as a whole.
+fn guard_regions_through_directories(docs: &[Doc], opt: &str) -> Vec<Vec<(usize, usize)>> {
+    guarded_regions(docs, opt, true)
+}
+
+/// The `CMakeLists.txt` an `add_subdirectory(<dir>)` in `from` adds, by its
+/// path in the repository; none for a directory named through a variable.
+fn added_directory(from: &str, dir: &str) -> Option<String> {
+    if dir.contains('$') {
+        return None;
+    }
+    let dir = dir.trim_end_matches('/');
+    Some(match from.rsplit_once('/') {
+        Some((base, _)) => format!("{base}/{dir}/CMakeLists.txt"),
+        None => format!("{dir}/CMakeLists.txt"),
+    })
+}
+
+/// Per document, the line ranges a guard holds.
+type DocumentRegions = Vec<Vec<(usize, usize)>>;
+
+fn guarded_regions(docs: &[Doc], opt: &str, through_directories: bool) -> DocumentRegions {
     let own: Vec<Vec<(usize, usize)>> = docs.iter().map(|d| guard_regions(&d.lines, opt)).collect();
+    // Each document a directory adds, with the (document, line) of every
+    // `add_subdirectory` that adds it.
+    let mut added: BTreeMap<usize, Vec<(usize, usize)>> = BTreeMap::new();
+    if through_directories {
+        let at_path: BTreeMap<&str, usize> = docs
+            .iter()
+            .enumerate()
+            .map(|(at, d)| (d.path.as_str(), at))
+            .collect();
+        for (at, doc) in docs.iter().enumerate() {
+            for (n, line) in doc.lines.iter().enumerate() {
+                for cap in RE_SUBDIRECTORY.captures_iter(line) {
+                    let Some(path) =
+                        added_directory(&doc.path, cap.get(1).expect("group").as_str())
+                    else {
+                        continue;
+                    };
+                    if let Some(&index) = at_path.get(path.as_str()) {
+                        added.entry(index).or_default().push((at, n));
+                    }
+                }
+            }
+        }
+    }
     // Each file name an include names, with the (document, line) of every
     // include of it.
     let mut includes: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
@@ -274,13 +376,14 @@ fn guard_regions_in(docs: &[Doc], opt: &str) -> Vec<Vec<(usize, usize)>> {
             if whole[index] {
                 continue;
             }
-            let Some(sites) = includes.get(file_name(&doc.path)) else {
-                continue;
+            let guarded = |sites: Option<&Vec<(usize, usize)>>| {
+                sites.is_some_and(|sites| {
+                    sites
+                        .iter()
+                        .all(|&(at, n)| whole[at] || inside(&own[at], n))
+                })
             };
-            if sites
-                .iter()
-                .all(|&(at, n)| whole[at] || inside(&own[at], n))
-            {
+            if guarded(includes.get(file_name(&doc.path))) || guarded(added.get(&index)) {
                 whole[index] = true;
                 grew = true;
             }
@@ -498,5 +601,301 @@ fn a_fragment_included_only_under_a_guard_is_guarded_whole() {
         regions[4].is_empty(),
         "a fragment nothing includes is not guarded: {:?}",
         regions[4]
+    );
+}
+
+/// A directory `add_subdirectory` adds only under a guard is under it as a
+/// whole, when directories are followed; one also added outside the guard is
+/// not, and without following directories neither is.
+#[test]
+fn a_directory_added_only_under_a_guard_is_guarded_whole() {
+    let doc = |path: &str, text: &str| Doc {
+        path: path.to_string(),
+        lines: text.lines().map(code).collect(),
+    };
+    let docs = [
+        doc(
+            "CMakeLists.txt",
+            "if(OPT)\n  add_subdirectory(guarded)\n  add_subdirectory(open)\nendif()\n\
+             add_subdirectory(open)\n",
+        ),
+        doc("guarded/CMakeLists.txt", "add_test(NAME t COMMAND t)\n"),
+        doc("open/CMakeLists.txt", "add_test(NAME u COMMAND u)\n"),
+    ];
+    let through = guard_regions_through_directories(&docs, "OPT");
+    assert_eq!(through[0], [(0, 3)], "the adder keeps its own block");
+    assert_eq!(
+        through[1],
+        [(0, 0)],
+        "a directory added only under the guard is guarded whole"
+    );
+    assert!(
+        through[2].is_empty(),
+        "a directory also added outside the guard is not guarded: {:?}",
+        through[2]
+    );
+    assert!(
+        guard_regions_in(&docs, "OPT")[1].is_empty(),
+        "directories are followed only when asked"
+    );
+}
+
+/// The name an `add_test` at line `n` registers, read from that line and the
+/// two after it, since a long call names its test on the next line.
+fn test_name(lines: &[String], n: usize) -> String {
+    let call = lines[n..lines.len().min(n + 3)].join(" ");
+    RE_TEST_NAME
+        .captures(&call)
+        .map_or_else(|| "<unnamed>".to_string(), |c| c[1].to_string())
+}
+
+/// Every test the test tree registers lies under exactly one family's guard,
+/// or is one of `SHARED_TESTS`. The test tree is every document guarded by
+/// `BUILD_TESTS` as a whole: the directories the top-level `CMakeLists.txt`
+/// adds under it, those they add, and the fragments they include. An example
+/// that registers its test under a `BUILD_TESTS` block of its own is not in
+/// it: the examples are `BUILD_EXAMPLES`'s, not a family's.
+///
+/// This is what makes the empty `SCE_TEST_FAMILIES` register every test the
+/// tree registered before families existed: each family resolves ON there
+/// (`a_family_list_registers_the_families_it_names`), and a registration no
+/// family guards would be the one place where the family list and the tree
+/// disagree.
+#[test]
+fn every_test_the_test_tree_registers_belongs_to_one_family() {
+    let docs = documents();
+    let families = declared_test_families(&docs);
+    assert!(
+        families.len() >= MIN_TEST_FAMILIES,
+        "found only {} test families (floor {MIN_TEST_FAMILIES}); \
+         cmake/SCETestFamilies.cmake moved or its declarations stopped matching",
+        families.len(),
+    );
+    let tree = guard_regions_through_directories(&docs, "BUILD_TESTS");
+    let guards: Vec<(&str, DocumentRegions)> = families
+        .iter()
+        .map(|family| {
+            (
+                family.as_str(),
+                guard_regions_through_directories(&docs, family),
+            )
+        })
+        .collect();
+
+    let mut registrations = 0usize;
+    let mut per_family: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut shared_seen: BTreeSet<String> = BTreeSet::new();
+    let mut violations: Vec<String> = Vec::new();
+    for (at, doc) in docs.iter().enumerate() {
+        if doc.lines.is_empty() || tree[at] != [(0, doc.lines.len() - 1)] {
+            continue;
+        }
+        for (n, line) in doc.lines.iter().enumerate() {
+            if !RE_ADD_TEST.is_match(line) {
+                continue;
+            }
+            registrations += 1;
+            let owners: Vec<&str> = guards
+                .iter()
+                .filter(|(_, regions)| inside(&regions[at], n))
+                .map(|&(family, _)| family)
+                .collect();
+            if let [owner] = owners.as_slice() {
+                *per_family.entry(*owner).or_default() += 1;
+                continue;
+            }
+            let name = test_name(&doc.lines, n);
+            if owners.is_empty() && SHARED_TESTS.iter().any(|&(shared, _)| shared == name) {
+                shared_seen.insert(name);
+                continue;
+            }
+            let held = if owners.is_empty() {
+                "no family".to_string()
+            } else {
+                owners.join(", ")
+            };
+            violations.push(format!("{}:{}  {name}  [{held}]", doc.path, n + 1));
+        }
+    }
+
+    assert!(
+        registrations >= MIN_TEST_TREE_REGISTRATIONS,
+        "only {registrations} add_test call(s) reached the scan (floor \
+         {MIN_TEST_TREE_REGISTRATIONS}); the test tree is no longer found under \
+         BUILD_TESTS, and a clean result would prove nothing",
+    );
+    assert!(
+        violations.is_empty(),
+        "{} test(s) the test tree registers outside exactly one family's guard:\n  {}\n\n\
+         Open the block with the guard of the family the test belongs to \
+         (`if(SCE_TEST_FAMILY_<NAME>)`, cmake/SCETestFamilies.cmake). A test no \
+         family guards is registered by every family list, so a lane that names \
+         one family configures it too; one two families guard is left out by a \
+         list that names only one of them.",
+        violations.len(),
+        violations.join("\n  "),
+    );
+    let idle: Vec<&String> = families
+        .iter()
+        .filter(|family| !per_family.contains_key(family.as_str()))
+        .collect();
+    assert!(
+        idle.is_empty(),
+        "the test families {idle:?} guard no test: a family that registers nothing \
+         scopes a tree to nothing, which reads as a passing lane",
+    );
+    let unused: Vec<&str> = SHARED_TESTS
+        .iter()
+        .map(|&(shared, _)| shared)
+        .filter(|shared| !shared_seen.contains(*shared))
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "SHARED_TESTS names {unused:?}, which the test tree no longer registers \
+         outside every family: drop the entry",
+    );
+}
+
+/// Every `SCE_TEST_FAMILY_<NAME>` a CMake file reads is a family
+/// `cmake/SCETestFamilies.cmake` declares. A guard naming no family is false
+/// in every tree, the default one included, so the block it opens would
+/// silently stop being registered anywhere.
+#[test]
+fn every_family_a_guard_names_is_declared() {
+    let docs = documents();
+    let families = declared_test_families(&docs);
+    let mut read = 0usize;
+    let mut unknown: Vec<String> = Vec::new();
+    for doc in &docs {
+        for (n, line) in doc.lines.iter().enumerate() {
+            for cap in RE_TEST_FAMILY_READ.captures_iter(line) {
+                read += 1;
+                let guard = format!("SCE_TEST_FAMILY_{}", &cap[1]);
+                if !families.contains(&guard) {
+                    unknown.push(format!("{}:{}  {guard}", doc.path, n + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        read >= families.len(),
+        "only {read} read(s) of a family guard for {} families; the scan stopped \
+         matching",
+        families.len(),
+    );
+    assert!(
+        unknown.is_empty(),
+        "{} guard(s) name a family cmake/SCETestFamilies.cmake does not declare:\n  {}",
+        unknown.len(),
+        unknown.join("\n  "),
+    );
+}
+
+/// What the family list resolves to, asked of CMake: with no list every
+/// family is ON, with a list exactly the families it names, and a name that
+/// is no family stops the configure. A tiny project that includes only the
+/// module keeps each configure to about a second.
+#[test]
+fn a_family_list_registers_the_families_it_names() {
+    if std::process::Command::new("cmake")
+        .arg("--version")
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(true)
+    {
+        eprintln!("SKIP: cmake not on PATH");
+        return;
+    }
+    let families = declared_test_families(&documents());
+    let sandbox = std::env::temp_dir().join(format!("sce-test-families-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sandbox);
+    std::fs::create_dir_all(&sandbox).expect("create sandbox");
+    // `project(... NONE)`: no compiler probe, so this does not depend on a
+    // toolchain being installed.
+    let probe = r#"cmake_minimum_required(VERSION 3.20)
+project(sce_test_family_probe NONE)
+include("@ROOT@/cmake/SCETestFamilies.cmake")
+get_property(_names GLOBAL PROPERTY _SCE_TEST_FAMILY_NAMES)
+foreach(_name IN LISTS _names)
+    string(TOUPPER "${_name}" _upper)
+    message(STATUS "FAMILY SCE_TEST_FAMILY_${_upper}=${SCE_TEST_FAMILY_${_upper}}")
+endforeach()
+"#
+    .replace("@ROOT@", &repo_root().display().to_string());
+    std::fs::write(sandbox.join("CMakeLists.txt"), probe).expect("write probe CMakeLists");
+
+    // Each list in a build directory of its own: the list is a cache entry,
+    // and a second configure of one directory would read the first's.
+    let configure = |case: &str, list: Option<&str>| -> (bool, String) {
+        let mut cmd = std::process::Command::new("cmake");
+        cmd.arg("-S")
+            .arg(&sandbox)
+            .arg("-B")
+            .arg(sandbox.join(format!("build-{case}")));
+        if let Some(list) = list {
+            cmd.arg(format!("-DSCE_TEST_FAMILIES={list}"));
+        }
+        let out = cmd.output().expect("cmake runs");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.success(), text)
+    };
+    let resolved = |text: &str| -> BTreeMap<String, String> {
+        text.lines()
+            .filter_map(|line| line.split_once("FAMILY "))
+            .filter_map(|(_, rest)| rest.split_once('='))
+            .map(|(guard, value)| (guard.to_string(), value.trim().to_string()))
+            .collect()
+    };
+    let on = |values: &BTreeMap<String, String>| -> BTreeSet<String> {
+        values
+            .iter()
+            .filter(|(_, value)| value.as_str() == "ON")
+            .map(|(guard, _)| guard.clone())
+            .collect()
+    };
+
+    let (ok, every) = configure("unset", None);
+    assert!(ok, "the probe did not configure with no list:\n{every}");
+    let every = resolved(&every);
+    assert_eq!(
+        every.keys().cloned().collect::<BTreeSet<String>>(),
+        families,
+        "the families the module resolves are not the ones it declares"
+    );
+    assert_eq!(
+        on(&every),
+        families,
+        "with no SCE_TEST_FAMILIES every family must be ON, or the default tree \
+         registers less than it did: {every:?}"
+    );
+
+    let (ok, one) = configure("one", Some("standard_host"));
+    assert!(ok, "the probe did not configure with one family:\n{one}");
+    assert_eq!(
+        on(&resolved(&one)),
+        BTreeSet::from(["SCE_TEST_FAMILY_STANDARD_HOST".to_string()]),
+        "a list of one family must turn on that family alone"
+    );
+
+    let (ok, two) = configure("two", Some("w3c;c11"));
+    assert!(ok, "the probe did not configure with two families:\n{two}");
+    assert_eq!(
+        on(&resolved(&two)),
+        BTreeSet::from([
+            "SCE_TEST_FAMILY_C11".to_string(),
+            "SCE_TEST_FAMILY_W3C".to_string(),
+        ]),
+        "a list of two families must turn on those two alone"
+    );
+
+    let (ok, unknown) = configure("unknown", Some("w3c;no_such_family"));
+    let _ = std::fs::remove_dir_all(&sandbox);
+    assert!(
+        !ok && unknown.contains("no_such_family"),
+        "a list naming no family must stop the configure and name it:\n{unknown}"
     );
 }

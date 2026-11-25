@@ -230,9 +230,15 @@ if(EMSCRIPTEN AND NOT SCE_WASM_THREADS)
         VERBATIM
     )
 
-    include(${CMAKE_CURRENT_SOURCE_DIR}/w3c/W3CPrograms.cmake)
+    if(SCE_TEST_FAMILY_W3C)
+        include(${CMAKE_CURRENT_SOURCE_DIR}/w3c/W3CPrograms.cmake)
+    endif()
     return()
 endif()
+
+# The engine's own suites, here and in each block below that opens with the
+# same guard (test family `engine`, cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_ENGINE)
 
 # ============================================================================
 # Performance Benchmarks (Optional)
@@ -253,7 +259,6 @@ set(SCE_TEST_TARGETS
     ready_scxml_engine_tests
     core_parser_tests
     model_tests
-    integration_tests
     concurrency_tests
     txml_converter_tests
 )
@@ -403,6 +408,11 @@ target_compile_definitions(ecmascript_semantics_test
 apply_sce_test_policies(ecmascript_semantics_test)
 
 add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
+endif() # SCE_TEST_FAMILY_ENGINE
+
+# datamodel="sce-static" under the Interpreter and generated to C++ (test
+# family `static_datamodel`, cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_STATIC_DATAMODEL)
 
 # ============================================================================
 # 2.6. datamodel="sce-static" under the Interpreter (SCE Accepted Subset §2.15)
@@ -480,6 +490,7 @@ if(NOT EMSCRIPTEN)
         ENVIRONMENT "SCE_CODEGEN_BIN=${SCE_CODEGEN}"
     )
 endif()
+endif() # SCE_TEST_FAMILY_STATIC_DATAMODEL
 
 # ============================================================================
 # 2.7. datamodel="sce-static" under generated C++ (SCE Accepted Subset §2.15)
@@ -591,6 +602,10 @@ function(sce_add_static_scenario_suite)
         target_sources(${_suite_TARGET} PRIVATE "${_unit}")
     endforeach()
 endfunction()
+
+# The suite the function above declares, and the programs beside it (test family
+# `static_datamodel`). The function itself is defined in every tree.
+if(SCE_TEST_FAMILY_STATIC_DATAMODEL)
 
 add_executable(static_datamodel_generated_cpp_test
     integration/static_scenarios/StaticScenarioReplay.cpp
@@ -1146,6 +1161,11 @@ if(NOT EMSCRIPTEN)
     apply_sce_test_policies(runtime_suite_runner_test)
     add_test(NAME runtime_suite_runner COMMAND runtime_suite_runner_test)
 endif()
+endif() # SCE_TEST_FAMILY_STATIC_DATAMODEL
+
+# The standard host features and the payload record codec (test family
+# `standard_host`, cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_STANDARD_HOST)
 
 # ============================================================================
 # The standard host features (docs/SCE_HOST_FEATURES.md): the scenarios of
@@ -1358,6 +1378,10 @@ target_compile_definitions(payload_record_codec_test
 )
 apply_sce_test_policies(payload_record_codec_test)
 add_test(NAME payload_record_codec COMMAND payload_record_codec_test)
+endif() # SCE_TEST_FAMILY_STANDARD_HOST
+
+# The engine's own suites (test family `engine`).
+if(SCE_TEST_FAMILY_ENGINE)
 
 # ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
@@ -1904,6 +1928,7 @@ target_link_libraries(an_assignment_stays_in_the_engine_test
 apply_sce_test_policies(an_assignment_stays_in_the_engine_test)
 
 add_test(NAME AnAssignmentStaysInTheEngine COMMAND an_assignment_stays_in_the_engine_test)
+endif() # SCE_TEST_FAMILY_ENGINE
 
 # ============================================================================
 # ECMA-262 through a Lua-LOWERED C++ artifact, compiled and run
@@ -1944,8 +1969,10 @@ add_test(NAME AnAssignmentStaysInTheEngine COMMAND an_assignment_stays_in_the_en
 # a PATH and read at run time, and re-running configure on an edit keeps a tree
 # from being rebuilt against a list it was not configured beside.
 # ============================================================================
+# Test family `lowered_ecma262` (cmake/SCETestFamilies.cmake), in a tree that
+# selected the Lua engine.
 string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_SELECTED_ENGINE)
-if(_SCE_SELECTED_ENGINE STREQUAL "lua")
+if(_SCE_SELECTED_ENGINE STREQUAL "lua" AND SCE_TEST_FAMILY_LOWERED_ECMA262)
     # REQUIRED here and nowhere else: this target cannot be assembled without
     # the fixture, and a silently skipped gate is the failure mode the whole
     # lane exists to remove. A quickjs tree never reaches this branch. 3.7 is
@@ -2075,6 +2102,9 @@ if(_SCE_SELECTED_ENGINE STREQUAL "lua")
     add_test(NAME LoweredEcma262 COMMAND lowered_ecma262_test)
     set_tests_properties(LoweredEcma262 PROPERTIES TIMEOUT 120)
 endif()
+
+# The engine's own suites (test family `engine`).
+if(SCE_TEST_FAMILY_ENGINE)
 
 # ============================================================================
 # 3. StateMachine Tests
@@ -2393,6 +2423,12 @@ target_link_libraries(core_parser_tests
 
 
 
+endif() # SCE_TEST_FAMILY_ENGINE
+
+# integration_tests, with the fixtures it compiles further below (test family
+# `integration`, cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_INTEGRATION)
+
 # ============================================================================
 # 6. Integration Tests (SCE architecture)
 # ============================================================================
@@ -2661,6 +2697,11 @@ target_link_libraries(integration_tests
 
 
 
+endif() # SCE_TEST_FAMILY_INTEGRATION
+
+# The engine's own suites (test family `engine`).
+if(SCE_TEST_FAMILY_ENGINE)
+
 # ============================================================================
 # 7. Model Layer Tests
 # ============================================================================
@@ -2813,14 +2854,22 @@ target_link_libraries(txml_converter_tests
 add_dependencies(txml_converter_tests sce_runtime)
 
 
+endif() # SCE_TEST_FAMILY_ENGINE
+
 # ============================================================================
 # 9. W3C SCXML Compliance Tests - Native and WASM
 # ============================================================================
 # The W3C runner and the interactive suite, with the registry and machines
 # they are built from, are declared in w3c/W3CPrograms.cmake: the tree without
 # threads (build_wasm_web) declares them too, to run the host-driven engine
-# the browser runs, so they are one file both trees include.
-include(${CMAKE_CURRENT_SOURCE_DIR}/w3c/W3CPrograms.cmake)
+# the browser runs, so they are one file both trees include (test family
+# `w3c`, cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_W3C)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/w3c/W3CPrograms.cmake)
+endif()
+
+# Test family `integration` (cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_INTEGRATION)
 
 # The integration fixtures, the machines integration_tests compiles beside them,
 # and the feature-conformance programs. Declared under Emscripten as natively:
@@ -3619,6 +3668,7 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_thermostat.scxml
 )
+endif() # SCE_TEST_FAMILY_INTEGRATION
 
 
 # ============================================================================
@@ -3627,7 +3677,8 @@ sce_add_state_machine(
 # Validates that generated mesh transport code compiles against generated SM
 # headers. Compilation success = test pass (runtime assertions live in
 # the *_runtime_verification tests below).
-if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
+# Test family `mesh` (cmake/SCETestFamilies.cmake), in a tree with SCE_ENABLE_MESH.
+if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN AND SCE_TEST_FAMILY_MESH)
     set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
     set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
 
@@ -8666,6 +8717,10 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     #   5. Register the driver as ctest `w3c_distributed_conformance_testN`
     #      under the `w3c_distributed_conformance` label for S5+'s
     #      `ctest -L w3c_distributed_conformance -j` acid-test sweep.
+    # A fixture's directory is named as every W3C route names it
+    # (`sce_w3c_fixture_dir`, cmake/SCEW3CRegistry.cmake), included here as
+    # well as by the W3C programs, whose family a tree can leave out.
+    include(${CMAKE_SOURCE_DIR}/cmake/SCEW3CRegistry.cmake)
     function(sce_generate_distributed_w3c_test TEST_NUM)
         set(test_id "${TEST_NUM}")
         set(test_src_dir "${W3C_DIST_SRC_DIR}/test${TEST_NUM}")
@@ -8943,6 +8998,8 @@ endif()
 # CTest execution order optimization (fast feedback → comprehensive validation → performance measurement)
 # ============================================================================
 
+# The engine's own suites (test family `engine`).
+if(SCE_TEST_FAMILY_ENGINE)
 # Priority Level 1: Fast unit tests (quick feedback during development, <1s)
 add_test(NAME CoreParserTests COMMAND core_parser_tests)
 add_test(NAME StatesTests COMMAND states_tests)
@@ -8965,13 +9022,18 @@ add_test(NAME GameLoopTimerTests COMMAND game_loop_timer_tests)
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
 add_test(NAME ConcurrencyTests COMMAND concurrency_tests)
+endif() # SCE_TEST_FAMILY_ENGINE
+if(SCE_TEST_FAMILY_INTEGRATION)
 add_test(NAME IntegrationTests COMMAND integration_tests)
 # WhatAnotherThreadPostsEntersThroughTheInboxTest runs `static_invoke_ending_order`
 # on the Interpreter as `sce-codegen lower` writes it (docs/adr/0084, D2 as amended
 # at step 10), spawned as static_datamodel_lowered_test spawns it; a WASM build
 # skips that case.
 set_tests_properties(IntegrationTests PROPERTIES ENVIRONMENT "SCE_CODEGEN_BIN=${SCE_CODEGEN}")
+endif() # SCE_TEST_FAMILY_INTEGRATION
 
+# Test family `w3c` (cmake/SCETestFamilies.cmake).
+if(SCE_TEST_FAMILY_W3C)
 # Priority Level 4: W3C SCXML compliance validation. Each test number's
 # program is its own ctest, `w3c_cpp_<number>`, registered in
 # w3c/W3CPrograms.cmake under the label `w3c_cpp`, natively and in both
@@ -9053,6 +9115,7 @@ if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_NUMBER)
     )
     set_tests_properties(W3CSkipsAndRepeatsReported PROPERTIES TIMEOUT 900)
 endif()
+endif() # SCE_TEST_FAMILY_W3C
 
 # ============================================================================
 # CTest execution order control: Set priority using COST property
@@ -9060,6 +9123,8 @@ endif()
 # so assign higher values to main tests than benchmarks (COST=1000) to ensure proper order
 # ============================================================================
 
+# Each set on the tests of the family that registers them.
+if(SCE_TEST_FAMILY_ENGINE)
 # Priority Level 1: COST 5000 (execute first)
 set_tests_properties(CoreParserTests PROPERTIES COST 5000)
 set_tests_properties(StatesTests PROPERTIES COST 5000)
@@ -9070,31 +9135,40 @@ set_tests_properties(StateMachineTests PROPERTIES COST 4000)
 set_tests_properties(JSEngineTests PROPERTIES COST 4000)
 set_tests_properties(ActionTests PROPERTIES COST 4000)
 set_tests_properties(SCESCXMLTests PROPERTIES COST 4000)
-set_tests_properties(ComprehensiveInteractiveTests PROPERTIES COST 4000)
+endif() # SCE_TEST_FAMILY_ENGINE
+if(SCE_TEST_FAMILY_W3C)
+    set_tests_properties(ComprehensiveInteractiveTests PROPERTIES COST 4000)
+endif()
 
 # Priority Level 3: COST 3000
-set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
-set_tests_properties(ConcurrencyTests PROPERTIES COST 3000)
-set_tests_properties(IntegrationTests PROPERTIES COST 3000)
+if(SCE_TEST_FAMILY_ENGINE)
+    set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
+    set_tests_properties(ConcurrencyTests PROPERTIES COST 3000)
+endif()
+if(SCE_TEST_FAMILY_INTEGRATION)
+    set_tests_properties(IntegrationTests PROPERTIES COST 3000)
+endif()
 
 # SSOT byte-equivalence harness — Rust vs C++ `sce:template`
 # expansion parity. Skipped on WASM because the harness spawns
 # `sce-codegen expand` as a subprocess via popen, which is not
 # available in the Emscripten runtime.
-if(NOT EMSCRIPTEN)
+if(NOT EMSCRIPTEN AND SCE_TEST_FAMILY_ENGINE)
     add_subdirectory(w3c_template_parity)
 endif()
 
 # Parsing unit-test family (PositionMap, expanders, the diagnostic
 # wire surface). Runs everywhere except the cross-producer parity
 # suite, which spawns `sce-codegen` and guards itself on EMSCRIPTEN.
-add_subdirectory(parsing)
+if(SCE_TEST_FAMILY_ENGINE)
+    add_subdirectory(parsing)
+endif()
 
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)
 # Benchmark subdirectory must be included AFTER all main tests to ensure proper execution order
 # WASM builds: Benchmarks excluded (Native-only performance measurement)
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
-if(BUILD_BENCHMARKS AND NOT EMSCRIPTEN)
+if(BUILD_BENCHMARKS AND NOT EMSCRIPTEN AND SCE_TEST_FAMILY_ENGINE)
     message(STATUS "Building performance benchmarks")
     add_subdirectory(benchmarks)
 endif()
@@ -9103,13 +9177,21 @@ endif()
 # Test dependency and priority configuration
 # ============================================================================
 
+# Each set on the tests of the family that registers them.
+if(SCE_TEST_FAMILY_ENGINE)
 # Advanced tests run only after core tests pass
 set_tests_properties(ActionTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests")
 set_tests_properties(HistoryTests PROPERTIES DEPENDS "StateMachineTests")
 set_tests_properties(StatesTests PROPERTIES DEPENDS "StateMachineTests")
+endif() # SCE_TEST_FAMILY_ENGINE
 
 # Integration tests run after core components pass
-set_tests_properties(IntegrationTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests;ActionTests")
+if(SCE_TEST_FAMILY_INTEGRATION)
+    set_tests_properties(IntegrationTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests;ActionTests")
+    set_tests_properties(IntegrationTests PROPERTIES TIMEOUT 180)
+endif()
+
+if(SCE_TEST_FAMILY_ENGINE)
 set_tests_properties(ConcurrencyTests PROPERTIES DEPENDS "StateMachineTests;StatesTests")
 
 set_tests_properties(TXMLConverterTests PROPERTIES DEPENDS "CoreParserTests")
@@ -9121,7 +9203,7 @@ set_tests_properties(TimerManagerTests PROPERTIES TIMEOUT 60)
 set_tests_properties(GameLoopTimerTests PROPERTIES TIMEOUT 30)
 set_tests_properties(JSEngineTests CoreParserTests StateMachineTests PROPERTIES TIMEOUT 60)
 set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)
-set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)
+set_tests_properties(ConcurrencyTests PROPERTIES TIMEOUT 180)
 set_tests_properties(TXMLConverterTests PROPERTIES TIMEOUT 120)
 
 # Limit parallel execution (resource-intensive tests)
@@ -9140,6 +9222,13 @@ message(STATUS "✅ JavaScript Engine tests enabled")
 message(STATUS "✅ Core Parser tests enabled")
 message(STATUS "✅ Integration tests enabled")
 message(STATUS "🚫 std::cout usage prohibited in all test targets")
+endif() # SCE_TEST_FAMILY_ENGINE
+
+# integration_tests takes the same policy, after everything its family declared
+# on it, as it did when SCE_TEST_TARGETS named it.
+if(SCE_TEST_FAMILY_INTEGRATION)
+    apply_sce_test_policies(integration_tests)
+endif()
 
 # ----------------------------------------------------------------------------
 # Install-tree consumer smoke test (opt-in).

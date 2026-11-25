@@ -479,6 +479,10 @@ a port file, so no run needs a fixed port free.")
 tests/w3c/basic_http_test_endpoint.h; the documents address it through the \
 published location, so this rarely needs overriding.")
 
+    # Which families of tests the directories below register: every one,
+    # unless SCE_TEST_FAMILIES names some (cmake/SCETestFamilies.cmake).
+    include(cmake/SCETestFamilies.cmake)
+
     add_subdirectory(tests)
     # RFC §5.J.1 — C11 backend conformance harness, sibling of the
     # C++ tests/ tree. Lives at the repo root next to backends/c/runtime
@@ -491,7 +495,8 @@ published location, so this rarely needs overriding.")
     # WebAssembly, so a build of it with emcc would check a target nothing
     # ships. Every target the emscripten tree declares is built and run by a
     # gate, so a target with no WebAssembly purpose is not declared there.
-    if(NOT EMSCRIPTEN)
+    # Test family `c11`.
+    if(NOT EMSCRIPTEN AND SCE_TEST_FAMILY_C11)
         add_subdirectory(backends/c/tests)
     endif()
 endif()
