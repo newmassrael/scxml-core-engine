@@ -4065,3 +4065,9 @@ change; a consumer regenerates its Rust codecs. No frame decodes differently.
   `()`). A walk written by hand outside the tree fails with `E0046` (missing `read_with`): rename its `read` to
   `read_with`, add the `hook` parameter, and hand it to the entry's own `read_with` where the entry holds a chain.
   A `read` kept beside it overrides the provided one, which a walk of the list calls and the scan of a chain does not.
+- **The function that reads a codec's body is `#[inline(never)]`**: the eager `read_into` of a codec that reads into
+  its destination (`read` of one built as a value) and a view's `read_with`. A dispatching variant calls one function
+  per arm, and a body several codecs embed is one function. Nothing a consumer calls changes. A build that wants
+  every read of a frame inlined into one function generates with `generate --inline-decode`
+  (`ForgeCompileOptions::inline_decode`), which marks them `#[inline(always)]`, and measures the image before keeping
+  it.

@@ -4564,6 +4564,19 @@ pub struct ForgeCompileOptions {
     /// property of one document: an attribute on a function needs nothing of
     /// the functions it calls.
     pub inline_encode: bool,
+    /// Rust only: always inline the function that reads each codec's body
+    /// (`generate --inline-decode`, docs/adr/0136).
+    ///
+    /// The function a parent reads a codec's body through, an arm of a
+    /// dispatching variant, an embedded body or a chain's entry, is out of line
+    /// by default (`#[inline(never)]`): a variant then calls one function per
+    /// arm and holds no arm's body, and a body several codecs embed is the one
+    /// function of its codec, not a copy at each. With this on it carries
+    /// `#[inline(always)]`, so a frame's decode is one function, at the price of
+    /// a copy of each body where it is read, which a build measures before it
+    /// keeps it. The runtime's read of a chain stays out of line either way. Like
+    /// [`Self::inline_encode`] it is a property of one document.
+    pub inline_decode: bool,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default

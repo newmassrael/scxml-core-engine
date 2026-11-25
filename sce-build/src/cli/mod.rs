@@ -2153,6 +2153,14 @@ struct GenerateArgs {
     /// A property of one document, not of a set; ignored for other languages.
     #[arg(long)]
     inline_encode: bool,
+    /// Rust only: always inline the function that reads each codec's body, so
+    /// a frame's decode is one function (docs/adr/0136). By default each body
+    /// is read by one function out of line, which a dispatching variant and
+    /// every codec that embeds the body call; this trades that sharing for the
+    /// calls. Measure it on the target before keeping it. A property of one
+    /// document, not of a set; ignored for other languages.
+    #[arg(long)]
+    inline_decode: bool,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -7429,6 +7437,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         owned_origin,
         views,
         inline_encode,
+        inline_decode,
         format_style,
         no_format,
         deploy,
@@ -7560,6 +7569,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 owned_origin,
                 views,
                 inline_encode,
+                inline_decode,
                 // The digest every file of this run is headed by, which a schema
                 // unit's payload schema names (docs/adr/0087, section 1.1).
                 source_hash: Some(drift_ctx.header.source_hex()),
@@ -8383,6 +8393,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             owned_origin,
             views,
             inline_encode,
+            inline_decode,
             // The digest the files of this run are headed by, which the unit of
             // a schema the document declares in place names in its payload
             // schema, as a schema document's does (docs/adr/0087, section 1.1).

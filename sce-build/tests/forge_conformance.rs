@@ -3893,6 +3893,50 @@ fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
     }
 }
 
+/// `generate --inline-decode` (docs/adr/0136) marks the function that reads each
+/// codec's body `#[inline(always)]` where it is otherwise `#[inline(never)]`, and
+/// changes nothing else. A codec set that nests bodies, lists, a chain and a
+/// variant, generated with it, differs from the set without it only in those
+/// lines, and still compiles as a program.
+#[test]
+fn inline_decode_marks_the_body_reads_and_changes_nothing_else() {
+    let dir = resource_dir();
+    let rust = sce_build::generator::Language::Rust;
+    let off = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, golden_options(rust))
+        .expect("generate with the option off");
+    let mut on_opts = golden_options(rust);
+    on_opts.inline_decode = true;
+    let on = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, on_opts)
+        .expect("generate with the option on");
+    assert_eq!(off.len(), on.len());
+    let mut marked = 0usize;
+    for ((name, plain), (_, inlined)) in off.iter().zip(&on) {
+        let (plain, inlined): (Vec<&str>, Vec<&str>) =
+            (plain.lines().collect(), inlined.lines().collect());
+        assert_eq!(
+            plain.len(),
+            inlined.len(),
+            "{name}: the option adds or removes lines"
+        );
+        for (a, b) in plain.iter().zip(&inlined) {
+            if a == b {
+                continue;
+            }
+            assert_eq!(
+                (a.trim(), b.trim()),
+                ("#[inline(never)]", "#[inline(always)]"),
+                "{name}: the option changed more than a body read's attribute"
+            );
+            marked += 1;
+        }
+    }
+    assert!(marked > 0, "no body read was marked");
+    if let Err(e) = rustc_run_generated_set(on, "inline_decode_rust", "build", RustcProfile::Alloc)
+    {
+        panic!("the set generated with --inline-decode does not compile:\n{e}");
+    }
+}
+
 /// A golden is text; this is the gate that it is also a program. The
 /// chain-membership lowering names locals, entry accessors and members on
 /// both the decode and the encode site, in six spellings each, and a name

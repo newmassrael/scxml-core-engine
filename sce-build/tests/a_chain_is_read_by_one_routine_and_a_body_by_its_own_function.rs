@@ -10,6 +10,10 @@
 //! view hands `walk_chain` its walk and its hook. What the routines do, frame by
 //! frame, is held by their unit tests in `backends/rust/forge-runtime/src/chain.rs`
 //! and by the round trips the conformance crate runs over the goldens.
+//!
+//! The function a parent reads a codec's body through (an arm of a dispatching
+//! variant, an embedded body, a chain's entry) is out of line, so it is one
+//! function every reader of the body calls; `inline_decode` asks it inlined.
 
 use std::path::PathBuf;
 
@@ -248,5 +252,124 @@ fn a_view_scans_a_chain_by_one_call_of_the_runtime_with_its_walk() {
             body.contains(&said),
             "codec_chain_prev_carrier's view does not hand the scan `{said}`:\n{body}"
         );
+    }
+}
+
+/// Each `read`, `read_into` and `read_with` the code declares as a method of
+/// its own: the line before its signature, trimmed, and its body.
+fn reads(code: &str) -> Vec<(&str, &str)> {
+    ["read", "read_into", "read_with"]
+        .into_iter()
+        .flat_map(|name| {
+            let head = format!("    pub fn {name}");
+            code.match_indices(&head)
+                .filter(|(at, _)| {
+                    let after = &code[at + head.len()..];
+                    after.starts_with('(') || after.starts_with('<')
+                })
+                .map(|(at, _)| {
+                    let before = code[..at].lines().last().unwrap_or_default().trim();
+                    let body = &code[at..];
+                    let end = body.find("\n    }\n").unwrap_or(body.len());
+                    (before, &body[..end])
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Whether `body` reads the frame and is no call of another of the codec's
+/// reads: the eager read that fills its destination, the eager read of a codec
+/// built as a value, and the view's hooked read.
+fn reads_the_body(body: &str) -> bool {
+    ![
+        "*_out = Self::read(",
+        "Self::read_into(cursor, &mut _out",
+        "Self::read_with(cursor",
+        "        Self::read(cursor",
+    ]
+    .iter()
+    .any(|forward| body.contains(forward))
+}
+
+/// Codecs of each shape a body read takes: a dispatching variant, a codec with
+/// a chain and an embedded body, a chain alone, and a frame built as a value.
+const BODIES: [&str; 4] = [
+    "codec_zenoh_network_envelope",
+    "codec_zenoh_oam",
+    "codec_tlv_chain_basic",
+    "codec_simple_frame",
+];
+
+/// The function that reads a codec's body is `#[inline(never)]` by default and
+/// `#[inline(always)]` under `inline_decode`; a read that only calls it keeps no
+/// attribute of the option's.
+#[test]
+fn a_body_read_is_out_of_line_by_default_and_inlined_when_the_build_asks() {
+    for (inline_decode, attribute) in [(false, "#[inline(never)]"), (true, "#[inline(always)]")] {
+        let options = ForgeCompileOptions {
+            views: true,
+            inline_decode,
+            ..ForgeCompileOptions::default()
+        };
+        for name in BODIES {
+            let code = rust_with(name, &options);
+            let all = reads(&code);
+            let body_reads: Vec<&(&str, &str)> = all
+                .iter()
+                .filter(|(_, body)| reads_the_body(body))
+                .collect();
+            assert!(!body_reads.is_empty(), "{name} has no body read:\n{code}");
+            for (before, body) in &body_reads {
+                assert_eq!(
+                    *before, attribute,
+                    "{name}'s body read is not marked `{attribute}`:\n{body}"
+                );
+            }
+            for (before, body) in all.iter().filter(|(_, body)| !reads_the_body(body)) {
+                assert_ne!(
+                    *before, "#[inline(never)]",
+                    "{name} keeps a read that only forwards out of line:\n{body}"
+                );
+            }
+        }
+    }
+}
+
+/// `inline_decode` changes the attribute of each body read and nothing else: the
+/// two outputs are the same lines but for `#[inline(never)]` made
+/// `#[inline(always)]`, and at least one is.
+#[test]
+fn inline_decode_changes_nothing_but_the_body_reads_attribute() {
+    for name in BODIES {
+        let off = rust_of(name);
+        let on = rust_with(
+            name,
+            &ForgeCompileOptions {
+                views: true,
+                inline_decode: true,
+                ..ForgeCompileOptions::default()
+            },
+        );
+        let (off_lines, on_lines): (Vec<&str>, Vec<&str>) =
+            (off.lines().collect(), on.lines().collect());
+        assert_eq!(
+            off_lines.len(),
+            on_lines.len(),
+            "{name}: inline_decode adds or removes lines"
+        );
+        let mut marked = 0usize;
+        for (plain, inlined) in off_lines.iter().zip(&on_lines) {
+            if plain == inlined {
+                continue;
+            }
+            assert_eq!(
+                (plain.trim(), inlined.trim()),
+                ("#[inline(never)]", "#[inline(always)]"),
+                "{name}: inline_decode changes more than a body read's attribute"
+            );
+            marked += 1;
+        }
+        assert!(marked > 0, "{name}: inline_decode marks no body read");
     }
 }

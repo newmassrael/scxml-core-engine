@@ -417,7 +417,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    {{ body_read_attr }}
     pub fn read_into{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}){{ decode_where }} {
 {% set view_decode = false %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
@@ -435,7 +437,10 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// Read the frame through `cursor`, the frame's reader, as a value built
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
-    /// once the frame is read (docs/adr/0128).
+    /// once the frame is read (docs/adr/0128). A codec that embeds or
+    /// dispatches to this one reads it through this one function, which is not
+    /// copied into each (docs/adr/0136).
+    {{ body_read_attr }}
     pub fn read{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self{{ decode_where }} {
 {% set view_decode = false %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
@@ -742,7 +747,10 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// [`Self::read`], each entry of every chain the frame holds, this view's
     /// and those of every body it reads, shown to `_hook` right after the entry
     /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
-    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself. A
+    /// view that embeds, dispatches to or lists this one reads it through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    {{ body_read_attr }}
     pub fn read_with<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self {
 {% set view_decode = true %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}

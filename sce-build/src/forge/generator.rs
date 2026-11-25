@@ -14331,6 +14331,9 @@ struct CodecForms {
     views: bool,
     /// Always inline the functions that write (docs/adr/0061).
     inline_encode: bool,
+    /// Always inline the function that reads a codec's body, which is otherwise
+    /// out of line (docs/adr/0136).
+    inline_decode: bool,
 }
 
 /// The refusal of a codec that carries a sub-feature only an MCU-class backend writes (today DMA
@@ -14363,6 +14366,18 @@ pub(crate) fn reject_mcu_only_codec(
     ))
 }
 
+/// The attribute of the function that reads a codec's body, for
+/// [`CodecForms::inline_decode`] (docs/adr/0136): out of line by default, so a
+/// body is one function every reader of it calls, and always inlined where the
+/// build asks every read inlined.
+fn body_read_attribute(inline_decode: bool) -> &'static str {
+    if inline_decode {
+        "#[inline(always)]"
+    } else {
+        "#[inline(never)]"
+    }
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -14374,6 +14389,7 @@ fn render_codec(
         owned_origin,
         views,
         inline_encode,
+        inline_decode,
     } = forms;
     if matches!(lang, crate::generator::Language::C11) {
         c11_refuse_a_field_it_cannot_hold(m)?;
@@ -17755,6 +17771,14 @@ fn render_codec(
         // generated with views has a `{Codec}View`, which is what lets a
         // parent name the view of a body without knowing which kind it is.
         ctx.insert("emit_views".into(), emit_views.into());
+        // docs/adr/0136: the function a parent reads this codec's body through
+        // (an arm, an embedded body, a chain's entry) is one function, out of
+        // line, so a variant holds no arm's body and a body several codecs read
+        // is not copied into each; `--inline-decode` asks it inlined.
+        ctx.insert(
+            "body_read_attr".into(),
+            body_read_attribute(inline_decode).into(),
+        );
         if emit_views {
             let view_borrowed = codec_self_view_borrowed(m, imports);
             ctx.insert("view_is_alias".into(), (!m.has_own_view()).into());
@@ -29883,6 +29907,7 @@ pub fn generate_rust_with_imports_and_externs(
                 // serves every deployment, so the deploy input does not make it.
                 views: options.views,
                 inline_encode: options.inline_encode,
+                inline_decode: options.inline_decode,
             },
         )?,
         ForgeDocument::Validator(m) => {
