@@ -421,7 +421,33 @@ pub const fn widen_usize(n: usize) -> u64 {
 /// flagged bytes ends with a ninth that holds a full 8 data bits, so no ZInt
 /// is longer than nine bytes, whatever the width of the field that reads it
 /// (Appendix B of the protocol-synthesis RFC).
-const ZINT_FLAGGED_BYTES: u32 = 8;
+const ZINT_FLAGGED_BYTES: usize = 8;
+
+/// The longest ZInt: the flagged bytes and the ninth that ends a chain of
+/// all of them.
+const ZINT_MAX_BYTES: usize = ZINT_FLAGGED_BYTES + 1;
+
+/// The ZInt at the start of `bytes` and the count of bytes it takes, or
+/// `None` when `bytes` ends inside its chain. Both paths of
+/// [`SceCursor::read_zint`] run this one decode: given nine bytes the length
+/// is known where it is inlined, so the chain is read with no test of the
+/// end, since no chain can run past them; given a shorter tail, the iterator
+/// tests each byte once against the end, and the chain may end with the tail.
+#[inline(always)]
+fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
+    let mut value: u64 = 0;
+    for (group, &b) in bytes.iter().take(ZINT_FLAGGED_BYTES).enumerate() {
+        value |= u64::from(b & 0x7F) << (7 * group);
+        if (b & 0x80) == 0 {
+            return Some((value, group + 1));
+        }
+    }
+    let &last = bytes.get(ZINT_FLAGGED_BYTES)?;
+    Some((
+        value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES)),
+        ZINT_MAX_BYTES,
+    ))
+}
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_array` to bounds-check + read fixed-offset bytes positionally
@@ -510,19 +536,34 @@ impl<'a> SceCursor<'a> {
     /// (1 = another byte follows); a ninth carries a full 8 data bits and
     /// has no flag, so bit 63 rides in its high bit and no chain is longer.
     /// A chain the buffer ends inside is `NeedMoreBytes`.
+    ///
+    /// When nine bytes remain, the longest a ZInt is, they are taken as one
+    /// array, whose length is the one test of the end, and the chain is read
+    /// from it with no other; when fewer remain, the tail is read byte by
+    /// byte. Both run the one decode, [`decode_zint`].
+    ///
+    /// The cursor after the read: past the ZInt when it is whole, and at the
+    /// end of the input on `NeedMoreBytes`, every byte left having been a
+    /// flagged byte of the chain. A caller that resumes once more bytes have
+    /// arrived reads again from a copy of the cursor taken before this read
+    /// (`SceCursor` is `Copy`).
+    #[inline(always)]
     fn read_zint(&mut self) -> Result<u64, CodecError> {
-        let mut value: u64 = 0;
-        for group in 0..ZINT_FLAGGED_BYTES {
-            let b = self.peek_u8()?;
-            self.advance(1)?;
-            value |= u64::from(b & 0x7F) << (7 * group);
-            if (b & 0x80) == 0 {
-                return Ok(value);
+        let tail = self.buf.get(self.pos..).unwrap_or_default();
+        let decoded = match tail.first_chunk::<ZINT_MAX_BYTES>() {
+            Some(chunk) => decode_zint(chunk),
+            None => decode_zint(tail),
+        };
+        match decoded {
+            Some((value, len)) => {
+                self.pos += len;
+                Ok(value)
+            }
+            None => {
+                self.pos = self.buf.len();
+                Err(CodecError::NeedMoreBytes)
             }
         }
-        let last = self.peek_u8()?;
-        self.advance(1)?;
-        Ok(value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES)))
     }
 
     /// Read a `vle_u<N>` field of `max_bits` width: one ZInt
@@ -532,7 +573,17 @@ impl<'a> SceCursor<'a> {
     /// narrow field accepts every encoding of a value it holds, the padded
     /// ones included, as upstream Zenoh does, and refuses a value past
     /// `2^max_bits - 1` with `VleWidthOverflow` (the wire is corrupt or a
-    /// too-narrow `vle_u<N>` was used), never a longer encoding.
+    /// too-narrow `vle_u<N>` was used), never a longer encoding. On
+    /// `VleWidthOverflow` the ZInt was whole and the cursor is past it.
+    ///
+    /// This is the one out-of-line body of every width's read, entered when
+    /// the next byte is not a ZInt by itself ([`Self::read_zint_byte`]): a
+    /// chain of two or more bytes, or the end of the input. It is cold so the
+    /// one-byte read inlined at each field stays a test and a branch, and it
+    /// is shared so the longer decode is compiled once, however many fields
+    /// of however many widths read a ZInt.
+    #[cold]
+    #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
         let value = self.read_zint()?;
         if max_bits < u64::BITS && value >> max_bits != 0 {
@@ -541,21 +592,53 @@ impl<'a> SceCursor<'a> {
         Ok(value)
     }
 
+    /// The next byte when it is a whole ZInt by itself, its continuation flag
+    /// clear, with the cursor moved past it; `None`, with the cursor where
+    /// it was, at the end of the input or at a byte that begins a longer
+    /// chain. A value below 128 is held by every width, so no width is
+    /// tested.
+    #[inline(always)]
+    fn read_zint_byte(&mut self) -> Option<u8> {
+        let b = self
+            .buf
+            .get(self.pos)
+            .copied()
+            .filter(|&b| (b & 0x80) == 0)?;
+        self.pos += 1;
+        Some(b)
+    }
+
     /// Read a `vle_u16` field: a ZInt of 1-9 wire bytes whose value is at
-    /// most `u16::MAX`.
+    /// most `u16::MAX`. A one-byte ZInt is read where this is inlined;
+    /// every other goes to the shared `read_vle_inner`.
+    #[inline]
     pub fn read_vle_u16(&mut self) -> Result<u16, CodecError> {
-        self.read_vle_inner(16).map(|v| v as u16)
+        match self.read_zint_byte() {
+            Some(b) => Ok(u16::from(b)),
+            None => self.read_vle_inner(16).map(|v| v as u16),
+        }
     }
 
     /// Read a `vle_u32` field: a ZInt of 1-9 wire bytes whose value is at
-    /// most `u32::MAX`.
+    /// most `u32::MAX`. A one-byte ZInt is read where this is inlined;
+    /// every other goes to the shared `read_vle_inner`.
+    #[inline]
     pub fn read_vle_u32(&mut self) -> Result<u32, CodecError> {
-        self.read_vle_inner(32).map(|v| v as u32)
+        match self.read_zint_byte() {
+            Some(b) => Ok(u32::from(b)),
+            None => self.read_vle_inner(32).map(|v| v as u32),
+        }
     }
 
-    /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes.
+    /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes. A one-byte ZInt is
+    /// read where this is inlined; every other goes to the shared
+    /// `read_vle_inner`.
+    #[inline]
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
-        self.read_vle_inner(64)
+        match self.read_zint_byte() {
+            Some(b) => Ok(u64::from(b)),
+            None => self.read_vle_inner(64),
+        }
     }
 }
 
@@ -1578,6 +1661,218 @@ mod tests {
         let buf = [0x80];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.read_vle_u32(), Err(CodecError::NeedMoreBytes));
+    }
+
+    // ── The ZInt read held to a reference decode ─────────────────
+
+    /// A ZInt read the plain way, one byte at a time as the encoding is
+    /// written, then held to `max_bits`: the result and the bytes left after
+    /// the read, as every reader of the cursor must give them. An input that
+    /// ends inside the chain leaves no byte; a value past the width leaves the
+    /// bytes after its ZInt.
+    fn reference_read(input: &[u8], max_bits: u32) -> (Result<u64, CodecError>, usize) {
+        let mut value: u64 = 0;
+        let mut taken = 0;
+        loop {
+            let Some(&b) = input.get(taken) else {
+                return (Err(CodecError::NeedMoreBytes), 0);
+            };
+            taken += 1;
+            if taken == 9 {
+                value |= u64::from(b) << 56;
+                break;
+            }
+            value |= u64::from(b & 0x7F) << (7 * (taken - 1));
+            if (b & 0x80) == 0 {
+                break;
+            }
+        }
+        let left = input.len() - taken;
+        if max_bits < 64 && value >> max_bits != 0 {
+            (Err(CodecError::VleWidthOverflow), left)
+        } else {
+            (Ok(value), left)
+        }
+    }
+
+    /// The bytes of the shortest ZInt of `value`.
+    fn shortest_zint_len(value: u64) -> usize {
+        (1..9).find(|&len| value >> (7 * len) == 0).unwrap_or(9)
+    }
+
+    /// `value` as a ZInt of exactly `len` bytes, at least its shortest, in
+    /// the first `len` bytes of the array: the groups past the shortest
+    /// encoding are flagged zero groups ended by a zero byte.
+    fn zint_of_len(value: u64, len: usize) -> [u8; 9] {
+        assert!((shortest_zint_len(value)..=9).contains(&len));
+        let mut wire = [0u8; 9];
+        for (i, byte) in wire.iter_mut().enumerate().take(len) {
+            *byte = if i == 8 {
+                (value >> 56) as u8
+            } else {
+                let group = ((value >> (7 * i)) & 0x7F) as u8;
+                if i + 1 < len {
+                    group | 0x80
+                } else {
+                    group
+                }
+            };
+        }
+        wire
+    }
+
+    /// Every one-byte value, `2^(7k) - 1` and `2^(7k)` for each count `k`
+    /// of 7-bit groups, the bounds of each width and the first values past
+    /// them, and `u64::MAX`.
+    fn zint_values() -> impl Iterator<Item = u64> {
+        let groups = (1..=9u32).flat_map(|k| {
+            let p = 1u64 << (7 * k);
+            [p - 1, p]
+        });
+        (0..=255u64).chain(groups).chain([
+            u64::from(u16::MAX),
+            u64::from(u16::MAX) + 1,
+            u64::from(u32::MAX),
+            u64::from(u32::MAX) + 1,
+            u64::MAX,
+        ])
+    }
+
+    /// Read `input` from `offset` at each width, through the public reader
+    /// (one-byte path inlined, the rest out of line) and through the shared
+    /// out-of-line body alone, and hold the result and the bytes left after
+    /// it to [`reference_read`].
+    fn assert_reads_as_reference(input: &[u8], offset: usize) {
+        let tail = &input[offset..];
+        for bits in [16u32, 32, 64] {
+            let want = reference_read(tail, bits);
+            let mut public = SceCursor::new(input);
+            public.advance(offset).unwrap();
+            let got = match bits {
+                16 => public.read_vle_u16().map(u64::from),
+                32 => public.read_vle_u32().map(u64::from),
+                _ => public.read_vle_u64(),
+            };
+            assert_eq!(
+                (got, public.remaining()),
+                want,
+                "{bits}-bit read of {tail:02x?}"
+            );
+            let mut shared = SceCursor::new(input);
+            shared.advance(offset).unwrap();
+            let got = shared.read_vle_inner(bits);
+            assert_eq!(
+                (got, shared.remaining()),
+                want,
+                "shared {bits}-bit body on {tail:02x?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_zint_reads_as_the_reference_at_every_length_width_and_tail() {
+        // After the ZInt: nothing, one byte, and nine flagged bytes, so the
+        // read starts both with fewer than nine bytes left and with nine or
+        // more, and a byte after the ZInt is never taken into it.
+        let trailers: [&[u8]; 3] = [&[], &[0x00], &[0xFF; 9]];
+        for value in zint_values() {
+            for len in shortest_zint_len(value)..=9 {
+                let wire = zint_of_len(value, len);
+                for trailer in trailers {
+                    for offset in [0, 3] {
+                        let mut buf = [0xAAu8; 21];
+                        let end = offset + len + trailer.len();
+                        buf[offset..offset + len].copy_from_slice(&wire[..len]);
+                        buf[offset + len..end].copy_from_slice(trailer);
+                        let input = &buf[..end];
+                        assert_eq!(
+                            reference_read(&input[offset..], 64),
+                            (Ok(value), trailer.len()),
+                            "the reference misreads {value:#x} in {len} bytes"
+                        );
+                        assert_reads_as_reference(input, offset);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_zint_cut_short_needs_more_bytes_at_every_cut_and_width() {
+        for value in zint_values() {
+            for len in shortest_zint_len(value)..=9 {
+                let wire = zint_of_len(value, len);
+                for cut in 0..len {
+                    for offset in [0, 3] {
+                        let mut buf = [0xAAu8; 12];
+                        buf[offset..offset + cut].copy_from_slice(&wire[..cut]);
+                        let input = &buf[..offset + cut];
+                        assert_eq!(
+                            reference_read(&input[offset..], 64),
+                            (Err(CodecError::NeedMoreBytes), 0)
+                        );
+                        assert_reads_as_reference(input, offset);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_input_of_one_or_two_bytes_reads_as_the_reference() {
+        for first in 0..=u8::MAX {
+            assert_reads_as_reference(&[first], 0);
+            for second in 0..=u8::MAX {
+                assert_reads_as_reference(&[first, second], 0);
+                let mut long = [0xFFu8; 11];
+                long[0] = first;
+                long[1] = second;
+                assert_reads_as_reference(&long, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn every_placement_of_the_flags_in_nine_bytes_reads_as_the_reference() {
+        // Each of the 512 ways to flag nine bytes, over data bits that differ
+        // byte to byte, cut at every length and followed by nine more bytes.
+        for flags in 0..(1u32 << 9) {
+            let mut buf = [0xFFu8; 18];
+            for (i, byte) in buf.iter_mut().enumerate().take(9) {
+                let data = (0x35 + 11 * i as u8) & 0x7F;
+                *byte = if flags & (1 << i) != 0 {
+                    data | 0x80
+                } else {
+                    data
+                };
+            }
+            for end in 0..=buf.len() {
+                assert_reads_as_reference(&buf[..end], 0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_zint_read_leaves_the_cursor_where_the_chain_stopped() {
+        // Cut short: every byte left was a flagged byte of the chain, and the
+        // cursor is at the end of the input.
+        let mut c = SceCursor::new(&[0x01, 0x80, 0x80]);
+        c.advance(1).unwrap();
+        assert_eq!(c.read_vle_u64(), Err(CodecError::NeedMoreBytes));
+        assert_eq!(c.remaining(), 0);
+        let mut c = SceCursor::new(&[]);
+        assert_eq!(c.read_vle_u16(), Err(CodecError::NeedMoreBytes));
+        assert_eq!(c.remaining(), 0);
+        // Past its width: the ZInt was whole and the cursor is past it, both
+        // with fewer than nine bytes left at the read and with nine or more.
+        let mut c = SceCursor::new(&[0x80, 0x80, 0x04, 0x7F]);
+        assert_eq!(c.read_vle_u16(), Err(CodecError::VleWidthOverflow));
+        assert_eq!(c.remaining(), 1);
+        let mut long = [0x7Fu8; 12];
+        long[..5].copy_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x10]);
+        let mut c = SceCursor::new(&long);
+        assert_eq!(c.read_vle_u32(), Err(CodecError::VleWidthOverflow));
+        assert_eq!(c.remaining(), 7);
     }
 
     // ── RFC §synth-5-B string primitive — InvalidUtf8 variant exists and is
