@@ -53,6 +53,9 @@ after the other in `&'f [u8]`:
 - The reader is ADR 0128's `SceReader`, one for the whole sequence: the first refusal of any record is the
   sequence's verdict, `next` answers `None` from then on, and `consumed` stays at the end of the last record read
   whole.
+- A tag of an arm the build leaves out (ADR 0072) refuses the sequence with `VariantArmNotBuilt`, as one frame's
+  decode refuses it: the tag is one the document names, so the frame is not something else. A codec every arm of
+  which a build may leave out has no records, since a record enum with no variant in some build is no type.
 
 The rest of the codec does not change: `{Codec}View::decode` still reads one frame as the enum of every arm.
 

@@ -1282,3 +1282,174 @@ mod refused_lengths {
         assert!(CodecDeclaredBounds::decode(&mut SceCursor::new(&frame)).is_ok());
     }
 }
+
+// A batch of network messages is read one record at a time (docs/adr/0130):
+// `next` peeks a record's tag and hands out a handle of its arm, the arm's view
+// is read when the handle is, and each chain entry is shown to the hook the
+// record is read with, in that one read.
+mod records {
+    use super::codecs::codec_zenoh_network_envelope::{
+        CodecZenohNetworkEnvelopeRecord as Record, CodecZenohNetworkEnvelopeRecords as Records,
+    };
+    use super::codecs::codec_zenoh_oam::CodecZenohOamView;
+    use sce_forge_runtime::codec::{ChainHook, ChainSite, CodecError, SceCursor};
+
+    const OAM_EXTENSIONS: ChainSite = ChainSite {
+        codec: "codec_zenoh_oam",
+        field: "extensions",
+    };
+
+    /// Each entry shown, by its site; the entry whose first byte is `refuse`
+    /// is refused.
+    struct Seen {
+        entries: Vec<(ChainSite, Vec<u8>)>,
+        refuse: Option<u8>,
+    }
+
+    impl Seen {
+        fn admitting() -> Self {
+            Self {
+                entries: Vec::new(),
+                refuse: None,
+            }
+        }
+
+        fn refusing(first: u8) -> Self {
+            Self {
+                entries: Vec::new(),
+                refuse: Some(first),
+            }
+        }
+    }
+
+    impl ChainHook for Seen {
+        fn entry(&mut self, site: ChainSite, entry: &[u8]) -> Result<(), CodecError> {
+            self.entries.push((site, entry.to_vec()));
+            match (self.refuse, entry.first()) {
+                (Some(refused), Some(&first)) if refused == first => {
+                    Err(CodecError::TooManyElements)
+                }
+                _ => Ok(()),
+            }
+        }
+    }
+
+    /// The ids of the OAM records of `bytes` read whole, each read with
+    /// `hook`, the sequence's verdict and the bytes it read whole.
+    fn oam_ids(bytes: &[u8], hook: &mut Seen) -> (Vec<u16>, Result<(), CodecError>, usize) {
+        let mut records = Records::new(bytes);
+        let mut ids = Vec::new();
+        while let Some(record) = records.next() {
+            let id = match record {
+                Record::CodecZenohOam(oam) => oam.read_with(hook).id,
+                _ => panic!("only OAM frames were written"),
+            };
+            if records.verdict().is_ok() {
+                ids.push(id);
+            }
+        }
+        (ids, records.verdict(), records.consumed())
+    }
+
+    #[test]
+    fn records_are_read_one_after_the_other_to_the_end_of_the_bytes() {
+        // Two OAM frames: the header (MID 0x1f, no extension) and the id.
+        let mut hook = Seen::admitting();
+        assert_eq!(
+            oam_ids(&[0x1f, 0x05, 0x1f, 0x07], &mut hook),
+            (vec![5, 7], Ok(()), 4)
+        );
+        assert!(hook.entries.is_empty());
+    }
+
+    #[test]
+    fn each_chain_entry_is_shown_to_the_hook_as_it_is_read() {
+        // `Z` set, id 5, and two unit extensions: 1 with `Z` (another
+        // follows), then 2.
+        let mut hook = Seen::admitting();
+        assert_eq!(
+            oam_ids(&[0x9f, 0x05, 0x81, 0x02], &mut hook),
+            (vec![5], Ok(()), 4)
+        );
+        assert_eq!(
+            hook.entries,
+            vec![(OAM_EXTENSIONS, vec![0x81]), (OAM_EXTENSIONS, vec![0x02])]
+        );
+    }
+
+    #[test]
+    fn a_tag_no_arm_names_ends_the_sequence_before_it() {
+        // An OAM frame and then a byte whose MID (1) no network message has:
+        // the next thing in the batch, which the sequence leaves unread.
+        let mut hook = Seen::admitting();
+        assert_eq!(
+            oam_ids(&[0x1f, 0x05, 0x01, 0x00], &mut hook),
+            (vec![5], Ok(()), 2)
+        );
+    }
+
+    #[test]
+    fn a_short_record_is_the_verdict_and_nothing_is_read_whole() {
+        let mut hook = Seen::admitting();
+        assert_eq!(
+            oam_ids(&[0x1f], &mut hook),
+            (vec![], Err(CodecError::NeedMoreBytes), 0)
+        );
+    }
+
+    #[test]
+    fn a_record_handed_out_and_not_read_is_skipped() {
+        let bytes = [0x1f, 0x05, 0x1f, 0x07];
+        let mut records = Records::new(&bytes);
+        assert!(matches!(records.next(), Some(Record::CodecZenohOam(_))));
+        let Some(Record::CodecZenohOam(second)) = records.next() else {
+            panic!("the second frame is an OAM record");
+        };
+        assert_eq!(second.read().id, 7);
+        assert!(records.next().is_none());
+        assert_eq!((records.verdict(), records.consumed()), (Ok(()), 4));
+    }
+
+    #[test]
+    fn what_the_hook_refuses_is_the_sequences_verdict() {
+        // The first record's second extension is refused; the record after it
+        // is not read.
+        let mut hook = Seen::refusing(0x02);
+        assert_eq!(
+            oam_ids(&[0x9f, 0x05, 0x81, 0x02, 0x1f, 0x07], &mut hook),
+            (vec![], Err(CodecError::TooManyElements), 0)
+        );
+        assert_eq!(hook.entries.len(), 2);
+    }
+
+    #[test]
+    fn a_record_is_a_handle_and_its_arm() {
+        let size = core::mem::size_of::<Record<'_, '_>>();
+        assert!(size <= 2 * core::mem::size_of::<usize>(), "{size} bytes");
+    }
+
+    #[test]
+    fn a_view_decoded_with_a_hook_shows_it_each_entry_and_answers_its_refusal() {
+        let bytes = [0x9f, 0x05, 0x81, 0x02];
+        let mut hook = Seen::admitting();
+        let mut cursor = SceCursor::new(&bytes);
+        let mut view = CodecZenohOamView::new();
+        assert_eq!(
+            CodecZenohOamView::decode_with(&mut cursor, &mut view, &mut hook),
+            Ok(())
+        );
+        assert_eq!((view.id, cursor.remaining()), (5, 0));
+        assert_eq!(hook.entries.len(), 2);
+
+        // Refused at the first entry: the frame is refused there, the hook is
+        // shown nothing after it, and the cursor does not move.
+        let mut refusing = Seen::refusing(0x81);
+        let mut cursor = SceCursor::new(&bytes);
+        assert_eq!(
+            CodecZenohOamView::decode_with(&mut cursor, &mut view, &mut refusing),
+            Err(CodecError::TooManyElements)
+        );
+        assert_eq!(cursor.remaining(), 4);
+        assert_eq!(refusing.entries, vec![(OAM_EXTENSIONS, vec![0x81])]);
+    }
+}

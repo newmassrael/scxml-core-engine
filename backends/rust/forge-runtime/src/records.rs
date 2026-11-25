@@ -122,6 +122,13 @@ impl<'f> Records<'f> {
         self.reader.rest().first().copied()
     }
 
+    /// Refuse the sequence at the head with `refused`, its verdict: a record
+    /// whose tag names an arm this build leaves out. The bytes read whole stay
+    /// where they were, and the next head is `None`.
+    pub fn fail(&mut self, refused: CodecError) {
+        self.reader.fail(refused);
+    }
+
     /// Hand out the record at the head, of the kind `W` its tag says.
     #[inline]
     pub fn record<W: RecordRead>(&mut self) -> Record<'_, 'f, W> {
@@ -255,6 +262,19 @@ mod tests {
             core::mem::size_of::<Record<'_, '_, Counted>>(),
             core::mem::size_of::<usize>()
         );
+    }
+
+    #[test]
+    fn a_sequence_refused_at_its_head_keeps_what_it_read_whole() {
+        let bytes = [1u8, 0, 2, 0];
+        let mut records = Records::new(&bytes);
+        assert_eq!(records.head(skip), Some(1));
+        records.record::<Counted>().read();
+        assert_eq!(records.head(skip), Some(2));
+        records.fail(CodecError::VariantArmNotBuilt);
+        assert_eq!(records.head(skip), None);
+        assert_eq!(records.verdict(), Err(CodecError::VariantArmNotBuilt));
+        assert_eq!(records.consumed(), 2);
     }
 
     /// Admits an entry whose first byte is below `limit`, and counts what it saw.

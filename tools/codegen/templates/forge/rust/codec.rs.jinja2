@@ -862,6 +862,128 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 {{ flags.accessors(fields, false) }}
 {% endif %}
 }
+{# docs/adr/0130 §1: a codec that is one variant dispatching on a peeked byte,
+    with no field of its own and no argument to any read, is the head of a frame
+    a sequence holds one after another (a batch's network messages), and is read
+    one record at a time. A sequence needs one arm every build holds, which its
+    record enum always names. -#}
+{% set records_ns = namespace(made=false, held=false) %}
+{% if has_variant and variant.has_peek_byte and not fields and not params_after_first_arg and not dispatch_tag_param_decl %}
+{% set records_ns.made = true %}
+{% for arm in variant.arms %}
+{% if arm.body_decode_args_after_cursor %}{% set records_ns.made = false %}{% endif %}
+{% if not arm.rust_cfg %}{% set records_ns.held = true %}{% endif %}
+{% endfor %}
+{% endif %}
+{% if records_ns.made and records_ns.held %}
+
+// ── Records (ADR 0130) ───────────────────────────────────────────────
+// The frames of `{{ struct_name }}` laid one after the other, read one record
+// at a time: `next` peeks the tag of a record and hands out a handle of the arm
+// it names, and the arm's view is read only when the handle is, so the stack
+// under the call that reads it holds that arm's view and no other.
+{% for arm in variant.arms %}
+
+/// How a record of the arm `{{ arm.variant_name }}` is read: as
+/// [`{{ arm.view_body_type }}`], from where the record starts.
+{% if arm.rust_cfg %}
+{{ arm.rust_cfg }}
+{% endif %}
+#[allow(dead_code)]
+pub struct {{ struct_name }}{{ arm.variant_name }}Record;
+
+{% if arm.rust_cfg %}
+{{ arm.rust_cfg }}
+{% endif %}
+impl {{ runtime_codec }}::RecordRead for {{ struct_name }}{{ arm.variant_name }}Record {
+    type View<'f> = {{ arm.view_body_type }}{{ arm.view_body_lifetime | replace("'a", "'f") }};
+
+    #[inline]
+    fn read_with<'f, H: {{ runtime_codec }}::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
+        {{ arm.view_body_type }}::read_with(reader, hook)
+    }
+}
+{% endfor %}
+
+/// One record of a [`{{ struct_name }}Records`], of the arm its tag names, not
+/// yet read: a borrow of the reader and nothing else. `read()` reads the arm's
+/// view and `read_with(hook)` shows `hook` each chain entry as it is read; a
+/// record not read is skipped by the next `next`.
+#[allow(dead_code)]
+pub enum {{ struct_name }}Record<'r, 'f> {
+{% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
+    {{ arm.variant_name }}({{ runtime_codec }}::Record<'r, 'f, {{ struct_name }}{{ arm.variant_name }}Record>),
+{% endfor %}
+}
+
+// A record is a handle and its arm, whatever the arms' views hold, so handing
+// one out costs the consumer two words of stack on every target.
+const _: () = assert!(core::mem::size_of::<{{ struct_name }}Record<'static, 'static>>() <= 64);
+
+/// The frames of `{{ struct_name }}` laid one after the other in `&'f [u8]`,
+/// read one record at a time through one reader (docs/adr/0130). The sequence
+/// ends at the end of the bytes, at a tag no arm names (the start of something
+/// else, which a single frame's default arm would take), and at the first
+/// refusal, which is its verdict.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct {{ struct_name }}Records<'f>({{ runtime_codec }}::Records<'f>);
+
+#[allow(dead_code)]
+impl<'f> {{ struct_name }}Records<'f> {
+    /// The records of `bytes`, none read.
+    pub const fn new(bytes: &'f [u8]) -> Self {
+        Self({{ runtime_codec }}::Records::new(bytes))
+    }
+
+    /// The bytes of the records read whole: where a refused record, or the
+    /// first byte no arm's tag names, begins.
+    pub const fn consumed(&self) -> usize {
+        self.0.consumed()
+    }
+
+    /// The sequence's verdict: the first refusal of any record read, or `Ok`.
+    pub fn verdict(&self) -> Result<(), CodecError> {
+        self.0.verdict()
+    }
+
+    /// The next record, of the arm its tag names; `None` at the end of the
+    /// bytes, at a tag no arm names and once a record was refused.
+    // A record borrows the sequence it was read from, which `Iterator::next`
+    // cannot say: the consumer reads one record and then asks for the next.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<{{ struct_name }}Record<'_, 'f>> {
+        let _peek = self.0.head(Self::skip)?;
+        match {{ variant.tag_match_expr }} {
+{% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
+            {{ arm.value_literal }} => Some({{ struct_name }}Record::{{ arm.variant_name }}(self.0.record())),
+{% if arm.rust_cfg_off %}
+            {{ arm.rust_cfg_off }}
+            {{ arm.value_literal }} => {
+                self.0.fail(CodecError::VariantArmNotBuilt);
+                None
+            }
+{% endif %}
+{% endfor %}
+            _ => None,
+        }
+    }
+
+    /// Read past a record handed out and not read, as the codec's view, which
+    /// is dropped: out of line, so `next` holds no view of any arm.
+    #[cold]
+    #[inline(never)]
+    fn skip(reader: &mut SceReader<'f>) {
+        {{ struct_name }}View::read(reader);
+    }
+}
+{% endif %}
 {% endif %}
 {% endif %}
 {% if emit_owned %}
