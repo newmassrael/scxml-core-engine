@@ -552,11 +552,11 @@ fn the_kotlin_gate_runs_every_engine_it_claims() {
 
     // The registry's one-line summary is what a reader sees in `scripts/gate
     // --list`, so it must not name a coverage the script stopped providing.
-    let registry = std::fs::read_to_string(repo_root().join("tools/git-hooks/gate_registry.py"))
-        .expect("the registry is readable");
-    let summary = registry
+    // It is written in the gate's own entry, a file of its own.
+    let entry = std::fs::read_to_string(repo_root().join("tools/git-hooks/gates/w3c-kotlin.py"))
+        .expect("the w3c-kotlin entry is readable");
+    let summary = entry
         .lines()
-        .skip_while(|line| !line.contains("\"w3c-kotlin\": {"))
         .find_map(|line| line.trim().strip_prefix("\"summary\": "))
         .expect("the w3c-kotlin entry carries a summary")
         .to_lowercase();
@@ -1391,8 +1391,8 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
     assert!(
         offenders.is_empty(),
         "the push hook runs verification commands directly: {offenders:?}\n\
-         Put them in a gate under scripts/gates/ and register it in \
-         tools/git-hooks/gate_registry.py, so the check can also be run on \
+         Put them in a gate under scripts/gates/ and register it with an \
+         entry in tools/git-hooks/gates/, so the check can also be run on \
          its own."
     );
 

@@ -15,7 +15,8 @@ mutation_tests -p sce-build --features cli \
     --test gate_registry_contract --test ci_supersession_policy
 mutation_runtime_targets scripts/gates/ecma262-lowered-swift.sh \
     .github/workflows/swift-backend.yml \
-    tools/git-hooks/gate_registry.py
+    tools/git-hooks/gate_registry.py \
+    tools/git-hooks/gates/ecma262-lowered-swift.py
 
 # ── The lane stops being reachable ─────────────────────────────────
 #
@@ -25,9 +26,9 @@ mutation_runtime_targets scripts/gates/ecma262-lowered-swift.sh \
 # that runs it.
 
 mutation_case "the lowered Swift gate loses the workflow that runs it" <<'PY'
-edit("tools/git-hooks/gate_registry.py",
-     '"ecma262-lowered-swift": {\n        "workflows": ["swift-backend.yml"],',
-     '"ecma262-lowered-swift": {\n        "workflows": [],')
+edit("tools/git-hooks/gates/ecma262-lowered-swift.py",
+     '{\n    "workflows": ["swift-backend.yml"],',
+     '{\n    "workflows": [],')
 PY
 
 # ── The artifact stops being shown to be a lowered one ─────────────

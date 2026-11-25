@@ -22,8 +22,9 @@
 #   scripts/gate --shard k/N <slug>   run part k of N of a gate that declares
 #                                     `shard_env`, as a plan's shard unit does
 #
-# The order is derived, never typed: `tools/git-hooks/gate_registry.py`
-# holds each gate's dependencies and measured cost, and the runner sorts by
+# The order is derived, never typed: each gate's entry
+# (`tools/git-hooks/gates/<slug>.py`, which `tools/git-hooks/gate_registry.py`
+# reads) holds its dependencies and measured cost, and the runner sorts by
 # dependencies first, cheapest first within that. A gate added tomorrow
 # lands in the right place without anyone rearranging a script.
 #
@@ -57,7 +58,13 @@
 # plan ran the registry's self-test over the same tree before it named the
 # unit, and the self-test reads the whole repository (every workflow, hook and
 # gate script), so a unit that ran it again would read the whole tree whatever
-# its gate reads, and no narrowed key could hold it (ADR 0120, D2).
+# its gate reads, and no narrowed key could hold it (ADR 0120, D2). For the same
+# reason a unit reads none of the registry: what it asks of its gates (their
+# closure and order, where each runs, a shard's variable, the submodules each
+# needs) it asks `tools/git-hooks/gate_table.py`, which reads the entries of
+# those gates alone ("One file per gate" there), and it leaves the drift
+# report below to a run that is not a unit, since the budget it checks is a
+# sum over the whole table and bx keeps a unit's timing itself.
 
 set -euo pipefail
 
@@ -65,6 +72,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 REGISTRY="$REPO_ROOT/tools/git-hooks/gate_registry.py"
+# What this runner asks of the gates it runs, answered from their entries
+# alone (`--unit` above). `-I` puts no directory on Python's path, so the
+# interpreter lists neither tools/git-hooks/ nor the checkout's root.
+TABLE="$REPO_ROOT/tools/git-hooks/gate_table.py"
 MEASURE=0
 SLUGS=()
 ORDER=()
@@ -93,7 +104,7 @@ while (( $# )); do
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
         --change-set)   CHANGE_SET_RANGES+=("${2:-}"); shift ;;
         --shard)        SHARD_WANT="${2:-}"; shift ;;
-        -h|--help)      sed -n '5,51p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '5,52p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
@@ -157,7 +168,7 @@ if [[ -n "$SHARD_WANT" ]]; then
         printf 'gate: --shard takes k/N with 1 <= k <= N, got %q\n' "$SHARD_WANT" >&2
         exit 2
     fi
-    SHARD_ENV="$(python3 "$REGISTRY" --shard-env "${SLUGS[0]}")" || exit 2
+    SHARD_ENV="$(python3 -I "$TABLE" shard-env "${SLUGS[0]}")" || exit 2
     if [[ -z "$SHARD_ENV" ]]; then
         printf 'gate: %s declares no shard_env, so it has no parts to run one of\n' "${SLUGS[0]}" >&2
         exit 2
@@ -431,24 +442,7 @@ PYEOF
         # was told the gate had passed. That is the escape hatch this
         # repository writes its gates against, in the runner that owns all of
         # them.
-        if ! ORDER_TEXT="$(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF'
-import runpy, sys
-mod = runpy.run_path(sys.argv[1])
-want = set(sys.argv[2:])
-unknown = want - set(mod["GATES"])
-if unknown:
-    print("gate: unknown slug(s): " + ", ".join(sorted(unknown)), file=sys.stderr)
-    raise SystemExit(2)
-grew = True
-while grew:
-    grew = False
-    for s in list(want):
-        for d in mod["GATES"][s].get("deps", []):
-            if d not in want:
-                want.add(d); grew = True
-print("\n".join(mod["run_order"](want)))
-PYEOF
-)"; then
+        if ! ORDER_TEXT="$(python3 -I "$TABLE" order "${SLUGS[@]}")"; then
             exit 2
         fi
         while IFS= read -r _slug; do
@@ -492,7 +486,7 @@ fi
 # the Containerfile it was built from) every gate runs where it is.
 declare -A CONTAINER_OF=()
 if [[ -z "${SCE_GATE_CONTAINER:-}" ]]; then
-    if ! PLACEMENT_TEXT="$(python3 "$REGISTRY" --repo-root "$REPO_ROOT" --placement "${ORDER[@]}")"; then
+    if ! PLACEMENT_TEXT="$(python3 -I "$TABLE" placement "${ORDER[@]}")"; then
         printf 'gate: the registry could not say where %s run\n' "${ORDER[*]}" >&2
         exit 2
     fi
@@ -593,6 +587,11 @@ gate_in_container() {
     fi
     mounts+=(-v "$cache/target:$target")
     inner=(bash scripts/gate --rust "$release")
+    # A unit's run inside reads what the unit's reads outside do: no
+    # self-test, no drift report.
+    if (( UNIT )); then
+        inner+=(--unit)
+    fi
     if (( LANDING )); then
         inner+=(--landing)
     fi
@@ -781,13 +780,17 @@ fi
 # claim about the table rather than the machine — the registry divides out
 # this run's own pace before making it — and that fails, because a ceiling
 # checked against a stale number is not a ceiling.
+#
+# A unit (`--unit`) makes no report: the budget is a sum over every gate's
+# declared cost, a claim about the table that no unit's verdict rests on, and
+# making it would read the whole table into the unit's run.
 DRIFT_ARGS=()
 for slug in "${ORDER[@]}"; do
     [[ -n "$slug" ]] || continue
     DRIFT_ARGS+=("${slug}=${ELAPSED[$slug]}")
 done
 drift_rc=0
-if (( ${#DRIFT_ARGS[@]} > 1 )); then
+if (( ! UNIT && ${#DRIFT_ARGS[@]} > 1 )); then
     python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
         --order-drift "${DRIFT_ARGS[@]}" || drift_rc=$?
 fi
