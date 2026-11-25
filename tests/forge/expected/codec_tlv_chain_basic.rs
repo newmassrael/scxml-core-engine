@@ -127,7 +127,9 @@ impl<S: CodecTlvChainBasicStorage> CodecTlvChainBasicIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecTlvChainBasicFrom<'f> {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -146,20 +148,14 @@ impl<S: CodecTlvChainBasicStorage> CodecTlvChainBasicIn<S> {
             raw[0]
         };
         cursor.hold_with(|cursor| _out.extensions.refill(|_vec| {
-            let mut _full = false;
-            for _ in 0..8u32 {
-                if cursor.remaining() == 0 { break; }
-                if cursor.failed() { break; }
-                let _entry = CodecTlvEntryOwned::<S>::read(cursor);
-                ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
-            }
-            if cursor.remaining() > 0 {
-                cursor.fail(CodecError::TooManyElements);
-            }
-            if _full {
-                return Err(CodecError::CapacityExceeded);
-            }
-            Ok(())
+            ::sce_forge_runtime::codec::read_chain_into::<CodecTlvEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
+                read: |_r, _a| CodecTlvEntryOwned::<S>::read(_r),
+                args: [],
+                depth: Some(8),
+                end: ::sce_forge_runtime::codec::ChainEnd::Frame,
+                carry: None,
+                kinds: &[],
+            }, &mut [])
         }));
         _out.header_flags = header_flags;
 

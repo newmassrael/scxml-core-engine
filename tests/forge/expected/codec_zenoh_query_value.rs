@@ -131,7 +131,9 @@ impl<S: CodecZenohQueryValueStorage> CodecZenohQueryValueIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecZenohQueryValueFrom<'f> {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -146,24 +148,14 @@ impl<S: CodecZenohQueryValueStorage> CodecZenohQueryValueIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         cursor.hold_with(|cursor| _out.exts.refill_from((), |_vec| {
-            let mut _full = false;
-            let mut _prev_exts_after_shm: u8 = 0;
-            let mut _more = false;
-            loop {
-                if cursor.failed() { break; }
-                let _entry = CodecZenohValueEntryOwned::<S>::read(cursor, _prev_exts_after_shm);
-                _more = _entry.z();
-                _prev_exts_after_shm = u8::from(u64::from(_entry.ext_id()) == 4u64);
-                ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                cursor.fail(CodecError::NeedMoreBytes);
-            }
-            if _full {
-                return Err(CodecError::CapacityExceeded);
-            }
-            Ok(())
+            ::sce_forge_runtime::codec::read_chain_into::<CodecZenohValueEntryOwned<S>, _, 1>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
+                read: |_r, _a| CodecZenohValueEntryOwned::<S>::read(_r, _a[0]),
+                args: [0],
+                depth: None,
+                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
+                carry: Some(|_e, _a| { _a[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }),
+                kinds: &[],
+            }, &mut [])
         }));
 
     }
@@ -361,8 +353,8 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohQueryValueWalk {
     type Entry<'b> = CodecZenohQueryValueView<'b>;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
-        CodecZenohQueryValueView::read(_r)
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 0], _h: &mut H) -> Self::Entry<'b> {
+        CodecZenohQueryValueView::read_with(_r, _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
@@ -384,8 +376,8 @@ impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohQueryValueExtsWalk {
     type Entry<'b> = CodecZenohValueEntryView<'b>;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 1]) -> Self::Entry<'b> {
-        CodecZenohValueEntryView::read(_r, _a[0])
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 1], _h: &mut H) -> Self::Entry<'b> {
+        CodecZenohValueEntryView::read_with(_r, _a[0], _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) { _s[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }
@@ -433,7 +425,10 @@ impl<'a> CodecZenohQueryValueView<'a> {
     /// [`Self::read`], each entry of every chain the frame holds, this view's
     /// and those of every body it reads, shown to `_hook` right after the entry
     /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
-    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself. A
+    /// view that embeds, dispatches to or lists this one reads it through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -451,22 +446,12 @@ impl<'a> CodecZenohQueryValueView<'a> {
         let exts: ::sce_forge_runtime::codec::Lawful<Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecZenohQueryValueExtsWalk, 1>, { usize::MAX }, 1>, CodecZenohQueryValueExtsLaw>;
         {
             let _rest = cursor.rest();
-            let mut _count: u32 = 0;
-            let mut _prev_exts_after_shm: u8 = 0;
-            let mut _more = false;
-            loop {
-                if cursor.failed() { break; }
-                let _at = cursor.mark();
-                let _entry = CodecZenohValueEntryView::read_with(cursor, _prev_exts_after_shm, _hook);
-                ::sce_forge_runtime::codec::show_entry(cursor, _hook, ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_query_value", field: "exts" }, _at);
-                _more = _entry.z();
-                _prev_exts_after_shm = u8::from(u64::from(_entry.ext_id()) == 4u64);
-                _count += u32::from(!cursor.failed());
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                cursor.fail(CodecError::NeedMoreBytes);
-            }
+            let _count = ::sce_forge_runtime::codec::walk_chain::<CodecZenohQueryValueExtsWalk, _, 1>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
+                site: ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_query_value", field: "exts" },
+                args: [0],
+                depth: None,
+                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
+            });
             exts = cursor.settle(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [0])).ok_or(CodecError::NeedMoreBytes).and_then(|_l| Bounded::new(_l).ok_or(CodecError::TooManyElements)).and_then(|_l| ::sce_forge_runtime::codec::Lawful::new((), _l).ok_or(CodecError::PresentIfMismatch)));
         }
         Self {

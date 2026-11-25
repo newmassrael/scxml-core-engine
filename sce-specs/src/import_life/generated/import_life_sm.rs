@@ -212,9 +212,17 @@ pub type ImportLifeConfiguration =
 /// state's range of written transitions (`first_written`, one entry past the
 /// last state), and for each transition the list of events that enable it
 /// (`triggers`, a position in `trigger_events`, each list its length first),
-/// as the numbers of `ImportLifeEvent`. The runtime's one selection
-/// reads them for every machine and asks this machine only whether a guard
-/// holds (`guard_holds`).
+/// as the numbers of `ImportLifeEvent`. The general walk's selection
+/// reads them and asks this machine only whether a guard holds (`guard_holds`).
+///
+/// `candidates` is what a document the row walk serves selects from instead
+/// (docs/adr/0135): the same lists fused over each atomic state's ancestors,
+/// so for each atomic state and each event the transitions the selection
+/// tries, the state's own then each ancestor's, as compressed sparse rows
+/// (`first_cell` each state's range of `cells`, one past the last; a cell an
+/// event and the position of its list in `candidates`, each list its length
+/// first). Such a document's tables carry these and no `selection`, any
+/// other's `selection` and no candidates.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -222,9 +230,9 @@ pub type ImportLifeConfiguration =
 /// same.
 pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, SelectionRows,
-        StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
-        TriggerRow,
+        Candidate, CandidateCell, CandidateRows, DocumentTables, EntryRow, EntryStep, EventId,
+        HistoryId, HistoryRow, SelectionRows, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow, TriggerEvent, TriggerRow,
     };
     DocumentTables {
         states: &[
@@ -323,42 +331,52 @@ pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         ],
         history: None,
         parallel: None,
-        selection: Some(SelectionRows {
-            first_written: &[
-                TransitionId(0),
-                TransitionId(0),
-                TransitionId(6),
-                TransitionId(10),
-                TransitionId(11),
-                TransitionId(12),
-                TransitionId(12),
+        selection: None,
+        candidates: Some(CandidateRows {
+            first_cell: &[0, 0, 4, 4, 8, 12, 16],
+            cells: &[
+                CandidateCell::new(EventId(0), 0),
+                CandidateCell::new(EventId(1), 4),
+                CandidateCell::new(EventId(2), 6),
+                CandidateCell::new(EventId(3), 8),
+                CandidateCell::new(EventId(0), 10),
+                CandidateCell::new(EventId(1), 13),
+                CandidateCell::new(EventId(2), 15),
+                CandidateCell::new(EventId(3), 17),
+                CandidateCell::new(EventId(0), 19),
+                CandidateCell::new(EventId(1), 13),
+                CandidateCell::new(EventId(2), 21),
+                CandidateCell::new(EventId(3), 17),
+                CandidateCell::new(EventId(0), 19),
+                CandidateCell::new(EventId(1), 13),
+                CandidateCell::new(EventId(2), 15),
+                CandidateCell::new(EventId(3), 17),
             ],
-            triggers: &[
-                TriggerRow::at(0),
-                TriggerRow::at(0),
-                TriggerRow::at(0),
-                TriggerRow::at(2),
-                TriggerRow::at(4),
-                TriggerRow::at(6),
-                TriggerRow::at(0),
-                TriggerRow::at(4),
-                TriggerRow::at(2),
-                TriggerRow::at(6),
-                TriggerRow::at(0),
-                TriggerRow::at(4),
-                TriggerRow::NONE,
-                TriggerRow::NONE,
-                TriggerRow::NONE,
-            ],
-            trigger_events: &[
-                TriggerEvent::count(1),
-                TriggerEvent::new(EventId(0)),
-                TriggerEvent::count(1),
-                TriggerEvent::new(EventId(1)),
-                TriggerEvent::count(1),
-                TriggerEvent::new(EventId(2)),
-                TriggerEvent::count(1),
-                TriggerEvent::new(EventId(3)),
+            candidates: &[
+                Candidate::count(3),
+                Candidate::new(TransitionId(0)),
+                Candidate::new(TransitionId(1)),
+                Candidate::new(TransitionId(2)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(3)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(4)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(5)),
+                Candidate::count(2),
+                Candidate::new(TransitionId(10)),
+                Candidate::new(TransitionId(6)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(8)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(7)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(9)),
+                Candidate::count(1),
+                Candidate::new(TransitionId(6)),
+                Candidate::count(2),
+                Candidate::new(TransitionId(11)),
+                Candidate::new(TransitionId(7)),
             ],
         }),
     }

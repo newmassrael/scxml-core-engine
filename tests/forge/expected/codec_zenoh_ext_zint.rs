@@ -75,7 +75,9 @@ impl CodecZenohExtZint {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into(cursor: &mut SceReader<'_>, _out: &mut Self) {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -270,8 +272,8 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohExtZintWalk {
     type Entry<'b> = CodecZenohExtZintView;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
-        CodecZenohExtZintView::read(_r)
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 0], _h: &mut H) -> Self::Entry<'b> {
+        CodecZenohExtZintView::read_with(_r, _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }

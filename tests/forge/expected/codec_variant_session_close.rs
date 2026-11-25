@@ -73,7 +73,10 @@ impl CodecVariantSessionClose {
     /// Read the frame through `cursor`, the frame's reader, as a value built
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
-    /// once the frame is read (docs/adr/0128).
+    /// once the frame is read (docs/adr/0128). A codec that embeds or
+    /// dispatches to this one reads it through this one function, which is not
+    /// copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read(cursor: &mut SceReader<'_>) -> Self {
         let raw = cursor.take_array::<1>();
         let reason = raw[0];

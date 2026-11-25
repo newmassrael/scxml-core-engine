@@ -223,7 +223,9 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecZenohDeclarationFrom<'f> {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
@@ -717,8 +719,8 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohDeclarationWalk {
     type Entry<'b> = CodecZenohDeclarationView<'b>;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
-        CodecZenohDeclarationView::read(_r)
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 0], _h: &mut H) -> Self::Entry<'b> {
+        CodecZenohDeclarationView::read_with(_r, _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
@@ -800,7 +802,10 @@ impl<'a> CodecZenohDeclarationView<'a> {
     /// [`Self::read`], each entry of every chain the frame holds, this view's
     /// and those of every body it reads, shown to `_hook` right after the entry
     /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
-    /// The hook is generic, so a read with `()` is [`Self::read`] itself.
+    /// The hook is generic, so a read with `()` is [`Self::read`] itself. A
+    /// view that embeds, dispatches to or lists this one reads it through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_with<H: ::sce_forge_runtime::codec::ChainHook>(cursor: &mut SceReader<'a>, _hook: &mut H) -> Self {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).

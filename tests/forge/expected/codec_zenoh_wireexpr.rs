@@ -129,7 +129,9 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self, n: u8) where S: CodecZenohWireexprFrom<'f> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
@@ -369,8 +371,8 @@ impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohWireexprWalk {
     type Entry<'b> = CodecZenohWireexprView<'b>;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 1]) -> Self::Entry<'b> {
-        CodecZenohWireexprView::read(_r, _a[0])
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 1], _h: &mut H) -> Self::Entry<'b> {
+        CodecZenohWireexprView::read_with(_r, _a[0], _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }

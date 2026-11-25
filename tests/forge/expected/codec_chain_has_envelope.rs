@@ -155,7 +155,9 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecChainHasEnvelopeFrom<'f> {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -182,28 +184,16 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
         let mut _has_extensions_2 = false;
         let mut _extensions_first = true;
         loop {
-            let mut _found_extensions_2 = false;
+            let mut _found_extensions = [false; 1];
             let mut _extensions_fill = |_vec: &mut <S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>| -> Result<(), CodecError> {
-                let mut _full = false;
-                let mut _more = false;
-                for _ in 0..4u32 {
-                    if cursor.failed() { break; }
-                    let _entry = CodecZenohExtEntryOwned::<S>::read(cursor);
-                    _more = _entry.z();
-                    _found_extensions_2 |= u64::from(_entry.ext_id()) == 2u64;
-                    ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[|_e| u64::from(_e.ext_id()) == 2u64], &mut _full);
-                    if !_more { break; }
-                }
-                if _more && cursor.remaining() == 0 {
-                    cursor.fail(CodecError::NeedMoreBytes);
-                }
-                if _more {
-                    cursor.fail(CodecError::TooManyElements);
-                }
-                if _full {
-                    return Err(CodecError::CapacityExceeded);
-                }
-                Ok(())
+                ::sce_forge_runtime::codec::read_chain_into::<CodecZenohExtEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
+                    read: |_r, _a| CodecZenohExtEntryOwned::<S>::read(_r),
+                    args: [],
+                    depth: Some(4),
+                    end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
+                    carry: None,
+                    kinds: &[|_e| u64::from(_e.ext_id()) == 2u64],
+                }, &mut _found_extensions)
             };
             let (_extensions_settled, _extensions_full) = if (header & 0x80u8) != 0 {
                 if _has_extensions_2 { { let _read = ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, slices: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, .. } => Some(_c), _ => None }, &mut _extensions_fill); cursor.settle(_read) } } else { { let _read = ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), payload: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), .. } => Some(_c), _ => None }, &mut _extensions_fill); cursor.settle(_read) } }
@@ -211,7 +201,7 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
                 if _has_extensions_2 { cursor.fail(CodecError::PresentIfMismatch) } else { _out.extensions_has_0x2 = CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: None, payload: Default::default() } }
                 (true, false)
             };
-            _has_extensions_2 = _found_extensions_2;
+            _has_extensions_2 = _found_extensions[0];
             if _extensions_settled || cursor.failed() {
                 if _extensions_full {
                     cursor.note_capacity();

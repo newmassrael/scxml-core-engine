@@ -76,7 +76,10 @@ impl CodecChainHasTaggedEntry {
     /// Read the frame through `cursor`, the frame's reader, as a value built
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
-    /// once the frame is read (docs/adr/0128).
+    /// once the frame is read (docs/adr/0128). A codec that embeds or
+    /// dispatches to this one reads it through this one function, which is not
+    /// copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read(cursor: &mut SceReader<'_>) -> Self {
         let raw = cursor.take_array::<3>();
         let entry_type = raw[0];
@@ -351,8 +354,8 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecChainHasTaggedEntryWalk {
     type Entry<'b> = CodecChainHasTaggedEntryView;
 
     #[inline(always)]
-    fn read<'b>(_r: &mut SceReader<'b>, _a: &[u8; 0]) -> Self::Entry<'b> {
-        CodecChainHasTaggedEntryView::read(_r)
+    fn read_with<'b, H: ::sce_forge_runtime::codec::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; 0], _h: &mut H) -> Self::Entry<'b> {
+        CodecChainHasTaggedEntryView::read_with(_r, _h)
     }
 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }

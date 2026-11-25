@@ -128,7 +128,9 @@ impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
     /// (docs/adr/0128). A codec that embeds or dispatches to this one reads it
-    /// through its own reader, so one frame has one verdict.
+    /// through its own reader, so one frame has one verdict, and through this
+    /// one function, which is not copied into each (docs/adr/0136).
+    #[inline(never)]
     pub fn read_into<'f>(cursor: &mut SceReader<'f>, _out: &mut Self) where S: CodecChainPrevGatedFrom<'f> {
         // Streaming decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -148,27 +150,14 @@ impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
         };
         if (head & 0x02u8) != 0 {
             cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill_from(((head & 0x1) != 0, (),), |_vec| {
-                let mut _full = false;
-                let mut _prev_entries_after_marker: u8 = 0;
-                let mut _more = false;
-                for _ in 0..4u32 {
-                    if cursor.failed() { break; }
-                    let _entry = CodecChainPrevEntry::read(cursor, _prev_entries_after_marker, head & 0x1);
-                    _more = _entry.z();
-                    _prev_entries_after_marker = u8::from((u64::from(_entry.header) & 127u64) == 4u64);
-                    ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
-                    if !_more { break; }
-                }
-                if _more && cursor.remaining() == 0 {
-                    cursor.fail(CodecError::NeedMoreBytes);
-                }
-                if _more {
-                    cursor.fail(CodecError::TooManyElements);
-                }
-                if _full {
-                    return Err(CodecError::CapacityExceeded);
-                }
-                Ok(())
+                ::sce_forge_runtime::codec::read_chain_into::<CodecChainPrevEntry, _, 2>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
+                    read: |_r, _a| CodecChainPrevEntry::read(_r, _a[0], _a[1]),
+                    args: [0, head & 0x1],
+                    depth: Some(4),
+                    end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
+                    carry: Some(|_e, _a| { _a[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64); }),
+                    kinds: &[],
+                }, &mut [])
             }));
         } else {
             _out.entries = None;
