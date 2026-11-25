@@ -188,10 +188,31 @@ fn rust_goldens_with_views() -> &'static std::collections::BTreeSet<std::path::P
     })
 }
 
+/// What the goldens of `tests/forge/expected/` read of each codec's body, as one
+/// set (docs/adr/0137): the goldens are one crate, so one tree, and a body two
+/// sites of it read is kept out of line in its golden as `generate
+/// --with-imports` keeps it out of line in the tree of a set. Each golden's
+/// view is the one [`rust_goldens_with_views`] gives it. Read once per run.
+fn rust_golden_body_reads() -> &'static sce_build::forge::body_reads::BodyReadSites {
+    static READS: std::sync::OnceLock<sce_build::forge::body_reads::BodyReadSites> =
+        std::sync::OnceLock::new();
+    READS.get_or_init(|| {
+        let documents: Vec<String> = rust_golden_documents()
+            .iter()
+            .map(|document| resource_dir().join(document).display().to_string())
+            .collect();
+        sce_build::forge::body_reads::BodyReadSites::of_documents(&documents, &[], |identity| {
+            rust_goldens_with_views().contains(std::path::Path::new(identity))
+        })
+    })
+}
+
 /// [`golden_options_for`] of the golden of the one document `document` in
 /// `tests/forge/expected/`: a Rust golden takes views where the directory's
 /// tree needs them ([`rust_goldens_with_views`]), so the golden of a codec and
-/// the golden of a codec that holds it are generated with one answer.
+/// the golden of a codec that holds it are generated with one answer, and the
+/// sites of the directory's tree that read each body
+/// ([`rust_golden_body_reads`]).
 fn golden_options_of_document(
     language: sce_build::generator::Language,
     document: &str,
@@ -202,6 +223,7 @@ fn golden_options_of_document(
         let path =
             std::fs::canonicalize(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         opts.views |= rust_goldens_with_views().contains(&path);
+        opts.body_reads = rust_golden_body_reads().clone();
     }
     opts
 }
@@ -2896,12 +2918,43 @@ fn views_options() -> sce_build::ForgeCompileOptions {
 /// where their own tree needs it ([`rust_goldens_with_views`]). The directory
 /// is linted as a crate of its own (`scripts/check_clippy_codec.sh`).
 fn assert_views_rust(scxml_name: &str) {
+    let mut options = views_options();
+    options.body_reads = rust_view_golden_body_reads().clone();
     assert_standalone_forge_with(
         scxml_name,
         &format!("views/{scxml_name}.rs"),
         sce_build::generator::Language::Rust,
-        views_options(),
+        options,
     );
+}
+
+/// What the goldens of `expected/views/` read of each codec's body, as one set
+/// generated with its views (docs/adr/0137): the directory is a crate of its
+/// own, so a tree of its own, and a body two sites of it read is kept out of
+/// line in its golden as `generate --with-imports --views` keeps it out of line
+/// in the tree of a set. A golden is named after its document. Read once per
+/// run.
+fn rust_view_golden_body_reads() -> &'static sce_build::forge::body_reads::BodyReadSites {
+    static READS: std::sync::OnceLock<sce_build::forge::body_reads::BodyReadSites> =
+        std::sync::OnceLock::new();
+    READS.get_or_init(|| {
+        let dir = expected_dir().join("views");
+        let mut documents: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+            .filter_map(|entry| {
+                let name = entry.expect("dir entry").file_name().into_string().ok()?;
+                let stem = name.strip_suffix(".rs")?;
+                Some(
+                    resource_dir()
+                        .join(format!("{stem}.scxml"))
+                        .display()
+                        .to_string(),
+                )
+            })
+            .collect();
+        documents.sort();
+        sce_build::forge::body_reads::BodyReadSites::of_documents(&documents, &[], |_| true)
+    })
 }
 
 #[test]
@@ -3894,43 +3947,59 @@ fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
 }
 
 /// `generate --inline-decode` (docs/adr/0136) marks the function that reads each
-/// codec's body `#[inline(always)]` where it is otherwise `#[inline(never)]`, and
-/// changes nothing else. A codec set that nests bodies, lists, a chain and a
-/// variant, generated with it, differs from the set without it only in those
-/// lines, and still compiles as a program.
+/// codec's body `#[inline(always)]`, where the set otherwise keeps it out of
+/// line (`#[inline(never)]`, a body the set reads from two sites or more) or
+/// leaves it to the compiler (no attribute, a body read from one site), and
+/// changes nothing else (docs/adr/0137). A codec set that nests bodies, lists, a
+/// chain and a variant, generated with it, differs from the set without it only
+/// in those lines, and still compiles as a program.
 #[test]
 fn inline_decode_marks_the_body_reads_and_changes_nothing_else() {
     let dir = resource_dir();
     let rust = sce_build::generator::Language::Rust;
-    let off = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, golden_options(rust))
+    let documents: Vec<String> = CHAIN_HAS_SET
+        .iter()
+        .map(|document| dir.join(document).display().to_string())
+        .collect();
+    let mut off_opts = golden_options(rust);
+    let views = off_opts.views;
+    off_opts.body_reads =
+        sce_build::forge::body_reads::BodyReadSites::of_documents(&documents, &[], |_| views);
+    let off = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, off_opts.clone())
         .expect("generate with the option off");
-    let mut on_opts = golden_options(rust);
+    let mut on_opts = off_opts;
     on_opts.inline_decode = true;
     let on = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, on_opts)
         .expect("generate with the option on");
     assert_eq!(off.len(), on.len());
-    let mut marked = 0usize;
+    let (mut replaced, mut added) = (0usize, 0usize);
     for ((name, plain), (_, inlined)) in off.iter().zip(&on) {
         let (plain, inlined): (Vec<&str>, Vec<&str>) =
             (plain.lines().collect(), inlined.lines().collect());
-        assert_eq!(
-            plain.len(),
-            inlined.len(),
-            "{name}: the option adds or removes lines"
-        );
-        for (a, b) in plain.iter().zip(&inlined) {
-            if a == b {
+        let (mut p, mut i) = (0usize, 0usize);
+        while i < inlined.len() {
+            let (a, b) = (plain.get(p).copied(), inlined[i]);
+            if a == Some(b) {
+                (p, i) = (p + 1, i + 1);
                 continue;
             }
             assert_eq!(
-                (a.trim(), b.trim()),
-                ("#[inline(never)]", "#[inline(always)]"),
-                "{name}: the option changed more than a body read's attribute"
+                b.trim(),
+                "#[inline(always)]",
+                "{name}: the option changed more than a body read's attribute at {a:?}"
             );
-            marked += 1;
+            if a.map(str::trim) == Some("#[inline(never)]") {
+                replaced += 1;
+                p += 1;
+            } else {
+                added += 1;
+            }
+            i += 1;
         }
+        assert_eq!(p, plain.len(), "{name}: the option removed lines");
     }
-    assert!(marked > 0, "no body read was marked");
+    assert!(replaced > 0, "no body read the set shares was marked");
+    assert!(added > 0, "no body read of one site was marked");
     if let Err(e) = rustc_run_generated_set(on, "inline_decode_rust", "build", RustcProfile::Alloc)
     {
         panic!("the set generated with --inline-decode does not compile:\n{e}");

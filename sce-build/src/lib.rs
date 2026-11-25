@@ -4565,18 +4565,32 @@ pub struct ForgeCompileOptions {
     /// the functions it calls.
     pub inline_encode: bool,
     /// Rust only: always inline the function that reads each codec's body
-    /// (`generate --inline-decode`, docs/adr/0136).
+    /// (`generate --inline-decode`, docs/adr/0136, docs/adr/0137).
     ///
     /// The function a parent reads a codec's body through, an arm of a
-    /// dispatching variant, an embedded body or a chain's entry, is out of line
-    /// by default (`#[inline(never)]`): a variant then calls one function per
-    /// arm and holds no arm's body, and a body several codecs embed is the one
-    /// function of its codec, not a copy at each. With this on it carries
-    /// `#[inline(always)]`, so a frame's decode is one function, at the price of
-    /// a copy of each body where it is read, which a build measures before it
-    /// keeps it. The runtime's read of a chain stays out of line either way. Like
-    /// [`Self::inline_encode`] it is a property of one document.
+    /// dispatching variant, an embedded body or a list's entry, carries no
+    /// attribute where its set reads it from one site, which the compiler
+    /// inlines or not, and `#[inline(never)]` where the set reads it from two
+    /// or more ([`Self::body_reads`]), so it is one function and not a copy at
+    /// each. With this on it carries `#[inline(always)]` either way, so a
+    /// frame's decode is one function, at the price of a copy of each body where
+    /// it is read, which a build measures before it keeps it. The runtime's read
+    /// of a chain stays out of line either way. Like [`Self::inline_encode`] it
+    /// is a property of one document.
     pub inline_decode: bool,
+    /// Rust only: the sites of the generated set that read each codec's body
+    /// (docs/adr/0137), counted from the set's import graph by
+    /// [`forge::body_reads::BodyReadSites::count`]: a body read from two sites
+    /// or more is kept out of line, one from one site is left to the compiler.
+    ///
+    /// ⚠ Like [`Self::views`] it is a property of a SET of documents: a document
+    /// does not know which documents import it. `generate --with-imports` counts
+    /// the set it generates; a build that generates a set one document at a time
+    /// counts it once with [`forge::body_reads::BodyReadSites::of_documents`] and
+    /// hands the same answer to each generation. Empty (the default) is a set of
+    /// one document, which reads no body of its own, so no body read carries an
+    /// attribute but the one `inline_decode` asks for.
+    pub body_reads: forge::body_reads::BodyReadSites,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default

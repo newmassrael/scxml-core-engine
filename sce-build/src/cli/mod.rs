@@ -26,6 +26,7 @@ use crate::analyzer;
 use crate::cli_error::CliError;
 use crate::cli_language::LanguageRoute;
 use crate::filters;
+use crate::forge::body_reads::BodyReadSites;
 use crate::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use crate::forge::error::{ForgeError, Located, RelatedRole};
 use crate::manifest::{
@@ -7023,7 +7024,9 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     let depfile = args.write_deps.clone();
     let children_of = plans_children().then(|| args.clone());
     let generates_children = args.children.then(|| args.clone());
-    let mut report = cmd_generate(args, error_format);
+    // One document is a set of one, which reads no body of its own
+    // (docs/adr/0137).
+    let mut report = cmd_generate(args, error_format, &BodyReadSites::default());
     let mut shares = std::mem::take(&mut report.sourcemaps);
     if generates_children.is_none() {
         write_sourcemaps(std::mem::take(&mut shares));
@@ -7183,7 +7186,7 @@ fn generate_child_generations(
         if kind == ChildGeneration::InItsParentsProcess {
             child_args.parent_stem = parent_stem.clone();
         }
-        let mut child_report = cmd_generate(child_args, error_format);
+        let mut child_report = cmd_generate(child_args, error_format, &BodyReadSites::default());
         staged.extend(std::mem::take(&mut child_report.staged_children));
         read = joined_reads(read, child_report.depfile.take());
         shares.append(&mut child_report.sourcemaps);
@@ -7261,8 +7264,9 @@ fn plan_child_generations(
             continue;
         }
         let child_args = kind.of(&child, args, &input_root);
-        let mut child_report =
-            crate::confine::with_documents(held.clone(), || cmd_generate(child_args, error_format));
+        let mut child_report = crate::confine::with_documents(held.clone(), || {
+            cmd_generate(child_args, error_format, &BodyReadSites::default())
+        });
         read = joined_reads(read, child_report.depfile.take());
         write_sourcemaps(std::mem::take(&mut child_report.sourcemaps));
         let tree = std::mem::take(&mut *pending_tree());
@@ -7337,6 +7341,11 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         error_format.emit_forge_and_exit(&refusal.error)
     });
 
+    // What the set reads of each codec's body is the set's, counted once over
+    // every document it generates and handed to each (docs/adr/0137).
+    let documents: Vec<String> = units.iter().map(|unit| unit.document.clone()).collect();
+    let body_reads = BodyReadSites::of_documents(&documents, &include_dirs, |_| args.views);
+
     let root = PathBuf::from(&args.output_dir);
     let mut set = GenerateReport {
         target_language: Some(lang),
@@ -7371,7 +7380,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             one.parent_stem = Some(parent.clone());
         }
         set_reached_from(unit.reached_from.clone());
-        let report = cmd_generate(one, error_format);
+        let report = cmd_generate(one, error_format, &body_reads);
         for artifact in &report.artifacts {
             if let Some(first) = writers.insert(tree_key(artifact), unit.document.clone()) {
                 let refusal = Located::new(
@@ -7420,8 +7429,13 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
 /// Generate one document as `generate` does, and hand back what the run
 /// found for the manifest rather than printing it: `generate` prints it for
 /// its one document, and `--with-imports` merges the reports of every
-/// document it reaches into one.
-fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport {
+/// document it reaches into one. `body_reads` is what the set the document is
+/// generated in reads of each codec's body (docs/adr/0137).
+fn cmd_generate(
+    args: GenerateArgs,
+    error_format: ErrorFormat,
+    body_reads: &BodyReadSites,
+) -> GenerateReport {
     // Unpack the CLI args struct into the internal borrowed names the
     // body uses. `args` owns the data for the whole function, so the
     // `&` / `as_deref()` borrows below stay valid for every use.
@@ -7570,6 +7584,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 views,
                 inline_encode,
                 inline_decode,
+                body_reads: body_reads.clone(),
                 // The digest every file of this run is headed by, which a schema
                 // unit's payload schema names (docs/adr/0087, section 1.1).
                 source_hash: Some(drift_ctx.header.source_hex()),

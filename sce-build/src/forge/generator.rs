@@ -14331,9 +14331,11 @@ struct CodecForms {
     views: bool,
     /// Always inline the functions that write (docs/adr/0061).
     inline_encode: bool,
-    /// Always inline the function that reads a codec's body, which is otherwise
-    /// out of line (docs/adr/0136).
+    /// Always inline the function that reads a codec's body (docs/adr/0136).
     inline_decode: bool,
+    /// The sites of the generated set that read this codec's body, which keep
+    /// its read out of line where they are two or more (docs/adr/0137).
+    body_reads: crate::forge::body_reads::BodyReads,
 }
 
 /// The refusal of a codec that carries a sub-feature only an MCU-class backend writes (today DMA
@@ -14366,15 +14368,21 @@ pub(crate) fn reject_mcu_only_codec(
     ))
 }
 
-/// The attribute of the function that reads a codec's body, for
-/// [`CodecForms::inline_decode`] (docs/adr/0136): out of line by default, so a
-/// body is one function every reader of it calls, and always inlined where the
-/// build asks every read inlined.
-fn body_read_attribute(inline_decode: bool) -> &'static str {
+/// The attribute of a function that reads a codec's body, read from `sites`
+/// sites of the generated set (docs/adr/0137): always inlined where the build
+/// asks every read inlined ([`CodecForms::inline_decode`], docs/adr/0136), out
+/// of line where the set reads the body from two sites or more, so the body is
+/// one function every site calls, and none where it is read from one site or
+/// none, which leaves the choice to the compiler: kept out of line, a body with
+/// one caller is a call frame and a function its caller cannot inline, and the
+/// copy it would spare does not exist.
+fn body_read_attribute(inline_decode: bool, sites: u32) -> &'static str {
     if inline_decode {
         "#[inline(always)]"
-    } else {
+    } else if sites >= 2 {
         "#[inline(never)]"
+    } else {
+        ""
     }
 }
 
@@ -14390,6 +14398,7 @@ fn render_codec(
         views,
         inline_encode,
         inline_decode,
+        body_reads,
     } = forms;
     if matches!(lang, crate::generator::Language::C11) {
         c11_refuse_a_field_it_cannot_hold(m)?;
@@ -17816,13 +17825,20 @@ fn render_codec(
         // generated with views has a `{Codec}View`, which is what lets a
         // parent name the view of a body without knowing which kind it is.
         ctx.insert("emit_views".into(), emit_views.into());
-        // docs/adr/0136: the function a parent reads this codec's body through
-        // (an arm, an embedded body, a chain's entry) is one function, out of
-        // line, so a variant holds no arm's body and a body several codecs read
-        // is not copied into each; `--inline-decode` asks it inlined.
+        // docs/adr/0137: the function a parent reads this codec's body through
+        // (an arm, an embedded body, a list's entry) is one function, out of
+        // line, where the set reads it from two sites or more, so it is not
+        // copied into each, and is the compiler's to place where it is read
+        // from one; `--inline-decode` asks it inlined (docs/adr/0136). The
+        // eager read and the view's are two functions, each read from its own
+        // sites.
         ctx.insert(
             "body_read_attr".into(),
-            body_read_attribute(inline_decode).into(),
+            body_read_attribute(inline_decode, body_reads.eager).into(),
+        );
+        ctx.insert(
+            "view_read_attr".into(),
+            body_read_attribute(inline_decode, body_reads.view).into(),
         );
         if emit_views {
             let view_borrowed = codec_self_view_borrowed(m, imports);
@@ -30068,6 +30084,7 @@ pub fn generate_rust_with_imports_and_externs(
                 views: options.views,
                 inline_encode: options.inline_encode,
                 inline_decode: options.inline_decode,
+                body_reads: options.body_reads.of(&m.name),
             },
         )?,
         ForgeDocument::Validator(m) => {
