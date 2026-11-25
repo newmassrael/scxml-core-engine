@@ -2000,7 +2000,7 @@ fn the_ctest_shard_helpers_pass_their_own_cases() {
 /// Each lane whose shards workspace_shards.py plans: its workflow, the gate
 /// script its jobs run, the variable that hands the gate its shard, and the
 /// arguments that name the suite to the helper.
-const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 3] = [
+const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 4] = [
     (
         ".github/workflows/w3c-tests.yml",
         "scripts/gates/w3c-rust.sh",
@@ -2018,6 +2018,12 @@ const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 3] = [
         "scripts/gates/tree-hygiene.sh",
         "SCE_TREE_HYGIENE_SHARD",
         &["--gate-targets", "scripts/gates/tree-hygiene.sh"],
+    ),
+    (
+        ".github/workflows/authoring-core.yml",
+        "scripts/gates/authoring-core.sh",
+        "SCE_AUTHORING_CORE_SHARD",
+        &["--unittest-modules", "tools/authoring/tests"],
     ),
 ];
 
@@ -2157,6 +2163,49 @@ fn every_target_the_tree_hygiene_gate_names_is_in_exactly_one_shard() {
         expected.contains("test hook_ci_parity") && expected.len() > 50,
         "{gate_path} names {} target(s) in its cargo command, without `hook_ci_parity` \
          or under the fifty it has held since it was split; the reading broke",
+        expected.len()
+    );
+    let seen = units_of_each_shard(args, count);
+    assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
+}
+
+/// Every module unittest discovers in the authoring core's suite is in exactly
+/// one part of its lane, and no part holds a module discovery does not load.
+/// The modules are read here from the directory by discovery's own pattern
+/// (`test*.py`, the suite having no package below it), by a reading of this
+/// file's own; each part also holds the plan to discovery itself before it runs.
+#[test]
+fn every_module_of_the_authoring_suite_is_in_exactly_one_shard() {
+    let (lane_path, _, variable, args) = PLANNED_SHARD_LANES[3];
+    let (_, (count, _)) = sharded_job(lane_path, &read(lane_path), &format!("{variable}:"));
+    let dir = repo_root().join("tools/authoring/tests");
+    let mut expected: BTreeSet<String> = BTreeSet::new();
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            assert!(
+                !path.join("__init__.py").is_file(),
+                "{} is a package, where discovery descends; read its modules too",
+                path.display()
+            );
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if let Some(stem) = name
+            .strip_suffix(".py")
+            .filter(|_| name.starts_with("test"))
+        {
+            expected.insert(format!("module tests.{stem}"));
+        }
+    }
+    assert!(
+        expected.len() > 100,
+        "{} holds {} test module(s), under the hundred it has held since it was split; \
+         the reading broke",
+        dir.display(),
         expected.len()
     );
     let seen = units_of_each_shard(args, count);

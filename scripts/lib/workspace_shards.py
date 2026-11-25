@@ -11,6 +11,7 @@
 #   w3c-rust          sce-rust-tests' test targets, `core`  SCE_W3C_RUST_SHARD    w3c-tests.yml
 #   regen-reproduces  the regeneration's steps              SCE_REGEN_SHARD       regen-reproduces.yml
 #   tree-hygiene      the targets its `cargo test` names     SCE_TREE_HYGIENE_SHARD tree-hygiene.yml
+#   authoring-core    the suite's unittest modules           SCE_AUTHORING_CORE_SHARD authoring-core.yml
 #
 # Unset, each gate runs its whole suite, which is what the build machines and a
 # developer run. (scripts/lib/ctest_shards.py is the same for a ctest suite.)
@@ -21,6 +22,8 @@
 #   scripts/lib/workspace_shards.py --regen <k>/<N>             the regeneration's steps
 #   scripts/lib/workspace_shards.py --gate-targets <gate> <k>/<N>
 #                                     the targets a gate script's cargo command names
+#   scripts/lib/workspace_shards.py --unittest-modules <dir> <k>/<N>
+#                                     the test modules unittest discovers under <dir>
 #   scripts/lib/workspace_shards.py ... --out <dir> <k>/<N>     and write the plan there
 #   scripts/lib/workspace_shards.py --measure <job log>         the costs a run measured
 #   scripts/lib/workspace_shards.py --self-test
@@ -35,7 +38,10 @@
 # is a step of scripts/regen_all_committed_trees.sh with the trees it owns
 # (scripts/lib/sce_generated_tree.sh, `sce_regen_steps`). For `--gate-targets`,
 # `test <name>` is a target the gate script names with `--test` in its
-# `cargo test` command, which is the one list of what that gate runs.
+# `cargo test` command, which is the one list of what that gate runs. For
+# `--unittest-modules`, `module <name>` is a module `python -m unittest
+# discover` loads from the directory, named from the directory's parent, which
+# is the top level the suite is discovered from.
 #
 # WHY SHARDS. The workspace suite outgrew one job. Measured on the run of
 # 293defb01c (Rust Workspace Tests, job 132834013098): 29 minutes of build and
@@ -221,6 +227,13 @@ GATE_SECONDS: dict[str, dict[str, float]] = {
 }
 GATE_UNMEASURED_SECONDS = 1.0
 
+# The cost of a unittest module, until a run measures one: the test methods it
+# defines. The authoring core's suite ran 2413 tests in 526 s with the
+# generator built (job 139000500233, 2026-11-25), and its runner prints dots, so
+# no module's time is in a log; the job runs each part with `--durations`, which
+# names the slowest tests, for the measurement that replaces this.
+UNITTEST_TEST = re.compile(r"^\s*(?:async\s+)?def test", re.M)
+
 CORE = "core"
 
 Cost = Callable[[str], float]
@@ -230,7 +243,7 @@ def unit_name(unit: str) -> str:
     """A unit less its kind: the target of `test <name>`, the step of
     `step <name>`, and `core` as it is."""
     kind, _, name = unit.partition(" ")
-    return name if kind in ("test", "step") and name else unit
+    return name if kind in ("test", "step", "module") and name else unit
 
 
 def cost_by(table: dict[str, float], unmeasured: float) -> Cost:
@@ -367,6 +380,35 @@ def gate_targets(text: str, gate: str = "the gate") -> list[str]:
         raise SystemExit(f"workspace_shards: {gate} runs no `cargo test` that names a "
                          f"target with `--test`, so there is nothing to spread")
     return [f"test {name}" for name in sorted(names)]
+
+
+def unittest_modules(directory: Path) -> dict[str, float]:
+    """The modules `python -m unittest discover -s <directory> -t <parent>`
+    loads, as `module <dotted name>` units, each with its cost: every file
+    matching discovery's pattern `test*.py` in the directory and in each
+    package under it (a directory holding `__init__.py`, which is where
+    discovery descends), named from the parent. Refused when there is none."""
+    top = directory.parent
+    found: dict[str, float] = {}
+
+    def walk(here: Path) -> None:
+        for entry in sorted(here.iterdir()):
+            if entry.is_dir():
+                if (entry / "__init__.py").is_file():
+                    walk(entry)
+                continue
+            if entry.suffix == ".py" and entry.name.startswith("test"):
+                dotted = ".".join(entry.relative_to(top).with_suffix("").parts)
+                text = entry.read_text(encoding="utf-8", errors="replace")
+                found[f"module {dotted}"] = float(max(1, len(UNITTEST_TEST.findall(text))))
+
+    if not (directory / "__init__.py").is_file():
+        raise SystemExit(f"workspace_shards: {directory} is no package, so its modules are "
+                         f"not named from {top}")
+    walk(directory)
+    if not found:
+        raise SystemExit(f"workspace_shards: no test*.py module under {directory}")
+    return found
 
 
 def shards(all_units: list[str], count: int, cost: Cost) -> list[list[str]]:
@@ -531,6 +573,16 @@ def self_test() -> int:
             check(sorted(assigned) == named and len(assigned) == len(set(assigned)),
                   f"{count}: the parts of tree-hygiene are every target once")
 
+    authoring = REPO_ROOT / "tools/authoring/tests"
+    if authoring.is_dir():
+        modules = unittest_modules(authoring)
+        check(len(modules) > 100 and all(u.startswith("module tests.test") for u in modules),
+              f"the authoring suite reads as {len(modules)} module(s); the reading broke")
+        spread = shards(sorted(modules), 3, lambda u: modules[u])
+        assigned = [u for s in spread for u in s]
+        check(sorted(assigned) == sorted(modules) and len(assigned) == len(set(assigned)),
+              "the parts of the authoring suite are every module once")
+
     try:
         plan_of(["core", "core"], 2, package)
         check(False, "a unit named twice is refused")
@@ -570,6 +622,23 @@ def self_test() -> int:
         check(any("left no report" in f for f in verify(root / "shards")),
               "a shard whose units did not all run is named")
 
+        suite = root / "tool" / "tests"
+        (suite / "deeper").mkdir(parents=True)
+        (suite / "skipped").mkdir()
+        (suite / "__init__.py").write_text("", encoding="utf-8")
+        (suite / "deeper" / "__init__.py").write_text("", encoding="utf-8")
+        (suite / "test_one.py").write_text("def test_a():\n    pass\n"
+                                           "    def test_b(self):\n        pass\n",
+                                           encoding="utf-8")
+        (suite / "helper.py").write_text("def test_not_a_module():\n    pass\n",
+                                         encoding="utf-8")
+        (suite / "deeper" / "test_two.py").write_text("x = 1\n", encoding="utf-8")
+        (suite / "skipped" / "test_three.py").write_text("def test_c():\n    pass\n",
+                                                         encoding="utf-8")
+        check(unittest_modules(suite) == {"module tests.test_one": 2.0,
+                                          "module tests.deeper.test_two": 1.0},
+              f"discovery's modules, each with its tests: {unittest_modules(suite)}")
+
         log = root / "job.log"
         log.write_text("\n".join([
             "2026-11-25T05:13:40.1000000Z === step runtime-kotlin",
@@ -599,6 +668,9 @@ def main() -> int:
     parser.add_argument("--package", help="one package's suite, not the workspace's")
     parser.add_argument("--regen", action="store_true",
                         help="the regeneration's steps, not a cargo suite")
+    parser.add_argument("--unittest-modules", metavar="DIR",
+                        help="the unittest modules discovered under DIR, a package "
+                             "path from the repository root")
     parser.add_argument("--gate-targets", metavar="GATE",
                         help="the targets a gate script's cargo command names, "
                              "the script's path from the repository root")
@@ -622,7 +694,14 @@ def main() -> int:
     if args.gate_targets and (args.regen or args.package or args.features):
         parser.error("--gate-targets spreads what a gate script names; it takes no "
                      "--regen, --package or --features")
-    if args.gate_targets:
+    if args.unittest_modules and (args.gate_targets or args.regen or args.package
+                                  or args.features):
+        parser.error("--unittest-modules spreads a Python suite; it takes no other suite")
+    if args.unittest_modules:
+        modules = unittest_modules(REPO_ROOT / args.unittest_modules)
+        every = sorted(modules)
+        cost = lambda unit: modules.get(unit, 1.0)  # noqa: E731  (one table, read once)
+    elif args.gate_targets:
         script = REPO_ROOT / args.gate_targets
         if not script.is_file():
             parser.error(f"--gate-targets {args.gate_targets}: no such gate script")
@@ -640,7 +719,7 @@ def main() -> int:
         cost = cost_by(MEASURED_SECONDS, UNMEASURED_SECONDS)
     else:
         parser.error("--features is required, the features the suite enables "
-                     "(or --package, --regen or --gate-targets)")
+                     "(or --package, --regen, --gate-targets or --unittest-modules)")
     if args.all:
         print("\n".join(every))
         return 0

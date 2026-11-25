@@ -37,6 +37,9 @@ on:
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
       - 'scripts/gates/authoring-core.sh'
+      # What says which part runs which modules, and what holds the parts.
+      - 'scripts/lib/workspace_shards.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
       # What cargo reads of the generator crate to build it, and the fixtures
@@ -60,6 +63,9 @@ on:
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
       - 'scripts/gates/authoring-core.sh'
+      # What says which part runs which modules, and what holds the parts.
+      - 'scripts/lib/workspace_shards.py'
+      - 'scripts/lib/ctest_shards.py'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
       # What cargo reads of the generator crate to build it, and the fixtures
@@ -103,10 +109,27 @@ jobs:
           SCE_REQUIRE_PDF_PACK: '1'
         run: scripts/gate authoring-core
 
-  verify-with-codegen:
-    name: Suite with the product's generator built
+  # The suite with the generator built, in three parts, one job each, and a
+  # last job, `verify-with-codegen`, that holds them together. Whole, the job
+  # took 16 minutes (job 139000500233, 2026-11-25): 3.8 building the generator,
+  # 2.2 building the Lua binding's wheel (no wheel is published for the newest
+  # Python the runner takes), and 526 s of tests, the run-driven cases most of
+  # them. Each part runs the authoring-core gate with
+  # `SCE_AUTHORING_CORE_SHARD`, which runs its part of the suite's test modules
+  # (scripts/lib/workspace_shards.py `--unittest-modules`) after holding the plan
+  # to what discovery loads; `hook_ci_parity` holds the matrix and the variable
+  # to one count and the parts to every module. Three, because the build and the
+  # wheel are six minutes every part pays: three parts are about three minutes
+  # of tests each beside them, and a fourth would save under a minute of tests
+  # for another six of setup.
+  verify-with-codegen-shard:
+    name: Suite with the product's generator built (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Install Dependencies
@@ -157,4 +180,43 @@ jobs:
       - name: Authoring core gate, run-driven cases included
         env:
           SCE_REQUIRE_PDF_PACK: '1'
+          SCE_AUTHORING_CORE_SHARD: ${{ matrix.shard }}/3
         run: scripts/gate authoring-core
+      # The plan and what this part ran (`verify-with-codegen` reads them).
+      - name: Upload this part's plan
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: authoring-core-shard-${{ matrix.shard }}
+          path: target/authoring-core-shard/
+          retention-days: 30
+          if-no-files-found: warn
+
+  # The verdict of the suite with the generator built: every part planned the
+  # modules alike and ran every module of its part (`ctest_shards.py verify`).
+  # It keeps the job's id and name, so the lane's readers find it where the
+  # unsplit job was.
+  verify-with-codegen:
+    name: Suite with the product's generator built
+    needs: verify-with-codegen-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Download the parts' plans
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: authoring-core-shard-*
+          path: shards
+      - name: Hold the parts to one plan and the whole suite
+        env:
+          SHARDS_RESULT: ${{ needs.verify-with-codegen-shard.result }}
+        run: |
+          status=0
+          python3 scripts/lib/ctest_shards.py verify shards || status=1
+          if [[ "$SHARDS_RESULT" != success ]]; then
+            echo "::error title=authoring-core::a part's job ended $SHARDS_RESULT"
+            status=1
+          fi
+          exit "$status"

@@ -20,6 +20,12 @@
 {
     "workflows": ["authoring-core.yml"],
     "runner_workflow": True,
+    # Its test modules are spread over the three jobs of the lane's suite with
+    # the generator built when SCE_AUTHORING_CORE_SHARD names `k/N`
+    # (`--unittest-modules` in scripts/lib/workspace_shards.py): whole, that job
+    # took 16 minutes on a hosted runner (job 139000500233). A plan makes one
+    # unit per part (`shard_count`).
+    "shard_env": "SCE_AUTHORING_CORE_SHARD",
     "ci_only": "72s measured with the generator built at opt 1, 155s "
                "at opt 0, against a declared 0.262. authoring-core.yml "
                "runs it twice: Python only, and with sce-codegen built "
