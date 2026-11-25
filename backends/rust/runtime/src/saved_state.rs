@@ -3724,6 +3724,24 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
              document has no delayed send",
         ));
     }
+    // docs/adr/0132: the delayed sends and the host-run deadlines a saved state
+    // lists wait in one queue, and the generator proved how many of them the
+    // document can leave waiting at once. A state that lists more is not one the
+    // saved machine could have been in.
+    if let Some(bound) = P::SCHEDULER_BOUND {
+        let waiting = saved.pending.len()
+            + saved
+                .host_invokes
+                .iter()
+                .filter(|host| host.due.is_some())
+                .count();
+        if waiting > bound {
+            return Err(StateRefusal::new(format!(
+                "pending and hostinvokes list {waiting} delayed event(s) waiting, and this \
+                 machine's document leaves at most {bound} waiting at once"
+            )));
+        }
+    }
     // The same for a waiting send: an event this document does not name refuses
     // the restore, not the sends before it.
     let pending = saved

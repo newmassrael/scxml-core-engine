@@ -177,25 +177,17 @@
 /// (unbounded, the spec's `Queue`) so this constant only affects the `--no-default-features` variant.
 pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 
-/// Maximum number of simultaneously-pending delayed events in the no_std
-/// [`PullScheduler`] ring.
+/// The capacity of a no_std [`PullScheduler`] whose type names none: the
+/// most delayed events its ring holds at once.
 ///
-/// Bounds the `heapless::Vec<ScheduledEntry<S>, _>` capacity of the no_std
-/// variant of the scheduler. `<send delay>` author surface; this is the
-/// in-flight delay-pending dimension, distinct from the event queue capacity
-/// (`<sce:capacity>` populates `EVENT_QUEUE_CAPACITY` per-document for the
-/// ready-to-process queue — that's a different dimension).
-///
-/// v1 value 32 covers typical statechart in-flight `<send delay>` parallelism
-/// (1-5 simultaneous timers in the W3C 202 test corpus) with a ~6× safety
-/// margin. Profiler-driven per-document tunable (via a future
-/// `StatePolicy::SCHEDULER_CAPACITY: usize` associated const + matching
-/// `<sce:scheduler-capacity>` parser surface, mirroring B-γ1's `<sce:capacity>`
-/// architecture) is not built because its input does not exist: the
-/// right per-document number comes from a profile of that document's
-/// in-flight timer count, and the corpus measurement above is the only
-/// profile SCE has. A tunable whose value would still be guessed adds
-/// a knob without adding an answer.
+/// Only a policy written by hand leaves the capacity out. A generated machine
+/// names its own, `PullScheduler<S, N>`: the most delayed events its document
+/// can leave waiting at once, which the generator proves from the document,
+/// or the capacity the document declares with `<scxml sce:scheduler-capacity>`
+/// where it proves none; a bare-metal generation of a document with neither is
+/// refused (docs/adr/0132). This is the in-flight delay-pending dimension,
+/// distinct from the event queue capacity (`<sce:capacity>` populates
+/// `EVENT_QUEUE_CAPACITY` per-document for the ready-to-process queue).
 ///
 /// ## Per-entry footprint (no_std)
 ///

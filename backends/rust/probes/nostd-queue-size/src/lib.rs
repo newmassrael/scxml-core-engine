@@ -137,6 +137,21 @@ const _: () = assert!(
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
 );
 
+/// Capacity lever (docs/adr/0132). A generated machine names the capacity of
+/// its delayed-send queue in its policy, the most delayed events its document
+/// can leave waiting, and the ring is that many entries: a queue of two holds
+/// less than one of the default capacity, a hand-written policy's. Either side
+/// growing to the other means the ring stopped being sized by the capacity its
+/// type names (`PullScheduler<S, N>` in backends/rust/runtime/src/engine.rs).
+const _: () = assert!(
+    PullScheduler::<ProbeSendId, 2>::CAPACITY == 2
+        && core::mem::size_of::<PullScheduler<ProbeSendId, 2>>()
+            < core::mem::size_of::<PullScheduler<ProbeSendId>>(),
+    "PullScheduler<S, 2> is not smaller than the default-capacity PullScheduler<S>: the \
+     no_std ring is no longer sized by the capacity its type names. See PullScheduler in \
+     backends/rust/runtime/src/engine.rs and docs/adr/0132.",
+);
+
 /// Unused-capacity lever. The fixture has no `<send delay>`, no
 /// `<send delayexpr>`, no `<cancel>` and no `<donedata>`, so its engine has
 /// nothing to wait in a delayed-send queue and nothing to keep for a parent:

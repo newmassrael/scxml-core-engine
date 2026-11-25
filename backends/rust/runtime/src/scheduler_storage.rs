@@ -7,8 +7,8 @@
 //! `<cancel>` and no host-run deadline arms nothing on the delayed-send queue
 //! and never asks it to drop anything, so a queue there is capacity nobody can
 //! fill. Under `--no-default-features` that is the whole of a
-//! [`PullScheduler`]'s fixed ring, [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS)
-//! entries of it, in every engine of such a document. The generator therefore
+//! [`PullScheduler`]'s fixed ring, as many entries as its capacity, in every
+//! engine of such a document. The generator therefore
 //! picks the queue per document, the way it picks the event queue's depth and
 //! the cancel key's storage: [`StatePolicy::Scheduler`](crate::StatePolicy::Scheduler)
 //! is [`PullScheduler`] for a document that delays or cancels a send, and the
@@ -38,7 +38,7 @@ use crate::SceString;
 /// module documentation for why).
 pub trait SchedulerStorage: sealed::SchedulerOps {}
 
-impl<S: ScheduledSendIdLike> SchedulerStorage for PullScheduler<S> {}
+impl<S: ScheduledSendIdLike, const N: usize> SchedulerStorage for PullScheduler<S, N> {}
 
 impl SchedulerStorage for NoDelayedSends {}
 
@@ -216,11 +216,23 @@ pub(crate) mod sealed {
         /// entry is only ever an event.
         #[cfg(not(feature = "std"))]
         fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<EventId>;
+
+        /// The most entries the queue has held at once since it was built
+        /// empty, which a build with debug assertions holds to a proven
+        /// capacity (docs/adr/0132).
+        #[cfg(debug_assertions)]
+        fn high_water(&self) -> usize;
     }
 
-    impl<S: ScheduledSendIdLike> SchedulerOps for PullScheduler<S> {
+    impl<S: ScheduledSendIdLike, const N: usize> SchedulerOps for PullScheduler<S, N> {
         const EMPTY: Self = Self::new();
         const KEEPS_DELAYED_SENDS: bool = true;
+
+        #[cfg(debug_assertions)]
+        #[inline]
+        fn high_water(&self) -> usize {
+            PullScheduler::high_water(self)
+        }
 
         #[inline]
         fn schedule_event_named_at(
@@ -350,6 +362,13 @@ pub(crate) mod sealed {
     impl SchedulerOps for NoDelayedSends {
         const EMPTY: Self = NoDelayedSends;
         const KEEPS_DELAYED_SENDS: bool = false;
+
+        /// Nothing is ever held.
+        #[cfg(debug_assertions)]
+        #[inline]
+        fn high_water(&self) -> usize {
+            0
+        }
 
         fn schedule_event_named_at(
             &mut self,

@@ -243,16 +243,17 @@ pub trait StatePolicy: Sized + 'static {
     /// document with no `<cancel>` therefore never reads it, so generated code
     /// emits the zero-size [`ElidedSendId`](crate::ElidedSendId) and the no_std
     /// scheduler ring sheds its per-entry `heapless::String<256>`
-    /// (~264 B × [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS)); a
+    /// (~264 B × the queue's capacity); a
     /// document that cancels emits [`SceString`](crate::SceString) (load-bearing
     /// on both profiles). The choice is behaviour-preserving under std either
     /// way, so the one emission compiles on both runtime profiles.
     ///
     /// The key of the [`Scheduler`](StatePolicy::Scheduler) when that is a
     /// [`PullScheduler`](crate::PullScheduler): generated code writes
-    /// `PullScheduler<Self::ScheduledSendId>`. A machine that keeps no
-    /// delayed-send queue keeps no key either, and its policy still names one
-    /// (the zero-size `ElidedSendId`, since such a document has no `<cancel>`).
+    /// `PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>`. A machine
+    /// that keeps no delayed-send queue keeps no key either, and its policy still
+    /// names one (the zero-size `ElidedSendId` when its document has no
+    /// `<cancel>`).
     ///
     /// Mirrors the per-machine [`ExternalQueue`](StatePolicy::ExternalQueue)
     /// sizing lever; like it (and [`Hal`](StatePolicy::Hal) / [`Payload`](StatePolicy::Payload))
@@ -265,19 +266,35 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// - [`NoDelayedSends`](crate::NoDelayedSends), zero-size, for a document
     ///   with no `<send delay>`, no `<send delayexpr>`, no `<cancel>` and no
-    ///   host-run deadline: nothing can be armed, so no queue is kept. Under
-    ///   `--no-default-features` the bounded ring it replaces is
-    ///   [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) entries of
-    ///   capacity nobody could fill.
+    ///   host-run deadline, or one whose proven capacity is `0`: nothing can
+    ///   be armed, so no queue is kept. Under `--no-default-features` the
+    ///   bounded ring it replaces is capacity nobody could fill.
     /// - [`PullScheduler`](crate::PullScheduler) keyed by
     ///   [`ScheduledSendId`](StatePolicy::ScheduledSendId) for every other
-    ///   document.
+    ///   document, of the capacity the generator proves from the document
+    ///   ([`SCHEDULER_BOUND`](StatePolicy::SCHEDULER_BOUND)), or of the one the
+    ///   document declares (`<scxml sce:scheduler-capacity>`) where none is
+    ///   proven (docs/adr/0132). A bare-metal build of a document with neither
+    ///   is refused by the generator.
     ///
     /// The same emission compiles on both runtime profiles, and the choice is
     /// behaviour-preserving on both: a document the zero-size queue is chosen
     /// for has nothing to arm on it. Emitted by every generated policy, like
     /// [`ScheduledSendId`](StatePolicy::ScheduledSendId).
     type Scheduler: crate::SchedulerStorage;
+
+    /// The most delayed events the [`Scheduler`](StatePolicy::Scheduler) holds
+    /// at once, as the generator proved it from the document, when it proved
+    /// it (docs/adr/0132): the same number as the queue's capacity.
+    ///
+    /// A build with debug assertions holds the most entries the queue held to
+    /// it as each turn closes, on both profiles. Under std the queue grows, so
+    /// without this a capacity too small for the document would pass every
+    /// test and stop only a bare-metal machine; with it, each test run of a
+    /// machine with a proven capacity checks the proof. A host reads it to know
+    /// how many timers a machine can have waiting. `None`, the default, asks
+    /// nothing.
+    const SCHEDULER_BOUND: Option<usize> = None;
 
     /// Where the payload of a top-level `<final>`'s `<donedata>` waits for the
     /// parent that lifts it onto `done.invoke.<id>`

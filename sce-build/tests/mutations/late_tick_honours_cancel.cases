@@ -53,14 +53,13 @@ PY
 
 mutation_case "the scheduler pops in insertion order rather than by deadline" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        let idx = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.ready_at <= now)
-            .min_by_key(|(_, e)| e.ready_at)
-            .map(|(idx, _)| idx)?;""",
-     """        let idx = self.entries.iter().position(|e| e.ready_at <= now)?;""")
+     """    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.ready_at <= now)
+        .min_by_key(|(_, e)| e.ready_at)
+        .map(|(idx, _)| idx)""",
+     """    entries.iter().position(|e| e.ready_at <= now)""")
 PY
 
 # ── The deadline query ─────────────────────────────────────────────

@@ -99,9 +99,7 @@ use crate::scheduler_storage::sealed::SchedulerOps;
 #[cfg(feature = "http-send")]
 use crate::http::{HttpSendOutcome, HttpSendRequest};
 use crate::policy::{CurrentEventData, StatePolicy};
-#[cfg(not(feature = "std"))]
-use crate::MAX_SCHEDULED_EVENTS;
-use crate::{sce_log_debug, sce_log_error, BoundedPush, SceString};
+use crate::{sce_log_debug, sce_log_error, BoundedPush, SceString, MAX_SCHEDULED_EVENTS};
 
 // A document printed as its own step function (docs/adr/0129): the trait its
 // policy implements, the calls its arms make, and how the engine holds it.
@@ -224,11 +222,14 @@ pub type SchedTimePoint = u64;
 /// synthetic clocks.
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--no-default-features`
-/// the backing store is a stack-allocated `heapless::Vec` capped at
-/// [`crate::MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
-/// reasoning and the deferred per-document tunable). Capacity overflow under
-/// no_std is treated as a fatal configuration error (panic) per the same
-/// "no silent transition drop" discipline the W3C SCXML algorithm follows.
+/// the backing store is a stack-allocated `heapless::Vec` of `N` entries. A
+/// generated machine names `N` in its policy: the capacity the generator proves
+/// from its document, or the one the document declares when none is proven
+/// (docs/adr/0132). [`crate::MAX_SCHEDULED_EVENTS`] is `N` only for a policy
+/// written by hand that names none. Capacity overflow under no_std is treated
+/// as a fatal configuration error (panic) per the same "no silent transition
+/// drop" discipline the W3C SCXML algorithm follows; for a proven capacity it
+/// cannot happen.
 ///
 /// Kept as a concrete type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
 /// The engine holds it as its policy's [`StatePolicy::Scheduler`], which is
@@ -248,14 +249,20 @@ pub type SchedTimePoint = u64;
 /// [`StatePolicy::ScheduledSendId`], which is
 /// [`ElidedSendId`](crate::ElidedSendId) for cancel-free machines.
 #[derive(Debug)]
-pub struct PullScheduler<S = SceString> {
+pub struct PullScheduler<S = SceString, const N: usize = MAX_SCHEDULED_EVENTS> {
     /// Pending entries: `(event, [event_data_json], send_id, ready_at)`.
     /// The `event_data_json` field is elided under no_std (see [`ScheduledEntry`]).
     #[cfg(feature = "std")]
     entries: Vec<ScheduledEntry<S>>,
     #[cfg(not(feature = "std"))]
-    entries: ::heapless::Vec<ScheduledEntry<S>, MAX_SCHEDULED_EVENTS>,
+    entries: ::heapless::Vec<ScheduledEntry<S>, N>,
     next_auto_send_id: u64,
+    /// The most entries the queue has held at once since it was built empty,
+    /// kept by a build with debug assertions so a test run holds a proven
+    /// capacity to what it did (docs/adr/0132); a std queue would grow past
+    /// the capacity in silence.
+    #[cfg(debug_assertions)]
+    high_water: usize,
 }
 
 /// What one scheduled entry is to do when its deadline arrives.
@@ -484,7 +491,13 @@ impl<S> ScheduledEntry<S> {
     }
 }
 
-impl<S: ScheduledSendIdLike> PullScheduler<S> {
+impl<S: ScheduledSendIdLike, const N: usize> PullScheduler<S, N> {
+    /// The most entries the queue holds under `--no-default-features`, where
+    /// arming one past it stops the program. The std queue grows past it, and
+    /// a build with debug assertions holds the policy's proven capacity to
+    /// what each run armed ([`StatePolicy::SCHEDULER_BOUND`]).
+    pub const CAPACITY: usize = N;
+
     /// Construct an empty scheduler. A constant expression on both profiles.
     pub const fn new() -> Self {
         Self {
@@ -493,7 +506,16 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
             #[cfg(not(feature = "std"))]
             entries: ::heapless::Vec::new(),
             next_auto_send_id: 0,
+            #[cfg(debug_assertions)]
+            high_water: 0,
         }
+    }
+
+    /// The most entries the queue has held at once since it was built empty
+    /// (docs/adr/0132). Kept only by a build with debug assertions.
+    #[cfg(debug_assertions)]
+    pub fn high_water(&self) -> usize {
+        self.high_water
     }
 
     /// §scxml-6.2: Schedule an event for delayed delivery, given an
@@ -505,8 +527,8 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` an attempted
-    /// push past [`crate::MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
-    /// the event (W3C SCXML no-silent-drop discipline).
+    /// push past [`Self::CAPACITY`] panics rather than silently dropping the
+    /// event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
         &mut self,
         event: EventId,
@@ -687,9 +709,10 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// Push into [`Self::entries`] uniformly under std and no_std.
     ///
     /// Under std this is `Vec::push` (infallible). Under no_std this is
-    /// `heapless::Vec::push` with an `.expect` panic — W3C SCXML mandates no
-    /// silent transition drop, so an over-capacity schedule attempt is treated
-    /// as a fatal configuration error rather than swallowed.
+    /// `heapless::Vec::push`, and a full ring stops the program — W3C SCXML
+    /// mandates no silent transition drop, so an over-capacity schedule
+    /// attempt is treated as a fatal configuration error rather than
+    /// swallowed. A build with debug assertions records the most entries held.
     #[inline]
     fn push_scheduled(&mut self, entry: ScheduledEntry<S>) {
         #[cfg(feature = "std")]
@@ -698,9 +721,13 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         }
         #[cfg(not(feature = "std"))]
         {
-            self.entries.push(entry).map_err(|_| ()).expect(
-                "PullScheduler: heapless capacity exhausted (MAX_SCHEDULED_EVENTS=32 — author has more in-flight <send delay> than scheduler can hold; tune capacity or reduce concurrency)",
-            );
+            if self.entries.push(entry).is_err() {
+                scheduler_full(N);
+            }
+        }
+        #[cfg(debug_assertions)]
+        {
+            self.high_water = self.high_water.max(self.entries.len());
         }
     }
 
@@ -768,20 +795,18 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// the only kind a handler can arm during the tick that pops it, and a cut
     /// reports the event it was still popping.
     ///
-    /// Out of line, as [`pop_ready_event_at`](Self::pop_ready_event_at) is: the
-    /// policy reaches it through its `SchedulerStorage` (docs/adr/0075), whose
+    /// The walk is out of line ([`next_due`]), as the pop's scan is: the policy
+    /// reaches it through its `SchedulerStorage` (docs/adr/0075), whose
     /// forwarding is inlined into each machine's `tick`, and inlined further the
-    /// walk would be one copy per machine where it is one per send-id type.
-    #[inline(never)]
+    /// walk would be one copy per machine where it is one per send-id type. It
+    /// walks the entries as a slice, so it is one copy for every capacity as
+    /// well (docs/adr/0132).
+    #[inline]
     pub(crate) fn next_ready_at_with_event(
         &self,
         now: SchedTimePoint,
     ) -> Option<(SchedTimePoint, Option<EventId>)> {
-        self.entries
-            .iter()
-            .filter(|e| e.ready_at <= now)
-            .min_by_key(|e| e.ready_at)
-            .map(|e| (e.ready_at, e.own_event()))
+        next_due(&self.entries, now)
     }
 
     /// When the earliest still-queued entry comes due, whether or not it is
@@ -828,15 +853,12 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// path). `heapless::Vec::remove` is `pub fn remove(&mut self, index:
     /// usize) -> T` — same shape as `Vec::remove`, so this works on both
     /// profiles.
+    ///
+    /// The scan is over the entries as a slice ([`first_due`]), one copy for
+    /// every capacity; only the removal is the capacity's own.
     #[inline]
     fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<S>> {
-        let idx = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.ready_at <= now)
-            .min_by_key(|(_, e)| e.ready_at)
-            .map(|(idx, _)| idx)?;
+        let idx = first_due(&self.entries, now)?;
         Some(self.entries.remove(idx))
     }
 
@@ -870,8 +892,9 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// returning `Option<EventId>` avoids both the act discriminant and moving a
     /// 264 B empty `heapless::String` out on every timer fire.
     ///
-    /// Out of line, so the machines that keep a queue of one send-id type share
-    /// one copy of the pop (docs/adr/0075).
+    /// Out of line, so the machines that keep a queue of one send-id type and
+    /// one capacity share one copy of the pop (docs/adr/0075), and the scan in
+    /// it is one copy for every capacity ([`first_due`], docs/adr/0132).
     #[cfg(not(feature = "std"))]
     #[inline(never)]
     pub(crate) fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<EventId> {
@@ -926,10 +949,54 @@ fn take_host_invoke_deadline(
     }
 }
 
-impl<S: ScheduledSendIdLike> Default for PullScheduler<S> {
+impl<S: ScheduledSendIdLike, const N: usize> Default for PullScheduler<S, N> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The index of the ready entry that came due first, the earliest-armed of
+/// those due at the same instant ([`PullScheduler::pop_ready_entry`]'s order).
+///
+/// Over a slice and out of line, so the queues of every capacity that keep one
+/// send-id type share one copy of the scan (docs/adr/0075, docs/adr/0132).
+#[inline(never)]
+fn first_due<S>(entries: &[ScheduledEntry<S>], now: SchedTimePoint) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.ready_at <= now)
+        .min_by_key(|(_, e)| e.ready_at)
+        .map(|(idx, _)| idx)
+}
+
+/// The entry [`first_due`] would take, left where it is: the instant it came
+/// due and the event it delivers to this machine's own queues
+/// ([`PullScheduler::next_ready_at_with_event`]). One copy for every capacity,
+/// as [`first_due`] is.
+#[inline(never)]
+fn next_due<S>(
+    entries: &[ScheduledEntry<S>],
+    now: SchedTimePoint,
+) -> Option<(SchedTimePoint, Option<EventId>)> {
+    entries
+        .iter()
+        .filter(|e| e.ready_at <= now)
+        .min_by_key(|e| e.ready_at)
+        .map(|e| (e.ready_at, e.own_event()))
+}
+
+/// The one way an entry reaches a full bare-metal queue: stop, and say why.
+/// Out of line and of no capacity's type, so every queue shares it.
+#[cfg(not(feature = "std"))]
+#[cold]
+#[inline(never)]
+fn scheduler_full(capacity: usize) -> ! {
+    panic!(
+        "PullScheduler: its {capacity} slot(s) are full and a delayed send was armed: the \
+         document leaves more delayed events waiting than the capacity its policy names, which \
+         is a declared sce:scheduler-capacity (a proven one cannot be exceeded, docs/adr/0132)"
+    )
 }
 
 /// What the engine did with one event it offered to the active configuration.
@@ -1689,6 +1756,11 @@ impl<P: StatePolicy> Engine<P> {
         self.state.core.main_loop.is_running = true;
         self.state.core.main_loop.terminal_state = None;
         self.state.core.interpreter_exited = false;
+        // docs/adr/0132: a run starts with nothing waiting in the delayed-send
+        // queue. What an ended run left is that run's own, which a new run is
+        // not delivered, and the capacity the generator proves counts what one
+        // run arms.
+        self.state.scheduler = <P::Scheduler as SchedulerOps>::EMPTY;
         #[cfg(feature = "std")]
         self.state.late_bound_states.clear();
 
@@ -3166,8 +3238,25 @@ impl<P: StatePolicy> EngineState<P> {
 
     /// Close a turn opened by [`begin_turn`](Engine::begin_turn) — see
     /// [`EngineCore::close_turn`].
+    ///
+    /// docs/adr/0132: a proven capacity of the delayed-send queue is a claim
+    /// about every run, so a build with debug assertions holds the most entries
+    /// the queue has held to it as each turn closes, on both profiles. A std
+    /// queue grows past the capacity in silence, and the turn is where every
+    /// send the document arms is armed.
     #[inline]
     fn end_turn(&mut self, opened: bool) {
+        #[cfg(debug_assertions)]
+        if let Some(bound) = P::SCHEDULER_BOUND {
+            let held = self.scheduler.high_water();
+            assert!(
+                held <= bound,
+                "the delayed-send queue held {held} entries at once, more than the capacity the \
+                 generator proved for this document ({bound}): the analysis undercounts, or a \
+                 host armed a delayed send by hand that no document accounts for \
+                 (docs/adr/0132)"
+            );
+        }
         self.core.close_turn(opened);
     }
 
@@ -3440,6 +3529,15 @@ impl<P: StatePolicy> EngineState<P> {
     /// what a `step`-only loop otherwise never offers.
     pub fn unattended_scheduler_steps(&self) -> u32 {
         self.core.unattended_scheduler_steps
+    }
+
+    /// The most delayed events the delayed-send queue has held at once in this
+    /// run (docs/adr/0132), which a test holds to the policy's
+    /// [`SCHEDULER_BOUND`](StatePolicy::SCHEDULER_BOUND). Kept only by a build
+    /// with debug assertions; `0` for a machine that keeps no queue.
+    #[cfg(debug_assertions)]
+    pub fn scheduled_high_water(&self) -> usize {
+        self.scheduler.high_water()
     }
 
     /// How many events this engine took off the external queue and discarded

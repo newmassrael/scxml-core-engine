@@ -30,7 +30,7 @@ reversion.
   declares `<scxml sce:capacity="2">`. The generated `machine/src/*_sm.rs` is
   git-ignored and produced fresh on each run, so it never drifts stale.
 - `src/lib.rs` const-asserts (evaluated at compile time, so **building the crate
-  is the gate**) the four per-machine no_std footprint levers, each at its own
+  is the gate**) the five per-machine no_std footprint levers, each at its own
   type so the bound is robust against unrelated machine state:
   1. **Queue lever** — `size_of::<StatePolicy::ExternalQueue>()` and
      `size_of::<StatePolicy::InternalQueue>()`: catches a `<sce:capacity>`
@@ -43,13 +43,17 @@ reversion.
   3. **Scheduler lever** — `size_of::<PullScheduler<S>>()`: catches the
      per-entry delayed-send `event_data` string re-added to `ScheduledEntry`
      under no_std.
-  4. **Unused-capacity lever** — `size_of::<StatePolicy::Scheduler>()` and
+  4. **Capacity lever** — `PullScheduler<S, 2>` is smaller than the
+     default-capacity `PullScheduler<S>`: the ring is sized by the capacity its
+     type names, the one a generated policy proves from its document or the
+     document declares (docs/adr/0132).
+  5. **Unused-capacity lever** — `size_of::<StatePolicy::Scheduler>()` and
      `size_of::<StatePolicy::DoneData>()` are zero: the fixture has no delayed
      send, no `<cancel>` and no `<donedata>`, so its policy names
      `NoDelayedSends` and `NoDoneData` rather than a 528 B scheduler ring and a
      260 B string it could never fill.
 - Plus a loose whole-`Engine` sanity bound for gross regressions that miss all
-  four precise bounds.
+  five precise bounds.
 
 Using the real generated machine (rather than a hand-written policy) keeps the
 gate in lock-step with the templates with zero maintenance.
