@@ -135,6 +135,13 @@ function sameValue(got, want) {
     return isDeepStrictEqual(got, want);
 }
 
+/** The innermost distinct frames of what was thrown, at most twenty, for a failure's report. */
+function framesOf(thrown) {
+    if (!(thrown instanceof Error) || !thrown.stack) return [];
+    const frames = thrown.stack.split('\n').slice(1).map((line) => line.trim());
+    return [...new Set(frames)].slice(0, 20).map((frame) => `  ${frame}`);
+}
+
 /** The first line of what was thrown: an Error's message, or the text of anything else. */
 function firstLine(thrown) {
     const text = thrown instanceof Error ? thrown.message : String(thrown);
@@ -213,6 +220,9 @@ function replay(Module, lowered, scenario) {
 }
 
 async function main(files) {
+    // Enough frames that a recursion shows its cycle and what entered it, not
+    // only the ten innermost copies of one frame V8 keeps by default.
+    Error.stackTraceLimit = 200;
     const Module = await require(path.join(ROOT, 'visualizer.js'))();
     const rust = await import(path.join(ROOT, 'wasm', 'sce_build.js'));
     rust.initSync({ module: fs.readFileSync(path.join(ROOT, 'wasm', 'sce_build_bg.wasm')) });
@@ -239,7 +249,9 @@ async function main(files) {
             try {
                 failures = replay(Module, lowered, scenario);
             } catch (e) {
-                failures = [`could not be replayed: ${firstLine(e)}`];
+                // The frames say where: a message alone ("Maximum call stack size
+                // exceeded") names no site, and the run that showed it is gone.
+                failures = [`could not be replayed: ${firstLine(e)}`, ...framesOf(e)];
             }
         } catch (e) {
             // `lowerForInterpreter` throws an Error, whose `code` is the product's
