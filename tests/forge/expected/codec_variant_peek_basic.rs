@@ -124,8 +124,10 @@ impl CodecVariantPeekBasic {
                 }
             }
             // Build-time `codec/variant-arm-unreachable` proves the
-            // arm set covers the tag domain without a default.
-            _ => unreachable!("variant exhaustiveness gated by codec/variant-arm-unreachable at parse time"),
+            // arm set covers the tag domain without a default, so no tag
+            // read from its bits reaches here; a tag outside the arms is a
+            // value the tag's set does not hold, refused as one.
+            _ => return Err(CodecError::UndeclaredEnumValue),
         }
         if _over {
             return Err(CodecError::CapacityExceeded);

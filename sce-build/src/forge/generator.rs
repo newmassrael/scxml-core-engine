@@ -12763,7 +12763,7 @@ fn rust_group_storage(
             let local = codec_field_decode_local(&f.id, l.lang);
             let bound = rust_bound_most(crate::forge::codec_totality::list_bound(f, &m.fields));
             let list = if f.present_if.is_some() {
-                format!("{local}.expect(\"the gate found the chain\").into_inner()")
+                format!("{local}.ok_or(CodecError::PresentIfMismatch)?.into_inner()")
             } else {
                 format!("{local}.into_inner()")
             };
@@ -12777,7 +12777,7 @@ fn rust_group_storage(
                     format!("{RUNTIME_CODEC}::place_first::<_, {key}, {bound}>({list})")
                 };
                 return format!(
-                    "{}: match {place} {{ Ok(_p) => _p, Err(_) => unreachable!(\"the gate found an entry of the kind\") }}",
+                    "{}: {place}.map_err(|_| CodecError::PresentIfMismatch)?",
                     acc(f)
                 );
             }
@@ -12787,16 +12787,16 @@ fn rust_group_storage(
                 } else {
                     list.to_string()
                 };
-                format!("{RUNTIME_CODEC}::Chain::new({list}).expect(\"the gates found the chain's kinds as the arm says\")")
+                format!("{RUNTIME_CODEC}::Chain::new({list}).ok_or(CodecError::PresentIfMismatch)")
             };
             if chain_optional_in(group, f, arm) {
                 format!(
-                    "{}: {local}.map(|_l| {})",
+                    "{}: {local}.map(|_l| {}).transpose()?",
                     acc(f),
                     refined("_l.into_inner()")
                 )
             } else {
-                format!("{}: {}", acc(f), refined(&list))
+                format!("{}: {}?", acc(f), refined(&list))
             }
         };
         let build = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| -> String {
@@ -12809,7 +12809,7 @@ fn rust_group_storage(
                     } else if let Some(second) = second_in(arm.0, f) {
                         // The one count read both lists, and the gate the second.
                         format!(
-                            "{}: {RUNTIME_CODEC}::Aligned::new({local}, {}.expect(\"the gate read the list\")).expect(\"one count read both lists\")",
+                            "{}: {RUNTIME_CODEC}::Aligned::new({local}, {}.ok_or(CodecError::PresentIfMismatch)?).ok_or(CodecError::InconsistentSource)?",
                             held_name(arm.0, f),
                             codec_field_decode_local(&second.id, l.lang),
                         )
@@ -13609,9 +13609,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
             let present_select = arm_by_gates(
                 tests,
                 &arm_refs,
-                (!every_assignment).then_some(
-                    "unreachable!(\"a chain's memberships name an arm under every assignment\")",
-                ),
+                (!every_assignment).then_some(RUST_ARM_NOT_HELD),
                 &read_into,
             );
             // An absent chain holds no entry of any kind, so its arm is one
@@ -13623,12 +13621,10 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                         .iter()
                         .filter(|a| chain_optional_in(group, chain, a.0))
                         .collect();
-                    let absent_value = arm_by_gates(
-                        tests,
-                        &absent,
-                        Some("unreachable!(\"an absent chain holds no entry of any kind\")"),
-                        &|arm| defaults_but(arm, Some("None")),
-                    );
+                    let absent_value =
+                        arm_by_gates(tests, &absent, Some(RUST_ARM_NOT_HELD), &|arm| {
+                            defaults_but(arm, Some("None"))
+                        });
                     format!(
                         "if {} {{\n                {present_select}\n            }} else {{\n                {RUST_DECODE_OUT}.{accessor} = {absent_value};\n                (true, false)\n            }}",
                         present_if_test_literal(&m.fields, pred, l.lang)
@@ -13689,7 +13685,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                              // Read again into the arm its kinds name, the chain holds them\n                \
                              // all unless it had no room for one of each: the value cannot\n                \
                              {unheld}\n                \
-                             unreachable!(\"a chain read again holds the kinds it was first read with\");\n            \
+                             {RUST_ARM_NOT_HELD};\n            \
                          }}\n            \
                          {first} = false;\n            \
                          *cursor = {at};\n        \
@@ -13797,6 +13793,16 @@ fn in_arms_of(group: &str, cases: &[(String, String)], others: bool) -> String {
     }
 }
 
+/// What a Rust decode answers on a branch its own gates leave no frame to
+/// take: a group's arm that does not hold what the gates read, a chain read
+/// again that does not hold the kinds it was read with, an assignment of the
+/// gates that names no arm. The gates are read off the same frame, so no
+/// frame reaches it; it is the chain and the gates contradicting each other,
+/// answered as the refusal of that contradiction rather than as a panic,
+/// whose message an image without formatting would still carry the
+/// machinery for.
+const RUST_ARM_NOT_HELD: &str = "return Err(CodecError::PresentIfMismatch)";
+
 /// `stmt`, which reads an element into its field `place` (`_out.<id>`) as an
 /// element outside a group is read, as it reads it into `_p`, the field of the
 /// arm that holds it (`&mut` the field's present type): `place.insert(..)` is
@@ -13807,7 +13813,7 @@ fn place_in_arm(stmt: &str, place: &str) -> String {
     let inserted = replace_call(stmt, &format!("{place}.insert("), "_p");
     let present = inserted.replace(
         &format!("{place} = None;"),
-        "unreachable!(\"the arm its gates installed holds the field they read\");",
+        &format!("{RUST_ARM_NOT_HELD};"),
     );
     let borrowed = replace_place(&present, &format!("&mut {place}"), "&mut *_p");
     let called = borrowed.replace(&format!("{place}."), "_p.");
@@ -19516,9 +19522,9 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
     // decode body wraps in a per-language `if predicate { Some(...) }
     // else { None }` shape. The co-gating validator
     // (`validate_codec_repeat_present_if_co_gating`) guarantees the
-    // count source field carries the IDENTICAL predicate, so reading
-    // its value via `.unwrap()` (or per-language equivalent) inside
-    // the True arm is sound.
+    // count source field carries the IDENTICAL predicate, so its value
+    // is there inside the True arm (Rust opens the arm on it,
+    // `rust_gated_head`; the others unwrap it).
     if let Some(pred) = &field.present_if {
         return repeat_streaming_decode_stmt_gated(RepeatDecodeGated {
             field,
@@ -20988,16 +20994,21 @@ struct RepeatDecodeGated<'a> {
     lang: crate::generator::Language,
 }
 
-/// How a Rust decode reads the count of a gated repeat inside its True arm: a
-/// count gated with the repeat is an `Option` the co-gating validator proves
-/// is `Some` there; one that is always on the wire is a plain local. Shared by
-/// the eager and the view decode, which loop over the same count.
-fn rust_repeat_count_read(count_is_gated: bool, len_field: &str) -> String {
-    let snake = filters::to_snake_case(len_field.to_string());
-    if count_is_gated {
-        format!("{snake}.expect(\"co-gating: count present-if matches repeat\")")
-    } else {
-        snake
+/// The head of the Rust block a field gated by `test` is read in, where the
+/// field reads the value of a sibling as `binding`: a repeat its count, a
+/// length-ref field its length. A gated sibling is gated by the field's own
+/// predicate (the co-gating rules,
+/// `validate_codec_repeat_present_if_co_gating` and
+/// `validate_codec_length_present_if_co_gating`), so its local holds a value
+/// exactly where `test` holds: the block opens on that value,
+/// `if let Some(binding) = sibling`, which tests the gate once and leaves no
+/// `unwrap` or `expect` whose panic a bare-metal image would carry. An
+/// unconditional sibling (`None` here) is a plain local, and the block opens
+/// on `test`. Shared by the eager and the view decode.
+fn rust_gated_head(test: &str, gated_sibling: Option<&str>, binding: &str) -> String {
+    match gated_sibling {
+        Some(sibling) => format!("if let Some({binding}) = {sibling}"),
+        None => format!("if {test}"),
     }
 }
 
@@ -21007,7 +21018,7 @@ fn rust_repeat_count_read(count_is_gated: bool, len_field: &str) -> String {
 /// block on/off the wire. The co-gating validator
 /// (`validate_codec_repeat_present_if_co_gating`) guarantees the count
 /// source is readable before the gated repeat — either co-gated (same
-/// predicate, read via `count.unwrap()`) or unconditional (always on the
+/// predicate, read as the value its local holds) or unconditional (always on the
 /// wire, read with a plain load). `count_is_gated` selects between the
 /// two in the Rust/Cpp/Kotlin/Go count-read; C11 and Python read the
 /// count field plainly in both cases (struct member / bare local).
@@ -21057,12 +21068,19 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::Swift, _) => no_swift_emitter("repeat_streaming_decode_stmt_gated"),
         // Rust: bind `_n` from the count source inside the True arm —
         // single read site keeps the loop bound and capacity hint in sync.
-        // Co-gated count is `Option<_>` (unwrap via `.expect`); unconditional
-        // count is a plain local (read directly). UntilEof has no count field
+        // Co-gated count is `Option<_>`, and the block opens on its value
+        // (`rust_gated_head`); unconditional count is a plain local (read
+        // directly). UntilEof has no count field
         // so the wrap reduces to `if test { Some(<until-eof body>) } else
         // { None }`.
         (Language::Rust, CountRef::LengthField(len_field)) => {
-            let count_read = rust_repeat_count_read(count_is_gated, len_field);
+            let count = filters::to_snake_case(len_field.to_string());
+            let head = rust_gated_head(&test, count_is_gated.then_some(count.as_str()), "_n");
+            let bind = if count_is_gated {
+                String::new()
+            } else {
+                format!("let _n = {count};\n            ")
+            };
             let guard = repeat_count_guard(field, fields, "_n", lang, "            ");
             let entry = chain_loop_body(
                 "                    ",
@@ -21070,9 +21088,8 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 &rust_list_entry_lines(body_type, decode_arg, Vec::new(), &[]),
             );
             format!(
-                "if {test} {{\n            \
-                     let _n = {count_read};\n            \
-                     {guard}{}\n        \
+                "{head} {{\n            \
+                     {bind}{guard}{}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}",
@@ -23794,10 +23811,11 @@ fn present_if_decode_tail(
 /// - **Gated length sibling**: when the sibling itself carries
 ///   `present-if`, its host-language type is wrapped (Option/optional/
 ///   nullable/pointer); inside the `if predicate` branch this helper
-///   unwraps it (`.unwrap()` / `.value()` / `!!` / `*p` / pass-through
-///   for Python+C11 which lack a wrapper). Trust contract: payload's
-///   predicate matches sibling's predicate, so unwrap is safe inside
-///   the branch.
+///   unwraps it (`.value()` / `!!` / `*p` / pass-through for Python+C11
+///   which lack a wrapper), and Rust opens the branch on the value itself
+///   (`if let Some(_len) = sibling`, `rust_gated_head`). The payload's
+///   predicate is the sibling's (`validate_codec_length_present_if_co_gating`),
+///   so the value is there inside the branch.
 /// - **Length arithmetic (`sce:length-arith`)**: when `field.length_arith` is `Some(n)`,
 ///   the byte count read from the cursor is `sibling_value + n` (v1
 ///   restricts `n ∈ {-1, +1}`). First reachable consumer:
@@ -23874,8 +23892,9 @@ fn present_if_decode_length_ref(
         }
         (Language::Rust, Some(p)) => {
             let test = present_if_test_literal(fields, p, lang);
+            let head = rust_gated_head(&test, sibling_gated.then_some(len_field), "_len");
             format!(
-                "let {id} = if {test} {{\n            \
+                "let {id} = {head} {{\n            \
                      {count}\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = raw;\n            \
@@ -24105,8 +24124,9 @@ fn present_if_decode_string_length_ref(
         }
         (Language::Rust, Some(p)) => {
             let test = present_if_test_literal(fields, p, lang);
+            let head = rust_gated_head(&test, sibling_gated.then_some(len_field), "_len");
             format!(
-                "let {id} = if {test} {{\n            \
+                "let {id} = {head} {{\n            \
                      {count}\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = core::str::from_utf8(raw)\n                \
@@ -24462,7 +24482,9 @@ fn carried_length(
         };
     }
     match lang {
-        Language::Rust if sibling_gated => format!("{len_field}.unwrap()"),
+        // The value of a gated sibling is bound to `_len` by the head of the
+        // block the gated field is read in (`rust_gated_head`).
+        Language::Rust if sibling_gated => "_len".to_string(),
         Language::Rust => len_field.to_string(),
         Language::Cpp if sibling_gated => format!("{len_field}.value()"),
         Language::Cpp => len_field.to_string(),
@@ -24532,10 +24554,14 @@ fn length_count_stmts(
             } else {
                 format!("usize::try_from(_len{offset}).map_err(|_| CodecError::NeedMoreBytes)?")
             };
-            format!(
-                "let _len = {carried};\n{indent}{}let _n = {narrow};",
-                check("_len")
-            )
+            // A gated sibling's value is bound to `_len` by the head of the
+            // block (`rust_gated_head`), not here.
+            let bind = if sibling_gated {
+                String::new()
+            } else {
+                format!("let _len = {carried};\n{indent}")
+            };
+            format!("{bind}{}let _n = {narrow};", check("_len"))
         }
         Language::Cpp => {
             let room = if fits {

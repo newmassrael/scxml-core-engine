@@ -256,8 +256,8 @@ fn two_lists_of_one_count_whose_second_is_lawful_are_paired_by_value() {
     assert_contains(
         name,
         &body,
-        "links_weights: ::sce_forge_runtime::codec::Aligned::new(links, weights.expect(\"the gate \
-         read the list\")).expect(\"one count read both lists\")",
+        "links_weights: ::sce_forge_runtime::codec::Aligned::new(links, \
+         weights.ok_or(CodecError::PresentIfMismatch)?).ok_or(CodecError::InconsistentSource)?",
     );
 }
 

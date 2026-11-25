@@ -153,8 +153,7 @@ impl<S: CodecInitCookieBodyStorage> CodecInitCookieBodyIn<S> {
         } else {
             None
         };
-        let cookie = if (a & 0x01u8) != 0 {
-            let _len = cookie_size.unwrap();
+        let cookie = if let Some(_len) = cookie_size {
             if _len > 64 {
                 return Err(CodecError::LengthOutOfRange);
             }

@@ -153,8 +153,7 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
         } else {
             None
         };
-        let cookie = if (a & 0x01u8) == 0 {
-            let _len = cookie_len.unwrap();
+        let cookie = if let Some(_len) = cookie_len {
             let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;

@@ -164,7 +164,7 @@ impl<S: CodecZenohInterestStorage> CodecZenohInterestIn<S> {
             if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
             ::sce_forge_runtime::codec::note_capacity(CodecZenohInterestBodyOwned::<S>::decode_into(cursor, _p), &mut _over)?;
         } else {
-            unreachable!("the arm its gates installed holds the field they read");
+            return Err(CodecError::PresentIfMismatch);
         }
         }
         if (header & 0x80u8) != 0 {

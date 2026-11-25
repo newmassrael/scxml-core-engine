@@ -85,7 +85,9 @@ pub enum CodecError {
     /// the frame does not decode. An open set (`sce:strict-variants=
     /// "false"`) carries every value of its carrier and never raises
     /// this. Every runtime's decode answers this kind by its own name
-    /// (docs/adr/0099, amendment of 2026-11-16).
+    /// (docs/adr/0099, amendment of 2026-11-16). A Rust decode answers it as
+    /// well for a variant's tag outside arms that cover the tag's whole
+    /// domain, which a tag read from its bits never is.
     UndeclaredEnumValue,
     /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that
     /// is not well-formed CBOR (RFC 8949 Appendix F: reserved additional
@@ -127,6 +129,12 @@ pub enum CodecError {
     /// predicate gates. The C11 backend never raises it: a C11 field carries
     /// no "given" marker, so there the predicate alone decides what is
     /// written.
+    ///
+    /// Decode-side, a Rust decode answers it on a branch its own gates leave
+    /// no frame to take: a chain that does not make the arm the gates read
+    /// off it name, an arm that does not hold the field its gates read. No
+    /// frame reaches it, since the gates are read off the same frame; it
+    /// stands where a panic stood, so the decode is total.
     PresentIfMismatch,
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a
     /// line, a parameter or an `END:` the grammar does not admit.

@@ -176,8 +176,7 @@ impl<S: CodecZenohQueryStorage> CodecZenohQueryIn<S> {
         } else {
             None
         };
-        let parameters = if (header & 0x40u8) != 0 {
-            let _len = parameters_len.unwrap();
+        let parameters = if let Some(_len) = parameters_len {
             let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
@@ -581,8 +580,7 @@ impl<'a> CodecZenohQueryView<'a> {
         } else {
             None
         };
-        let parameters = if (header & 0x40u8) != 0 {
-            let _len = parameters_len.unwrap();
+        let parameters = if let Some(_len) = parameters_len {
             let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;

@@ -150,8 +150,7 @@ impl<S: CodecPresentIfStringStorage> CodecPresentIfStringIn<S> {
         } else {
             None
         };
-        let text = if (carrier & 0x01u8) != 0 {
-            let _len = text_len.unwrap();
+        let text = if let Some(_len) = text_len {
             if _len > 32 {
                 return Err(CodecError::LengthOutOfRange);
             }

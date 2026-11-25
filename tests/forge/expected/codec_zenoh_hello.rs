@@ -189,8 +189,7 @@ impl<S: CodecZenohHelloStorage> CodecZenohHelloIn<S> {
         } else {
             None
         };
-        if (l & 0x01u8) != 0 {
-            let _n = num_locators.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = num_locators {
             ::sce_forge_runtime::codec::note_capacity(_out.locators.insert(Default::default()).refill(|_vec| {
                 let mut _full = false;
                 for _ in 0.._n {
@@ -553,8 +552,7 @@ impl<'a> CodecZenohHelloView<'a> {
         } else {
             None
         };
-        if (l & 0x01u8) != 0 {
-            let _n = num_locators.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = num_locators {
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0.._n {

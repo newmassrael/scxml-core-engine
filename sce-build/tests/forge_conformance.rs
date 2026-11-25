@@ -11745,6 +11745,62 @@ fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
     );
 }
 
+/// A Rust decode reads a gated field's count or length as the value its
+/// sibling's local holds, and answers a branch its gates leave no frame to
+/// take as a refusal: no Rust codec golden, eager or view, holds an `unwrap`,
+/// an `expect` or an `unreachable!` in a decode, each of which formats its
+/// message and so carries the formatting machinery into a bare-metal image
+/// whose panic handler reads none. The positive half holds that the goldens
+/// still read gated counts and lengths, so the test is not passing on goldens
+/// that hold none.
+#[test]
+fn a_rust_decode_holds_no_panic_on_a_gated_read() {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    for dir in [expected_dir(), expected_dir().join("views")] {
+        for entry in std::fs::read_dir(&dir).expect("read the goldens") {
+            let path = entry.expect("a directory entry").path();
+            if path.extension().is_some_and(|ext| ext == "rs") {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    let refused = [
+        ".expect(\"co-gating",
+        "_len.unwrap()",
+        "_size.unwrap()",
+        "unreachable!(\"the arm its gates installed",
+        "unreachable!(\"a chain read again",
+        "unreachable!(\"an absent chain",
+        "unreachable!(\"a chain's memberships",
+        "unreachable!(\"variant exhaustiveness",
+        "unreachable!(\"the gate found",
+        ".expect(\"the gate",
+        ".expect(\"one count read both lists",
+    ];
+    let (mut counts, mut lengths) = (0usize, 0usize);
+    for path in &paths {
+        let text = std::fs::read_to_string(path).expect("read a golden");
+        for shape in refused {
+            assert!(
+                !text.contains(shape),
+                "{} holds a decode panic `{shape}`",
+                path.display()
+            );
+        }
+        counts += text.matches("if let Some(_n) = ").count();
+        lengths += text.matches("if let Some(_len) = ").count();
+    }
+    assert!(
+        counts > 0,
+        "no Rust golden opens a gated repeat on its count's value"
+    );
+    assert!(
+        lengths > 0,
+        "no Rust golden opens a gated length-ref field on its length's value"
+    );
+}
+
 /// Every generated Rust algorithm is total under the lints a consumer denies on
 /// a panic-free path (`sce_build::rust_lint_policy`): a body that does not
 /// declare `may-fail` prints the integer operations and index reads its

@@ -190,8 +190,7 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         };
         _out.after_shm = if (after_shm & 0x01u8) != 0 { CodecZenohValueZbufAfterShm::AfterShm { encoding: Default::default(), slices: Default::default(), value_len: Default::default() } } else { CodecZenohValueZbufAfterShm::NotAfterShm { value: Default::default() } };
         if let CodecZenohValueZbufAfterShm::AfterShm { slices: _p, .. } = &mut _out.after_shm {
-            if (after_shm & 0x01u8) != 0 {
-            let _n = slice_count.expect("co-gating: count present-if matches repeat");
+            if let Some(_n) = slice_count {
             ::sce_forge_runtime::codec::note_capacity(_p.refill(|_vec| {
                 let mut _full = false;
                 for _ in 0.._n {
@@ -205,7 +204,7 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
                 Ok(())
             }), &mut _over)?;
         } else {
-            unreachable!("the arm its gates installed holds the field they read");
+            return Err(CodecError::PresentIfMismatch);
         }
         }
         match &mut _out.after_shm {
@@ -548,8 +547,7 @@ impl<'a> CodecZenohValueZbufView<'a> {
         };
         #[allow(clippy::needless_late_init)]
         let slices: Option<Bounded<ListView<'a, super::codec_zenoh_value_slice::CodecZenohValueSliceWalk, 0>, { usize::MAX }>>;
-        if (after_shm & 0x01u8) != 0 {
-            let _n = slice_count.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = slice_count {
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0.._n {

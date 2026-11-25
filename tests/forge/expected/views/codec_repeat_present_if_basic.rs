@@ -155,8 +155,7 @@ impl<S: CodecRepeatPresentIfBasicStorage> CodecRepeatPresentIfBasicIn<S> {
         } else {
             None
         };
-        if (carrier & 0x01u8) != 0 {
-            let _n = num_elems.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = num_elems {
             if _n > 32 {
                 return Err(CodecError::TooManyElements);
             }
@@ -458,8 +457,7 @@ impl<'a> CodecRepeatPresentIfBasicView<'a> {
         } else {
             None
         };
-        if (carrier & 0x01u8) != 0 {
-            let _n = num_elems.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = num_elems {
             if _n > 32 {
                 return Err(CodecError::TooManyElements);
             }

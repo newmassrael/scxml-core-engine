@@ -149,8 +149,7 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
         } else {
             None
         };
-        let suffix = if (n & 0x01u8) != 0 {
-            let _len = suffix_len.unwrap();
+        let suffix = if let Some(_len) = suffix_len {
             if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }

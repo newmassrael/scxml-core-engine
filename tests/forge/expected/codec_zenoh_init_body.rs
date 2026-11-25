@@ -201,8 +201,7 @@ impl<S: CodecZenohInitBodyStorage> CodecZenohInitBodyIn<S> {
         } else {
             None
         };
-        let cookie = if (a & 0x01u8) != 0 {
-            let _len = cookie_len.unwrap();
+        let cookie = if let Some(_len) = cookie_len {
             if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }

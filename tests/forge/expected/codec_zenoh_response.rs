@@ -250,8 +250,7 @@ impl<S: CodecZenohResponseStorage> CodecZenohResponseIn<S> {
         } else {
             None
         };
-        let suffix = if (header & 0x20u8) != 0 {
-            let _len = suffix_len.unwrap();
+        let suffix = if let Some(_len) = suffix_len {
             if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }
@@ -834,8 +833,7 @@ impl<'a> CodecZenohResponseView<'a> {
         } else {
             None
         };
-        let suffix = if (header & 0x20u8) != 0 {
-            let _len = suffix_len.unwrap();
+        let suffix = if let Some(_len) = suffix_len {
             if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }

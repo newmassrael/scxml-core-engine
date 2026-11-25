@@ -199,7 +199,7 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
                     _over = true;
                     break;
                 }
-                unreachable!("a chain read again holds the kinds it was first read with");
+                return Err(CodecError::PresentIfMismatch);
             }
             _entries_first = false;
             *cursor = _entries_at;

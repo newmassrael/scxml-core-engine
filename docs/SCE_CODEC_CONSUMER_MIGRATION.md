@@ -3994,3 +3994,27 @@ regenerates every Rust machine it generates.
 - **An extension trait a consumer implements for `Engine<P>`**, as the generated `<Machine>Inject` is, is found before
   the state's methods: a trait method with the name of a method of `EngineState` is the one `engine.<name>(..)`
   reaches, where the engine's own method was. The state's is then spelled `EngineState::<name>(&mut engine, ..)`.
+
+## A Rust decode reads a gated count or length as the value it holds, and a gated length gates its field alike
+
+Landing: the commits that add this section. No committed generated tree changes; the Rust codec goldens do. A
+consumer regenerates its Rust codecs.
+
+- **A codec whose `sce:length-field` sibling carries a `sce:present-if` must gate the field it measures with the
+  identical predicate, or it is refused** with `validation/attribute-rule-violated` on `sce:present-if`, as a
+  repeat's count already was. A field gated apart from its length, or not gated at all, would be read with no length
+  where the length's gate is off: the Rust decode stopped there on an `unwrap`, C++ on `value()`, Kotlin on `!!`.
+  A document that gated them alike, which every fixture of this repository does, is unchanged.
+- A generated Rust decode opens a gated repeat on its count's value, `if let Some(_n) = count`, and a gated
+  length-ref field on its length's, `if let Some(_len) = len`, where it tested the gate and then took the value
+  with `expect` or `unwrap`. The gate is tested once.
+- A branch of a Rust decode its own gates leave no frame to take is answered as a refusal, where it was an
+  `unreachable!` or an `expect`: `CodecError::PresentIfMismatch` where a chain or an arm contradicts the gates,
+  `CodecError::InconsistentSource` where two lists of one count differ, `CodecError::UndeclaredEnumValue` for a
+  variant's tag outside arms that cover its domain. No frame reaches any of them. A decode then holds no panic whose
+  message is formatted, so a bare-metal image whose panic handler reads no message does not carry the formatting
+  machinery for one. A build that measures its size reads it again after it moves its pin.
+- The Rust runtime's engine reads a state, an event or a history by its number, a table's list and an event queue's
+  ring with no index operator and no remainder: a number past its table stops at the one cold call a row read past
+  its table stops at, a queue's ring wraps its head by one comparison, and `SceCursor::peek_slice` and
+  `into_written` read through `get`. Nothing a consumer calls changed.

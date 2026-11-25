@@ -220,7 +220,7 @@ impl<S: CodecRepeatUnconditionalCountStorage> CodecRepeatUnconditionalCountIn<S>
                 Ok(())
             }), &mut _over)?;
         } else {
-            unreachable!("the arm its gates installed holds the field they read");
+            return Err(CodecError::PresentIfMismatch);
         }
         }
         _out.options = options;

@@ -361,29 +361,37 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
         }
         Some(pred) => {
             let test = present_if_test_literal(list.fields, pred, crate::generator::Language::Rust);
-            let (count_decl, head) = match count_ref {
+            let (open, count_decl, head) = match count_ref {
                 CountRef::LengthField(len_field) => {
                     let gated = sibling_field_gated(list.fields, len_field.as_str());
+                    let count = filters::to_snake_case(len_field.clone());
+                    let bind = if gated {
+                        String::new()
+                    } else {
+                        format!("let _n = {count};\n            ")
+                    };
+                    let guard = super::repeat_count_guard(
+                        field,
+                        list.fields,
+                        "_n",
+                        Language::Rust,
+                        "            ",
+                    );
                     (
-                        format!(
-                            "let _n = {};\n            {}",
-                            rust_repeat_count_read(gated, len_field),
-                            super::repeat_count_guard(
-                                field,
-                                list.fields,
-                                "_n",
-                                Language::Rust,
-                                "            ",
-                            )
-                        ),
+                        rust_gated_head(&test, gated.then_some(count.as_str()), "_n"),
+                        format!("{bind}{guard}"),
                         "for _ in 0.._n".to_string(),
                     )
                 }
-                CountRef::UntilEof => (String::new(), "while cursor.remaining() > 0".to_string()),
+                CountRef::UntilEof => (
+                    format!("if {test}"),
+                    String::new(),
+                    "while cursor.remaining() > 0".to_string(),
+                ),
             };
             let scan = scan("            ", &head);
             format!(
-                "if {test} {{\n            \
+                "{open} {{\n            \
                      {count_decl}{SCAN_OPEN}\n            \
                      {scan}\n            \
                      _out.{id} = {value};\n        \

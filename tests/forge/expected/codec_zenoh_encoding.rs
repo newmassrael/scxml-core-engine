@@ -144,8 +144,7 @@ impl<S: CodecZenohEncodingStorage> CodecZenohEncodingIn<S> {
         } else {
             None
         };
-        let schema = if (packed_id & 0x00000001u32) != 0 {
-            let _len = schema_len.unwrap();
+        let schema = if let Some(_len) = schema_len {
             if _len > 255 {
                 return Err(CodecError::LengthOutOfRange);
             }

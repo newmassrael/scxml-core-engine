@@ -152,8 +152,7 @@ impl<S: CodecRepeatFlagGatedStorage> CodecRepeatFlagGatedIn<S> {
         } else {
             None
         };
-        if (head & 0x02u8) != 0 {
-            let _n = count.expect("co-gating: count present-if matches repeat");
+        if let Some(_n) = count {
             if _n > 4 {
                 return Err(CodecError::TooManyElements);
             }

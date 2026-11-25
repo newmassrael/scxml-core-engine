@@ -204,7 +204,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
             let (_extensions_settled, _extensions_full) = if (header & 0x80u8) != 0 {
                 if _has_extensions_18 { ::sce_forge_runtime::codec::decode_placed_in(&mut _out.extensions_has_0x12, |_c| CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: _c, slices: Default::default() }, |_g| match _g { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: _c, .. } => Some(_c), _ => None }, &mut _extensions_fill)? } else { ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x12, |_c| CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: Some(_c), payload: Default::default() }, |_g| match _g { CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: Some(_c), .. } => Some(_c), _ => None }, &mut _extensions_fill)? }
             } else {
-                _out.extensions_has_0x12 = if _has_extensions_18 { unreachable!("an absent chain holds no entry of any kind") } else { CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: None, payload: Default::default() } };
+                _out.extensions_has_0x12 = if _has_extensions_18 { return Err(CodecError::PresentIfMismatch) } else { CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: None, payload: Default::default() } };
                 (true, false)
             };
             _has_extensions_18 = _found_extensions_18;
@@ -219,7 +219,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
                 if _extensions_full {
                     return Err(CodecError::CapacityExceeded);
                 }
-                unreachable!("a chain read again holds the kinds it was first read with");
+                return Err(CodecError::PresentIfMismatch);
             }
             _extensions_first = false;
             *cursor = _extensions_at;
@@ -230,8 +230,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
         } else {
             None
         };
-        let payload = if !_has_extensions_18 {
-            let _len = payload_len.unwrap();
+        let payload = if let Some(_len) = payload_len {
             if _len > 256 {
                 return Err(CodecError::LengthOutOfRange);
             }
@@ -252,8 +251,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
             None
         };
         if let CodecChainHasMarkerExtensionsHas0x12::Has0x12 { slices: _p, .. } = &mut _out.extensions_has_0x12 {
-            if _has_extensions_18 {
-            let _n = slice_count.expect("co-gating: count present-if matches repeat");
+            if let Some(_n) = slice_count {
             if _n > 4 {
                 return Err(CodecError::TooManyElements);
             }
@@ -270,7 +268,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
                 Ok(())
             }), &mut _over)?;
         } else {
-            unreachable!("the arm its gates installed holds the field they read");
+            return Err(CodecError::PresentIfMismatch);
         }
         }
         _out.header = header;
