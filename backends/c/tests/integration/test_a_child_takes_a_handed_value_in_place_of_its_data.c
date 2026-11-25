@@ -14,8 +14,12 @@
 // failure in a <final> of its own; the driver names the one reached.
 //
 // The parent keeps the values it hands on its own Lua stack until the child's
-// start returns, and drops them then: the driver also holds the parent's stack
-// to the height it had once the first invoke had run.
+// start returns, and drops them then. Every invoke of this document runs inside
+// the parent's start, which runs the machine until nothing is left for it to
+// do, so this driver holds the stack only to the height the start left it at;
+// the driver of the C11-only `a_handed_value_past_its_bounds_is_its_datas_error`,
+// whose invoke waits for an event the driver sends, reads it before and after
+// an invoke.
 //
 // Fixture:
 // integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
@@ -67,8 +71,8 @@ static const verdict_t STRANDED[] = {
 
 int main(void) {
     sm_t sm;
-    // The first invoke runs inside the start, so the parent's stack has handed
-    // and dropped its values once by now.
+    // Every invoke runs inside the start, so the parent's stack has handed and
+    // dropped every value by now.
     REQUIRE_STARTED(a_child_takes_a_handed_value_in_place_of_its_data_init(&sm), P(START_OK));
     const int stack_after_start = lua_gettop(sm.L);
 
@@ -102,8 +106,8 @@ int main(void) {
         }
     }
 
-    // Three more invokes handed their values during the run; each start
-    // returned and each drop put the stack back.
+    // Nothing is left for the run to do, and it leaves the stack as the start
+    // left it.
     const int stack_after_run = lua_gettop(sm.L);
     if (stack_after_run != stack_after_start) {
         ++failures;

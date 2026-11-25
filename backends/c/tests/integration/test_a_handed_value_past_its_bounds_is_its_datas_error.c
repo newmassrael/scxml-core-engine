@@ -43,18 +43,30 @@ static const verdict_t FAILURES[] = {
     {P(STATE_FAILHANDEDVALUELOST), "the value handed beside the unheld ones did not arrive"},
     {P(STATE_FAILPARENTRAISED), "the parent raised error.execution while it handed its arguments"},
     {P(STATE_UNHELD), "the child holding values past its bounds never answered"},
+    {P(STATE_IDLE), "the machine never took `go`, so its invoke never ran"},
 };
 
 int main(void) {
     sm_t sm;
-    // The invoke runs inside the start, so the parent's stack has handed and
-    // dropped its values by now.
+    // The start runs the machine until nothing is left for it to do, so an
+    // invoke of the initial state would have handed and dropped its values
+    // before this line. The invoke waits for `go` instead: read here, the
+    // stack is that of a parent that has handed nothing.
     REQUIRE_STARTED(a_handed_value_past_its_bounds_is_its_datas_error_init(&sm), P(START_OK));
     const int stack_after_start = lua_gettop(sm.L);
 
+    int failures = 0;
+    if (!a_handed_value_past_its_bounds_is_its_datas_error_in_state(&sm, P(STATE_IDLE))) {
+        ++failures;
+        (void)fprintf(stderr, "a_handed_value_past_its_bounds_is_its_datas_error: FAIL - the machine did not wait "
+                              "in `idle` for `go`\n");
+    }
+
+    a_handed_value_past_its_bounds_is_its_datas_error_event_with_meta_t go = {0};
+    go.event = P(EVENT_GO);
+    a_handed_value_past_its_bounds_is_its_datas_error_raise_external(&sm, &go);
     a_handed_value_past_its_bounds_is_its_datas_error_run(&sm);
 
-    int failures = 0;
     if (!a_handed_value_past_its_bounds_is_its_datas_error_ended_in(&sm, P(STATE_PASS))) {
         ++failures;
         int named = 0;
@@ -73,13 +85,17 @@ int main(void) {
         }
     }
 
-    // A copy refused past a bound leaves the parent's stack as it found it.
+    // The invoke ran in the run: it held its three values on the parent's
+    // stack, its child copied the one it could hold and refused the two past a
+    // bound, and the values were dropped once the child's start returned, so
+    // the stack is as the start left it.
     const int stack_after_run = lua_gettop(sm.L);
     if (stack_after_run != stack_after_start) {
         ++failures;
         (void)fprintf(stderr,
                       "a_handed_value_past_its_bounds_is_its_datas_error: FAIL - the parent's Lua stack held %d "
-                      "value(s) after its start and %d after its run\n",
+                      "value(s) after its start and %d after its run: the values its invoke handed were not "
+                      "dropped once the child's start returned\n",
                       stack_after_start, stack_after_run);
     }
 

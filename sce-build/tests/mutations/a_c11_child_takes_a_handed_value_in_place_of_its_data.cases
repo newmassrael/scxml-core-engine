@@ -165,8 +165,12 @@ PY
 #
 # Every invoke leaves its arguments on the parent's Lua stack after the child's
 # start returned.
-# Killer: the canonical driver's check that the parent's stack is as high
-# after the run as it was after the start.
+# Killer: the bounds driver's check that the parent's stack is as high after
+# the run as it was after the start. Its invoke waits for `go`, which the
+# driver sends after the start; the canonical document runs every invoke inside
+# the start, which runs the machine until nothing is left for it to do, so its
+# driver read the stack only after every value had been handed, and the case
+# SURVIVED there (measured 2026-11-24, 0/2 red).
 
 mutation_case "the parent keeps the values it handed on its stack" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",

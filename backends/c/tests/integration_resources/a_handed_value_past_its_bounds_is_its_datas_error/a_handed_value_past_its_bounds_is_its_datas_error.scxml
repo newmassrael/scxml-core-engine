@@ -18,14 +18,27 @@
              not tried, and `within`, handed beside them, still arrives.
 
   The phase lands its failure in a <final> of its own.
+
+    idle     the invoke waits for `go`, which the driver sends once the
+             machine's start has returned. The start runs the machine until
+             nothing is left for it to do, so an invoke of the initial state
+             would have handed its values and dropped them before the driver
+             could read the parent's stack; read in `idle`, the stack is that
+             of a parent that has handed nothing, and read after the run, it
+             says whether the values were dropped once the child's start
+             returned.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="ecmascript" initial="unheld"
+       datamodel="ecmascript" initial="idle"
        name="a_handed_value_past_its_bounds_is_its_datas_error">
     <datamodel>
         <data id="deep" expr="({a: {b: {c: {d: {e: 1}}}}})"/>
         <data id="many" expr="[1, 2, 3, 4, 5, 6, 7, 8, 9]"/>
     </datamodel>
+
+    <state id="idle">
+        <transition event="go" target="unheld"/>
+    </state>
 
     <state id="unheld">
         <invoke type="scxml" id="inv_unheld">
