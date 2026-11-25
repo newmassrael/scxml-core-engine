@@ -15095,7 +15095,7 @@ fn render_codec(
                             &entry,
                             &rust_view::view_type(imports, alias, &body_type)
                                 .replace("<'a>", "<'b>"),
-                            imports.iter().find(|i| i.alias == alias),
+                            rust_view::shared_entry_walk(f, m, imports),
                             repeat_thread.inputs.len(),
                             &[],
                         );
@@ -15253,11 +15253,11 @@ fn render_codec(
                     // are the exception — each entry gets the value its loop
                     // holds for it, in the local the loop declares.
                     let entry_binds = ChainEntryBinds::of(f, &chain_masks);
-                    let entry_thread = embed_flag_bind_thread_args_supplying(
+                    let entry_thread = list_entry_thread_args(
+                        f,
                         imports.iter().find(|i| i.alias == alias),
                         m,
                         lang,
-                        |input| ChainEntryBinds::local_of(f, input),
                     );
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
@@ -15374,7 +15374,7 @@ fn render_codec(
                             &entry,
                             &rust_view::view_type(imports, alias, &body_type)
                                 .replace("<'a>", "<'b>"),
-                            imports.iter().find(|i| i.alias == alias),
+                            rust_view::shared_entry_walk(f, m, imports),
                             entry_thread.inputs.len(),
                             &rust_view::chain_advance(&view_list, &entry_binds),
                         );
@@ -17822,9 +17822,12 @@ fn render_codec(
                 "has_view_lists".into(),
                 (m.has_repeat_fields() || m.has_tlv_chain_fields()).into(),
             );
+            // A view imports exactly the views its code names
+            // (`rust_view::named_views`).
+            let named_views = rust_view::named_views(m, imports);
             let view_imports: Vec<serde_json::Value> = imports
                 .iter()
-                .filter(|i| i.kind == "codec")
+                .filter(|i| i.kind == "codec" && named_views.contains(i.alias.as_str()))
                 .map(|i| {
                     gated_use(
                         &i.alias,
@@ -20738,6 +20741,22 @@ fn embed_flag_bind_thread_args(
     lang: crate::generator::Language,
 ) -> EmbedThreadArgs {
     embed_flag_bind_thread_args_supplying(imp, parent, lang, |_| None)
+}
+
+/// What list field `f` of `parent` hands each entry it reads, the entry being
+/// the codec imported as `imp`: the inputs bound at that import, and for a
+/// `<sce:tlv-chain>` the ones its `<sce:entry-flag-bind>`s supply entry by entry,
+/// in the local its loop holds for each ([`ChainEntryBinds::local_of`]). A repeat
+/// supplies none of its own, so its entries are handed what the import binds.
+fn list_entry_thread_args(
+    f: &CodecField,
+    imp: Option<&ImportContext>,
+    parent: &CodecModel,
+    lang: crate::generator::Language,
+) -> EmbedThreadArgs {
+    embed_flag_bind_thread_args_supplying(imp, parent, lang, |input| {
+        ChainEntryBinds::local_of(f, input)
+    })
 }
 
 /// [`embed_flag_bind_thread_args`] for a caller that supplies some of the

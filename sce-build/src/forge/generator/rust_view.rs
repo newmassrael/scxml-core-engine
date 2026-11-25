@@ -100,32 +100,85 @@ pub(super) struct ListWalkOf {
     pub item: String,
 }
 
-/// How list field `field` of codec `codec` reads its entries, which are the codec imported as
-/// `import`: `entry`, `entry_ty`, `inputs` and `advance` as [`walk_item`] takes them.
+/// The import whose module's walk list field `f` of codec `m` reads its entries by
+/// ([`entry_walk_item`]), or `None` where the list has a walk of its own ([`walk_item`]).
 ///
-/// A list that carries nothing from one entry to the next (`advance` empty) and hands its
-/// entry every input the entry declares reads an entry exactly as every other such list of the
-/// same entry does: the entry's view decoded with the inputs in the order the entry declares
-/// them. Such a list names the one walk the entry's module writes ([`entry_walk_item`]), so a
-/// program that walks lists of one entry from several codecs holds one walk and not one per
-/// list. Its own name, `{Codec}{Field}Walk`, stays as an alias of that walk, so a consumer
-/// that named it names the same type. A list that carries a value, or whose entry takes its
-/// tag from its caller, has a walk of its own.
+/// A list that carries nothing from one entry to the next (a chain with no
+/// `<sce:entry-flag-bind>`, or a repeat) and hands its entry every input the entry declares
+/// ([`list_entry_thread_args`]) reads an entry exactly as every other such list of the same
+/// entry does: the entry's view decoded with the inputs in the order the entry declares them.
+/// A list that carries a value, or whose entry takes its tag from its caller (whose module
+/// writes no such walk), has a walk of its own.
+///
+/// It is the one answer to how a list reads its entries: [`list_walk`] prints the list's walk
+/// by it, and [`named_views`] reads from it whether a chain names its entry's view.
+pub(super) fn shared_entry_walk<'i>(
+    f: &CodecField,
+    m: &CodecModel,
+    imports: &'i [ImportContext],
+) -> Option<&'i ImportContext> {
+    if !(f.is_repeat() || f.is_tlv_chain()) {
+        return None;
+    }
+    let alias = crate::forge::codec_totality::child_alias(f)?;
+    let imp = imports.iter().find(|i| i.alias == alias)?;
+    let carries = matches!(
+        &f.bit_size,
+        BitSize::TlvChain { entry_binds, .. } if !entry_binds.is_empty()
+    );
+    let inputs = list_entry_thread_args(f, Some(imp), m, crate::generator::Language::Rust)
+        .inputs
+        .len();
+    (!carries && !imp.codec_variant_is_caller_tag && imp.codec_flag_inputs.len() == inputs)
+        .then_some(imp)
+}
+
+/// The imported codecs whose views the view of codec `m` names by their bare `{Type}View`,
+/// by alias: the views its module imports, and no other (an import it does not name is an
+/// unused import, refused under `-D warnings`).
+///
+/// An embedded body is held as its view, and an arm of a variant holds its body's view. A
+/// repeat names its entry's view in its scan, which reads each entry by it
+/// ([`repeat_decode_stmt`]). A chain that reads by a walk of its own names its entry's view in
+/// that walk ([`walk_item`]); one that reads by its entry's walk ([`shared_entry_walk`])
+/// names that walk by its path, and its scan is the runtime's `walk_chain` over it
+/// (docs/adr/0136), so it names its entry's view nowhere.
+pub(super) fn named_views<'m>(
+    m: &'m CodecModel,
+    imports: &[ImportContext],
+) -> std::collections::BTreeSet<&'m str> {
+    let lists_and_bodies = m.fields.iter().filter_map(|f| {
+        let alias = crate::forge::codec_totality::child_alias(f)?;
+        let by_path = f.is_tlv_chain() && shared_entry_walk(f, m, imports).is_some();
+        (!by_path).then_some(alias)
+    });
+    let arms = m
+        .variant
+        .iter()
+        .flat_map(|v| v.arms.iter().chain(v.default_arm.iter()))
+        .map(|arm| arm.body_alias.as_str());
+    lists_and_bodies.chain(arms).collect()
+}
+
+/// How list field `field` of codec `codec` reads its entries: `entry`, `entry_ty`, `inputs`
+/// and `advance` as [`walk_item`] takes them, and `shared` the import whose module's walk it
+/// reads by ([`shared_entry_walk`]).
+///
+/// A list that reads by its entry's walk names the one walk the entry's module writes
+/// ([`entry_walk_item`]), so a program that walks lists of one entry from several codecs holds
+/// one walk and not one per list. Its own name, `{Codec}{Field}Walk`, stays as an alias of
+/// that walk, so a consumer that named it names the same type. Any other list has a walk of
+/// its own.
 pub(super) fn list_walk(
     codec: &str,
     field: &str,
     entry: &str,
     entry_ty: &str,
-    import: Option<&ImportContext>,
+    shared: Option<&ImportContext>,
     inputs: usize,
     advance: &[String],
 ) -> ListWalkOf {
     let own = walk_name(codec, field);
-    let shared = import.filter(|imp| {
-        advance.is_empty()
-            && !imp.codec_variant_is_caller_tag
-            && imp.codec_flag_inputs.len() == inputs
-    });
     match shared {
         Some(imp) => {
             let ty = format!(

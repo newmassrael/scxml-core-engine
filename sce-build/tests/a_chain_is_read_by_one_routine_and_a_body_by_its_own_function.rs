@@ -32,8 +32,14 @@ fn rust_with(name: &str, options: &ForgeCompileOptions) -> String {
     let path = resource_dir().join(format!("{name}.scxml"));
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()));
+    rust_of_source(name, &source, options)
+}
+
+/// The Rust the codec `name` written as `source` generates under `options`, its
+/// imports read from the resources, every file joined.
+fn rust_of_source(name: &str, source: &str, options: &ForgeCompileOptions) -> String {
     sce_build::compile_forge_with_imports(
-        &source,
+        source,
         DocumentLabel::symmetric(name),
         Language::Rust,
         &resource_dir(),
@@ -56,6 +62,88 @@ fn rust_of(name: &str) -> String {
             ..ForgeCompileOptions::default()
         },
     )
+}
+
+/// A codec that embeds `codec_tlv_entry` and reads a chain of it after: the
+/// embedded body is held as its view, and the chain reads by the walk of the
+/// entry's module.
+const EMBEDDED_AND_CHAINED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_tlv_entry_held">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="first" type="codec_tlv_entry" sce:byte="1"/>
+    <sce:tlv-chain id="rest" type="codec_tlv_entry" sce:byte="2" max-depth="8"/>
+  </datamodel>
+</scxml>"#;
+
+/// How many times `code` imports the view of the codec `module` as `view`.
+fn view_imports(code: &str, module: &str, view: &str) -> usize {
+    let import = format!("use super::{module}::{view};");
+    code.lines().filter(|line| line.trim() == import).count()
+}
+
+/// A view imports exactly the views its code names: a chain that reads by the
+/// walk of its entry's module names that walk by its path and its entry's view
+/// nowhere, so a codec whose only use of an imported codec is such a chain
+/// imports no view of it, and one that embeds the codec imports its view once.
+#[test]
+fn a_view_imports_the_view_of_a_codec_it_embeds_and_not_of_one_it_only_chains() {
+    let code = rust_of("codec_tlv_chain_basic");
+    assert!(
+        code.contains("pub type CodecTlvChainBasicExtensionsWalk = super::codec_tlv_entry::CodecTlvEntryWalk;"),
+        "codec_tlv_chain_basic's chain does not read by its entry's walk:\n{code}"
+    );
+    assert_eq!(
+        view_imports(&code, "codec_tlv_entry", "CodecTlvEntryView"),
+        0,
+        "codec_tlv_chain_basic imports the view of an entry it only chains:\n{code}"
+    );
+
+    let code = rust_of_source(
+        "codec_tlv_entry_held",
+        EMBEDDED_AND_CHAINED,
+        &ForgeCompileOptions {
+            views: true,
+            ..ForgeCompileOptions::default()
+        },
+    );
+    assert_eq!(
+        view_imports(&code, "codec_tlv_entry", "CodecTlvEntryView"),
+        1,
+        "a codec that embeds codec_tlv_entry does not import its view once:\n{code}"
+    );
+
+    // The frame's message embeds its timestamp and chains its extensions.
+    let code = rust_of("codec_zenoh_msg_put");
+    assert_eq!(
+        view_imports(&code, "codec_zenoh_timestamp", "CodecZenohTimestampView"),
+        1,
+        "codec_zenoh_msg_put does not import the view of the body it embeds:\n{code}"
+    );
+    assert_eq!(
+        view_imports(&code, "codec_zenoh_ext_entry", "CodecZenohExtEntryView"),
+        0,
+        "codec_zenoh_msg_put imports the view of an entry it only chains:\n{code}"
+    );
+}
+
+/// A chain that carries a value from one entry to the next reads by a walk of
+/// its own, which reads each entry by its view, so its codec imports that view.
+#[test]
+fn a_chain_with_a_walk_of_its_own_imports_its_entrys_view() {
+    let code = rust_of("codec_chain_prev_carrier");
+    assert!(
+        code.contains("pub struct CodecChainPrevCarrierEntriesWalk;"),
+        "codec_chain_prev_carrier's chain has no walk of its own:\n{code}"
+    );
+    assert_eq!(
+        view_imports(&code, "codec_chain_prev_entry", "CodecChainPrevEntryView"),
+        1,
+        "codec_chain_prev_carrier does not import the view its walk reads by:\n{code}"
+    );
 }
 
 /// The bodies of every method `name` the code declares, from its signature to
