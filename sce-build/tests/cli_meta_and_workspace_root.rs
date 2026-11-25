@@ -15,13 +15,16 @@
 //      (vendor pin R30 → R53), so a regression here would re-open the
 //      same mis-judgment for the next contributor.
 //   3. `--workspace-root <PATH>` resolution chain: `--workspace-root
-//      override → SCE_WORKSPACE_ROOT → CARGO_MANIFEST_DIR/.. → cwd-walk`,
-//      with explicit warnings on validation failures along the way. It
-//      decides which checkout `verify-generator` judges this binary
-//      against when no `--root` is named, and vendored binaries (consumer
-//      cwd is the consumer workspace; SCE source lives in `vendor/sce/`)
-//      are why it does not start at the cwd: the legacy resolver only
-//      walked upward from there and never found SCE.
+//      override → SCE_WORKSPACE_ROOT → the tree the run works in`, with
+//      explicit warnings on validation failures along the way. It decides
+//      which checkout `verify-generator` judges this binary against when
+//      no `--root` is named. The last layer climbs from the working
+//      directory, from the package Cargo runs the binary for, and from the
+//      binary's own directory, and never reads where the binary was
+//      compiled: a compiled-in path is the build machine's and made two
+//      builds of one source differ by their checkout. Vendored binaries
+//      (consumer cwd is the consumer workspace; SCE source lives in
+//      `vendor/sce/`) are why the package Cargo runs is one of its starts.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -201,10 +204,10 @@ fn workspace_root_invalid_explicit_flag_warns_and_falls_through() {
     );
 
     // We deliberately keep SCE_WORKSPACE_ROOT unset; resolution must
-    // still find the real workspace via CARGO_MANIFEST_DIR/.. (this
-    // test binary was built against the SCE workspace, so that layer
-    // resolves), and the bogus explicit override must emit its warning
-    // along the way.
+    // still find the real workspace through the package Cargo runs the
+    // binary for (named here as `cargo test` names it), and the bogus
+    // explicit override must emit its warning along the way.
+    let package = ws_real.join("sce-build");
     let (code, stderr) = run_codegen(
         &std::env::temp_dir(),
         &[
@@ -212,7 +215,10 @@ fn workspace_root_invalid_explicit_flag_warns_and_falls_through() {
             bogus.to_str().unwrap(),
             "verify-generator",
         ],
-        &[("SCE_WORKSPACE_ROOT", None)],
+        &[
+            ("SCE_WORKSPACE_ROOT", None),
+            ("CARGO_MANIFEST_DIR", Some(package.to_str().unwrap())),
+        ],
     );
     assert!(
         stderr.contains("--workspace-root") && stderr.contains("does not contain"),
@@ -221,28 +227,32 @@ fn workspace_root_invalid_explicit_flag_warns_and_falls_through() {
     assert_eq!(
         code,
         Some(0),
-        "the fall-through (CARGO_MANIFEST_DIR/..) must still resolve the real workspace; \
-         stderr:\n{stderr}",
+        "the fall-through (the search for the tree the run works in) must still resolve \
+         the real workspace; stderr:\n{stderr}",
     );
 }
 
 #[test]
-fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
-    // Simulate the vendored-binary scenario: consumer cwd is somewhere
-    // entirely unrelated to SCE, and no explicit --workspace-root /
-    // SCE_WORKSPACE_ROOT is provided. The `CARGO_MANIFEST_DIR/..`
-    // fallback (baked at build time) is what must save the day —
-    // this is the layer the legacy "walk up from cwd" resolver
-    // missed for vendor-pinned consumers.
+fn workspace_root_is_found_from_the_package_cargo_runs() {
+    // The vendored-binary scenario: consumer cwd is somewhere entirely
+    // unrelated to SCE, no explicit --workspace-root / SCE_WORKSPACE_ROOT
+    // is provided, and Cargo runs the binary for the SCE package
+    // (`cargo run -p sce-build` from the consumer workspace). The package
+    // Cargo names is what must save the day; the legacy "walk up from cwd"
+    // resolver missed vendor-pinned consumers.
+    let package = sce_workspace_root().join("sce-build");
     let (code, stderr) = run_codegen(
         &std::env::temp_dir(),
         &["verify-generator"],
-        &[("SCE_WORKSPACE_ROOT", None)],
+        &[
+            ("SCE_WORKSPACE_ROOT", None),
+            ("CARGO_MANIFEST_DIR", Some(package.to_str().unwrap())),
+        ],
     );
     assert_eq!(
         code,
         Some(0),
-        "the CARGO_MANIFEST_DIR/.. fallback must resolve the real workspace; \
+        "the package Cargo runs the binary for must resolve the real workspace; \
          stderr:\n{stderr}",
     );
 }
@@ -256,10 +266,11 @@ fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
 // that built the binary reads that checkout's registry, which is outside
 // the generation's checkout and outside its key.
 
-#[test]
-fn a_relative_workspace_root_is_the_directory_the_run_starts_in() {
-    let checkout = tempfile::tempdir().expect("a checkout");
-    let registry = checkout.path().join("tests/w3c/conformance/fixtures.json");
+/// A checkout holding one fixture no other checkout registers, `9999`: the
+/// conformance registry the batch commands find their root by, and the
+/// fixture's document.
+fn checkout_of_one_fixture(root: &std::path::Path) {
+    let registry = root.join("tests/w3c/conformance/fixtures.json");
     std::fs::create_dir_all(registry.parent().unwrap()).expect("the registry's directory");
     std::fs::write(
         &registry,
@@ -273,7 +284,7 @@ fn a_relative_workspace_root_is_the_directory_the_run_starts_in() {
 "#,
     )
     .expect("write the registry");
-    let document = checkout.path().join("resources/9999/test9999.scxml");
+    let document = root.join("resources/9999/test9999.scxml");
     std::fs::create_dir_all(document.parent().unwrap()).expect("the fixture's directory");
     std::fs::write(
         &document,
@@ -282,24 +293,140 @@ fn a_relative_workspace_root_is_the_directory_the_run_starts_in() {
          </scxml>\n",
     )
     .expect("write the fixture");
+}
 
-    let out = Command::new(sce_codegen_bin())
-        .current_dir(checkout.path())
+/// `generate-w3c -l rust --list` run by `binary` from `cwd`, with `env`
+/// applied over an environment that names no root (`None` removes a
+/// variable); the templates are named, so that the run reads the one tree
+/// this test asks about and no other. Returns (succeeded, stdout, stderr).
+fn list_fixtures(
+    binary: &std::path::Path,
+    cwd: &std::path::Path,
+    env: &[(&str, Option<&str>)],
+) -> (bool, String, String) {
+    let mut cmd = Command::new(binary);
+    cmd.current_dir(cwd)
         .args(["generate-w3c", "-l", "rust", "--list"])
-        .env("SCE_WORKSPACE_ROOT", ".")
+        .env(
+            "SCE_TEMPLATE_DIR",
+            sce_workspace_root().join("tools/codegen/templates"),
+        )
+        .env_remove("SCE_WORKSPACE_ROOT")
+        .env_remove("CARGO_MANIFEST_DIR")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("spawn sce-codegen generate-w3c --list");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
+        .stderr(Stdio::piped());
+    for (k, v) in env {
+        match v {
+            Some(val) => {
+                cmd.env(k, val);
+            }
+            None => {
+                cmd.env_remove(k);
+            }
+        }
+    }
+    let out = cmd.output().expect("spawn sce-codegen generate-w3c --list");
+    (
         out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// A working directory no checkout is above: the root of the file system.
+/// Not a temporary directory, which a machine may keep inside a checkout,
+/// where the climb from the working directory would find that checkout first.
+fn unrelated_directory() -> &'static std::path::Path {
+    std::path::Path::new("/")
+}
+
+/// Whether a listing is the one of [`checkout_of_one_fixture`].
+fn lists_the_one_fixture(stdout: &str) -> bool {
+    stdout.contains("W3C conformance registry: 1 fixtures") && stdout.contains("9999")
+}
+
+#[test]
+fn a_relative_workspace_root_is_the_directory_the_run_starts_in() {
+    let checkout = tempfile::tempdir().expect("a checkout");
+    checkout_of_one_fixture(checkout.path());
+    let (ok, stdout, stderr) = list_fixtures(
+        &sce_codegen_bin(),
+        checkout.path(),
+        &[("SCE_WORKSPACE_ROOT", Some("."))],
+    );
+    assert!(
+        ok,
         "generate-w3c --list failed in a checkout of one fixture; stderr:\n{stderr}",
     );
     assert!(
-        stdout.contains("W3C conformance registry: 1 fixtures") && stdout.contains("9999"),
+        lists_the_one_fixture(&stdout),
         "SCE_WORKSPACE_ROOT=. must name the checkout the run starts in, not the one that \
          built this binary; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+// ── #5: with no root named, the tree the run works in ──────────────
+//
+// The search climbs from the working directory, then from the package Cargo
+// runs the binary for, then from the binary's own directory, and never reads
+// where the binary was compiled. Each case below puts the checkout of one
+// fixture where only one start reaches it, while this binary's own checkout
+// stays reachable from its directory: a resolver that took the checkout the
+// binary was built in, or took the starts in another order, lists that
+// checkout's whole registry instead.
+
+#[test]
+fn with_no_root_named_a_run_inside_a_checkout_works_in_it() {
+    let checkout = tempfile::tempdir().expect("a checkout");
+    checkout_of_one_fixture(checkout.path());
+    let inside = checkout.path().join("resources/9999");
+    let (ok, stdout, stderr) = list_fixtures(&sce_codegen_bin(), &inside, &[]);
+    assert!(
+        ok && lists_the_one_fixture(&stdout),
+        "a run started inside a checkout must work in that checkout, found by climbing from \
+         the working directory; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+#[test]
+fn with_no_root_named_a_run_works_in_the_checkout_of_the_package_cargo_runs() {
+    let consumer = tempfile::tempdir().expect("a consumer workspace");
+    let vendored = consumer.path().join("vendor/sce");
+    checkout_of_one_fixture(&vendored);
+    let package = vendored.join("sce-build");
+    std::fs::create_dir_all(&package).expect("the vendored package");
+    let (ok, stdout, stderr) = list_fixtures(
+        &sce_codegen_bin(),
+        unrelated_directory(),
+        &[("CARGO_MANIFEST_DIR", Some(package.to_str().unwrap()))],
+    );
+    assert!(
+        ok && lists_the_one_fixture(&stdout),
+        "a run Cargo starts for a vendored SCE package must work in the vendored checkout; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+#[test]
+fn with_no_root_named_a_binary_placed_in_a_checkout_works_in_it() {
+    // In the target directory, so that the binary can be linked rather than
+    // copied: one file system, and the checkout the binary sits in is this
+    // one, not the one it was built in.
+    let checkout = tempfile::Builder::new()
+        .prefix("placed-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("a checkout");
+    checkout_of_one_fixture(checkout.path());
+    let placed = checkout.path().join(".bx/artifacts/codegen");
+    std::fs::create_dir_all(&placed).expect("the place of the output");
+    let binary = placed.join("sce-codegen");
+    if std::fs::hard_link(sce_codegen_bin(), &binary).is_err() {
+        std::fs::copy(sce_codegen_bin(), &binary).expect("place the binary");
+    }
+    let (ok, stdout, stderr) = list_fixtures(&binary, unrelated_directory(), &[]);
+    assert!(
+        ok && lists_the_one_fixture(&stdout),
+        "a binary placed inside a checkout, run from elsewhere with nothing named, must work \
+         in the checkout it sits in; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 }

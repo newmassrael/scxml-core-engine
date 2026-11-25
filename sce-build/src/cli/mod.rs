@@ -1004,7 +1004,7 @@ fn read_named_document(path: &str) -> std::io::Result<String> {
 /// can consult one source of truth without each call having to thread
 /// the flag through its signature. Unset when the user neither passed `--workspace-root`
 /// nor `SCE_WORKSPACE_ROOT` — in which case the resolution falls
-/// through to `CARGO_MANIFEST_DIR`'s parent and cwd-walk per
+/// through to the search for the tree the run works in, per
 /// [`locate_workspace_root`].
 static WORKSPACE_ROOT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
@@ -1849,11 +1849,11 @@ struct Cli {
     /// Override the SCE workspace root: the checkout carrying
     /// `tools/codegen/templates/`, whose sources `verify-generator`
     /// compares this binary against. Resolution priority: this flag →
-    /// `SCE_WORKSPACE_ROOT` env var → `CARGO_MANIFEST_DIR/..`
-    /// (compile-time, used for vendored builds where cwd lives in the
-    /// consumer workspace) → walk up from cwd. Set this when an automated
-    /// build (vendored or otherwise) cannot rely on the default
-    /// resolution. Global — applies to every subcommand.
+    /// `SCE_WORKSPACE_ROOT` env var → the first checkout above the working
+    /// directory, above the package Cargo runs this for, or above this
+    /// executable. Set this when an automated build (vendored or otherwise)
+    /// cannot rely on the default resolution. Global — applies to every
+    /// subcommand.
     #[arg(long, global = true, value_name = "PATH")]
     workspace_root: Option<PathBuf>,
 
@@ -9654,20 +9654,15 @@ fn resolve_suite_packaging(
 }
 
 fn find_project_root() -> PathBuf {
-    // `SCE_WORKSPACE_ROOT` first, for the same reason
-    // [`locate_workspace_root`] honours it: `CARGO_MANIFEST_DIR` is baked in
-    // at compile time, so a binary built in one checkout and run in another
-    // resolves to the one that BUILT it. That is right for a vendored
-    // consumer and wrong for every other reader, and this resolver decides
-    // where the W3C trees are WRITTEN — so the failure is not a bad lookup
-    // but an escape. Measured: running the regeneration procedure inside a
-    // linked git worktree (whose `.git` is a file, so no other layer
-    // corrects the root) rewrote nine files in the original checkout while
-    // reporting success in the worktree, and the paths it embedded in the
-    // generated Kotlin were absolute into that other tree.
-    //
-    // The variable was already the documented escape hatch; it simply did
-    // not reach this resolver, which is why pinning it did not help.
+    // `SCE_WORKSPACE_ROOT` first, then the tree the run works in
+    // ([`crate::source_tree::find`]), whose first place is the working
+    // directory. This resolver decides where the W3C trees are WRITTEN, so a
+    // root other than the run's is not a bad lookup but an escape. Measured
+    // when the fallback was the checkout the binary was compiled in: running
+    // the regeneration procedure inside a linked git worktree rewrote nine
+    // files in the original checkout while reporting success in the
+    // worktree, and the paths it embedded in the generated Kotlin were
+    // absolute into that other tree.
     let marker = Path::new(crate::w3c_registry::W3C_REGISTRY_RELATIVE_PATH);
     let pinned = std::env::var("SCE_WORKSPACE_ROOT").ok().and_then(|p| {
         let candidate = PathBuf::from(&p);
@@ -9681,23 +9676,13 @@ fn find_project_root() -> PathBuf {
         None
     });
 
-    // Try CARGO_MANIFEST_DIR ancestor, then CWD
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let candidate = crate_dir.join("..");
     // The marker is the conformance registry, not `tests/CMakeLists.txt`:
     // probing for the build script made a CMake-less checkout unable to
     // resolve a root at all, which is the same coupling the registry
     // format itself carried.
-    let root = if let Some(pinned) = pinned {
-        pinned
-    } else if candidate.join(marker).exists() {
-        fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf())
-    } else {
-        let cwd = std::env::current_dir().expect("Cannot get CWD");
-        if !cwd.join(marker).exists() {
-            cli_exit(CliError::ProjectRootNotFound);
-        }
-        cwd
+    let root = match pinned.or_else(|| crate::source_tree::find(marker)) {
+        Some(found) => fs::canonicalize(&found).unwrap_or(found),
+        None => cli_exit(CliError::ProjectRootNotFound),
     };
     // Every in-repo batch command reaches its inputs through this root and
     // records `// From:` provenance relative to it — that is what the
@@ -15370,17 +15355,13 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
 ///      env vars or process layout.
 ///   2. `SCE_WORKSPACE_ROOT` env var — mirrors the `SCE_TEMPLATE_DIR`
 ///      escape hatch already documented for [`crate::find_template_base`].
-///   3. `CARGO_MANIFEST_DIR`'s parent — baked at compile time to the
-///      `sce-build/` crate root inside whichever workspace built this
-///      binary. For both in-repo and `path = "vendor/sce/sce-build"`
-///      consumer builds this resolves to the SCE workspace that
-///      shipped the matching template tree. This is the layer the
-///      walk-up-from-cwd path (used pre-2026-05) missed for vendored
-///      binaries — cwd lives in the consumer workspace while the
-///      vendored SCE tree sits *below* it under `vendor/sce/`.
-///   4. Walk upward from the current directory looking for a
-///      `tools/codegen/templates/` directory. Last-resort path for
-///      ad-hoc invocations from inside the SCE workspace tree.
+///   3. The tree the run works in ([`crate::source_tree::find`]): the
+///      first directory holding `tools/codegen/templates/` above the
+///      working directory, above the package Cargo runs this process for
+///      (a vendoring workspace's `cargo run -p sce-build` names the
+///      vendored crate), or above this executable. Never the checkout the
+///      binary was compiled in: that path is the build machine's, and a
+///      binary that carried it differed in its bytes by where it was built.
 ///
 /// Returns `None` only if every layer fails; `verify-generator` then
 /// falls back to the current directory, and says so if that tree
@@ -15417,30 +15398,7 @@ fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> 
         );
     }
 
-    // `CARGO_MANIFEST_DIR` is baked at compile time to the sce-build
-    // crate's directory inside the workspace that built the binary —
-    // including vendored builds where the consumer's
-    // `path = "vendor/sce/sce-build"` dependency makes the parent
-    // (`vendor/sce/`) the canonical SCE workspace root.
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    if let Some(parent) = crate_dir.parent() {
-        if validates(parent) {
-            return Some(parent.to_path_buf());
-        }
-    }
-
-    // Last resort: walk upward from cwd. Kept for ad-hoc invocations
-    // from inside the SCE workspace; vendored binaries normally hit
-    // the `CARGO_MANIFEST_DIR` layer above before reaching here.
-    let mut cursor = std::env::current_dir().ok()?;
-    loop {
-        if validates(&cursor) {
-            return Some(cursor);
-        }
-        if !cursor.pop() {
-            return None;
-        }
-    }
+    crate::source_tree::find(Path::new(crate::generator_witness::RUN_TIME_TREE))
 }
 
 // ── Subcommand: plan-batch ─────────────────────────────────────
