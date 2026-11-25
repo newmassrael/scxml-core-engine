@@ -52,7 +52,8 @@ sce_http_endpoint_path() {
     fi
 
     path="$(sed -n 's/^#define SCE_W3C_HTTP_TEST_PATH[[:space:]]\{1,\}"\(.*\)".*/\1/p' \
-        "$header" | head -1)"
+        "$header")"
+    path="${path%%$'\n'*}"
     if [[ -z "$path" ]]; then
         printf '%s declares no SCE_W3C_HTTP_TEST_PATH — the endpoint owner moved or was renamed\n' \
             "$header" >&2

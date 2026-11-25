@@ -28,7 +28,7 @@ version="$(sce_swift_pin_version)"
 tag="$(sce_swift_pin_tag "$version")"
 prefix="$HOME/.local/share/swift/$version"
 
-if [ -x "$prefix/bin/swift" ] && "$prefix/bin/swift" --version 2>&1 | grep -qF "$tag"; then
+if [ -x "$prefix/bin/swift" ] && grep -qF "$tag" <<<"$("$prefix/bin/swift" --version 2>&1)"; then
     echo "Swift $version is installed at $prefix"
     exit 0
 fi
@@ -58,6 +58,6 @@ tar -xzf "$work/$file" -C "$prefix" --strip-components=1
 # `swiftc` and the rest sit beside the file it points to, which is where the gate and
 # the mutation harness look.
 ln -sfn "$prefix/usr/bin/swift" "$prefix/bin/swift"
-"$prefix/bin/swift" --version 2>&1 | grep -qF "$tag" \
+grep -qF "$tag" <<<"$("$prefix/bin/swift" --version 2>&1)" \
     || { echo "error: the unpacked toolchain is not $tag" >&2; exit 1; }
 echo "Swift $version installed at $prefix"

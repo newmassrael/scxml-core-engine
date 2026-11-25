@@ -150,7 +150,7 @@ row_C4() {
 # fixture no channel runs.
 row_C5() {
     local stem
-    stem=$(find integration_resources -maxdepth 1 -type d -name '*order*' 2>/dev/null | head -1)
+    stem=$(find integration_resources -maxdepth 1 -type d -name '*order*' -print -quit 2>/dev/null)
     [[ -n "$stem" ]] || return 1
     sce_grep -q "$(basename "$stem")" tests/ backends/ 2>/dev/null
 }
@@ -751,8 +751,8 @@ row_S1() {
 # global scripts at all.
 row_S2() {
     grep -qE 'global_scripts' sce-build/src/requirements_report.rs 2>/dev/null || return 1
-    ! awk '/model\.global_scripts\.push\(Action \{/,/\}\);/' sce-build/src/parser.rs 2>/dev/null \
-        | grep -q '\.\.Default::default()'
+    ! grep -q '\.\.Default::default()' \
+        <<<"$(awk '/model\.global_scripts\.push\(Action \{/,/\}\);/' sce-build/src/parser.rs 2>/dev/null)"
 }
 
 # S3 — the dead constant is gone from every site that carried it, and

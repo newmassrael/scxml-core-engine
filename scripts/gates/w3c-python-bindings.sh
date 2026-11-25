@@ -47,7 +47,7 @@ sce_gate_build "$BUILD_DIR" --target _sce \
 # pointed at the wrong directory. Measured 2026-08-11: it pointed at
 # `$BUILD_DIR/sce-python`, a path nothing in this repository creates, and the
 # lane this gate replaced carried the same wrong path.
-MODULE="$(find "$BUILD_DIR" -name '_sce*.so' -o -name '_sce*.pyd' 2>/dev/null | head -1)"
+MODULE="$(find "$BUILD_DIR" \( -name '_sce*.so' -o -name '_sce*.pyd' \) -print -quit 2>/dev/null)"
 [[ -n "$MODULE" ]] \
     || sce_gate_fail "the _sce extension was not produced anywhere under ${BUILD_DIR}"
 [[ "$(dirname "$MODULE")" == "$BUILD_DIR/backends/python/bindings" ]] \

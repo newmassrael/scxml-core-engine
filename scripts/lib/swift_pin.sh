@@ -28,7 +28,10 @@ sce_swift_pin_version() {
 # release the pin has no digest for, which the caller refuses by name: a tarball
 # downloaded with no digest to check it against is not installed.
 sce_swift_pin_digest() {
-    grep -o "ubuntu$1) sum=[0-9a-f]\{64\}" "${SCE_REPO_ROOT}/bx.toml" | head -1 | sed 's/.*sum=//'
+    local found
+    found="$(grep -o "ubuntu$1) sum=[0-9a-f]\{64\}" "${SCE_REPO_ROOT}/bx.toml")" || return
+    found="${found%%$'\n'*}"
+    printf '%s\n' "${found##*sum=}"
 }
 
 # What `swift --version` prints in parentheses for release `$1`: `swift-6.4-RELEASE`

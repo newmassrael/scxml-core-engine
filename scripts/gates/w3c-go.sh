@@ -46,8 +46,7 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # the case had to be run again to learn it (2026-11-10, a composed-send case).
 # One reader for every `go test` of this gate, so no step reports less.
 go_failures() {
-    grep -E '^(--- FAIL|FAIL|panic:|# )|^\s+.*_test\.go:[0-9]+:|^[^ ]+\.(go|scxml):[0-9]+' "$1" \
-        | head -n 60 >&2
+    grep -m 60 -E '^(--- FAIL|FAIL|panic:|# )|^\s+.*_test\.go:[0-9]+:|^[^ ]+\.(go|scxml):[0-9]+' "$1" >&2 || true
 }
 
 # `-v` matches the lane, whose summary step counts the per-case `--- PASS:`

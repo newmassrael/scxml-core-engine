@@ -125,7 +125,7 @@ fi
 # `ip netns list` formats as "<name> (id: N)" or "<name>" depending on
 # version; awk's first field is the bare name on either layout.
 have_netns() {
-    ip netns list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
+    grep -qx -- "$1" <<<"$(ip netns list 2>/dev/null | awk '{print $1}')"
 }
 if ! have_netns "$PARENT_NS"; then
     echo "two_host_fixture: skipping — netns '$PARENT_NS' missing; "\

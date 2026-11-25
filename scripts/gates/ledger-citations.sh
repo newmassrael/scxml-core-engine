@@ -224,10 +224,11 @@ if [[ "${1:-}" == "--staged" ]]; then
     # which is the same rule the tool applies to its own unjudged axes: a count
     # of zero has to mean measured-and-clean.
     mapfile -t dirty < <(git diff --name-only --diff-filter=ACMR)
+    printf -v dirty_lines '%s\n' "${dirty[@]}"
     decidable=()
     undecidable=()
     for path in "${scoped[@]}"; do
-        if printf '%s\n' "${dirty[@]}" | grep -qxF -- "$path"; then
+        if grep -qxF -- "$path" <<<"$dirty_lines"; then
             undecidable+=("$path")
         else
             decidable+=("$path")

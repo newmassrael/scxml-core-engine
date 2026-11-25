@@ -138,7 +138,7 @@ if [[ -n "$SHARD_PLAN" ]] && (( CORE )) && (( status == 0 )); then
 fi
 
 if (( status != 0 )); then
-    grep -E '^(test .* \.\.\. FAILED|error(\[E[0-9]+\])?:)' "$LOG/rust.log" | head -n 40 >&2 || true
+    grep -m 40 -E '^(test .* \.\.\. FAILED|error(\[E[0-9]+\])?:)' "$LOG/rust.log" >&2 || true
     sce_gate_fail "Rust conformance suite failed"
 fi
 

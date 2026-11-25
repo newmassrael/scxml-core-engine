@@ -41,7 +41,7 @@ fi
 
 # System information
 echo -e "${BLUE}System Information:${NC}"
-echo -e "  Compiler: $(gcc --version | head -n 1)"
+echo -e "  Compiler: $(gcc --version | sed -n 1p)"
 echo -e "  Platform: $(uname -sr)"
 echo -e "  CPU cores: $(nproc)"
 echo ""

@@ -2234,8 +2234,7 @@ mutation_ctest_scope() {
 # The `sce-codegen` this tree generates with, as its configure step recorded
 # it; nothing for a tree that holds no generator.
 mutation_ctest_generator() {
-    sed -n 's/^SCE_CODEGEN:[A-Z]*=//p' "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null \
-        | head -n 1
+    sed -n '/^SCE_CODEGEN:[A-Z]*=/{s///p;q;}' "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null
 }
 
 # Whether the generator this tree holds disagrees with the sources it was
@@ -2627,7 +2626,7 @@ mutation_go_run() {
         # one that changed which tests exist, and read INCONCLUSIVE where the tests
         # are as red as they can be. Each test the binary lists and never started is
         # counted as run and failed, and named.
-        if [[ "$rc" != "0" ]] && printf '%s\n' "$out" | grep -qE '^(panic: |fatal error: )'; then
+        if [[ "$rc" != "0" ]] && grep -qE '^(panic: |fatal error: )' <<<"$out"; then
             local listed started unreached n
             listed="$(cd "$dir/${pkg#./}" 2>/dev/null || cd "$dir"; "$binary" -test.list '.*' 2>/dev/null)"
             started="$(printf '%s\n' "$out" | sed -n 's/^=== RUN   \([^/]*\)$/\1/p')"
@@ -2830,7 +2829,7 @@ mutation_swift_run() {
         + $(printf '%s\n' "$out" | grep -cE '^↪ Test ' || true) ))
     printf '%s\n' "$out" | mutation_failures_from_swift >> "$MUTATION_FAILING"
     printf '%s\n' "$out" | mutation_detail_from_swift >> "$MUTATION_FAILURE_DETAIL"
-    if [[ "$rc" != "0" ]] && ! printf '%s\n' "$out" | grep -qE '^[✔✘] Test run with '; then
+    if [[ "$rc" != "0" ]] && ! grep -qE '^[✔✘] Test run with ' <<<"$out"; then
         listed="$(cd "$dir" && swift test list --skip-build "${MUTATION_RUNNER_ARGS[@]:1}" 2>/dev/null | grep -c . || true)"
         unreached=$(( ${listed:-0} - ${passed:-0} - ${failed:-0} ))
         if (( unreached > 0 )); then

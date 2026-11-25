@@ -101,7 +101,7 @@ if ! diff -q "${CANON_COMMITTED}" "${CANON_FRESH}" >/dev/null 2>&1; then
     echo "    git commit -m \"chore: Regenerate embed/MANIFEST.json after \$(git rev-parse --short HEAD)\"" >&2
     echo "" >&2
     echo "--- diff (first 80 lines, excluding embed_version + clang_version) ---" >&2
-    diff -u "${CANON_COMMITTED}" "${CANON_FRESH}" 2>/dev/null | head -n 80 >&2 || true
+    diff -u "${CANON_COMMITTED}" "${CANON_FRESH}" 2>/dev/null | sed -n '1,80p' >&2 || true
     exit 1
 fi
 

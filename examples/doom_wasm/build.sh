@@ -31,7 +31,7 @@ if ! command -v emcc &> /dev/null; then
     exit 1
 fi
 
-echo "Using Emscripten: $(emcc --version | head -1)"
+echo "Using Emscripten: $(emcc --version | sed -n 1p)"
 echo ""
 
 # Create build directory

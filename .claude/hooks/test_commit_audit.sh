@@ -133,7 +133,7 @@ for row in "${CASES[@]}"; do
         BLOCK)
             if ! grep -q "forward-reference in commit body" <<<"$err"; then
                 echo "FAIL [$desc]: expected forward-reference block but got:" >&2
-                echo "$err" | head -3 | sed 's/^/        /' >&2
+                sed -n '1,3s/^/        /p' <<<"$err" >&2
                 failures=$((failures + 1))
             fi
             ;;

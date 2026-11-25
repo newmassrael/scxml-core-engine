@@ -427,10 +427,10 @@ sce_gate_build() {
     # first use of this helper in anger — a `sce-codegen` crash whose one line
     # of evidence ("Illegal instruction") had to be grepped out by hand.
     local first_failed
-    first_failed="$(grep -n '^FAILED:' "$log" | head -1 | cut -d: -f1)"
+    first_failed="$(sed -n '/^FAILED:/{=;q;}' "$log")"
     if [[ -n "$first_failed" ]]; then
         printf '  [%s] build failed; from the first FAILED edge:\n' "$SCE_GATE_SLUG" >&2
-        sed -n "${first_failed},\$p" "$log" | head -80 >&2
+        sed -n "${first_failed},$((first_failed + 79))p" "$log" >&2
     else
         # No marker: the failure was cmake's own (a bad argument, a missing
         # generator), and those speak at the end.
@@ -911,7 +911,7 @@ sce_gate_judge_w3c_report() {
     fi
 
     if (( bad > 0 )); then
-        grep -E '<failure|<error' "$xml" | head -n 20 >&2 || true
+        grep -m 20 -E '<failure|<error' "$xml" >&2 || true
         sce_gate_fail "$bad of $total W3C case(s) failed"
     fi
 
@@ -1418,7 +1418,8 @@ sce_gate_requires_tool() {
 # leading `1.` is dropped before the first component is read.
 sce_java_major() {
     local home="${1:-}" out version
-    out="$("${home:+$home/bin/}java" -version 2>&1 | head -1)" || return 1
+    out="$("${home:+$home/bin/}java" -version 2>&1)" || return 1
+    out="${out%%$'\n'*}"
     version="${out#*\"}"
     version="${version%%\"*}"
     case "$version" in
@@ -1465,7 +1466,8 @@ sce_gate_require_jdk() {
         || sce_gate_fail "java is not on PATH, and this gate was selected because the Kotlin backend changed. Install a JDK 17+ (apt install openjdk-17-jdk) — skipping here would report green on an unverified backend."
 
     floor="$(sed -n "s/^[[:space:]]*java-version:[[:space:]]*['\"]\{0,1\}\([0-9]\{1,\}\).*/\1/p" \
-        "$pin_file" | head -1)"
+        "$pin_file")"
+    floor="${floor%%$'\n'*}"
     [ -n "$floor" ] \
         || sce_gate_fail "no \`java-version:\` pin found in $pin_file — this gate derives its JDK floor from the version CI installs, and a missing pin would let it run on any JVM."
 
@@ -1528,7 +1530,7 @@ sce_gate_require_swift() {
     # release `6.4.0`, and `swift-6.4.1-RELEASE` for a patch release.
     tag="$(sce_swift_pin_tag "$version")"
 
-    if ! { command -v swift >/dev/null 2>&1 && swift --version 2>&1 | grep -qF "$tag"; }; then
+    if ! { command -v swift >/dev/null 2>&1 && grep -qF "$tag" <<<"$(swift --version 2>&1)"; }; then
         link="$HOME/.local/share/swift/$version/bin/swift"
         if [ -x "$link" ]; then
             # `swiftc` and the rest of the toolchain sit beside the file the
@@ -1540,8 +1542,8 @@ sce_gate_require_swift() {
 
     command -v swift >/dev/null 2>&1 \
         || sce_gate_fail "swift is not on PATH and $HOME/.local/share/swift/$version/bin/swift does not exist, and this gate was selected because the Swift backend changed. Install Swift $version (\`provision <alias>\` installs the \`[platform.linux.tools.swift]\` pin of bx.toml) — skipping here would report green on an unverified backend."
-    swift --version 2>&1 | grep -qF "$tag" \
-        || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | head -1), and they are verified on $tag (the \`[platform.linux.tools.swift]\` pin of bx.toml). Install Swift $version under ~/.local/share/swift/$version/ with scripts/install_swift_toolchain.sh — another release is a different compiler."
+    grep -qF "$tag" <<<"$(swift --version 2>&1)" \
+        || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | sed -n 1p), and they are verified on $tag (the \`[platform.linux.tools.swift]\` pin of bx.toml). Install Swift $version under ~/.local/share/swift/$version/ with scripts/install_swift_toolchain.sh — another release is a different compiler."
     sce_gate_step "Swift $tag (pinned by bx.toml)"
 }
 
@@ -1608,7 +1610,8 @@ sce_gate_python_requires() {
 # is what needs it.
 sce_gate_python_requires_lupa() {
     local who="$1" floor have
-    floor="$(sed -n 's/^[[:space:]]*"lupa>=\([0-9][0-9.]*\)".*/\1/p' "$SCE_REPO_ROOT/backends/python/runtime/pyproject.toml" | head -n 1)"
+    floor="$(sed -n 's/^[[:space:]]*"lupa>=\([0-9][0-9.]*\)".*/\1/p' "$SCE_REPO_ROOT/backends/python/runtime/pyproject.toml")"
+    floor="${floor%%$'\n'*}"
     [ -n "$floor" ] \
         || sce_gate_fail "backends/python/runtime/pyproject.toml declares no \"lupa>=<version>\" dependency — the precondition takes lupa's floor from the runtime's own declaration"
     have="$("$SCE_GATE_PYTHON" -c 'import importlib.metadata, lupa.lua54; print(importlib.metadata.version("lupa"))' 2>/dev/null)" \

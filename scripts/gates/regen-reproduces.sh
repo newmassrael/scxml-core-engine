@@ -213,18 +213,19 @@ if [[ -n "$CHANGED" ]]; then
     # What reproduces it: the declared tree each changed file is in,
     # materialized in a checkout of HEAD, then what git sees of the files.
     regen_changed=()
+    first=""
     while IFS= read -r line; do
         path="${line:3}"
         path="${path##* -> }"
         if [[ -n "$path" ]]; then
             regen_changed+=(--changed "$path")
+            first="${first:-$path}"
         fi
     done <<<"$CHANGED"
     sce_gate_repro_from /dev/null ${regen_changed[@]+"${regen_changed[@]}"} \
         -- scripts/regen_all_committed_trees.sh
     printf '\n  Diff of the first changed file:\n' >&2
-    first="$(printf '%s\n' "$CHANGED" | head -1 | awk '{print $2}')"
-    ( cd "$WT" && git --no-pager diff -- "$first" | head -40 ) >&2
+    git -C "$WT" --no-pager diff -- "$first" | sed -n '1,40p' >&2
     sce_gate_fail "regenerating the committed trees changed them — the procedure does not reproduce what is committed"
 fi
 

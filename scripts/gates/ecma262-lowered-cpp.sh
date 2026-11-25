@@ -210,7 +210,8 @@ PY
 # The suite's own census, lifted out of the verbose log so a green run states
 # what it measured. `docs/SCE_LUA_TRANSLATION_SEAM.md` re-derives its numbers
 # from this line rather than from a paragraph someone typed.
-census="$(sed -n 's/.*\(LoweredEcma262 census: .*\)/\1/p' "$LOG" | head -1)"
+census="$(sed -n 's/.*\(LoweredEcma262 census: .*\)/\1/p' "$LOG")"
+census="${census%%$'\n'*}"
 [[ -n "$census" ]] \
     || sce_gate_fail "the suite printed no census line, so this run cannot say how large a population it asked"
 sce_gate_step "$census"

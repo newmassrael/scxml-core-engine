@@ -110,12 +110,12 @@ assert_blocks_with() {
     local desc="$1" needle="$2" stderr="$3"
     if ! grep -q "memory lifecycle contract violations" <<<"$stderr"; then
         echo "FAIL [$desc]: expected memory contract block, got:" >&2
-        echo "$stderr" | head -5 | sed 's/^/        /' >&2
+        sed -n '1,5s/^/        /p' <<<"$stderr" >&2
         return 1
     fi
     if ! grep -qF "$needle" <<<"$stderr"; then
         echo "FAIL [$desc]: expected violation containing '$needle', got:" >&2
-        echo "$stderr" | head -10 | sed 's/^/        /' >&2
+        sed -n '1,10s/^/        /p' <<<"$stderr" >&2
         return 1
     fi
     return 0
@@ -125,7 +125,7 @@ assert_no_memory_block() {
     local desc="$1" stderr="$2"
     if grep -q "memory lifecycle contract violations" <<<"$stderr"; then
         echo "FAIL [$desc]: expected memory contract to PASS, but blocked:" >&2
-        echo "$stderr" | head -10 | sed 's/^/        /' >&2
+        sed -n '1,10s/^/        /p' <<<"$stderr" >&2
         return 1
     fi
     return 0
@@ -312,7 +312,7 @@ assert_says() {
     local desc="$1" needle="$2" stderr="$3"
     if ! grep -qF "$needle" <<<"$stderr"; then
         echo "FAIL [$desc]: expected the output to say '$needle', got:" >&2
-        echo "$stderr" | head -10 | sed 's/^/        /' >&2
+        sed -n '1,10s/^/        /p' <<<"$stderr" >&2
         return 1
     fi
     return 0

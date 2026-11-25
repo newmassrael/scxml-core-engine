@@ -64,7 +64,8 @@ sce_gate_step "the artifact carries $sites lowered call site(s)"
 # A number that only exists on a red run is a number nobody can cite from a green one, and the run
 # can be answered from a cache without producing any output (the Kotlin lane met that with Gradle),
 # so the line is demanded and not only looked for.
-census="$(sed -n 's/.*\(LoweredEcma262Swift census: .*\)/\1/p' "$LOG" | head -n 1)"
+census="$(sed -n 's/.*\(LoweredEcma262Swift census: .*\)/\1/p' "$LOG")"
+census="${census%%$'\n'*}"
 [ -n "$census" ] \
     || sce_gate_fail "the suite printed no census line, so this run cannot say how large a population it asked"
 sce_gate_step "$census"

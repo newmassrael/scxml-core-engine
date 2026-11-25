@@ -390,6 +390,11 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // that numbering is one an author adds next, in any directory, and the
     // lanes that run `sce-build`'s suites filter on paths that do not name it.
     "a_documents_tables_are_its_tree_in_document_order",
+    // Asks `git ls-files` for every tracked shell script and refuses a pipe
+    // handed to a reader that leaves before its writer is done. The script
+    // that writes the next one is any script, in any directory, and most of
+    // them sit where no lane's filter looks.
+    "a_pipeline_has_no_reader_that_leaves_early",
     "workflow_trigger_coverage",
 ];
 

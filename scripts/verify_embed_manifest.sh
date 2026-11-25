@@ -112,7 +112,7 @@ if ! diff -q "${CANON_SNAPSHOT}" "${CANON_FRESH}" >/dev/null 2>&1; then
     echo "commit the updated embed/MANIFEST.json, and retry." >&2
     echo "" >&2
     echo "--- diff (first 80 lines, excluding embed_version + clang_version) ---" >&2
-    diff -u "${CANON_SNAPSHOT}" "${CANON_FRESH}" | head -n 80 >&2 || true
+    diff -u "${CANON_SNAPSHOT}" "${CANON_FRESH}" | sed -n '1,80p' >&2 || true
     # Restore the checked-in copies so subsequent CI steps see a clean tree.
     restore_committed
     exit 1

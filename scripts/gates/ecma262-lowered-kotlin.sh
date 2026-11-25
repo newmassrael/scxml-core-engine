@@ -79,7 +79,7 @@ sce_gate_tested --log "$LOG/gradle.log" --report "$MODULE/build/test-results/tes
     -- ./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun || status=$?
 
 if (( status != 0 )); then
-    grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/gradle.log" | head -n 20 >&2
+    grep -m 20 -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/gradle.log" >&2 || true
     sce_gate_fail "the lowered Kotlin artifact did not answer ECMA-262 through the build-time lowering"
 fi
 
@@ -164,7 +164,8 @@ sce_gate_step "both manifests report the language their artifact was asked for"
 # A number that only exists on a red run is a number nobody can cite from a
 # green one. `docs/SCE_LUA_TRANSLATION_SEAM.md` re-derives from this line
 # rather than from a paragraph someone typed.
-census="$(sed -n 's/.*\(LoweredEcma262Kotlin census: .*\)/\1/p' "$LOG/gradle.log" | head -1)"
+census="$(sed -n 's/.*\(LoweredEcma262Kotlin census: .*\)/\1/p' "$LOG/gradle.log")"
+census="${census%%$'\n'*}"
 [ -n "$census" ] \
     || sce_gate_fail "the suite printed no census line, so this run cannot say how large a population it asked"
 sce_gate_step "$census"

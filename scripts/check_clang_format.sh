@@ -46,7 +46,7 @@ for f in "${candidates[@]}"; do
         *) continue ;;
     esac
     [ -f "$f" ] || continue
-    if head -10 "$f" | grep -qE "$GENERATED_MARKER"; then
+    if grep -qE "$GENERATED_MARKER" <<<"$(head -n 10 "$f")"; then
         continue
     fi
     targets+=("$f")

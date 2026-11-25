@@ -32,7 +32,8 @@ sce_rustfmt_edition() {
     local root="${1:-$(git rev-parse --show-toplevel)}"
     local edition
     edition="$(sed -n 's/^edition[[:space:]]*=[[:space:]]*"\([0-9]*\)".*/\1/p' \
-        "$root/Cargo.toml" | head -1)"
+        "$root/Cargo.toml")"
+    edition="${edition%%$'\n'*}"
     if [[ -z "$edition" ]]; then
         echo "sce_rustfmt: no edition in $root/Cargo.toml" >&2
         return 1

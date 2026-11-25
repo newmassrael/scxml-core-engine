@@ -99,7 +99,8 @@ sce_rust_declared_toolchains() {
     local root="$1" name version file pattern install
     while IFS=$'\x1f' read -r name version file pattern install; do
         if [[ -z "$version" && -n "$file" && -n "$pattern" ]]; then
-            version="$(sed -nE "s|${pattern}.*|\\1|p" "$root/$file" | head -n 1)"
+            version="$(sed -nE "s|${pattern}.*|\\1|p" "$root/$file")"
+            version="${version%%$'\n'*}"
         fi
         [[ -n "$version" ]] || continue
         printf '%s\x1f%s\x1f%s\n' "$name" "$version" "$install"

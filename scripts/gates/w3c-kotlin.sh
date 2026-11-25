@@ -314,13 +314,14 @@ done
 # direction. A site that stops being greppable is a refusal, not a skip: a
 # silent zero here would be a lane reporting that it checked nothing.
 kotlin_default_engine_of() {
-    local label="$1" file="$2" pattern="$3" hits
+    local label="$1" file="$2" pattern="$3" hits found
     [ -f "$file" ] \
         || sce_gate_fail "$file is missing, so the $label default engine cannot be read. This gate pairs every shipped default against the language the committed machines carry; a site it cannot read is unchecked, not absent."
     hits="$(grep -cE "$pattern" "$file" || true)"
     [ "$hits" = "1" ] \
         || sce_gate_fail "expected exactly one line matching \`$pattern\` in $file, found $hits. The $label default engine is what a host gets when it configures nothing, and a parse that matches none — or two — is a check that reports on the wrong line."
-    grep -oE "$pattern" "$file" | head -1
+    found="$(grep -oE "$pattern" "$file")"
+    printf '%s\n' "${found%%$'\n'*}"
 }
 
 # `W3CTestBase.DEFAULT_ENGINE` — what a `./gradlew test` with no
@@ -451,7 +452,7 @@ overlay_covers_suite() {
         <(printf '%s\n' "$overlay_files" | grep -v '^$'))"
     if [ -n "$uncovered" ]; then
         printf '%s\n' "committed sources the $language overlay excludes without replacing in $suite_dir:" >&2
-        printf '%s\n' "$uncovered" | head -n 10 >&2
+        sed -n '1,10p' <<<"$uncovered" >&2
         sce_gate_fail "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')in $suite_dir but does not carry $(printf '%s\n' "$uncovered" | wc -l) committed file(s) inside them. The build excludes those directories wholesale, so each missing file is an unresolved reference at compile time. Generate those stems for $language too"
     fi
 
@@ -471,11 +472,11 @@ overlay_covers_suite() {
             com/sce/*) name="${carrier#com/sce/}"; name="${name%%/*}" ;;
             *) name="" ;;
         esac
-        printf '%s\n' "$replaced" | grep -qx "$name" || stray="$stray$carrier"$'\n'
+        grep -qx "$name" <<<"$replaced" || stray="$stray$carrier"$'\n'
     done <<<"$carriers"
     if [ -n "$stray" ]; then
         printf '%s\n' "committed sources in $suite_dir that carry a language and are outside every replaced population:" >&2
-        printf '%s\n' "$stray" | head -n 10 >&2
+        sed -n '1,10p' <<<"$stray" >&2
         sce_gate_fail "$(printf '%s\n' "$stray" | grep -c .) committed source(s) in $suite_dir carry a script-engine language and sit outside the directories this $language overlay replaces, so they compile as $COMMITTED_LANGUAGE and are handed to the $language row's engine. That mis-supply does not fail this suite, it HANGS it — a machine whose events the engine cannot read never settles its eventless macrostep"
     fi
 
@@ -756,7 +757,7 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     report_row_heap "$engine over $language machines" "$gradle_gc_from" "$kotlin_gc_from"
 
     if (( status != 0 )); then
-        grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine-$language.log" | head -n 20 >&2
+        grep -m 20 -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine-$language.log" >&2 || true
         sce_gate_fail "Kotlin conformance suite failed on $engine over $language machines"
     fi
 
@@ -1053,7 +1054,7 @@ sce_gate_step "KotlinLowering census: frontend=$frontend_hits refused=$refused_h
 # produces — stale, or generated nondeterministically — and the next gate
 # would be the one to discover it.
 if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
-    diff <(printf '%s\n' "$TREE_BEFORE") <(kotlin_tree_hashes) | head -n 10 >&2
+    diff <(printf '%s\n' "$TREE_BEFORE") <(kotlin_tree_hashes) | sed -n '1,10p' >&2 || true
     sce_gate_fail "the suite rewrote the Kotlin tree it was handed — the committed tree is not what the generator produces (regenerate it with scripts/regen_all_committed_trees.sh)"
 fi
 
