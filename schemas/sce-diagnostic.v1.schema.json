@@ -290,6 +290,7 @@
         "codegen/no-std-http-not-supported",
         "codegen/no-std-fs-load-not-supported",
         "codegen/no-std-invoke-not-supported",
+        "codegen/no-std-scheduler-unbounded",
         "algorithm/const-not-foldable",
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",

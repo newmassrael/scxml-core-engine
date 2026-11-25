@@ -1559,6 +1559,7 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
             | GenerateError::CodegenStandardHostTypeNotServed { at, .. }
             | GenerateError::CodegenStandardHostBoundRelation { at, .. }
             | GenerateError::CodegenStepFunctionOutsideClass { at, .. }
+            | GenerateError::CodegenNoStdSchedulerUnbounded { at, .. }
             | GenerateError::Migration { at, .. } => at.clone(),
             _ => None,
         },

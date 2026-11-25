@@ -3987,6 +3987,40 @@ fn render_rust(
     let internal_queue = crate::internal_queue_bound::InternalQueueBound::of(&model_lowered);
     let internal_queue_depth = internal_queue.depth();
     let internal_queue_basis = internal_queue.basis_lines();
+    // How many delayed events the delayed-send queue holds at once
+    // (docs/adr/0132), proven from the lowered model for the reason the
+    // internal queue's depth is: which statement can fail, and so end a block
+    // before a `<cancel>`, is known only once the static lowering has lowered
+    // it. A proven capacity is used even where the document declares one; the
+    // declared one sizes the queue where none is proven. A bare-metal machine
+    // that keeps a queue and has neither is refused: its ring of fixed
+    // capacity is a claim about every run, and no number is guessed for it.
+    let scheduler = crate::scheduler_bound::SchedulerBound::of(&model_lowered);
+    let scheduler_bound = scheduler.bound();
+    let scheduler_capacity = scheduler_bound.or_else(|| {
+        model
+            .scheduler_capacity
+            .and_then(|declared| usize::try_from(declared).ok())
+    });
+    let scheduler_queue = if model.needs_event_scheduler != Some(true) || scheduler_bound == Some(0)
+    {
+        // Nothing this document does can leave a delayed event waiting.
+        "none"
+    } else if scheduler_capacity.is_some() {
+        "sized"
+    } else {
+        "growable"
+    };
+    if let (true, "growable", crate::scheduler_bound::SchedulerBound::NotProven { reason, at }) =
+        (options.no_std, scheduler_queue, &scheduler)
+    {
+        return Err(GenerateError::CodegenNoStdSchedulerUnbounded {
+            document: model.name.clone(),
+            reason: reason.clone(),
+            at: at.clone().or_else(|| model.source_location.clone()),
+        });
+    }
+    let scheduler_basis = scheduler.basis_lines();
     // docs/adr/0129: the form the build asked for. A step function is the
     // document's arms; its tables then carry no walk and no entry rows, since
     // no shared procedure walks its microsteps.
@@ -4014,6 +4048,13 @@ fn render_rust(
         max_send_id => bounds.send_id,
         internal_queue_depth => internal_queue_depth,
         internal_queue_basis => &internal_queue_basis,
+        // docs/adr/0132: `none` (the zero-size queue), `sized` (a ring of
+        // `scheduler_capacity`), or `growable` (the hosted profile's queue,
+        // where no capacity is proven or declared).
+        scheduler_queue => scheduler_queue,
+        scheduler_capacity => scheduler_capacity.unwrap_or(0),
+        scheduler_proven => scheduler_bound.is_some(),
+        scheduler_basis => &scheduler_basis,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

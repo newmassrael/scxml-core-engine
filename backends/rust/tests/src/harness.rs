@@ -95,6 +95,20 @@ where
         .initialize()
         .expect("the machine starts: a W3C test is run over a script session that is established");
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
+    // docs/adr/0132: the most delayed events the run left waiting at once, held
+    // to the capacity the generator proved for the document, over every W3C
+    // machine the suite runs. Each turn holds it too (`StatePolicy::SCHEDULER_BOUND`);
+    // this states it once more for the whole run, as a result of the suite.
+    #[cfg(debug_assertions)]
+    if let Some(bound) = <T::Policy as StatePolicy>::SCHEDULER_BOUND {
+        let held = engine.scheduled_high_water();
+        assert!(
+            held <= bound,
+            "W3C test {}: the delayed-send queue held {held} events at once, more than the \
+             capacity the generator proved for its document ({bound})",
+            T::TEST_NUM
+        );
+    }
     if !completed {
         return TestResult::Timeout;
     }

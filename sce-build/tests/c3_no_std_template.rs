@@ -16,7 +16,7 @@
 
 use std::path::Path;
 
-use sce_build::forge::error::{ForgeError, ValidationError};
+use sce_build::forge::error::{ForgeError, GenerateError, ValidationError};
 use sce_build::generator::generate;
 use sce_build::parser::SCXMLParser;
 
@@ -1232,8 +1232,8 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
   <state id="s1"/>
 </scxml>
 "#;
-    // A `<cancel>` with no delayed send of its own document still needs the
-    // queue: it is the one thing that reads an entry's key.
+    // A `<cancel>` with no delayed send of its own document finds nothing, so
+    // the machine keeps no queue for it to look in (docs/adr/0132).
     const CANCEL_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
   <state id="s0">
@@ -1270,8 +1270,11 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
 </scxml>
 "#;
     const NO_SCHEDULER: &str = "type Scheduler = sce_rust_runtime::NoDelayedSends;";
+    // The delayed send of `DELAYED_SEND_FSM` is in a state no transition enters
+    // again, so one waits at most, and the queue is of that capacity
+    // (docs/adr/0132).
     const PULL_SCHEDULER: &str =
-        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;";
+        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;";
     const NO_SLOT: &str = "type DoneData = sce_rust_runtime::NoDoneData;";
     const STRING_SLOT: &str = "type DoneData = ::sce_rust_runtime::SceString;";
     const STASH: &str = "engine.stash_donedata_at_final(";
@@ -1305,6 +1308,10 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
             "no_std={no_std}: a delayed send waits in a PullScheduler"
         );
         assert!(
+            delayed.contains("pub const SCHEDULER_CAPACITY: usize = 1;"),
+            "no_std={no_std}: one delayed send in a state entered once waits at most once"
+        );
+        assert!(
             delayed.contains("type ScheduledSendId = sce_rust_runtime::ElidedSendId;"),
             "no_std={no_std}: a cancel-free queue keys its entries by the zero-size id"
         );
@@ -1319,8 +1326,13 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
 
         let cancel = render(CANCEL_FSM, "cancel_slots", no_std);
         assert!(
-            cancel.contains(PULL_SCHEDULER),
-            "no_std={no_std}: a <cancel> is answered by a PullScheduler"
+            cancel.contains(NO_SCHEDULER),
+            "no_std={no_std}: a <cancel> in a document that arms nothing finds nothing, and \
+             the machine keeps no queue"
+        );
+        assert!(
+            cancel.contains("// Proven capacity 0:"),
+            "no_std={no_std}: the policy says why it keeps no queue"
         );
         assert!(
             cancel.contains("type ScheduledSendId = ::sce_rust_runtime::SendIdString<"),
@@ -1678,6 +1690,35 @@ fn cargo_config_declares_thumbv7em_target() {
     );
 }
 
+/// The session lifecycle a bare-metal consumer writes: a deadline in each
+/// state, armed on entry and cancelled by its id on exit, and an overall limit
+/// on the compound state around them. One child is active at a time, so the
+/// delayed-send queue holds two at most, and the policy names that capacity,
+/// states why, and holds every test run to it (docs/adr/0132).
+const DEADLINES_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="session"{declared}>
+  <state id="session" initial="connecting">
+    <onentry><send id="limit" event="session.timeout" delay="30s"/></onentry>
+    <onexit><cancel sendid="limit"/></onexit>
+    <transition event="session.timeout" target="ended"/>
+    <state id="connecting">
+      <onentry><send id="t_connect" event="connect.timeout" delay="2s"/></onentry>
+      <onexit><cancel sendid="t_connect"/></onexit>
+      <transition event="connected" target="established"/>
+      <transition event="connect.timeout" target="connecting"/>
+    </state>
+    <state id="established">
+      <onentry><send id="t_idle" event="idle.timeout" delay="10s"/></onentry>
+      <onexit><cancel sendid="t_idle"/></onexit>
+      <transition event="idle.timeout" target="connecting"/>
+    </state>
+  </state>
+  <final id="ended"/>
+</scxml>
+"#;
+
 /// A delayed send never cancelled in a state a transition enters again: no
 /// capacity is proven.
 const PILING_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1731,4 +1772,104 @@ fn a_zero_or_malformed_sce_scheduler_capacity_is_refused_by_its_rule() {
             other => panic!("expected AttributeRuleViolated, got: {other:?}"),
         }
     }
+}
+
+#[test]
+fn rust_template_sizes_the_delayed_send_queue_by_what_the_document_can_leave_waiting() {
+    const SIZED: &str =
+        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;";
+    const HELD: &str = "const SCHEDULER_BOUND: Option<usize> = Some(SCHEDULER_CAPACITY);";
+    for no_std in [false, true] {
+        let code = generate(
+            &analysed(DEADLINES_FSM, "", "deadlines"),
+            &template_dir(),
+            no_std,
+        )
+        .expect("a document whose deadlines are proven generates on both profiles");
+        assert!(
+            code.contains("pub const SCHEDULER_CAPACITY: usize = 2;"),
+            "no_std={no_std}: the limit and one state's deadline wait at once:\n{code}"
+        );
+        assert!(
+            code.contains(SIZED),
+            "no_std={no_std}: the queue is of that capacity"
+        );
+        assert!(
+            code.contains(HELD),
+            "no_std={no_std}: a test build holds every run to the proven capacity"
+        );
+        assert!(
+            code.contains("// Proven capacity 2"),
+            "no_std={no_std}: the policy states why"
+        );
+
+        // A proven capacity is used even where the document declares one.
+        let declared = generate(
+            &analysed(
+                DEADLINES_FSM,
+                r#" sce:scheduler-capacity="9""#,
+                "deadlines_declared",
+            ),
+            &template_dir(),
+            no_std,
+        )
+        .expect("render");
+        assert!(
+            declared.contains("pub const SCHEDULER_CAPACITY: usize = 2;"),
+            "no_std={no_std}: the proven capacity wins over the declared one"
+        );
+    }
+}
+
+#[test]
+fn a_document_whose_delayed_sends_are_not_bounded_takes_its_declared_capacity() {
+    for no_std in [false, true] {
+        let code = generate(
+            &analysed(
+                PILING_FSM,
+                r#" sce:scheduler-capacity="4""#,
+                "piling_declared",
+            ),
+            &template_dir(),
+            no_std,
+        )
+        .expect("a declared capacity sizes a queue no capacity is proven for");
+        assert!(
+            code.contains("pub const SCHEDULER_CAPACITY: usize = 4;"),
+            "no_std={no_std}: the declared capacity sizes the queue:\n{code}"
+        );
+        assert!(
+            !code.contains("const SCHEDULER_BOUND"),
+            "no_std={no_std}: a declared capacity is not a proven one"
+        );
+        assert!(
+            code.contains("// No capacity is proven:"),
+            "no_std={no_std}: the policy says why none is proven"
+        );
+    }
+}
+
+#[test]
+fn a_bare_metal_document_with_no_proven_or_declared_capacity_is_refused() {
+    let model = analysed(PILING_FSM, "", "piling");
+    match generate(&model, &template_dir(), true) {
+        Err(GenerateError::CodegenNoStdSchedulerUnbounded {
+            document,
+            reason,
+            at,
+        }) => {
+            assert_eq!(document, model.name);
+            assert!(reason.contains("can run again"), "{reason}");
+            assert!(at.is_some(), "the refusal is located on the <send>");
+        }
+        other => panic!("expected codegen/no-std-scheduler-unbounded, got {other:?}"),
+    }
+    // The hosted profile's queue grows, so the same document generates there,
+    // and says why its queue has no stated capacity.
+    let hosted = generate(&model, &template_dir(), false).expect("a hosted machine generates");
+    assert!(
+        hosted.contains("type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;"),
+        "the hosted queue names no capacity:\n{hosted}"
+    );
+    assert!(!hosted.contains("SCHEDULER_CAPACITY"));
 }

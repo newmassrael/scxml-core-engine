@@ -11258,9 +11258,51 @@ names each transition, block and action by its position in the document, so a sy
 of `generate --features`'s map, and a marker of the output for every build, is the
 document map's symbol of the same node; that map carries no condition.
 
+### §2.23 A delayed-send queue's capacity — `sce:scheduler-capacity` (ADR 0132)
+
+A machine keeps each `<send>` that waits (a `delay` other than none, or a
+`delayexpr`) in its delayed-send queue until it comes due, a `<cancel>` names
+its id, or the run ends. A bare-metal Rust machine (`generate -l rust --no-std`)
+keeps that queue in a ring of fixed capacity, and a send armed on a full ring
+stops the program rather than lose the transition it would have taken. The
+capacity is therefore a claim about every run, and the generator makes it from
+the document: the most delayed events the document can leave waiting at once
+(docs/adr/0132, `sce-build/src/scheduler_bound.rs`).
+
+A delayed send counts once each time its block runs, times the bound of each
+`<foreach>` around it, and its events stop piling up when one of these holds:
+
+- it is written in an `<onentry>` of a state (or the state's initial transition)
+  and an `<onexit>` of the same state cancels its id;
+- it is written in an `<onexit>` of a state and an `<onentry>` of the same state
+  cancels its id;
+- it is written in a transition's content and an `<onexit>` of a state the
+  transition targets cancels its id;
+- its state is entered once in a run: no transition can enter it again.
+
+A `<cancel>` counts where it surely runs: it names the send's `id` as written,
+it is present in every build the send is (ADR 0057), and nothing before it in
+its block can end the block with an error. A send armed under the id of one
+already waiting is a second event, not a replacement. The events of sends a
+state's exit cancels wait only while that state is active, so they count by the
+configuration in which the most wait, a compound state's children one at a time
+and a `<parallel>`'s together: a session of several states, each with its own
+deadline, inside a state with an overall limit leaves two waiting at most.
+
+A document whose delayed sends this does not bound (a send no rule above
+covers, one in a `<foreach>` over a list of no stated bound, in a `<history>`'s
+default transition or in a `<finalize>`) declares the capacity on its
+`<scxml>`: `sce:scheduler-capacity="N"`, a whole number of at least one; any
+other value is `validation/attribute-rule-violated`. A bare-metal build of such
+a document that declares none is `codegen/no-std-scheduler-unbounded`, located
+on the send. A proven capacity is used even where one is declared. The hosted
+profile's queue grows, and its policy states the same capacity
+(`StatePolicy::SCHEDULER_BOUND`), which every run of a build with debug
+assertions is held to.
+
 ---
 
-## Appendix — `DiagnosticCode` index (568 codes)
+## Appendix — `DiagnosticCode` index (569 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11612,6 +11654,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codegen/no-std-http-not-supported` | Generate |
 | `codegen/no-std-fs-load-not-supported` | Generate |
 | `codegen/no-std-invoke-not-supported` | Generate |
+| `codegen/no-std-scheduler-unbounded` | Generate |
 | `generate/source-hash-unavailable` | Generate |
 | `generate/inline-child-unreturnable` | Generate |
 | `expression/empty` | Expression |

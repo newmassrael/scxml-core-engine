@@ -823,6 +823,7 @@ references against a real document and drift silently.
 | `codegen/no-std-fs-load-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/no-std-http-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/no-std-invoke-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `codegen/no-std-scheduler-unbounded` | `generate` | no | ADR 0132 |
 | `codegen/no-std-script-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/standard-host-bound-relation` | `generate` | no | ADR 0109 D17 |
 | `codegen/standard-host-type-not-served` | `generate` | no |  |

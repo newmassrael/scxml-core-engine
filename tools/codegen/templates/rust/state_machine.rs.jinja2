@@ -109,6 +109,14 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // (the policy-carried SSOT for the per-machine queue size).
 pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 {% endif %}
+{% if scheduler_queue == "sized" %}
+
+// docs/adr/0132: the most delayed events this machine's delayed-send queue
+// holds at once, proven from the document or, where none is proven, declared
+// by it (`<scxml sce:scheduler-capacity>`), as the policy below says. Consumed
+// by `type Scheduler` as the no_std ring's capacity.
+pub const SCHEDULER_CAPACITY: usize = {{ scheduler_capacity }};
+{% endif %}
 {% if answer_schemas %}
 
 /// The answer schemas this machine's model generations name with `sce:answer`
@@ -1985,9 +1993,35 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% else %}
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 {% endif %}
-{% if model.needs_event_scheduler %}
-    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above.
+{% if scheduler_queue == "sized" %}
+    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above, of
+    // the capacity the document can leave waiting at once (docs/adr/0132).
+{% for line in scheduler_basis %}
+    // {{ line }}
+{% endfor %}
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId, { SCHEDULER_CAPACITY }>;
+{% if scheduler_proven %}
+    // The same capacity, held to every run a test build makes (docs/adr/0132).
+    const SCHEDULER_BOUND: Option<usize> = Some(SCHEDULER_CAPACITY);
+{% endif %}
+{% elif scheduler_queue == "growable" %}
+    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above. No
+    // capacity is proven and none is declared, so it is the hosted profile's
+    // queue, which grows; a bare-metal build of this document is refused
+    // (docs/adr/0132).
+{% for line in scheduler_basis %}
+    // {{ line }}
+{% endfor %}
     type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+{% elif model.needs_event_scheduler %}
+    // W3C SCXML 6.2: this document cancels a send, and nothing it does can leave
+    // a delayed event waiting (docs/adr/0132), so a cancel finds nothing: the
+    // zero-size `NoDelayedSends`, which answers every query that nothing is
+    // pending. The same emission compiles on both runtime profiles.
+{% for line in scheduler_basis %}
+    // {{ line }}
+{% endfor %}
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
 {% else %}
     // W3C SCXML 6.2: this document has no `<send delay>`, no `<send delayexpr>`,
     // no `<cancel>` and no host-run deadline, so nothing is ever armed on the

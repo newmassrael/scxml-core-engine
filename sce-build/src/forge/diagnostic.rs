@@ -1822,6 +1822,12 @@ pub enum DiagnosticCode {
     // Arc<Mutex<Vec<...>>> + HashMap, all alloc-coupled. Same RFC §synth-5-J-2 rule.
     #[serde(rename = "codegen/no-std-invoke-not-supported")]
     CodegenNoStdInvokeNotSupported,
+    /// A Rust machine generated `--no-std` whose delayed-send queue has no
+    /// capacity: the generator proves none from the document and the document
+    /// declares none (docs/adr/0132) — see
+    /// [`GenerateError::CodegenNoStdSchedulerUnbounded`].
+    #[serde(rename = "codegen/no-std-scheduler-unbounded")]
+    CodegenNoStdSchedulerUnbounded,
 
     // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F, item A4).
     //    The host interpreter (`forge::const_fold`) emits these
@@ -4365,6 +4371,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenNoStdHttpNotSupported,
         CodegenNoStdFsLoadNotSupported,
         CodegenNoStdInvokeNotSupported,
+        // ADR 0132: a bare-metal delayed-send queue of no proven or declared capacity
+        CodegenNoStdSchedulerUnbounded,
         // Algorithm §synth-5-F const-fold (SCE Protocol-Synthesis RFC §synth-5-F, item A4)
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
@@ -4984,6 +4992,9 @@ impl DiagnosticCode {
 
             // ── A document printed as its own step function (docs/adr/0129) ──
             CodegenStepFunctionOutsideClass => Some("ADR 0129"),
+
+            // ── A bare-metal delayed-send queue's capacity (docs/adr/0132) ──
+            CodegenNoStdSchedulerUnbounded => Some("ADR 0132"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -6159,6 +6170,7 @@ impl DiagnosticCode {
             | CodegenNoStdHttpNotSupported
             | CodegenNoStdFsLoadNotSupported
             | CodegenNoStdInvokeNotSupported
+            | CodegenNoStdSchedulerUnbounded
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -6716,6 +6728,7 @@ impl DiagnosticCode {
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
             CodegenNoStdInvokeNotSupported => "codegen/no-std-invoke-not-supported",
+            CodegenNoStdSchedulerUnbounded => "codegen/no-std-scheduler-unbounded",
             AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
@@ -13070,6 +13083,21 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![document.clone(), locations.clone()],
         },
+        // docs/adr/0132: the reason names the construct the proof cannot
+        // bound, so a document that moves to another such construct gets a
+        // new id; where it is written is the record's position, not a key.
+        GenerateError::CodegenNoStdSchedulerUnbounded {
+            document,
+            reason,
+            at: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenNoStdSchedulerUnbounded,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), reason.clone()],
+        },
         GenerateError::ConstNotFoldable {
             algorithm,
             const_name,
@@ -17795,6 +17823,20 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d46720a4cb2f313e","code":"codegen/no-std-invoke-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects `<invoke>`: document 'demo' invokes child sessions at <invoke type='scxml' src='child.scxml'> (SCE Protocol-Synthesis RFC §5.J.2; invoke processing is gated to !no_std and unreachable from emitted code)"}"#,
             ),
+            (
+                // A delayed send a bare-metal build cannot bound, in a document
+                // that declares no capacity (docs/adr/0132).
+                "forge/codegen-no-std-scheduler-unbounded",
+                GenerateError::CodegenNoStdSchedulerUnbounded {
+                    document: "demo".into(),
+                    reason: "the <send> in the <onentry> of `a` can run again before its earlier \
+                             event is delivered or cancelled"
+                        .into(),
+                    at: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:177c620b733d98bf","code":"codegen/no-std-scheduler-unbounded","stage":"generate","spec":"ADR 0132","message":"Rust no_std variant of 'demo' has no capacity for its delayed-send queue: the <send> in the <onentry> of `a` can run again before its earlier event is delivered or cancelled. Declare the most delayed events it holds at once with <scxml sce:scheduler-capacity=\"N\">, or cancel each delayed send by its id where its state exits (ADR 0132)"}"#,
+            ),
             // ── Algorithm kind sema (SCE Protocol-Synthesis RFC §synth-5-A) ───────
             (
                 "forge/algorithm-local-shadows-param",
@@ -22084,6 +22126,7 @@ mod tests {
             | CodegenNoStdHttpNotSupported
             | CodegenNoStdFsLoadNotSupported
             | CodegenNoStdInvokeNotSupported
+            | CodegenNoStdSchedulerUnbounded
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -22943,6 +22986,7 @@ mod tests {
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
                 | CodegenNoStdInvokeNotSupported
+                | CodegenNoStdSchedulerUnbounded
                 | AlgorithmConstNotFoldable
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
@@ -23274,9 +23318,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            568,
+            569,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 568 distinct variants to match the DiagnosticCode \
+             expected 569 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24074,6 +24118,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // and resolved through `locate_codegen_error`; no scenario asks for
             // a step function yet (docs/adr/0129).
             | CodegenStepFunctionOutsideClass
+            // Raised by the Rust generator under `--no-std`, after the static
+            // lowering, and located on the delayed `<send>` the proof cannot
+            // bound through `locate_codegen_error`; the scenarios generate
+            // without `--no-std`, so none raises it (docs/adr/0132).
+            | CodegenNoStdSchedulerUnbounded
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch

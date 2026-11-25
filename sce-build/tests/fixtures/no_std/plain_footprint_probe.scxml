@@ -16,8 +16,16 @@
   subtree, an internal transition, a targetless one, an eventless one, a
   raised event and a delayed send. No script, invoke or external data, so the
   document is no_std-eligible.
+
+  sce:scheduler-capacity: `busy` arms its delayed send each time it is entered
+  and nothing cancels it, and `reset` can enter it again while the last one
+  still waits, so no capacity of the delayed-send queue is proven from the
+  document (docs/adr/0132); it declares the one a bare-metal build sizes the
+  queue by.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:scheduler-capacity="32"
        name="plain_footprint_probe"
        version="1.0"
        initial="link"

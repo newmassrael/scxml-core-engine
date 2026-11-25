@@ -22,9 +22,16 @@
   no_std target (those constructs are codegen-rejected for the no_std backend).
   All send/data is static (no expr/namelist/targetexpr) since dynamic forms
   require the script engine, which no_std rejects.
+
+  sce:scheduler-capacity: a1 arms its delayed send each time it is entered and
+  a2, not a1's exit, cancels it, so a1 entered again by way of a3 arms another
+  while the first may still wait: no capacity of the delayed-send queue is
+  proven from the document (docs/adr/0132), and it declares the one a
+  bare-metal build sizes the queue by.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="top" name="parallel_history_probe">
+       version="1.0" initial="top" name="parallel_history_probe"
+       sce:scheduler-capacity="32">
   <parallel id="top">
     <state id="ra" initial="a1">
       <history id="ha_deep" type="deep"><transition target="a1"/></history>

@@ -7407,6 +7407,28 @@ pub enum GenerateError {
     )]
     CodegenNoStdInvokeNotSupported { document: String, locations: String },
 
+    /// docs/adr/0132: the SCXML document is generated with `sce-codegen
+    /// generate -l rust --no-std`, arms delayed events whose capacity the
+    /// generator proves no bound for, and declares none with
+    /// `<scxml sce:scheduler-capacity>`. A bare-metal machine keeps its delayed
+    /// sends in a ring of fixed capacity, and no number is guessed for one.
+    /// Producer: the Rust generator, from
+    /// [`crate::scheduler_bound::SchedulerBound::of`] over the lowered model.
+    /// `document` is the machine's name; `reason` the construct that keeps
+    /// the capacity from being proven, as that analysis states it; `at` where
+    /// it is written, when the model knows.
+    #[error(
+        "Rust no_std variant of '{document}' has no capacity for its delayed-send queue: \
+         {reason}. Declare the most delayed events it holds at once with \
+         <scxml sce:scheduler-capacity=\"N\">, or cancel each delayed send by its id where \
+         its state exits (ADR 0132)"
+    )]
+    CodegenNoStdSchedulerUnbounded {
+        document: String,
+        reason: String,
+        at: Option<SourceLocation>,
+    },
+
     /// RFC §synth-5-F: a `<sce:fold>` body or a `<sce:const init=...>` scalar
     /// expression cannot be reduced to a build-time value. The host
     /// interpreter rejects every construct outside the §synth-5-F substrate
