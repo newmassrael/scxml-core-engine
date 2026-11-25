@@ -6,3 +6,9 @@ commit = "7364cb428416e6e9d4241f3670bf2631b7d909b1"
 base = "4c71fb062c7aa4c936f6b4f0a7409f9d6d2784eb"
 machine = "mf977c53d872e"
 at = 1795570659
+
+[return]
+reason = "conflict"
+detail = "sce-build/src/forge/expr.rs"
+report = "mb2af4e1c456c:0000000428-ad74059c66f0/attempt-2.log"
+at = 1795571232
