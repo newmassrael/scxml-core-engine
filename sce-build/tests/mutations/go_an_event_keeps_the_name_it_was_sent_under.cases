@@ -34,10 +34,14 @@ edit("backends/go/runtime/engine.go",
      "\tif true {\n\t\treturn \"\"\n\t}\n\treturn name\n")
 PY
 
+# The door the parent's `<send target="#_listener">` reaches the child through:
+# `DeliverToChild` raises it by `RaiseExternalByNameWithMeta` since 1843647a4a9,
+# which moved it off `RaiseExternalByName`, the host's door, so a mutant of
+# that one reaches nothing this fixture runs.
 mutation_case "the by-name door delivers the event without its arrival name" <<'PY'
 edit("backends/go/runtime/engine.go",
-     "\tmeta.Metadata.Name = e.arrivalNameOf(event, eventName)\n",
-     "\tmeta.Metadata.Name = \"\"\n")
+     "\tmetadata.Name = e.arrivalNameOf(event, eventName)\n",
+     "\tmetadata.Name = \"\"\n")
 PY
 
 mutation_case "the generated binding reads the value's name before the arrival name" <<'PY'
