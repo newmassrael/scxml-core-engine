@@ -5307,7 +5307,7 @@ set_tests_properties(c11_integration_event_schema_lifted PROPERTIES
 #
 # The W3C SCXML C.2 corpus addresses the BasicHTTP location its machine
 # publishes and expects a server there to echo events back. The cpp side's
-# `w3c_test_cli` runs the same expectation via in-process orchestration
+# W3C programs run the same expectation via in-process orchestration
 # (`tests/w3c/standalone_http_server.js` spawned by the WASM polyfill;
 # native cpp uses the in-process httplib server). C11 fixtures run as
 # bare ctest executables with no orchestrator, so without this ctest

@@ -1229,9 +1229,10 @@ EventDispatcherBase (shared logic: timers, task queue)
 
 ```bash
 cd build
-./tests/w3c_test_cli           # All tests
-./tests/w3c_test_cli 336       # Single test
-./tests/w3c_test_cli 144 147   # Multiple tests
+ctest -L w3c_cpp                    # All tests, one program per test number
+ctest -R '^w3c_cpp_336$'            # Single test
+./tests/w3c_cpp_test_336 336        # The same test, run directly
+ctest -R '^w3c_cpp_(144|147)$'      # Multiple tests
 ```
 
 **Test Strategy**:

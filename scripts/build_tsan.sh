@@ -46,6 +46,6 @@ RUN_TSAN="env TSAN_OPTIONS=${TSAN_OPTIONS} setarch $(uname -m) -R"
 
 echo -e "${GREEN}=== TSAN build complete ===${NC}"
 echo "Build directory: $BUILD_DIR"
-echo "Run a single test:  (cd $BUILD_DIR/tests && $RUN_TSAN env SPDLOG_LEVEL=off ./w3c_test_cli 144)"
+echo "Run a single test:  (cd $BUILD_DIR/tests && $RUN_TSAN env SPDLOG_LEVEL=off ./w3c_cpp_test_144 144)"
 echo "Run the suite:      (cd $BUILD_DIR && $RUN_TSAN ctest --output-on-failure)"
 echo "Note: HTTP (BasicHTTP) W3C tests are skipped under TSAN by design."

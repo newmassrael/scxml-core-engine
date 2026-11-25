@@ -7,7 +7,7 @@
 // the four backends (C++, Rust, Go, Kotlin) and fed to a language-
 // native syntax checker. The goal is not behavioural correctness — the
 // W3C harnesses in sce-rust-tests, sce-kotlin-tests, sce-go-tests, and
-// `w3c_test_cli` already own that. This harness catches *structural*
+// the C++ W3C programs (`w3c_cpp_test_<number>`) already own that. This harness catches *structural*
 // template bugs (brace imbalance, missing delimiters, stray tokens)
 // whose cross-products are absent from the W3C corpus.
 //

@@ -119,7 +119,8 @@ endif()
 #   - GNU ld:  45.89 seconds
 #   - lld:     29.58 seconds (35.5% improvement)
 #
-# This is especially important for w3c_test_cli which links 240+ test runners
+# This is especially important for the W3C programs: one per test number, each
+# linking the engine (tests/w3c/W3CPrograms.cmake)
 
 # Check if lld is available. `-fuse-ld` is the GCC and Clang driver's option, so
 # the search is theirs: MSVC links with its own link.exe, which reads the option

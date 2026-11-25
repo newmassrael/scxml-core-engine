@@ -7,7 +7,7 @@ name: C++ Test Suite
 # were `w3c-c11`'s. 159 of 382 registered cases — every `mesh_*` case, all 19
 # zenoh ones, and twenty-four C++ unit suites — were executed by nothing. Not
 # by a gate and not by CI, because no workflow configured the main tree at all:
-# the C++ conformance job builds the single `w3c_test_cli` target.
+# the C++ conformance job built the single `w3c_test_cli` target.
 #
 # ⚠ This block used to say: "No `paths:` filter, for the reason `w3c-tests.yml`
 # has none: a filter is a statement about a runner paid by the minute, and the

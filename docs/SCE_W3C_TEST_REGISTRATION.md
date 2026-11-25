@@ -90,13 +90,25 @@ the same on every checkout.
    it from the registry through one reading of it,
    `sce_w3c_registry_fixtures` (`cmake/SCEW3CRegistry.cmake`), which asks
    `sce-codegen list-fixtures` for every id, in registry order, and the
-   `harness` of each. `tests/CMakeLists.txt` calls
-   `sce_generate_static_w3c_test()` and `backends/c/tests/CMakeLists.txt`
-   calls `sce_generate_static_w3c_c_test()` inside a `foreach` over that
-   list, with no filter. A fixture in the registry and absent from either
+   `harness` of each. `tests/w3c/W3CPrograms.cmake` (which
+   `tests/CMakeLists.txt` includes) calls `sce_generate_static_w3c_test()`
+   and `backends/c/tests/CMakeLists.txt` calls
+   `sce_generate_static_w3c_c_test()` inside a `foreach` over that list,
+   with no filter. A fixture in the registry and absent from either
    build is therefore not a state this tree can reach, which is why the
    parity that used to be checked is now a property of the loops
    (`sce-build/tests/w3c_registry_drives_cmake.rs` holds both routes to it).
+
+   Nor is there a program to add the fixture to. Each route builds one program
+   per fixture's run: the C11 route `sce_c_w3c_test_XXX` per fixture, the C++
+   route `w3c_cpp_test_<number>` per test number (every variant of a number
+   is one program: `w3c_cpp_test_403` holds 403a, 403b and 403c), each
+   compiled from the fixture's runner and machines alone, beside a runner core
+   every C++ program shares. Each is registered as a ctest, `w3c_c_aot_XXX`
+   (label `c11`) and `w3c_cpp_<number>` (label `w3c_cpp`), from the same
+   loop, so a fixture in the registry is built and run by both routes and a
+   shard of a lane (`scripts/lib/ctest_shards.py`) builds the programs of
+   the tests it runs and no other.
 
    Nor is there a flag to write for what a C11 fixture links. The C11 route
    used to carry its own 202 calls, each flagged `NEEDS_LUA`, `NEEDS_DOM` or
@@ -170,8 +182,8 @@ inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 
 ⚠ The header's brief names no spec section. The section a fixture targets is
 `specnum` in `resources/XXX/metadata.txt`, and the build refuses a header whose
-`@brief` states one (`sce-codegen check-aot-briefs`, a dependency of
-`w3c_test_cli`). Cite the sections the test touches in the comment's body
+`@brief` states one (`sce-codegen check-aot-briefs`, a dependency of every
+C++ W3C program). Cite the sections the test touches in the comment's body
 instead — those citations are expected there.
 
 ## Step 3b: Create the C11 runner
@@ -216,8 +228,25 @@ with `testXXX_tick` until it ends or a deadline passes, as the existing
 
 ## Step 4: Verify
 
-- `type="pure_static"` or `"static_hybrid"` in test output (NOT `"interpreter_fallback"`)
-- Both Interpreter and AOT tests pass
+Build and run the fixture's own program, on both engines:
+
+```bash
+cmake --build build --target w3c_cpp_test_XXX
+ctest --test-dir build -R '^w3c_cpp_XXX$' --output-on-failure
+# or run it directly: build/tests/w3c_cpp_test_XXX XXX
+```
+
+The run writes its JUnit report into a directory of its own,
+`build/tests/w3c_runs/XXX/w3c_test_results.xml`. Check there:
+
+- `type="pure_static"` or `"static_hybrid"` on the AOT case (NOT `"interpreter_fallback"`)
+- Both the Interpreter and the AOT case pass
+
+The program holds the AOT machines of its own test number only: run it on
+that number (its Interpreter runs any fixture, its AOT engine reports another
+number's fixture as not registered). `w3c-cpp` and `w3c-wasm` run every
+program of the label and hold the joined reports to every fixture of the
+registry on both engines (`tests/w3c/scripts/w3c_reports.py`).
 
 ## When code generation refuses a document
 
