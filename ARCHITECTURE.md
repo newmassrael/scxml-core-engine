@@ -1054,13 +1054,20 @@ it:
 |--------|--------|---------------------|
 | C++ (Interpreter and AOT) | `SendSchedulingHelper::parseDelayString` | `tests/common/DurationTest.cpp` |
 | Rust | `helpers::send::parse_delay_to_ms` | `backends/rust/runtime/src/helpers/send.rs` |
+| Rust, a count joined to its unit | `helpers::send::delay_of_count` | `backends/rust/runtime/src/helpers/send.rs` (equal to the reader's answer over `tests/durations/count_unit.json`) |
 | Go | `ParseDelayToMs` | `backends/go/runtime/duration_test.go` |
 | Python | `sce_runtime.parse_delay_ms` | `backends/python/tests/durations/test_css2_time.py` |
 | C11 | `sce_parse_delay_ms` | `backends/c/tests/unit/duration_test.c` |
 | Kotlin | `SendHelper.parseDelayMs` | `backends/kotlin/tests/.../runtime/DurationTest.kt` |
 | codegen (static `delay`) | `parser::parse_delay_to_ms` | `sce-build/src/parser.rs` |
+| codegen (a unit joined to a count) | `forge::delay_count::DelayUnit::after_count` | `sce-build/src/forge/delay_count.rs` (`tests/durations/count_unit.json`) |
 
-Do NOT write a new delay parser; call the engine's reader above.
+Do NOT write a new delay parser; call the engine's reader above. A Rust
+machine reads a `delayexpr` of the form `<integer> + '<unit>'` as the integer
+times the unit, with no text (docs/adr/0134): that is not a second parser but
+the one reader's answer for every text such a join can spell, held equal to it
+over every value of every integer type, and the unit table is the reader's own
+(`helpers::send::DelayUnit`).
 
 ### Document Stem (Single Source of Truth)
 

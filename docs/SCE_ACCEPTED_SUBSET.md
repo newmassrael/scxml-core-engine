@@ -4324,7 +4324,23 @@ of W3C SCXML 6.2.4, so `error.execution` is raised and the message is not sent
 under some default wait. It takes no `delay` beside it. A machine that has one
 must be driven with `tick()`, as one with a written delay is
 (`scenarios/static_send_delay.json`, whose `advance_ms` steps move a manual clock;
-the Interpreter waits the time out, and C11 replays it as the others do). C11
+the Interpreter waits the time out, and C11 replays it as the others do). The text
+of a `delayexpr` is bounded by what the data model declares, as every text a
+machine holds is: one whose text has no bound (a call whose callee declares none
+on what it returns) is refused where it is written, as
+`scxml/static-datamodel-rule`, on every backend, so a machine with no heap holds
+every delay (docs/adr/0134). A Rust machine computes the delay with no heap on
+either profile. `<integer> + '<unit>'`, the unit `ms` or `s` in either case
+with nothing before it and only whitespace after it
+(`tests/durations/count_unit.json`), is computed from the integer by checked
+arithmetic with no text at all (`helpers::send::delay_of_count`), and answers
+as the text it spells read by the one reader does, for every value of the
+integer's type: a negative value, milliseconds past the largest delay and an
+operation that fails are the same argument error. Any other `delayexpr` is
+written into a buffer on the stack sized as C11 sizes its join below
+(`helpers::send::DelayText`, `sce_delay_text!`), a conditional one of whose
+branches joins as one buffer of the larger branch, and read by the one reader;
+one that joins nothing is read where it is. C11
 holds a string in a bounded buffer, so it writes an expression that joins text
 into one the generator sizes from what the data model declares
 (`SCE_FORGE_CONCAT`, `sce/forge/wire.h`): a string variable by the capacity it
