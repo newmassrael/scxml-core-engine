@@ -10,6 +10,12 @@
     # (`embed-manifest-failfast`) runs in a SEPARATE job of the same
     # workflow, and this job restated the three scripts verbatim.
     "runner_workflow": True,
+    # Its script runs one of its three parts when SCE_EMBED_VENDOR_SHARD names
+    # `k/N` (the `EMBED_VENDOR_PARTS` lines of scripts/gates/embed-vendor.sh),
+    # as the lane's three jobs do: whole, the gate ran 1142 s on a hosted
+    # runner (job 138811665797). A plan makes one unit per part
+    # (`shard_count`).
+    "shard_env": "SCE_EMBED_VENDOR_SHARD",
     "extra": ["sce/include/**", "embed/MANIFEST.json",
               "backends/cpp/forge-runtime/include/**",
               "scripts/smoke_bazel_consumer.sh", "scripts/sce_repo.bzl",

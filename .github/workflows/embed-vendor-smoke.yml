@@ -86,10 +86,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The gate in three parts, one job each: the drift check, the lag check and
+  # the consumers, each a packaging of its own in a scratch directory. Whole,
+  # the gate ran 1142 s of a 1496 s job (job 138811665797, 2026-11-24), six,
+  # six and seven minutes. Each job runs the embed-vendor gate with
+  # `SCE_EMBED_VENDOR_SHARD`, which runs one line of the gate's
+  # EMBED_VENDOR_PARTS; `hook_ci_parity` holds the matrix to the number of
+  # lines. The parts are fixed, so there is no plan to hold the shards to after
+  # they run. Each job is its part and the generator build every job pays.
   embed-smoke:
-    name: Embed vendor smoke build
+    name: Embed vendor smoke build (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
     - name: Checkout Repository
@@ -175,6 +188,8 @@ jobs:
     # sibling gate; it does not — `embed-manifest-failfast` runs in the
     # separate job below, and this one was a plain restatement.
     - name: Verify embed manifest, payload and consumer smoke
+      env:
+        SCE_EMBED_VENDOR_SHARD: ${{ matrix.shard }}/3
       run: scripts/gate embed-vendor
 
   # The emitter's fail-fast behaviour, on a synthetic header rather than

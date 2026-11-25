@@ -2182,11 +2182,13 @@ const SWIFT_LANE: &str = ".github/workflows/swift-backend.yml";
 const SWIFT_GATE: &str = "scripts/gates/swift-backend.sh";
 const SWIFT_SCRIPT: &str = "scripts/test_swift_backend.sh";
 
-/// The parts of the gate, one line of `SWIFT_BACKEND_SHARDS=( ... )` each.
-fn swift_backend_parts() -> Vec<Vec<String>> {
-    uncommented(&read(SWIFT_GATE))
+/// The lines of a gate script's array of parts, `<name>=(` then one quoted
+/// line per part and `)`, each split into its words.
+fn gate_parts(gate: &str, name: &str) -> Vec<Vec<String>> {
+    let opening = format!("{name}=(");
+    uncommented(&read(gate))
         .lines()
-        .skip_while(|l| l.trim() != "SWIFT_BACKEND_SHARDS=(")
+        .skip_while(|l| l.trim() != opening)
         .skip(1)
         .take_while(|l| l.trim() != ")")
         .map(|l| {
@@ -2197,6 +2199,11 @@ fn swift_backend_parts() -> Vec<Vec<String>> {
                 .collect()
         })
         .collect()
+}
+
+/// The parts of the gate, one line of `SWIFT_BACKEND_SHARDS=( ... )` each.
+fn swift_backend_parts() -> Vec<Vec<String>> {
+    gate_parts(SWIFT_GATE, "SWIFT_BACKEND_SHARDS")
 }
 
 /// The packages `scripts/test_swift_backend.sh` runs when it is given none.
@@ -2245,5 +2252,63 @@ fn the_swift_backend_parts_are_its_default_list_each_package_once() {
         matrix,
         (1..=count).collect::<Vec<_>>(),
         "{SWIFT_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
+    );
+}
+
+// ── The embed-vendor lane runs its gate in parts ────────────────────────────
+//
+// `embed-vendor` runs one line of `EMBED_VENDOR_PARTS` when
+// `SCE_EMBED_VENDOR_SHARD` names `k/N`, and every line when it is unset. Each
+// line names a `part_<name>` function of the script, so a part is held to
+// exist, to be run once, and the lane to run as many jobs as there are parts.
+
+const EMBED_LANE: &str = ".github/workflows/embed-vendor-smoke.yml";
+const EMBED_GATE: &str = "scripts/gates/embed-vendor.sh";
+
+#[test]
+fn the_embed_vendor_parts_are_its_checks_each_once() {
+    let parts = gate_parts(EMBED_GATE, "EMBED_VENDOR_PARTS");
+    let names: Vec<&String> = parts.iter().flatten().collect();
+    assert!(
+        parts.len() >= 2 && parts.iter().all(|p| p.len() == 1),
+        "{EMBED_GATE} declares the parts {parts:?}; each line is one part, a job of the lane"
+    );
+    let once: BTreeSet<&String> = names.iter().copied().collect();
+    assert_eq!(
+        once.len(),
+        names.len(),
+        "a part is listed twice in {EMBED_GATE}, so two jobs run it: {parts:?}"
+    );
+    let gate = uncommented(&read(EMBED_GATE));
+    for name in &names {
+        let opening = format!("part_{name}() {{");
+        assert!(
+            gate.lines().any(|l| l.trim() == opening),
+            "{EMBED_GATE} lists the part {name} and defines no `part_{name}`, so its job \
+             fails without running a check"
+        );
+    }
+    let defined = gate
+        .lines()
+        .filter(|l| l.trim_start().starts_with("part_") && l.trim_end().ends_with("() {"))
+        .count();
+    assert_eq!(
+        defined,
+        names.len(),
+        "{EMBED_GATE} defines a `part_` function no line of EMBED_VENDOR_PARTS lists, so no \
+         job runs that check"
+    );
+    let lane = read(EMBED_LANE);
+    let (job, (count, matrix)) = sharded_job(EMBED_LANE, &lane, "SCE_EMBED_VENDOR_SHARD:");
+    assert_eq!(
+        count,
+        parts.len(),
+        "{EMBED_LANE}'s job `{job}` names {count} shard(s) and {EMBED_GATE} has {} parts",
+        parts.len()
+    );
+    assert_eq!(
+        matrix,
+        (1..=count).collect::<Vec<_>>(),
+        "{EMBED_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
     );
 }
