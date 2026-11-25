@@ -65,9 +65,11 @@ BUILD_DIR="build_lua"
 SCRATCH="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$SCRATCH'"
 
-# `BUILD_TESTS` stays ON — the target under test is a test target — and only
-# that one target is built, so the rest of the suite is registered and not
-# compiled. Examples are off because nothing here reads them.
+# `BUILD_TESTS` stays ON — the target under test is a test target — and the
+# tree registers its family alone (SCE_TEST_FAMILIES, cmake/SCETestFamilies.cmake),
+# so the rest of the suite is neither registered nor planned: the whole test
+# tree took 423 s to configure for a target that builds in 81 s (job
+# 139038611735). Examples are off because nothing here reads them.
 #
 # The engine is passed explicitly rather than relied on: `sce/CMakeLists.txt`
 # validates the value and aborts on `lua` without `SCE_ENABLE_LUA`, so a
@@ -78,6 +80,7 @@ sce_gate_step "configuring a SCE_SCRIPT_ENGINE=lua tree"
 sce_gate_configure_tree "$SCE_REPO_ROOT" "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Debug \
       -DSCE_SCRIPT_ENGINE=lua \
+      -DSCE_TEST_FAMILIES=lowered_ecma262 \
       -DBUILD_EXAMPLES=OFF \
       -DSCE_CODEGEN="$CODEGEN" \
     || { tail -40 "$BUILD_DIR/sce_gate_configure.log" >&2; sce_gate_fail "SCE_SCRIPT_ENGINE=lua configure"; }

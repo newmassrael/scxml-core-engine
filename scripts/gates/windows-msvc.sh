@@ -83,12 +83,17 @@ sce_gate_step "sce-codegen, the generator the C++ build runs"
 cargo build --bin sce-codegen --features cli -p sce-build ||
     sce_gate_fail "sce-codegen did not build"
 
+# The tree registers the one family of tests this lane builds and runs
+# (SCE_TEST_FAMILIES, cmake/SCETestFamilies.cmake): the configure of the whole
+# test tree declared 1221 generations, each planned by the generator, for one
+# program, and was 489 s of the lane (job 138963137937).
 sce_gate_step "configure $BUILD_DIR: Visual Studio 2022, x64, the vcpkg toolchain for $TRIPLET"
 cmake -S . -B "$BUILD_DIR" -G "Visual Studio 17 2022" -A x64 \
     -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
     -DVCPKG_TARGET_TRIPLET="$TRIPLET" \
     -DSCE_HOST_COSE=ON \
     -DSCE_FORMAT_GENERATED=OFF \
+    -DSCE_TEST_FAMILIES=standard_host \
     -DBUILD_EXAMPLES=OFF ||
     sce_gate_fail "the configure with MSVC failed"
 
