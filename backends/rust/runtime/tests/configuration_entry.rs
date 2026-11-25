@@ -27,9 +27,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EventId,
-    EventWithMetadata, HistoryId, NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow,
-    Target, TransitionId, TransitionRow, Workspace, PARALLEL,
+    state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EngineState,
+    EventId, EventWithMetadata, HistoryId, NoHistory, RunStore, StateId, StateKind, StatePolicy,
+    StateRow, Target, TransitionId, TransitionRow, Workspace, PARALLEL,
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -228,7 +228,7 @@ impl StatePolicy for ParallelPolicy {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         self.entries += 1;
@@ -242,7 +242,7 @@ impl StatePolicy for ParallelPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -251,7 +251,7 @@ impl StatePolicy for ParallelPolicy {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (PState::A1, PEvent::Advance) => Some(A1_ON_ADVANCE),
@@ -263,7 +263,7 @@ impl StatePolicy for ParallelPolicy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 }
@@ -421,7 +421,7 @@ impl StatePolicy for LinearPolicy {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         self.entries += 1;
@@ -434,7 +434,7 @@ impl StatePolicy for LinearPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -443,7 +443,7 @@ impl StatePolicy for LinearPolicy {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (LState::X1, LEvent::Go) => Some(X1_ON_GO),
@@ -455,7 +455,7 @@ impl StatePolicy for LinearPolicy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 }

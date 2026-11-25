@@ -19,8 +19,9 @@ use std::time::Duration;
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore,
-    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, HistoryId, NoHistory,
+    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -141,7 +142,7 @@ impl StatePolicy for HttpPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
     }
@@ -150,7 +151,7 @@ impl StatePolicy for HttpPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -159,7 +160,7 @@ impl StatePolicy for HttpPolicy {
         _state: StateId,
         _event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         None
     }
@@ -168,7 +169,7 @@ impl StatePolicy for HttpPolicy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 

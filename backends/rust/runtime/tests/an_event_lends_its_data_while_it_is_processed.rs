@@ -21,7 +21,7 @@ use std::num::NonZeroU32;
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, CurrentEventData, DocumentTables, Engine, EventId,
+    state_scratch, state_words, CurrentEventData, DocumentTables, Engine, EngineState, EventId,
     EventWithMetadata, HistoryId, NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow,
     Target, TransitionId, TransitionRow, Workspace,
 };
@@ -184,7 +184,7 @@ impl StatePolicy for LtPolicy {
         state: StateId,
         event: EventId,
         event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (LtState::Idle, LtEvent::Other) => Some(IDLE_OTHER),
@@ -203,7 +203,7 @@ impl StatePolicy for LtPolicy {
         &mut self,
         transition: TransitionId,
         event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
     ) {
         match transition {
             IDLE_OTHER => self.record("other", event_data),
@@ -220,7 +220,7 @@ impl StatePolicy for LtPolicy {
         &mut self,
         state: StateId,
         event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         let what = match Self::state_of(state) {
@@ -235,7 +235,7 @@ impl StatePolicy for LtPolicy {
         &mut self,
         state: StateId,
         event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         if Self::state_of(state) == LtState::Idle {
             self.record("exit idle", event_data);

@@ -34,9 +34,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EventId,
-    EventWithMetadata, Hal, HistoryId, InboxInput, InboxRefusal, InboxWaker, NoHistory, RunStore,
-    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EngineState,
+    EventId, EventWithMetadata, Hal, HistoryId, InboxInput, InboxRefusal, InboxWaker, NoHistory,
+    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -228,7 +229,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
     }
@@ -237,7 +238,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -246,7 +247,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (St::S, Ev::Ping) => Some(S_PING),
@@ -261,7 +262,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         &mut self,
         transition: TransitionId,
         event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         if transition == S_PING {
             self.taken.push("ping");

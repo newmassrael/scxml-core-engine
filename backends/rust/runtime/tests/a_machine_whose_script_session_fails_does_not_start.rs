@@ -30,10 +30,10 @@
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::helpers::invoke_processing::start_child;
 use sce_rust_runtime::{
-    state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EventId,
-    EventWithMetadata, HistoryId, NoHistory, RootStartRefusal, RunStore, ScriptSessionFailure,
-    ScriptSessionStage, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
-    TransitionRow, Workspace,
+    state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EngineState,
+    EventId, EventWithMetadata, HistoryId, NoHistory, RootStartRefusal, RunStore,
+    ScriptSessionFailure, ScriptSessionStage, StateId, StateKind, StatePolicy, StateRow, Target,
+    TransitionId, TransitionRow, Workspace,
 };
 
 // Declared in document order, so a variant's discriminant is its `StateId`.
@@ -203,7 +203,7 @@ impl StatePolicy for SessionPolicy {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         self.entries += 1;
@@ -216,7 +216,7 @@ impl StatePolicy for SessionPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -225,7 +225,7 @@ impl StatePolicy for SessionPolicy {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (St::X1, Ev::Go) => Some(X1_ON_GO),
@@ -237,7 +237,7 @@ impl StatePolicy for SessionPolicy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         self.transitions += 1;
     }
@@ -247,7 +247,7 @@ impl StatePolicy for SessionPolicy {
     // names fails, and the policy reports it as a generated one does.
     fn initialize_data_model(
         &mut self,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Result<(), ScriptSessionFailure> {
         self.data_model_inits += 1;
         match self.fails_at {

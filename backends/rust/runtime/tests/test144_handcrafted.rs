@@ -29,9 +29,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, EventId, EventWithMetadata, HistoryId,
-    NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
-    TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, EventWithMetadata,
+    HistoryId, NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow, Target,
+    TransitionId, TransitionRow, Workspace,
 };
 
 // Declared in document order, so a variant's discriminant is its `StateId`:
@@ -209,7 +209,7 @@ impl StatePolicy for Test144Policy {
         &mut self,
         state: StateId,
         _event_data: Self::EventData<'_>,
-        engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         match Self::state_of(state) {
@@ -226,7 +226,7 @@ impl StatePolicy for Test144Policy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         // C++ executeExitActions: empty body
     }
@@ -240,7 +240,7 @@ impl StatePolicy for Test144Policy {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             // S0 on Foo → S1
@@ -260,7 +260,7 @@ impl StatePolicy for Test144Policy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         // C++ executeTransitionActions: empty body
     }
