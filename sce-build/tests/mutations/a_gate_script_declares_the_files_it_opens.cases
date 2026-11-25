@@ -58,10 +58,18 @@ mutation_runtime_targets tools/git-hooks/gate_registry.py
 # this is the case that proves it guards the repair rather than merely having
 # been green once.
 
+#
+# `w3c-kotlin` declares the list twice since 5871e08552e added
+# `tests/ecmascript/**` for the shared tables its Lua readers ask, and the
+# glob alone matches the list: removing the named line left it declared, and
+# the case SURVIVED. Both declarations go, so the gate declares nothing that
+# matches the list its script opens.
+
 mutation_case "a gate stops declaring the list its script opens" <<'PY'
 edit("tools/git-hooks/gate_registry.py",
+     '                  "sce/include/scripting/*.lua", "tests/ecmascript/**",\n'
      '                  "tests/ecmascript/kotlin_frontend_refusals.json",\n',
-     "")
+     '                  "sce/include/scripting/*.lua",\n')
 PY
 
 # The same, for a gate that inherits its workflow's filter instead of
