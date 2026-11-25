@@ -577,5 +577,399 @@ class TheRunCommandEndToEnd(unittest.TestCase):
         self.assertIn("not a C++ standard", err)
 
 
+# ── Shards ────────────────────────────────────────────────────────
+
+
+GENERATION_GRAPH = "\n".join([
+    "digraph ninja {",
+    'rankdir="LR"',
+    # The parent's generation writes its header and the child document beside it.
+    '"0x1" [label="tests/gen/m_sm.h"]',
+    '"0x2" [label="tests/gen/m_child.scxml"]',
+    '"0xe1" [label="CUSTOM_COMMAND", shape=ellipse]',
+    '"0xe1" -> "0x1"',
+    '"0xe1" -> "0x2"',
+    '"0x3" -> "0xe1" [arrowhead=none]',
+    '"0x4" -> "0xe1" [arrowhead=none]',
+    '"0x3" [label="/src/m.scxml"]',
+    '"0x4" [label="tests/gen/staged.scxml"]',
+    # A staging step that writes no planned header, which two families read.
+    '"0x5" -> "0x4" [label=" CUSTOM_COMMAND"]',
+    '"0x5" [label="/src/staged.scxml"]',
+    # The child's generation runs on the document the parent's wrote.
+    '"0x6" [label="tests/gen/m_child_sm.h"]',
+    '"0x2" -> "0x6" [label=" CUSTOM_COMMAND"]',
+    # An unrelated family that reads the same staged document.
+    '"0x7" [label="tests/gen/n_sm.h"]',
+    '"0xe3" [label="CUSTOM_COMMAND", shape=ellipse]',
+    '"0xe3" -> "0x7"',
+    '"0x4" -> "0xe3" [arrowhead=none]',
+    '"0x8" -> "0xe3" [arrowhead=none]',
+    '"0x8" [label="/src/n.scxml"]',
+    '"0x9" [label="ctests/gen/c_sm.h"]',
+    '"0xa" -> "0x9" [label=" CUSTOM_COMMAND"]',
+    '"0xa" [label="/src/c.scxml"]',
+    '"0xb" [label="tests/gen/orphan_sm.h"]',
+    '"0xc" -> "0xb" [label=" CUSTOM_COMMAND"]',
+    '"0xc" [label="/src/orphan.scxml"]',
+    "}",
+])
+
+PLANNED = ["ctests/gen/c_sm.h", "tests/gen/m_child_sm.h", "tests/gen/m_sm.h",
+           "tests/gen/n_sm.h", "tests/gen/orphan_sm.h"]
+
+MARK = "// SCE-GENERATED -- DO NOT EDIT\n// source-hash: 0\n"
+
+
+def generation_graph():
+    return tool.ctest_shards_module().Graph(GENERATION_GRAPH)
+
+
+class GenerationFamiliesFollowTheStepsThatWriteHeaders(unittest.TestCase):
+    def test_a_child_joins_its_parent_and_a_shared_prerequisite_joins_nothing(self):
+        family_of, steps = tool.generation_families(
+            PLANNED + ["tests/gen/unknown_sm.h"], generation_graph(), Path("/b"))
+        self.assertEqual(family_of["tests/gen/m_sm.h"], "tests/gen/m_child_sm.h")
+        self.assertEqual(family_of["tests/gen/m_child_sm.h"], "tests/gen/m_child_sm.h")
+        # n_sm.h reads the staged document m_sm.h's generation reads too; the
+        # step that stages it writes no planned header, so it couples nothing.
+        self.assertEqual(family_of["tests/gen/n_sm.h"], "tests/gen/n_sm.h")
+        self.assertEqual(family_of["tests/gen/orphan_sm.h"], "tests/gen/orphan_sm.h")
+        self.assertEqual(family_of["tests/gen/unknown_sm.h"], "tests/gen/unknown_sm.h")
+        self.assertEqual(steps["tests/gen/m_child_sm.h"], frozenset({"s:0x6", "e:0xe1", "s:0x4"}))
+        self.assertIn("s:0x4", steps["tests/gen/n_sm.h"],
+                      "a shared prerequisite is a step of every family that needs it")
+        self.assertEqual(steps["tests/gen/unknown_sm.h"], frozenset())
+
+
+class AShardPlanGivesEverySubjectToOneShard(unittest.TestCase):
+    """The plan, the shard's filter and its account, on a tree with one of each case."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        base = Path(self._tmp.name).resolve()
+        self.root = base / "root"
+        self.build = base / "build"
+        inc = self.root / "sce/include"
+        write(inc / "core/A.h", '#pragma once\n#include "core/B.h"\n')
+        write(inc / "core/B.h", "#pragma once\n")
+        write(inc / "core/Late.h", "#pragma once\n")
+        write(self.root / "tests/forge/expected/alg.h", "#pragma once\n")
+        write(self.root / "backends/cpp/forge-runtime/include/sce/forge/rt.h", "#pragma once\n")
+        lib_src = write(self.root / "sce/src/x.cpp", '#include "core/A.h"\n')
+        t1_src = write(self.root / "tests/t1.cpp", '#include "m_sm.h"\n#include "core/A.h"\n')
+        t2_src = write(self.root / "tests/t2.cpp", '#include "n_sm.h"\n')
+        c_src = write(self.root / "backends/c/tests/u.c", '#include "c_sm.h"\n')
+        track(self.root)
+        self.build.mkdir(parents=True)
+        gen = f"-I{self.build}/tests/gen"
+        self.entries = [
+            tool.Entry(str(self.build / "tests"), str(t2_src),
+                       ["c++", gen, "-c", str(t2_src)], "w3c2", "tests", "c++"),
+            tool.Entry(str(self.build / "sce"), str(lib_src),
+                       ["c++", f"-I{inc}", "-c", str(lib_src)], "sce_runtime", "sce", "c++"),
+            tool.Entry(str(self.build / "tests"), str(t1_src),
+                       ["c++", gen, f"-I{inc}", "-c", str(t1_src)], "w3c", "tests", "c++"),
+            tool.Entry(str(self.build / "ctests"), str(c_src),
+                       ["cc", f"-I{self.build}/ctests/gen", "-c", str(c_src)],
+                       "ct", "backends/c/tests", "c"),
+        ]
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def plan(self, count):
+        return tool.plan_shards(self.root, self.build, self.entries, PLANNED,
+                                generation_graph(), count)
+
+    @staticmethod
+    def shard_of(plan, key):
+        held = [i for i, part in enumerate(plan["shards"]) if key in part["subjects"]]
+        return held[0] if len(held) == 1 else None
+
+    def generate(self, outputs):
+        """What the generation rules would write for `outputs`."""
+        bodies = {"tests/gen/m_sm.h": MARK + '#include "m_child_sm.h"\n#include "core/Late.h"\n'}
+        for rel in outputs:
+            write(self.build / rel, bodies.get(rel, MARK))
+
+    def ungenerate(self):
+        for rel in PLANNED:
+            (self.build / rel).unlink(missing_ok=True)
+
+    def test_a_planned_header_is_reached_before_it_is_written(self):
+        t1 = next(e for e in self.entries if e.target == "w3c")
+        planned = {os.path.normpath(str(self.build / rel)) for rel in PLANNED}
+        self.assertNotIn(str(self.build / "tests/gen/m_sm.h"),
+                         tool.IncludeGraph((self.root, self.build)).closure(t1))
+        self.assertIn(str(self.build / "tests/gen/m_sm.h"),
+                      tool.PlannedIncludeGraph((self.root, self.build), (), planned).closure(t1))
+
+    def test_every_subject_is_in_exactly_one_shard_and_late_ones_in_none(self):
+        everything = None
+        for count in (1, 2, 3, 5):
+            plan = self.plan(count)
+            given = [k for part in plan["shards"] for k in part["subjects"]]
+            self.assertEqual(len(given), len(set(given)), f"{count}: a subject in two shards")
+            self.assertEqual(len(given), plan["subjects"])
+            self.assertEqual(len(plan["shards"]), count)
+            if everything is None:
+                everything = set(given)
+            self.assertEqual(set(given), everything, f"{count}: the same subjects at any count")
+            self.assertEqual(plan["late"], ["hdr:sce/include/core/Late.h"])
+            self.assertEqual(plan, self.plan(count), f"{count}: the same tree plans the same way")
+        self.assertEqual(everything, {
+            "tu:sce/src/x.cpp@sce_runtime", "ctu:backends/c/tests/u.c@ct",
+            "hdr:sce/include/core/A.h", "hdr:sce/include/core/B.h",
+            "hdr:backends/cpp/forge-runtime/include/sce/forge/rt.h",
+            "forge:tests/forge/expected/alg.h",
+            *(f"gen:<build>/{rel}" for rel in PLANNED)})
+        self.assertNotEqual(self.plan(2)["digest"], self.plan(3)["digest"])
+
+    def test_what_belongs_together_is_planned_together_and_generated_there(self):
+        plan = self.plan(5)
+        lib = self.shard_of(plan, "tu:sce/src/x.cpp@sce_runtime")
+        # The library owns the public headers it includes.
+        self.assertEqual(self.shard_of(plan, "hdr:sce/include/core/A.h"), lib)
+        self.assertEqual(self.shard_of(plan, "hdr:sce/include/core/B.h"), lib)
+        # A family is one shard's, with the unit that reaches it and the header
+        # a unit reaches only by its directory.
+        parent = self.shard_of(plan, "gen:<build>/tests/gen/m_sm.h")
+        self.assertEqual(self.shard_of(plan, "gen:<build>/tests/gen/m_child_sm.h"), parent)
+        self.assertEqual(self.shard_of(plan, "gen:<build>/tests/gen/orphan_sm.h"), parent)
+        self.assertEqual(self.shard_of(plan, "gen:<build>/ctests/gen/c_sm.h"),
+                         self.shard_of(plan, "ctu:backends/c/tests/u.c@ct"))
+        for part in plan["shards"]:
+            for key in part["subjects"]:
+                if key.startswith("gen:<build>/"):
+                    self.assertIn(key[len("gen:<build>/"):], part["outputs"],
+                                  f"{key} is measured where it is not generated")
+        self.assertIn("ctests/gen/c_sm.h", plan["shards"][self.shard_of(
+            plan, "ctu:backends/c/tests/u.c@ct")]["outputs"])
+
+    def test_the_shards_measure_what_the_whole_run_measures_each_once(self):
+        self.generate(PLANNED)
+        generated = tool.generated_headers(self.root, self.build)
+        whole = tool.build_jobs(self.root, self.build, self.entries, {}, generated,
+                                cxx_override="g++", c_override="gcc")
+        expected = {tool.job_key(j) for j in whole["jobs"]}
+        self.ungenerate()
+
+        plan = self.plan(3)
+        measured = []
+        late_shards = 0
+        for index in (1, 2, 3):
+            self.generate(plan["shards"][index - 1]["outputs"])
+            generated = tool.generated_headers(self.root, self.build)
+            doc = tool.build_jobs(self.root, self.build, self.entries, {}, generated,
+                                  cxx_override="g++", c_override="gcc")
+            mine = tool.filter_for_shard(doc, {**plan, "shard": index}, self.entries,
+                                         self.root, self.build, generated)
+            faults = {k: s for k, s in mine["accounting"].items()
+                      if s in tool.ACCOUNTING_FAULTS}
+            self.assertEqual(faults, {}, f"shard {index} could not account for its subjects")
+            self.assertEqual(set(mine["accounting"]),
+                             set(plan["shards"][index - 1]["subjects"]))
+            measured += [j["key"] for j in mine["jobs"] if not j.get("late")]
+            late = [j for j in mine["jobs"] if j.get("late")]
+            if late:
+                late_shards += 1
+                self.assertEqual([j["key"] for j in late], ["hdr:sce/include/core/Late.h"])
+            self.assertEqual(mine["shard"]["index"], index)
+            self.assertEqual(set(mine["unbuilt"]) & set(plan["shards"][index - 1]["outputs"]),
+                             set())
+            self.ungenerate()
+        self.assertEqual(len(measured), len(set(measured)), "a subject measured twice")
+        self.assertEqual(set(measured) | {"hdr:sce/include/core/Late.h"}, expected)
+        self.assertGreaterEqual(late_shards, 1, "no shard measured the late header")
+
+    def test_the_c_header_is_accounted_as_compiled_through_its_c_unit(self):
+        plan = self.plan(1)
+        self.generate(PLANNED)
+        generated = tool.generated_headers(self.root, self.build)
+        doc = tool.build_jobs(self.root, self.build, self.entries, {}, generated,
+                              cxx_override="g++", c_override="gcc")
+        mine = tool.filter_for_shard(doc, {**plan, "shard": 1}, self.entries,
+                                     self.root, self.build, generated)
+        self.assertEqual(mine["accounting"]["gen:<build>/ctests/gen/c_sm.h"],
+                         "compiled through C units")
+        self.assertEqual(mine["accounting"]["gen:<build>/tests/gen/m_child_sm.h"], "measured")
+
+    def test_a_planned_header_the_generation_did_not_write_is_a_fault(self):
+        plan = self.plan(1)
+        self.generate([rel for rel in PLANNED if rel != "tests/gen/n_sm.h"])
+        generated = tool.generated_headers(self.root, self.build)
+        doc = tool.build_jobs(self.root, self.build, self.entries, {}, generated,
+                              cxx_override="g++", c_override="gcc")
+        mine = tool.filter_for_shard(doc, {**plan, "shard": 1}, self.entries,
+                                     self.root, self.build, generated)
+        self.assertEqual(mine["accounting"]["gen:<build>/tests/gen/n_sm.h"], "absent")
+
+
+class AShardRunsItsPart(unittest.TestCase):
+    def test_a_header_generated_in_another_shard_is_a_failure_not_a_miss(self):
+        job = {"kind": "gen", "subject": "g", "target": "t",
+               "via": {"how": "included", "tu": "a.cpp", "target": "t"}}
+        output = "/b/x.h:2:10: fatal error: m_child_sm.h: No such file or directory\n"
+        with tempfile.TemporaryDirectory() as empty:
+            index = tool.FileIndex((Path(empty),))
+            outcome = tool.classify(job, "c++17", 1, output, index,
+                                    ["tests/gen/m_child_sm.h"])
+            self.assertEqual(outcome.verdict, "fail")
+            self.assertIn("another shard", outcome.detail)
+            self.assertEqual(tool.classify(job, "c++17", 1, output, index).verdict, "unmeasured")
+
+    def test_a_shards_floors_are_its_share_of_the_whole(self):
+        floors = dict(tool.DEFAULT_FLOORS)
+        scaled = tool.scaled_floors(floors, {"gen": 100, "hdr": 0}, {"gen": 400, "hdr": 300})
+        self.assertEqual(scaled["gen"], tool.DEFAULT_FLOORS["gen"] // 4)
+        self.assertEqual(scaled["hdr"], 0)
+        self.assertEqual(scaled["tu"], 0, "a kind the plan counted none of holds no floor")
+
+    def test_a_late_failure_is_left_to_the_verdict(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            work = Path(scratch)
+            fail = [sys.executable, "-c", "import sys; print('x.h:1:1: error: no'); sys.exit(1)",
+                    "-std=@STD@"]
+            ok = [sys.executable, "-c", "import sys; sys.exit(0)", "-std=@STD@"]
+            via = {"how": "included", "tu": "sce/src/a.cpp", "target": "t"}
+            doc = {"format": 1, "root": str(work), "build_dir": str(work / "build"),
+                   "jobs": [{"kind": "hdr", "subject": "sce/include/a.h", "target": "t",
+                             "via": via, "cwd": str(work), "argv": ok,
+                             "key": "hdr:sce/include/a.h"},
+                            {"kind": "hdr", "subject": "sce/include/late.h", "target": "t",
+                             "via": via, "cwd": str(work), "argv": fail,
+                             "key": "hdr:sce/include/late.h",
+                             "late": {"rank": 3, "how": "included"}}],
+                   "not_measured": [], "c_headers": 0, "unbuilt": [],
+                   "shard": {"index": 1, "count": 2, "digest": "0" * 64,
+                             "counts": {"hdr": 1}, "totals": {"hdr": 1000}}}
+            jobs = work / "jobs.json"
+            jobs.write_text(json.dumps(doc), encoding="utf-8")
+            results = work / "results.json"
+            status, out, _ = run_main(["run", "--jobs", str(jobs), "--results", str(results)])
+            self.assertEqual(status, 0, out)
+            self.assertIn("LATE (2 compile(s))", out)
+            recorded = json.loads(results.read_text(encoding="utf-8"))["outcomes"]
+            self.assertEqual(sorted((r["key"], r["standard"], r["verdict"]) for r in recorded), [
+                ("hdr:sce/include/a.h", "c++17", "pass"), ("hdr:sce/include/a.h", "c++20", "pass"),
+                ("hdr:sce/include/late.h", "c++17", "fail"),
+                ("hdr:sce/include/late.h", "c++20", "fail")])
+
+
+class TheVerdictHoldsTheShardsTogether(unittest.TestCase):
+    """`verify-shards` over the files two shards leave."""
+
+    DIGEST = "d" * 64
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name).resolve()
+        self.plan = {"format": 1, "count": 2, "digest": self.DIGEST, "stds": ["c++17", "c++20"],
+                     "subjects": 2, "late": ["hdr:late.h"],
+                     "totals": {kind: 0 for kind in tool.KINDS},
+                     "shards": [{"subjects": ["hdr:a.h"], "outputs": [], "cost": 2, "counts": {}},
+                                {"subjects": ["hdr:b.h"], "outputs": [], "cost": 2,
+                                 "counts": {}}]}
+        self.outcomes = {
+            1: [self.record("hdr:a.h", "pass"),
+                self.record("hdr:late.h", "fail", late={"rank": 4, "how": "included"})],
+            2: [self.record("hdr:b.h", "pass"),
+                self.record("hdr:late.h", "pass", late={"rank": 1, "how": "included"})],
+        }
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    @staticmethod
+    def record(key, verdict, late=None):
+        return [{"key": key, "kind": "hdr", "subject": key[4:], "target": "t", "standard": std,
+                 "verdict": verdict, "detail": "" if verdict == "pass" else "x.h: error: no",
+                 "how": (late or {}).get("how", "included"), "tu": "a.cpp", "late": late}
+                for std in ("c++17", "c++20")]
+
+    def leave(self, index, digest=None, accounting=None, results=True):
+        shard = self.dir / f"shard-{index}"
+        shard.mkdir(parents=True, exist_ok=True)
+        plan = {**self.plan, "shard": index, "digest": digest or self.DIGEST}
+        (shard / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        mine = self.plan["shards"][index - 1]["subjects"]
+        account = accounting if accounting is not None else {k: "measured" for k in mine}
+        (shard / "jobs.json").write_text(json.dumps({"accounting": account,
+                                                     "not_measured": []}), encoding="utf-8")
+        if results:
+            flat = [r for group in self.outcomes[index] for r in group]
+            (shard / "results.json").write_text(json.dumps({"outcomes": flat}), encoding="utf-8")
+
+    def verify(self):
+        return tool.verify_shards(self.dir, {kind: 0 for kind in tool.KINDS})
+
+    def test_a_whole_run_passes_and_counts_the_late_header_where_the_whole_run_would(self):
+        self.leave(1)
+        self.leave(2)
+        faults, verdict = self.verify()
+        self.assertEqual(faults, [])
+        # The late header failed in shard 1 under a later owner; shard 2's
+        # owner comes first, and its pass is the one counted.
+        self.assertEqual(verdict["failures"], [])
+        self.assertEqual(verdict["table"][("hdr", "c++17")].passed, 3)
+
+    def test_the_earliest_owner_decides_even_when_it_fails(self):
+        self.outcomes[1] = [self.record("hdr:a.h", "pass"),
+                            self.record("hdr:late.h", "fail", late={"rank": 0, "how": "included"})]
+        self.leave(1)
+        self.leave(2)
+        _, verdict = self.verify()
+        self.assertEqual(len(verdict["failures"]), 2)
+
+    def test_an_including_owner_comes_before_a_sibling(self):
+        self.outcomes[1] = [self.record("hdr:a.h", "pass"),
+                            self.record("hdr:late.h", "fail", late={"rank": 0, "how": "sibling"})]
+        self.leave(1)
+        self.leave(2)
+        _, verdict = self.verify()
+        self.assertEqual(verdict["failures"], [])
+
+    def test_shards_that_planned_differently_are_refused(self):
+        self.leave(1)
+        self.leave(2, digest="e" * 64)
+        faults, _ = self.verify()
+        self.assertTrue(any("planned differently" in f for f in faults), faults)
+
+    def test_a_shard_that_did_not_finish_is_named(self):
+        self.leave(1)
+        self.leave(2, results=False)
+        faults, _ = self.verify()
+        self.assertTrue(any("shard 2 of 2 left no account or no results" in f for f in faults),
+                        faults)
+
+    def test_a_shard_that_left_nothing_is_named(self):
+        self.leave(1)
+        faults, _ = self.verify()
+        self.assertTrue(any("shard 2 of 2 left no plan" in f for f in faults), faults)
+
+    def test_a_subject_its_shard_did_not_account_for_is_a_fault(self):
+        self.leave(1)
+        self.leave(2, accounting={"hdr:b.h": "absent"})
+        faults, _ = self.verify()
+        self.assertTrue(any("hdr:b.h is absent" in f for f in faults), faults)
+
+    def test_the_whole_floors_are_held_over_the_shards_together(self):
+        self.leave(1)
+        self.leave(2)
+        floors = {kind: 0 for kind in tool.KINDS}
+        floors["hdr"] = 4
+        _, verdict = tool.verify_shards(self.dir, floors)
+        self.assertEqual(len(verdict["breaches"]), 2)
+        floors["hdr"] = 3
+        _, verdict = tool.verify_shards(self.dir, floors)
+        self.assertEqual(verdict["breaches"], [])
+
+    def test_no_shard_at_all_is_not_a_pass(self):
+        faults, verdict = self.verify()
+        self.assertEqual(verdict, {})
+        self.assertTrue(faults)
+
+
 if __name__ == "__main__":
     unittest.main()

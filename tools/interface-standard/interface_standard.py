@@ -50,7 +50,21 @@ them:
     Exit 1 on any failure, and on a count of measured jobs below its floor:
     a run that measured nothing must not read as a run that found nothing.
 
-Standard library only, so it runs wherever the compiler does.
+In shards (the gate's SCE_INTERFACE_STANDARD_SHARD), `shard-plan` runs after
+`generation-outputs`, the generation builds only the shard's part, `jobs` is
+given the plan, and `verify-shards` holds the shards of one run together:
+
+``shard-plan``
+    Plan the whole measurement of the configured tree as N shards, before
+    anything is generated, and write the plan and this shard's outputs.
+
+``verify-shards``
+    Read every shard's plan, account and outcomes, and judge the run as the
+    whole measurement would: one plan, every subject accounted for, the
+    floors held over the shards together, no failure.
+
+Standard library only, so it runs wherever the compiler does; the shard plan
+reads ninja's graph and spreads its units through `scripts/lib/ctest_shards.py`.
 """
 
 from __future__ import annotations
@@ -59,6 +73,7 @@ import argparse
 import collections
 import concurrent.futures
 import functools
+import hashlib
 import json
 import os
 import re
@@ -68,7 +83,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, FrozenSet, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 # The repository this file lives in: tools/interface-standard/<this file>.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -839,15 +854,21 @@ def generated_headers(root: Path, build_dir: Path) -> List[str]:
     population. The repository is asked of git, because only what is
     committed belongs to the interface (see `tracked_files`).
     """
-    found: Set[str] = set()
+    found: Set[str] = set(tracked_generated_headers(root))
     for path in walk_files(build_dir, skip_names=("CMakeFiles", "_deps")):
         if path.name.endswith(HEADER_SUFFIXES) and carries_generator_mark(path):
             found.add(os.path.realpath(path))
+    return sorted(found)
+
+
+def tracked_generated_headers(root: Path) -> List[str]:
+    """The committed headers that carry the generator's mark (see `generated_headers`)."""
+    found = []
     for path in tracked_files(root):
         if path.relative_to(root).parts[0] in SKIPPED_SOURCE_DIRS:
             continue
         if path.name.endswith(HEADER_SUFFIXES) and carries_generator_mark(path):
-            found.add(os.path.realpath(path))
+            found.append(os.path.realpath(path))
     return sorted(found)
 
 
@@ -865,6 +886,14 @@ class HeaderPlan:
     unowned: List[str]
 
 
+def owner_order(entries: Sequence[Entry]) -> List[Entry]:
+    """The C++ translation units in the order a header's owner is chosen from:
+    library units first (they belong to the target that owns the header), then
+    by file and target. A shard plan reads the same order (`plan_shards`)."""
+    return sorted((e for e in entries if e.language == "c++"),
+                  key=lambda e: (0 if e.is_library else 1, e.file, e.target))
+
+
 def assign_headers(wanted: Iterable[str], entries: Sequence[Entry],
                    graph: IncludeGraph) -> HeaderPlan:
     """Pair each header with a translation unit that carries the flags it needs.
@@ -879,8 +908,7 @@ def assign_headers(wanted: Iterable[str], entries: Sequence[Entry],
     """
     wanted_set = set(wanted)
     wanted_dirs = {os.path.dirname(p) for p in wanted_set}
-    cxx = sorted((e for e in entries if e.language == "c++"),
-                 key=lambda e: (0 if e.is_library else 1, e.file, e.target))
+    cxx = owner_order(entries)
     c_units = sorted((e for e in entries if e.language == "c"), key=lambda e: (e.file, e.target))
 
     assigned: Dict[str, Assignment] = {}
@@ -1031,6 +1059,9 @@ def build_jobs(root: Path, build_dir: Path, entries: Sequence[Entry],
         "jobs": jobs,
         "not_measured": not_measured,
         "c_headers": len(plan.c_only & set(generated)),
+        # Which generated headers those are, by subject: a shard accounts for
+        # each header its plan gave it (`filter_for_shard`).
+        "c_only": sorted(subject(p) for p in plan.c_only & set(generated)),
     }
 
 
@@ -1044,19 +1075,34 @@ def cmd_jobs(args: argparse.Namespace) -> int:
         generated = generated_headers(root, build_dir)
         doc = build_jobs(root, build_dir, entries, floors, generated,
                          cxx_override=args.cxx, c_override=args.cc)
+        if args.plan:
+            plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+            doc = filter_for_shard(doc, plan, entries, root, build_dir, generated)
     except RuntimeError as exc:
         print(f"jobs: {exc}", file=sys.stderr)
         return 1
     Path(args.out).write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
-    counts = collections.Counter(job["kind"] for job in doc["jobs"])
-    unmeasured = collections.Counter(item["kind"] for item in doc["not_measured"])
+    if "shard" in doc:
+        shard = doc["shard"]
+        late = sum(1 for job in doc["jobs"] if job.get("late"))
+        print(f"jobs: shard {shard['index']} of {shard['count']} (plan "
+              f"{shard['digest'][:16]}) keeps {len(doc['jobs']) - late} job(s) of its own "
+              f"and {late} late one(s)", file=sys.stderr)
+    counts = collections.Counter(job["kind"] for job in doc["jobs"] if not job.get("late"))
+    unmeasured = collections.Counter(item["kind"] for item in doc["not_measured"]
+                                     if not item.get("late"))
     print(f"jobs: {len(entries)} translation unit(s) in {compile_commands}", file=sys.stderr)
     for kind in KINDS:
         print(f"  {kind:5} {counts.get(kind, 0):5} job(s), {unmeasured.get(kind, 0):3} "
               f"not measured  ({KIND_TITLES[kind]})", file=sys.stderr)
     print(f"  {doc['c_headers']} generated header(s) are reached only by C translation "
           f"units and are compiled through them", file=sys.stderr)
-    return 0
+    faults = sorted(key for key, status in doc.get("accounting", {}).items()
+                    if status in ACCOUNTING_FAULTS)
+    for key in faults:
+        print(f"jobs: {key} is planned in this shard and is {doc['accounting'][key]}",
+              file=sys.stderr)
+    return 1 if faults else 0
 
 
 # ── run ───────────────────────────────────────────────────────────
@@ -1116,8 +1162,18 @@ def first_error(output: str) -> str:
     return found.strip()[:400]
 
 
+def generated_elsewhere(name: str, unbuilt: Sequence[str]) -> bool:
+    """Whether a missing `name` is a header the shard plan generates in another
+    shard (`unbuilt`, build-relative), spelled as an include or absolutely."""
+    wanted = os.path.normpath(name).replace(os.sep, "/")
+    for rel in unbuilt:
+        if rel == wanted or rel.endswith("/" + wanted) or wanted.endswith("/" + rel):
+            return True
+    return False
+
+
 def classify(job: dict, std: Optional[str], returncode: int, output: str,
-             index: FileIndex) -> Outcome:
+             index: FileIndex, unbuilt: Sequence[str] = ()) -> Outcome:
     """Pass, fail, or not measured, from one compile's status and output.
 
     A compile whose first error is a missing file says nothing about the
@@ -1134,6 +1190,13 @@ def classify(job: dict, std: Optional[str], returncode: int, output: str,
     missing = _MISSING_FILE.search(error)
     if missing:
         name = missing.group(1).strip()
+        # In a shard, a header the plan generates elsewhere is the plan's
+        # defect: it split what this compile joins. Read as "not measured" it
+        # would drop the header from the measurement without a word.
+        if generated_elsewhere(name, unbuilt):
+            return Outcome(job, std, "fail",
+                           f"needs {name}, which the shard plan generates in another shard: "
+                           f"the plan split what this compile joins ({error})")
         borrowed = job.get("via", {}).get("how") == "sibling"
         if borrowed:
             return Outcome(job, std, "unmeasured",
@@ -1145,7 +1208,8 @@ def classify(job: dict, std: Optional[str], returncode: int, output: str,
     return Outcome(job, std, "fail", error)
 
 
-def execute(job: dict, std: Optional[str], index: FileIndex) -> Outcome:
+def execute(job: dict, std: Optional[str], index: FileIndex,
+            unbuilt: Sequence[str] = ()) -> Outcome:
     argv = [a.replace(STD_PLACEHOLDER, std) for a in job["argv"]] if std else list(job["argv"])
     try:
         proc = subprocess.run(argv, cwd=job["cwd"], stdout=subprocess.PIPE,
@@ -1155,7 +1219,7 @@ def execute(job: dict, std: Optional[str], index: FileIndex) -> Outcome:
         return Outcome(job, std, "fail", f"timed out after {JOB_TIMEOUT_S}s")
     except OSError as exc:
         return Outcome(job, std, "fail", f"could not start {argv[0]}: {exc}")
-    return classify(job, std, proc.returncode, proc.stdout, index)
+    return classify(job, std, proc.returncode, proc.stdout, index, unbuilt)
 
 
 Run = Tuple[dict, Optional[str]]
@@ -1246,6 +1310,56 @@ def compiler_identity(argv0: str) -> str:
     return f"{argv0} {proc.stdout.strip() or '(no version)'}"
 
 
+def scaled_floors(floors: Dict[str, int], counts: Dict[str, int],
+                  totals: Dict[str, int]) -> Dict[str, int]:
+    """A shard's floors: each kind's floor in the share of that kind's planned
+    population the shard holds, rounded down. The verdict across the shards
+    holds the whole floors (`verify-shards`); a shard run alone, as a landing
+    runs it, still refuses a part that measured far below its share."""
+    return {kind: (floors[kind] * counts.get(kind, 0)) // totals[kind] if totals.get(kind) else 0
+            for kind in KINDS}
+
+
+def outcome_record(outcome: Outcome) -> dict:
+    job = outcome.job
+    return {"key": job.get("key") or job_key(job), "kind": job["kind"],
+            "subject": job["subject"], "target": job["target"],
+            "standard": outcome.std or "own", "verdict": outcome.verdict,
+            "detail": outcome.detail, "how": job.get("via", {}).get("how", ""),
+            "tu": job.get("via", {}).get("tu", ""), "late": job.get("late")}
+
+
+def print_table(table: Dict[Tuple[str, str], Tally], stds: Sequence[str],
+                unowned: Dict[str, int], excused: Excused) -> None:
+    print(f"\n{'kind':6}{'standard':10}{'measured':>9}{'passed':>8}{'failed':>8}"
+          f"{'not measured':>14}")
+    for kind in KINDS:
+        columns = ["own"] if kind == KIND_CTU else stds
+        for std in columns:
+            row = table.get((kind, std), Tally())
+            unmeasured = row.unmeasured + (unowned.get(kind, 0) if std != "own" else 0)
+            note = ""
+            if excused.get((kind, std)):
+                targets = sorted({job["target"] for job in excused[(kind, std)]})
+                note = (f"  ({len(excused[(kind, std)])} not applicable: "
+                        f"{', '.join(targets)} declare an implementation above {std})")
+            print(f"{kind:6}{std:10}{row.measured:9}{row.passed:8}{row.failed:8}"
+                  f"{unmeasured:14}{note}")
+
+
+def print_failures(failures: Sequence[Outcome]) -> None:
+    if not failures:
+        return
+    print(f"\nFAILED ({len(failures)}):")
+    for outcome in failures:
+        job = outcome.job
+        borrowed = job["via"].get("how") in ("included", "sibling")
+        source = f", flags of {job['via']['tu']}" if borrowed else ""
+        print(f"  [{job['kind']} {outcome.std or 'own'}] {job['subject']}  "
+              f"(target {job['target']}{source})")
+        print(f"      {outcome.detail}")
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     stds = args.std or ["c++17", "c++20"]
     try:
@@ -1259,76 +1373,649 @@ def cmd_run(args: argparse.Namespace) -> int:
     root = Path(doc["root"])
     build_dir = Path(doc["build_dir"])
     index = FileIndex((root, build_dir))
+    # A shard's part (`jobs --plan`): its floors are its share of the whole,
+    # a header the plan generates in another shard is the plan's defect, and
+    # a late header is compiled here and judged across the shards.
+    shard = doc.get("shard")
+    if shard:
+        floors = scaled_floors(floors, shard.get("counts", {}), shard.get("totals", {}))
+    unbuilt = tuple(doc.get("unbuilt", ()))
 
     for compiler in sorted({job["argv"][0] for job in doc["jobs"]}):
         print(f"run: compiler {compiler_identity(compiler)}", file=sys.stderr)
 
     runs, excused = plan_runs(doc["jobs"], stds)
     print(f"run: {len(runs)} compile(s), {args.parallel} at a time", file=sys.stderr)
-    outcomes: List[Outcome] = []
+    every: List[Outcome] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:
-        futures = [pool.submit(execute, job, std, index) for job, std in runs]
+        futures = [pool.submit(execute, job, std, index, unbuilt) for job, std in runs]
         for done, future in enumerate(concurrent.futures.as_completed(futures), 1):
-            outcomes.append(future.result())
+            every.append(future.result())
             if done % 250 == 0:
                 print(f"run: {done}/{len(runs)}", file=sys.stderr)
-    outcomes.sort(key=lambda o: (KINDS.index(o.job["kind"]), o.job["subject"], o.std or ""))
+    every.sort(key=lambda o: (KINDS.index(o.job["kind"]), o.job["subject"], o.std or ""))
+    late = [o for o in every if o.job.get("late")]
+    outcomes = [o for o in every if not o.job.get("late")]
 
     table = tally(outcomes)
-    unowned = collections.Counter(item["kind"] for item in doc["not_measured"])
-    print(f"\n{'kind':6}{'standard':10}{'measured':>9}{'passed':>8}{'failed':>8}"
-          f"{'not measured':>14}")
-    for kind in KINDS:
-        columns = ["own"] if kind == KIND_CTU else stds
-        for std in columns:
-            row = table.get((kind, std), Tally())
-            unmeasured = row.unmeasured + (unowned[kind] if std != "own" else 0)
-            note = ""
-            if excused.get((kind, std)):
-                targets = sorted({job["target"] for job in excused[(kind, std)]})
-                note = (f"  ({len(excused[(kind, std)])} not applicable: "
-                        f"{', '.join(targets)} declare an implementation above {std})")
-            print(f"{kind:6}{std:10}{row.measured:9}{row.passed:8}{row.failed:8}"
-                  f"{unmeasured:14}{note}")
+    own_not_measured = [item for item in doc["not_measured"] if not item.get("late")]
+    unowned = collections.Counter(item["kind"] for item in own_not_measured)
+    print_table(table, stds, unowned, excused)
 
     failures = [o for o in outcomes if o.verdict == "fail"]
-    if failures:
-        print(f"\nFAILED ({len(failures)}):")
-        for outcome in failures:
-            job = outcome.job
-            borrowed = job["via"].get("how") in ("included", "sibling")
-            source = f", flags of {job['via']['tu']}" if borrowed else ""
-            print(f"  [{job['kind']} {outcome.std or 'own'}] {job['subject']}  "
-                  f"(target {job['target']}{source})")
-            print(f"      {outcome.detail}")
+    print_failures(failures)
 
     unmeasured_runs: Dict[Tuple[str, str, str], List[str]] = collections.defaultdict(list)
     for outcome in outcomes:
         if outcome.verdict == "unmeasured":
             key = (outcome.job["kind"], outcome.job["subject"], outcome.detail)
             unmeasured_runs[key].append(outcome.std or "own")
-    total_unmeasured = len(doc["not_measured"]) + len(unmeasured_runs)
+    total_unmeasured = len(own_not_measured) + len(unmeasured_runs)
     if total_unmeasured:
         print(f"\nNOT MEASURED ({total_unmeasured}), neither passed nor failed:")
-        for item in doc["not_measured"]:
+        for item in own_not_measured:
             print(f"  [{item['kind']}] {item['subject']}: {item['reason']}")
         for (kind, subject, reason), standards in sorted(unmeasured_runs.items()):
             print(f"  [{kind}] {subject}: {reason} (at {', '.join(standards)})")
+
+    if late:
+        print(f"\nLATE ({len(late)} compile(s)): headers no translation unit includes "
+              f"before generation, compiled in every shard that can own them; the "
+              f"verdict across the shards counts the one the whole run would:")
+        for outcome in late:
+            job = outcome.job
+            detail = f": {outcome.detail}" if outcome.detail else ""
+            print(f"  [{job['kind']} {outcome.std or 'own'}] {job['subject']} "
+                  f"{outcome.verdict}{detail}  ({job['via'].get('how', '')}, flags of "
+                  f"{job['via'].get('tu', '')})")
 
     breaches = floor_breaches(table, stds, floors)
     for breach in breaches:
         print(f"\nFLOOR: {breach}")
 
     if args.results:
-        Path(args.results).write_text(json.dumps([
-            {"kind": o.job["kind"], "subject": o.job["subject"], "target": o.job["target"],
-             "standard": o.std or "own", "verdict": o.verdict, "detail": o.detail}
-            for o in outcomes], indent=1) + "\n", encoding="utf-8")
+        Path(args.results).write_text(json.dumps(
+            {"stds": list(stds), "outcomes": [outcome_record(o) for o in every],
+             "not_measured": doc["not_measured"]}, indent=1) + "\n", encoding="utf-8")
 
     passed = sum(1 for o in outcomes if o.verdict == "pass")
     print(f"\nrun: {passed} passed, {len(failures)} failed, {total_unmeasured} not measured, "
           f"{len(breaches)} floor breach(es)", file=sys.stderr)
     return 1 if failures or breaches else 0
+
+
+# ── Shards ────────────────────────────────────────────────────────
+#
+# The measurement split over N jobs (ADR 0120, D3), each generating only what
+# its own part compiles. Run whole, the generation rules took 984 s and the
+# compiles 1252 s of a 2811 s job (job 138978378267, 57602a3bb8), beside a
+# configure and a generator build every job pays alike; splitting the compiles
+# alone would leave every job paying the whole generation.
+#
+# WHAT A SHARD OWNS is read from the configured tree before anything is
+# generated, the same way in every job, so every job holds the whole plan:
+#   * a library translation unit, and a C translation unit, are each their own
+#     subject;
+#   * a generation family is the planned headers one build couples: a header
+#     and every header whose rule runs on a file that rule writes (a child
+#     machine generated from the document its parent's generation wrote). Steps
+#     that write no planned header (a staged document, a stamp) couple nothing;
+#   * a public header, and a generated header that exists before the generation
+#     rules run, goes with the first translation unit in owner order
+#     (`owner_order`) whose include graph reaches it, read with every planned
+#     header present as a file that includes nothing (`PlannedIncludeGraph`);
+#   * a family goes with the first C++ unit that reaches one of its headers so,
+#     else the first C unit, else the first C++ unit that reaches a file beside
+#     one of them (the owner `assign_headers` would borrow flags from), else a
+#     unit of its own;
+#   * a Forge golden and a Forge runtime header are each their own subject.
+# A source header no unit reaches before generation can only be reached through
+# a generated header. It is LATE: every shard compiles it if it can own it, and
+# `verify-shards` counts the outcome of the shard whose owner the whole run
+# would have chosen, which is the earliest unit in owner order that reaches it,
+# an including unit before a sibling's.
+#
+# WHAT A SHARD BUILDS is the families its subjects need (a translation unit's
+# reach, a header's reach under its owner's flags, an owned family) and the
+# families the library reaches, which every compile of the interface needs.
+#
+# HOW THE UNITS ARE SPREAD is `scripts/lib/ctest_shards.py`'s rule over
+# unions: a unit's cost is its compiles and its generation steps, a step
+# weighed against a compile by the measured ratio above over this plan's own
+# counts, and a step two units share is counted once in a shard holding both.
+#
+# WHAT A SHARD MAY NOT DO is lose a subject. The plan refuses unless its shards
+# are every subject once; a shard accounts for each subject it was given
+# (`filter_for_shard`) and fails on one it cannot; a compile that misses a
+# header the plan generates elsewhere is a failure, not "not measured"; and
+# `verify-shards` holds the shards of one run to one plan, every subject to
+# its shard's account, and the floors to the whole.
+
+SHARD_FORMAT = 1
+GENERATION_SECONDS = 984
+COMPILE_SECONDS = 1252
+CUSTOM_COMMAND = "CUSTOM_COMMAND"
+BUILD_PREFIX = "<build>/"
+
+# What a shard's account of a subject it was given may say. The last two are
+# faults: a planned header the generation did not write, or a subject no
+# category of the measurement holds.
+ACCOUNTING_FAULTS = frozenset({"absent", "unaccounted"})
+
+
+def ctest_shards_module():
+    """`scripts/lib/ctest_shards.py`: its reading of ninja's graph and its spreading
+    of units over shards, which the ctest lanes and this gate share."""
+    lib = str(REPO_ROOT / "scripts" / "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import ctest_shards  # noqa: E402  (the path above is what finds it)
+    return ctest_shards
+
+
+def shard_spec(text: str) -> Tuple[int, int]:
+    return ctest_shards_module().shard_arg(text)
+
+
+def job_key(job: dict) -> str:
+    """The subject a job measures, as a shard plan names it: a translation unit
+    with its target (one file can be compiled into two), a header by path."""
+    if job["kind"] in (KIND_TU, KIND_CTU):
+        return f"{job['kind']}:{job['subject']}@{job['target']}"
+    return f"{job['kind']}:{job['subject']}"
+
+
+class PlannedIncludeGraph(IncludeGraph):
+    """An include graph in which every header the generation rules will write is
+    present already, as a file that includes nothing.
+
+    Before generation it says which translation unit reaches a planned header
+    through the files that exist; what a generated header includes is known
+    only once it is written, which is why a family is generated whole.
+    """
+
+    def __init__(self, follow: Sequence[Path], leaves: Sequence[Path],
+                 planned: Iterable[str]):
+        super().__init__(follow, leaves)
+        self._planned = frozenset(planned)
+
+    def _is_file(self, path: str) -> bool:
+        return path in self._planned or super()._is_file(path)
+
+    def _realpath(self, path: str) -> str:
+        return path if path in self._planned else super()._realpath(path)
+
+    def reach(self, entry: Entry, start: str) -> Set[str]:
+        """Every file `start` reaches under `entry`'s search path, itself included."""
+        search = search_path(entry)
+        seen: Set[str] = set()
+        stack = [start]
+        while stack:
+            path = stack.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            if not self.follows(path):
+                continue
+            stack.extend(c for c in self._children_of(search, path) if c not in seen)
+        return seen
+
+
+def generation_families(outputs: Sequence[str], graph,
+                        build_dir: Path) -> Tuple[Dict[str, str], Dict[str, FrozenSet[str]]]:
+    """Each planned output's family, and each family's custom-command steps.
+
+    Two outputs are one family when the steps that build one include a step
+    that writes a planned output and builds the other too. A family is named by
+    its least output.
+    """
+    def spelled(rel: str) -> Optional[str]:
+        for spelling in (rel, str(build_dir / rel)):
+            if spelling in graph.node_of:
+                return spelling
+        return None
+
+    steps: Dict[str, FrozenSet[str]] = {}
+    writers: Set[str] = set()
+    for rel in outputs:
+        name = spelled(rel)
+        if name is None:
+            steps[rel] = frozenset()
+            continue
+        steps[rel] = graph.steps(name, lambda rule: rule == CUSTOM_COMMAND)
+        writer = graph.made_by.get(graph.node_of[name])
+        if writer:
+            writers.add(writer)
+
+    parent = {rel: rel for rel in outputs}
+
+    def find(rel: str) -> str:
+        while parent[rel] != rel:
+            parent[rel] = parent[parent[rel]]
+            rel = parent[rel]
+        return rel
+
+    holder: Dict[str, str] = {}
+    for rel in sorted(outputs):
+        for step in sorted(steps[rel] & writers):
+            if step in holder:
+                a, b = find(rel), find(holder[step])
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+            else:
+                holder[step] = rel
+    family_of = {rel: find(rel) for rel in outputs}
+    family_steps: Dict[str, Set[str]] = collections.defaultdict(set)
+    for rel in outputs:
+        family_steps[family_of[rel]] |= steps[rel]
+    return family_of, {family: frozenset(s) for family, s in family_steps.items()}
+
+
+def plan_shards(root: Path, build_dir: Path, entries: Sequence[Entry],
+                outputs: Sequence[str], graph, count: int,
+                stds: Sequence[str] = ("c++17", "c++20"),
+                floors: Optional[Dict[str, int]] = None) -> dict:
+    """The whole shard plan of one configured tree, as a JSON-ready document."""
+    if count < 1:
+        raise RuntimeError(f"a plan of {count} shard(s)")
+    shards_lib = ctest_shards_module()
+    floors = floors or {}
+
+    def subject(path: str) -> str:
+        return display(path, root, build_dir)
+
+    def spellings(rel: str) -> Tuple[str, str]:
+        joined = os.path.join(str(build_dir), rel)
+        return os.path.normpath(joined), os.path.realpath(joined)
+
+    planned: Dict[str, str] = {}
+    for rel in outputs:
+        for spelling in spellings(rel):
+            planned[spelling] = rel
+    includes = PlannedIncludeGraph(follow=(root, build_dir),
+                                   leaves=(root / "third_party", build_dir / "_deps"),
+                                   planned=planned)
+    family_of, family_steps = generation_families(outputs, graph, build_dir)
+    members: Dict[str, List[str]] = collections.defaultdict(list)
+    for rel in sorted(outputs):
+        members[family_of[rel]].append(rel)
+
+    cxx = owner_order(entries)
+    c_units = sorted((e for e in entries if e.language == "c"), key=lambda e: (e.file, e.target))
+    ordered = cxx + c_units
+    reach = [includes.closure(e) for e in ordered]
+
+    def families_in(paths: Iterable[str]) -> Set[str]:
+        return {family_of[planned[p]] for p in paths if p in planned}
+
+    first_cxx: Dict[str, int] = {}
+    first_cxx_rel: Dict[str, int] = {}
+    first_cxx_dir: Dict[str, int] = {}
+    first_c_rel: Dict[str, int] = {}
+    for i, paths in enumerate(reach):
+        for path in paths:
+            if i < len(cxx):
+                first_cxx.setdefault(path, i)
+                first_cxx_dir.setdefault(os.path.dirname(path), i)
+                if path in planned:
+                    first_cxx_rel.setdefault(planned[path], i)
+            elif path in planned:
+                first_c_rel.setdefault(planned[path], i)
+
+    always: Set[str] = set()
+    for i, entry in enumerate(cxx):
+        if entry.is_library:
+            always |= families_in(reach[i])
+
+    units: Dict[str, dict] = {}
+
+    def unit(name: str) -> dict:
+        return units.setdefault(name, {"subjects": set(), "families": set(), "compiles": 0})
+
+    def entry_unit(i: int) -> dict:
+        return unit(f"{subject(ordered[i].file)}@{ordered[i].target}")
+
+    def compiles_at(target: str) -> int:
+        return sum(1 for std in stds if std_year(std) >= floors.get(target, 2017))
+
+    floor_keys: Set[str] = set()
+    library_root = str(root / LIBRARY_SOURCES) + os.sep
+    c_root = str(root / C_TU_ROOT) + os.sep
+    for i, entry in enumerate(ordered):
+        if entry.language == "c++" and entry.is_library and entry.file.startswith(library_root):
+            kind, compiles = KIND_TU, compiles_at(entry.target)
+        elif entry.language == "c" and entry.file.startswith(c_root):
+            kind, compiles = KIND_CTU, 1
+        else:
+            continue
+        held = entry_unit(i)
+        key = f"{kind}:{subject(entry.file)}@{entry.target}"
+        held["subjects"].add(key)
+        held["families"] |= families_in(reach[i])
+        held["compiles"] += compiles
+        floor_keys.add(key)
+
+    late: List[str] = []
+    sources = [(KIND_HDR, p) for p in public_headers(root)]
+    sources += [(KIND_GEN, p) for p in generated_headers(root, build_dir) if p not in planned]
+    for kind, path in sources:
+        key = f"{kind}:{subject(path)}"
+        owner = first_cxx.get(path)
+        if owner is None:
+            late.append(key)
+            continue
+        held = entry_unit(owner)
+        held["subjects"].add(key)
+        held["families"] |= families_in(includes.reach(cxx[owner], path))
+        held["compiles"] += len(stds)
+        floor_keys.add(key)
+
+    for family in sorted(members):
+        rels = members[family]
+        owner: Optional[int] = None
+        measured_by_cxx = True
+        hits = [first_cxx_rel[rel] for rel in rels if rel in first_cxx_rel]
+        if hits:
+            owner = min(hits)
+        else:
+            c_hits = [first_c_rel[rel] for rel in rels if rel in first_c_rel]
+            if c_hits:
+                owner, measured_by_cxx = min(c_hits), False
+            else:
+                dirs = {os.path.dirname(s) for rel in rels for s in spellings(rel)}
+                d_hits = [first_cxx_dir[d] for d in dirs if d in first_cxx_dir]
+                if d_hits:
+                    owner = min(d_hits)
+                else:
+                    measured_by_cxx = False
+        held = entry_unit(owner) if owner is not None else unit(f"family:{family}")
+        held["families"].add(family)
+        for rel in rels:
+            key = f"{KIND_GEN}:{BUILD_PREFIX}{rel}"
+            held["subjects"].add(key)
+            if rel.endswith(HEADER_SUFFIXES):
+                held["compiles"] += len(stds)
+                if measured_by_cxx:
+                    floor_keys.add(key)
+
+    for path in forge_runtime_headers(root):
+        key = f"{KIND_HDR}:{subject(path)}"
+        held = unit(key)
+        held["subjects"].add(key)
+        held["compiles"] += len(stds)
+        floor_keys.add(key)
+    for path in forge_goldens(root):
+        key = f"{KIND_FORGE}:{subject(path)}"
+        held = unit(key)
+        held["subjects"].add(key)
+        held["compiles"] += len(stds)
+        floor_keys.add(key)
+
+    def steps_of(families: Iterable[str]) -> Set[str]:
+        found: Set[str] = set()
+        for family in families:
+            found |= family_steps.get(family, frozenset())
+        return found
+
+    always_steps = steps_of(always)
+    every_step = steps_of(family_steps) - always_steps
+    compiles_total = sum(u["compiles"] for u in units.values())
+    weight = max(1, round(GENERATION_SECONDS * compiles_total
+                          / (COMPILE_SECONDS * max(1, len(every_step)))))
+
+    items = []
+    held_by: Dict[str, dict] = {}
+    for name in sorted(units):
+        data = units[name]
+        item = shards_lib.Unit(sorted(data["subjects"]))
+        tokens = {f"c:{name}#{n}" for n in range(data["compiles"])}
+        tokens |= {f"g:{step}#{n}" for step in steps_of(data["families"]) - always_steps
+                   for n in range(weight)}
+        item.closure = frozenset(tokens)
+        items.append(item)
+        held_by[item.name] = data
+
+    spread = []
+    for part in shards_lib.assign(items, count):
+        subjects = sorted(k for item in part for k in item.tests)
+        families = set(always)
+        for item in part:
+            families |= held_by[item.name]["families"]
+        cost = len(frozenset().union(*(item.closure for item in part))) if part else 0
+        counts = collections.Counter(k.split(":", 1)[0] for k in subjects if k in floor_keys)
+        spread.append({"subjects": subjects,
+                       "outputs": sorted(rel for f in families for rel in members.get(f, ())),
+                       "cost": cost, "counts": {kind: counts.get(kind, 0) for kind in KINDS}})
+
+    everything = sorted(k for data in units.values() for k in data["subjects"])
+    assigned = sorted(k for part in spread for k in part["subjects"])
+    if assigned != everything or len(set(assigned)) != len(assigned) or set(late) & set(assigned):
+        raise RuntimeError("the shards are not every subject of the plan, each once")
+    totals = collections.Counter(k.split(":", 1)[0] for k in everything if k in floor_keys)
+    shape = {"count": count, "stds": list(stds), "late": sorted(late),
+             "shards": [part["subjects"] for part in spread],
+             "outputs": [part["outputs"] for part in spread]}
+    digest = hashlib.sha256(json.dumps(shape, sort_keys=True).encode()).hexdigest()
+    return {"format": SHARD_FORMAT, "count": count, "digest": digest, "stds": list(stds),
+            "weight": weight, "steps": len(every_step), "subjects": len(everything),
+            "late": sorted(late), "totals": {kind: totals.get(kind, 0) for kind in KINDS},
+            "shards": spread}
+
+
+def describe_plan(plan: dict, index: int) -> str:
+    lines = [f"plan {plan['digest'][:16]}: {plan['subjects']} subject(s) and "
+             f"{len(plan['late'])} late header(s) in {plan['count']} shard(s); "
+             f"{plan['steps']} generation step(s), each weighed as {plan['weight']} compile(s)"]
+    for i, part in enumerate(plan["shards"], 1):
+        mark = "  <- this job" if i == index else ""
+        lines.append(f"  shard {i}: {len(part['subjects'])} subject(s), "
+                     f"{len(part['outputs'])} generated file(s), cost {part['cost']}{mark}")
+    return "\n".join(lines)
+
+
+def cmd_shard_plan(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    compile_commands = Path(args.compile_commands).resolve()
+    build_dir = Path(args.build_dir).resolve() if args.build_dir else compile_commands.parent
+    index, count = args.shard
+    entries = load_entries(compile_commands, build_dir)
+    outputs = [line.strip() for line in
+               Path(args.generation).read_text(encoding="utf-8").splitlines() if line.strip()]
+    graph = ctest_shards_module().Graph(
+        Path(args.ninja_graph).read_text(encoding="utf-8", errors="replace"))
+    try:
+        floors = implementation_floors(cmake_sources(root))
+        plan = plan_shards(root, build_dir, entries, outputs, graph, count,
+                           stds=args.std or ["c++17", "c++20"], floors=floors)
+    except RuntimeError as exc:
+        print(f"shard-plan: {exc}", file=sys.stderr)
+        return 1
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "plan.json").write_text(json.dumps({**plan, "shard": index}, indent=1) + "\n",
+                                   encoding="utf-8")
+    (out / "outputs").write_text(
+        "".join(f"{rel}\n" for rel in plan["shards"][index - 1]["outputs"]), encoding="utf-8")
+    print(describe_plan(plan, index), file=sys.stderr)
+    return 0
+
+
+def filter_for_shard(doc: dict, plan: dict, entries: Sequence[Entry], root: Path,
+                     build_dir: Path, generated: Sequence[str]) -> dict:
+    """The jobs document of one shard: its own subjects' jobs, every late
+    header's, and its account of each subject the plan gave it."""
+    index = plan["shard"]
+    part = plan["shards"][index - 1]
+    mine = set(part["subjects"])
+    late = set(plan["late"])
+    ranks: Dict[Tuple[str, str], int] = {}
+    for rank, entry in enumerate(owner_order(entries)):
+        ranks.setdefault((display(entry.file, root, build_dir), entry.target), rank)
+
+    jobs: List[dict] = []
+    not_measured: List[dict] = []
+    accounting: Dict[str, str] = {}
+    for job in doc["jobs"]:
+        key = job_key(job)
+        if key in mine:
+            jobs.append({**job, "key": key})
+            accounting[key] = "measured"
+        elif key in late:
+            via = job.get("via", {})
+            rank = ranks.get((via.get("tu", ""), via.get("target", "")), len(ranks))
+            jobs.append({**job, "key": key, "late": {"rank": rank, "how": via.get("how", "")}})
+    for item in doc["not_measured"]:
+        key = f"{item['kind']}:{item['subject']}"
+        if key in mine:
+            not_measured.append({**item, "key": key})
+            accounting[key] = "not measured"
+        elif key in late:
+            not_measured.append({**item, "key": key, "late": True})
+    for header in doc.get("c_only", []):
+        key = f"{KIND_GEN}:{header}"
+        if key in mine:
+            accounting.setdefault(key, "compiled through C units")
+    marked = {display(p, root, build_dir) for p in generated}
+    for key in sorted(mine - set(accounting)):
+        kind, _, rest = key.partition(":")
+        if kind == KIND_GEN and rest.startswith(BUILD_PREFIX):
+            path = build_dir / rest[len(BUILD_PREFIX):]
+            if not path.is_file():
+                accounting[key] = "absent"
+            elif rest not in marked:
+                accounting[key] = "not a generated header"
+            else:
+                accounting[key] = "unaccounted"
+        else:
+            accounting[key] = "unaccounted"
+
+    built = set(part["outputs"])
+    everywhere = {rel for other in plan["shards"] for rel in other["outputs"]}
+    return {**doc, "jobs": jobs, "not_measured": not_measured, "accounting": accounting,
+            "unbuilt": sorted(everywhere - built),
+            "shard": {"index": index, "count": plan["count"], "digest": plan["digest"],
+                      "counts": part["counts"], "totals": plan["totals"]}}
+
+
+def verify_shards(directory: Path, floors: Dict[str, int]) -> Tuple[List[str], dict]:
+    """What is wrong with the shards of one run, and the counted outcomes.
+
+    Each shard leaves `plan.json`, `jobs.json` and `results.json` in one
+    directory. Nothing is wrong when every shard planned alike, accounted for
+    every subject it was given and measured it, and the counted outcomes hold
+    the whole floors with no failure.
+    """
+    faults: List[str] = []
+    plans: Dict[int, dict] = {}
+    docs: Dict[int, dict] = {}
+    results: Dict[int, dict] = {}
+    for plan_path in sorted(directory.rglob("plan.json")):
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        index = plan.get("shard")
+        if index in plans:
+            faults.append(f"shard {index} left two plans ({plan_path})")
+            continue
+        plans[index] = plan
+        for name, into in (("jobs.json", docs), ("results.json", results)):
+            path = plan_path.with_name(name)
+            if path.is_file():
+                into[index] = json.loads(path.read_text(encoding="utf-8"))
+    if not plans:
+        return [f"no shard left a plan under {directory}"], {}
+    digests = {p.get("digest") for p in plans.values()}
+    if len(digests) != 1:
+        faults.append("the shards planned differently, so a subject can fall between them: "
+                      f"{sorted((str(i), str(p.get('digest'))[:16]) for i, p in plans.items())}")
+    plan = plans[min(plans, key=str)]
+    count = plan["count"]
+    extra = sorted(str(i) for i in plans if not isinstance(i, int) or not 1 <= i <= count)
+    if extra:
+        faults.append(f"plans for shards outside 1..{count}: {extra}")
+    given = [k for part in plan["shards"] for k in part["subjects"]]
+    if len(given) != len(set(given)) or len(given) != plan["subjects"]:
+        faults.append(f"the plan does not give each of its {plan['subjects']} subject(s) to "
+                      f"one shard ({len(given)} given, {len(set(given))} distinct)")
+
+    counted: List[Outcome] = []
+    late: Dict[str, List[Tuple[Tuple[int, int, int], dict]]] = collections.defaultdict(list)
+    late_reasons: Dict[str, str] = {}
+    for index in range(1, count + 1):
+        if index not in plans:
+            faults.append(f"shard {index} of {count} left no plan")
+            continue
+        if index not in docs or index not in results:
+            faults.append(f"shard {index} of {count} left no account or no results: its "
+                          f"part did not run to the end")
+            continue
+        mine = set(plan["shards"][index - 1]["subjects"])
+        accounting = docs[index].get("accounting", {})
+        if set(accounting) != mine:
+            missing = sorted(mine - set(accounting))[:10]
+            foreign = sorted(set(accounting) - mine)[:10]
+            faults.append(f"shard {index} accounted for other than its subjects: missing "
+                          f"{missing}, not its own {foreign}")
+        for key, status in sorted(accounting.items()):
+            if status in ACCOUNTING_FAULTS:
+                faults.append(f"shard {index}: {key} is {status}")
+        for item in docs[index].get("not_measured", []):
+            if item.get("late"):
+                late_reasons.setdefault(item["key"], item.get("reason", ""))
+        for record in results[index].get("outcomes", []):
+            job = {"kind": record["kind"], "subject": record["subject"],
+                   "target": record["target"], "via": {"how": record.get("how", ""),
+                                                       "tu": record.get("tu", "")}}
+            std = None if record["standard"] == "own" else record["standard"]
+            outcome = Outcome(job, std, record["verdict"], record.get("detail", ""))
+            if record.get("late"):
+                info = record["late"]
+                order = (0 if info.get("how") == "included" else 1, info.get("rank", 0), index)
+                late[record["key"]].append((order, {"outcome": outcome, "shard": index}))
+            elif record["key"] in mine:
+                counted.append(outcome)
+            else:
+                faults.append(f"shard {index} measured {record['key']}, which is not its own")
+
+    unmeasured_late = []
+    for key in plan["late"]:
+        candidates = late.get(key)
+        if not candidates:
+            unmeasured_late.append((key, late_reasons.get(key, "no shard could own it")))
+            continue
+        best = min(order for order, _ in candidates)
+        counted.extend(c["outcome"] for order, c in candidates if order == best)
+
+    stds = plan["stds"]
+    table = tally(counted)
+    failures = [o for o in counted if o.verdict == "fail"]
+    breaches = floor_breaches(table, stds, floors)
+    return faults, {"table": table, "stds": stds, "failures": failures, "breaches": breaches,
+                    "unmeasured_late": unmeasured_late, "count": count,
+                    "digest": plan.get("digest", "")}
+
+
+def cmd_verify_shards(args: argparse.Namespace) -> int:
+    try:
+        floors = parse_floors(args.floor or [])
+    except ValueError as exc:
+        print(f"verify-shards: {exc}", file=sys.stderr)
+        return 2
+    faults, verdict = verify_shards(Path(args.directory), floors)
+    for fault in faults:
+        print(f"verify-shards: {fault}", file=sys.stderr)
+    if not verdict:
+        return 1
+    print(f"verify-shards: plan {verdict['digest'][:16]}, {verdict['count']} shard(s)")
+    print_table(verdict["table"], verdict["stds"], {}, {})
+    print_failures(verdict["failures"])
+    for key, reason in verdict["unmeasured_late"]:
+        print(f"  NOT MEASURED (late) {key}: {reason}")
+    for breach in verdict["breaches"]:
+        print(f"\nFLOOR: {breach}")
+    ok = not faults and not verdict["failures"] and not verdict["breaches"]
+    print(f"\nverify-shards: {len(verdict['failures'])} failed, "
+          f"{len(verdict['breaches'])} floor breach(es), {len(faults)} fault(s) in the shards",
+          file=sys.stderr)
+    return 0 if ok else 1
 
 
 # ── CLI ───────────────────────────────────────────────────────────
@@ -1358,7 +2045,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     jobs.add_argument("--out", required=True)
     jobs.add_argument("--cxx", help="compile with this C++ compiler instead of the configured one")
     jobs.add_argument("--cc", help="compile with this C compiler instead of the configured one")
+    jobs.add_argument("--plan", help="a shard's plan.json (`shard-plan`): keep its subjects' "
+                                     "jobs and the late ones, and account for each subject")
     jobs.set_defaults(func=cmd_jobs)
+
+    plan = sub.add_parser("shard-plan",
+                          help="plan the measurement of a configured tree as N shards")
+    plan.add_argument("--compile-commands", required=True)
+    plan.add_argument("--build-dir", help="default: the directory of compile_commands.json")
+    plan.add_argument("--root", default=str(REPO_ROOT))
+    plan.add_argument("--generation", required=True,
+                      help="the file `generation-outputs` wrote: every planned output")
+    plan.add_argument("--ninja-graph", required=True,
+                      help="`ninja -t graph` of those outputs")
+    plan.add_argument("--std", action="append",
+                      help="a C++ standard the run measures at (default: c++17 and c++20)")
+    plan.add_argument("--out", required=True,
+                      help="where plan.json and this shard's outputs are written")
+    plan.add_argument("shard", type=shard_spec, help="k/N, this job's shard")
+    plan.set_defaults(func=cmd_shard_plan)
 
     run = sub.add_parser("run", help="run the jobs at the requested standards")
     run.add_argument("--jobs", required=True)
@@ -1369,6 +2074,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                      help="override the fewest jobs of a kind a run must measure")
     run.add_argument("--results", help="also write every outcome to this JSON file")
     run.set_defaults(func=cmd_run)
+
+    verify = sub.add_parser("verify-shards",
+                            help="hold the shards of one run to one plan and the whole floors")
+    verify.add_argument("directory", help="holds each shard's plan.json, jobs.json and "
+                                          "results.json, a directory per shard")
+    verify.add_argument("--floor", action="append", metavar="KIND=N",
+                        help="override the fewest jobs of a kind the run must measure")
+    verify.set_defaults(func=cmd_verify_shards)
 
     args = parser.parse_args(argv)
     return args.func(args)

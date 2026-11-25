@@ -286,10 +286,14 @@ class Graph:
     def closure(self, path: str) -> frozenset[str]:
         """The compile and link steps building `path` takes, by edge."""
         if path not in self._closures:
-            self._closures[path] = self._walk(path)
+            self._closures[path] = self.steps(path, costs)
         return self._closures[path]
 
-    def _walk(self, path: str) -> frozenset[str]:
+    def steps(self, path: str, keep) -> frozenset[str]:
+        """The edges building `path` takes whose rule `keep` accepts, by edge.
+        `closure` asks for the compiles and links; the interface-standard
+        gate asks for the custom commands that generate its headers
+        (tools/interface-standard/interface_standard.py, `shard-plan`)."""
         start = self.node_of.get(path)
         if start is None:
             return frozenset()
@@ -305,7 +309,7 @@ class Graph:
                 if node not in seen_nodes:
                     seen_nodes.add(node)
                     stack.append(node)
-        return frozenset(e for e in seen_edges if costs(self.rule.get(e, "")))
+        return frozenset(e for e in seen_edges if keep(self.rule.get(e, "")))
 
 
 def costs(rule: str) -> bool:
@@ -691,6 +695,10 @@ def self_test() -> int:
     check(len(a) == 4, f"tests/a takes a link, a compile, the library's link and its "
                        f"compile, not the custom command or the phony: {sorted(a)}")
     check(graph.closure("tests/missing") == frozenset(), "an unknown output costs nothing")
+    generation = graph.steps("tests/a", lambda rule: rule == "CUSTOM_COMMAND")
+    check(generation == frozenset({"s:0x6"}),
+          f"tests/a takes the one custom command that writes gen/a_sm.h, through the "
+          f"order-only phony, and no compile or link: {sorted(generation)}")
 
     targets = parse_targets("tests/a: CXX_EXECUTABLE_LINKER__a\ntests/b: CXX_EXECUTABLE_"
                             "LINKER__b\n/out/side.bin: CUSTOM_COMMAND\nall: phony\n")
