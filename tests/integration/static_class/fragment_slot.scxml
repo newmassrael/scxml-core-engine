@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  A reassembly slot machine of the static class (docs/adr/0129), shaped as the
+  A reassembly slot machine of the static class (docs/adr/0135), shaped as the
   reassembly machine of a downstream bare-metal consumer's image is: flat, 6
   states and 12 transitions. A message arrives as fragments and the machine
   runs once for every fragment, so its step is the image's most frequent one.
 
-  It reaches what a flat step function writes out: an external self-transition
+  It reaches what the class walker does for a flat document: an external self-transition
   that exits and enters its state again (fragment.last in empty, a restart in
   filling), a targetless transition (fragment.next in filling), an eventless
   transition taken as soon as its state is entered (complete), and a
   top-level <final> that ends the run (released).
 
-  Generated twice by tools/codegen/trees/rust-integration.toml, for the shared
-  interpreter and as its own step function, and the two held to each other by
-  backends/rust/tests/tests/a_step_function_runs_as_the_shared_interpreter_does.rs.
+  Tabled twice, for the class walker and for the general interpreter, and the
+  two held to each other with seeded random events by
+  sce-build/tests/the_class_walker_runs_as_the_general_interpreter_does.rs.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

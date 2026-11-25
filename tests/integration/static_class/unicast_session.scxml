@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  A unicast session machine of the static class (docs/adr/0129), shaped as the
+  A unicast session machine of the static class (docs/adr/0135), shaped as the
   session machine of a downstream bare-metal consumer's image is: 13 states, 2
   of them compound, 30 transitions and 19 events; one cond, one <raise>, two
   <send>s, nine <onentry> and two <onexit>; no <parallel>, <history> or
@@ -8,7 +8,7 @@
   has no script language, and every other effect is one too, so a host that
   records the calls sees every step the machine takes.
 
-  It reaches every rule a step function writes out as constants:
+  It reaches every rule the class walker reads from its tables:
   - a transition held by a compound state and taken from each atomic state
     below it (close, reset and keepalive.missed in established);
   - an atomic state's transition taken before its ancestor's for the same
@@ -22,9 +22,9 @@
     (hello.ack, closed.ack);
   - a top-level <final>, which ends the run.
 
-  Generated twice by tools/codegen/trees/rust-integration.toml, for the shared
-  interpreter and as its own step function, and the two held to each other by
-  backends/rust/tests/tests/a_step_function_runs_as_the_shared_interpreter_does.rs.
+  Tabled twice, for the class walker and for the general interpreter, and the
+  two held to each other with seeded random events by
+  sce-build/tests/the_class_walker_runs_as_the_general_interpreter_does.rs.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
