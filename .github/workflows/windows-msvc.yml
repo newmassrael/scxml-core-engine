@@ -15,14 +15,32 @@ name: Windows MSVC
 #
 # ## Duration
 #
-# STAND-IN: the lane has no run of its own yet. `LANES` in
-# `sce-build/tests/ci_supersession_policy.rs` borrows `ecma262-lowered-cpp.yml`'s
-# 23.7 min median, the nearest lane: a cold configure and build of part of the
-# main project after a cached generator build. This lane also builds two vcpkg
-# ports and a cold Bazel, on a Windows runner, so the real figure may sit above
-# it. That is above a 17.6 min median gap between pushes to `main`, so
-# `cancel-in-progress: false` keeps the run in flight, as on every lane. Replace
-# the borrowed figure after 25 runs of its own.
+# STAND-IN in `LANES` of `sce-build/tests/ci_supersession_policy.rs`, which
+# borrows `ecma262-lowered-cpp.yml`'s 23.7 min median until the lane has 25 runs
+# of its own; `cancel-in-progress: false` keeps the run in flight either way, as
+# on every lane.
+#
+# Where a run's time went, measured in job 138963137937 (run 45542197963,
+# 28.8 min): the vcpkg ports 6.7 min, built from source on every run (4.9 of it
+# libiconv; "Restored 0 package(s)"); the generator 7.2 min, a debug build of
+# the workspace's own crates, which cargo compiles again after every checkout
+# although the Cargo cache step hit its key exactly; the configure 8.2 min, 1.2
+# of it the release build of the lowering library and the rest the generator
+# planning 1221 generations of the tree; the build of the one test 2.3 min, its
+# run 1.8 and the Bazel consumers 1.2.
+#
+# What does not change between commits is now kept between runs: the ports as
+# vcpkg's binary packages, keyed by the vcpkg baseline and the MSVC that build
+# them, and the Rust compilations through sccache, one entry for the lane. The rest
+# is the commit's own work: a generator whose sources changed is compiled
+# again, and the configure plans every generation of the tree whatever the
+# lane builds of it.
+#
+# MSVC's own compilations (the 2.3 min build) are not cached. The Visual Studio
+# generator does not run a compiler launcher (CMake reads
+# CMAKE_<LANG>_COMPILER_LAUNCHER for the Makefile and Ninja generators only),
+# and a cache there would mean another generator and another debug-information
+# format for the lane whose verdict is the Visual Studio build.
 
 on:
   push:
@@ -118,9 +136,18 @@ jobs:
     name: MSVC build of the C++ host, generated machines and Bazel channels
     runs-on: windows-2022
     timeout-minutes: 120
+    # actions: write deletes the lane's older caches (keep-one-cache).
+    permissions:
+      contents: read
+      actions: write
     defaults:
       run:
         shell: bash
+    # The ports the lane installs and the triplet they are built for, named once
+    # for the install, the binary cache's key and the gate.
+    env:
+      SCE_VCPKG_TRIPLET: x64-windows
+      SCE_VCPKG_PORTS: libxml2 libsodium
 
     steps:
       # Git for Windows checks text out with CRLF line endings (core.autocrlf),
@@ -157,14 +184,131 @@ jobs:
         with:
           python-version: '3.12'
 
+      # vcpkg's binary packages, so a port is built from source once rather than
+      # on every run (6.7 min in job 138963137937, which restored none). vcpkg
+      # keys each package by its ABI (the port, the triplet, the compiler and the
+      # tools that built it) and builds again what changed, so the cache is a
+      # store and never a source of a stale port: the key decides only when a new
+      # entry is saved. It is what moves those ABIs on this image: the ports'
+      # versions, which the vcpkg checkout's baseline lists, and the MSVC that
+      # builds them, beside the triplet and the ports. A new baseline or MSVC
+      # restores the previous entry, vcpkg reuses what it can, and the entry
+      # saved after it replaces it (keep-one-cache). The packages of the twelve
+      # ports the install resolves are a few tens of MB.
+      - name: Name vcpkg's binary cache
+        id: vcpkg-cache
+        run: |
+          baseline="$(cygpath -u "$VCPKG_INSTALLATION_ROOT")/versions/baseline.json"
+          baseline_hash="$(sha256sum "$baseline" | cut -c1-16)"
+          vswhere="$(cygpath -u "${ProgramFiles:-C:\\Program Files} (x86)")/Microsoft Visual Studio/Installer/vswhere.exe"
+          msvc="$("$vswhere" -latest -products '*' -property installationVersion | tr -d '\r')"
+          [[ -n "$msvc" ]] || {
+            echo "::error title=vcpkg binary cache::vswhere names no Visual Studio, whose MSVC keys the cache"
+            exit 1
+          }
+          archives="$RUNNER_TEMP\\vcpkg-archives"
+          mkdir -p "$(cygpath -u "$archives")"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$archives,readwrite" >> "$GITHUB_ENV"
+          echo "family=vcpkg-archives-$RUNNER_OS-$SCE_VCPKG_TRIPLET-${SCE_VCPKG_PORTS// /-}-" >> "$GITHUB_OUTPUT"
+          echo "abi=msvc$msvc-baseline$baseline_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg's binary cache
+        id: vcpkg-restore
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: ${{ steps.vcpkg-cache.outputs.family }}${{ steps.vcpkg-cache.outputs.abi }}
+          restore-keys: |
+            ${{ steps.vcpkg-cache.outputs.family }}
+
       # The image's vcpkg: libxml2 for the generator, which links it, and
       # libsodium for the COSE operations, which SCE finds and never vendors.
       - name: Install libxml2 and libsodium from vcpkg
         run: |
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-          "$VCPKG_INSTALLATION_ROOT/vcpkg" install libxml2:x64-windows libsodium:x64-windows
+          ports=()
+          for port in $SCE_VCPKG_PORTS; do
+            ports+=("$port:$SCE_VCPKG_TRIPLET")
+          done
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install "${ports[@]}"
+
+      # Saved as soon as the ports are installed, so a run that fails later
+      # still leaves them to the next one.
+      - name: Save vcpkg's binary cache
+        id: vcpkg-save
+        if: steps.vcpkg-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: ${{ steps.vcpkg-restore.outputs.cache-primary-key }}
+
+      - name: Keep only the newest vcpkg binary cache
+        if: steps.vcpkg-save.outcome == 'success'
+        uses: ./.github/actions/keep-one-cache
+        with:
+          prefix: ${{ steps.vcpkg-cache.outputs.family }}
+          keep: ${{ steps.vcpkg-restore.outputs.cache-primary-key }}
+
+      # The Rust compilations through sccache. The Cargo cache above restores the
+      # dependencies' build state, and cargo still compiles the workspace's own
+      # crates after every checkout, since it dates their sources by the
+      # checkout: 7.2 min for the generator and 1.2 for the release lowering
+      # library the configure builds (job 138963137937), on a run whose Cargo
+      # cache hit its key exactly. sccache answers a compilation whose inputs it
+      # has seen by their content, so a crate whose sources did not change is not
+      # compiled again; one whose sources did is, and its result replaces the
+      # old one in the cache. Pinned: without a version the action asks the
+      # GitHub releases API for the newest, the lookup that handed
+      # deploy-visualizer.yml an old wasm-pack when it was rate limited.
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.19.0
+
+      # The cache in a directory the cache steps name, and bounded, so the lane's
+      # one entry cannot grow past 1 GB: what it holds is the workspace crates in
+      # the two profiles the lane builds and the few dependencies cargo rebuilds
+      # beside them.
+      - name: Compile Rust through sccache
+        run: |
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_DIR=$RUNNER_TEMP\\sccache"
+            echo "SCCACHE_CACHE_SIZE=1G"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore sccache
+        id: sccache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: ${{ runner.os }}-sccache-windows-msvc-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-windows-msvc-
 
       - name: Build and run the C++ host with MSVC, through CMake and Bazel
-        env:
-          SCE_VCPKG_TRIPLET: x64-windows
         run: bash scripts/gates/windows-msvc.sh
+
+      # What sccache answered and missed, and its server stopped, so the
+      # directory the save reads is no longer being written.
+      - name: Report what sccache answered
+        if: always()
+        run: |
+          sccache --show-stats
+          sccache --stop-server
+
+      - name: Save sccache
+        id: sccache-save
+        if: always() && steps.sccache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
+      # One entry for the lane: the save above is under a key new on every run
+      # (.github/actions/keep-one-cache says why that is kept to one).
+      - name: Keep only the lane's newest sccache
+        if: always() && steps.sccache-save.outcome == 'success'
+        uses: ./.github/actions/keep-one-cache
+        with:
+          prefix: ${{ runner.os }}-sccache-windows-msvc-
+          keep: ${{ steps.sccache.outputs.cache-primary-key }}
