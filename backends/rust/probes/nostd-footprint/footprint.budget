@@ -583,7 +583,12 @@ STACK_MIN_FUNCTIONS=200
 # frame under the entry walk is 120 bytes instead of 216-232. The deepest chain
 # is now the selection's: `select_transitions` (152) through
 # `remove_conflicting_transitions` (160) and `compute_exit_set`.
-STACK_BYTES=952
+#
+# 952 -> 984 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments to tools/mcu_stack, since no build machine carries the thumbv6m
+# library the gate's earlier step needs): the event's data held by the turn
+# (docs/adr/0124) and both walks linked beside each other (docs/adr/0125).
+STACK_BYTES=984
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -621,5 +626,9 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 # two steps a level, not three, as no region loop is ever resumed
 # (sce-build/src/microstep_bounds.rs); `run_turn` 168 -> 144 for the first
 # machine's three levels, for no code.
-STACK_BYTES_PLAIN=760
+#
+# 760 -> 560 (2026-11-25, rustc 1.100.0, measured as above): both plain documents
+# fix their sets, so the turn walks rows and holds no set of the general walk
+# (docs/adr/0125).
+STACK_BYTES_PLAIN=560
 STACK_TOLERANCE_BYTES=256
