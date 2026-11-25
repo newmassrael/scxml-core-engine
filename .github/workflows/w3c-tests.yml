@@ -60,22 +60,37 @@ concurrency:
 
 jobs:
   # ============================================================
-  # C++ (Interpreter + AOT) — 404 tests
+  # C++ (Interpreter + AOT) — 404 tests, in six shards
   # ============================================================
-  test-cpp:
-    name: C++ W3C Tests
+  # One program per W3C test number (tests/w3c/W3CPrograms.cmake), each
+  # registered as the ctest `w3c_cpp_<number>` under the label `w3c_cpp`
+  # with the interactive suite. The one program that held every fixture was
+  # 41 of this job's 47 minutes to build and 51 seconds to run (job
+  # 138891691638), so the label runs as six jobs: each plans the whole label
+  # from the configured tree (scripts/lib/ctest_shards.py), builds the
+  # programs of its own part and runs them, and the job below holds the parts
+  # to one plan and their joined JUnit reports to every fixture of the
+  # registry on both engines. Six, from that build: about seven of its
+  # minutes are the runner core and the engine, which every shard builds,
+  # and the rest spreads, so a shard builds for about ten minutes. A red
+  # fixture is reproduced by building and running its one program.
+  # `hook_ci_parity` holds the matrix and the variable to one count, and
+  # the build machines run the gate whole.
+  test-cpp-shard:
+    name: C++ W3C Tests (shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
-    # 60 until the WASM half joined this job (2026-11-04), 85 while it was
-    # here. With it the job ran 67 minutes once and was stopped at 85 three
-    # times on 2026-11-05, so the WASM half, which runs in two emscripten trees
-    # since, is the job `test-cpp-wasm` below. The 85 stands until a run of the
-    # native half alone is read.
-    timeout-minutes: 85
+    # actions: write deletes the lane's older compiler caches (keep-one-cache).
     permissions:
+      contents: read
       actions: write
-      checks: write
-      pull-requests: write
-      contents: write
+    # An allowance until a sharded run is read: a sixth of the build that
+    # took 41 minutes in one job, the shared core and engine on top of it.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
     - name: Checkout Repository
@@ -160,7 +175,10 @@ jobs:
 
     # The compiler cache: a directory named for ccache, a restore here and a
     # save after the suite that runs whatever the suite did. The reason for
-    # the three steps is written beside the same steps in cpp-suite.yml.
+    # the three steps is written beside the same steps in cpp-suite.yml. One
+    # cache per shard: a shard compiles its own part, and a cache shared
+    # between six jobs would hold whichever saved last. The lane's cache from
+    # before it was sharded is the fallback a shard's first run restores from.
     - name: Keep ccache in the directory its cache restores and saves
       run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
 
@@ -169,8 +187,9 @@ jobs:
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.ccache
-        key: ${{ runner.os }}-ccache-w3c-cpp-${{ github.sha }}
+        key: ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-${{ github.sha }}
         restore-keys: |
+          ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-
           ${{ runner.os }}-ccache-w3c-cpp-
           ${{ runner.os }}-ccache-
 
@@ -181,19 +200,20 @@ jobs:
         ld.lld --version || echo "Warning: ld.lld version check failed"
 
     # Configure, build and run are one gate, so the check has one spelling for
-    # this lane and for the pre-push hook. The gate writes the JUnit report and
-    # the run log where the publish and upload steps below expect them.
+    # this lane and for the pre-push hook. The gate writes this shard's joined
+    # JUnit report and its ctest log where the upload below expects them.
     #
     # The `specific-tests` dispatch input was dropped when this moved: running
     # a subset produces a green check for a suite that did not run, which is
     # the failure this lane already shipped — 233 of 234 cases failing under a
     # green check for three weeks. A subset is a debugging move and belongs at
-    # a developer's own `./w3c_test_cli 531`, not in the channel that reports
-    # conformance.
+    # a developer's own `ctest -R '^w3c_cpp_531$'`, not in the channel that
+    # reports conformance; the shards are no subset, since the job below holds
+    # them to the whole registry.
     - name: Run W3C SCXML Test Suite
-      id: cpp-suite
+      env:
+        SCE_W3C_CPP_SHARD: ${{ matrix.shard }}/6
       run: |
-        ulimit -c unlimited
         SPDLOG_LEVEL="${{ inputs.log-level || 'debug' }}" \
         SCE_W3C_REPORT_DIR=build/tests \
           scripts/gate w3c-cpp
@@ -205,68 +225,99 @@ jobs:
       with:
         path: ~/.ccache
         key: ${{ steps.ccache.outputs.cache-primary-key }}
-    # One compiler cache per lane: the save above is under a key new on every run,
-    # and the entries it leaves would fill the repository's 10 GB and evict the
-    # caches of every other lane (.github/actions/keep-one-cache says why).
-    - name: Keep only this lane's newest ccache
+    # One compiler cache per shard: the save above is under a key new on every
+    # run, and the entries it leaves would fill the repository's 10 GB and evict
+    # the caches of every other lane (.github/actions/keep-one-cache says why).
+    - name: Keep only this shard's newest ccache
       if: always() && steps.ccache-save.outcome == 'success'
       uses: ./.github/actions/keep-one-cache
       with:
-        prefix: ${{ runner.os }}-ccache-w3c-cpp-
+        prefix: ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-
         keep: ${{ steps.ccache.outputs.cache-primary-key }}
 
-    - name: Debug Environment
-      if: failure()
-      run: |
-        echo "=== Build Directory ==="
-        ls -lh build/tests/w3c_test_cli || echo "no test binary — the build failed"
-        echo ""
-        echo "=== Library Dependencies ==="
-        ldd build/tests/w3c_test_cli || echo "ldd failed or static binary"
-        echo ""
-        echo "=== Resources ==="
-        # Not `ls ... | head ... || echo`: `||` tests the pipeline, whose
-        # status is head's, so the missing-directory message could never be
-        # printed. Nor is pipefail the fix here — head exits at ten lines and
-        # SIGPIPEs ls, which pipefail would then read as a failure. The
-        # directory check is what this line actually wanted.
-        if [ -d resources ]; then
-          head -n 10 <(ls -la resources)
-        else
-          echo "ERROR: resources directory not found"
-        fi
+    # The plan and what this shard ran (`test-cpp` reads them), its joined
+    # report and ctest log, and the logs the runner keeps of a failed fixture.
+    - name: Upload this shard's plan, report and log
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: always()
+      with:
+        name: w3c-cpp-shard-${{ matrix.shard }}
+        path: |
+          build/ctest-shard-w3c-cpp/
+          build/tests/w3c_test_results.xml
+          build/tests/w3c_test_output.log
+          build/tests/w3c_runs/*/w3c_failed_test_logs/
+        retention-days: 30
+        if-no-files-found: warn
 
-    - name: Analyze Crash (if occurred)
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: failure()
+      with:
+        name: build-logs-w3c-cpp-shard-${{ matrix.shard }}
+        path: |
+          build/CMakeFiles/*.log
+          build/Testing/Temporary/
+        retention-days: 7
+
+  # The verdict of the C++ lane: every shard planned the label alike and ran
+  # every test of its part (`ctest_shards.py verify`), and the shards' joined
+  # reports list every fixture of the registry once on each engine
+  # (tests/w3c/scripts/w3c_reports.py `join`). It keeps the job's id and
+  # name, so the report below and the lane's readers find it where the
+  # unsharded job was, and it publishes the check, the results and the
+  # summary the unsharded job did, from the joined report.
+  test-cpp:
+    name: C++ W3C Tests
+    needs: test-cpp-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: write
+      pull-requests: write
+      contents: read
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    - name: Download the shards' plans, reports and logs
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: w3c-cpp-shard-*
+        path: shards
+
+    - name: Hold the shards to one plan and the registry
+      env:
+        SHARDS_RESULT: ${{ needs.test-cpp-shard.result }}
+      run: |
+        status=0
+        python3 scripts/lib/ctest_shards.py verify shards || status=1
+        mkdir -p build/tests
+        mapfile -t reports < <(find shards -name w3c_test_results.xml)
+        python3 tests/w3c/scripts/w3c_reports.py join \
+          --registry tests/w3c/conformance/fixtures.json \
+          --out build/tests/w3c_test_results.xml "${reports[@]}" || status=1
+        if [[ "$SHARDS_RESULT" != success ]]; then
+          echo "::error title=C++ W3C Tests::a shard job ended $SHARDS_RESULT"
+          status=1
+        fi
+        exit "$status"
+
+    # The shards' ctest logs, one after another, under the name the unsharded
+    # job's log had.
+    - name: Join the shards' logs
       if: always()
       run: |
-        cd build/tests
-        echo "=== Crash Analysis ==="
-        if [ -f core ]; then
-          echo "Core dump found!"
-          gdb -batch -ex "bt" -ex "quit" ./w3c_test_cli core 2>&1 || echo "GDB not available"
-        else
-          echo "No core dump found"
-        fi
-        echo ""
-        echo "=== Test Output Summary ==="
-        if [ -f w3c_test_output.log ]; then
-          echo "Log file size: $(wc -l < w3c_test_output.log) lines"
-          echo "First 20 lines:"
-          head -n 20 w3c_test_output.log
-          echo ""
-          echo "Last 30 lines:"
-          tail -n 30 w3c_test_output.log
-        else
-          echo "No output log found"
-        fi
-        echo ""
-        echo "=== XML Results Check ==="
-        if [ -f w3c_test_results.xml ]; then
-          echo "XML file found in current directory"
-          head -n 20 w3c_test_results.xml
-        else
-          echo "XML file NOT found - test execution likely failed early"
-        fi
+        mkdir -p build/tests
+        : > build/tests/w3c_test_output.log
+        for log in shards/w3c-cpp-shard-*/tests/w3c_test_output.log; do
+          [ -f "$log" ] || continue
+          echo "===== $log" >> build/tests/w3c_test_output.log
+          cat "$log" >> build/tests/w3c_test_output.log
+        done
 
     - name: Upload Test Output Log
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -296,16 +347,6 @@ jobs:
         name: w3c-test-results-cpp
         path: build/tests/w3c_test_results.xml
         retention-days: 30
-
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      if: failure()
-      with:
-        name: build-logs
-        path: |
-          build/CMakeFiles/*.log
-          build/Testing/Temporary/
-        retention-days: 7
 
     - name: Generate Test Summary
       if: always()
@@ -364,22 +405,32 @@ jobs:
   # C++ under Node (emscripten) — the 404 tests and the interactive
   # suite, in the threaded tree and in the one without threads
   # ============================================================
-  # One gate, `w3c-wasm`, builds the W3C runner and the interactive suite in
-  # both emscripten trees and runs each (scripts/gates/lib.sh, the two
+  # One gate, `w3c-wasm`, builds the C++ W3C programs and the interactive
+  # suite in an emscripten tree and runs them (scripts/gates/lib.sh, the two
   # emscripten trees): the threaded engine the native build runs, and the
-  # host-driven one the browser visualizer runs. A job of its own beside the
-  # native one, as `cpp-suite-wasm` is beside the native suite, because the
+  # host-driven one the browser visualizer runs. Jobs of their own beside the
+  # native ones, as `cpp-suite-wasm` is beside the native suite, because the
   # two builds fail for different reasons and one red must not hide the
-  # other, and because the native job with one tree of this already ran to its
-  # limit. SCE_REQUIRE_TOOLS turns the gate's "emsdk missing, skipping" into a
-  # failure here, where emsdk is installed.
-  test-cpp-wasm:
-    name: C++ W3C Tests (WASM, under Node)
+  # other. Each tree spent about 22 minutes building the one program that
+  # held every fixture, one tree after the other (job 138891691350), so each
+  # tree is its own set of jobs and its label runs in four shards, planned
+  # and held as the native lane's are. Four, from that build: the programs
+  # are a link each where they were one, and the cost of an emscripten link
+  # is not yet read, so this stands until a sharded run is. SCE_REQUIRE_TOOLS
+  # turns the gate's "emsdk missing, skipping" into a failure here, where
+  # emsdk is installed.
+  test-cpp-wasm-shard:
+    name: C++ W3C Tests (WASM, ${{ matrix.tree }} engine, shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
-    # An allowance until a run of the job is read: one tree's cold build of the
-    # two programs took 21 minutes on a hosted runner (2026-11-04), and this
-    # builds two.
-    timeout-minutes: 120
+    # An allowance until a sharded run is read: a quarter of one tree's build,
+    # which took 22 minutes as one program, with a link per program on top.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        tree: [threaded, host-driven]
+        shard: [1, 2, 3, 4]
 
     steps:
     - name: Checkout Repository
@@ -446,27 +497,87 @@ jobs:
         ./emsdk activate 6.0.13
         cd ..
 
-    - name: Run W3C SCXML Test Suite (WASM, under Node, both engines)
+    - name: Run W3C SCXML Test Suite (WASM, under Node, one tree's shard)
       env:
         SCE_REQUIRE_TOOLS: 1
+        SCE_W3C_WASM_TREE: ${{ matrix.tree }}
+        SCE_W3C_WASM_SHARD: ${{ matrix.shard }}/4
       run: |
         source emsdk/emsdk_env.sh
         scripts/gate w3c-wasm
+
+    # The plan and what this shard ran (`test-cpp-wasm` reads them), its
+    # joined report and ctest log, and the logs the runner keeps of a failed
+    # fixture. Only the tree this job ran exists.
+    - name: Upload this shard's plan, report and log
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: ${{ !cancelled() }}
+      with:
+        name: w3c-wasm-${{ matrix.tree }}-shard-${{ matrix.shard }}
+        path: |
+          build_wasm/ctest-shard-w3c-wasm/
+          build_wasm/tests/w3c_test_results.xml
+          build_wasm/tests/w3c_test_output.log
+          build_wasm/tests/w3c_runs/*/w3c_failed_test_logs/
+          build_wasm_web/ctest-shard-w3c-wasm/
+          build_wasm_web/tests/w3c_test_results.xml
+          build_wasm_web/tests/w3c_test_output.log
+          build_wasm_web/tests/w3c_runs/*/w3c_failed_test_logs/
+        retention-days: 30
+        if-no-files-found: warn
+
+  # The verdict of the WASM lane, for each tree: its shards planned the label
+  # alike and ran every test of their parts (`ctest_shards.py verify`), and
+  # their joined reports list every fixture of the registry once on each
+  # engine. It keeps the job's id and name, so the lane's readers find it
+  # where the unsharded job was.
+  test-cpp-wasm:
+    name: C++ W3C Tests (WASM, under Node)
+    needs: test-cpp-wasm-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    - name: Download the threaded tree's shards
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: w3c-wasm-threaded-shard-*
+        path: shards/threaded
+
+    - name: Download the host-driven tree's shards
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: w3c-wasm-host-driven-shard-*
+        path: shards/host-driven
+
+    - name: Hold each tree's shards to one plan and the registry
+      env:
+        SHARDS_RESULT: ${{ needs.test-cpp-wasm-shard.result }}
+      run: |
+        status=0
+        for tree in threaded host-driven; do
+          python3 scripts/lib/ctest_shards.py verify "shards/$tree" || status=1
+          mapfile -t reports < <(find "shards/$tree" -name w3c_test_results.xml)
+          python3 tests/w3c/scripts/w3c_reports.py join \
+            --registry tests/w3c/conformance/fixtures.json \
+            --out "shards/w3c_wasm_results_$tree.xml" "${reports[@]}" || status=1
+        done
+        if [[ "$SHARDS_RESULT" != success ]]; then
+          echo "::error title=C++ W3C Tests (WASM)::a shard job ended $SHARDS_RESULT"
+          status=1
+        fi
+        exit "$status"
 
     - name: Upload WASM Test Output
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: ${{ !cancelled() }}
       with:
         name: w3c-test-output-wasm
-        path: |
-          build_wasm/tests/w3c_wasm_output.log
-          build_wasm/tests/comprehensive_interactive_wasm_output.log
-          build_wasm/tests/w3c_test_results.xml
-          build_wasm/tests/w3c_failed_test_logs/
-          build_wasm_web/tests/w3c_wasm_output.log
-          build_wasm_web/tests/comprehensive_interactive_wasm_output.log
-          build_wasm_web/tests/w3c_test_results.xml
-          build_wasm_web/tests/w3c_failed_test_logs/
+        path: shards/
         retention-days: 30
         if-no-files-found: ignore
 

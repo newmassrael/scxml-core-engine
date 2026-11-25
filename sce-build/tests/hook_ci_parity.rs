@@ -1821,11 +1821,14 @@ fn the_workspace_shard_helper_passes_its_own_cases() {
 
 // ── The sharded ctest suites are wired to run what the unsharded suites run ─
 //
-// Three gates run a ctest suite as N jobs of a lane, each with a variable of its
+// Five gates run a ctest suite as N jobs of a lane, each with a variable of its
 // own that names `k/N`: cpp-suite (the main tree, `-LE c11`, `SCE_CTEST_SHARD`)
 // and cpp-suite-wasm (the emscripten tree, `SCE_CPP_SUITE_WASM_SHARD`) in
-// cpp-suite.yml, and w3c-c11 (the main tree, `-L c11`, `SCE_W3C_C11_SHARD`) in
-// w3c-tests.yml. The build machines run each whole. Which tests a suite holds
+// cpp-suite.yml, and in w3c-tests.yml w3c-c11 (the main tree, `-L c11`,
+// `SCE_W3C_C11_SHARD`), w3c-cpp (the main tree, `-L w3c_cpp`,
+// `SCE_W3C_CPP_SHARD`) and w3c-wasm (each emscripten tree, `-L w3c_cpp`,
+// `SCE_W3C_WASM_SHARD`, the tree named by `SCE_W3C_WASM_TREE`). The build
+// machines run each whole. Which tests a suite holds
 // is a fact of a configured tree, so the union is held where there is one:
 // every job plans the whole suite against the count the gate registered
 // (`ctest_shards.py plan --expect`), and the lane's verdict job holds the plans
@@ -1837,10 +1840,13 @@ fn the_workspace_shard_helper_passes_its_own_cases() {
 
 const CTEST_SHARD_HELPER: &str = "scripts/lib/ctest_shards.py";
 const BUILD_TIME_REPORT: &str = "scripts/lib/build_time_report.py";
+/// What joins the C++ W3C programs' reports and holds them to the registry,
+/// which the two W3C C++ gates and their lanes' verdict jobs run.
+const W3C_REPORTS: &str = "tests/w3c/scripts/w3c_reports.py";
 
 /// Each lane that runs a ctest suite in shards: its workflow, the gate script
 /// its jobs run, and the variable that hands the gate its shard.
-const CTEST_SHARDED_LANES: [(&str, &str, &str); 3] = [
+const CTEST_SHARDED_LANES: [(&str, &str, &str); 5] = [
     (
         ".github/workflows/cpp-suite.yml",
         "scripts/gates/cpp-suite.sh",
@@ -1855,6 +1861,16 @@ const CTEST_SHARDED_LANES: [(&str, &str, &str); 3] = [
         ".github/workflows/w3c-tests.yml",
         "scripts/gates/w3c-c11.sh",
         "SCE_W3C_C11_SHARD",
+    ),
+    (
+        ".github/workflows/w3c-tests.yml",
+        "scripts/gates/w3c-cpp.sh",
+        "SCE_W3C_CPP_SHARD",
+    ),
+    (
+        ".github/workflows/w3c-tests.yml",
+        "scripts/gates/w3c-wasm.sh",
+        "SCE_W3C_WASM_SHARD",
     ),
 ];
 
@@ -1938,13 +1954,14 @@ fn every_sharded_ctest_lane_and_its_gate_agree_on_the_shards() {
     );
 }
 
-/// The shard helper and the build-time report pass their own cases: the
-/// partition (every test in one shard, a fixture's tests together, the same tree
-/// planned the same way), the verdict over the shards' reports, and the reading
-/// of ninja's log.
+/// The shard helper, the build-time report and the W3C report joiner pass their
+/// own cases: the partition (every test in one shard, a fixture's tests
+/// together, the same tree planned the same way), the verdict over the shards'
+/// reports, the reading of ninja's log, and the joined W3C report held to the
+/// registry (every fixture once on each engine, across shards as within one).
 #[test]
 fn the_ctest_shard_helpers_pass_their_own_cases() {
-    for helper in [CTEST_SHARD_HELPER, BUILD_TIME_REPORT] {
+    for helper in [CTEST_SHARD_HELPER, BUILD_TIME_REPORT, W3C_REPORTS] {
         let out = std::process::Command::new("python3")
             .arg(helper)
             .arg("--self-test")
