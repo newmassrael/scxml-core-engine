@@ -11,6 +11,11 @@
 # them and compares, which is also what makes the procedure's own
 # documented claim ("regenerate and expect no diff") checked rather than
 # asserted.
+#
+# Its script regenerates one shard of the steps when SCE_REGEN_SHARD names
+# `k/N`, as regen-reproduces.yml's three jobs do
+# (scripts/lib/workspace_shards.py plans the part). No `shard_env`: the
+# build machines run it whole.
 {
     "workflows": ["regen-reproduces.yml"],
     "runner_workflow": True,

@@ -1966,25 +1966,36 @@ fn the_ctest_shard_helpers_pass_their_own_cases() {
 
 // ── The lanes whose shards workspace_shards.py plans ───────────────────────
 //
-// A gate that runs a suite as N jobs of a lane with a part that
+// Two gates run a suite as N jobs of a lane with a part that
 // scripts/lib/workspace_shards.py plans, and a last job that holds the parts
 // together: w3c-rust (the targets of sce-rust-tests, `SCE_W3C_RUST_SHARD`) in
-// w3c-tests.yml. The build machines run it whole. Every job writes the whole
-// plan beside its part (`--out`), in the form ctest_shards.py writes, and the
-// lane's verdict job holds the plans of all the shards to one digest and every
-// shard to a report that its part ran (`ctest_shards.py verify`). What is held
-// here is that those pieces stay wired, and that the parts are the whole suite,
-// each unit once, read by a reading of its own: cargo's for the targets.
+// w3c-tests.yml and regen-reproduces (the regeneration's steps,
+// `SCE_REGEN_SHARD`) in regen-reproduces.yml. The build machines run each
+// whole. Every job writes the whole plan beside its part (`--out`), in the
+// form ctest_shards.py writes, and the lane's verdict job holds the plans of all
+// the shards to one digest and every shard to a report that its part ran
+// (`ctest_shards.py verify`). What is held here is that those pieces stay wired,
+// and that the parts are the whole suite, each unit once, read by a reading of
+// its own: cargo's for the targets, the regeneration's own `--list` for the
+// steps.
 
 /// Each lane whose shards workspace_shards.py plans: its workflow, the gate
 /// script its jobs run, the variable that hands the gate its shard, and the
 /// arguments that name the suite to the helper.
-const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 1] = [(
-    ".github/workflows/w3c-tests.yml",
-    "scripts/gates/w3c-rust.sh",
-    "SCE_W3C_RUST_SHARD",
-    &["--package", "sce-rust-tests"],
-)];
+const PLANNED_SHARD_LANES: [(&str, &str, &str, &[&str]); 2] = [
+    (
+        ".github/workflows/w3c-tests.yml",
+        "scripts/gates/w3c-rust.sh",
+        "SCE_W3C_RUST_SHARD",
+        &["--package", "sce-rust-tests"],
+    ),
+    (
+        ".github/workflows/regen-reproduces.yml",
+        "scripts/gates/regen-reproduces.sh",
+        "SCE_REGEN_SHARD",
+        &["--regen"],
+    ),
+];
 
 /// Each such lane's matrix and its variable name one shard count, its gate
 /// reads the variable and hands it to the helper with the suite's arguments and
@@ -2056,6 +2067,38 @@ fn every_target_the_rust_w3c_arm_runs_is_in_exactly_one_shard() {
         expected.contains("test w3c") && expected.len() > 100,
         "cargo metadata names {} unit(s) of sce-rust-tests, without its target `w3c` or \
          under the hundred it has held since the arm was sharded; the reading broke",
+        expected.len()
+    );
+    let seen = units_of_each_shard(args, count);
+    assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
+}
+
+/// Every step `scripts/regen_all_committed_trees.sh` runs when given none is in
+/// exactly one shard of the regeneration lane, so the trees the shards compare
+/// are every tree the gate compares run whole.
+#[test]
+fn every_step_the_regeneration_runs_is_in_exactly_one_shard() {
+    let (lane_path, _, variable, args) = PLANNED_SHARD_LANES[1];
+    let (_, (count, _)) = sharded_job(lane_path, &read(lane_path), &format!("{variable}:"));
+    let out = std::process::Command::new("bash")
+        .args(["scripts/regen_all_committed_trees.sh", "--list"])
+        .current_dir(repo_root())
+        .output()
+        .expect("bash runs the regeneration's --list");
+    assert!(
+        out.status.success(),
+        "scripts/regen_all_committed_trees.sh --list failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let expected: BTreeSet<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|step| format!("step {}", step.trim()))
+        .collect();
+    assert!(
+        expected.contains("step runtime-rust") && expected.len() > 10,
+        "the regeneration lists {} step(s), without `runtime-rust` or under the ten it \
+         has held since it was sharded; the reading broke",
         expected.len()
     );
     let seen = units_of_each_shard(args, count);

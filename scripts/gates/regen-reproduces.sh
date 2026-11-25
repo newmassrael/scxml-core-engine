@@ -62,7 +62,46 @@ while read -r key path; do
         submodule update --init --quiet -- "$path" \
         || sce_gate_fail "could not check out submodule $path in the worktree"
 done < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$')
-sce_gate_step "regenerating every committed tree in a worktree of HEAD"
+
+# ONE SHARD OF THE STEPS, when `SCE_REGEN_SHARD=k/N` asks for one: the CI lane
+# runs the regeneration as N jobs (regen-reproduces.yml), since it took 22 of
+# the job's 28 minutes (job 138988228323). A step owns its trees and reads
+# nothing another step writes (scripts/regen_all_committed_trees.sh), so a run
+# of some steps alone reproduces their trees as the whole run does.
+# scripts/lib/workspace_shards.py reads the steps from the one list that names
+# them and spreads them; it plans from the worktree, so the steps are HEAD's,
+# and writes the whole plan beside this shard's part, with the outputs each of
+# its steps declares (`[actions.regen-<step>]` in bx.toml). The lane's last job
+# holds the plans of all the shards to one digest and every shard to a report
+# that its steps ran (`ctest_shards.py verify`), which is what makes the
+# shards' union every tree this gate checks. Unset, the gate runs every step,
+# which is what a push and the build machines run.
+STEPS=()
+SHARD_PLAN=""
+SHARD_OUTPUTS=()
+if [[ -n "${SCE_REGEN_SHARD:-}" ]]; then
+    SHARD_PLAN="$SCE_REPO_ROOT/target/regen-shard"
+    rm -rf "$SHARD_PLAN"
+    shard_steps="$(python3 "$WT/scripts/lib/workspace_shards.py" --regen \
+        --out "$SHARD_PLAN" "$SCE_REGEN_SHARD")" \
+        || sce_gate_cannot_run "scripts/lib/workspace_shards.py could not plan shard $SCE_REGEN_SHARD of the regeneration's steps"
+    while IFS= read -r unit; do
+        case "$unit" in
+            "step "*) STEPS+=("${unit#step }") ;;
+            "") ;;
+            *) sce_gate_cannot_run "scripts/lib/workspace_shards.py named a unit it does not define: $unit" ;;
+        esac
+    done <<<"$shard_steps"
+    if (( ${#STEPS[@]} == 0 )); then
+        python3 "$WT/scripts/lib/ctest_shards.py" report --out "$SHARD_PLAN" --executed 0 --disabled 0
+        sce_gate_step "shard $SCE_REGEN_SHARD holds no step; the other shards regenerate every tree"
+        exit 0
+    fi
+    mapfile -t SHARD_OUTPUTS < "$SHARD_PLAN/outputs"
+    sce_gate_step "shard $SCE_REGEN_SHARD: regenerating the trees of ${STEPS[*]} in a worktree of HEAD"
+else
+    sce_gate_step "regenerating every committed tree in a worktree of HEAD"
+fi
 
 mkdir -p "$WT/target/debug"
 cp "$CODEGEN" "$WT/target/debug/sce-codegen"
@@ -105,12 +144,31 @@ MINIMUM=800
 if (( ${#GENERATED[@]} < MINIMUM )); then
     sce_gate_fail "only ${#GENERATED[@]} generated file(s) found, under the ${MINIMUM} floor — the scan is broken, not the tree"
 fi
+# A shard samples only what its own steps write, by the outputs each declares:
+# a file another shard's step writes would stay removed here, and read as a
+# file the procedure no longer produces.
+CANDIDATES=()
+if [[ -n "$SHARD_PLAN" ]]; then
+    for file in "${GENERATED[@]}"; do
+        for glob in ${SHARD_OUTPUTS[@]+"${SHARD_OUTPUTS[@]}"}; do
+            # shellcheck disable=SC2053  # the right side is the declared glob
+            if [[ "$file" == $glob ]]; then
+                CANDIDATES+=("$file")
+                break
+            fi
+        done
+    done
+else
+    CANDIDATES=("${GENERATED[@]}")
+fi
 SAMPLE=()
-for (( i = 0; i < ${#GENERATED[@]}; i += 47 )); do
-    SAMPLE+=("${GENERATED[i]}")
+for (( i = 0; i < ${#CANDIDATES[@]}; i += 47 )); do
+    SAMPLE+=("${CANDIDATES[i]}")
 done
-sce_gate_step "removing ${#SAMPLE[@]} of ${#GENERATED[@]} generated file(s) so the run has to restore them"
-( cd "$WT" && rm -f "${SAMPLE[@]}" )
+sce_gate_step "removing ${#SAMPLE[@]} of ${#CANDIDATES[@]} generated file(s) so the run has to restore them"
+if (( ${#SAMPLE[@]} > 0 )); then
+    ( cd "$WT" && rm -f "${SAMPLE[@]}" )
+fi
 
 REGEN_LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$REGEN_LOG'"
@@ -123,10 +181,15 @@ sce_gate_on_exit "rm -f '$REGEN_LOG'"
 # the likeliest explanation for the four files an earlier attempt at this
 # gate could not account for from inside a Rust test.
 if ! ( cd "$WT" && SCE_WORKSPACE_ROOT="$WT" \
-        ./scripts/regen_all_committed_trees.sh ) >"$REGEN_LOG" 2>&1; then
+        ./scripts/regen_all_committed_trees.sh ${STEPS[@]+"${STEPS[@]}"} ) >"$REGEN_LOG" 2>&1; then
     tail -40 "$REGEN_LOG" >&2
     sce_gate_fail "the regeneration procedure did not complete"
 fi
+
+# Where the time went, step by step: each step names itself and says how long
+# each of its stages took, and `workspace_shards.py --measure` reads these
+# lines back into the table that spreads the steps over the lane's shards.
+grep -E '^(=== step |    .+: [0-9]+s$)' "$REGEN_LOG" || true
 
 # A committed generated file the procedure no longer produces: the procedure
 # removed it, so it is a tracked file the worktree lacks. Named on its own and
@@ -163,6 +226,24 @@ if [[ -n "$CHANGED" ]]; then
     first="$(printf '%s\n' "$CHANGED" | head -1 | awk '{print $2}')"
     ( cd "$WT" && git --no-pager diff -- "$first" | head -40 ) >&2
     sce_gate_fail "regenerating the committed trees changed them — the procedure does not reproduce what is committed"
+fi
+
+# What this shard ran, for the lane's last job to hold beside the other shards'
+# (`ctest_shards.py verify`): a step counts when the procedure started it, and
+# the procedure completed, so each step it started also finished.
+if [[ -n "$SHARD_PLAN" ]]; then
+    ran=0
+    for step in "${STEPS[@]}"; do
+        if grep -qxF "=== step $step" "$REGEN_LOG"; then
+            ran=$((ran + 1))
+        fi
+    done
+    if (( ran != ${#STEPS[@]} )); then
+        sce_gate_fail "the procedure ran $ran of the ${#STEPS[@]} step(s) of shard $SCE_REGEN_SHARD"
+    fi
+    python3 "$WT/scripts/lib/ctest_shards.py" report --out "$SHARD_PLAN" --executed "$ran" --disabled 0
+    sce_gate_step "the trees of shard $SCE_REGEN_SHARD (${STEPS[*]}) reproduced byte for byte"
+    exit 0
 fi
 
 sce_gate_step "every committed tree reproduced byte for byte"
