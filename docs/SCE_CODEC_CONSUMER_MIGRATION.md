@@ -4032,3 +4032,21 @@ runtime does, and a codec writes the bytes it wrote.
   byte. A sink that keeps the provided `write_vle_*` sees one write of the exact length; the bytes are the same. A sink
   of bounded room whose `write_bytes` refuses a write it has no room for, writing nothing, now refuses a VLE whole,
   its position where it was, as `SliceSink` does; it wrote the bytes that fit before refusing.
+
+## What enables a Rust machine's transition is a row of its tables (ADR 0127)
+
+Landing: the commits that add this section. The committed Rust machines under `sce-specs` change; a consumer
+regenerates every Rust machine it generates.
+
+- **A generated machine** is regenerated, and nothing a host calls changes. Its tables gain `selection`, the rows
+  that say which of each state's written transitions each event enables, and its policy no longer writes
+  `first_enabled_transition`: the runtime's one selection reads the rows for every machine of a program and asks the
+  policy only `guard_holds(transition, event_data, engine)`, which a machine with a guard writes. The event enum, its
+  numbers and `EVENTS` are unchanged.
+- **Tables written by hand** (`DocumentTables { .. }`) fail to compile once, with `E0063` (a missing field): they add
+  `selection: None`. Their machine answers the selection itself, as before, so a hand-written `StatePolicy` keeps
+  its `first_enabled_transition`. `StatePolicy::first_enabled_transition` now has a default, which stops the program
+  with a message at the first selection, so a policy of tables with no rows that does not write it is found the
+  first time it runs.
+- **A hand-written `helpers::microstep::Behaviour`** needs nothing: `guard_holds` is a new provided method, which the
+  runtime asks only of tables that carry rows.

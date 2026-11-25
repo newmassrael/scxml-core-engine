@@ -2713,12 +2713,32 @@ fn rust_optional_id(id_type: &str, id: Option<u16>) -> String {
     }
 }
 
+/// The named events of a Rust machine, in the order its event enum numbers
+/// them; the null event is numbered after the last (docs/adr/0068). The
+/// template declares the enum, its `ID_<variant>` numbers, `EVENTS`, the name
+/// tables and the tables' `error_events` from this list, and the selection
+/// rows are made from it (docs/adr/0127), so what is numbered and what the
+/// rows are made from are one list.
+///
+/// The order is the one the template's `sort` filter gave the events before
+/// the list was made here, so no machine's numbers moved: the names compared
+/// with their ASCII letters folded to lower case, and names that compare equal
+/// so in the set's own order, by a stable sort.
+pub fn rust_numbered_events(model: &SCXMLModel) -> Vec<&str> {
+    let mut events: Vec<&str> = model.events.iter().map(String::as_str).collect();
+    events.sort_by_key(|name| name.to_ascii_lowercase());
+    events
+}
+
 /// What a Rust machine's template writes its tables from (docs/adr/0064): the
 /// rows [`crate::document_tables::DocumentTables::of`] computes for `model`, in
 /// the order the runtime numbers them, the sizes its buffers take from
 /// `bounds`, the `TransitionId` of each written transition by its source
-/// state and its index there (`written`), and the walk its microsteps form
-/// their sets by, with the entry rows the row walk reads (docs/adr/0125).
+/// state and its index there (`written`), the walk its microsteps form
+/// their sets by, with the entry rows the row walk reads (docs/adr/0125), the
+/// events its enum numbers (`events`, [`rust_numbered_events`]) and what
+/// enables each transition, as numbers of those events (`selection`,
+/// docs/adr/0127).
 ///
 /// The rows are `model`'s own; the sizes are `bounds`, which a product line
 /// gives every variant from the whole document (ADR 0057 §9), so that a
@@ -2736,7 +2756,8 @@ fn rust_tables(
     })?;
     // The event enum's `Null` is numbered after every event the document
     // names, so it too is a `u16`.
-    rust_table_number(model.events.len(), "events before its null event")?;
+    let events = rust_numbered_events(model);
+    rust_table_number(events.len(), "events before its null event")?;
     let max_configuration = rust_table_number(bounds.configuration, "states in one configuration")?;
     let max_enabled = rust_table_number(bounds.enabled, "transitions in one selection")?;
     let max_history_defaults =
@@ -2874,6 +2895,7 @@ fn rust_tables(
     }
     let row_walk = entry_paths.is_some();
     let walk = if row_walk { "ROW_WALK" } else { "GENERAL_WALK" };
+    let selection = rust_selection_rows(model, &tables, &events)?;
     Ok(serde_json::json!({
         "states": states,
         "histories": histories,
@@ -2891,6 +2913,74 @@ fn rust_tables(
         "max_history_defaults": max_history_defaults,
         "max_walk": max_walk,
         "written": written,
+        "events": events,
+        "selection": selection,
+    }))
+}
+
+/// The selection rows of a Rust machine's tables (docs/adr/0127), as the
+/// runtime's `SelectionRows` spells them: each state's first written
+/// transition and one past the last (`first_written`), each transition's
+/// list of events (`triggers`), and the lists (`trigger_events`), each its
+/// length first, each distinct list in the pool once.
+///
+/// The events each transition answers are asked of the names the machine's
+/// `get_event_name` answers for `events`, the list its enum numbers, so they
+/// are the names the descriptor match of a machine's run would have read.
+fn rust_selection_rows(
+    model: &SCXMLModel,
+    tables: &crate::document_tables::DocumentTables,
+    events: &[&str],
+) -> Result<serde_json::Value, GenerateError> {
+    let names: Vec<String> = events
+        .iter()
+        .map(|event| filters::event_wire_name((*event).to_string()))
+        .collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let selection = tables.selection(model, &names).map_err(|refusal| {
+        GenerateError::unsupported(format!("the Rust machine's selection rows: {refusal}"))
+    })?;
+    let mut pool: Vec<String> = Vec::new();
+    let mut positions: std::collections::BTreeMap<&[u16], usize> =
+        std::collections::BTreeMap::new();
+    let triggers: Vec<String> = selection
+        .triggers
+        .iter()
+        .map(|list| {
+            if list.is_empty() {
+                return "TriggerRow::NONE".to_string();
+            }
+            let position = *positions.entry(list.as_slice()).or_insert_with(|| {
+                let position = pool.len();
+                pool.push(format!("TriggerEvent::count({})", list.len()));
+                pool.extend(
+                    list.iter()
+                        .map(|event| format!("TriggerEvent::new(EventId({event}))")),
+                );
+                position
+            });
+            format!("TriggerRow::at({position})")
+        })
+        .collect();
+    // A list's position is a 14-bit id field of its row, as a list of targets'
+    // is.
+    if pool.len() > crate::document_tables::MAX_IDS {
+        return Err(GenerateError::unsupported(format!(
+            "the document's transitions need {} entries in the pool of the events that \
+             enable them, and a Rust machine's tables hold at most {} (docs/adr/0127)",
+            pool.len(),
+            crate::document_tables::MAX_IDS
+        )));
+    }
+    let first_written: Vec<String> = selection
+        .first_written
+        .iter()
+        .map(|number| format!("TransitionId({number})"))
+        .collect();
+    Ok(serde_json::json!({
+        "first_written": first_written,
+        "triggers": triggers,
+        "trigger_events": pool,
     }))
 }
 
@@ -9268,6 +9358,99 @@ mod tests {
             }
             other => panic!("a walk past a u16 is refused, got {other:?}"),
         }
+    }
+
+    /// docs/adr/0127: the events a Rust machine numbers are listed in the order
+    /// the template's `sort` filter gave them before the list was made in
+    /// Rust, so no machine's numbers moved: letters folded, ties in the set's
+    /// own order.
+    #[test]
+    fn rust_numbered_events_are_the_order_the_template_sorted_them_in() {
+        let mut model = SCXMLModel::default();
+        model.events = [
+            "go", "Go", "gO", "Zeta", "alpha", "error.x", "_b", "1a", "Error",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let env = minijinja::Environment::new();
+        let sorted = env
+            .render_str(
+                "{% for event in events | sort %}{{ event }}\n{% endfor %}",
+                minijinja::context! { events => &model.events },
+            )
+            .expect("render");
+        let by_template: Vec<&str> = sorted.lines().collect();
+        assert_eq!(rust_numbered_events(&model), by_template);
+        assert_eq!(
+            rust_numbered_events(&model),
+            ["1a", "_b", "alpha", "Error", "error.x", "Go", "gO", "go", "Zeta"]
+        );
+    }
+
+    /// docs/adr/0127: a Rust machine's tables state what enables each written
+    /// transition, as numbers of the events its enum numbers: each state's
+    /// first written transition and one past the last, and each transition's
+    /// list, each distinct list once in the pool, its length first. A
+    /// descriptor is matched by the runtime's own match against each event's
+    /// name, an eventless transition answers the null event alone, and a
+    /// transition no selection returns has no list.
+    #[test]
+    fn rust_tables_state_what_enables_each_written_transition() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+  <state id="idle">
+    <onentry><raise event="Zeta"/><raise event="alpha"/><raise event="error.platform.x"/></onentry>
+    <transition event="go" target="busy"/>
+    <transition event="error.*" target="idle"/>
+  </state>
+  <state id="busy">
+    <transition target="idle"/>
+    <transition event="*" target="busy"/>
+  </state>
+</scxml>"#,
+                "rust_selection_rows",
+            )
+            .expect("parse");
+        let bounds = crate::microstep_bounds::MicrostepBounds::of(&model);
+        let tables = rust_tables(&model, &bounds).expect("tables");
+        // Letters folded: `alpha` before `Zeta`. The null event is 4.
+        assert_eq!(
+            tables["events"],
+            serde_json::json!(["alpha", "error.platform.x", "go", "Zeta"])
+        );
+        let selection = &tables["selection"];
+        assert_eq!(
+            selection["first_written"],
+            serde_json::json!(["TransitionId(0)", "TransitionId(2)", "TransitionId(4)"])
+        );
+        assert_eq!(
+            selection["triggers"],
+            serde_json::json!([
+                "TriggerRow::at(0)",
+                "TriggerRow::at(2)",
+                "TriggerRow::at(4)",
+                "TriggerRow::at(6)",
+                "TriggerRow::NONE"
+            ])
+        );
+        assert_eq!(
+            selection["trigger_events"],
+            serde_json::json!([
+                "TriggerEvent::count(1)",
+                "TriggerEvent::new(EventId(2))",
+                "TriggerEvent::count(1)",
+                "TriggerEvent::new(EventId(1))",
+                "TriggerEvent::count(1)",
+                "TriggerEvent::new(EventId(4))",
+                "TriggerEvent::count(4)",
+                "TriggerEvent::new(EventId(0))",
+                "TriggerEvent::new(EventId(1))",
+                "TriggerEvent::new(EventId(2))",
+                "TriggerEvent::new(EventId(3))"
+            ])
+        );
     }
 
     /// A document with a `<parallel>` does not fix its microsteps' sets, so its

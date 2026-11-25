@@ -1196,7 +1196,9 @@ pub fn register_event_wire_filters(env: &mut minijinja::Environment) {
 /// table: its own, except the wildcard entry, which is the descriptor that asks
 /// for it ([`WILDCARD_EVENT_WIRE_NAME`]). The table that maps `*` to the member
 /// is what a name that no event of the document matches is delivered through.
-fn event_wire_name(name: String) -> String {
+/// It is also the name a Rust machine's `get_event_name` answers for the
+/// member, which the selection rows match descriptors against (ADR 0127).
+pub fn event_wire_name(name: String) -> String {
     if name == crate::analyzer::WILDCARD_EVENT {
         crate::analyzer::WILDCARD_EVENT_WIRE_NAME.to_string()
     } else {

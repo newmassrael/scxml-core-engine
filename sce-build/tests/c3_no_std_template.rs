@@ -322,24 +322,27 @@ fn rust_template_omits_no_std_attribute_under_default_std() {
 fn rust_template_leaves_the_microstep_to_the_runtime() {
     // W3C SCXML Appendix D's microstep is the runtime's
     // (`sce_rust_runtime::helpers::microstep`), for a `<parallel>` chart as
-    // for every other: the emission answers only which of a state's
-    // transitions an event enables, as the number of its row in the
-    // document's tables (docs/adr/0064), and carries no conflict resolution,
+    // for every other: the emission states which of a state's transitions an
+    // event enables as rows of the document's tables (docs/adr/0064,
+    // docs/adr/0127), which the runtime's one selection reads, and carries no
+    // selection, conflict resolution,
     // exit set or entry walk of its own — nor the collections one would need,
     // nor the structure the runtime reads from the tables. It used to carry a
     // whole second microstep for exactly this shape, with its own dedup set
     // and buffers.
     //
     // The chart is p(0) > r1(1), r2(2), and its rows are r1's `go` (0), r2's
-    // `go` (1) and the document's initial transition (2).
+    // `go` (1) and the document's initial transition (2). Its one event, `go`,
+    // is 0 and the null event 1: p's range of written transitions is empty,
+    // r1's is row 0 and r2's row 1, and both answer the one list, `go`.
     let model = parse(PARALLEL_FSM, "parallel_microstep");
     for no_std in [false, true] {
         let code = generate(&model, &template_dir(), no_std).expect("render");
         for expected in [
-            "fn first_enabled_transition(",
-            ") -> Option<::sce_rust_runtime::TransitionId> {",
-            "return Some(::sce_rust_runtime::TransitionId(0));",
-            "return Some(::sce_rust_runtime::TransitionId(1));",
+            "selection: Some(SelectionRows {",
+            "first_written: &[TransitionId(0), TransitionId(0), TransitionId(1), TransitionId(2)],",
+            "triggers: &[TriggerRow::at(0), TriggerRow::at(0), TriggerRow::NONE],",
+            "trigger_events: &[TriggerEvent::count(1), TriggerEvent::new(EventId(0))],",
             "transition: ::sce_rust_runtime::TransitionId,",
             "fn execute_exit_actions(\n        &mut self,\n        \
              state: ::sce_rust_runtime::StateId,\n        \
@@ -376,6 +379,10 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
             "fn deactivate(",
             "configuration_before_exit",
             "PolicyDocument",
+            // The selection is the runtime's, from the rows above, and no
+            // transition here has a guard to ask of the machine.
+            "fn first_enabled_transition(",
+            "fn guard_holds(",
         ] {
             assert!(
                 !code.contains(procedure),
@@ -433,14 +440,17 @@ fn rust_template_hooks_match_on_the_numbers_the_tables_are_indexed_by() {
             // The hooks take the numbers.
             "fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId,",
             "fn execute_history_default_content(&mut self, history: ::sce_rust_runtime::HistoryId,",
-            "        state: ::sce_rust_runtime::StateId,\n        \
-             event: ::sce_rust_runtime::EventId,\n        \
-             sce_event_data: Self::EventData<'_>,\n",
             // And match on them.
             "HookNumbersState::ID_S0 => {",
             "HookNumbersHistory::ID_H => {",
-            "event == HookNumbersEvent::ID_Go",
-            "event == HookNumbersEvent::ID_Left",
+            // What enables a transition is rows of the same numbers
+            // (docs/adr/0127): s0(0), p(1), s1(2); s0's `go` is row 0 and s1's
+            // `left` row 1; `back` is event 0, `go` 1, `left` 2.
+            "first_written: &[TransitionId(0), TransitionId(1), TransitionId(1), TransitionId(2)],",
+            "triggers: &[TriggerRow::at(0), TriggerRow::at(2), TriggerRow::NONE, \
+             TriggerRow::NONE, TriggerRow::NONE],",
+            "trigger_events: &[TriggerEvent::count(1), TriggerEvent::new(EventId(1)), \
+             TriggerEvent::count(1), TriggerEvent::new(EventId(2))],",
         ] {
             assert!(
                 code.contains(expected),
@@ -450,8 +460,9 @@ fn rust_template_hooks_match_on_the_numbers_the_tables_are_indexed_by() {
         for typed in [
             "HookNumbersState::S0 => {",
             "HookNumbersHistory::H => {",
-            "event == HookNumbersEvent::Go",
-            "event == HookNumbersEvent::Left",
+            // No event is compared in the machine: the rows are read by the
+            // runtime's selection.
+            "event == HookNumbersEvent::",
         ] {
             assert!(
                 !code.contains(typed),
@@ -802,7 +813,8 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
              entry_rows: &[],\n        \
              entry_paths: &[],\n        \
              history: Some(&::sce_rust_runtime::HISTORY),\n        \
-             parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
+             parallel: Some(&::sce_rust_runtime::PARALLEL),\n        \
+             selection: Some(SelectionRows {",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables<'static> \
              = {",
             "const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = \

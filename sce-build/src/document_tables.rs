@@ -188,6 +188,23 @@ pub enum TransitionOrigin {
     Document,
 }
 
+/// What enables each written transition of a document (ADR 0127): the rows the
+/// runtime's one selection reads in place of a machine's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection {
+    /// For each state, by `StateId`, the `TransitionId` of its first written
+    /// transition, and one entry past the last state: the number of written
+    /// transitions. A state's own written transitions are the numbers from its
+    /// entry up to the next one's, in the order they are written.
+    pub first_written: Vec<u16>,
+    /// For each transition, by `TransitionId`, the numbers of the events that
+    /// enable it, in ascending order: for a written transition with an event,
+    /// each named event its descriptor matches; for an eventless one, the null
+    /// event alone; for any other transition, and for a written one whose
+    /// descriptor matches no event, none.
+    pub triggers: Vec<Vec<u16>>,
+}
+
 /// One state of a transition's entry path (ADR 0125): a state the transition
 /// enters, and whether it is entered by default (Appendix D's
 /// statesForDefaultEntry), so its initial transition's content runs after its
@@ -216,6 +233,8 @@ pub enum Table {
     Histories,
     Transitions,
     Targets,
+    /// The events a machine numbers, the null event after them (ADR 0127).
+    Events,
 }
 
 impl Table {
@@ -225,6 +244,8 @@ impl Table {
         match self {
             Table::States | Table::Histories | Table::Transitions => MAX_IDS,
             Table::Targets => MAX_TARGETS,
+            // The null event is numbered after the last, and is a `u16` too.
+            Table::Events => u16::MAX as usize,
         }
     }
 }
@@ -236,6 +257,7 @@ impl fmt::Display for Table {
             Table::Histories => "<history> elements",
             Table::Transitions => "transitions (written, initial and history default)",
             Table::Targets => "transition targets",
+            Table::Events => "events before the null event",
         })
     }
 }
@@ -261,6 +283,13 @@ pub enum TablesError {
          subtree is not the run of states that follows it"
     )]
     NotDocumentOrder { state: String },
+    /// The tables name a written transition the model does not have: they were
+    /// built from another model than the one they are read with.
+    #[error(
+        "the tables name transition {index} of state `{state}`, which the model does not have: \
+         they are not this model's tables"
+    )]
+    NotOfModel { state: String, index: u16 },
 }
 
 /// `count` as a `u16` when `table` holds that many rows, or the refusal that
@@ -396,6 +425,72 @@ impl DocumentTables {
                 _ => self.entry_path(row),
             })
             .collect()
+    }
+
+    /// What enables each of these tables' transitions (ADR 0127), numbered by
+    /// `events`: the names a machine answers for its named events, in the order
+    /// it numbers them, the null event numbered after the last.
+    ///
+    /// The events a written transition answers are asked of every name in
+    /// `events` with the runtime's own descriptor match
+    /// (`sce_rust_runtime::helpers::event_matching::matches_event_descriptor`),
+    /// the function a machine that matched descriptors at run time called on
+    /// the same names. So the lists are made from the set the machine numbers,
+    /// whatever was added to the model's events after its analysis, and a
+    /// build and a run cannot disagree about a name.
+    ///
+    /// `model` is the model these tables were built from
+    /// ([`DocumentTables::of`]); its written transitions are read by the rows'
+    /// sources and indices.
+    pub fn selection(&self, model: &SCXMLModel, events: &[&str]) -> Result<Selection, TablesError> {
+        let null = fits(events.len(), Table::Events)?;
+        let mut first_written: Vec<u16> = Vec::with_capacity(self.states.len() + 1);
+        let mut triggers: Vec<Vec<u16>> = Vec::with_capacity(self.transitions.len());
+        for (number, row) in self.transitions.iter().enumerate() {
+            let (TransitionOrigin::Written { index_in_source }, Some(source)) =
+                (row.origin, row.source)
+            else {
+                triggers.push(Vec::new());
+                continue;
+            };
+            // The written rows come first, grouped by source in state order:
+            // every state up to this row's source begins at or before it.
+            while first_written.len() <= usize::from(source) {
+                first_written.push(fits(number, Table::Transitions)?);
+            }
+            let id = &self.state_row(source).id;
+            let transition = model
+                .states
+                .get(id)
+                .and_then(|state| state.transitions.get(usize::from(index_in_source)))
+                .ok_or_else(|| TablesError::NotOfModel {
+                    state: id.clone(),
+                    index: index_in_source,
+                })?;
+            triggers.push(if transition.event.is_empty() {
+                vec![null]
+            } else {
+                (0..null)
+                    .filter(|&event| {
+                        sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                            events[usize::from(event)],
+                            &transition.event,
+                        )
+                    })
+                    .collect()
+            });
+        }
+        let written = self
+            .transitions
+            .iter()
+            .take_while(|row| matches!(row.origin, TransitionOrigin::Written { .. }))
+            .count();
+        let written = fits(written, Table::Transitions)?;
+        first_written.resize(self.states.len() + 1, written);
+        Ok(Selection {
+            first_written,
+            triggers,
+        })
     }
 
     /// The entry path of one transition of a document that fixes its sets, or

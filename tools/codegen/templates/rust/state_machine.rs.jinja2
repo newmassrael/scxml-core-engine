@@ -196,17 +196,20 @@ impl {{ machine_name }}History {
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+{# `tables.events` is the one list the event numbers and the selection rows
+   are made from (sce_build::generator::rust_numbered_events, docs/adr/0127):
+   every loop that numbers an event reads it. #}
 /// The events the document names, and the null event. Each variant's
 /// discriminant is the number the runtime knows the event by, its position in
 /// `StatePolicy::EVENTS`.
 {{ event_derives_attr }}
 #[repr(u16)]
 pub enum {{ machine_name }}Event {
-{% for event_name in model.events | sort %}
+{% for event_name in tables.events %}
     {{ event_name | to_event_variant }} = {{ loop.index0 }},
 {% endfor %}
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = {{ model.events | length }},
+    Null = {{ tables.events | length }},
 }
 
 /// Each event's number, as the runtime's queues and the policy's behaviour
@@ -216,7 +219,7 @@ pub enum {{ machine_name }}Event {
 // Named after the variant each one numbers, which is not upper case.
 #[allow(non_upper_case_globals)]
 impl {{ machine_name }}Event {
-{% for event_name in model.events | sort %}
+{% for event_name in tables.events %}
     pub const ID_{{ event_name | to_event_variant }}: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::{{ event_name | to_event_variant }} as u16);
 {% endfor %}
     pub const ID_Null: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::Null as u16);
@@ -265,14 +268,23 @@ pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarch
 /// row walk reads them. Any other document carries the general walk, which
 /// computes them, and no rows.
 ///
+/// `selection` is what enables each written transition (docs/adr/0127): each
+/// state's range of written transitions (`first_written`, one entry past the
+/// last state), and for each transition the list of events that enable it
+/// (`triggers`, a position in `trigger_events`, each list its length first),
+/// as the numbers of `{{ machine_name }}Event`. The runtime's one selection
+/// reads them for every machine and asks this machine only whether a guard
+/// holds (`guard_holds`).
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, EntryRow, EntryStep, HistoryId, HistoryRow, StateId, StateKind, StateRow,
-        Target, TransitionId, TransitionRow,
+        DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, SelectionRows,
+        StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
+        TriggerRow,
     };
     DocumentTables {
         states: &[
@@ -300,7 +312,7 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
    first sorted state when the attribute is unset), written as the variant's
    number so `StatePolicy::initial_state` and the engine read the same one. #}
         default_state: ::sce_rust_runtime::StateId({{ machine_name }}State::{{ default_state_id | to_state_variant }} as u16),
-        null_event: ::sce_rust_runtime::EventId({{ model.events | length }}),
+        null_event: ::sce_rust_runtime::EventId({{ tables.events | length }}),
 {# §scxml-3.12.2: the processor "MUST signal any errors that occur by raising
    SCXML events whose names begin with 'error.'". It defines `error.execution`
    and `error.communication`, lets a platform add a suffix to either, and
@@ -309,12 +321,20 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
    same sorted loop the enum is, so the numbers cannot disagree with it. The
    main loop counts an unanswered one and bounds a chain of them by these
    numbers (docs/adr/0068). #}
-        error_events: &[{% for event_name in model.events | sort %}{% if event_name is startingwith("error.") %}::sce_rust_runtime::EventId({{ loop.index0 }}),{% endif %}{% endfor %}],
+        error_events: &[{% for event_name in tables.events %}{% if event_name is startingwith("error.") %}::sce_rust_runtime::EventId({{ loop.index0 }}),{% endif %}{% endfor %}],
         walk: &::sce_rust_runtime::{{ tables.walk }},
         entry_rows: &[{% for row in tables.entry_rows %}{{ row }}{{ ", " if not loop.last }}{% endfor %}],
         entry_paths: &[{% for entry in tables.entry_paths %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
         history: {% if tables.history %}Some(&::sce_rust_runtime::HISTORY){% else %}None{% endif %},
         parallel: {% if tables.parallel %}Some(&::sce_rust_runtime::PARALLEL){% else %}None{% endif %},
+{# docs/adr/0127: what enables each written transition, as numbers of the
+   events above, read by the runtime's one selection, which asks the policy's
+   `guard_holds` only for a transition the event enables. #}
+        selection: Some(SelectionRows {
+            first_written: &[{% for entry in tables.selection.first_written %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
+            triggers: &[{% for row in tables.selection.triggers %}{{ row }}{{ ", " if not loop.last }}{% endfor %}],
+            trigger_events: &[{% for entry in tables.selection.trigger_events %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
+        }),
     }
 };
 {% if model.emitted_transition_table %}
@@ -1918,7 +1938,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     const HISTORIES: &'static [Self::History] = &[];
 {% endif %}
     const EVENTS: &'static [Self::Event] = &[
-{% for event_name in model.events | sort %}
+{% for event_name in tables.events %}
         {{ machine_name }}Event::{{ event_name | to_event_variant }},
 {% endfor %}
         {{ machine_name }}Event::Null,
@@ -2020,7 +2040,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-{% for event_name in model.events | sort %}
+{% for event_name in tables.events %}
             {{ machine_name }}Event::{{ event_name | to_event_variant }} => "{{ event_name | event_wire_name }}",
 {% endfor %}
             {{ machine_name }}Event::Null => "",
@@ -2029,7 +2049,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-{% for event_name in model.events | sort %}
+{% for event_name in tables.events %}
             "{{ event_name | event_wire_name }}" => Some({{ machine_name }}Event::{{ event_name | to_event_variant }}),
 {% endfor %}
             _ => None,

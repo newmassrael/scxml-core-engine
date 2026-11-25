@@ -63,15 +63,19 @@ PY
 
 # ── The null event ─────────────────────────────────────────────────
 #
-# No case drops the `| sort` from the loop: the model's events are a sorted
-# set already, so that edit changes no output and could only SURVIVE.
+# No case reorders the loop: it reads `tables.events`, the one list the
+# generator numbers the events by (`rust_numbered_events`, docs/adr/0127),
+# whose order its own unit test holds to the order the template's `sort`
+# filter gave before.
 #
 # The null event is the one past the document's own; written as the first,
 # it is a document event, and the main loop would skip that event's
 # transitions as eventless ones.
 
+# Re-aimed 2026-11-25: the template numbers the events from `tables.events`
+# (docs/adr/0127); the count it writes is unchanged.
 mutation_case "the null event takes the first event's number" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     """        null_event: ::sce_rust_runtime::EventId({{ model.events | length }}),""",
+     """        null_event: ::sce_rust_runtime::EventId({{ tables.events | length }}),""",
      """        null_event: ::sce_rust_runtime::EventId(0),""")
 PY

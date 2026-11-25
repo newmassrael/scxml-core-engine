@@ -155,6 +155,15 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
     }
 }
 
+/// The number the event enum of `code` gives its variant `variant`, read from
+/// the variant's line in the enum (`    <variant> = <number>,`).
+fn event_number(code: &str, variant: &str) -> Option<usize> {
+    let prefix = format!("    {variant} = ");
+    code.lines()
+        .find_map(|line| line.strip_prefix(&prefix)?.strip_suffix(','))
+        .and_then(|number| number.parse().ok())
+}
+
 /// P2, P3, §12.3: every branch is a transition on the snapshot event, tried in
 /// its document place, its guard the match of its kind: a receive with a
 /// template asks for its record's value under its record's event and calls
@@ -173,16 +182,22 @@ fn each_branch_is_a_transition_on_the_snapshot_event_guarded_by_its_match() {
         receive < timeout,
         "the branches are tried in document order"
     );
-    assert!(asker.contains("event == AskerEvent::ID_SceTestSnapshot"));
+    // The branches answer the snapshot event: a row of the tables names its
+    // number, and the guards are the machine's `guard_holds` (docs/adr/0127).
+    let snapshot = event_number(&asker, "SceTestSnapshot").expect("the snapshot event is numbered");
+    assert!(asker.contains(&format!("TriggerEvent::new(EventId({snapshot}))")));
+    assert!(asker.contains("fn guard_holds("));
     assert!(asker.contains("use super::reply_ok;"));
     assert!(asker.contains("use super::request_of;"));
 
     let coordinator = text("coordinator");
     assert!(coordinator.contains("self.test_context().done(\"answerer\")"));
-    assert!(
-        !coordinator.contains("event == CoordinatorEvent::ID_DoneInvokeAnswerer"),
-        "a done branch is read from the snapshot, not from a completion"
-    );
+    if let Some(done) = event_number(&coordinator, "DoneInvokeAnswerer") {
+        assert!(
+            !coordinator.contains(&format!("TriggerEvent::new(EventId({done}))")),
+            "a done branch is read from the snapshot, not from a completion"
+        );
+    }
     assert!(coordinator.contains(
         "::sce_rust_runtime::test::receives::<any_request::Value>(self.test_context(), \"peer\", \
          \"job.request\""

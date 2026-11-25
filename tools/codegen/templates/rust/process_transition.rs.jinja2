@@ -4,10 +4,13 @@
 {#
     Transition Selection Template (Rust Jinja2)
 
-    What the generated policy knows and the engine does not: which of a
-    state's transitions an event enables, and what each transition's content
-    is. Everything else Appendix D does with a transition — the walk from each
-    atomic state up through its ancestors, the ordered set, conflict removal,
+    What the generated policy knows and the engine does not: whether a
+    transition's guard holds, and what each transition's content is. Which of a
+    state's transitions an event enables is a row of the document's tables
+    (`selection`, state_machine.rs.jinja2), which the runtime's one selection
+    reads for every machine (docs/adr/0127). Everything else Appendix D does
+    with a transition — the walk from each atomic state up through its
+    ancestors, the ordered set, conflict removal,
     the exit set, the entry set — is written once, in
     `sce_rust_runtime::helpers::microstep`, over the structure
     state_machine.rs.jinja2 emits.
@@ -22,7 +25,7 @@
 
     Generates:
     - bind_current_event(event, engine)             §scxml-5.10 `_event` for the guards
-    - first_enabled_transition(state, event, sce_event_data, engine)  the per-state half of selection
+    - guard_holds(transition, sce_event_data, engine)  whether a guard holds, for a guarded document
     - execute_transition_content(transition, sce_event_data, engine)
 
     `sce_event_data` is the data of the event being processed, the machine's
@@ -36,6 +39,10 @@
     written in `state`. The state and the event come in as the numbers of the
     same tables (docs/adr/0123), matched through the `ID_<variant>` constants
     state_machine.rs.jinja2 writes beside each enum.
+
+    The template stays the one judge of which transitions are guarded: the
+    rows hold no guard, and `guard_holds` is written over exactly the
+    transitions that have one (docs/adr/0127, decision 2).
 
     The Rust twin of C++ process_transition.jinja2.
 #}
@@ -52,20 +59,6 @@
 {%- elif trans.is_pure_in_predicate -%}{{ trans.cond_cpp | rust_in_predicate }}
 {%- elif model.needs_script_engine -%}self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
-{%- endif -%}
-{%- endmacro %}
-
-{# Whether `trans` answers `event`: an eventless transition only an eventless
-   selection, a transition with an event descriptor only a named event —
-   §scxml-3.13 selects the two kinds in separate passes. #}
-{# `event` is the event's number (docs/adr/0123), compared with the numbers
-   the event type names (`ID_<variant>`). A descriptor matched by its name
-   reads the name, and only it turns the number into the event. #}
-{% macro event_match(trans) -%}
-{%- if not trans.event -%}event == {{ machine_name }}Event::ID_Null
-{%- elif trans.needs_string_matching -%}event != {{ machine_name }}Event::ID_Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(Self::get_event_name(Self::event_of(event)), "{{ trans.event }}")
-{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event::ID_{{ ev | to_event_variant }}{{ ' || ' if not loop.last }}{% endfor %}
-{%- else -%}false
 {%- endif -%}
 {%- endmacro %}
 
@@ -141,47 +134,47 @@
     }
 
 {% endif %}
-    // Appendix D selectTransitions, the half only this document can answer:
-    // the first of `state`'s own transitions, in document order, that `event`
-    // enables, as its row of the tables, which holds its targets and its
-    // type. The engine walks the atomic states and their ancestors and keeps
-    // the ordered set. `Event::ID_Null` asks for eventless transitions. The
-    // state and the event are the numbers the tables are indexed by
-    // (docs/adr/0123).
+{# Whether any transition is guarded: only then is `guard_holds` written, and
+   the trait's default, which holds, answers for a document with none. #}
+{% set guarded = namespace(any=false) %}
+{% for state_id, state in model.states | dictsort %}
+{% for trans in state.transitions %}
+{% if trans.cond or trans.native_guard %}
+{% set guarded.any = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if guarded.any %}
+    // §scxml-3.13: whether the guard of `transition`, a written transition the
+    // event being selected for enables, holds. Which transitions an event
+    // enables is a row of the tables (`selection`), which the runtime's one
+    // selection reads for every machine and asks this only for a transition
+    // the event enables, in the order its state's transitions are written,
+    // until one holds (docs/adr/0127). The transition is its number in the
+    // tables, and every other transition has no guard.
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn first_enabled_transition(
+    fn guard_holds(
         &mut self,
-        state: ::sce_rust_runtime::StateId,
-        event: ::sce_rust_runtime::EventId,
+        transition: ::sce_rust_runtime::TransitionId,
         sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::EngineState<Self>,
-    ) -> Option<::sce_rust_runtime::TransitionId> {
-        match state {
+    ) -> bool {
+        match transition.0 {
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions %}
-            {{ machine_name }}State::ID_{{ state_id | to_state_variant }} => {
 {% for trans in state.transitions %}
-                if {{ event_match(trans) }} {
 {# A guard lowered with no `cond` written is a branch of a test component's
    match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
 {% if trans.cond or trans.native_guard %}
-                    if {{ guard_expr(trans) }} {
-{% else %}
-                    {
-{% endif %}
-                        // {{ state_id }}, transition {{ trans.transition_index }}
-                        return Some(::sce_rust_runtime::TransitionId({{ tables.written[state_id][trans.transition_index] }}));
-                    }
-                }
-{% endfor %}
-                None
-            }
+            // {{ state_id }}, transition {{ trans.transition_index }}
+            {{ tables.written[state_id][trans.transition_index] }} => {{ guard_expr(trans) }},
 {% endif %}
 {% endfor %}
-            _ => None,
+{% endfor %}
+            _ => true,
         }
     }
 
+{% endif %}
 {% if model.test_component %}
     // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
     // is taken before the microstep exits anything: it removes what it matched

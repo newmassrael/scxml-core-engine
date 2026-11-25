@@ -59,11 +59,10 @@ fn collapsed(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The five hooks that run a guard or executable content, each handed the
-/// event's data in the one parameter every machine names.
+/// The hooks every machine writes that run executable content, each handed the
+/// event's data in the one parameter every machine names. A machine with a
+/// guard writes `guard_holds` with the same parameter ([`GUARD_HOOK`]).
 const HOOKS: &[&str] = &[
-    "fn first_enabled_transition( &mut self, state: ::sce_rust_runtime::StateId, \
-     event: ::sce_rust_runtime::EventId, sce_event_data: Self::EventData<'_>,",
     "fn execute_transition_content( &mut self, transition: ::sce_rust_runtime::TransitionId, \
      sce_event_data: Self::EventData<'_>,",
     "fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId, \
@@ -71,6 +70,12 @@ const HOOKS: &[&str] = &[
     "fn execute_exit_actions( &mut self, state: ::sce_rust_runtime::StateId, \
      sce_event_data: Self::EventData<'_>,",
 ];
+
+/// The hook that runs a guard (docs/adr/0127), written by a machine that has
+/// one.
+const GUARD_HOOK: &str =
+    "fn guard_holds( &mut self, transition: ::sce_rust_runtime::TransitionId, \
+     sce_event_data: Self::EventData<'_>,";
 
 fn assert_one_signature(name: &str, code: &str) {
     for hook in HOOKS {
@@ -123,6 +128,7 @@ fn a_machine_whose_guard_reads_its_data_is_handed_it_the_same_way() {
     for expected in [
         "type EventData<'e> = StatechartMinimalEventData;",
         "pub struct StatechartMinimalJobCompletedRef {",
+        GUARD_HOOK,
         "matches!(sce_event_data, StatechartMinimalEventData::JobCompleted(ev) if ev.elapsed_ms == 0)",
         "fn process_job_completed_with(&mut self, event_data: StatechartMinimalJobCompletedRef);",
     ] {
