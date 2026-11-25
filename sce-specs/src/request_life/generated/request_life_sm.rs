@@ -37,7 +37,7 @@
 // `<send delay=...>` and no engine-borrowing actions never reference
 // `Duration`/`Engine`, leaving the imports unused.
 #![allow(unused_imports)]
-// Method parameters such as `_engine: &mut Engine<Self>` and per-state
+// Method parameters such as `_engine: &mut ::sce_rust_runtime::EngineState<Self>` and per-state
 // fields (`pending_event_invokeid`, `script_engine_initialized`, ...) are
 // emitted on every fixture for the StatePolicy trait shape but read only
 // by fixtures that actually exercise the corresponding W3C feature.
@@ -1827,7 +1827,7 @@ impl StatePolicy for RequestLifePolicy {
         &mut self,
         state: ::sce_rust_runtime::StateId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
         is_default_entry: bool,
     ) {
     }
@@ -1845,7 +1845,7 @@ impl StatePolicy for RequestLifePolicy {
         &mut self,
         state: ::sce_rust_runtime::StateId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
@@ -1868,7 +1868,7 @@ impl StatePolicy for RequestLifePolicy {
         state: ::sce_rust_runtime::StateId,
         event: ::sce_rust_runtime::EventId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             RequestLifeState::ID_Cancelled => {
@@ -2128,7 +2128,7 @@ impl StatePolicy for RequestLifePolicy {
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
         sce_event_data: Self::EventData<'_>,
-        engine: &mut sce_rust_runtime::Engine<Self>,
+        engine: &mut sce_rust_runtime::EngineState<Self>,
     ) {
         match transition.0 {
             // cancelled, transition 0
