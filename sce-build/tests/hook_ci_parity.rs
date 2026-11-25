@@ -1494,18 +1494,16 @@ const WORKSPACE_LANE: &str = ".github/workflows/rust-workspace-tests.yml";
 const WORKSPACE_GATE: &str = "scripts/gates/workspace-tests.sh";
 const SHARD_HELPER: &str = "scripts/lib/workspace_shards.py";
 
-/// The shard count the lane declares: the `N` of `SCE_WORKSPACE_SHARD: ${{
+/// The shard count a sharded lane declares: the `N` of `<variable> ${{
 /// matrix.shard }}/N`, and the matrix's `shard:` list, which must be `1..=N`.
-fn workspace_lane_shards(workflow: &str) -> (usize, Vec<usize>) {
+fn lane_shards(lane: &str, workflow: &str, variable: &str) -> (usize, Vec<usize>) {
     let count = workflow
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
-        .find_map(|l| l.trim().strip_prefix("SCE_WORKSPACE_SHARD:"))
+        .find_map(|l| l.trim().strip_prefix(variable))
         .and_then(|v| v.trim().rsplit('/').next().map(str::to_string))
         .and_then(|n| n.trim().parse::<usize>().ok())
-        .unwrap_or_else(|| {
-            panic!("{WORKSPACE_LANE} sets no `SCE_WORKSPACE_SHARD: ${{{{ matrix.shard }}}}/N`")
-        });
+        .unwrap_or_else(|| panic!("{lane} sets no `{variable} ${{{{ matrix.shard }}}}/N`"));
     let listed = workflow
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -1518,8 +1516,13 @@ fn workspace_lane_shards(workflow: &str) -> (usize, Vec<usize>) {
                 .filter_map(|n| n.trim().parse::<usize>().ok())
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| panic!("{WORKSPACE_LANE} declares no `shard:` matrix"));
+        .unwrap_or_else(|| panic!("{lane} declares no `shard:` matrix"));
     (count, listed)
+}
+
+/// The workspace lane's shard count (`SCE_WORKSPACE_SHARD`).
+fn workspace_lane_shards(workflow: &str) -> (usize, Vec<usize>) {
+    lane_shards(WORKSPACE_LANE, workflow, "SCE_WORKSPACE_SHARD:")
 }
 
 /// The features the gate hands the shard helper, written after `--features` on
@@ -1710,34 +1713,91 @@ fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
     );
 }
 
-// ── Where a build's time went is read by a helper that passes its own cases ──
+// ── The sharded C++ suite is wired to run what the unsharded suite runs ─────
 //
-// The cpp-suite gate prints the report after its build, and its lane prints it
-// for a job cancelled inside the build (scripts/lib/build_time_report.py). A
-// report that misreads ninja's log would send the next reading of a slow lane
-// to the wrong targets, so the reading is held to its cases here.
+// cpp-suite.yml runs the C++ ctest suite as N jobs (`SCE_CTEST_SHARD=k/N`, read
+// by scripts/gates/cpp-suite.sh), and the build machines run it whole. Which
+// tests the whole suite holds is a fact of a configured tree, so the union is
+// held where there is one: every job plans the whole suite against the count
+// the gate registered (`ctest_shards.py plan --expect`), and the lane's verdict
+// job holds the plans of all the shards to one digest and every shard to a
+// report that its part ran (`ctest_shards.py verify`). What is held here,
+// with no tree, is that those pieces stay wired: one shard count on both sides
+// of the matrix, the gate handing the variable to the helper, the verdict job
+// running the check, and the helpers' own cases.
 
+const CPP_SUITE_LANE: &str = ".github/workflows/cpp-suite.yml";
+const CPP_SUITE_GATE: &str = "scripts/gates/cpp-suite.sh";
+const CTEST_SHARD_HELPER: &str = "scripts/lib/ctest_shards.py";
 const BUILD_TIME_REPORT: &str = "scripts/lib/build_time_report.py";
 
-/// The build-time report passes its own cases: the last run of a log that
-/// holds several, one step per edge with several outputs, the slowest steps and
-/// the targets their time is summed under.
+/// The lines of a shell or YAML file that are not whole-line comments.
+fn uncommented(text: &str) -> String {
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The C++ lane's matrix and its variable name one shard count, the gate reads
+/// the variable and hands it to the helper, and the lane's verdict runs the
+/// helper's check over what the shards left.
 #[test]
-fn the_build_time_report_passes_its_own_cases() {
-    let out = std::process::Command::new("python3")
-        .arg(BUILD_TIME_REPORT)
-        .arg("--self-test")
-        .current_dir(repo_root())
-        .output()
-        .expect("python3 runs the report");
+fn the_cpp_suite_lane_and_its_gate_agree_on_the_shards() {
+    let lane = read(CPP_SUITE_LANE);
+    let (count, listed) = lane_shards(CPP_SUITE_LANE, &lane, "SCE_CTEST_SHARD:");
     assert!(
-        out.status.success(),
-        "{BUILD_TIME_REPORT} --self-test failed:\n{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
+        count >= 2,
+        "{CPP_SUITE_LANE} runs the suite in {count} shard(s); one is the whole suite"
+    );
+    assert_eq!(
+        listed,
+        (1..=count).collect::<Vec<_>>(),
+        "{CPP_SUITE_LANE}'s `shard:` matrix is not 1..={count}, the count its \
+         `SCE_CTEST_SHARD` names: a shard it lists past the count is refused by the \
+         helper, and one it leaves out runs in no job"
+    );
+    let gate = uncommented(&read(CPP_SUITE_GATE));
+    assert!(
+        gate.contains("SCE_CTEST_SHARD") && gate.contains(CTEST_SHARD_HELPER),
+        "{CPP_SUITE_GATE} no longer reads SCE_CTEST_SHARD and hands it to \
+         {CTEST_SHARD_HELPER}, so the lane's jobs would each run the whole suite"
     );
     assert!(
-        String::from_utf8_lossy(&out.stdout).contains("checks passed"),
-        "{BUILD_TIME_REPORT} --self-test said nothing about its checks, so it may have run none"
+        gate.contains("--expect"),
+        "{CPP_SUITE_GATE} no longer holds the shard plan to the count it registered \
+         (`--expect`), so a plan that read fewer tests than the gate would pass"
     );
+    assert!(
+        uncommented(&lane).contains(&format!("{CTEST_SHARD_HELPER} verify")),
+        "{CPP_SUITE_LANE} no longer runs `{CTEST_SHARD_HELPER} verify`, so nothing \
+         holds its shards to one plan: a test that fell between two plans would leave \
+         every shard green"
+    );
+}
+
+/// The shard helper and the build-time report pass their own cases: the
+/// partition (every test in one shard, a fixture's tests together, the same tree
+/// planned the same way), the verdict over the shards' reports, and the reading
+/// of ninja's log.
+#[test]
+fn the_ctest_shard_helpers_pass_their_own_cases() {
+    for helper in [CTEST_SHARD_HELPER, BUILD_TIME_REPORT] {
+        let out = std::process::Command::new("python3")
+            .arg(helper)
+            .arg("--self-test")
+            .current_dir(repo_root())
+            .output()
+            .expect("python3 runs the helper");
+        assert!(
+            out.status.success(),
+            "{helper} --self-test failed:\n{}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("checks passed"),
+            "{helper} --self-test said nothing about its checks, so it may have run none"
+        );
+    }
 }
