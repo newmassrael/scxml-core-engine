@@ -206,14 +206,23 @@ pub type ImportLifeConfiguration =
 /// row walk reads them. Any other document carries the general walk, which
 /// computes them, and no rows.
 ///
+/// `selection` is what enables each written transition (docs/adr/0127): each
+/// state's range of written transitions (`first_written`, one entry past the
+/// last state), and for each transition the list of events that enable it
+/// (`triggers`, a position in `trigger_events`, each list its length first),
+/// as the numbers of `ImportLifeEvent`. The runtime's one selection
+/// reads them for every machine and asks this machine only whether a guard
+/// holds (`guard_holds`).
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, EntryRow, EntryStep, HistoryId, HistoryRow, StateId, StateKind, StateRow,
-        Target, TransitionId, TransitionRow,
+        DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, SelectionRows,
+        StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
+        TriggerRow,
     };
     DocumentTables {
         states: &[
@@ -312,6 +321,44 @@ pub const IMPORT_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         ],
         history: None,
         parallel: None,
+        selection: Some(SelectionRows {
+            first_written: &[
+                TransitionId(0),
+                TransitionId(0),
+                TransitionId(6),
+                TransitionId(10),
+                TransitionId(11),
+                TransitionId(12),
+                TransitionId(12),
+            ],
+            triggers: &[
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(2),
+                TriggerRow::at(4),
+                TriggerRow::at(6),
+                TriggerRow::at(0),
+                TriggerRow::at(4),
+                TriggerRow::at(2),
+                TriggerRow::at(6),
+                TriggerRow::at(0),
+                TriggerRow::at(4),
+                TriggerRow::NONE,
+                TriggerRow::NONE,
+                TriggerRow::NONE,
+            ],
+            trigger_events: &[
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(0)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(1)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(2)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(3)),
+            ],
+        }),
     }
 };
 
@@ -1204,110 +1251,27 @@ impl StatePolicy for ImportLifePolicy {
         // `state` from the configuration after this returns.
     }
 
-    // Appendix D selectTransitions, the half only this document can answer:
-    // the first of `state`'s own transitions, in document order, that `event`
-    // enables, as its row of the tables, which holds its targets and its
-    // type. The engine walks the atomic states and their ancestors and keeps
-    // the ordered set. `Event::ID_Null` asks for eventless transitions. The
-    // state and the event are the numbers the tables are indexed by
-    // (docs/adr/0123).
+    // §scxml-3.13: whether the guard of `transition`, a written transition the
+    // event being selected for enables, holds. Which transitions an event
+    // enables is a row of the tables (`selection`), which the runtime's one
+    // selection reads for every machine and asks this only for a transition
+    // the event enables, in the order its state's transitions are written,
+    // until one holds (docs/adr/0127). The transition is its number in the
+    // tables, and every other transition has no guard.
     #[doc = "SCE-MAP: import_life.scxml:21 :: _machine"]
     // SCE-MAP: import_life.scxml:21 :: _machine
-    fn first_enabled_transition(
+    fn guard_holds(
         &mut self,
-        state: ::sce_rust_runtime::StateId,
-        event: ::sce_rust_runtime::EventId,
+        transition: ::sce_rust_runtime::TransitionId,
         sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::EngineState<Self>,
-    ) -> Option<::sce_rust_runtime::TransitionId> {
-        match state {
-            ImportLifeState::ID_Accepted => {
-                if event == ImportLifeEvent::ID_Accept {
-                    {
-                        // accepted, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(10));
-                    }
-                }
-                None
-            }
-            ImportLifeState::ID_Ended => {
-                if event == ImportLifeEvent::ID_Accept {
-                    {
-                        // ended, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(6));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Reject {
-                    {
-                        // ended, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(7));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Decide {
-                    {
-                        // ended, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(8));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Supersede {
-                    {
-                        // ended, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(9));
-                    }
-                }
-                None
-            }
-            ImportLifeState::ID_Pending => {
-                if event == ImportLifeEvent::ID_Accept {
-                    if matches!(sce_event_data, ImportLifeEventData::Accept(ev) if !ev.headMatches)
-                    {
-                        // pending, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(0));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Accept {
-                    if matches!(sce_event_data, ImportLifeEventData::Accept(ev) if ev.undecided > 0)
-                    {
-                        // pending, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(1));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Accept {
-                    {
-                        // pending, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(2));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Decide {
-                    {
-                        // pending, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(3));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Reject {
-                    {
-                        // pending, transition 4
-                        return Some(::sce_rust_runtime::TransitionId(4));
-                    }
-                }
-                if event == ImportLifeEvent::ID_Supersede {
-                    {
-                        // pending, transition 5
-                        return Some(::sce_rust_runtime::TransitionId(5));
-                    }
-                }
-                None
-            }
-            ImportLifeState::ID_Rejected => {
-                if event == ImportLifeEvent::ID_Reject {
-                    {
-                        // rejected, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(11));
-                    }
-                }
-                None
-            }
-            _ => None,
+    ) -> bool {
+        match transition.0 {
+            // pending, transition 0
+            0 => matches!(sce_event_data, ImportLifeEventData::Accept(ev) if !ev.headMatches),
+            // pending, transition 1
+            1 => matches!(sce_event_data, ImportLifeEventData::Accept(ev) if ev.undecided > 0),
+            _ => true,
         }
     }
 

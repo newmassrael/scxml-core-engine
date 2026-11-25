@@ -228,14 +228,23 @@ pub type RequestLifeConfiguration =
 /// row walk reads them. Any other document carries the general walk, which
 /// computes them, and no rows.
 ///
+/// `selection` is what enables each written transition (docs/adr/0127): each
+/// state's range of written transitions (`first_written`, one entry past the
+/// last state), and for each transition the list of events that enable it
+/// (`triggers`, a position in `trigger_events`, each list its length first),
+/// as the numbers of `RequestLifeEvent`. The runtime's one selection
+/// reads them for every machine and asks this machine only whether a guard
+/// holds (`guard_holds`).
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const REQUEST_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, EntryRow, EntryStep, HistoryId, HistoryRow, StateId, StateKind, StateRow,
-        Target, TransitionId, TransitionRow,
+        DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, SelectionRows,
+        StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
+        TriggerRow,
     };
     DocumentTables {
         states: &[
@@ -427,6 +436,79 @@ pub const REQUEST_LIFE_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         ],
         history: None,
         parallel: None,
+        selection: Some(SelectionRows {
+            first_written: &[
+                TransitionId(0),
+                TransitionId(10),
+                TransitionId(16),
+                TransitionId(16),
+                TransitionId(21),
+                TransitionId(25),
+                TransitionId(31),
+                TransitionId(32),
+                TransitionId(33),
+                TransitionId(34),
+                TransitionId(34),
+            ],
+            triggers: &[
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(0),
+                TriggerRow::at(2),
+                TriggerRow::at(4),
+                TriggerRow::at(6),
+                TriggerRow::at(8),
+                TriggerRow::at(10),
+                TriggerRow::at(12),
+                TriggerRow::at(14),
+                TriggerRow::at(4),
+                TriggerRow::at(6),
+                TriggerRow::at(8),
+                TriggerRow::at(10),
+                TriggerRow::at(2),
+                TriggerRow::at(4),
+                TriggerRow::at(6),
+                TriggerRow::at(8),
+                TriggerRow::at(10),
+                TriggerRow::at(4),
+                TriggerRow::at(6),
+                TriggerRow::at(8),
+                TriggerRow::at(10),
+                TriggerRow::at(12),
+                TriggerRow::at(14),
+                TriggerRow::at(6),
+                TriggerRow::at(8),
+                TriggerRow::at(12),
+                TriggerRow::NONE,
+                TriggerRow::NONE,
+                TriggerRow::NONE,
+                TriggerRow::NONE,
+            ],
+            trigger_events: &[
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(1)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(4)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(3)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(5)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(2)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(7)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(0)),
+                TriggerEvent::count(1),
+                TriggerEvent::new(EventId(6)),
+            ],
+        }),
     }
 };
 
@@ -1854,268 +1936,91 @@ impl StatePolicy for RequestLifePolicy {
         // `state` from the configuration after this returns.
     }
 
-    // Appendix D selectTransitions, the half only this document can answer:
-    // the first of `state`'s own transitions, in document order, that `event`
-    // enables, as its row of the tables, which holds its targets and its
-    // type. The engine walks the atomic states and their ancestors and keeps
-    // the ordered set. `Event::ID_Null` asks for eventless transitions. The
-    // state and the event are the numbers the tables are indexed by
-    // (docs/adr/0123).
+    // §scxml-3.13: whether the guard of `transition`, a written transition the
+    // event being selected for enables, holds. Which transitions an event
+    // enables is a row of the tables (`selection`), which the runtime's one
+    // selection reads for every machine and asks this only for a transition
+    // the event enables, in the order its state's transitions are written,
+    // until one holds (docs/adr/0127). The transition is its number in the
+    // tables, and every other transition has no guard.
     #[doc = "SCE-MAP: request_life.scxml:25 :: _machine"]
     // SCE-MAP: request_life.scxml:25 :: _machine
-    fn first_enabled_transition(
+    fn guard_holds(
         &mut self,
-        state: ::sce_rust_runtime::StateId,
-        event: ::sce_rust_runtime::EventId,
+        transition: ::sce_rust_runtime::TransitionId,
         sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::EngineState<Self>,
-    ) -> Option<::sce_rust_runtime::TransitionId> {
-        match state {
-            RequestLifeState::ID_Cancelled => {
-                if event == RequestLifeEvent::ID_Cancel {
-                    {
-                        // cancelled, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(33));
-                    }
-                }
-                None
+    ) -> bool {
+        match transition.0 {
+            // completed, transition 0
+            31 => {
+                matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
             }
-            RequestLifeState::ID_Completed => {
-                if event == RequestLifeEvent::ID_Publish {
-                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
-                    {
-                        // completed, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(31));
-                    }
-                }
-                None
+            // failed, transition 0
+            32 => {
+                matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
             }
-            RequestLifeState::ID_Ended => {
-                if event == RequestLifeEvent::ID_Heartbeat {
-                    {
-                        // ended, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(25));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Publish {
-                    {
-                        // ended, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(26));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Fail {
-                    {
-                        // ended, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(27));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Write {
-                    {
-                        // ended, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(28));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Cancel {
-                    {
-                        // ended, transition 4
-                        return Some(::sce_rust_runtime::TransitionId(29));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Supersede {
-                    {
-                        // ended, transition 5
-                        return Some(::sce_rust_runtime::TransitionId(30));
-                    }
-                }
-                None
+            // interrupted, transition 0
+            21 => {
+                matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
             }
-            RequestLifeState::ID_Failed => {
-                if event == RequestLifeEvent::ID_Fail {
-                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // failed, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(32));
-                    }
-                }
-                None
+            // interrupted, transition 1
+            22 => {
+                matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
             }
-            RequestLifeState::ID_Interrupted => {
-                if event == RequestLifeEvent::ID_Heartbeat {
-                    if matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // interrupted, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(21));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Publish {
-                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // interrupted, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(22));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Fail {
-                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // interrupted, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(23));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Write {
-                    if matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // interrupted, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(24));
-                    }
-                }
-                None
+            // interrupted, transition 2
+            23 => {
+                matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
             }
-            RequestLifeState::ID_Open => {
-                if event == RequestLifeEvent::ID_Heartbeat {
-                    {
-                        // open, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(10));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Publish {
-                    {
-                        // open, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(11));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Fail {
-                    {
-                        // open, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(12));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Write {
-                    {
-                        // open, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(13));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Cancel {
-                    {
-                        // open, transition 4
-                        return Some(::sce_rust_runtime::TransitionId(14));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Supersede {
-                    {
-                        // open, transition 5
-                        return Some(::sce_rust_runtime::TransitionId(15));
-                    }
-                }
-                None
+            // interrupted, transition 3
+            24 => {
+                matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
             }
-            RequestLifeState::ID_Request => {
-                if event == RequestLifeEvent::ID_Claim {
-                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.offeredMatches)
-                    {
-                        // request, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(0));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
-                    {
-                        // request, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(1));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if engine.is_active(RequestLifeState::Queued) {
-                        // request, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(2));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
-                    {
-                        // request, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(3));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if engine.is_active(RequestLifeState::Interrupted) {
-                        // request, transition 4
-                        return Some(::sce_rust_runtime::TransitionId(4));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
-                    {
-                        // request, transition 5
-                        return Some(::sce_rust_runtime::TransitionId(5));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
-                    {
-                        // request, transition 6
-                        return Some(::sce_rust_runtime::TransitionId(6));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    if engine.is_active(RequestLifeState::Running) {
-                        // request, transition 7
-                        return Some(::sce_rust_runtime::TransitionId(7));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Claim {
-                    {
-                        // request, transition 8
-                        return Some(::sce_rust_runtime::TransitionId(8));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Normalize {
-                    {
-                        // request, transition 9
-                        return Some(::sce_rust_runtime::TransitionId(9));
-                    }
-                }
-                None
+            // request, transition 0
+            0 => matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.offeredMatches),
+            // request, transition 1
+            1 => {
+                matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
             }
-            RequestLifeState::ID_Running => {
-                if event == RequestLifeEvent::ID_Heartbeat {
-                    if matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // running, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(16));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Publish {
-                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // running, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(17));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Fail {
-                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // running, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(18));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Write {
-                    if matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
-                    {
-                        // running, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(19));
-                    }
-                }
-                if event == RequestLifeEvent::ID_Normalize {
-                    if matches!(sce_event_data, RequestLifeEventData::Normalize(ev) if self.expires_at <= ev.now)
-                    {
-                        // running, transition 4
-                        return Some(::sce_rust_runtime::TransitionId(20));
-                    }
-                }
-                None
+            // request, transition 2
+            2 => engine.is_active(RequestLifeState::Queued),
+            // request, transition 3
+            3 => {
+                matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
             }
-            _ => None,
+            // request, transition 4
+            4 => engine.is_active(RequestLifeState::Interrupted),
+            // request, transition 5
+            5 => {
+                matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
+            }
+            // request, transition 6
+            6 => {
+                matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
+            }
+            // request, transition 7
+            7 => engine.is_active(RequestLifeState::Running),
+            // running, transition 0
+            16 => {
+                matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+            }
+            // running, transition 1
+            17 => {
+                matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+            }
+            // running, transition 2
+            18 => {
+                matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+            }
+            // running, transition 3
+            19 => {
+                matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+            }
+            // running, transition 4
+            20 => {
+                matches!(sce_event_data, RequestLifeEventData::Normalize(ev) if self.expires_at <= ev.now)
+            }
+            _ => true,
         }
     }
 
