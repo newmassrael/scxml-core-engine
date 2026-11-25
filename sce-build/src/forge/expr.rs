@@ -73,10 +73,12 @@ use std::fmt;
 pub type Refusal = Spanned<ExprError>;
 
 pub(crate) mod c_tree;
+pub(crate) mod cpp_tree;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
 use c_tree::{CBinOp, CExpr, CInit, CUnOp};
+use cpp_tree::{CppBinOp, CppExpr, CppUnOp};
 use rust_tree::{RustBinOp, RustExpr, RustStmt, RustUnOp};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -593,7 +595,7 @@ fn lower_at(
     // The Rust and Go emitters refuse at a node; the others refuse nothing of
     // their own, so a refusal they pass on carries no range.
     let text = match target {
-        ExprTarget::Cpp => emit_cpp(&ast, expected)?,
+        ExprTarget::Cpp => emit_cpp(&ast, expected)?.to_string(),
         ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
             emit_rust_returned_str(&ast)?.to_string()
@@ -3570,7 +3572,7 @@ pub fn transpile_lvalue(
     // value being shoved into an expected type. Pass `Unknown` so the
     // per-language emitter emits the identifier/member path verbatim.
     let emitted = match target {
-        ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown)?,
+        ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown)?,
         // A place that holds an optional text or byte string is read borrowed
         // ([`rust_optional::view`]); the place assigned to is the storage itself.
@@ -7603,129 +7605,6 @@ fn child_needs_parens(
     }
 }
 
-/// An operand GCC's `-Wparentheses` flags — `&&` nested inside `||` first
-/// among them — parenthesised for the C family even though precedence does
-/// not require it.
-///
-/// ⚠ Precedence-correct is not the same as compilable. `a || b && c` binds the
-/// way the document means, so `child_needs_parens` leaves it bare — and then
-/// GCC and Clang emit `-Wparentheses` ("suggest parentheses around '&&' within
-/// '||'"). A target that builds with `-Wall -Werror`, which a real downstream
-/// build does, turns that into a hard error, so the generated file does not
-/// compile at all. Found by generating a component and feeding it to such a
-/// build: an expression of the shape `a == 2 || b >= 1 && b <= 4` stopped it.
-///
-/// This is deliberately C-family only. Rust, Go, Kotlin and Python have no
-/// such diagnostic, and widening the rule would re-pin every committed tree in
-/// those languages to fix a warning they do not have.
-///
-/// The same warning has more shapes than `&&` within `||`, each as fatal
-/// under `-Werror`, and the rule covers every one GCC names:
-/// - `+`/`-`, or a comparison, as an operand of `&`, `|` or `^`
-///   (`(h * 5 + c) & m` emitted bare as `h * 5 + c & m` stopped the C11
-///   conformance build of `sce:std/hash/murmur3_32`);
-/// - `&` or `^` within `|`, and `&` within `^`;
-/// - `+`/`-` within `<<` or `>>`.
-fn c_family_clarity_parens(child: &TypedExpr, parent_op: BinOp) -> bool {
-    use BinOp::*;
-    let ExprKind::Binary { op: child_op, .. } = &child.kind else {
-        return false;
-    };
-    let additive = matches!(child_op, Add | Sub);
-    match parent_op {
-        Or => matches!(child_op, And),
-        BitAnd => additive || child_op.is_comparison(),
-        BitXor => additive || child_op.is_comparison() || matches!(child_op, BitAnd),
-        BitOr => additive || child_op.is_comparison() || matches!(child_op, BitAnd | BitXor),
-        Shl | Shr | UShr => additive,
-        _ => false,
-    }
-}
-
-/// Which of the two C-family emitters a shared spelling is written for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CFamily {
-    C,
-    Cpp,
-}
-
-impl CFamily {
-    /// `text` converted to the integer type of `signed` and `bits`.
-    fn cast(self, signed: bool, bits: u8, text: &str) -> String {
-        let unsigned = if signed { "" } else { "u" };
-        match self {
-            Self::C => format!("({unsigned}int{bits}_t)({text})"),
-            Self::Cpp => format!("static_cast<std::{unsigned}int{bits}_t>({text})"),
-        }
-    }
-}
-
-/// `left op right`, the operands as the operator takes them, of the node type
-/// `ty`, as C and C++ write it.
-///
-/// A left shift wraps at the width of its type (SCE_FORGE.md §3.4.1, "The
-/// width of a shift"), and neither language makes it there by itself: an
-/// operand narrower than `int` is promoted to `int`, so a `uint8` or `int16`
-/// shift keeps the bits it shifts out until its value is converted back to its
-/// type, and a left shift of a negative signed value is undefined. So a narrow
-/// unsigned shift is converted back to its type, and a signed one is made in
-/// the unsigned type of its width and converted back, which is its
-/// two's-complement value. Every other operator is written as it is.
-///
-/// ⚠ Until 2026-11-19 a `uint8` `x << 4` stored in a `uint32` kept 12 bits in
-/// C, C++ and Kotlin and 8 in every other backend.
-fn c_family_binary(
-    family: CFamily,
-    op: BinOp,
-    ty: InferredType,
-    left: &str,
-    right: &str,
-) -> String {
-    let written = format!("{left} {} {right}", cpp_binop(op));
-    if op != BinOp::Shl {
-        return written;
-    }
-    match ty.strip_quantity() {
-        InferredType::Int { signed: true, bits } => {
-            let unsigned = family.cast(false, bits, left);
-            family.cast(true, bits, &format!("{unsigned} << {right}"))
-        }
-        InferredType::Int {
-            signed: false,
-            bits,
-        } if bits < 32 => family.cast(false, bits, &written),
-        _ => written,
-    }
-}
-
-/// `op` over `operand`, written `inner`, of the node type `ty`, as C and C++
-/// write it. A `~` of an operand narrower than `int` is converted back to its
-/// type, as a left shift is ([`c_family_binary`]): `~x` of a `uint8` is an
-/// `int` below 0 until it is.
-fn c_family_unary(
-    family: CFamily,
-    op: UnaryOp,
-    ty: InferredType,
-    operand: &TypedExpr,
-    inner: &str,
-) -> String {
-    let wrap = matches!(
-        &operand.kind,
-        ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-    );
-    let written = if wrap {
-        format!("{}({inner})", cpp_unary(op))
-    } else {
-        format!("{}{inner}", cpp_unary(op))
-    };
-    match (op, ty.strip_quantity()) {
-        (UnaryOp::BitNot, InferredType::Int { signed, bits }) if bits < 32 => {
-            family.cast(signed, bits, &written)
-        }
-        _ => written,
-    }
-}
-
 /// How C and C++ write a left shift, of the node type `ty`, so it wraps at the
 /// width of its type (SCE_FORGE.md §3.4.1, "The width of a shift"), which
 /// neither language makes it do by itself: an operand narrower than `int` is
@@ -10085,7 +9964,15 @@ pub(crate) fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
     }
 }
 
-fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+/// The C++ expression `expr` is where a value of `expected` is wanted.
+///
+/// The expression is built as a tree of the C++ expressions it is made of
+/// ([`CppExpr`], `expr/cpp_tree.rs`), a conversion a `static_cast` of its own
+/// wherever it comes from, and printed once, where it leaves this layer: every
+/// parenthesis is the printer's, decided by the kinds of the nodes around it
+/// and the precedence C++ gives them, and no rule here groups anything or reads
+/// back what it has written.
+fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<CppExpr, ExprError> {
     // Push-down: propagate Float expectation into arithmetic sub-trees so
     // cpp_coerce appends `.0` to integer literals, preventing C++ integer
     // division (e.g. `9 / 5` → `9.0 / 5.0`).
@@ -10094,25 +9981,17 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_cpp(left, expected)?;
-            let r_raw = emit_cpp(right, expected)?;
+            let l = emit_cpp(left, expected)?;
             let l = if c_family_divides_integers(*op, left, right) {
-                format!("static_cast<{}>({l_raw})", c_family_float_name(expected))
-            } else if child_needs_parens(left, *op, true, ecma_precedence)
-                || c_family_clarity_parens(left, *op)
-            {
-                format!("({l_raw})")
+                l.static_cast(c_family_float_name(expected))
             } else {
-                l_raw
+                l
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence)
-                || c_family_clarity_parens(right, *op)
-            {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", cpp_binop(*op)));
+            return Ok(CppExpr::binary(
+                cpp_binop(*op),
+                l,
+                emit_cpp(right, expected)?,
+            ));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — without this, `-40` in a
@@ -10127,16 +10006,7 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_cpp(operand, expected)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{}({inner})", cpp_unary(*op))
-            } else {
-                format!("{}{inner}", cpp_unary(*op))
-            });
+            return Ok(emit_cpp(operand, expected)?.prefixed(cpp_unop(*op)));
         }
     }
     // Push-down: `len(x)` is a `size_t`, so against a signed integer it is a sign
@@ -10146,21 +10016,33 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) && matches!(expr.ty, InferredType::UntypedInt) {
             if let InferredType::Int { signed: true, bits } = expected {
-                let size = format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown)?);
-                return Ok(format!("static_cast<std::int{bits}_t>({size})"));
+                return Ok(cpp_size(&args[0])?.static_cast(cpp_int_type(true, bits)));
             }
         }
     }
     // `null` where an optional value is expected is the absent one
     // (docs/adr/0055), which `std::optional` is built from and compared with.
     if matches!(expr.kind, ExprKind::NullLit) && expected.is_optional() {
-        return Ok("std::nullopt".to_string());
+        return Ok(CppExpr::atom("std::nullopt"));
     }
     let raw = match typed_integer_literal(ExprTarget::Cpp, expr) {
-        Some(literal) => literal,
+        Some(literal) => CppExpr::atom(literal),
         None => cpp_emit_node(expr)?,
     };
     Ok(cpp_coerce(raw, expr.ty, expected, expr))
+}
+
+/// The C++ integer type of `signed` and `bits`: `std::int16_t`, `std::uint64_t`.
+fn cpp_int_type(signed: bool, bits: u8) -> String {
+    format!("std::{}int{bits}_t", if signed { "" } else { "u" })
+}
+
+/// `len(value)` in C++: the `size()` of the container, a `size_t`.
+fn cpp_size(value: &TypedExpr) -> Result<CppExpr, ExprError> {
+    Ok(CppExpr::call(
+        emit_cpp(value, InferredType::Unknown)?.field("size"),
+        Vec::new(),
+    ))
 }
 
 /// The `std::optional` a value of `elem` is held in, for a place that has to
@@ -10171,9 +10053,7 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
 fn cpp_optional_type(elem: OptionalElem, present: &str) -> String {
     use crate::forge::quantity::NumericBaseType;
     let held = match elem {
-        OptionalElem::Number(NumericBaseType::Int { signed, bits }) => {
-            format!("std::{}int{bits}_t", if signed { "" } else { "u" })
-        }
+        OptionalElem::Number(NumericBaseType::Int { signed, bits }) => cpp_int_type(signed, bits),
         OptionalElem::Number(NumericBaseType::Float { bits }) => {
             c_family_float_name(InferredType::Float { bits }).to_string()
         }
@@ -10191,7 +10071,7 @@ fn cpp_optional_type(elem: OptionalElem, present: &str) -> String {
 /// section 5) over `std::optional<T>` and the runtime's `sce/forge/optional.h`:
 ///
 /// - a test: `x.has_value()`, or its negation;
-/// - a read the build has proven present: `(*x)`, which has no failure to record;
+/// - a read the build has proven present: `*x`, which has no failure to record;
 /// - `x ?? d`: `SCE::Forge::otherwise(x, [&] { return d; })`, which reads `x`
 ///   once and calls the lambda only when `x` is absent, so a failure `d`
 ///   records in the statement's `sce_failure_` is recorded only then;
@@ -10199,28 +10079,32 @@ fn cpp_optional_type(elem: OptionalElem, present: &str) -> String {
 ///
 /// `None` for equality: `x === y` of two optional values, or of one and a value
 /// of `T`, is the `==` C++ defines over `std::optional`, which lifts the side of
-/// `T` itself, and the generic arm writes it with the operands' parentheses.
-fn cpp_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Option<String>, ExprError> {
-    let receiver = |node: &TypedExpr| -> Result<String, ExprError> {
-        Ok(wrap_postfix(node, emit_cpp(node, InferredType::Unknown)?))
-    };
+/// `T` itself, and the generic arm writes it.
+fn cpp_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Option<CppExpr>, ExprError> {
     Ok(Some(match form {
         OptionalForm::Test { subject, present } => {
-            let test = format!("{}.has_value()", receiver(subject)?);
+            let test = CppExpr::call(
+                emit_cpp(subject, InferredType::Unknown)?.field("has_value"),
+                Vec::new(),
+            );
             if present {
                 test
             } else {
-                format!("!{test}")
+                test.prefixed(CppUnOp::Not)
             }
         }
-        OptionalForm::Proven { subject } => format!("(*{})", receiver(subject)?),
-        OptionalForm::Otherwise { value, fallback } => format!(
-            "SCE::Forge::otherwise({}, [&] {{ return {}; }})",
-            emit_cpp(value, InferredType::Unknown)?,
-            emit_cpp(fallback, whole.ty)?
+        OptionalForm::Proven { subject } => {
+            emit_cpp(subject, InferredType::Unknown)?.prefixed(CppUnOp::Deref)
+        }
+        OptionalForm::Otherwise { value, fallback } => CppExpr::path_call(
+            "SCE::Forge::otherwise",
+            vec![
+                emit_cpp(value, InferredType::Unknown)?,
+                CppExpr::lambda(emit_cpp(fallback, whole.ty)?),
+            ],
         ),
         OptionalForm::Equality { .. } => return Ok(None),
-        OptionalForm::Constant(answer) => answer.to_string(),
+        OptionalForm::Constant(answer) => CppExpr::atom(answer.to_string()),
     }))
 }
 
@@ -10231,7 +10115,7 @@ fn cpp_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Option<Stri
 /// conditional of an optional value and `null`, or of an optional value and a
 /// value of `T`, has the optional value's type, which the other branch converts
 /// to as it is.
-fn cpp_optional_conditional(expr: &TypedExpr) -> Result<Option<String>, ExprError> {
+fn cpp_optional_conditional(expr: &TypedExpr) -> Result<Option<CppExpr>, ExprError> {
     let (
         ExprKind::Conditional {
             condition,
@@ -10249,22 +10133,19 @@ fn cpp_optional_conditional(expr: &TypedExpr) -> Result<Option<String>, ExprErro
         _ => return Ok(None),
     };
     let value = emit_cpp(present, elem.present())?;
-    let ty = cpp_optional_type(elem, &value);
+    // The type names the present branch, printed whole inside `decltype(…)`.
+    let ty = cpp_optional_type(elem, &value.to_string());
     let cond = emit_cpp(condition, InferredType::Bool)?;
-    let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
-        format!("({cond})")
-    } else {
-        cond
-    };
-    let (absent, held) = (format!("{ty}()"), format!("{ty}({value})"));
+    let absent = CppExpr::path_call(ty.as_str(), Vec::new());
+    let held = CppExpr::path_call(ty, vec![value]);
     Ok(Some(if absent_first {
-        format!("{cond} ? {absent} : {held}")
+        CppExpr::conditional(cond, absent, held)
     } else {
-        format!("{cond} ? {held} : {absent}")
+        CppExpr::conditional(cond, held, absent)
     }))
 }
 
-fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+fn cpp_emit_node(expr: &TypedExpr) -> Result<CppExpr, ExprError> {
     if let Some(form) = optional_form(expr) {
         if let Some(spelled) = cpp_optional(form, expr)? {
             return Ok(spelled);
@@ -10279,108 +10160,88 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // converts to it rather than choosing the instantiation.
         ExprKind::Total { op, rule, .. } => {
             let (signed, bits, operands) = total_parts(expr, "C++", emit_cpp)?;
-            format!(
-                "SCE::Forge::{}::{}<std::{}int{bits}_t>({})",
-                crate::filters::capitalize_first(rule.helper()),
-                op.helper(),
-                if signed { "" } else { "u" },
-                operands.join(", ")
+            CppExpr::path_call(
+                format!(
+                    "SCE::Forge::{}::{}<{}>",
+                    crate::filters::capitalize_first(rule.helper()),
+                    op.helper(),
+                    cpp_int_type(signed, bits),
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
+        ExprKind::NumberLit(n) => CppExpr::atom(portable_number_literal(n)),
         // A literal while one holds the text, a `std::string` of its bytes
         // where it is too long for one or holds a U+0000 a literal would end
         // at.
-        ExprKind::StringLit { value } => crate::filters::cpp_text_expression(value),
+        ExprKind::StringLit { value } => CppExpr::atom(crate::filters::cpp_text_expression(value)),
         // `std::vector<uint8_t>` has `operator==`, so the default
         // `==`/`!=` path compares length+content directly against this
         // value-constructed temporary. No byte-string literal in C++, so
         // a hex initializer list. RFC §bytesguard-3 B5.
-        ExprKind::BytesLit { bytes } => {
-            format!("std::vector<uint8_t>{{{}}}", bytes_as_hex_list(bytes))
-        }
-        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        ExprKind::NullLit => "nullptr".to_string(),
+        ExprKind::BytesLit { bytes } => CppExpr::atom(format!(
+            "std::vector<uint8_t>{{{}}}",
+            bytes_as_hex_list(bytes)
+        )),
+        ExprKind::BoolLit(b) => CppExpr::atom(if *b { "true" } else { "false" }),
+        ExprKind::NullLit => CppExpr::atom("nullptr"),
         // The one spelling every C++ local takes, declaration and read alike
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::Cpp.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => CppExpr::atom(ExprTarget::Cpp.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => CppExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `"E" + n` is pointer arithmetic in C++, so each side is made a
             // `std::string` first: a string is wrapped (a literal is a
             // `const char *`), an integer becomes its decimal digits. The
             // left operand being a `std::string` is what makes every later
             // `+` in a chain a concatenation (ECMA-262 13.15.3).
-            let operand = |side: &TypedExpr| -> Result<String, ExprError> {
+            let operand = |side: &TypedExpr| -> Result<CppExpr, ExprError> {
+                let value = emit_cpp(side, side.ty)?;
                 match concat_operand(side.ty) {
-                    ConcatOperand::Text => Ok(format!("std::string({})", emit_cpp(side, side.ty)?)),
-                    ConcatOperand::Decimal => {
-                        Ok(format!("std::to_string({})", emit_cpp(side, side.ty)?))
-                    }
-                    ConcatOperand::Refused(what) => {
-                        Err(concat_refusal(what, emit_cpp(side, side.ty)?))
-                    }
+                    ConcatOperand::Text => Ok(CppExpr::path_call("std::string", vec![value])),
+                    ConcatOperand::Decimal => Ok(CppExpr::path_call("std::to_string", vec![value])),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, value.to_string())),
                 }
             };
-            format!("{} + {}", operand(left)?, operand(right)?)
+            CppExpr::binary(CppBinOp::Add, operand(left)?, operand(right)?)
         }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_cpp(left, operand_ty)?;
-            let r_raw = emit_cpp(right, right_operand_type(*op, operand_ty))?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence)
-                || c_family_clarity_parens(left, *op)
-            {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence)
-                || c_family_clarity_parens(right, *op)
-            {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            c_family_binary(CFamily::Cpp, *op, expr.ty, &l, &r)
+            let l = emit_cpp(left, operand_ty)?;
+            let r = emit_cpp(right, right_operand_type(*op, operand_ty))?;
+            match c_family_shift(*op, expr.ty) {
+                CFamilyShift::AsWritten => CppExpr::binary(cpp_binop(*op), l, r),
+                CFamilyShift::Narrowed { bits } => {
+                    CppExpr::binary(cpp_binop(*op), l, r).static_cast(cpp_int_type(false, bits))
+                }
+                CFamilyShift::OnItsBits { bits } => {
+                    CppExpr::binary(cpp_binop(*op), l.static_cast(cpp_int_type(false, bits)), r)
+                        .static_cast(cpp_int_type(true, bits))
+                }
+            }
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_cpp(operand, expr.ty)?;
-            c_family_unary(CFamily::Cpp, *op, expr.ty, operand, &inner)
+            let written = emit_cpp(operand, expr.ty)?.prefixed(cpp_unop(*op));
+            match c_family_complement(*op, expr.ty) {
+                Some((signed, bits)) => written.static_cast(cpp_int_type(signed, bits)),
+                None => written,
+            }
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => {
-            // The condition of a conditional that is itself a conditional is bracketed:
-            // `g ? a : b ? 1 : 0` reads `g ? a : (b ? 1 : 0)`. The consequent and the
-            // alternate keep the spelling they have, which reads as written.
-            let cond = emit_cpp(condition, InferredType::Bool)?;
-            let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
-                format!("({cond})")
-            } else {
-                cond
-            };
-            format!(
-                "{cond} ? {} : {}",
-                emit_cpp(consequent, expr.ty)?,
-                emit_cpp(alternate, expr.ty)?,
-            )
-        }
+        } => CppExpr::conditional(
+            emit_cpp(condition, InferredType::Bool)?,
+            emit_cpp(consequent, expr.ty)?,
+            emit_cpp(alternate, expr.ty)?,
+        ),
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)?)
-            )
+            emit_cpp(object, InferredType::Unknown)?.field(property.as_str())
         }
-        ExprKind::Index { object, index } => {
-            format!(
-                "{}[{}]",
-                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)?),
-                emit_cpp(index, InferredType::Unknown)?,
-            )
-        }
+        ExprKind::Index { object, index } => emit_cpp(object, InferredType::Unknown)?
+            .indexed(emit_cpp(index, InferredType::Unknown)?),
         ExprKind::Call {
             callee,
             args,
@@ -10389,14 +10250,13 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             ..
         } => {
             if is_len_builtin(callee, args) {
-                let size = format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown)?);
+                let size = cpp_size(&args[0])?;
                 // A length typed as an integer width (`TypeCtx::lengths_are_uint32`)
                 // is that width: the cast is spelled here, where `size_t` meets it.
                 return Ok(match expr.ty {
-                    InferredType::Int { signed, bits } => format!(
-                        "static_cast<std::{}int{bits}_t>({size})",
-                        if signed { "" } else { "u" }
-                    ),
+                    InferredType::Int { signed, bits } => {
+                        size.static_cast(cpp_int_type(signed, bits))
+                    }
                     _ => size,
                 });
             }
@@ -10410,18 +10270,27 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 // conversion happens.
                 let inner = emit_cpp(&args[0], InferredType::Float { bits: 64 })?;
                 return Ok(match op {
-                    RealToInt::Round => format!("std::llround({inner})"),
-                    RealToInt::Floor => format!("static_cast<long long>(std::floor({inner}))"),
+                    RealToInt::Round => CppExpr::path_call("std::llround", vec![inner]),
+                    RealToInt::Floor => {
+                        CppExpr::path_call("std::floor", vec![inner]).static_cast("long long")
+                    }
                 });
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_cpp(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)?);
-            let call = format!("{symbol}({})", a.join(", "));
+            let symbol = emit_cpp(callee, InferredType::Unknown)?;
+            let call = CppExpr::call(symbol.clone(), a);
             if *fails {
-                pass_failure_on(ExprTarget::Cpp, &symbol, &call, expr.ty)?
+                // The one spelling of a failure handed on ([`pass_failure_on`]): a
+                // call of the runtime's `take`, which stands as one operand.
+                CppExpr::atom(pass_failure_on(
+                    ExprTarget::Cpp,
+                    &symbol.to_string(),
+                    &call.to_string(),
+                    expr.ty,
+                )?)
             } else {
                 call
             }
@@ -10431,8 +10300,13 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // the algorithm `bytes` param type — `SCE::Forge::Span<const
             // std::uint8_t>` over the string's data()/size().
             let s = emit_cpp(source, InferredType::Unknown)?;
-            format!(
-                "{CPP_SPAN}<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
+            let data = CppExpr::path_call(
+                "reinterpret_cast<const std::uint8_t*>",
+                vec![CppExpr::call(s.clone().field("data"), Vec::new())],
+            );
+            CppExpr::path_call(
+                format!("{CPP_SPAN}<const std::uint8_t>"),
+                vec![data, CppExpr::call(s.field("size"), Vec::new())],
             )
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
@@ -10454,10 +10328,13 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             left,
             right: Some(index),
             ..
-        } => format!(
-            "SCE::Forge::Checked::at(sce_failure_, {}, {})",
-            emit_cpp(left, InferredType::Unknown)?,
-            emit_cpp(index, InferredType::Unknown)?,
+        } => CppExpr::path_call(
+            "SCE::Forge::Checked::at",
+            vec![
+                CppExpr::atom("sce_failure_"),
+                emit_cpp(left, InferredType::Unknown)?,
+                emit_cpp(index, InferredType::Unknown)?,
+            ],
         ),
         // SCE_FORGE.md §3.4.1: the runtime's helper at the operation's own
         // width, which records a failure in the body's `sce_failure_` and
@@ -10485,22 +10362,26 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         observed: None,
                     });
                 };
-                return Ok(format!(
-                    "SCE::Forge::Checked::narrow<std::{}int{bits}_t, std::{}int{from_bits}_t>(sce_failure_, {})",
-                    if signed { "" } else { "u" },
-                    if from_signed { "" } else { "u" },
-                    emit_cpp(left, left.ty)?
+                return Ok(CppExpr::path_call(
+                    format!(
+                        "SCE::Forge::Checked::narrow<{}, {}>",
+                        cpp_int_type(signed, bits),
+                        cpp_int_type(from_signed, from_bits),
+                    ),
+                    vec![CppExpr::atom("sce_failure_"), emit_cpp(left, left.ty)?],
                 ));
             }
-            let mut operands = vec!["sce_failure_".to_string(), emit_cpp(left, expr.ty)?];
+            let mut operands = vec![CppExpr::atom("sce_failure_"), emit_cpp(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_cpp(right, expr.ty)?);
             }
-            format!(
-                "SCE::Forge::Checked::{}<std::{}int{bits}_t>({})",
-                op.helper(),
-                if signed { "" } else { "u" },
-                operands.join(", ")
+            CppExpr::path_call(
+                format!(
+                    "SCE::Forge::Checked::{}<{}>",
+                    op.helper(),
+                    cpp_int_type(signed, bits),
+                ),
+                operands,
             )
         }
     })
@@ -10519,19 +10400,19 @@ fn cpp_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, ExprError> {
+) -> Result<CppExpr, ExprError> {
     let (signed, bits) = settled_shift_width(expr)?;
-    let ty = format!("std::{}int{bits}_t", if signed { "" } else { "u" });
+    let ty = cpp_int_type(signed, bits);
     let value = emit_cpp(left, expr.ty)?;
     let places = emit_cpp(count, InferredType::Unknown)?;
     Ok(match discharge {
-        Discharge::AtBuild | Discharge::Total => format!(
-            "SCE::Forge::Wrapping::{}<{ty}>({value}, {places})",
-            op.helper()
+        Discharge::AtBuild | Discharge::Total => CppExpr::path_call(
+            format!("SCE::Forge::Wrapping::{}<{ty}>", op.helper()),
+            vec![value, places],
         ),
-        Discharge::AtRun => format!(
-            "SCE::Forge::Checked::{}<{ty}>(sce_failure_, {value}, {places})",
-            op.helper()
+        Discharge::AtRun => CppExpr::path_call(
+            format!("SCE::Forge::Checked::{}<{ty}>", op.helper()),
+            vec![CppExpr::atom("sce_failure_"), value, places],
         ),
     })
 }
@@ -10576,7 +10457,7 @@ fn c_family_float_name(expected: InferredType) -> &'static str {
     }
 }
 
-fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+fn cpp_coerce(raw: CppExpr, from: InferredType, to: InferredType, node: &TypedExpr) -> CppExpr {
     use InferredType::*;
     // A value of `T` where an optional value of `T` is expected (docs/adr/0055,
     // section 2) is lifted by `std::optional`'s own conversion, and spelled as
@@ -10591,31 +10472,20 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
         return raw;
     }
     if let Some(spelled) = c_family_wide_literal(to, node) {
-        return spelled;
+        return CppExpr::atom(spelled);
     }
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
     // Promote untyped decimal integer literals in float context to prevent
-    // C++ integer division: `9 / 5` → `9.0 / 5.0`.
-    if let (UntypedInt, Float { bits }) = (from, to) {
-        if let ExprKind::NumberLit(text) = &node.kind {
-            if is_decimal_integer_literal(text) {
-                return format!("{raw}.0{}", single_suffix(bits));
-            }
-        }
-    }
-    // A real literal that lands in a 32-bit real is the single nearest to it:
-    // `0.2f`, and not the double `0.2`, which would make the sum around it a
-    // double's and round it to a single only once it is stored.
-    if let (UntypedFloat, Float { bits: 32 }) = (from, to) {
-        if matches!(node.kind, ExprKind::NumberLit(_)) {
-            return format!("{raw}f");
-        }
+    // C++ integer division: `9 / 5` → `9.0 / 5.0`; a real literal that lands
+    // in a single is one ([`c_family_real_literal`]).
+    if let Some(literal) = c_family_real_literal(from, to, node) {
+        return CppExpr::atom(literal);
     }
     // An unsigned operand where the join of the two is signed.
     if let Some(bits) = c_family_unsigned_to_signed(from, to) {
-        return format!("static_cast<std::int{bits}_t>({raw})");
+        return raw.static_cast(cpp_int_type(true, bits));
     }
     raw
 }
@@ -10652,37 +10522,40 @@ fn single_suffix(bits: u8) -> &'static str {
     }
 }
 
-fn cpp_binop(op: BinOp) -> &'static str {
+/// The C++ binary operator `op` is written as. `>>>` is `>>`: a logical shift
+/// of a signed value is settled into the runtime's shift before it reaches here
+/// ([`settle_shifts`]), and C++'s `>>` of an unsigned value is logical.
+fn cpp_binop(op: BinOp) -> CppBinOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "==",
-        BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>",
+        BinOp::Add => CppBinOp::Add,
+        BinOp::Sub => CppBinOp::Sub,
+        BinOp::Mul => CppBinOp::Mul,
+        BinOp::Div => CppBinOp::Div,
+        BinOp::Mod => CppBinOp::Rem,
+        BinOp::StrictEq => CppBinOp::Eq,
+        BinOp::StrictNeq => CppBinOp::Ne,
+        BinOp::Lt => CppBinOp::Lt,
+        BinOp::Gt => CppBinOp::Gt,
+        BinOp::LtEq => CppBinOp::Le,
+        BinOp::GtEq => CppBinOp::Ge,
+        BinOp::And => CppBinOp::And,
+        BinOp::Or => CppBinOp::Or,
+        BinOp::BitAnd => CppBinOp::BitAnd,
+        BinOp::BitOr => CppBinOp::BitOr,
+        BinOp::BitXor => CppBinOp::BitXor,
+        BinOp::Shl => CppBinOp::Shl,
+        BinOp::Shr | BinOp::UShr => CppBinOp::Shr,
         BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
-fn cpp_unary(op: UnaryOp) -> &'static str {
+/// The C++ prefix operator `op` is written as.
+fn cpp_unop(op: UnaryOp) -> CppUnOp {
     match op {
-        UnaryOp::Neg => "-",
-        UnaryOp::Pos => "+",
-        UnaryOp::Not => "!",
-        UnaryOp::BitNot => "~",
+        UnaryOp::Neg => CppUnOp::Neg,
+        UnaryOp::Pos => CppUnOp::Plus,
+        UnaryOp::Not => CppUnOp::Not,
+        UnaryOp::BitNot => CppUnOp::BitNot,
     }
 }
 
@@ -16815,13 +16688,15 @@ mod tests {
     }
 
     /// A prefix operator before an operand that begins with the same sign is
-    /// grouped, where C would read the two as one `--`; a `!` that is the left
-    /// operand of a comparison is grouped as `-Wlogical-not-parentheses` asks.
+    /// grouped, where C and C++ would read the two as one `--`; a `!` that is the
+    /// left operand of a comparison is grouped as `-Wlogical-not-parentheses` asks.
     #[test]
-    fn a_c_prefix_operator_is_grouped_where_the_build_would_misread_it() {
-        assert_eq!(tp("-(-a)", ExprTarget::C), "-(-a)");
-        assert_eq!(tp("!a === b", ExprTarget::C), "(!a) == b");
-        assert_eq!(tp("b === !a", ExprTarget::C), "b == !a");
+    fn a_c_family_prefix_operator_is_grouped_where_the_build_would_misread_it() {
+        for target in [ExprTarget::C, ExprTarget::Cpp] {
+            assert_eq!(tp("-(-a)", target), "-(-a)", "{target:?}");
+            assert_eq!(tp("!a === b", target), "(!a) == b", "{target:?}");
+            assert_eq!(tp("b === !a", target), "b == !a", "{target:?}");
+        }
     }
 
     // A non-ASCII / escape-bearing literal is NOT reinterpreted (RFC §bytesguard-3
@@ -17977,7 +17852,7 @@ mod tests {
         let mut ast = parse_to_ast(expr).unwrap();
         infer_types(&mut ast, &cpp_optional_ctx());
         rename_identifiers(&mut ast, &cpp_optional_renames());
-        emit_cpp(&ast, expected).unwrap()
+        emit_cpp(&ast, expected).unwrap().to_string()
     }
 
     /// The whole pipeline lowers an optional value for C++, the judge's passes
@@ -17993,9 +17868,9 @@ mod tests {
         assert_eq!(cpp("due !== null", InferredType::Bool), "due.has_value()");
         assert_eq!(
             cpp("other !== null ? other.value : 0", int(true, 64)),
-            "other.has_value() ? (*other) : 0"
+            "other.has_value() ? *other : 0"
         );
-        assert_eq!(cpp("due.value", int(true, 64)), "(*due)");
+        assert_eq!(cpp("due.value", int(true, 64)), "*due");
         assert_eq!(cpp("null === null", InferredType::Bool), "true");
     }
 
@@ -18015,7 +17890,7 @@ mod tests {
     fn cpp_reads_a_proven_value_through_the_optional() {
         assert_eq!(
             cpp_spelled("due !== null ? due.value : 0", int(true, 64)),
-            "v_due.has_value() ? (*v_due) : 0"
+            "v_due.has_value() ? *v_due : 0"
         );
     }
 
@@ -19630,7 +19505,7 @@ mod tests {
         ctx.insert_var("label", InferredType::Str);
         for (target, expected) in [
             (ExprTarget::Rust, "label.len()"),
-            (ExprTarget::Cpp, "(label).size()"),
+            (ExprTarget::Cpp, "label.size()"),
             (ExprTarget::Go, "len(label)"),
             (ExprTarget::Kotlin, "(label).encodeToByteArray().size"),
             (ExprTarget::Python, "len((label).encode(\"utf-8\"))"),

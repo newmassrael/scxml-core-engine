@@ -33285,7 +33285,7 @@ mod tests {
             .iter()
             .find(|block| block.role == crate::model::BlockRole::Then)
             .expect("the <if> has a then block");
-        assert_eq!(then.actions[0].native_code, "v_days = (*v_due);");
+        assert_eq!(then.actions[0].native_code, "v_days = *v_due;");
         let write = &state.transitions[1].actions;
         assert_eq!(write[0].native_code, "v_due = std::optional<int64_t>();");
         assert!(
