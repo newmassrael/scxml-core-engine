@@ -19,9 +19,9 @@
       "pattern": "^fnv1a:[0-9a-f]{16}$"
     },
     "generator": {
-      "description": "Commit of the generator that emitted this record — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read (vendored crate, release tarball). Required on every record because a rejected run writes no manifest: stdout stays empty and the exit code carries the failure, so on the failure path this record is the only thing the consumer receives, and SCE_ERROR_CONTRACT.md §8.1 tells consumers to pin a specific commit while the schema is pre-release.",
+      "description": "Digest of the sources of the producer that emitted this record. For sce-codegen it is the lowercase hex SHA-256 of the generator's sources, the same value the stdout manifest carries as `generator` and `--version` reports in parentheses; for the C++ runtime it is the SHA-256 its build takes of the sources under sce/. Two builds of the same sources stamp the same value whatever commit they were made at, and an edit to any of those sources moves it. `unavailable` on a build that could not read its sources (vendored crate, release tarball, a build of the C++ sources outside their CMake project). Required on every record because a rejected run writes no manifest: stdout stays empty and the exit code carries the failure, so on the failure path this record is the only thing the consumer receives, and SCE_ERROR_CONTRACT.md §8.1 tells consumers to pin a specific commit while the schema is pre-release, which they check by comparing this value with what the pinned build reports.",
       "type": "string",
-      "pattern": "^([0-9a-f]{7,40}|unknown)$"
+      "pattern": "^([0-9a-f]{64}|unavailable)$"
     },
     "code": {
       "description": "Closed enum of diagnostic codes. Adding a new entry is backwards-compatible; renaming an existing entry requires a schema bump per SCE_ERROR_CONTRACT.md §8.",

@@ -566,9 +566,10 @@ pub const HEADER_RECORD_KIND: &str = "header";
 ///
 /// It lets a consumer that keeps the export apart from the build check it
 /// against the machine it compiled: `source_hash` is the §synth-6.2.6 digest
-/// a generated file of the same invocation embeds. The commit stamp rides here
-/// and on no row, because a stamp on every row would change every line of an
-/// export that is diffed across commits.
+/// a generated file of the same invocation embeds, and `generator` the digest of
+/// the sources of the generator that wrote it. The generator stamp rides here and
+/// on no row, because a stamp on every row would change every line of an export
+/// that is diffed across generator changes.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TransitionTableHeader {
     record: &'static str,
@@ -585,7 +586,7 @@ impl TransitionTableHeader {
         Self {
             record: HEADER_RECORD_KIND,
             v: TRANSITION_TABLE_VERSION,
-            generator: crate::GENERATOR_COMMIT,
+            generator: crate::GENERATOR_SOURCE_DIGEST,
             machine: machine.to_string(),
             source_hash,
         }
@@ -877,7 +878,7 @@ mod tests {
         let with = stream_of(DOC, Some(&header));
         assert_eq!(with.len(), without.len() + 1);
         assert_eq!(with[0]["record"], "header");
-        assert_eq!(with[0]["generator"], crate::GENERATOR_COMMIT);
+        assert_eq!(with[0]["generator"], crate::GENERATOR_SOURCE_DIGEST);
         assert_eq!(with[0]["machine"], "machine");
         assert_eq!(&with[1..], &without[..], "the rows do not move");
     }
@@ -942,7 +943,7 @@ mod tests {
                 r.as_object_mut().unwrap().remove("node_path");
                 r
             }),
-            ("a header whose generator names no commit", {
+            ("a header whose generator names no generator", {
                 let mut h = header.clone();
                 h["generator"] = serde_json::json!("0.1.0");
                 h

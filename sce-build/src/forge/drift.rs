@@ -45,7 +45,8 @@
 //! - The generator's identity. That is a fact about a run, not a file, and
 //!   the run's stdout manifest carries it as `generator`
 //!   (`SCE_WIRE_CONTRACTS.md` policy 2). Stamped into a committed file it
-//!   would change with every generator commit whether the output did or not.
+//!   would change with every edit to the generator's sources whether the
+//!   output did or not.
 //!
 //! [`prepend_or_replace_header`] still recognises the older four-line header,
 //! so a file generated before the change is rewritten in the current shape

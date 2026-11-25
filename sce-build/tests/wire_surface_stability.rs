@@ -348,7 +348,7 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
     ),
     (
         "apis/forge-ast.v1.schema.json",
-        "ast_schema_rejects_a_generator_that_names_no_commit",
+        "ast_schema_rejects_a_generator_that_names_no_sources",
         "sce-build/tests/forge_ast_export.rs",
     ),
     (
@@ -443,22 +443,26 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// The field a surface carries the producing commit in.
+/// The field a surface names its producer in.
 ///
 /// One name across surfaces is part of the contract: a consumer that
 /// reads two surfaces from one run should not need a per-surface key
 /// to answer the same question.
 const ATTRIBUTION_FIELD: &str = "generator";
 
-/// Commit-shaped, or the `unknown` a build with no git checkout reads.
+/// A SHA-256 in lowercase hex, the digest of the producer's sources, or
+/// the `unavailable` a build that could not read them carries.
 ///
 /// The required-key check alone is satisfied by any string. A stamp
 /// whose shape is unconstrained can hold a value that names nothing
 /// and still pass — which is exactly how this surface failed: it
 /// carried `CARGO_PKG_VERSION`, the crate version the manifest
 /// schema's own `generator` description calls out as identifying
-/// "nothing on its own" because it is frozen pre-1.0.
-const ATTRIBUTION_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
+/// "nothing on its own" because it is frozen pre-1.0. A commit is
+/// refused too: it names a committed state rather than the sources a
+/// build compiled, and stamped into a build output it makes every
+/// commit a new output when nothing the output is made from changed.
+const ATTRIBUTION_PATTERN: &str = "^([0-9a-f]{64}|unavailable)$";
 
 /// Surfaces that deliberately do not carry the stamp: `(surface, reason,
 /// the sentence of SCE_WIRE_CONTRACTS.md that states the reason)`.
@@ -471,28 +475,30 @@ const ATTRIBUTION_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
 const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
     (
         "schemas/sce-sourcemap.v1.schema.json",
-        "committed artifact: a commit stamp would be invalidated by the \
-         very commit that writes it, so every commit touching any tree \
-         would have to regenerate every sidecar. source_hash identifies \
-         the inputs instead, and a consumer needing the emitting commit \
-         reads it from the manifest of the run that produced the sidecar, \
-         or from a lookup record naming it.",
+        "committed artifact: a generator stamp would move whenever any \
+         generator source moved, so every change to the generator would \
+         have to regenerate every sidecar with no byte of output changed. \
+         source_hash identifies the inputs instead, and a consumer needing \
+         the emitting generator reads it from the manifest of the run that \
+         produced the sidecar, or from a lookup record naming it.",
         "sourcemap sidecar deliberately does",
     ),
     (
         "schemas/sce-saved-state.v1.schema.json",
-        "written by generated code, which would have to embed the commit: \
-         every committed machine and every shared fixture would then change \
-         on every commit. What a saved state must identify is what it \
-         restores into, and its `shape` does that; the commit that built \
-         the machine is the build's to record.",
+        "written by generated code, which would have to embed the \
+         generator's stamp: every committed machine and every shared fixture \
+         would then change whenever a generator source did. What a saved \
+         state must identify is what it restores into, and its `shape` does \
+         that; the generator that built the machine is the build's to \
+         record.",
         "saved state deliberately does",
     ),
     (
         "schemas/sce-saved-state.v2.schema.json",
         "format 2 is written by the same generated code as format 1, for the \
          same reason: every committed machine and every shared fixture would \
-         change on every commit. Each session of the tree carries the `shape` \
+         change whenever a generator source did. Each session of the tree \
+         carries the `shape` \
          of its own document, which is what it restores into.",
         "Format 2 of the saved state deliberately does",
     ),
@@ -500,7 +506,8 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
         "schemas/sce-saved-state.v3.schema.json",
         "format 3 is format 2's tree written by the same generated code, with \
          only the origin of its events changed: every committed machine and \
-         every shared fixture would again change on every commit. Each \
+         every shared fixture would again change whenever a generator source \
+         did. Each \
          session carries the `shape` of its own document, which is what it \
          restores into.",
         "Format 3 of the saved state deliberately does",
@@ -510,14 +517,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
         "format 4 is format 3's tree written by the same generated code, with \
          only each host-run invocation's start number and each session's count \
          of them added: every committed machine and every shared fixture would \
-         again change on every commit. Each session carries the `shape` of its \
+         again change whenever a generator source did. Each session carries \
+         the `shape` of its \
          own document, which is what it restores into.",
         "Format 4 of the saved state deliberately does",
     ),
     (
         "schemas/sce-authoring-profile.v1.schema.json",
         "written by the specification's owner, not emitted by SCE: there is \
-         no run to stamp, and a commit the owner never chose would sit in a \
+         no run to stamp, and a generator stamp the owner never chose would sit in a \
          file whose bytes are what an acceptance record pins, so every \
          regeneration would change the digest that names the profile. What \
          identifies a profile is its own sha256, which the manifest and the \
@@ -528,7 +536,7 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
         "schemas/sce-scenario-set.v1.schema.json",
         "written by the specification's owner, or proposed by an AI client for \
          the owner to confirm, and never emitted by SCE: there is no run to \
-         stamp, and a commit nobody chose would sit in a file whose bytes an \
+         stamp, and a generator stamp nobody chose would sit in a file whose bytes an \
          acceptance can pin. What identifies a scenario set is its own sha256, \
          and the specification it quotes is named by `specification.doc_id` \
          and `rev`.",
@@ -545,8 +553,9 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
     ),
     (
         "schemas/sce-transition-table.v1.schema.json",
-        "the rows carry no stamp: the export is diffed across commits, so a \
-         commit on every line would change every line of it. The stamp rides \
+        "the rows carry no stamp: the export is diffed across generator \
+         changes, so a stamp on every line would change every line of it. The \
+         stamp rides \
          on the one `header` record, which `--header` adds and which is what \
          ties an export to a machine; its `source_hash` identifies the \
          inputs.",
@@ -554,8 +563,8 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
     ),
     (
         "schemas/sce-payload-schema.v1.schema.json",
-        "a constant of committed generated units: a commit stamp would \
-         change every committed tree on every commit. Its \
+        "a constant of committed generated units: a generator stamp would \
+         change every committed tree whenever a generator source moved. Its \
          `x-sce-source-hash`, the source-hash of the files it is written \
          into, names its inputs instead, as the sourcemap sidecar's \
          `source_hash` does.",
@@ -564,8 +573,9 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
     (
         "schemas/sce-ttcn3-types-manifest.v1.schema.json",
         "written beside the types module it describes, as part of an export \
-         a consumer commits and regenerates expecting no diff: a commit stamp \
-         would change it on every commit with no type changed. It states the \
+         a consumer commits and regenerates expecting no diff: a generator \
+         stamp would change it on every generator change with no type changed. \
+         It states the \
          structure of the module and nothing of the run; the module's header \
          names its inputs.",
         "TTCN-3 types manifest deliberately does",
@@ -574,8 +584,9 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
         "schemas/sce-ttcn3-witness.v1.schema.json",
         "written beside the two modules it relates the documents to, as part \
          of an export a consumer commits and regenerates expecting no diff: a \
-         commit stamp would change it on every commit with no construct \
-         changed. It states the correspondence and nothing of the run; the \
+         generator stamp would change it on every generator change with no \
+         construct changed. It states the correspondence and nothing of the \
+         run; the \
          modules' headers name their inputs.",
         "TTCN-3 correspondence witness deliberately does",
     ),
@@ -601,7 +612,7 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          back by a later build of the same program after a crash: what a \
          restore must know is that it reads the format (`format`) and that \
          the saved tree fits the machine (the state's `shape`), and the \
-         commit that built the writer is the host's to record. A stamp would \
+         build of the writer is the host's to record. A stamp would \
          also make two checkpoints of the same state differ by build.",
         "Mesh checkpoint deliberately does",
     ),
@@ -612,12 +623,13 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
 /// leave this test asserting nothing while still passing.
 const MIN_ATTRIBUTED_SURFACES: usize = 4;
 
-/// Every JSON surface names the commit that produced it.
+/// Every JSON surface names the generator that produced it.
 ///
 /// Registry policy 1 makes pinning a specific SCE commit the
 /// consumer's obligation while a surface is `pre-release`, and rules
 /// out relying on "a version number alone"; policy 2 answers that
-/// obligation from the payload side. Nothing enforced either.
+/// obligation from the payload side, with the digest of the producer's
+/// sources that the pinned build reports too. Nothing enforced either.
 ///
 /// The three checks that did exist — status header, instance
 /// validation, negative validation — all stayed green on a surface
@@ -627,7 +639,7 @@ const MIN_ATTRIBUTED_SURFACES: usize = 4;
 /// name its producer cannot be attributed by a second invocation
 /// either.
 #[test]
-fn every_json_surface_names_the_commit_that_produced_it() {
+fn every_json_surface_names_the_generator_that_produced_it() {
     let registry = read("SCE_WIRE_CONTRACTS.md");
     let mut attributed = 0usize;
 

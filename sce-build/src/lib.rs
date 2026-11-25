@@ -64,21 +64,6 @@ pub mod cli_language;
 /// that keeps opaque author text (`sce:req`, `sce:provenance`,
 /// `sce:unresolved`) from reaching code in any backend.
 pub mod comment_text;
-/// Which commit `HEAD` names, and the paths `build.rs` watches so that
-/// [`GENERATOR_COMMIT`] cannot go stale.
-///
-/// The build script `include!`s this file, the same way it includes
-/// [`generator_witness`]; the crate compiles it only for its own tests,
-/// which are the one place the build script's git reading can be held to
-/// what git does. Nothing in the library calls it.
-///
-/// What the tests hold it to is that every watched path exists. Cargo
-/// reads a watched path that does not as changed on every build, and the
-/// watch set this replaced named two absent files in every linked
-/// worktree: the branch ref and `packed-refs` live in the common git
-/// directory, not in the worktree's own.
-#[cfg(test)]
-mod commit_stamp;
 pub mod computed_route_analyzer;
 /// Which files a document may make the generator open: the one folder a caller names
 /// (`SCE_FILE_ROOT`), and a file outside it answered as a file that is not there.
@@ -460,46 +445,46 @@ pub mod w3c_suite;
 /// AOT hard-errors).
 pub mod xinclude;
 
-/// Commit this generator was built from, or `"unknown"` on a build with
-/// no git checkout to read (vendored crate, release tarball).
-///
-/// The crate version is frozen at `0.1.0` under the pre-1.0 no-versioning
-/// rule, so it identifies nothing; `build.rs` resolves the commit and
-/// embeds it. Every wire surface that stamps its producer names *this*
-/// constant, so two surfaces reporting the generator cannot report
-/// different answers. (The CLI's human `--version` string still spells
-/// `env!` directly because `concat!` takes literals, not constants; it
-/// reads the same build-script variable in the same compilation, and
-/// `manifest_generator_matches_version_output` pins the two together.)
-///
-/// Why the surfaces need it: while a surface is `pre-release`,
-/// `SCE_WIRE_CONTRACTS.md` policy 1 requires consumers to pin a specific
-/// SCE commit rather than rely on the schema version, because a
-/// non-additive shape change may land without a version bump. A consumer
-/// can only honour that if the payload names the commit it came from.
-///
-/// Scope is the committed state the build started from, deliberately —
-/// see `build.rs` for why a dirty-worktree flag cannot be kept honest
-/// here, and why uncommitted edits are the job of the §synth-6.2.6
-/// source/template hashes instead.
-pub const GENERATOR_COMMIT: &str = env!("SCE_GIT_COMMIT");
-
 /// Digest of the sources this generator was compiled from, or
 /// [`generator_witness::DIGEST_UNAVAILABLE`] when the build could not read
-/// them.
+/// them (a vendored crate, a release tarball).
 ///
-/// The sibling above names the *committed* state a build started from,
-/// which is exactly what it can keep honest — and exactly what does not
-/// answer the question a build system has to ask. Uncommitted edits are
-/// the normal working state of this repository, so a binary and a tree can
-/// agree on the commit and still disagree on every line the generator
-/// runs. This constant closes that gap: it is a function of the bytes in
-/// [`generator_witness::WITNESS_FILES`] and [`generator_witness::WITNESS_TREES`],
-/// recomputable at any later moment by `sce-codegen verify-generator`.
+/// This is the generator's identity, and the only one it states. Every wire
+/// surface that names its producer (`generator` on the stdout manifest, on
+/// every diagnostic record and symbol-lookup record, on the forge-AST
+/// export, the kind catalog and the transition table's header) carries
+/// *this* constant, and `--version` reports it in parentheses, so two
+/// surfaces cannot name the generator differently. (`--version` and
+/// [`forge::diagnostic::Diagnostic::TERMINAL_FALLBACK_NDJSON`] spell
+/// `env!` because `concat!` takes literals, not constants; they read the
+/// same build-script variable in the same compilation, and
+/// `manifest_generator_matches_version_output` and
+/// `terminal_fallback_line_matches_what_serde_would_emit` hold them to it.)
 ///
-/// It exists because nothing else in the build graph produces the binary.
-/// See [`generator_witness`] for the failure that made that visible and
-/// for why a timestamp cannot stand in for this.
+/// A function of the bytes in [`generator_witness::WITNESS_FILES`] and
+/// [`generator_witness::WITNESS_TREES`] and of nothing else, recomputable at
+/// any later moment by `sce-codegen verify-generator`: two builds of the
+/// same sources carry the same value whatever commit, worktree or machine
+/// they were made at, and an edit to any of those sources moves it. That is
+/// all a stamp in a build output may carry, a value derived from the inputs
+/// that made it, and it is what lets the binary itself come out the same
+/// bytes when its sources are. The commit this replaced changed the binary
+/// on every commit, and named the committed state rather than the tree the
+/// build compiled, so two binaries could agree on it and differ in every
+/// line the generator runs.
+///
+/// Why the surfaces need it: while a surface is `pre-release`,
+/// `SCE_WIRE_CONTRACTS.md` policy 1 requires a consumer to pin the SCE it
+/// reads rather than rely on the schema version, because a non-additive
+/// shape change may land without a version bump. A payload naming this
+/// digest is what lets the consumer check a record against its pin: the
+/// pinned build's `--version` reports the same value, and
+/// `sce-codegen verify-generator --root <checkout>` says whether a checkout
+/// is the one it came from.
+///
+/// It is also the generator's part of an action key (ADR 0097). See
+/// [`generator_witness`] for the failure that made it necessary and for why
+/// a timestamp cannot stand in for it.
 pub const GENERATOR_SOURCE_DIGEST: &str = env!("SCE_GENERATOR_SOURCE_DIGEST");
 
 /// Where a machine a document carries was written, which places every record

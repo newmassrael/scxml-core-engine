@@ -57,7 +57,7 @@ letting consumers be written in any language with a JSON parser.
 ```json
 {
   "v": 1,
-  "generator": "bf4c6555a291",
+  "generator": "6c1e0b7a9f2d4c58e3a1b0d9c7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8",
   "ast": {
     "document": { "kind": "...", "name": "...", ... },
     "imports": [ { "src": "...", "kind": "...", "alias": "..." } ],
@@ -68,19 +68,23 @@ letting consumers be written in any language with a JSON parser.
 
 * **`v` (integer, const `1`)** — wire-format version. A consumer
   written against v1 may reject any other value outright.
-* **`generator` (string, required)** — commit of the SCE build that
-  produced this payload, matching `^([0-9a-f]{7,40}|unknown)$`. Same
-  value the stdout manifest carries as `generator` and `--version`
-  reports in parentheses, so a consumer reading both surfaces from one
-  run gets one answer under one key. `unknown` only on a build with no
-  git checkout to read (vendored crate, release tarball).
+* **`generator` (string, required)** — digest of the sources of the
+  SCE build that produced this payload, matching
+  `^([0-9a-f]{64}|unavailable)$`. Same value the stdout manifest carries
+  as `generator` and `--version` reports in parentheses, so a consumer
+  reading both surfaces from one run gets one answer under one key. Two
+  builds of the same sources carry the same value whatever commit they
+  were made at. `unavailable` only on a build that could not read its
+  sources (vendored crate, release tarball).
 
   This is what discharges `SCE_WIRE_CONTRACTS.md` policy 1, which
   tells consumers to pin a specific SCE commit while the surface is
-  `pre-release`. The field previously held the `sce-build` crate
-  version under the name `sce_producer_version` and was optional; that
-  version is frozen pre-1.0, so it identified nothing and no consumer
-  could pin from it. It matters most on the failure path: a rejected
+  `pre-release`: the build of the pinned commit reports the same digest.
+  The field previously held the `sce-build` crate version under the name
+  `sce_producer_version` and was optional; that version is frozen
+  pre-1.0, so it identified nothing and no consumer could pin from it.
+  It then held the commit, which changed the stamp on every commit and
+  named a committed state rather than the sources the build compiled. It matters most on the failure path: a rejected
   run writes no manifest at all, so an export sitting next to a
   rejection has nothing else alongside it to be attributed by.
 * **`ast.document`** — per-kind parsed body. The closed set of

@@ -550,10 +550,13 @@ PACE_NORMALISED: dict[str, str] = {
 # ran 2.4 hours on one core and held the queue behind it. A gate that reads a
 # ref the plan cannot carry (an upstream branch, which moves) is `cache: False`
 # and says so. `[]` is a verdict that reads no commit: `git ls-files` and
-# `git grep` read the tracked tree, which is the key. The generator stamps the
-# commit it was built at into what it says about itself (`GENERATOR_COMMIT`);
-# no gate compares that stamp with anything, since every commit would then
-# fail it, so building the generator is not reading a commit.
+# `git grep` read the tracked tree, which is the key. The generator names
+# itself by the digest of the sources it is built from
+# (`GENERATOR_SOURCE_DIGEST`), a function of the tree, and carries no commit,
+# so building it is not reading a commit. `the_binary_carries_no_commit` reads
+# HEAD only to show the binary does not hold its id, which is the same verdict
+# at every commit of one tree: no file of a tree can hold the id of a commit
+# that contains it.
 # `a-verdict-that-reads-head-carries-it` derives the HEAD readers a script
 # shows and refuses one that does not declare it, and
 # `a-verdict-that-reads-the-change-set-carries-it` does the same for a script

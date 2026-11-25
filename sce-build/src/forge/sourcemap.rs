@@ -420,9 +420,9 @@ pub const ALL_LOOKUP_KINDS: &[LookupKind] = &[LookupKind::Addr2Sce, LookupKind::
 pub struct SymbolLookupRecord<'a> {
     pub v: u32,
     pub kind: &'static str,
-    /// Commit of the generator that answered this lookup — the same
-    /// value the stdout manifest and every diagnostic carry, from
-    /// [`crate::GENERATOR_COMMIT`].
+    /// Digest of the sources of the generator that answered this lookup —
+    /// the same value the stdout manifest and every diagnostic carry, from
+    /// [`crate::GENERATOR_SOURCE_DIGEST`].
     ///
     /// A lookup record is consumed on its own (a debugger resolving a
     /// fault address, a build step mapping a symbol back to its SCXML)

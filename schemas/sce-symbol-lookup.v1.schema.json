@@ -19,9 +19,9 @@
       "enum": ["addr2sce", "sce2sym"]
     },
     "generator": {
-      "description": "Commit of the generator that answered this lookup — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read. Required because a lookup record is consumed on its own, with no manifest alongside it, and SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release. The referenced sourcemap cannot stand in for it: its source_hash identifies the inputs, not the emit code.",
+      "description": "Digest of the sources of the generator that answered this lookup — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unavailable` on a build that could not read its sources. Required because a lookup record is consumed on its own, with no manifest alongside it, and SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release. The referenced sourcemap cannot stand in for it: its source_hash identifies the inputs, not the emit code.",
       "type": "string",
-      "pattern": "^([0-9a-f]{7,40}|unknown)$"
+      "pattern": "^([0-9a-f]{64}|unavailable)$"
     },
     "sourcemap": {
       "description": "Path of the sce_sourcemap.json this hit came from. Named per record so a lookup spanning several backends stays attributable without correlating by position.",

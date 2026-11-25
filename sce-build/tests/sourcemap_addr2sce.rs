@@ -782,15 +782,15 @@ fn lookup_schema_rejects_a_record_without_the_generator_stamp() {
 /// no manifest alongside it, so it has to carry its own attribution or
 /// have none. `SCE_WIRE_CONTRACTS.md` policy 1 makes pinning a specific
 /// SCE commit the consumer's obligation while the surface is
-/// `pre-release`; the record naming the commit is what makes that
-/// checkable rather than assumed.
+/// `pre-release`; the record naming the generator's source digest is
+/// what makes that checkable rather than assumed.
 ///
 /// The sourcemap the record points at cannot stand in for this: its
 /// `source_hash` identifies the *inputs* (document bytes), and two
 /// generators whose emit code differs produce the same hash for the same
 /// document.
 #[test]
-fn both_lookup_directions_name_the_generator_commit() {
+fn both_lookup_directions_name_the_generator() {
     let version_out = Command::new(sce_codegen_bin())
         .arg("--version")
         .output()
@@ -800,7 +800,7 @@ fn both_lookup_directions_name_the_generator_commit() {
         .split_once('(')
         .and_then(|(_, rest)| rest.split_once(')'))
         .map(|(c, _)| c.to_string())
-        .expect("--version carries a commit");
+        .expect("--version carries the generator's digest");
 
     let (tmp, json) = generate("rust");
     let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
@@ -836,7 +836,7 @@ fn both_lookup_directions_name_the_generator_commit() {
     for record in &records {
         assert_eq!(
             record["generator"], expected,
-            "every lookup record must name the generator commit: {record}",
+            "every lookup record must name the generator: {record}",
         );
     }
     let _ = std::fs::remove_dir_all(&tmp);

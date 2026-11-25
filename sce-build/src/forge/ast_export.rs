@@ -28,8 +28,9 @@ pub const FORGE_AST_WIRE_VERSION: u32 = 1;
 /// (`envelope_constants_match_schema_header`) guards the two-way sync.
 pub const FORGE_AST_SCHEMA_STATUS: &str = "pre-release";
 
-/// JSON Schema constraint on the `generator` stamp — commit-shaped, or
-/// the `unknown` a build with no git checkout resolves to.
+/// JSON Schema constraint on the `generator` stamp — a SHA-256 in
+/// lowercase hex (the generator's source digest), or the `unavailable` a
+/// build that could not read its sources carries.
 ///
 /// schemars cannot infer this from `&str`, so `render_generated`
 /// injects it the same way it injects the `v` const. Held here next to
@@ -41,7 +42,7 @@ pub const FORGE_AST_SCHEMA_STATUS: &str = "pre-release";
 /// drift guard below; the constraint itself reaches consumers through
 /// the checked-in `apis/forge-ast.v1.schema.json`.
 #[cfg(test)]
-pub(crate) const GENERATOR_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
+pub(crate) const GENERATOR_PATTERN: &str = "^([0-9a-f]{64}|unavailable)$";
 
 /// Envelope serialised as the outer JSON object.
 ///
@@ -58,17 +59,18 @@ pub(crate) const GENERATOR_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
 pub struct ForgeAstEnvelope<'a> {
     /// Always `FORGE_AST_WIRE_VERSION` (1 for this schema revision).
     pub v: u32,
-    /// Commit of the generator that produced this payload — the same
-    /// value the stdout manifest carries as `generator` and
-    /// `--version` reports in parentheses. `unknown` on a build with
-    /// no git checkout to read (vendored crate, release tarball).
-    /// Required on every envelope because SCE_WIRE_CONTRACTS.md policy
-    /// 1 makes pinning a specific commit the consumer's obligation
-    /// while this surface is pre-release, and because a rejected run
-    /// writes no manifest at all — an export emitted next to a
-    /// rejection has nothing else alongside it to be attributed by.
-    /// The crate version cannot stand in: it is frozen pre-1.0 and
-    /// identifies nothing on its own.
+    /// Digest of the sources of the generator that produced this payload:
+    /// the lowercase hex SHA-256 the stdout manifest carries as `generator`
+    /// and `--version` reports in parentheses, which two builds of the same
+    /// sources share whatever commit they were made at. `unavailable` on a
+    /// build that could not read its sources (vendored crate, release
+    /// tarball). Required on every envelope because SCE_WIRE_CONTRACTS.md
+    /// policy 1 makes pinning the SCE it reads the consumer's obligation
+    /// while this surface is pre-release, and because a rejected run writes
+    /// no manifest at all, so an export emitted next to a rejection has
+    /// nothing else alongside it to be attributed by. The crate version
+    /// cannot stand in: it is frozen pre-1.0 and identifies nothing on its
+    /// own.
     pub generator: &'a str,
     /// Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`.
     pub ast: &'a ParsedForge,
@@ -97,25 +99,26 @@ pub struct ForgeAstEnvelope<'a> {
 struct ForgeAstEnvelopeOwned {
     /// Always `FORGE_AST_WIRE_VERSION` (1 for this schema revision).
     v: u32,
-    /// Commit of the generator that produced this payload — the same
-    /// value the stdout manifest carries as `generator` and
-    /// `--version` reports in parentheses. `unknown` on a build with
-    /// no git checkout to read (vendored crate, release tarball).
-    /// Required on every envelope because SCE_WIRE_CONTRACTS.md policy
-    /// 1 makes pinning a specific commit the consumer's obligation
-    /// while this surface is pre-release, and because a rejected run
-    /// writes no manifest at all — an export emitted next to a
-    /// rejection has nothing else alongside it to be attributed by.
-    /// The crate version cannot stand in: it is frozen pre-1.0 and
-    /// identifies nothing on its own.
+    /// Digest of the sources of the generator that produced this payload:
+    /// the lowercase hex SHA-256 the stdout manifest carries as `generator`
+    /// and `--version` reports in parentheses, which two builds of the same
+    /// sources share whatever commit they were made at. `unavailable` on a
+    /// build that could not read its sources (vendored crate, release
+    /// tarball). Required on every envelope because SCE_WIRE_CONTRACTS.md
+    /// policy 1 makes pinning the SCE it reads the consumer's obligation
+    /// while this surface is pre-release, and because a rejected run writes
+    /// no manifest at all, so an export emitted next to a rejection has
+    /// nothing else alongside it to be attributed by. The crate version
+    /// cannot stand in: it is frozen pre-1.0 and identifies nothing on its
+    /// own.
     generator: String,
     /// Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`.
     ast: ParsedForge,
 }
 
 impl<'a> ForgeAstEnvelope<'a> {
-    /// The only constructor — stamps the producing commit into
-    /// `generator`. Used by every `--emit-ast` call site.
+    /// The only constructor — stamps the producing generator's source
+    /// digest into `generator`. Used by every `--emit-ast` call site.
     ///
     /// There is deliberately no stamp-suppressing variant. One existed
     /// for "byte-equal goldens across SCE versions", but no such
@@ -128,7 +131,7 @@ impl<'a> ForgeAstEnvelope<'a> {
     pub fn new(ast: &'a ParsedForge) -> Self {
         Self {
             v: FORGE_AST_WIRE_VERSION,
-            generator: crate::GENERATOR_COMMIT,
+            generator: crate::GENERATOR_SOURCE_DIGEST,
             ast,
         }
     }
@@ -268,11 +271,11 @@ mod schema_drift {
 
         // Tighten the `generator` property the same way: schemars
         // renders a `String` field as a bare `{type: string}`, which
-        // any value satisfies. The contract is a commit (or the
-        // `unknown` a checkout-less build resolves to), so inject the
-        // pattern that says so — a required stamp whose shape is
+        // any value satisfies. The contract is a source digest (or the
+        // `unavailable` a build that could not read its sources carries),
+        // so inject the pattern that says so — a required stamp whose shape is
         // unconstrained is discharged by a value naming nothing, which
-        // is how a crate version passed for a commit here before.
+        // is how a crate version passed for an identity here before.
         if let Some(gen_prop) = json
             .get_mut("properties")
             .and_then(|p| p.get_mut("generator"))

@@ -13,9 +13,9 @@
       "const": 1
     },
     "generator": {
-      "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read. The catalog is compiled into the binary, so this names which catalog was read (SCE_WIRE_CONTRACTS.md policy 2).",
+      "description": "Digest of the sources of the sce-codegen build that produced this record, or \"unavailable\" when the build could not read them. The catalog is compiled into the binary, so this names which catalog was read (SCE_WIRE_CONTRACTS.md policy 2).",
       "type": "string",
-      "pattern": "^([0-9a-f]{7,40}|unknown)$"
+      "pattern": "^([0-9a-f]{64}|unavailable)$"
     },
     "declaration": {
       "description": "How a document declares its kind: the `attribute` in `namespace` on the root `element`. A root with no such attribute is read as `default`; an attribute of the same local name in another namespace is not a declaration.",

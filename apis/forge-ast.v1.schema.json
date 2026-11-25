@@ -9334,8 +9334,8 @@
       "description": "Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`."
     },
     "generator": {
-      "description": "Commit of the generator that produced this payload — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read (vendored crate, release tarball). Required on every envelope because SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release, and because a rejected run writes no manifest at all — an export emitted next to a rejection has nothing else alongside it to be attributed by. The crate version cannot stand in: it is frozen pre-1.0 and identifies nothing on its own.",
-      "pattern": "^([0-9a-f]{7,40}|unknown)$",
+      "description": "Digest of the sources of the generator that produced this payload: the lowercase hex SHA-256 the stdout manifest carries as `generator` and `--version` reports in parentheses, which two builds of the same sources share whatever commit they were made at. `unavailable` on a build that could not read its sources (vendored crate, release tarball). Required on every envelope because SCE_WIRE_CONTRACTS.md policy 1 makes pinning the SCE it reads the consumer's obligation while this surface is pre-release, and because a rejected run writes no manifest at all, so an export emitted next to a rejection has nothing else alongside it to be attributed by. The crate version cannot stand in: it is frozen pre-1.0 and identifies nothing on its own.",
+      "pattern": "^([0-9a-f]{64}|unavailable)$",
       "type": "string"
     },
     "v": {

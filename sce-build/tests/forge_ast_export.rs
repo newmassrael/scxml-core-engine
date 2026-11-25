@@ -600,25 +600,26 @@ fn schema_self_validates() {
         .expect("checked-in schema must compile as a valid JSON Schema");
 }
 
-/// The stamp names *this* checkout, not merely something schema-shaped.
+/// The stamp names the sources of *this* build, not merely something
+/// schema-shaped.
 ///
 /// Schema validation cannot make this assertion: the pattern admits
-/// `unknown` on purpose, so a build whose commit resolution broke
+/// `unavailable` on purpose, so a build whose witness could not be read
 /// emits a schema-valid envelope that attributes nothing. This suite
-/// runs from inside the repository, so a checkout exists to read —
-/// `unknown` here means the resolution is broken, not that there was
-/// nothing to resolve. `version_reports_the_generator_commit` makes
-/// the same argument for the CLI's `--version`.
+/// runs from inside the repository, so the sources exist to read —
+/// `unavailable` here means the witness is broken, not that there was
+/// nothing to read. `version_reports_the_generator_digest` makes the
+/// same argument for the CLI's `--version`.
 #[test]
-fn producer_stamps_the_generator_commit() {
+fn producer_stamps_the_generator_digest() {
     let parsed = parse_fixture(&fixture("transform_multi_output.scxml"));
     let env = ForgeAstEnvelope::new(&parsed);
     assert_eq!(
         env.generator,
-        sce_build::GENERATOR_COMMIT,
-        "production constructor must stamp the generator commit — the \
-         same constant the stdout manifest and every diagnostic record \
-         carry, so one run's surfaces agree on who produced them"
+        sce_build::GENERATOR_SOURCE_DIGEST,
+        "production constructor must stamp the generator's source digest \
+         — the same constant the stdout manifest and every diagnostic \
+         record carry, so one run's surfaces agree on who produced them"
     );
 
     let json = serde_json::to_value(&env).expect("serialise");
@@ -627,19 +628,19 @@ fn producer_stamps_the_generator_commit() {
         .and_then(|v| v.as_str())
         .expect("wire form must carry `generator` as a string");
     assert_ne!(
-        stamp, "unknown",
-        "the stamp resolved to the no-checkout fallback while running \
-         inside a git checkout — commit resolution in build.rs is \
-         broken. The schema admits `unknown` for vendored builds, so \
-         nothing downstream would have caught this."
+        stamp,
+        sce_build::generator_witness::DIGEST_UNAVAILABLE,
+        "the stamp is the fallback for a build that could not read its \
+         sources, while running inside the repository — the witness in \
+         build.rs is broken. The schema admits `unavailable` for vendored \
+         builds, so nothing downstream would have caught this."
     );
     assert!(
-        stamp.len() >= 7
-            && stamp.len() <= 40
+        stamp.len() == 64
             && stamp
                 .chars()
-                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
-        "stamp must be a lowercase hex commit; got {stamp:?}"
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "stamp must be a SHA-256 in lowercase hex; got {stamp:?}"
     );
 }
 
@@ -773,15 +774,18 @@ fn ast_schema_rejects_an_envelope_missing_a_required_field() {
 
 /// The schema refuses an envelope that cannot name its producer.
 ///
-/// Two ways to fail that, and the schema has to catch both. Dropping
+/// Three ways to fail that, and the schema has to catch each. Dropping
 /// the key is the obvious one. The second is what this surface
 /// actually shipped: a stamp that is present, is a string, and names
 /// nothing — it carried `CARGO_PKG_VERSION`, frozen pre-1.0, so every
-/// commit emitted the same value. A required key with no shape
-/// constraint would still accept that, which is why the pattern is
-/// asserted from a rejection rather than trusted from the schema text.
+/// commit emitted the same value. The third is the commit the stamp
+/// held next, which names a committed state rather than the sources a
+/// build compiled and changes the stamp on every commit. A required key
+/// with no shape constraint would still accept either, which is why the
+/// pattern is asserted from a rejection rather than trusted from the
+/// schema text.
 #[test]
-fn ast_schema_rejects_a_generator_that_names_no_commit() {
+fn ast_schema_rejects_a_generator_that_names_no_sources() {
     let schema_value = load_schema();
     let validator = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft7)
@@ -824,6 +828,18 @@ fn ast_schema_rejects_a_generator_that_names_no_commit() {
         "schema must reject a `generator` holding the crate version — \
          it is frozen pre-1.0 and identifies nothing on its own, which \
          is exactly what this surface used to emit: {crate_version}",
+    );
+
+    let mut commit = control.clone();
+    commit
+        .as_object_mut()
+        .expect("envelope is a JSON object")
+        .insert("generator".to_string(), Value::from("619ff5be8834"));
+    assert!(
+        validator.validate(&commit).is_err(),
+        "schema must reject a `generator` holding a short commit — the \
+         stamp names the generator's sources, and a commit is not their \
+         digest: {commit}",
     );
 }
 

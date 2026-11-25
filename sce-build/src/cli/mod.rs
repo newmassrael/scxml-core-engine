@@ -1580,7 +1580,7 @@ fn build_manifest<'a>(
     Manifest {
         v: crate::manifest::MANIFEST_SCHEMA_VERSION,
         kind: kind.as_str(),
-        generator: crate::GENERATOR_COMMIT,
+        generator: crate::GENERATOR_SOURCE_DIGEST,
         document_kind: report.document_kind,
         artifacts: report
             .artifacts
@@ -1823,15 +1823,21 @@ fn emit_generate_manifest(report: &GenerateReport) {
 
 // ── CLI Definition ──────────────────────────────────────────────
 
-/// Generator identity: crate version plus the commit it was built from.
+/// Generator identity: crate version plus the digest of the sources it was
+/// built from ([`crate::GENERATOR_SOURCE_DIGEST`]).
 ///
 /// The crate version is frozen pre-1.0 and identifies nothing on its own,
-/// so a consumer pinning this binary needs the commit to attribute a
+/// so a consumer pinning this binary needs the digest to attribute a
 /// generated artifact to the generator that produced it — otherwise the
-/// attribution has to be recorded by hand, which drifts. `unknown` when
-/// the build had no git checkout to read (vendored crate, release
-/// tarball); see `build.rs` for the resolution and its limits.
-const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SCE_GIT_COMMIT"), ")");
+/// attribution has to be recorded by hand, which drifts. It is the value
+/// every wire surface carries as `generator`, and `unavailable` when the
+/// build could not read its sources (vendored crate, release tarball).
+const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("SCE_GENERATOR_SOURCE_DIGEST"),
+    ")"
+);
 
 #[derive(Parser)]
 #[command(
@@ -16587,7 +16593,7 @@ fn print_lookup_record(
     let record = crate::forge::sourcemap::SymbolLookupRecord {
         v: crate::forge::sourcemap::SYMBOL_LOOKUP_SCHEMA_VERSION,
         kind: kind.as_str(),
-        generator: crate::GENERATOR_COMMIT,
+        generator: crate::GENERATOR_SOURCE_DIGEST,
         sourcemap: map_path.display().to_string(),
         symbol,
         entry,

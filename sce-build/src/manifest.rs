@@ -395,11 +395,11 @@ impl ChildMeshRouterSite {
 pub struct Manifest<'a> {
     pub v: u32,
     pub kind: &'static str,
-    /// Commit of the generator that produced this record, or
-    /// `"unknown"` on a build with no git checkout to read. Present so
-    /// a build system capturing the manifest attributes its output
-    /// without a second invocation and without a hand-maintained
-    /// version sidecar.
+    /// Digest of the sources of the generator that produced this record
+    /// ([`crate::GENERATOR_SOURCE_DIGEST`]), or `"unavailable"` on a build
+    /// that could not read them. Present so a build system capturing the
+    /// manifest attributes its output without a second invocation and
+    /// without a hand-maintained version sidecar.
     pub generator: &'static str,
     /// Which kind the run read its document as — see [`DocumentKind`].
     /// Present exactly when the run is one document; a document set holds
@@ -713,6 +713,10 @@ mod tests {
 
     const SCHEMA_BYTES: &str = include_str!("../../schemas/sce-manifest.v1.schema.json");
 
+    /// A `generator` of the shape the schema admits: 64 lowercase hex, the
+    /// form of a source digest. The records below are about other fields.
+    const A_GENERATOR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     /// A site is listed when its child talks or starts one that does, and the
     /// child's own such sites ride under it; a site whose child asks nothing
     /// of Mesh is left out.
@@ -971,7 +975,7 @@ mod tests {
             let m = Manifest {
                 v: MANIFEST_SCHEMA_VERSION,
                 kind: ManifestKind::Check.as_str(),
-                generator: "deadbeefcafe",
+                generator: A_GENERATOR,
                 document_kind: None,
                 artifacts: Vec::new(),
                 needs_script_engine: false,
@@ -1036,7 +1040,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/foo_sm.rs".to_string(),
@@ -1076,7 +1080,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/foo_sm.h".to_string(),
@@ -1124,7 +1128,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Check.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
@@ -1189,7 +1193,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/probe_sm.rs".to_string(),
@@ -1243,7 +1247,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: true,
@@ -1303,7 +1307,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
@@ -1347,7 +1351,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
@@ -1394,7 +1398,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
@@ -1451,7 +1455,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
@@ -1507,7 +1511,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_manifest_kind() {
         assert_invalid(
-            r#"{"v":1,"kind":"generate-w3c","generator":"deadbeefcafe","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false}"#,
+            r#"{"v":1,"kind":"generate-w3c","generator":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false}"#,
             "kind outside ALL_MANIFEST_KINDS",
         );
     }
@@ -1515,7 +1519,7 @@ mod tests {
     #[test]
     fn schema_rejects_a_missing_required_field() {
         assert_invalid(
-            r#"{"v":1,"kind":"generate","generator":"deadbeefcafe","artifacts":[]}"#,
+            r#"{"v":1,"kind":"generate","generator":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","artifacts":[]}"#,
             "needs_script_engine absent",
         );
     }
@@ -1523,7 +1527,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_language_in_a_check_verdict() {
         assert_invalid(
-            r#"{"v":1,"kind":"check","generator":"deadbeefcafe","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
+            r#"{"v":1,"kind":"check","generator":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
             "language outside the backend set",
         );
     }
@@ -1533,7 +1537,7 @@ mod tests {
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
-            generator: "deadbeefcafe",
+            generator: A_GENERATOR,
             document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/timed_sm.c".to_string(),
