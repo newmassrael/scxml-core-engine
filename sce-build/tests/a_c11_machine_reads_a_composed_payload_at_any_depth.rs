@@ -646,7 +646,7 @@ fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
         ),
         (
             when("len(_event.data.items) &gt; 0 &amp;&amp; _event.data.items[0].label === 'ab'"),
-            ".items.data[0].label.data : \"\")",
+            ".items.data[0].label.data : \"\", \"ab\") == 0",
         ),
         (
             over_items(when("row.label === 'ab'")),
@@ -654,7 +654,7 @@ fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
         ),
         (
             over_items(when("len(row.tags) &gt; 0 &amp;&amp; row.tags[0] === 'ab'")),
-            "row.tags.data[0].data : \"\")",
+            "row.tags.data[0].data : \"\", \"ab\") == 0",
         ),
         (
             over_items(format!(
