@@ -7,8 +7,8 @@
 # A document that raises nothing for itself keeps an internal queue of no
 # slots, and the bare-metal queue's events and payloads are each a ring of
 # that depth. A push onto it must stop the program with the queue's own
-# message, as a push past any depth does, and never reach an index taken
-# modulo a capacity of zero. The tests are the runtime library's
+# message, as a push past any depth does, and never reach a division by a
+# capacity of zero: the rings take no remainder at all. The tests are the runtime library's
 # (`helpers::event_queue::tests`), which hold both rings on the host.
 #
 # Anchors are literal slices of the source; an edit that moves one is
@@ -19,28 +19,38 @@ mutation_oracles backends/rust/runtime/src/helpers/event_queue.rs
 mutation_targets backends/rust/runtime/src/helpers/event_queue.rs
 
 # The events' ring asks for a full ring only past its capacity: a push onto a
-# ring of no slots divides by zero instead of stopping with the queue's word.
+# full ring wraps onto its oldest event instead of stopping with the queue's
+# word.
 mutation_case "the events' ring does not refuse a push at its depth" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_queue.rs",
-     r'''    if count == capacity {
+     r'''    if count >= capacity {
         queue_full();
     }
-    slots[''',
+    match slots.get_mut(''',
      r'''    if count > capacity {
         queue_full();
     }
-    slots[''')
+    match slots.get_mut(''')
 PY
 
 # The same for the payload ring.
 mutation_case "the payload ring does not refuse a push at its depth" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_queue.rs",
-     r'''        if count == capacity {
+     r'''        if count >= N {
             queue_full();
         }''',
-     r'''        if count > capacity {
+     r'''        if count > N {
             queue_full();
         }''')
+PY
+
+# The slot after the head is found without a division: one comparison and one
+# subtraction. A comparison one short leaves the position at the capacity
+# unwrapped, past the last slot.
+mutation_case "the slot after the head does not wrap at the capacity" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_queue.rs",
+     r'''    if at >= capacity {''',
+     r'''    if at > capacity {''')
 PY
 
 # A payload ring dropped with items in it forgets them: their destructors
@@ -57,6 +67,6 @@ PY
 # after a wrap the queue is reported out of order.
 mutation_case "the queued events ignore the ring's head" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_queue.rs",
-     r'''    (0..usize::from(len)).map(move |offset| &slots[(head + offset) % capacity])''',
-     r'''    (0..usize::from(len)).map(move |offset| &slots[(offset + head * 0) % capacity])''')
+     r'''        .get(usize::from(head)..)''',
+     r'''        .get(usize::from(head) * 0..)''')
 PY

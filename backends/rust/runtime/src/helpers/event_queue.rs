@@ -212,9 +212,9 @@ impl EventQueueMut<'_> {
     /// Out of line: the main loop every machine shares takes an event off a
     /// queue in three places (the internal queue, the external queue, and what
     /// the external queue still holds when a run ends), and under `no_std`
-    /// each is the ring's index arithmetic, its division by the capacity and
-    /// the check that the capacity is not zero. One copy and three calls are
-    /// smaller than three copies.
+    /// each is the ring's index arithmetic: a test of the length, a read
+    /// through `get` and the wrap of the head by one comparison. One copy and
+    /// three calls are smaller than three copies.
     #[inline(never)]
     pub fn pop(&mut self) -> Option<QueuedEvent> {
         #[cfg(feature = "std")]
@@ -255,19 +255,44 @@ impl EventQueueMut<'_> {
 
 // The bounded queue's ring: `len` events from `head`, wrapping at the end of
 // `slots`. Free functions over the parts rather than methods of the view, so the
-// host's tests, which build the `std` queue, compile and hold them too. Each
-// holds for a ring of no slots (docs/adr/0076): its length is never more than
-// zero, so no index is taken modulo its capacity.
+// host's tests, which build the `std` queue, compile and hold them too.
+//
+// The ring keeps `head < capacity` whenever it holds an item, and `len <=
+// capacity` always. No slot is reached by an index operator or a remainder:
+// the slot `offset` places after `head` is found by one comparison and one
+// subtraction (`ring_slot`) and read through `get`, so the code has no
+// division, no division by a capacity of zero (docs/adr/0076) and no bounds
+// check whose panic formats the index. The one stop left is a push past the
+// depth (`queue_full`), which takes no argument.
+
+/// The position `offset` slots after `head` in a ring of `capacity`, both
+/// below the capacity: their sum is below twice the capacity, so one
+/// subtraction wraps it. A ring of no slots never asks: it holds nothing and
+/// refuses every push before it would.
+#[cfg(any(test, not(feature = "std")))]
+#[inline(always)]
+fn ring_slot(capacity: usize, head: usize, offset: usize) -> usize {
+    let at = head + offset;
+    if at >= capacity {
+        at - capacity
+    } else {
+        at
+    }
+}
 
 /// Put `item` behind the `len` items from `head`.
 #[cfg(any(test, not(feature = "std")))]
 fn ring_push<T>(slots: &mut [T], head: &mut u16, len: &mut u16, item: T) {
     let capacity = slots.len();
     let count = usize::from(*len);
-    if count == capacity {
+    if count >= capacity {
         queue_full();
     }
-    slots[(usize::from(*head) + count) % capacity] = item;
+    match slots.get_mut(ring_slot(capacity, usize::from(*head), count)) {
+        Some(slot) => *slot = item,
+        // A head the ring never writes: no slot is free for the item.
+        None => queue_full(),
+    }
     *len += 1;
 }
 
@@ -278,8 +303,9 @@ fn ring_pop<T: Default>(slots: &mut [T], head: &mut u16, len: &mut u16) -> Optio
         return None;
     }
     let first = usize::from(*head);
-    let item = core::mem::take(&mut slots[first]);
-    *head = ((first + 1) % slots.len()) as u16;
+    let capacity = slots.len();
+    let item = core::mem::take(slots.get_mut(first)?);
+    *head = ring_slot(capacity, first, 1) as u16;
     *len -= 1;
     Some(item)
 }
@@ -290,16 +316,19 @@ fn ring_front<T>(slots: &[T], head: u16, len: u16) -> Option<&T> {
     if len == 0 {
         None
     } else {
-        Some(&slots[usize::from(head)])
+        slots.get(usize::from(head))
     }
 }
 
-/// The `len` items from `head`, front first, left in place.
+/// The `len` items from `head`, front first, left in place: the slots from
+/// `head` to the end and then from the start, the first `len` of them.
 #[cfg(any(test, not(feature = "std")))]
 fn ring_queued<T>(slots: &[T], head: u16, len: u16) -> impl Iterator<Item = &T> {
-    let head = usize::from(head);
-    let capacity = slots.len();
-    (0..usize::from(len)).map(move |offset| &slots[(head + offset) % capacity])
+    slots
+        .get(usize::from(head)..)
+        .into_iter()
+        .flat_map(move |from_head| from_head.iter().chain(slots.iter()))
+        .take(usize::from(len))
 }
 
 /// A push past a bounded queue's depth. No formatted message, so an image does
@@ -364,13 +393,18 @@ impl<T, const N: usize> FixedRing<T, N> {
     /// rather than drop it.
     fn push_back(&mut self, item: T) {
         let count = self.len();
-        let capacity = self.slots.len();
-        if count == capacity {
+        if count >= N {
             queue_full();
         }
-        // `count < capacity`, so the slot is one no item is held in: writing
-        // it forgets nothing.
-        self.slots[(usize::from(self.head) + count) % capacity] = MaybeUninit::new(item);
+        // `count < N`, so the slot is one no item is held in: writing it
+        // forgets nothing.
+        match self
+            .slots
+            .get_mut(ring_slot(N, usize::from(self.head), count))
+        {
+            Some(slot) => *slot = MaybeUninit::new(item),
+            None => queue_full(),
+        }
         self.len += 1;
     }
 
@@ -383,20 +417,18 @@ impl<T, const N: usize> FixedRing<T, N> {
         // SAFETY: the ring holds an item, so the slot at `head` holds the
         // first; it is read out once, and the slot is counted vacant below, so
         // it is never read again.
-        let item = unsafe { self.slots[first].assume_init_read() };
-        self.head = ((first + 1) % self.slots.len()) as u16;
+        let item = unsafe { self.slots.get(first)?.assume_init_read() };
+        self.head = ring_slot(N, first, 1) as u16;
         self.len -= 1;
         Some(item)
     }
 
     /// The items held, front first, left in place.
     fn iter(&self) -> impl Iterator<Item = &T> {
-        let head = usize::from(self.head);
-        let capacity = self.slots.len();
-        (0..self.len()).map(move |offset| {
-            // SAFETY: `offset < len`, so the slot is one of the `len` from
-            // `head` that hold an item, borrowed for as long as the ring is.
-            unsafe { self.slots[(head + offset) % capacity].assume_init_ref() }
+        ring_queued(&self.slots, self.head, self.len).map(|slot| {
+            // SAFETY: the slot is one of the `len` from `head` that hold an
+            // item, borrowed for as long as the ring is.
+            unsafe { slot.assume_init_ref() }
         })
     }
 
@@ -658,6 +690,46 @@ mod tests {
         ring_push(&mut slots, &mut head, &mut len, 1);
     }
 
+    /// The slot `offset` places after `head` is the one the remainder by the
+    /// capacity names, for every head and offset below it: the wrap by one
+    /// subtraction is the ring's arithmetic without a division.
+    #[test]
+    fn the_slot_after_the_head_wraps_as_the_remainder_does() {
+        for capacity in 1..=5usize {
+            for head in 0..capacity {
+                for offset in 0..capacity {
+                    assert_eq!(
+                        ring_slot(capacity, head, offset),
+                        (head + offset) % capacity,
+                        "capacity {capacity}, head {head}, offset {offset}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A head past the slots, which the ring never writes, names no slot: the
+    /// ring reads nothing there rather than stop on a bounds check.
+    #[test]
+    fn a_head_past_the_slots_reads_nothing() {
+        let mut slots = [7u16; 2];
+        let (mut head, mut len) = (5u16, 1u16);
+        assert_eq!(ring_front(&slots, head, len), None);
+        assert_eq!(ring_queued(&slots, head, len).count(), 0);
+        assert_eq!(ring_pop(&mut slots, &mut head, &mut len), None);
+        assert_eq!((head, len), (5, 1), "nothing was taken off");
+    }
+
+    /// A push at a head past the slots has no slot for its item, and stops as
+    /// a full queue does rather than drop it.
+    #[test]
+    #[should_panic(expected = "an event queue is full")]
+    fn a_push_at_a_head_past_the_slots_is_refused_loud() {
+        let mut slots = [0u16; 2];
+        let (mut head, mut len) = (5u16, 0u16);
+        ring_push(&mut slots, &mut head, &mut len, 1);
+    }
+
     /// The payload store of a queue of depth zero is a ring of no slots too,
     /// which `heapless::Deque` refused to be while the program was compiled.
     #[test]
@@ -674,6 +746,17 @@ mod tests {
     fn a_push_onto_a_payload_ring_of_no_slots_is_refused_loud() {
         let mut ring: FixedRing<(), 0> = FixedRing::new();
         ring.push_back(());
+    }
+
+    /// A push past the depth of a payload ring that has slots stops the
+    /// program rather than write over the oldest payload.
+    #[test]
+    #[should_panic(expected = "an event queue is full")]
+    fn a_push_past_the_payload_ring_is_refused_loud() {
+        let mut ring: FixedRing<u32, 2> = FixedRing::new();
+        for item in [1, 2, 3] {
+            ring.push_back(item);
+        }
     }
 
     /// The payload ring keeps FIFO order across its wrap-around, refuses a
