@@ -1,7 +1,8 @@
 # ADR 0120 — A landing is judged by every gate its change reaches, and what it costs is what the change reads
 
-- Status: Accepted (2026-11-23, by the owner), as the direction. D1 is in force once item 395 (`gate-landing-whole`)
-  lands. D2 to D6 are built in the order of "Landing" below, each in a landing of its own.
+- Status: Accepted (2026-11-23, by the owner), as the direction; amended 2026-11-25 by the owner. D1 is replaced and
+  D6's culprit finding and revert are withdrawn (see "Amendment, 2026-11-25" at the end); D5 is the after-landing tier
+  of every `ci_only` gate. D2 to D4 stand and are built in the order of "Landing" below, each in a landing of its own.
 - Date: 2026-11-23
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored). The owner had asked whether every gate is needed and how to make a landing shorter.
@@ -119,3 +120,33 @@ finding over the landed range, and the culprit's revert is submitted to the queu
   that moved with it.
 - Residue: a build cache linked into the copy is not in the key (RFC 0026 §3.4). A build tool whose cached output
   changes a verdict is found by the resample, which runs without the links.
+
+## Amendment, 2026-11-25: before landing, only what is fast and deterministic
+
+The owner's decision of 2026-11-25, in their words as translated: "before landing, only fast, deterministic tests that
+finish in a few minutes; no automatic revert; a red found after landing is repaid by a follow-up commit."
+
+Measured: with D1 in force, a judgment of every gate a change reaches took about 1.5 h on the fleet, and the queue held
+every item behind the one it judged for that long.
+
+- **D1 is replaced.** The landing judgment is the set any push selects: every gate the change reaches less the
+  `ci_only` ones, the set `PUSH_BUDGET_S` (300 s) bounds and `budget_is_not_exceeded` holds to that bound. Its units
+  run with `--landing`, so a gate that would skip for want of a tool ends 3, could not run, and is never counted as a
+  pass (`kept_only_from_a_landing`, SCE_GATE_LANDING). The registry has one selection for every push (`select`,
+  `drop_ci_only` in `tools/git-hooks/gate_registry.py`); `--landing` changes how the units run and has the plan name
+  the gates it left, never which gates it selects. `PREPUSH_FULL=1` on an update to main (`--all --landing`) stays the
+  deliberate full run on the fleet, less the gates it cannot place or bound (`platform`, `audited_after_landing`).
+- **D5 becomes the after-landing tier for every `ci_only` gate.** Hosted CI runs them on main after the landing. The
+  next round reads that run first, and a red there is repaid by a follow-up commit that goes through the queue like any
+  other item. `--ci-owed` names, for each change, the gates that audit judges and the workflow that owns each.
+- **D6's culprit finding and revert are withdrawn.** Nothing is reverted automatically. A red after landing is
+  repaired, not rolled back. The gates D6 named (mutation analysis, fuzzing, performance, platforms the fleet lacks) are
+  in the tier of D5 with every other `ci_only` gate.
+- **D2 to D4 stand**: inputs derived from the build and kept passes over narrowed keys (D2), shards of test targets
+  (D3), and the queue judging independent items in parallel (D4). The instrument for D2 is bx RFC 0084, adopted on bx
+  main at `bf32b9b3`: a verdict is kept by the verifying trace of what its run read, with early cutoff. Each of them now
+  shortens the before-landing set and lets more gates leave `ci_only` within the budget, rather than shortening a
+  judgment of every reached gate.
+
+What this trades, stated: a `ci_only` gate's red can land on main and stay there until the next round repays it. The
+first round after a landing reads hosted CI's run of main before it starts other work, so a red is not left unread.
