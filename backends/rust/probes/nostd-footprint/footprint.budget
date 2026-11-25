@@ -196,7 +196,12 @@ ROW_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${ROW_WALK_PROCEDURES//
 # 862 -> 868 (2026-11-25, rustc 1.100.0): the data of the event being processed is
 # handed to each hook and held by the turn (docs/adr/0124). Images of 209837 and
 # 210705; the core does not move.
-MACHINE_BYTES=868
+#
+# 868 -> 1462 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
+# sets is walked as rows (docs/adr/0125). The probe's second machine is plain,
+# so it brings the row walk into a program the first machine gives the general
+# walk: both are linked. Images of 209907 and 211369.
+MACHINE_BYTES=1462
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -259,7 +264,11 @@ MACHINE_BYTES=868
 # 854 -> 860 (2026-11-25, rustc 1.100.0): the data of the event being processed is
 # handed to each hook and held by the turn (docs/adr/0124). Images of 209659 and
 # 210519.
-MACHINE_BYTES_NO_DIAGNOSTICS=860
+#
+# 860 -> 1454 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
+# sets is walked as rows (docs/adr/0125). As above; images of
+# 209729 and 211183.
+MACHINE_BYTES_NO_DIAGNOSTICS=1454
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -313,7 +322,10 @@ MACHINE_BYTES_NO_DIAGNOSTICS=860
 # one place, one copy of the main loop's pop and event step, and no inbox drain
 # in a bare-metal build that attaches none (the runtime's bounded-inbox
 # feature, docs/adr/0084 as amended). Over 29 symbols.
-CORE_BYTES=7890
+#
+# 7890 -> 8504 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
+# sets is walked as rows (docs/adr/0125). Both walks, over 33 symbols.
+CORE_BYTES=8504
 
 # The same without the report.
 #
@@ -350,7 +362,10 @@ CORE_BYTES=7890
 # one place, one copy of the main loop's pop and event step, and no inbox drain
 # in a bare-metal build that attaches none (the runtime's bounded-inbox
 # feature, docs/adr/0084 as amended). Over 29 symbols.
-CORE_BYTES_NO_DIAGNOSTICS=7782
+#
+# 7782 -> 8396 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
+# sets is walked as rows (docs/adr/0125). Both walks, over 33 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=8396
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -422,8 +437,12 @@ CORE_BYTES_NO_DIAGNOSTICS=7782
 # 926 -> 932 (2026-11-25, rustc 1.100.0): the data of the event being processed is
 # handed to each hook and held by the turn (docs/adr/0124). Images of 206872 and
 # 207804.
+#
+# 5584 -> 2906 over 16 symbols (2026-11-25, rustc 1.100.0): both plain documents
+# fix their sets, so the program links the row walk alone and no general walk
+# (docs/adr/0125); images of 204234 and 205166, 2638 bytes under the parent's.
 MACHINE_BYTES_PLAIN=932
-CORE_BYTES_PLAIN=5584
+CORE_BYTES_PLAIN=2906
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight

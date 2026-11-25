@@ -221,6 +221,29 @@ is its own landing.
   fact.
 - **Generating each machine's exits and entries as code.** That is the per-machine copy ADR 0064 removed.
 
+## Measured
+
+On one build machine, `thumbv7em-none-eabihf`, `opt-level = "s"`, rustc 1.100.0, with the gate's own arithmetic
+(`.text` plus `.rodata` of the probe staticlib, the image of two machines minus the image of one; the core by
+`CORE_SYMBOLS`), before (the parent, ADR 0124 landed) and after in one run:
+
+| | before | after |
+|---|---|---|
+| two plain documents: image of one / of two machines | 206,872 / 207,804 | 204,234 / 205,166 |
+| two plain documents: one more machine, core | 932, 5,584 | 932, 2,906 |
+| a `<parallel>` and `<history>` document beside a plain one: image of two machines | 210,705 | 211,369 |
+| the same: one more machine, core (with the report / without) | 868 / 860, 7,890 / 7,782 | 1,462 / 1,454, 8,504 / 8,396 |
+
+- A program whose documents all fix their sets links no general walk: `walk_entry`, `transition_domain`,
+  `effective_target_states_on`, `compute_exit_set` and the general `enter_states` / `exit_states` are absent from
+  the plain image, which holds `enter_states_from_rows`, `exit_states_from_rows` and `exit_active` instead. The
+  image is 2,638 bytes smaller and the core 2,678.
+- A program that holds both kinds of document links both walks, by decision 3: the second machine of the mixed
+  configuration is the probe's plain one, so it brings the row walk (594 bytes) into a program that already had the
+  general walk. That is what such a program pays; the gate holds it.
+- The worst-case stack is read by the nostd-mcu gate; the build machines carry no `thumbv6m` standard library, so
+  its stack step was not run there.
+
 ## Order of the changes
 
 1. This ADR.
