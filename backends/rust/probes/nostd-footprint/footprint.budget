@@ -204,7 +204,13 @@ ROW_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${ROW_WALK_PROCEDURES//
 # sets is walked as rows (docs/adr/0125). The probe's second machine is plain,
 # so it brings the row walk into a program the first machine gives the general
 # walk: both are linked. Images of 209907 and 211369.
-MACHINE_BYTES=1462
+#
+# 1462 -> 1486 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129). Images of 209963 and 211449.
+MACHINE_BYTES=1486
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -271,7 +277,13 @@ MACHINE_BYTES=1462
 # 860 -> 1454 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
 # sets is walked as rows (docs/adr/0125). As above; images of
 # 209729 and 211183.
-MACHINE_BYTES_NO_DIAGNOSTICS=1454
+#
+# 1454 -> 1478 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129). Images of 209789 and 211267.
+MACHINE_BYTES_NO_DIAGNOSTICS=1478
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -328,7 +340,13 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1454
 #
 # 7890 -> 8504 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
 # sets is walked as rows (docs/adr/0125). Both walks, over 33 symbols.
-CORE_BYTES=8504
+#
+# 8504 -> 8638 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129). Over 32 symbols.
+CORE_BYTES=8638
 
 # The same without the report.
 #
@@ -368,7 +386,13 @@ CORE_BYTES=8504
 #
 # 7782 -> 8396 (2026-11-25, rustc 1.100.0): a document that fixes its microstep
 # sets is walked as rows (docs/adr/0125). Both walks, over 33 symbols.
-CORE_BYTES_NO_DIAGNOSTICS=8396
+#
+# 8396 -> 8534 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129). Over 32 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=8534
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -444,8 +468,14 @@ CORE_BYTES_NO_DIAGNOSTICS=8396
 # 5584 -> 2906 over 16 symbols (2026-11-25, rustc 1.100.0): both plain documents
 # fix their sets, so the program links the row walk alone and no general walk
 # (docs/adr/0125); images of 204234 and 205166, 2638 bytes under the parent's.
-MACHINE_BYTES_PLAIN=932
-CORE_BYTES_PLAIN=2906
+#
+# 932 and 2906 -> 906 and 3066 (a machine, the core) (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129). A plain machine no longer carries its own selection, which the core now holds once. Images of 204408 and 205314.
+MACHINE_BYTES_PLAIN=906
+CORE_BYTES_PLAIN=3066
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -591,7 +621,13 @@ STACK_MIN_FUNCTIONS=200
 # own arguments to tools/mcu_stack, since no build machine carries the thumbv6m
 # library the gate's earlier step needs): the event's data held by the turn
 # (docs/adr/0124) and both walks linked beside each other (docs/adr/0125).
-STACK_BYTES=984
+#
+# 984 -> 1000 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129).
+STACK_BYTES=1000
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -633,5 +669,11 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 # 760 -> 560 (2026-11-25, rustc 1.100.0, measured as above): both plain documents
 # fix their sets, so the turn walks rows and holds no set of the general walk
 # (docs/adr/0125).
-STACK_BYTES_PLAIN=560
+#
+# 560 -> 576 (2026-11-25, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step no build machine can run): a transition is
+# selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
+# runtime's reads take no index that can panic, and the main loop is generic over
+# the two forms of a machine (docs/adr/0129).
+STACK_BYTES_PLAIN=576
 STACK_TOLERANCE_BYTES=256
