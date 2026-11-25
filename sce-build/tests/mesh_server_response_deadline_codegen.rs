@@ -67,28 +67,23 @@ const VSOMEIP_JSON: &str = r#"{
 }"#;
 
 struct Fixture {
-    dir: PathBuf,
+    dir: tempfile::TempDir,
 }
 
 impl Fixture {
     fn new(tag: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("sce_mesh_server_deadline_{tag}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("mkdir");
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("sce_mesh_server_deadline_{tag}_"))
+            .tempdir()
+            .expect("a directory of this fixture's own");
         Self { dir }
     }
 
     fn write(&self, name: &str, content: &str) -> PathBuf {
-        let path = self.dir.join(name);
+        let path = self.dir.path().join(name);
         let mut f = fs::File::create(&path).expect("create");
         f.write_all(content.as_bytes()).expect("write");
         path
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
     }
 }
 

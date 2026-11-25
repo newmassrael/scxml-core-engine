@@ -808,8 +808,8 @@ topology:
 
     #[test]
     fn resolves_all_name_based_references() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_ok");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let deploy = sample_deploy(&cfg_path);
@@ -844,15 +844,14 @@ topology:
         assert_eq!(d.getter_id, Some(0x0100));
         assert_eq!(d.setter_id, Some(0x0101));
 
-        std::fs::remove_dir_all(&dir).ok();
         let _ = res;
     }
 
     #[test]
     fn per_event_block_resolves_into_by_event_map() {
         // Per-event SCE_MESH.md §mesh-14 schema: distinct method per event.
-        let dir = std::env::temp_dir().join("sce_ext_cfg_per_event");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let yaml = format!(
@@ -900,14 +899,12 @@ topology:
             per_binding.by_event["field.set.mode"],
             SomeipEventIds::Setter { setter_id: 0x0101 }
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn flat_sugar_and_events_block_conflict_rejected() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_conflict");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let yaml = format!(
@@ -939,14 +936,12 @@ topology:
             }
             other => panic!("expected ConflictingEventSchema, got {other:?}"),
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn unresolved_service_produces_batched_error() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_bad_svc");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let mut deploy = sample_deploy(&cfg_path);
@@ -976,14 +971,12 @@ topology:
             }
             other => panic!("expected UnresolvedNames, got {other:?}"),
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn ambiguous_event_group_rejected() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_ambig");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let mut deploy = sample_deploy(&cfg_path);
@@ -1008,14 +1001,12 @@ topology:
             }
             other => panic!("expected AmbiguousEventGroup, got {other:?}"),
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn empty_event_group_rejected() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_empty");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
         let mut deploy = sample_deploy(&cfg_path);
@@ -1037,8 +1028,6 @@ topology:
             }
             other => panic!("expected EmptyEventGroup, got {other:?}"),
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1162,18 +1151,15 @@ topology:
 
     #[test]
     fn absolute_config_path_honored() {
-        let dir = std::env::temp_dir().join("sce_ext_cfg_abs");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().expect("a directory of this test's own");
+        let dir = tmp.path().to_path_buf();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
         assert!(cfg_path.is_absolute());
 
         let deploy = sample_deploy(&cfg_path);
         // deploy_dir is intentionally unrelated to cfg's parent — absolute
         // path must still resolve.
-        let unrelated = std::env::temp_dir().join("sce_unrelated_dir");
-        std::fs::create_dir_all(&unrelated).ok();
-        resolve_external_bindings(&deploy, &unrelated).expect("absolute path resolves");
-
-        std::fs::remove_dir_all(&dir).ok();
+        let unrelated = tempfile::tempdir().expect("a directory of this test's own");
+        resolve_external_bindings(&deploy, unrelated.path()).expect("absolute path resolves");
     }
 }
