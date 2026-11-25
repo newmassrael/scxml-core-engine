@@ -33,6 +33,7 @@ pub mod cross_kind_check;
 pub mod cycle_check;
 pub mod cycle_expand;
 pub mod declared_names;
+pub mod delay_count;
 pub mod deployment;
 pub mod diagnostic;
 pub mod drift;

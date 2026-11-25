@@ -22,10 +22,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::filters;
+use crate::forge::delay_count::DelayUnit;
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{
-    transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal, C_BUFFER_TEXT,
-    RUST_LIST_DESTINATION,
+    transpile_into_lent, transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving,
+    Refusal, C_BUFFER_TEXT, RUST_LIST_DESTINATION,
 };
 use crate::forge::model::{
     EntryField, EntrySchema, EntryType, EnumModel, EventSchemaModel, SceType,
@@ -2125,6 +2126,23 @@ pub enum ReceivedMessage<'a> {
     Composed(Vec<(String, String)>),
 }
 
+/// A `<send>`'s delay as a target that computes its milliseconds is handed it
+/// ([`StaticTarget::delay_ms`], docs/adr/0134), each part already lowered.
+#[derive(Debug, Clone, Copy)]
+pub enum DelayMs<'a> {
+    /// An integer joined to the unit it counts (`wait + 'ms'`): the integer's
+    /// expression, and the unit ([`crate::forge::delay_count`]).
+    Count {
+        /// The integer, lowered at its own type.
+        count: &'a str,
+        /// The unit it counts.
+        unit: DelayUnit,
+    },
+    /// Any other delay: its text, lent to the one reader
+    /// ([`crate::forge::expr::transpile_into_lent`]).
+    Text(&'a str),
+}
+
 /// How one backend spells what a `sce-static` document says. The walk
 /// ([`lower`]) asks; the answer is the only thing that differs by backend.
 pub trait StaticTarget {
@@ -2560,6 +2578,22 @@ pub trait StaticTarget {
     /// walked, by name, rather than left to emit a send with no delay.
     fn lowers_delay_expr(&self) -> bool {
         false
+    }
+    /// Whether the machine computes a `<send>`'s delay in milliseconds where the
+    /// send runs ([`Action::native_delay_ms`], spelled by [`Self::delay_ms`]),
+    /// rather than reading the text [`Action::native_delay`] holds
+    /// (docs/adr/0134). A target that does takes a count joined to its unit as
+    /// the count, with no text, and lends every other delay's text to the reader
+    /// ([`crate::forge::expr::transpile_into_lent`]).
+    fn computes_delay_ms(&self) -> bool {
+        false
+    }
+    /// The expression of the milliseconds of a `<send>`'s delay, of the
+    /// target's optional count of them, which is absent where the delay is no
+    /// time: the argument error. Asked only of a target that
+    /// [`Self::computes_delay_ms`], which is refused by name if it spells none.
+    fn delay_ms(&self, _delay: DelayMs<'_>) -> Option<String> {
+        None
     }
     /// Whether a `<send>`'s `eventexpr` is lowered to the string it computes
     /// ([`Action::native_event`]) that the backend resolves to the event it
@@ -6419,10 +6453,29 @@ impl StaticTarget for RustTarget {
     fn payload_enum_fields(&self) -> bool {
         true
     }
-    // The send template reads the string it computes as a CSS2 time
-    // (`helpers::send::parse_delay_to_ms`).
+    // The send template reads the milliseconds the machine computes
+    // (`Self::delay_ms`).
     fn lowers_delay_expr(&self) -> bool {
         true
+    }
+    // docs/adr/0134: the delay is computed where the send runs with no heap, a
+    // count joined to its unit by checked arithmetic and any other delay's text
+    // from a buffer on the stack, each read as the one reader reads its text.
+    fn computes_delay_ms(&self) -> bool {
+        true
+    }
+    fn delay_ms(&self, delay: DelayMs<'_>) -> Option<String> {
+        let send = "::sce_rust_runtime::helpers::send";
+        Some(match delay {
+            DelayMs::Count { count, unit } => {
+                let unit = match unit {
+                    DelayUnit::Milliseconds => "Milliseconds",
+                    DelayUnit::Seconds => "Seconds",
+                };
+                format!("{send}::delay_of_count({count}, {send}::DelayUnit::{unit})")
+            }
+            DelayMs::Text(text) => format!("{send}::parse_delay_to_ms({text})"),
+        })
     }
     // The send template names the event it delivers by the string it computes
     // (`send_named_external`, `Self::resolve_event_by_name`).
@@ -14047,6 +14100,21 @@ impl Rewrites<'_> {
             } else {
                 crate::forge::expr::transpile_into_copied(text, target, ctx, renames, slot)
             }
+        })
+    }
+
+    /// [`transpile_into_lent`] of `text`, with its state calls rewritten
+    /// ([`Self::with_state_calls`]): a text lent to a reader that keeps none of
+    /// it, a `<send>`'s delay on a target that computes its milliseconds.
+    fn lent_text(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+    ) -> Result<Receiving, Refusal> {
+        let target = self.target.expr_target();
+        self.with_state_calls(text, ctx, renames, |text, renames| {
+            transpile_into_lent(text, target, ctx, renames)
         })
     }
 
@@ -26082,6 +26150,50 @@ fn lower_actions(
     Ok(reads_payload)
 }
 
+/// A `<send>`'s `delayexpr` as the milliseconds a target that computes them
+/// spells ([`StaticTarget::computes_delay_ms`], docs/adr/0134): an integer joined
+/// to the unit it counts as that integer, lowered at its own type with checked
+/// arithmetic ([`crate::forge::delay_count`]), and any other delay as its text
+/// lent to the one reader. Whether it can fail is the lowered part's.
+fn lower_delay_ms(
+    written: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Receiving, GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let refused = |r: Refusal| {
+        GenerateError::unsupported(format!("`{written}` has no {lang} lowering: {}", r.error))
+    };
+    let (value, spelled) = match crate::forge::delay_count::delay_count(written, ctx) {
+        Some(delay) => {
+            let value = rewrites
+                .receiving(&delay.count, ctx, renames, delay.slot())
+                .map_err(refused)?;
+            let spelled = target.delay_ms(DelayMs::Count {
+                count: &value.text,
+                unit: delay.unit,
+            });
+            (value, spelled)
+        }
+        None => {
+            let value = rewrites.lent_text(written, ctx, renames).map_err(refused)?;
+            let spelled = target.delay_ms(DelayMs::Text(&value.text));
+            (value, spelled)
+        }
+    };
+    let text = spelled.ok_or_else(|| {
+        GenerateError::unsupported(format!(
+            "a <send> with a delayexpr has no {lang} spelling of its milliseconds"
+        ))
+    })?;
+    Ok(Receiving {
+        text,
+        can_fail: value.can_fail,
+    })
+}
+
 /// Lower one action and what it nests, in place. `true` when any expression
 /// lowered reads the triggering event's payload.
 fn lower_action(
@@ -27735,14 +27847,28 @@ fn lower_action(
                     )));
                 }
                 reads_payload |= reads(&action.delayexpr);
-                let value = lower(&action.delayexpr, InferredType::Str)?;
-                rewrites.note(
-                    &action.delayexpr,
-                    action.spellings.get("delayexpr"),
-                    &value.text,
-                );
-                action.native_delay = value.text;
-                action.native_delay_fails = value.can_fail;
+                // docs/adr/0134: a target that computes the milliseconds takes a
+                // count joined to its unit as the count and lends any other
+                // delay's text to the reader, so neither needs a heap.
+                if target.computes_delay_ms() {
+                    let value = lower_delay_ms(&action.delayexpr, ctx, renames, rewrites)?;
+                    rewrites.note(
+                        &action.delayexpr,
+                        action.spellings.get("delayexpr"),
+                        &value.text,
+                    );
+                    action.native_delay_ms = value.text;
+                    action.native_delay_ms_fails = value.can_fail;
+                } else {
+                    let value = lower(&action.delayexpr, InferredType::Str)?;
+                    rewrites.note(
+                        &action.delayexpr,
+                        action.spellings.get("delayexpr"),
+                        &value.text,
+                    );
+                    action.native_delay = value.text;
+                    action.native_delay_fails = value.can_fail;
+                }
             }
             // An event named by an expression is the string it computes, which
             // the backend resolves to the event it delivers; a name that is empty,

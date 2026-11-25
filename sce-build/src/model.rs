@@ -684,9 +684,10 @@ pub struct Action {
     /// document, as an owned string expression in the backend's own language,
     /// read from the machine's fields when the send runs — the text the delay is
     /// written in, which the backend reads as the CSS2 time it is (as it reads
-    /// a `delay` written out). Empty for a `<send>` with no `delayexpr`, and for
+    /// a `delay` written out). Empty for a `<send>` with no `delayexpr`, for
     /// one of a document under another data model, which a script engine
-    /// evaluates. Transient and outside the AST contract, as
+    /// evaluates, and on a target that computes the milliseconds itself
+    /// ([`Self::native_delay_ms`]). Transient and outside the AST contract, as
     /// [`Self::native_code`] is.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
@@ -697,6 +698,24 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_delay_fails: bool,
+    /// Codegen-internal: the `delayexpr` of a `<send>` in a `sce-static`
+    /// document, on a target whose machine computes the delay in milliseconds
+    /// where the send runs (docs/adr/0134): an expression in the backend's own
+    /// language of its optional count of milliseconds, absent where the delay is
+    /// no time, the argument error. An integer joined to the unit it counts is
+    /// computed from the integer, and any other delay is its text read by the
+    /// one duration reader. Set in place of [`Self::native_delay`], never beside
+    /// it; empty on every other target. Transient and outside the AST contract,
+    /// as [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_delay_ms: String,
+    /// Codegen-internal: whether [`Self::native_delay_ms`] can fail — a checked
+    /// integer operation in the expression. A failure is an argument that cannot
+    /// be evaluated: the message is not sent and the block ends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_delay_ms_fails: bool,
     /// Codegen-internal: the `eventexpr` of a `<send>` in a `sce-static`
     /// document, as an owned string expression in the backend's own language,
     /// read from the machine's fields when the send runs — the name of the event
@@ -1054,6 +1073,15 @@ impl Action {
     /// lowered slot is [`native_cond`](Self::native_cond).
     pub fn cond_is_native(&self) -> bool {
         self.is_cpp_condition || self.is_kt_condition || !self.native_cond.is_empty()
+    }
+
+    /// Whether this `<send>`'s delay is computed from the machine's fields when
+    /// the send runs, under `datamodel="sce-static"`: the text
+    /// [`native_delay`](Self::native_delay) holds, or the milliseconds
+    /// [`native_delay_ms`](Self::native_delay_ms) computes (docs/adr/0134). Either
+    /// can be no time, which is the argument error.
+    pub fn delay_is_native(&self) -> bool {
+        !self.native_delay.is_empty() || !self.native_delay_ms.is_empty()
     }
 
     /// §scxml-6.2.4: a `<send>`'s `namelist`, each name as the

@@ -3223,6 +3223,51 @@ fn a_send_delayexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_siz
     );
 }
 
+#[test]
+fn a_rust_delay_is_computed_with_no_heap_on_either_profile() {
+    // docs/adr/0134: a count joined to its unit is computed from the count by
+    // checked arithmetic, with no text, and a delay that joins texts is written
+    // into a buffer on the stack the data model sizes (1 + 10 + 1 bytes here),
+    // on the std profile and the bare-metal one alike: one emission, no heap.
+    for (send, expected) in [
+        (
+            r#"delayexpr="count + 'ms'""#,
+            "::sce_rust_runtime::helpers::send::delay_of_count(",
+        ),
+        (
+            r#"delayexpr="count + 'S'""#,
+            "::sce_rust_runtime::helpers::send::DelayUnit::Seconds)",
+        ),
+        (
+            r#"delayexpr="'1' + count + 's'""#,
+            "::sce_rust_runtime::helpers::send::parse_delay_to_ms(&::sce_rust_runtime::sce_delay_text!(12, ",
+        ),
+    ] {
+        for profile in [&[][..], &["--no-std"][..]] {
+            let out_dir = tempdir().expect("tempdir");
+            let mut args = vec![
+                "generate",
+                "-l",
+                "rust",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ];
+            args.extend_from_slice(profile);
+            let (ok, out) = run(&args, &sending_with(send));
+            assert!(ok, "{send} {profile:?}: the machine generates:\n{out}");
+            let source = generated_with_extension(out_dir.path(), "rs");
+            assert!(
+                source.contains(expected),
+                "{send} {profile:?}: `{expected}` is not in the machine:\n{source}"
+            );
+            assert!(
+                !source.contains("format!(\"{}{}\""),
+                "{send} {profile:?}: the delay is joined on the heap:\n{source}"
+            );
+        }
+    }
+}
+
 /// The text of every generated file with the extension `ext`.
 fn generated_with_extension(dir: &std::path::Path, ext: &str) -> String {
     let mut text = String::new();

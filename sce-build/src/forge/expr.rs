@@ -411,6 +411,13 @@ enum Position {
     /// ([`transpile_into_copied`]). Told from [`Self::Owned`] so the value is
     /// not made owned only for the constructor to borrow it again.
     Copied,
+    /// A text lent to a reader that keeps none of it, read in the statement
+    /// that computes it: a `<send>`'s delay, read as a CSS2 time
+    /// ([`transpile_into_lent`], docs/adr/0134, decision 2). A Rust text that
+    /// joins parts is written into a buffer on the stack sized from what the
+    /// data model declares of them ([`lower_rust_lent_joins`]), so it needs no
+    /// heap; one that joins none is borrowed whole, as [`Self::Copied`] is.
+    Lent,
 }
 
 fn transpile_at(
@@ -512,6 +519,32 @@ pub fn transpile_into_copied(
     })
 }
 
+/// [`transpile_into_receiving`] of a text lent to a reader that keeps none of
+/// it and reads it in the statement that computes it ([`Position::Lent`]): a
+/// `<send>`'s delay. On Rust the value is a `&str`, and a join of parts the data
+/// model sizes is written into a buffer on the stack of their summed bound, so
+/// the text needs no heap (docs/adr/0134, decision 2). Every other target emits
+/// what [`transpile_into_receiving`] does.
+pub fn transpile_into_lent(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+) -> Result<Receiving, Refusal> {
+    lower_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(InferredType::Str),
+        Position::Lent,
+    )
+    .map(|lowered| Receiving {
+        text: lowered.text,
+        can_fail: lowered.can_fail,
+    })
+}
+
 /// What [`lower_at`] produced: the code, and whether it can fail.
 struct Lowered {
     text: String,
@@ -555,7 +588,7 @@ fn lower_at(
     // context; the rename pass then changes only the syntactic form,
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
-    resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
+    resolve_then_rename(&mut ast, ctx, renames, target, &[], expr, position)?;
     judge_value(&mut ast, slot, expr)?;
     land_reals_in_slot(&mut ast, expected);
     if matches!(position, Position::Owned | Position::Copied) && expected == InferredType::Bytes {
@@ -610,6 +643,18 @@ fn lower_at(
                 && matches!(expected, InferredType::Str | InferredType::Bytes) =>
         {
             emit_rust_copied(&ast, expected)?.to_string()
+        }
+        // A lent text is a `&str`: the buffer its joins were written into
+        // ([`lower_rust_lent_joins`]), borrowed whole where the statement reads
+        // it, or, with no join in it, the text borrowed as a copied one is.
+        ExprTarget::Rust if position == Position::Lent => {
+            if is_rust_delay_text(&ast) {
+                emit_rust(&ast, InferredType::Str)?
+                    .borrowed_whole()
+                    .to_string()
+            } else {
+                emit_rust_copied(&ast, InferredType::Str)?.to_string()
+            }
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Str => {
             emit_rust_owned_str(&ast)?.to_string()
@@ -840,7 +885,15 @@ pub(crate) fn transpile_typed_with_import_lowering(
     }
 
     let mut ast = parse_to_ast(expr)?;
-    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
+    resolve_then_rename(
+        &mut ast,
+        ctx,
+        renames,
+        ExprTarget::C,
+        lowerings,
+        expr,
+        Position::Operand,
+    )?;
     judge_value(&mut ast, expected, expr)?;
     settle_shifts(&mut ast, ctx, expr);
     if ctx.receives_failures {
@@ -892,6 +945,7 @@ fn resolve_then_rename(
     target: ExprTarget,
     lowerings: &[ImportLowering],
     source: &str,
+    position: Position,
 ) -> Result<(), Refusal> {
     resolve_names(ast, ctx, source)?;
     // Judged on the tree as the author wrote it: a rename makes a read a
@@ -941,6 +995,13 @@ fn resolve_then_rename(
     // emission, by name.
     if matches!(target, ExprTarget::C) && ctx.joins_into_buffers {
         lower_string_concatenation(ast, ctx);
+    }
+    // A Rust text lent to a reader that keeps none of it (a `<send>`'s delay)
+    // is written into a buffer on the stack its declared bounds size, so it
+    // needs no heap (docs/adr/0134, decision 2): sized here, while each place
+    // is still the name the author wrote.
+    if matches!(target, ExprTarget::Rust) && position == Position::Lent {
+        lower_rust_lent_joins(ast, ctx);
     }
     // A text a composed value holds is a buffer of its bound in C, read as the
     // buffer's text: after the joins, whose operands are read so too, and before
@@ -9450,6 +9511,161 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     }
 }
 
+/// The callee a Rust join of a lent text is written as: the runtime's macro that
+/// writes each part, borrowed, into a `DelayText` of the capacity it is handed
+/// first (`backends/rust/runtime/src/helpers/send.rs`, docs/adr/0134, decision 2).
+const RUST_DELAY_TEXT: &str = "::sce_rust_runtime::sce_delay_text!";
+
+/// The joins of a Rust text lent to a reader that keeps none of it
+/// ([`Position::Lent`]: a `<send>`'s delay), written into a buffer on the stack
+/// sized from what the data model declares, as C11 writes every join of a
+/// statechart's ([`lower_string_concatenation`]), so the text needs no heap
+/// (docs/adr/0134, decision 2).
+///
+/// The whole text is one `DelayText` of its bound ([`crate::forge::text_bound`]):
+/// a join writes its parts into it, each branch of a conditional is one of the
+/// same capacity, so the branches are one type, and a branch that joins nothing
+/// is the one part of one. A part that is itself a join or a conditional of
+/// texts is one of its own bound, a value `Display` writes; any other part, a
+/// place, a literal, an integer or a call, is written as it is.
+///
+/// Left as written when the text joins nothing at its own level, which is then
+/// borrowed whole, and when a join in it has an operand a join does not carry or
+/// one the data model declares no bound for ([`concat_part_bound`]): the emitter
+/// refuses the first by name, and the judge has refused a delay whose text has
+/// no bound before anything is lowered (`crate::forge::static_datamodel`).
+fn lower_rust_lent_joins(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    if !joins_at_text_level(expr) || !every_text_join_sized(expr, ctx) {
+        return;
+    }
+    if let Some(capacity) = text_capacity(expr, ctx) {
+        form_rust_delay_text(expr, capacity, ctx);
+    }
+}
+
+/// Whether the text `expr` joins texts at its own level: it is a join, or a
+/// branch of it, as a conditional, does.
+fn joins_at_text_level(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Binary { op, left, right } => is_string_concatenation(*op, left.ty, right.ty),
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => joins_at_text_level(consequent) || joins_at_text_level(alternate),
+        _ => false,
+    }
+}
+
+/// Whether every join at the text level of `expr`, and in each part of one, has
+/// operands a join carries and the data model sizes.
+fn every_text_join_sized(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> bool {
+    match &expr.kind {
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            let mut spine = Vec::new();
+            concat_spine(expr, &mut spine);
+            spine.into_iter().all(|part| {
+                concat_part_bound(part, ctx).is_some() && every_text_join_sized(part, ctx)
+            })
+        }
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } if expr.ty == InferredType::Str => {
+            every_text_join_sized(consequent, ctx) && every_text_join_sized(alternate, ctx)
+        }
+        _ => true,
+    }
+}
+
+/// The most bytes of the text `expr` denotes, as a buffer's capacity.
+fn text_capacity(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
+    crate::forge::text_bound::text_bound(expr, ctx)
+        .bounded()
+        .and_then(|bytes| usize::try_from(bytes).ok())
+}
+
+/// `expr`, a text of at most `capacity` bytes, as the `DelayText` of
+/// `capacity` bytes [`lower_rust_lent_joins`] describes.
+fn form_rust_delay_text(expr: &mut TypedExpr, capacity: usize, ctx: &TypeCtx<'_>) {
+    let joins = matches!(
+        &expr.kind,
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty)
+    );
+    if joins {
+        let mut spine = Vec::new();
+        concat_spine(expr, &mut spine);
+        let mut parts: Vec<TypedExpr> = spine.into_iter().cloned().collect();
+        for part in &mut parts {
+            lend_rust_join_part(part, ctx);
+        }
+        expr.kind = rust_delay_text_call(capacity, parts);
+        return;
+    }
+    if let ExprKind::Conditional {
+        consequent,
+        alternate,
+        ..
+    } = &mut expr.kind
+    {
+        form_rust_delay_text(consequent, capacity, ctx);
+        form_rust_delay_text(alternate, capacity, ctx);
+        return;
+    }
+    let span = expr.span.clone();
+    let leaf = std::mem::replace(expr, TypedExpr::new(ExprKind::NullLit));
+    *expr = TypedExpr {
+        kind: rust_delay_text_call(capacity, vec![leaf]),
+        ty: InferredType::Str,
+        span,
+    };
+}
+
+/// A part of a join made a value `Display` writes: a join or a conditional of
+/// texts is a `DelayText` of its own bound, so the branches of the conditional
+/// are one type; any other part is written as it is.
+fn lend_rust_join_part(part: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    let text_of_its_own = part.ty == InferredType::Str
+        && matches!(
+            part.kind,
+            ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+        );
+    if text_of_its_own {
+        if let Some(capacity) = text_capacity(part, ctx) {
+            form_rust_delay_text(part, capacity, ctx);
+        }
+    }
+}
+
+/// The call of [`RUST_DELAY_TEXT`] that writes `parts` into a buffer of
+/// `capacity` bytes.
+fn rust_delay_text_call(capacity: usize, parts: Vec<TypedExpr>) -> ExprKind {
+    let mut args = vec![TypedExpr::new(ExprKind::Raw(capacity.to_string()))];
+    args.extend(parts);
+    ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(RUST_DELAY_TEXT.to_string()))),
+        args,
+        params: Vec::new(),
+        fails: false,
+        into_destination: false,
+        storage: None,
+    }
+}
+
+/// Whether `expr` is a lent text [`lower_rust_lent_joins`] wrote into a
+/// `DelayText`: the call of [`RUST_DELAY_TEXT`], or a conditional whose
+/// branches are.
+fn is_rust_delay_text(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Call { callee, .. } => {
+            matches!(&callee.kind, ExprKind::Raw(name) if name == RUST_DELAY_TEXT)
+        }
+        ExprKind::Conditional { consequent, .. } => is_rust_delay_text(consequent),
+        _ => false,
+    }
+}
+
 /// An operation on 32-bit reals, rounded to binary32 where it is made, for the
 /// targets that hold a real in a double (Python's `float`, ECMAScript's
 /// `Number`): the languages that have a single of their own — Rust, Go, Kotlin,
@@ -15885,6 +16101,112 @@ mod tests {
             text.starts_with("SCE_FORGE_CONCAT((char[10]){0}, 10, "),
             "8 + 1 + 1 bytes: {text}"
         );
+    }
+
+    /// A text lent to the reader of a `<send>`'s delay, on Rust.
+    fn rust_lent(expr: &str, ctx: &TypeCtx<'_>) -> String {
+        transpile_into_lent(expr, ExprTarget::Rust, ctx, &empty_renames())
+            .expect("the delay lowers")
+            .text
+    }
+
+    /// docs/adr/0134, decision 2: a Rust delay that joins texts is written into
+    /// a buffer on the stack of the bound the data model gives the whole text,
+    /// and lent to the reader as a `&str`; nothing is allocated.
+    #[test]
+    fn rust_lent_join_is_written_into_a_buffer_of_its_bound() {
+        let ctx = sized_join_ctx();
+        // The ten digits of a `uint32` and the two bytes of the unit.
+        assert_eq!(
+            rust_lent("wait + 'ms'", &ctx),
+            "&::sce_rust_runtime::sce_delay_text!(12, wait, \"ms\")[..]"
+        );
+        // A chain is one buffer of its parts, in order: 1 + 10 + 1.
+        assert_eq!(
+            rust_lent("'a' + wait + 'b'", &ctx),
+            "&::sce_rust_runtime::sce_delay_text!(12, \"a\", wait, \"b\")[..]"
+        );
+        // A string variable by its capacity, a signed `int8` by its sign and
+        // three digits.
+        assert_eq!(
+            rust_lent("name + level", &ctx),
+            "&::sce_rust_runtime::sce_delay_text!(12, name, level)[..]"
+        );
+        for written in ["wait + 'ms'", "'a' + wait + 'b'", "name + level"] {
+            assert!(
+                !rust_lent(written, &ctx).contains("format!"),
+                "{written} allocates"
+            );
+        }
+    }
+
+    /// A conditional whose branch joins is one buffer whose branches are each
+    /// of the whole text's bound, so the two are one type and the branch that
+    /// joins nothing is the one part of its own; a conditional that is a part
+    /// of a join is a buffer of its own bound.
+    #[test]
+    fn rust_lent_conditional_is_one_buffer_type_in_both_branches() {
+        let ctx = sized_join_ctx();
+        let text = rust_lent("level > 0 ? wait + 'ms' : '1s'", &ctx);
+        assert!(text.starts_with("&(if "), "{text}");
+        assert!(text.ends_with(")[..]"), "{text}");
+        assert!(
+            text.contains("::sce_rust_runtime::sce_delay_text!(12, wait, \"ms\")"),
+            "{text}"
+        );
+        assert!(
+            text.contains("::sce_rust_runtime::sce_delay_text!(12, \"1s\")"),
+            "{text}"
+        );
+        // 8 + 1: the conditional part is a buffer of eight, its larger branch.
+        let text = rust_lent("(level > 0 ? name : 'ab') + 'x'", &ctx);
+        assert!(
+            text.starts_with("&::sce_rust_runtime::sce_delay_text!(9, if "),
+            "{text}"
+        );
+        assert!(
+            text.contains("::sce_rust_runtime::sce_delay_text!(8, name)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("::sce_rust_runtime::sce_delay_text!(8, \"ab\")"),
+            "{text}"
+        );
+        assert!(!text.contains("format!"), "{text}");
+    }
+
+    /// A delay that joins nothing has no buffer: a literal is the `&str` it is,
+    /// and a variable's text, or a conditional of texts, is borrowed whole.
+    #[test]
+    fn rust_lent_text_that_joins_nothing_is_borrowed_whole() {
+        let ctx = sized_join_ctx();
+        assert_eq!(rust_lent("'5s'", &ctx), "\"5s\"");
+        assert_eq!(rust_lent("name", &ctx), "&name[..]");
+        let text = rust_lent("level > 0 ? name : '1s'", &ctx);
+        assert!(!text.contains("sce_delay_text!"), "{text}");
+        assert!(text.contains("&name[..]"), "{text}");
+    }
+
+    /// The buffer is Rust's alone: every other target lends the delay as it
+    /// reads any operand.
+    #[test]
+    fn a_lent_text_is_an_operand_on_every_other_target() {
+        let ctx = sized_join_ctx();
+        for target in [ExprTarget::Go, ExprTarget::Kotlin, ExprTarget::Python] {
+            let lent = transpile_into_lent("wait + 'ms'", target, &ctx, &empty_renames())
+                .expect("the delay lowers")
+                .text;
+            let operand = transpile_into_receiving(
+                "wait + 'ms'",
+                target,
+                &ctx,
+                &empty_renames(),
+                InferredType::Str,
+            )
+            .expect("the delay lowers")
+            .text;
+            assert_eq!(lent, operand, "{target:?}");
+        }
     }
 
     /// A context of a `sce-static` statechart over the 32-bit real `tenth`, the

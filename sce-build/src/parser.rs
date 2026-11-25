@@ -5,6 +5,7 @@
 // Parses W3C SCXML files into SCXMLModel for code generation.
 
 use crate::attribute_spelling::AttributeSpelling;
+use crate::forge::delay_count::DelayUnit;
 use crate::model::*;
 use crate::scxml_semantic::{ScxmlSemanticError, UnsupportedDatamodelKind};
 use crate::DocumentLabel;
@@ -9118,11 +9119,12 @@ pub(crate) fn parse_delay_to_ms(delay: &str) -> Option<i64> {
         let split = s.len().checked_sub(suffix.len())?;
         s[split..].eq_ignore_ascii_case(suffix).then(|| &s[..split])
     };
-    let (number, scale) = match (strip(b"ms"), strip(b"s")) {
-        (Some(n), _) => (n, 1i64),
-        (None, Some(n)) => (n, 1000i64),
+    let (number, unit) = match (strip(b"ms"), strip(b"s")) {
+        (Some(n), _) => (n, DelayUnit::Milliseconds),
+        (None, Some(n)) => (n, DelayUnit::Seconds),
         (None, None) => return None,
     };
+    let scale = unit.milliseconds();
     let (whole, fraction) = match number.iter().position(|&b| b == b'.') {
         Some(dot) => (&number[..dot], Some(&number[dot + 1..])),
         None => (number, None),

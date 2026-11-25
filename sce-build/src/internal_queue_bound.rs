@@ -626,7 +626,7 @@ impl<'m> Analysis<'m> {
             && crate::scxml_self_send::sends_to_itself(action);
         let computed_target = !action.targetexpr.is_empty() || !action.native_target.is_empty();
         let computed_event = !action.eventexpr.is_empty() || !action.native_event.is_empty();
-        let delayed = !action.native_delay.is_empty()
+        let delayed = action.delay_is_native()
             || !action.delayexpr.is_empty()
             || action.delay_ms > 0
             || (!action.delay.is_empty() && action.delay != "0s" && action.delay != "0ms");
@@ -656,7 +656,7 @@ impl<'m> Analysis<'m> {
             || !(to_internal || to_own_external)
             || computed_event
             || computed_target
-            || !action.native_delay.is_empty();
+            || action.delay_is_native();
         let error = if can_fail { self.send_error() } else { 0 };
 
         let delivered = if refused {
