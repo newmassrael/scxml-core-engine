@@ -157,6 +157,15 @@ fn rust_golden_documents() -> Vec<String> {
     documents
 }
 
+/// Whether this run judges the goldens on disk. An `UPDATE_GOLDEN` run writes
+/// them while its tests run in parallel, so a test that reads the whole
+/// directory would read a mix of the goldens before and after the change; it
+/// judges them on the next run, as [`rust_goldens_with_views`] reads a golden
+/// such a run adds.
+fn goldens_on_disk_are_settled() -> bool {
+    std::env::var_os("UPDATE_GOLDEN").is_none()
+}
+
 /// The documents whose Rust golden is generated with views, by canonical path
 /// (docs/adr/0077 §7). The goldens of `tests/forge/expected/` are one crate, so
 /// they are one tree: a golden whose document holds a list the protocol bounds
@@ -11711,6 +11720,9 @@ fn forge_rust_codec_variant_peek_basic() {
 /// golden, eager and view, which the tests above hold to the generator.
 #[test]
 fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
+    if !goldens_on_disk_are_settled() {
+        return;
+    }
     let (mut arrays, mut bytes) = (0usize, 0usize);
     for dir in [expected_dir(), expected_dir().join("views")] {
         let entries = std::fs::read_dir(&dir)
@@ -11755,6 +11767,9 @@ fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
 /// that hold none.
 #[test]
 fn a_rust_decode_holds_no_panic_on_a_gated_read() {
+    if !goldens_on_disk_are_settled() {
+        return;
+    }
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     for dir in [expected_dir(), expected_dir().join("views")] {
         for entry in std::fs::read_dir(&dir).expect("read the goldens") {
@@ -11815,6 +11830,9 @@ fn a_rust_decode_holds_no_panic_on_a_gated_read() {
 /// pass.
 #[test]
 fn a_rust_algorithm_is_clean_under_the_panic_free_lints() {
+    if !goldens_on_disk_are_settled() {
+        return;
+    }
     use sce_build::rust_lint_policy::PANIC_FREE_LINTS;
     let Some(clippy) = sce_build::toolchain::locate("clippy-driver") else {
         sce_build::toolchain::skipped(
@@ -15551,6 +15569,9 @@ fn forge_codec_length_arith_out_of_range_rejects() {
 /// standing up rustc, and catches the most common template-layer bugs.
 #[test]
 fn rust_golden_syn_gate() {
+    if !goldens_on_disk_are_settled() {
+        return;
+    }
     let dir = expected_dir();
     let mut failures: Vec<String> = Vec::new();
     let mut count = 0u32;
@@ -15733,6 +15754,9 @@ fn names_no_golden_beside_declares(dir: &std::path::Path) -> Vec<String> {
 /// the clippy lane runs.
 #[test]
 fn every_rust_codec_golden_names_only_what_the_goldens_beside_it_declare() {
+    if !goldens_on_disk_are_settled() {
+        return;
+    }
     for dir in [expected_dir(), expected_dir().join("views")] {
         let undeclared = names_no_golden_beside_declares(&dir);
         assert!(
