@@ -59,6 +59,8 @@ fi
 stale=()
 cases=0
 unchecked=0
+CHECK_LOG="$(mktemp)"
+sce_gate_on_exit "rm -f '$CHECK_LOG'"
 for casefile in "${CASEFILES[@]}"; do
     if output="$(scripts/mutate --check "$casefile" 2>&1)"; then
         # `|| true` because grep exits 1 on no match, and a casefile that
@@ -78,6 +80,9 @@ for casefile in "${CASEFILES[@]}"; do
         stale+=("$casefile")
         printf '\n  FAIL: %s\n' "$casefile" >&2
         printf '%s\n' "$output" >&2
+        # Each stale case, checked again alone (`scripts/mutate --check --case`).
+        printf '%s\n' "$output" >"$CHECK_LOG"
+        sce_gate_repro_from "$CHECK_LOG" -- scripts/mutate --check "$casefile"
     fi
 done
 

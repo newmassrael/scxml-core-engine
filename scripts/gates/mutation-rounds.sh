@@ -491,7 +491,9 @@ fi
 failed=()
 for casefile in "${SELECTED[@]}"; do
     sce_gate_step "round: $casefile${SCE_MUTATION_SHARD:+ (shard $SCE_MUTATION_SHARD)}"
-    round=(scripts/mutate ${shard_args[@]+"${shard_args[@]}"} "$casefile")
+    # Through `sce_gate_tested`, so a case that did not turn red ends the gate
+    # with the round of that one case (`scripts/mutate --case`).
+    round=(sce_gate_tested -- scripts/mutate ${shard_args[@]+"${shard_args[@]}"} "$casefile")
     # A toolchain the casefile declared is required here, where the job knows
     # what it was handed: absent, the gate ends as "could not run" (a hosted
     # runner installs it), never as a red the casefile did not earn. The round

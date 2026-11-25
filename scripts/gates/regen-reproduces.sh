@@ -138,12 +138,27 @@ mapfile -t UNPRODUCED < <(sce_generated_tree_unproduced "$WT")
 if (( ${#UNPRODUCED[@]} > 0 )); then
     printf '\n  Committed, and no longer produced by the regeneration:\n' >&2
     printf '    %s\n' "${UNPRODUCED[@]}" >&2
+    regen_changed=()
+    for path in "${UNPRODUCED[@]}"; do regen_changed+=(--changed "$path"); done
+    sce_gate_repro_from /dev/null "${regen_changed[@]}" -- scripts/regen_all_committed_trees.sh
     sce_gate_fail "${#UNPRODUCED[@]} committed generated file(s) are not produced by the regeneration procedure — commit their removal, or restore what produced them"
 fi
 
 CHANGED="$(cd "$WT" && git status --porcelain -- . | grep -v '^?? target/' || true)"
 if [[ -n "$CHANGED" ]]; then
     printf '\n%s\n' "$CHANGED" >&2
+    # What reproduces it: the declared tree each changed file is in,
+    # materialized in a checkout of HEAD, then what git sees of the files.
+    regen_changed=()
+    while IFS= read -r line; do
+        path="${line:3}"
+        path="${path##* -> }"
+        if [[ -n "$path" ]]; then
+            regen_changed+=(--changed "$path")
+        fi
+    done <<<"$CHANGED"
+    sce_gate_repro_from /dev/null ${regen_changed[@]+"${regen_changed[@]}"} \
+        -- scripts/regen_all_committed_trees.sh
     printf '\n  Diff of the first changed file:\n' >&2
     first="$(printf '%s\n' "$CHANGED" | head -1 | awk '{print $2}')"
     ( cd "$WT" && git --no-pager diff -- "$first" | head -40 ) >&2
