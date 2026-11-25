@@ -249,7 +249,7 @@ fn the_inject_seam_checks_what_it_is_handed_and_writes_it_as_its_json() {
              sce.ValueJSON(sceElement.id)), sce.Pair(\"amount\", \
              sce.ValueJSON(sce.Int64PayloadText(sceElement.amount))), ",
             "sce.Pair(\"spare\", func() sce.RawJSON { if sceElement, sceIs := \
-             (scePayload.spare).Get(); sceIs { return func() sce.RawJSON { sceItems := \
+             scePayload.spare.Get(); sceIs { return func() sce.RawJSON { sceItems := \
              make([]sce.RawJSON, 0, len(sceElement)); ",
             "sce.Pair(\"note\", sce.ValueJSON(scePayload.note))",
             "\t})\n\treturn nil\n}\n",
@@ -317,7 +317,7 @@ fn a_send_writes_each_composed_field_by_its_name() {
              p.pendingBatchSentPayload.levels { sceItems = append(sceItems, \
              sceElement.String()) }; return sceItems }()",
             "sceValue := func() any { if sceElement, sceIs := \
-             (p.pendingBatchSentPayload.spare).Get(); sceIs { return func() []any { ",
+             p.pendingBatchSentPayload.spare.Get(); sceIs { return func() []any { ",
             "sceValue := func() []any { sceItems := make([]any, 0, len(p.vLate)); for _, \
              sceElement := range p.vLate { sceItems = append(sceItems, int64(sceElement)) }; \
              return sceItems }()",

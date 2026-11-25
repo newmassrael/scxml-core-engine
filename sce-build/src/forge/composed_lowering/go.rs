@@ -24,6 +24,14 @@
 //! case, as a Rust union is.
 
 use super::*;
+use crate::forge::expr::go_tree::GoExpr;
+
+/// The value a walk holds, as the Go expression a read of it is made on: a
+/// place or a call ([`Held::place`]), one operand, so a method read on it needs
+/// no pair the printer does not write.
+fn go_held(held: &Held) -> GoExpr {
+    GoExpr::atom(held.text.as_str())
+}
 
 /// The Go spellings of the walks, for the machine `machine` (section 7.1, the
 /// Go row): the runtime's `PayloadValue` reads each constructor, and its
@@ -723,9 +731,9 @@ impl ComposedSpelling for GoComposed<'_> {
             GoCarrier::Wire => ("any", "nil"),
         };
         format!(
-            "func() {result} {{ if {GO_ELEMENT_BINDING}, sceIs := ({}).Get(); sceIs {{ return \
-             {elem} }}; return {absent} }}()",
-            held.text
+            "func() {result} {{ if {GO_ELEMENT_BINDING}, sceIs := {}; sceIs {{ return {elem} }}; \
+             return {absent} }}()",
+            go_held(held).method("Get", Vec::new())
         )
     }
     // Each element written in the list's order.
@@ -818,9 +826,9 @@ impl ComposedSpelling for GoComposed<'_> {
     }
     fn copy_optional(&self, held: &Held, elem: &str, elem_ty: &str) -> String {
         format!(
-            "func() optional.Of[{elem_ty}] {{ if {GO_ELEMENT_BINDING}, sceIs := ({}).Get(); sceIs \
+            "func() optional.Of[{elem_ty}] {{ if {GO_ELEMENT_BINDING}, sceIs := {}; sceIs \
              {{ return optional.Some[{elem_ty}]({elem}) }}; return optional.None[{elem_ty}]() }}()",
-            held.text
+            go_held(held).method("Get", Vec::new())
         )
     }
     fn copy_present(&self, value: &str) -> String {
@@ -906,9 +914,8 @@ impl ComposedSpelling for GoComposed<'_> {
                 let variant = crate::filters::escape_go(arm.variant.clone());
                 if arm.holds_record {
                     format!(
-                        "case \"{variant}\": {GO_ELEMENT_BINDING} := ({}).{}(); return {}; ",
-                        held.text,
-                        go_case_read(&arm.variant),
+                        "case \"{variant}\": {GO_ELEMENT_BINDING} := {}; return {}; ",
+                        go_held(held).method(go_case_read(&arm.variant), Vec::new()),
                         arm.value
                     )
                 } else {
@@ -916,10 +923,13 @@ impl ComposedSpelling for GoComposed<'_> {
                 }
             })
             .collect();
+        let tag = go_held(held)
+            .method(GO_UNION_KIND, Vec::new())
+            .method("DeclaredName", Vec::new())
+            .method("Proven", Vec::new());
         Some(format!(
-            "func() {ty} {{ switch ({}).{GO_UNION_KIND}().DeclaredName().Proven() {{ {cases}}}; \
-             panic(\"a value of {} is in no case of its tag\") }}()",
-            held.text,
+            "func() {ty} {{ switch {tag} {{ {cases}}}; panic(\"a value of {} is in no case of \
+             its tag\") }}()",
             crate::filters::escape_go(document.to_string())
         ))
     }
@@ -1479,7 +1489,7 @@ mod tests {
             write("list<optional<uint16>>[2]", Held::place("x.maybe")),
             "func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(x.maybe)); for _, \
              sceElement := range x.maybe { sceItems = append(sceItems, func() sce.RawJSON { if \
-             sceElement, sceIs := (sceElement).Get(); sceIs { return sce.ValueJSON(sceElement) }; \
+             sceElement, sceIs := sceElement.Get(); sceIs { return sce.ValueJSON(sceElement) }; \
              return sce.ValueJSON(nil) }()) }; return sce.ListJSON(sceItems, func(sceItem \
              sce.RawJSON) sce.RawJSON { return sceItem }) }()"
         );
@@ -1489,7 +1499,7 @@ mod tests {
             "sce.Pair(\"id\", sce.ValueJSON(sceElement.id)), ",
             "sce.Pair(\"level\", sce.ValueJSON(sceElement.level.String())), ",
             "sce.Pair(\"due\", func() sce.RawJSON { if sceElement, sceIs := \
-             (sceElement.due).Get(); sceIs { return sce.ValueJSON(sce.Int64PayloadText(sceElement)) \
+             sceElement.due.Get(); sceIs { return sce.ValueJSON(sce.Int64PayloadText(sceElement)) \
              }; return sce.ValueJSON(nil) }()), ",
             "sce.Pair(\"blob\", sce.ValueJSON(sce.BytesAsPayloadText(sceElement.blob))), ",
             "sce.Pair(\"tags\", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, \
@@ -1538,7 +1548,7 @@ mod tests {
         assert_eq!(
             write("optional<list<uint8>[2]>", Held::place("x.spare")),
             format!(
-                "func() any {{ if sceElement, sceIs := (x.spare).Get(); sceIs {{ return {inner} \
+                "func() any {{ if sceElement, sceIs := x.spare.Get(); sceIs {{ return {inner} \
                  }}; return nil }}()"
             )
         );
@@ -1547,7 +1557,7 @@ mod tests {
             items.contains(
                 "sceItems = append(sceItems, map[string]any{\"id\": int64(sceElement.id), \
                  \"level\": sceElement.level.String(), \"due\": func() any { if sceElement, sceIs \
-                 := (sceElement.due).Get(); sceIs { return sce.Int64PayloadText(sceElement) }; \
+                 := sceElement.due.Get(); sceIs { return sce.Int64PayloadText(sceElement) }; \
                  return nil }(), \"blob\": sce.BytesAsPayloadText(sceElement.blob), \"tags\": \
                  func() []any { sceItems := make([]any, 0, len(sceElement.tags)); for _, \
                  sceElement := range sceElement.tags { sceItems = append(sceItems, sceElement) }; \
@@ -1601,7 +1611,7 @@ mod tests {
                 "optional<list<optional<uint8>>[2]>"
             ),
             Ok(format!(
-                "func() optional.Of[[]optional.Of[uint8]] {{ if sceElement, sceIs := (x).Get(); \
+                "func() optional.Of[[]optional.Of[uint8]] {{ if sceElement, sceIs := x.Get(); \
                  sceIs {{ return optional.Some[[]optional.Of[uint8]]({widened}) }}; return \
                  optional.None[[]optional.Of[uint8]]() }}()"
             ))
@@ -2088,11 +2098,11 @@ mod tests {
         .expect("the union is made");
         assert_eq!(
             made,
-            "func() MShapeUnion { switch (sceValue.Shape).Kind().DeclaredName().Proven() { \
+            "func() MShapeUnion { switch sceValue.Shape.Kind().DeclaredName().Proven() { \
              case \"dot\": return MShapeUnionDot(); \
-             case \"circle\": sceElement := (sceValue.Shape).ProvenCircle(); return \
+             case \"circle\": sceElement := sceValue.Shape.ProvenCircle(); return \
              MShapeUnionCircle(MRadiusRecord{radius: sceElement.Radius}); \
-             case \"disc\": sceElement := (sceValue.Shape).ProvenDisc(); return \
+             case \"disc\": sceElement := sceValue.Shape.ProvenDisc(); return \
              MShapeUnionDisc(MRadiusRecord{radius: sceElement.Radius}); }; \
              panic(\"a value of shape is in no case of its tag\") }()"
         );

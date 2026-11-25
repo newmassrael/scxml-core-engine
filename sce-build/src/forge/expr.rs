@@ -74,11 +74,13 @@ pub type Refusal = Spanned<ExprError>;
 
 pub(crate) mod c_tree;
 pub(crate) mod cpp_tree;
+pub(crate) mod go_tree;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
 use c_tree::{CBinOp, CExpr, CInit, CUnOp};
 use cpp_tree::{CppBinOp, CppExpr, CppUnOp};
+use go_tree::{GoBinOp, GoExpr, GoUnOp};
 use rust_tree::{RustBinOp, RustExpr, RustStmt, RustUnOp};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3159,7 +3161,7 @@ fn typed_integer_literal(target: ExprTarget, node: &TypedExpr) -> Option<String>
     let wide = wide_literal(node).is_some();
     Some(match target {
         ExprTarget::Rust => return rust_typed_literal(node).map(|literal| literal.to_string()),
-        ExprTarget::Go => format!("{}({written})", go_int_type(signed, bits)),
+        ExprTarget::Go => return go_typed_literal(node).map(|literal| literal.to_string()),
         ExprTarget::Swift => format!("{}({written})", swift::int_type(signed, bits)),
         ExprTarget::C | ExprTarget::Cpp | ExprTarget::Kotlin if wide => return None,
         ExprTarget::C => format!("{}INT{bits}_C({written})", if signed { "" } else { "U" }),
@@ -7532,23 +7534,6 @@ fn kotlin_precedence(op: BinOp) -> u8 {
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::UShr => 7,
         BinOp::Add | BinOp::Sub => 9,
         BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
-    }
-}
-
-fn go_precedence(op: BinOp) -> u8 {
-    match op {
-        BinOp::Coalesce => COALESCE_PRECEDENCE,
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 3,
-        BinOp::Add | BinOp::Sub | BinOp::BitOr | BinOp::BitXor => 4,
-        BinOp::Mul
-        | BinOp::Div
-        | BinOp::Mod
-        | BinOp::Shl
-        | BinOp::Shr
-        | BinOp::UShr
-        | BinOp::BitAnd => 5,
     }
 }
 
@@ -12701,8 +12686,22 @@ fn rust_int_type(signed: bool, bits: u8) -> &'static str {
 // Concrete integer variables DO need explicit conversion: `float64(raw)`.
 // Integer widening: `int64(x)`. Go has no conditional expression; see
 // `go_conditional` for how one is lowered.
+//
+// The expression is built as a tree of the Go expressions it is made of
+// ([`GoExpr`], `expr/go_tree.rs`), a conversion and a function literal nodes
+// of their own wherever they come from, and printed once, where it leaves
+// this layer ([`emit_go`]): every parenthesis is the printer's, decided by the
+// kinds of the nodes around it and the precedence the Go specification gives
+// them, and no rule here groups anything or reads back what it has written.
 
+/// The Go text of `expr` where a value of `expected` is wanted: the tree
+/// [`go_expr`] builds, printed.
 fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    Ok(go_expr(expr, expected)?.to_string())
+}
+
+/// The Go expression `expr` is where a value of `expected` is wanted.
+fn go_expr(expr: &TypedExpr, expected: InferredType) -> Result<GoExpr, Refusal> {
     // The context a quantity-annotated output asks for is its numeric base
     // (see `rust_coerce`), or the push-down below never sees a float.
     let expected = expected.strip_quantity();
@@ -12725,19 +12724,11 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_go(left, expected)?;
-            let r_raw = emit_go(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, go_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, go_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", go_binop(*op)));
+            return Ok(GoExpr::binary(
+                go_binop(*op),
+                go_expr(left, expected)?,
+                go_expr(right, expected)?,
+            ));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — propagate Float so
@@ -12748,21 +12739,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_go(operand, expected)?;
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                _ => unreachable!("guarded by outer match"),
-            };
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            });
+            return Ok(go_expr(operand, expected)?.prefixed(go_unop(*op)));
         }
     }
     // Push-down: `len(x)` lowers to Go's `len(...)`, which returns a concrete
@@ -12776,30 +12753,69 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
-                let inner = emit_go(&args[0], InferredType::Unknown)?;
-                return Ok(format!("{}(len({inner}))", go_int_type(signed, bits)));
+                return Ok(go_length(&args[0])?.converted(go_int_type(signed, bits)));
             }
         }
         // Same width rule as Rust above — the context decides, not a constant.
         if let Some(op) = real_to_int_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
-                let inner = emit_go(&args[0], InferredType::Float { bits: 64 })?;
-                let f = match op {
-                    RealToInt::Round => "math.Round",
-                    RealToInt::Floor => "math.Floor",
-                };
-                return Ok(format!("{}({f}({inner}))", go_int_type(signed, bits)));
+                return Ok(go_real_to_int(op, &args[0])?.converted(go_int_type(signed, bits)));
             }
         }
     }
-    let raw = match typed_integer_literal(ExprTarget::Go, expr) {
+    let raw = match go_typed_literal(expr) {
         Some(literal) => literal,
         None => go_emit_node(expr)?,
     };
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
 
-fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
+/// `len(value)`: Go's `len`, an `int`, which counts a text in its UTF-8 bytes.
+fn go_length(value: &TypedExpr) -> Result<GoExpr, Refusal> {
+    Ok(GoExpr::path_call(
+        "len",
+        vec![go_expr(value, InferredType::Unknown)?],
+    ))
+}
+
+/// The real `round(value)` or `floor(value)` is before it is made an integer:
+/// `math.Round` is already half away from zero, and `math.Floor` already goes
+/// toward −∞.
+fn go_real_to_int(op: RealToInt, value: &TypedExpr) -> Result<GoExpr, Refusal> {
+    let function = match op {
+        RealToInt::Round => "math.Round",
+        RealToInt::Floor => "math.Floor",
+    };
+    Ok(GoExpr::path_call(
+        function,
+        vec![go_expr(value, InferredType::Float { bits: 64 })?],
+    ))
+}
+
+/// An integer literal that has taken the type of its place
+/// ([`typed_integer_literal`]), in Go: its digits, under the `-` the author
+/// wrote, converted to that type.
+fn go_typed_literal(node: &TypedExpr) -> Option<GoExpr> {
+    let InferredType::Int { signed, bits } = node.ty else {
+        return None;
+    };
+    let (text, negated) = integer_literal_parts(node)?;
+    let digits = GoExpr::atom(portable_number_literal(&text));
+    let value = if negated {
+        digits.prefixed(GoUnOp::Neg)
+    } else {
+        digits
+    };
+    Some(value.converted(go_int_type(signed, bits)))
+}
+
+/// The body's failure as a checked helper of the Go runtime takes it, the
+/// address of the `sceFailure` the statement around it returns.
+fn go_failure() -> GoExpr {
+    GoExpr::atom("sceFailure").prefixed(GoUnOp::Address)
+}
+
+fn go_emit_node(expr: &TypedExpr) -> Result<GoExpr, Refusal> {
     if let Some(form) = optional_form(expr) {
         return go_optional(form, expr);
     }
@@ -12809,56 +12825,63 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // two constants at compile time and refuses one that overflows, so
         // the operation is a call, as the checked one is.
         ExprKind::Total { op, rule, .. } => {
-            let (signed, bits, operands) = total_parts(expr, "Go", emit_go)?;
-            format!(
-                "scealgorithm.{}{}{}{bits}({})",
-                crate::filters::capitalize_first(rule.helper()),
-                crate::filters::capitalize_first(op.helper()),
-                if signed { "Int" } else { "Uint" },
-                operands.join(", ")
+            let (signed, bits, operands) = total_parts(expr, "Go", go_expr)?;
+            GoExpr::path_call(
+                format!(
+                    "scealgorithm.{}{}{}{bits}",
+                    crate::filters::capitalize_first(rule.helper()),
+                    crate::filters::capitalize_first(op.helper()),
+                    if signed { "Int" } else { "Uint" },
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
+        ExprKind::NumberLit(n) => GoExpr::atom(portable_number_literal(n)),
         ExprKind::StringLit { value } => {
-            format!("\"{}\"", crate::filters::escape_go(value.clone()))
+            GoExpr::atom(format!("\"{}\"", crate::filters::escape_go(value.clone())))
         }
         // Standalone fallback only — the bytes-equality Binary branch
         // renders operands itself (as `string(x)` / a string literal) so
         // it needs no `bytes` import. RFC §bytesguard-3 B5.
-        ExprKind::BytesLit { bytes } => format!("[]byte{{{}}}", bytes_as_hex_list(bytes)),
-        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        ExprKind::NullLit => "nil".to_string(),
+        ExprKind::BytesLit { bytes } => {
+            GoExpr::atom(format!("[]byte{{{}}}", bytes_as_hex_list(bytes)))
+        }
+        ExprKind::BoolLit(b) => GoExpr::atom(if *b { "true" } else { "false" }),
+        ExprKind::NullLit => GoExpr::atom("nil"),
         // The spelling the function DECLARED the name with: one function spells
         // the parameter, the variable and every read, so a name that hides a
         // builtin is escaped in the read as it was in the declaration
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::Go.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => GoExpr::atom(ExprTarget::Go.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => GoExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // Go refuses `string + int64`, and `string(n)` is not the digits
             // of `n` but the code point `n`. `strconv` is the digits; the
             // file that holds this text imports it because the render door
             // (`LangCtx::render`) reads the package off the text.
-            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, Refusal> {
-                let text = emit_go(side, side.ty)?;
+            let operand = |side: &TypedExpr| -> Result<GoExpr, Refusal> {
+                let value = go_expr(side, side.ty)?;
                 match concat_operand(side.ty) {
-                    ConcatOperand::Text => {
-                        Ok(if concat_text_needs_parens(side, is_left, go_precedence) {
-                            format!("({text})")
-                        } else {
-                            text
-                        })
+                    ConcatOperand::Text => Ok(value),
+                    ConcatOperand::Decimal => {
+                        let (format, wide) = match side.ty {
+                            InferredType::Int { signed: false, .. } => {
+                                ("strconv.FormatUint", "uint64")
+                            }
+                            _ => ("strconv.FormatInt", "int64"),
+                        };
+                        Ok(GoExpr::path_call(
+                            format,
+                            vec![value.converted(wide), GoExpr::atom("10")],
+                        ))
                     }
-                    ConcatOperand::Decimal => Ok(match side.ty {
-                        InferredType::Int { signed: false, .. } => {
-                            format!("strconv.FormatUint(uint64({text}), 10)")
-                        }
-                        _ => format!("strconv.FormatInt(int64({text}), 10)"),
-                    }),
-                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text).into()),
+                    ConcatOperand::Refused(what) => {
+                        Err(concat_refusal(what, value.to_string()).into())
+                    }
                 }
             };
-            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+            GoExpr::binary(GoBinOp::Add, operand(left)?, operand(right)?)
         }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Go forbids `==` on `[]byte` slices. Compare
@@ -12869,68 +12892,34 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
             {
-                let render = |operand: &TypedExpr| -> Result<String, Refusal> {
+                let render = |operand: &TypedExpr| -> Result<GoExpr, Refusal> {
                     if let ExprKind::BytesLit { bytes } = &operand.kind {
-                        Ok(format!("\"{}\"", bytes_as_quoted_ascii(bytes)))
+                        Ok(GoExpr::atom(format!(
+                            "\"{}\"",
+                            bytes_as_quoted_ascii(bytes)
+                        )))
                     } else {
-                        Ok(format!(
-                            "string({})",
-                            emit_go(operand, InferredType::Unknown)?
-                        ))
+                        Ok(go_expr(operand, InferredType::Unknown)?.converted("string"))
                     }
                 };
-                let l = render(left)?;
-                let r = render(right)?;
-                return Ok(format!("{l} {} {r}", go_binop(*op)));
+                return Ok(GoExpr::binary(go_binop(*op), render(left)?, render(right)?));
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_go(left, operand_ty)?;
-            let r_raw = emit_go(right, right_operand_type(*op, operand_ty))?;
-            let l = if child_needs_parens(left, *op, true, go_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, go_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            format!("{l} {} {r}", go_binop(*op))
+            GoExpr::binary(
+                go_binop(*op),
+                go_expr(left, operand_ty)?,
+                go_expr(right, right_operand_type(*op, operand_ty))?,
+            )
         }
-        ExprKind::Unary { op, operand } => {
-            let inner = emit_go(operand, expr.ty)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                UnaryOp::Not => "!",
-                UnaryOp::BitNot => "^",
-            };
-            if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            }
-        }
+        ExprKind::Unary { op, operand } => go_expr(operand, expr.ty)?.prefixed(go_unop(*op)),
         ExprKind::Conditional { .. } => {
-            unreachable!("emit_go lowers Conditional before go_emit_node")
+            unreachable!("go_expr lowers Conditional before go_emit_node")
         }
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_go(object, InferredType::Unknown)?)
-            )
+            go_expr(object, InferredType::Unknown)?.selector(property.as_str())
         }
         ExprKind::Index { object, index } => {
-            format!(
-                "{}[{}]",
-                wrap_postfix(object, emit_go(object, InferredType::Unknown)?),
-                emit_go(index, InferredType::Unknown)?,
-            )
+            go_expr(object, InferredType::Unknown)?.indexed(go_expr(index, InferredType::Unknown)?)
         }
         ExprKind::Call {
             callee,
@@ -12940,30 +12929,26 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             ..
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "len({})",
-                    emit_go(&args[0], InferredType::Unknown)?
-                ));
+                return go_length(&args[0]);
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
-                // `math.Round` is already half away from zero, and `math.Floor`
-                // already goes toward −∞.
-                let inner = emit_go(&args[0], InferredType::Float { bits: 64 })?;
-                let f = match op {
-                    RealToInt::Round => "math.Round",
-                    RealToInt::Floor => "math.Floor",
-                };
-                return Ok(format!("int64({f}({inner}))"));
+                return Ok(go_real_to_int(op, &args[0])?.converted("int64"));
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
-                a.push(emit_go(arg, argument_type(params, i))?);
+                a.push(go_expr(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_go(callee, InferredType::Unknown)?);
-            let call = format!("{symbol}({})", a.join(", "));
+            let callee = go_expr(callee, InferredType::Unknown)?;
+            let symbol = callee.as_operand();
+            let call = GoExpr::call(callee, a);
+            // [`pass_failure_on`] is the one spelling of a `may-fail` call, the
+            // expression's and the statement's; what it writes is a call of the
+            // runtime around this one, which stands as one operand.
             if *fails {
-                pass_failure_on(ExprTarget::Go, &symbol, &call, expr.ty)
-                    .map_err(|e| e.at(expr.span.clone()))?
+                GoExpr::atom(
+                    pass_failure_on(ExprTarget::Go, &symbol, &call.to_string(), expr.ty)
+                        .map_err(|e| e.at(expr.span.clone()))?,
+                )
             } else {
                 call
             }
@@ -12971,7 +12956,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field (`string`) →
             // the algorithm `bytes` param type (`[]byte`).
-            format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
+            go_expr(source, InferredType::Unknown)?.converted("[]byte")
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
         // not known below its width ([`settle_shifts`]).
@@ -12998,10 +12983,13 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 InferredType::Int { signed: false, .. } => ("AtU", "uint64"),
                 _ => ("At", "int64"),
             };
-            format!(
-                "scealgorithm.{helper}(&sceFailure, {}[:], {wide}({}))",
-                wrap_postfix(left, emit_go(left, InferredType::Unknown)?),
-                emit_go(index, InferredType::Unknown)?,
+            GoExpr::path_call(
+                format!("scealgorithm.{helper}"),
+                vec![
+                    go_failure(),
+                    go_expr(left, InferredType::Unknown)?.sliced(),
+                    go_expr(index, InferredType::Unknown)?.converted(wide),
+                ],
             )
         }
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
@@ -13034,27 +13022,34 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                     .at(expr.span.clone()));
                 };
                 let wide = if from_signed { "int64" } else { "uint64" };
-                return Ok(format!(
-                    "scealgorithm.Narrow{}{bits}From{}(&sceFailure, {wide}({}))",
-                    if signed { "Int" } else { "Uint" },
-                    if from_signed { "Int" } else { "Uint" },
-                    emit_go(left, left.ty)?
+                return Ok(GoExpr::path_call(
+                    format!(
+                        "scealgorithm.Narrow{}{bits}From{}",
+                        if signed { "Int" } else { "Uint" },
+                        if from_signed { "Int" } else { "Uint" },
+                    ),
+                    vec![go_failure(), go_expr(left, left.ty)?.converted(wide)],
                 ));
             }
-            let mut operands = vec!["&sceFailure".to_string(), emit_go(left, expr.ty)?];
+            let mut operands = vec![go_failure(), go_expr(left, expr.ty)?];
             if let Some(right) = right {
-                operands.push(emit_go(right, expr.ty)?);
+                operands.push(go_expr(right, expr.ty)?);
             }
-            let helper = op.helper();
-            format!(
-                "scealgorithm.{}{}{}{bits}({})",
-                helper[..1].to_ascii_uppercase(),
-                &helper[1..],
-                if signed { "Int" } else { "Uint" },
-                operands.join(", ")
-            )
+            GoExpr::path_call(go_checked_helper(*op, signed, bits), operands)
         }
     })
+}
+
+/// The Go runtime's checked helper for `op` at the width of `signed` and
+/// `bits`: Go has no overloading, so the width is in its name.
+fn go_checked_helper(op: CheckedOp, signed: bool, bits: u8) -> String {
+    let helper = op.helper();
+    format!(
+        "scealgorithm.{}{}{}{bits}",
+        helper[..1].to_ascii_uppercase(),
+        &helper[1..],
+        if signed { "Int" } else { "Uint" },
+    )
 }
 
 /// A shift the build settled ([`settle_shifts`]), in Go.
@@ -13062,13 +13057,14 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
 /// Go's own `<<` and `>>` are the total shift already: a count of any integer
 /// type at or past the width shifts every bit out, leaving 0, or the sign for a
 /// signed `>>` (The Go Programming Language Specification, "Arithmetic
-/// operators"), so the total shift is the operator, parenthesised so it binds as
-/// one operand, and a `>>>` of a signed value is made in the unsigned type of
-/// its width. Go panics on a count below 0, which reaches a total shift only
-/// outside the bodies the contract covers, where it is the caller's to rule out,
-/// as a divisor of 0 is. A literal count at or past the width goes through the
-/// runtime's `WrappingShl` and `WrappingShr` instead, which compute the same:
-/// written as the operator, `go vet` reports the shift as too large for its type.
+/// operators"), so the total shift is the operator, which the printer groups
+/// where it stands as one operand of another, and a `>>>` of a signed value is
+/// made in the unsigned type of its width. Go panics on a count below 0, which
+/// reaches a total shift only outside the bodies the contract covers, where it
+/// is the caller's to rule out, as a divisor of 0 is. A literal count at or past
+/// the width goes through the runtime's `WrappingShl` and `WrappingShr` instead,
+/// which compute the same: written as the operator, `go vet` reports the shift
+/// as too large for its type.
 ///
 /// The checked shift is the runtime's helper for the width, which records an
 /// out-of-range failure in the body's `sceFailure` for a count below 0 and
@@ -13079,20 +13075,17 @@ fn go_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, Refusal> {
+) -> Result<GoExpr, Refusal> {
     let (signed, bits) = settled_shift_width(expr).map_err(|e| e.at(expr.span.clone()))?;
     let Some(operator) = op.shift() else {
         unreachable!("only a shift is settled as one");
     };
-    let value = emit_go(left, expr.ty)?;
-    let written = emit_go(count, InferredType::Unknown)?;
-    let helper = op.helper();
+    let value = go_expr(left, expr.ty)?;
+    let written = go_expr(count, InferredType::Unknown)?;
     if discharge == Discharge::AtRun {
-        return Ok(format!(
-            "scealgorithm.{}{}{}{bits}(&sceFailure, {value}, int64({written}))",
-            helper[..1].to_ascii_uppercase(),
-            &helper[1..],
-            if signed { "Int" } else { "Uint" },
+        return Ok(GoExpr::path_call(
+            go_checked_helper(op, signed, bits),
+            vec![go_failure(), value, written.converted("int64")],
         ));
     }
     // Only a literal count at or past the width is one `go vet` reports; a
@@ -13102,15 +13095,13 @@ fn go_settled_shift(
     });
     let logical_of_signed = op == CheckedOp::UShr && signed;
     if logical_of_signed {
+        let unsigned = value.converted(format!("uint{bits}"));
         let shifted = if vet_refuses {
-            format!("scealgorithm.WrappingShr(uint{bits}({value}), {written})")
+            GoExpr::path_call("scealgorithm.WrappingShr", vec![unsigned, written])
         } else {
-            format!(
-                "uint{bits}({value}) >> {}",
-                go_operand(count, operator, false, written)
-            )
+            GoExpr::binary(go_binop(operator), unsigned, written)
         };
-        return Ok(format!("int{bits}({shifted})"));
+        return Ok(shifted.converted(format!("int{bits}")));
     }
     if vet_refuses {
         let family = if op == CheckedOp::Shl {
@@ -13118,48 +13109,47 @@ fn go_settled_shift(
         } else {
             "WrappingShr"
         };
-        return Ok(format!("scealgorithm.{family}({value}, {written})"));
+        return Ok(GoExpr::path_call(
+            format!("scealgorithm.{family}"),
+            vec![value, written],
+        ));
     }
-    Ok(format!(
-        "({} {} {})",
-        go_operand(left, operator, true, value),
-        go_binop(operator),
-        go_operand(count, operator, false, written)
-    ))
+    Ok(GoExpr::binary(go_binop(operator), value, written))
 }
 
-/// `text`, the Go spelling of `child`, an operand of `op`, parenthesised where Go
-/// would bind it to something else than the document does.
-fn go_operand(child: &TypedExpr, op: BinOp, is_left: bool, text: String) -> String {
-    if child_needs_parens(child, op, is_left, go_precedence) {
-        format!("({text})")
-    } else {
-        text
-    }
-}
-
-fn go_binop(op: BinOp) -> &'static str {
+/// The Go operator `op` is written as; `>>>` is Go's `>>` of an unsigned
+/// value, which its emitter makes it.
+fn go_binop(op: BinOp) -> GoBinOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "==",
-        BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>",
+        BinOp::Add => GoBinOp::Add,
+        BinOp::Sub => GoBinOp::Sub,
+        BinOp::Mul => GoBinOp::Mul,
+        BinOp::Div => GoBinOp::Div,
+        BinOp::Mod => GoBinOp::Rem,
+        BinOp::StrictEq => GoBinOp::Eq,
+        BinOp::StrictNeq => GoBinOp::Ne,
+        BinOp::Lt => GoBinOp::Lt,
+        BinOp::Gt => GoBinOp::Gt,
+        BinOp::LtEq => GoBinOp::Le,
+        BinOp::GtEq => GoBinOp::Ge,
+        BinOp::And => GoBinOp::And,
+        BinOp::Or => GoBinOp::Or,
+        BinOp::BitAnd => GoBinOp::BitAnd,
+        BinOp::BitOr => GoBinOp::BitOr,
+        BinOp::BitXor => GoBinOp::BitXor,
+        BinOp::Shl => GoBinOp::Shl,
+        BinOp::Shr | BinOp::UShr => GoBinOp::Shr,
         BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+    }
+}
+
+/// The Go prefix operator `op` is written as.
+fn go_unop(op: UnaryOp) -> GoUnOp {
+    match op {
+        UnaryOp::Neg => GoUnOp::Neg,
+        UnaryOp::Pos => GoUnOp::Pos,
+        UnaryOp::Not => GoUnOp::Not,
+        UnaryOp::BitNot => GoUnOp::Complement,
     }
 }
 
@@ -13170,20 +13160,18 @@ fn go_binop(op: BinOp) -> &'static str {
 /// `optional.Otherwise(x, func() T { return d })`, which evaluates `x` once and
 /// calls the function literal only when `x` is absent, so a failure `d` records
 /// in the statement's `sceFailure` is recorded only then.
-fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refusal> {
-    let receiver = |node: &TypedExpr| -> Result<String, Refusal> {
-        Ok(wrap_postfix(node, emit_go(node, InferredType::Unknown)?))
-    };
+fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<GoExpr, Refusal> {
+    let read = |node: &TypedExpr| go_expr(node, InferredType::Unknown);
     Ok(match form {
         OptionalForm::Test { subject, present } => {
-            let test = format!("{}.IsPresent()", receiver(subject)?);
+            let test = read(subject)?.method("IsPresent", Vec::new());
             if present {
                 test
             } else {
-                format!("!{test}")
+                test.prefixed(GoUnOp::Not)
             }
         }
-        OptionalForm::Proven { subject } => format!("{}.Proven()", receiver(subject)?),
+        OptionalForm::Proven { subject } => read(subject)?.method("Proven", Vec::new()),
         OptionalForm::Otherwise { value, fallback } => {
             // The function literal names the type it answers, the type of the
             // whole read: an optional value where the default may be absent.
@@ -13204,10 +13192,12 @@ fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refu
                 }
                 .at(whole.span.clone()));
             };
-            format!(
-                "optional.{helper}({}, func() {type_name} {{ return {} }})",
-                emit_go(value, InferredType::Unknown)?,
-                emit_go(fallback, result)?
+            GoExpr::path_call(
+                format!("optional.{helper}"),
+                vec![
+                    read(value)?,
+                    GoExpr::thunk(type_name, go_expr(fallback, result)?),
+                ],
             )
         }
         OptionalForm::Equality { left, right, equal } => {
@@ -13217,18 +13207,15 @@ fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refu
                 .into_iter()
                 .find(|ty| ty.is_optional())
                 .unwrap_or(InferredType::Unknown);
-            let equality = format!(
-                "{}.Equal({})",
-                wrap_postfix(left, emit_go(left, optional)?),
-                emit_go(right, optional)?
-            );
+            let equality =
+                go_expr(left, optional)?.method("Equal", vec![go_expr(right, optional)?]);
             if equal {
                 equality
             } else {
-                format!("!{equality}")
+                equality.prefixed(GoUnOp::Not)
             }
         }
-        OptionalForm::Constant(answer) => answer.to_string(),
+        OptionalForm::Constant(answer) => GoExpr::atom(answer.to_string()),
     })
 }
 
@@ -13237,9 +13224,9 @@ fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refu
 /// own, which the lattice does not carry: a `null` of one is written whole where
 /// a variable or a field takes it, where the lowering names the type
 /// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
-fn go_absent(elem: OptionalElem) -> Result<String, ExprError> {
+fn go_absent(elem: OptionalElem) -> Result<GoExpr, ExprError> {
     match go_nameable_type(elem.present()) {
-        Some(ty) => Ok(crate::forge::generator::go_optional_none(&ty)),
+        Some(ty) => Ok(GoExpr::atom(crate::forge::generator::go_optional_none(&ty))),
         None => Err(ExprError::UnsupportedConstruct {
             construct: "`null` of an optional value of an enum or a record inside an \
                         expression, whose type Go cannot name here: write it as the whole \
@@ -13251,7 +13238,7 @@ fn go_absent(elem: OptionalElem) -> Result<String, ExprError> {
     }
 }
 
-fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+fn go_coerce(raw: GoExpr, from: InferredType, to: InferredType, node: &TypedExpr) -> GoExpr {
     use InferredType::*;
     // A value of `T` where an optional value of `T` is expected is lifted
     // (docs/adr/0055, section 2), converted to the element's type first. Asked
@@ -13261,8 +13248,8 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
         let present = elem.present();
         let value = go_coerce(raw, from, present, node);
         return match go_nameable_type(present) {
-            Some(ty) => format!("optional.Some[{ty}]({value})"),
-            None => format!("optional.Some({value})"),
+            Some(ty) => GoExpr::path_call(format!("optional.Some[{ty}]"), vec![value]),
+            None => GoExpr::path_call("optional.Some", vec![value]),
         };
     }
     // A quantity is emitted as its numeric base (see `rust_coerce`): Go has no
@@ -13274,23 +13261,22 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
     }
     match (from, to) {
         // Promote untyped decimal integer literals in float context to prevent
-        // Go integer division: `9 / 5` → `9.0 / 5.0`.
-        (UntypedInt, Float { .. }) => {
-            if let ExprKind::NumberLit(text) = &node.kind {
-                if is_decimal_integer_literal(text) {
-                    return format!("{raw}.0");
-                }
+        // Go integer division: `9 / 5` → `9.0 / 5.0`. The literal itself,
+        // written as a real one.
+        (UntypedInt, Float { .. }) => match &node.kind {
+            ExprKind::NumberLit(text) if is_decimal_integer_literal(text) => {
+                GoExpr::atom(format!("{}.0", portable_number_literal(text)))
             }
-            raw
-        }
+            _ => raw,
+        },
         // Other untyped literals — Go's untyped constants auto-convert; no-op.
         (UntypedInt, _) | (UntypedFloat, _) => raw,
         // Concrete int → float: explicit `float64(x)` / `float32(x)`.
-        (Int { .. }, Float { bits: 64 }) => format!("float64({raw})"),
-        (Int { .. }, Float { bits: 32 }) => format!("float32({raw})"),
+        (Int { .. }, Float { bits: 64 }) => raw.converted("float64"),
+        (Int { .. }, Float { bits: 32 }) => raw.converted("float32"),
         // Float widening.
-        (Float { bits: 32 }, Float { bits: 64 }) => format!("float64({raw})"),
-        (Float { bits: 64 }, Float { bits: 32 }) => format!("float32({raw})"),
+        (Float { bits: 32 }, Float { bits: 64 }) => raw.converted("float64"),
+        (Float { bits: 64 }, Float { bits: 32 }) => raw.converted("float32"),
         // Integer conversions.
         (
             Int {
@@ -13301,10 +13287,7 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
                 signed: s2,
                 bits: b2,
             },
-        ) if (s1, b1) != (s2, b2) => {
-            let target = go_int_type(s2, b2);
-            format!("{target}({raw})")
-        }
+        ) if (s1, b1) != (s2, b2) => raw.converted(go_int_type(s2, b2)),
         _ => raw,
     }
 }
@@ -13324,7 +13307,7 @@ fn go_int_type(signed: bool, bits: u8) -> &'static str {
 }
 
 /// Lower `c ? a : b` to an immediately invoked function literal:
-/// `func() T { if c { return a }; return b }()`.
+/// `func() T { if c { return a }; return b }()` ([`GoExpr::Choice`]).
 ///
 /// Go has no conditional expression, and every other spelling is wrong in a
 /// way that matters. A generic `pick(c, a, b)` helper evaluates BOTH branches
@@ -13347,7 +13330,7 @@ fn go_conditional(
     consequent: &TypedExpr,
     alternate: &TypedExpr,
     expected: InferredType,
-) -> Result<String, Refusal> {
+) -> Result<GoExpr, Refusal> {
     let Some((result, type_name)) = [expected, conditional.ty]
         .into_iter()
         .find_map(|ty| go_nameable_type(ty).map(|name| (ty, name)))
@@ -13357,20 +13340,22 @@ fn go_conditional(
         // constant, or a read of a field. Go infers the type from the values,
         // and evaluating both costs nothing: neither can fail.
         if is_pure_reference(consequent) && is_pure_reference(alternate) {
-            return Ok(format!(
-                "scealgorithm.Choose({}, {}, {})",
-                emit_go(condition, InferredType::Bool)?,
-                emit_go(consequent, InferredType::Unknown)?,
-                emit_go(alternate, InferredType::Unknown)?,
+            return Ok(GoExpr::path_call(
+                "scealgorithm.Choose",
+                vec![
+                    go_expr(condition, InferredType::Bool)?,
+                    go_expr(consequent, InferredType::Unknown)?,
+                    go_expr(alternate, InferredType::Unknown)?,
+                ],
             ));
         }
         return Err(ExprError::GoTernary.at(conditional.span.clone()));
     };
-    Ok(format!(
-        "func() {type_name} {{ if {} {{ return {} }}; return {} }}()",
-        emit_go(condition, InferredType::Bool)?,
-        emit_go(consequent, result)?,
-        emit_go(alternate, result)?,
+    Ok(GoExpr::choice(
+        type_name,
+        go_expr(condition, InferredType::Bool)?,
+        go_expr(consequent, result)?,
+        go_expr(alternate, result)?,
     ))
 }
 
@@ -16972,7 +16957,7 @@ mod tests {
         );
         assert_eq!(
             landed(source, ExprTarget::Go, u64t),
-            "prev | (uint64(1) << m)"
+            "prev | uint64(1) << m"
         );
         assert_eq!(
             landed(source, ExprTarget::Kotlin, u64t),
@@ -17061,7 +17046,7 @@ mod tests {
                 i16t,
                 "SCE::Forge::Wrapping::ushr<std::int16_t>(h, m)",
             ),
-            (ExprTarget::Go, "prev >> m", u64t, "(prev >> m)"),
+            (ExprTarget::Go, "prev >> m", u64t, "prev >> m"),
             (ExprTarget::Go, "h >>> m", i16t, "int16(uint16(h) >> m)"),
             (
                 ExprTarget::Go,
@@ -17174,7 +17159,7 @@ mod tests {
         ctx.integers_proven = true;
         assert_eq!(
             transpile_into("s >> s", ExprTarget::Go, &ctx, &empty_renames(), i32t).unwrap(),
-            "(s >> s)"
+            "s >> s"
         );
         assert_eq!(
             transpile_into("s >> s", ExprTarget::C, &ctx, &empty_renames(), i32t).unwrap(),
@@ -17580,13 +17565,17 @@ mod tests {
     }
 
     /// A comparison that is an operand of a comparison keeps its parentheses
-    /// on every backend. Found by a consumer whose
-    /// `(o.kind === WhoKind.of_department) === p.ofDepartment` passed `check`
-    /// and was generated as `a == b == c`, which rustc refuses; Python ran the
-    /// same text as a chained comparison and answered something else.
+    /// on every backend whose grammar reads it otherwise. Found by a consumer
+    /// whose `(o.kind === WhoKind.of_department) === p.ofDepartment` passed
+    /// `check` and was generated as `a == b == c`, which rustc refuses; Python
+    /// ran the same text as a chained comparison and answered something else.
+    /// Go reads it as written (`a_go_comparison_is_grouped_by_left_association`).
     #[test]
     fn a_comparison_under_a_comparison_keeps_its_parentheses() {
-        for target in ExprTarget::ALL {
+        for target in ExprTarget::ALL
+            .into_iter()
+            .filter(|target| *target != ExprTarget::Go)
+        {
             assert_eq!(tp("(a === b) === c", target), "(a == b) == c", "{target:?}");
             assert_eq!(tp("a === (b === c)", target), "a == (b == c)", "{target:?}");
             assert_eq!(
@@ -17595,6 +17584,20 @@ mod tests {
                 "{target:?}"
             );
         }
+    }
+
+    /// Go's comparisons share one level of its table and associate from the
+    /// left as its other binary operators do ("Operator precedence"), so the
+    /// printer groups a comparison under a comparison where precedence asks: on
+    /// the right, and not on the left.
+    #[test]
+    fn a_go_comparison_is_grouped_by_left_association() {
+        assert_eq!(tp("(a === b) === c", ExprTarget::Go), "a == b == c");
+        assert_eq!(tp("a === (b === c)", ExprTarget::Go), "a == (b == c)");
+        assert_eq!(
+            tp("(a < b) === (c > d)", ExprTarget::Go),
+            "a < b == (c > d)"
+        );
     }
 
     #[test]
