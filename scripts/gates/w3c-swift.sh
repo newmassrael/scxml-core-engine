@@ -27,10 +27,8 @@ LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
-set +e
-scripts/test_swift_backend.sh w3c 2>&1 | tee "$LOG"
-status="${PIPESTATUS[0]}"
-set -e
+status=0
+sce_gate_tested --log "$LOG" -- scripts/test_swift_backend.sh w3c || status=$?
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh w3c exited $status (the W3C suite failed to generate, to build or to pass; the output above names it)"
 

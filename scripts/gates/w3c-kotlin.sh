@@ -223,7 +223,13 @@ FRONTEND_FLOOR=1000
 CENSUS="$LOG/lowering-census.tsv"
 # Each suite's JUnit results, as `--reports` arguments for the verdict.
 REPORTS=()
-while IFS= read -r _dir; do REPORTS+=(--reports "$_dir/build/test-results/test"); done < <(suite_dirs)
+# The same directories, as where the commands that reproduce a failing test
+# read its class and name (`sce_gate_tested --report`).
+FAILED_TEST_REPORTS=()
+while IFS= read -r _dir; do
+    REPORTS+=(--reports "$_dir/build/test-results/test")
+    FAILED_TEST_REPORTS+=(--report "$_dir/build/test-results/test")
+done < <(suite_dirs)
 
 # ── Which language the committed machines are emitted for ─────────
 #
@@ -740,13 +746,13 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     kotlin_gc_from="$(log_size "$KOTLIN_GC_LOG")"
     status=0
     mapfile -t row_tasks < <(suite_tasks test)
-    ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
+    sce_gate_tested --log "$LOG/kotlin-$engine-$language.log" "${FAILED_TEST_REPORTS[@]}" \
+        -- ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
         "-Psce.script.language=$language" \
         "-Psce.lua.loweringCensus=$CENSUS" \
         "${HEAP_OBSERVED[@]}" \
         "${overlay[@]}" \
-        >"$LOG/kotlin-$engine-$language.log" 2>&1 || status=$?
-    cat "$LOG/kotlin-$engine-$language.log"
+        || status=$?
     report_row_heap "$engine over $language machines" "$gradle_gc_from" "$kotlin_gc_from"
 
     if (( status != 0 )); then
@@ -1285,7 +1291,8 @@ kotlin_module_tests() {
     # multiplatform module, `test` for a JVM one.
     declared="$(grep -rh '^\s*@Test' "$module"/src/*[tT]est | grep -c . || true)"
     log="$LOG/kotlin-$(basename "$module").log"
-    ./gradlew --console=plain "$task" >"$log" 2>&1 || status=$?
+    sce_gate_tested --quiet --log "$log" --report "$module/build/test-results/${task##*:}" \
+        -- ./gradlew --console=plain "$task" || status=$?
     if (( status != 0 )); then
         tail -n 40 "$log" >&2
         sce_gate_fail "$what's tests failed"

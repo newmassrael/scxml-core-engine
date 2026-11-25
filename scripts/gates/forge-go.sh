@@ -21,15 +21,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ( cd backends/go/forge-runtime/conformance && bash generate.sh ) \
     || sce_gate_fail "Go forge conformance generate"
-( cd backends/go/forge-runtime && go test ./conformance/ -count=1 ) \
+sce_gate_tested --cwd backends/go/forge-runtime -- go test ./conformance/ -count=1 \
     || sce_gate_fail "Go forge conformance"
-( cd backends/go/forge-runtime && go test ./round_trip/ -count=1 ) \
+sce_gate_tested --cwd backends/go/forge-runtime -- go test ./round_trip/ -count=1 \
     || sce_gate_fail "Go forge round-trip"
 # The runtime's own integer rows: the checked operations of SCE_FORGE.md
 # §3.4.1 and the wrapping and saturating ones of §3.4.2 (docs/adr/0063). The
 # conformance suite reaches them only through what the generator emits, and no
 # other step ran this package's tests.
-( cd backends/go/forge-runtime && go test ./algorithm/ -count=1 ) \
+sce_gate_tested --cwd backends/go/forge-runtime -- go test ./algorithm/ -count=1 \
     || sce_gate_fail "Go forge runtime integer operations"
 
 # The queue kind's Go arm (SCE Protocol-Synthesis RFC §synth-5-P). Go has no
@@ -44,8 +44,8 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/go"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
-( cd backends/go/forge-runtime \
-    && SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" go test -race -count=1 ./queue/ ) \
+sce_gate_tested --cwd backends/go/forge-runtime \
+    -- env SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" go test -race -count=1 ./queue/ \
     || sce_gate_fail "Go forge queue runtime under the race detector"
 # 4 Lamport capacities recorded 3 times, 6 SCQ shapes recorded 25 times, and 5
 # segmented shapes (the linked Lamport rings and four of the list of SCQ rings)
@@ -59,7 +59,7 @@ shopt -u nullglob
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Go queue histories are not linearizable"
 # The packages the generator writes for a queue, under the race detector too.
-( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq|Lscq' ./conformance/ ) \
+sce_gate_tested --cwd backends/go/forge-runtime -- go test -race -count=1 -run 'Lamport|Scq|Lscq' ./conformance/ \
     || sce_gate_fail "Go forge queue generated packages under the race detector"
 
 # The broadcast-log kind's Go arm (RFC §synth-5-S, ADR 0062). The same two kinds of evidence as
@@ -69,8 +69,8 @@ shopt -u nullglob
 BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/go"
 rm -rf "$BROADCAST_HISTORIES"
 mkdir -p "$BROADCAST_HISTORIES"
-( cd backends/go/forge-runtime \
-    && SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" go test -race -count=1 ./broadcastlog/ ) \
+sce_gate_tested --cwd backends/go/forge-runtime \
+    -- env SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" go test -race -count=1 ./broadcastlog/ \
     || sce_gate_fail "Go forge broadcast-log runtime under the race detector"
 # 4 log shapes recorded 25 times. A run that recorded fewer would pass the
 # judgement below, so the count is held.

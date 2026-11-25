@@ -69,6 +69,42 @@ if ! command -v swift > /dev/null 2>&1; then
     export PATH
 fi
 
+# One `swift test` of a package, in its directory, with the arguments given.
+#
+# Where SCE_SWIFT_XUNIT_DIR names a directory (the gates' runner sets it,
+# scripts/lib/repro.py's `prepare`), each run also writes its xUnit report
+# there as `run-<n>.xml` (and SwiftPM writes Swift Testing's beside it as
+# `run-<n>-swift-testing.xml`), with `run-<n>.package` saying which package
+# ran and what wrote its sources first: what a failing test is rerun from,
+# alone, with `swift test --filter`.
+#
+#   swift_test <package dir> [--first <command>]... [--env NAME=VALUE]... [-- swift test arguments...]
+SWIFT_TEST_RUNS=0
+swift_test() {
+    local dir="$1" marker=""
+    shift
+    local -a first=() env=() report=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --first) first+=("$2"); shift 2 ;;
+            --env) env+=("$2"); shift 2 ;;
+            --) shift; break ;;
+            *) break ;;
+        esac
+    done
+    if [ -n "${SCE_SWIFT_XUNIT_DIR:-}" ]; then
+        SWIFT_TEST_RUNS=$((SWIFT_TEST_RUNS + 1))
+        marker="$SCE_SWIFT_XUNIT_DIR/run-$SWIFT_TEST_RUNS"
+        {
+            printf 'dir %s\n' "$dir"
+            for line in ${first[@]+"${first[@]}"}; do printf 'first %s\n' "$line"; done
+            for line in ${env[@]+"${env[@]}"}; do printf 'env %s\n' "$line"; done
+        } >"$marker.package"
+        report=(--xunit-output "$marker.xml")
+    fi
+    (cd "$dir" && env ${env[@]+"${env[@]}"} swift test ${report[@]+"${report[@]}"} "$@")
+}
+
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
@@ -83,7 +119,7 @@ for package in "${PACKAGES[@]}"; do
             # is written here and not committed, and `tests` below neither writes nor runs it.
             scripts/regen_swift_w3c.sh
             echo "== swift test: backends/swift/tests (W3C suite)"
-            (cd backends/swift/tests && swift test --filter W3cMachinesTests)
+            swift_test backends/swift/tests --first scripts/regen_swift_w3c.sh -- --filter W3cMachinesTests
             ;;
         ecma262-lowered)
             # The ECMA-262 artifact is a question of its own (`scripts/gate ecma262-lowered-swift`):
@@ -91,7 +127,8 @@ for package in "${PACKAGES[@]}"; do
             # and not committed, and `tests` below neither writes nor runs it.
             scripts/regen_swift_ecma262_lowered.sh
             echo "== swift test: backends/swift/tests (ECMA-262 lowered artifact)"
-            (cd backends/swift/tests && swift test --filter Ecma262LoweredTests)
+            swift_test backends/swift/tests --first scripts/regen_swift_ecma262_lowered.sh \
+                -- --filter Ecma262LoweredTests
             ;;
         forge)
             # The Forge conformance question (`scripts/gate forge-swift`): the forge runtime's own
@@ -100,10 +137,11 @@ for package in "${PACKAGES[@]}"; do
             # replay them are the ones named `...MatchesReference`; `tests` skips those, so each
             # question is judged by one gate.
             echo "== swift test: backends/swift/forge-runtime"
-            (cd backends/swift/forge-runtime && swift test)
+            swift_test backends/swift/forge-runtime
             scripts/materialize.sh swift-static-datamodel
             echo "== swift test: backends/swift/tests (numerical conformance)"
-            (cd backends/swift/tests && swift test --filter MatchesReference)
+            swift_test backends/swift/tests --first "scripts/materialize.sh swift-static-datamodel" \
+                -- --filter MatchesReference
             ;;
         tests)
             # The four committed targets of the package, each a declared tree
@@ -112,7 +150,9 @@ for package in "${PACKAGES[@]}"; do
             echo "== swift test: backends/swift/tests"
             # A tree another lane left on this machine is built with the rest, and not run here;
             # the numerical conformance tests are the Forge lane's (`forge` above).
-            (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests --skip MatchesReference)
+            swift_test backends/swift/tests \
+                --first "scripts/materialize.sh swift-statecharts swift-static-datamodel swift-ecmascript swift-integration" \
+                -- --skip W3cMachinesTests --skip Ecma262LoweredTests --skip MatchesReference
             ;;
         feature-conformance)
             # docs/adr/0057 §10: the machine for every build of tests/product_line/session.scxml,
@@ -120,7 +160,7 @@ for package in "${PACKAGES[@]}"; do
             # generates alone through every run of up to four events.
             scripts/regen_swift_feature_conformance.sh
             echo "== swift test: backends/swift/feature-conformance"
-            (cd backends/swift/feature-conformance && swift test)
+            swift_test backends/swift/feature-conformance --first scripts/regen_swift_feature_conformance.sh
             # A build the feature model does not admit (a feature on without the one it
             # requires) stops at the model's `#error`, which names the edge. The compiler
             # fails either way, since the machine imports a module this invocation does not
@@ -142,7 +182,7 @@ for package in "${PACKAGES[@]}"; do
             # write today, then the router core that applies them and its tests.
             backends/swift/mesh/generate.sh
             echo "== swift test: backends/swift/mesh"
-            (cd backends/swift/mesh && swift test)
+            swift_test backends/swift/mesh --first backends/swift/mesh/generate.sh
             ;;
         mesh-wss)
             # The WebSocket binding's client (`backends/swift/mesh-wss`, SCE_MESH.md section 18) over
@@ -154,8 +194,9 @@ for package in "${PACKAGES[@]}"; do
             backends/swift/mesh-wss/generate.sh
             cargo build -p sce-rust-mesh --features wss --example wss_peer
             echo "== swift test: backends/swift/mesh-wss"
-            (cd backends/swift/mesh-wss \
-                && SCE_MESH_WSS_PEER="$REPO_ROOT/${CARGO_TARGET_DIR:-target}/debug/examples/wss_peer" swift test)
+            swift_test backends/swift/mesh-wss --first backends/swift/mesh-wss/generate.sh \
+                --first "cargo build -p sce-rust-mesh --features wss --example wss_peer" \
+                --env "SCE_MESH_WSS_PEER=$REPO_ROOT/${CARGO_TARGET_DIR:-target}/debug/examples/wss_peer"
             ;;
         transition-outputs)
             # Each name is matched exactly in both test binaries, so each binary runs the one
@@ -172,7 +213,7 @@ for package in "${PACKAGES[@]}"; do
             ;;
         *)
             echo "== swift test: backends/swift/$package"
-            (cd "backends/swift/$package" && swift test)
+            swift_test "backends/swift/$package"
             ;;
     esac
 done

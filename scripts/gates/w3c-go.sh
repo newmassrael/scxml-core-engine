@@ -54,8 +54,7 @@ go_failures() {
 # lines out of this log. It also gives this gate a case count rather than a
 # package count to hold a floor against.
 status=0
-( cd backends/go/tests && go test ./... -v -count=1 ) >"$LOG/go.log" 2>&1 || status=$?
-cat "$LOG/go.log"
+sce_gate_tested --log "$LOG/go.log" --cwd backends/go/tests -- go test ./... -v -count=1 || status=$?
 
 if (( status != 0 )); then
     go_failures "$LOG/go.log"
@@ -84,8 +83,8 @@ sce_gate_step "$cases Go case(s) passed"
 for module in lua runtime; do
     sce_gate_step "running the Go $module module's own tests"
     module_status=0
-    ( cd "backends/go/$module" && go test ./... -v -count=1 ) \
-        >"$LOG/go-$module.log" 2>&1 || module_status=$?
+    sce_gate_tested --quiet --log "$LOG/go-$module.log" --cwd "backends/go/$module" \
+        -- go test ./... -v -count=1 || module_status=$?
     if (( module_status != 0 )); then
         go_failures "$LOG/go-$module.log"
         sce_gate_fail "the Go $module module's tests failed"

@@ -110,15 +110,15 @@ status=0
 # `testprofile/` is the eleventh: it holds the test profile's runtime
 # (`sce_runtime.testprofile`, docs/SCE_TEST_PROFILE.md §12.2) to the cases of
 # the Rust one, over components written by hand, which no document drives.
-PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
+sce_gate_tested --log "$LOG/pytest.log" \
+    -- env PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     "$SCE_GATE_PYTHON" -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
         backends/python/tests/scheduler/ backends/python/tests/io_processors/ \
         backends/python/tests/testprofile/ \
-        --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
-cat "$LOG/pytest.log"
+        --no-header -v || status=$?
 
 # pytest's summary line is the count. A collection error exits non-zero with
 # no tests run, and a generator that emitted nothing would collect zero and

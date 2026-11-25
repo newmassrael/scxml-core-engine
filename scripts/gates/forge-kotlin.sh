@@ -67,7 +67,8 @@ mkdir -p "$QUEUE_HISTORIES"
 BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/kotlin"
 rm -rf "$BROADCAST_HISTORIES"
 mkdir -p "$BROADCAST_HISTORIES"
-SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+sce_gate_tested --report backends/kotlin/forge-runtime/build/test-results/jvmTest \
+    -- env SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
     ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmTest \
     || sce_gate_fail "Kotlin forge conformance"
 

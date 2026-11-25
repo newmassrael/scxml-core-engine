@@ -15,11 +15,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # write is either hand-edited in a generated line or stale against the model,
 # and every arm below would then be held to cases nobody can reproduce. Run
 # here because this arm has no build step and Python is all it needs.
-python3 tests/forge/conformance/gen_cases.py --check \
+sce_gate_tested -- python3 tests/forge/conformance/gen_cases.py --check \
     || sce_gate_fail "generated conformance cases are stale — run tests/forge/conformance/gen_cases.py"
 
-( cd backends/python/forge-runtime && PYTHONPATH=tests python3 -m unittest \
-    tests.test_numerical_conformance tests.test_default_round_trip ) \
+sce_gate_tested --cwd backends/python/forge-runtime -- env PYTHONPATH=tests python3 -m unittest \
+    tests.test_numerical_conformance tests.test_default_round_trip \
     || sce_gate_fail "Python forge conformance"
 
 # The queue kind's Python arm (SCE Protocol-Synthesis RFC §synth-5-P): the
@@ -32,9 +32,9 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/python"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
-( cd backends/python/forge-runtime && SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
+sce_gate_tested --cwd backends/python/forge-runtime -- env SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
     PYTHONPATH=tests python3 -m unittest \
-    tests.test_queue_runtime tests.test_queue_generated tests.test_queue_history ) \
+    tests.test_queue_runtime tests.test_queue_generated tests.test_queue_history \
     || sce_gate_fail "Python forge queue"
 # 4 capacities recorded 3 times with one producer and one consumer, 6 shapes
 # recorded 25 times and 5 segmented shapes recorded 25 times. A run that
@@ -57,10 +57,10 @@ shopt -u nullglob
 BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/python"
 rm -rf "$BROADCAST_HISTORIES"
 mkdir -p "$BROADCAST_HISTORIES"
-( cd backends/python/forge-runtime && SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+sce_gate_tested --cwd backends/python/forge-runtime -- env SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
     PYTHONPATH=tests python3 -m unittest \
     tests.test_broadcast_log_runtime tests.test_broadcast_log_generated \
-    tests.test_broadcast_log_history ) \
+    tests.test_broadcast_log_history \
     || sce_gate_fail "Python forge broadcast log"
 # 5 shapes recorded 10 times. A run that recorded fewer would pass the judgement
 # below, so the count is held. Linearizability is judged by the command every

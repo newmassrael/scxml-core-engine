@@ -55,10 +55,8 @@ LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
-set +e
-scripts/test_swift_backend.sh 2>&1 | tee "$LOG"
-status="${PIPESTATUS[0]}"
-set -e
+status=0
+sce_gate_tested --log "$LOG" -- scripts/test_swift_backend.sh || status=$?
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 

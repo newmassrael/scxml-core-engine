@@ -106,8 +106,8 @@ PY
 
 mutation_case "the suite is allowed to answer from cache instead of running" <<'PY'
 edit("scripts/gates/ecma262-lowered-kotlin.sh",
-     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun \\",
-     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test \\")
+     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun || status=$?",
+     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test || status=$?")
 PY
 
 # ── The workflow stops naming the pin the gate reads ───────────────

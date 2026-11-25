@@ -75,9 +75,8 @@ status=0
 # verdict about inputs, not a run of this turn. For a lane whose whole subject
 # is "the artifact executes", that distinction is the lane. `--rerun` scopes to
 # the named task, so the generation and compilation above still cache normally.
-./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun \
-    >"$LOG/gradle.log" 2>&1 || status=$?
-cat "$LOG/gradle.log"
+sce_gate_tested --log "$LOG/gradle.log" --report "$MODULE/build/test-results/test" \
+    -- ./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun || status=$?
 
 if (( status != 0 )); then
     grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/gradle.log" | head -n 20 >&2

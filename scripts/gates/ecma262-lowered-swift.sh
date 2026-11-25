@@ -37,10 +37,8 @@ LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
-set +e
-scripts/test_swift_backend.sh ecma262-lowered 2>&1 | tee "$LOG"
-status="${PIPESTATUS[0]}"
-set -e
+status=0
+sce_gate_tested --log "$LOG" -- scripts/test_swift_backend.sh ecma262-lowered || status=$?
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh ecma262-lowered exited $status (the artifact failed to generate, to build or to answer ECMA-262; the output above names it)"
 

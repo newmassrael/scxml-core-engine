@@ -42,11 +42,10 @@ LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
-set +e
-SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
-    scripts/test_swift_backend.sh forge 2>&1 | tee "$LOG"
-status="${PIPESTATUS[0]}"
-set -e
+status=0
+sce_gate_tested --log "$LOG" \
+    -- env SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+    scripts/test_swift_backend.sh forge || status=$?
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh forge exited $status (the forge runtime or a generated unit failed to build or to pass; the output above names it)"
 
