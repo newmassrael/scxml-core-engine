@@ -3,6 +3,8 @@
 - Status: Accepted (2026-10-29), on the owner's instruction, under the owner's standing rule: the most
   long-term correct structure, cost ignored. Implemented in the order of the last section.
 - Date: 2026-10-29
+- Amended by: ADR 0129 (decision 6: for a document of the static class the image chooses, document by document,
+  between the shared interpreter and the document's own step function; no runtime feature or `cfg` chooses)
 - Scope: `backends/rust/runtime` (`helpers/microstep.rs`, `helpers/hierarchy.rs`, `helpers/configuration.rs`,
   `policy.rs`, `engine.rs`, `saved_state.rs`); `sce-build` (a new module beside `microstep_bounds.rs`, and the
   Rust half of `generator.rs`); `tools/codegen/templates/rust/*.rs.jinja2`; the committed Rust trees; the probes
