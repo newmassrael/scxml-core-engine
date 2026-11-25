@@ -199,17 +199,17 @@ fn each_value_is_written_by_walking_its_type_on_kotlin() {
         &code,
         &[
             &format!(
-                "putParam(sendPayload, \"items\", (pendingBatchSentPayload!!.items).map {{ \
-                 mapOf<String, Any?>(\"id\" to (it.id).toLong(), \"amount\" to (it.amount).toString(), \
+                "putParam(sendPayload, \"items\", pendingBatchSentPayload!!.items.map {{ \
+                 mapOf<String, Any?>(\"id\" to it.id.toLong(), \"amount\" to it.amount.toString(), \
                  \"label\" to it.label, \"level\" to it.level.declaredName, \"due\" to \
-                 ((it.due)?.let {{ (it).toString() }}), \"blob\" to {p}.bytesAsText(it.blob), \
-                 \"tags\" to (it.tags).map {{ it }}) }})"
+                 it.due?.let {{ it.toString() }}, \"blob\" to {p}.bytesAsText(it.blob), \
+                 \"tags\" to it.tags.map {{ it }}) }})"
             ),
-            "putParam(sendPayload, \"grid\", (pendingBatchSentPayload!!.grid).map { (it).map { (it).toLong() } })",
-            "putParam(sendPayload, \"levels\", (pendingBatchSentPayload!!.levels).map { it.declaredName })",
-            "putParam(sendPayload, \"maybe\", (pendingBatchSentPayload!!.maybe).map { ((it)?.let { (it).toLong() }) })",
-            "putParam(sendPayload, \"spare\", ((pendingBatchSentPayload!!.spare)?.let { (it).map { (it).toLong() } }))",
-            "putParam(sendPayload, \"late\", (vLate).map { (it).toLong() })",
+            "putParam(sendPayload, \"grid\", pendingBatchSentPayload!!.grid.map { it.map { it.toLong() } })",
+            "putParam(sendPayload, \"levels\", pendingBatchSentPayload!!.levels.map { it.declaredName })",
+            "putParam(sendPayload, \"maybe\", pendingBatchSentPayload!!.maybe.map { it?.let { it.toLong() } })",
+            "putParam(sendPayload, \"spare\", pendingBatchSentPayload!!.spare?.let { it.map { it.toLong() } })",
+            "putParam(sendPayload, \"late\", vLate.map { it.toLong() })",
         ],
     );
 }

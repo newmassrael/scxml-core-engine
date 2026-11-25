@@ -75,12 +75,14 @@ pub type Refusal = Spanned<ExprError>;
 pub(crate) mod c_tree;
 pub(crate) mod cpp_tree;
 pub(crate) mod go_tree;
+pub(crate) mod kotlin_tree;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
 use c_tree::{CBinOp, CExpr, CInit, CUnOp};
 use cpp_tree::{CppBinOp, CppExpr, CppUnOp};
 use go_tree::{GoBinOp, GoExpr, GoUnOp};
+use kotlin_tree::{KotlinBinOp, KotlinExpr, KotlinLambda, KotlinUnOp};
 use rust_tree::{RustBinOp, RustExpr, RustStmt, RustUnOp};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3169,33 +3171,52 @@ fn typed_integer_literal(target: ExprTarget, node: &TypedExpr) -> Option<String>
             "std::{}int{bits}_t{{{written}}}",
             if signed { "" } else { "u" }
         ),
-        ExprTarget::Kotlin => kotlin_typed_literal(&written, negated, signed, bits),
+        ExprTarget::Kotlin => return kotlin_typed_literal(node).map(|literal| literal.to_string()),
         ExprTarget::Python | ExprTarget::Js => return None,
     })
 }
 
 /// [`typed_integer_literal`] for Kotlin: a suffix where the type has one
 /// (`1L`, `1u`, `1uL`, and an `Int` bare), and the conversion of the `Int`
-/// literal to a type that has none (`1.toUByte()`, `(-1).toShort()`).
-fn kotlin_typed_literal(written: &str, negated: bool, signed: bool, bits: u8) -> String {
-    match (signed, bits) {
-        (true, 32) => written.to_string(),
-        (true, 64) => format!("{written}L"),
-        (false, 32) => format!("{written}u"),
-        (false, 64) => format!("{written}uL"),
-        _ => {
-            let ctor = if signed {
+/// literal to a type that has none (`1.toUByte()`, `(-1).toShort()`), under the
+/// `-` the author wrote. `None` for any other node, and for a [`WideLiteral`],
+/// whose spelling its coercion writes ([`wide_literal_spelling`]).
+fn kotlin_typed_literal(node: &TypedExpr) -> Option<KotlinExpr> {
+    let InferredType::Int { signed, bits } = node.ty else {
+        return None;
+    };
+    let (text, negated) = integer_literal_parts(node)?;
+    if wide_literal(node).is_some() {
+        return None;
+    }
+    let suffix = match (signed, bits) {
+        (true, 32) => Some(""),
+        (true, 64) => Some("L"),
+        (false, 32) => Some("u"),
+        (false, 64) => Some("uL"),
+        _ => None,
+    };
+    let literal = KotlinExpr::atom(format!(
+        "{}{}",
+        portable_number_literal(&text),
+        suffix.unwrap_or_default()
+    ));
+    let value = if negated {
+        literal.prefixed(KotlinUnOp::Neg)
+    } else {
+        literal
+    };
+    Some(match suffix {
+        Some(_) => value,
+        None => value.method(
+            if signed {
                 kotlin_signed_ctor(bits)
             } else {
                 kotlin_unsigned_ctor(bits)
-            };
-            if negated {
-                format!("({written}).{ctor}()")
-            } else {
-                format!("{written}.{ctor}()")
-            }
-        }
-    }
+            },
+            Vec::new(),
+        ),
+    })
 }
 
 /// Refuse a call of a function `ctx` registers — an imported function, a
@@ -7521,22 +7542,6 @@ fn ecma_precedence(op: BinOp) -> u8 {
     }
 }
 
-fn kotlin_precedence(op: BinOp) -> u8 {
-    match op {
-        // Kotlin's elvis, which `??` is spelled as, binds tighter than a
-        // comparison and looser than an infix function (`and`, `shl`): a
-        // comparison under it is parenthesised, and it stands bare under one.
-        BinOp::Coalesce => 6,
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq => 3,
-        BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
-        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::UShr => 7,
-        BinOp::Add | BinOp::Sub => 9,
-        BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
-    }
-}
-
 fn python_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Coalesce => COALESCE_PRECEDENCE,
@@ -10560,6 +10565,13 @@ fn cpp_unop(op: UnaryOp) -> CppUnOp {
 //   type is `Int{u, bits}`, the emitted expression (which may have computed
 //   in signed domain to satisfy Kotlin arithmetic) is wrapped with
 //   `.toUByte()` / `.toUShort()` / `.toUInt()` / `.toULong()`.
+// * The expression is built as a tree of the Kotlin expressions it is made of
+//   ([`KotlinExpr`], `expr/kotlin_tree.rs`), a conversion and a call that
+//   takes a lambda nodes of their own wherever they come from, and printed
+//   once, where it leaves this layer ([`emit_kotlin`]): every parenthesis is
+//   the printer's, decided by the kinds of the nodes around it and the
+//   precedence the Kotlin specification gives them, and no rule here groups
+//   anything or reads back what it has written.
 
 /// The `SceListBuf` reader that returns a list buffer's element as the type
 /// it was appended as. The buffer keeps every element in one 64-bit slot,
@@ -10596,7 +10608,14 @@ pub(crate) fn kotlin_buffer_reader(
     })
 }
 
+/// The Kotlin text of `expr` where a value of `expected` is wanted: the tree
+/// [`kotlin_expr`] builds, printed.
 fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+    Ok(kotlin_expr(expr, expected)?.to_string())
+}
+
+/// The Kotlin expression `expr` is where a value of `expected` is wanted.
+fn kotlin_expr(expr: &TypedExpr, expected: InferredType) -> Result<KotlinExpr, ExprError> {
     // A value of `T` where an `optional<T>` is expected is lifted
     // (docs/adr/0055, section 2, [`InferredType::lifted_into`]). Kotlin's `T?`
     // takes a `T` as it is, so it is spelled as the value of `T` it is, with
@@ -10607,7 +10626,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     if let Some(elem) = expr.ty.lifted_into(expected) {
         let present = elem.present();
         return Ok(kotlin_equality_operand(
-            emit_kotlin(expr, present)?,
+            kotlin_expr(expr, present)?,
             expr,
             present,
         ));
@@ -10618,21 +10637,12 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if let Some(op) = real_to_int_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
-                let inner = emit_kotlin(&args[0], InferredType::Float { bits: 64 })?;
                 let ctor = if signed {
                     kotlin_signed_ctor(bits)
                 } else {
                     kotlin_unsigned_ctor(bits)
                 };
-                // ⚠ `floor` needs no sign branch the way `round` does:
-                // `kotlin.math.floor` already goes toward −∞, and it is
-                // `kotlin.math.round` alone that disagrees with the other five
-                // backends.
-                let call = match op {
-                    RealToInt::Round => kotlin_round_half_away(inner),
-                    RealToInt::Floor => format!("kotlin.math.floor({inner})"),
-                };
-                return Ok(format!("{call}.{ctor}()"));
+                return Ok(kotlin_real_to_int(op, &args[0])?.method(ctor, Vec::new()));
             }
         }
     }
@@ -10642,19 +10652,11 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_kotlin(left, expected)?;
-            let r_raw = emit_kotlin(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", kotlin_binop(*op)));
+            return Ok(KotlinExpr::binary(
+                kotlin_binop(*op),
+                kotlin_expr(left, expected)?,
+                kotlin_expr(right, expected)?,
+            ));
         }
         // Kotlin's narrow unsigned types (UByte/UShort) define no operator:
         // the operation runs in the type `kotlin_narrow_unsigned_operation`
@@ -10673,19 +10675,11 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             } else {
                 widened
             };
-            let l_raw = emit_kotlin(left, widened)?;
-            let r_raw = emit_kotlin(right, count_ty)?;
-            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            let inner = format!("{l} {} {r}", kotlin_binop(*op));
+            let inner = KotlinExpr::binary(
+                kotlin_binop(*op),
+                kotlin_expr(left, widened)?,
+                kotlin_expr(right, count_ty)?,
+            );
             // A left shift made in `Int` wraps at the width of what it shifts
             // (SCE_FORGE.md §3.4.1, "The width of a shift"), as it does on
             // every backend: converted to its own type first, and only then
@@ -10708,28 +10702,54 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_kotlin(operand, expected)?;
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                _ => unreachable!("guarded by outer match"),
-            };
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            });
+            return Ok(kotlin_expr(operand, expected)?.prefixed(kotlin_unop(*op)));
         }
     }
-    let raw = match typed_integer_literal(ExprTarget::Kotlin, expr) {
+    let raw = match kotlin_typed_literal(expr) {
         Some(literal) => literal,
         None => kotlin_emit_node(expr)?,
     };
     Ok(kotlin_coerce(raw, expr.ty, expected, expr))
+}
+
+/// The real `round(value)` or `floor(value)` is before it is made an integer.
+///
+/// ⚠ NOT `kotlin.math.round`, which is half to EVEN: the sign is branched on
+/// ([`kotlin_round_half_away`]), since the other five backends round 0.5 → 1
+/// and −0.5 → −1, and this must agree. `kotlin.math.floor` needs no such
+/// treatment: it goes toward −∞ like every other backend's floor, so only
+/// `round` is the odd one out here.
+fn kotlin_real_to_int(op: RealToInt, value: &TypedExpr) -> Result<KotlinExpr, ExprError> {
+    let inner = kotlin_expr(value, InferredType::Float { bits: 64 })?;
+    Ok(match op {
+        RealToInt::Round => kotlin_round_half_away(inner),
+        RealToInt::Floor => KotlinExpr::path_call("kotlin.math.floor", vec![inner]),
+    })
+}
+
+/// `len(value)` in Kotlin, an `Int`. A string is measured in the UTF-8 bytes
+/// its bound counts: a Kotlin `String` has no `size`, and its `length` counts
+/// UTF-16 units. A list and a byte array by their `size`.
+fn kotlin_length(value: &TypedExpr) -> Result<KotlinExpr, ExprError> {
+    let measured = kotlin_expr(value, InferredType::Unknown)?;
+    Ok(if value.ty == InferredType::Str {
+        measured
+            .method("encodeToByteArray", Vec::new())
+            .field("size")
+    } else {
+        measured.field("size")
+    })
+}
+
+/// The Kotlin prefix operator `op` is written as; `~` is the method `inv`,
+/// which [`kotlin_emit_node`] writes.
+fn kotlin_unop(op: UnaryOp) -> KotlinUnOp {
+    match op {
+        UnaryOp::Neg => KotlinUnOp::Neg,
+        UnaryOp::Pos => KotlinUnOp::Pos,
+        UnaryOp::Not => KotlinUnOp::Not,
+        UnaryOp::BitNot => unreachable!("`~` is written as the method `inv`"),
+    }
 }
 
 /// The Kotlin type `expr` is computed in when it is a bitwise or arithmetic
@@ -10813,7 +10833,7 @@ fn kotlin_wraps_at_its_width(expr: &TypedExpr) -> bool {
     matches!(&expr.kind, ExprKind::Binary { op: BinOp::Shl, .. })
 }
 
-/// The type of the text [`emit_kotlin`] writes for `expr` before it is
+/// The type of the expression [`kotlin_expr`] builds for `expr` before it is
 /// converted to what its caller asks: the type its operation is made in, or,
 /// for one [`kotlin_wraps_at_its_width`], its own.
 fn kotlin_written_type(expr: &TypedExpr) -> InferredType {
@@ -10836,7 +10856,7 @@ fn is_narrow_unsigned(ty: InferredType) -> bool {
     )
 }
 
-fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+fn kotlin_emit_node(expr: &TypedExpr) -> Result<KotlinExpr, ExprError> {
     if let Some(form) = optional_form(expr) {
         return kotlin_optional_form(form, expr);
     }
@@ -10846,55 +10866,50 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // checked one's are. `Byte`, `Short`, `UByte` and `UShort` arithmetic
         // is made in `Int`, so the runtime truncates it back.
         ExprKind::Total { op, rule, .. } => {
-            let (_, _, operands) = total_parts(expr, "Kotlin", emit_kotlin)?;
-            format!(
-                "com.sce.forge.runtime.Sce{}.{}({})",
-                crate::filters::capitalize_first(rule.helper()),
-                op.helper(),
-                operands.join(", ")
+            let (_, _, operands) = total_parts(expr, "Kotlin", kotlin_expr)?;
+            KotlinExpr::path_call(
+                format!(
+                    "com.sce.forge.runtime.Sce{}.{}",
+                    crate::filters::capitalize_first(rule.helper()),
+                    op.helper()
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value } => crate::filters::kotlin_text_expression(value),
+        ExprKind::NumberLit(n) => KotlinExpr::atom(portable_number_literal(n)),
+        ExprKind::StringLit { value } => {
+            KotlinExpr::atom(crate::filters::kotlin_text_expression(value))
+        }
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
         // (UTF-8 default). Used as the `contentEquals` argument in the
         // bytes-equality Binary branch below. RFC §bytesguard-3 B5. Escaped
         // as any Kotlin literal is, since a `$` in the bytes would otherwise
         // open a template expression.
         ExprKind::BytesLit { bytes } => {
-            format!(
-                "{}.toByteArray()",
-                crate::filters::kotlin_text_expression(&latin1(bytes))
-            )
+            KotlinExpr::atom(crate::filters::kotlin_text_expression(&latin1(bytes)))
+                .method("toByteArray", Vec::new())
         }
-        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        ExprKind::NullLit => "null".to_string(),
+        ExprKind::BoolLit(b) => KotlinExpr::atom(if *b { "true" } else { "false" }),
+        ExprKind::NullLit => KotlinExpr::atom("null"),
         // The one spelling the declaration of the name takes
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::Kotlin.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => KotlinExpr::atom(ExprTarget::Kotlin.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => KotlinExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `String.plus` takes `Any`, so Kotlin concatenated this by
             // accident while the other backends did not; the digits are made
             // explicit so that it is the same decision here as everywhere
             // (ECMA-262 13.15.3), not a property of Kotlin's overload.
-            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, ExprError> {
-                let text = emit_kotlin(side, side.ty)?;
+            let operand = |side: &TypedExpr| -> Result<KotlinExpr, ExprError> {
+                let value = kotlin_expr(side, side.ty)?;
                 match concat_operand(side.ty) {
-                    ConcatOperand::Text => Ok(
-                        if concat_text_needs_parens(side, is_left, kotlin_precedence) {
-                            format!("({text})")
-                        } else {
-                            text
-                        },
-                    ),
-                    ConcatOperand::Decimal => {
-                        Ok(format!("{}.toString()", wrap_postfix(side, text)))
-                    }
-                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text)),
+                    ConcatOperand::Text => Ok(value),
+                    ConcatOperand::Decimal => Ok(value.method("toString", Vec::new())),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, value.to_string())),
                 }
             };
-            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+            KotlinExpr::binary(KotlinBinOp::Add, operand(left)?, operand(right)?)
         }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Kotlin `==` on `ByteArray` is reference
@@ -10904,11 +10919,12 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
             {
-                let l = emit_kotlin(left, InferredType::Unknown)?;
-                let r = emit_kotlin(right, InferredType::Unknown)?;
-                let call = format!("{}.contentEquals({r})", wrap_postfix(left, l));
+                let call = kotlin_expr(left, InferredType::Unknown)?.method(
+                    "contentEquals",
+                    vec![kotlin_expr(right, InferredType::Unknown)?],
+                );
                 return Ok(if matches!(op, BinOp::StrictNeq) {
-                    format!("!{call}")
+                    call.prefixed(KotlinUnOp::Not)
                 } else {
                     call
                 });
@@ -10927,29 +10943,19 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             } else {
                 operand_ty
             };
-            let mut l_raw = emit_kotlin(left, operand_ty)?;
-            let mut r_raw = emit_kotlin(right, count_ty)?;
+            let mut l = kotlin_expr(left, operand_ty)?;
+            let mut r = kotlin_expr(right, count_ty)?;
             if equality {
-                l_raw = kotlin_equality_operand(l_raw, left, operand_ty);
-                r_raw = kotlin_equality_operand(r_raw, right, operand_ty);
+                l = kotlin_equality_operand(l, left, operand_ty);
+                r = kotlin_equality_operand(r, right, operand_ty);
             }
-            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
             // `UInt` and `ULong` have no `ushr`: their `shr` is the logical
             // shift `>>>` is (SCE_FORGE.md §3.4.1, "The width of a shift").
             let spelled = match (op, operand_ty) {
-                (BinOp::UShr, InferredType::Int { signed: false, .. }) => "shr",
+                (BinOp::UShr, InferredType::Int { signed: false, .. }) => KotlinBinOp::Shr,
                 _ => kotlin_binop(*op),
             };
-            format!("{l} {spelled} {r}")
+            KotlinExpr::binary(spelled, l, r)
         }
         // `Byte` and `Short` have no `inv()` of their own (only
         // `kotlin.experimental`'s), so their complement is made in `Int` and
@@ -10969,56 +10975,27 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 signed: true,
                 bits: 32,
             };
-            let complement = format!(
-                "{}.inv()",
-                wrap_postfix(operand, emit_kotlin(operand, int)?)
-            );
+            let complement = kotlin_expr(operand, int)?.method("inv", Vec::new());
             kotlin_coerce(complement, int, expr.ty, expr)
         }
         ExprKind::Unary {
             op: UnaryOp::BitNot,
             operand,
-        } => {
-            format!(
-                "{}.inv()",
-                wrap_postfix(operand, emit_kotlin(operand, expr.ty)?)
-            )
-        }
+        } => kotlin_expr(operand, expr.ty)?.method("inv", Vec::new()),
         ExprKind::Unary { op, operand } => {
-            let inner = emit_kotlin(operand, expr.ty)?;
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                UnaryOp::Not => "!",
-                UnaryOp::BitNot => unreachable!(),
-            };
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            }
+            kotlin_expr(operand, expr.ty)?.prefixed(kotlin_unop(*op))
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => {
-            format!(
-                "if ({}) {} else {}",
-                emit_kotlin(condition, InferredType::Bool)?,
-                emit_kotlin(consequent, expr.ty)?,
-                emit_kotlin(alternate, expr.ty)?,
-            )
-        }
+        } => KotlinExpr::if_else(
+            kotlin_expr(condition, InferredType::Bool)?,
+            kotlin_expr(consequent, expr.ty)?,
+            kotlin_expr(alternate, expr.ty)?,
+        ),
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?)
-            )
+            kotlin_expr(object, InferredType::Unknown)?.field(property.as_str())
         }
         ExprKind::Index { object, index } => {
             // Kotlin's `Array.get(index: Int)` and the unboxed
@@ -11028,20 +11005,17 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // "argument type mismatch". Mirrors the Rust emitter's
             // `as usize` insertion for non-`UntypedInt` indices.
             // An operation on a narrow unsigned index is emitted in the type
-            // Kotlin computes it in, which may be `Int` already.
-            let idx_raw = emit_kotlin(index, InferredType::Unknown)?;
-            let idx_emit = match kotlin_written_type(index) {
+            // Kotlin computes it in, which may be `Int` already. A compound
+            // index (`data[i + run]`) is converted whole, which the printer
+            // groups: `(i.toUInt() + run.toUInt()).toInt()`.
+            let position = kotlin_expr(index, InferredType::Unknown)?;
+            let position = match kotlin_written_type(index) {
                 InferredType::Int {
                     signed: true,
                     bits: 32,
-                } => idx_raw,
-                // Parenthesize before `.toInt()`: a compound index
-                // (`data[i + run]`) emits as `i.toUInt() + run.toUInt()`, so a
-                // bare `.toInt()` would bind to the trailing operand only
-                // (`... + run.toUInt().toInt()` = `UInt + Int`, a type error).
-                // The wrap is harmless on a single-token index.
-                InferredType::Int { .. } => format!("({idx_raw}).toInt()"),
-                _ => idx_raw,
+                } => position,
+                InferredType::Int { .. } => position.method("toInt", Vec::new()),
+                _ => position,
             };
             // A list buffer is a `SceListBuf`, read by the element's own
             // typed reader; a bytes buffer a `SceByteBuf`, read as a byte.
@@ -11050,24 +11024,19 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 InferredType::BytesBuffer => Some("getUByte"),
                 _ => None,
             };
+            let collection = kotlin_expr(object, InferredType::Unknown)?;
             if let Some(reader) = reader {
-                return Ok(format!(
-                    "{}.{reader}({idx_emit})",
-                    wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
-                ));
+                return Ok(collection.method(reader, vec![position]));
             }
             // A `bytes` operand is a `ByteArray`; `[i]` yields a signed
             // `Byte`, so normalize to `UByte` exactly as the foreach arm
             // does. Item C7 wildcard-keyexpr lowering.
-            let norm = if matches!(object.ty, InferredType::Bytes) {
-                ".toUByte()"
+            let element = collection.indexed(position);
+            if matches!(object.ty, InferredType::Bytes) {
+                element.method("toUByte", Vec::new())
             } else {
-                ""
-            };
-            format!(
-                "{}[{idx_emit}]{norm}",
-                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
-            )
+                element
+            }
         }
         ExprKind::Call {
             callee,
@@ -11077,60 +11046,46 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             ..
         } => {
             if is_len_builtin(callee, args) {
-                let measured = emit_kotlin(&args[0], InferredType::Unknown)?;
-                // A string is measured in the UTF-8 bytes its bound counts: a Kotlin
-                // `String` has no `size`, and its `length` counts UTF-16 units. A list
-                // and a byte array by their `size`.
-                let size = if args[0].ty == InferredType::Str {
-                    format!("({measured}).encodeToByteArray().size")
-                } else {
-                    format!("({measured}).size")
-                };
+                let size = kotlin_length(&args[0])?;
                 // `Int` is Kotlin's length; one typed as an integer width
                 // (`TypeCtx::lengths_are_uint32`) is that width.
                 return Ok(match expr.ty {
-                    InferredType::Int { signed, bits } => format!(
-                        "{size}.{}()",
+                    InferredType::Int { signed, bits } => size.method(
                         if signed {
                             kotlin_signed_ctor(bits)
                         } else {
                             kotlin_unsigned_ctor(bits)
-                        }
+                        },
+                        Vec::new(),
                     ),
                     _ => size,
                 });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
-                // ⚠ NOT `kotlin.math.round`, which is half to EVEN. `floor(x
-                // + 0.5)` is half away from zero for non-negative input and
-                // `ceil(x - 0.5)` for negative, so the sign is branched on
-                // rather than inherited — the other five backends round
-                // 0.5 → 1 and −0.5 → −1, and this must agree.
-                //
-                // ⚠ `kotlin.math.floor` needs no such treatment: it goes
-                // toward −∞ like every other backend's floor, so only `round`
-                // is the odd one out here.
-                //
                 // ⚠⚠ `.toLong()` here is the WIDTH-FREE fallback. When the
-                // context declares an integer width, `emit_kotlin` intercepts
+                // context declares an integer width, `kotlin_expr` intercepts
                 // this call above and converts to that type instead; without
                 // that arm a `sce:type="int32"` output returned `Long` from an
                 // `Int` function, which Kotlin refuses.
-                let inner = emit_kotlin(&args[0], InferredType::Float { bits: 64 })?;
-                let call = match op {
-                    RealToInt::Round => kotlin_round_half_away(inner),
-                    RealToInt::Floor => format!("kotlin.math.floor({inner})"),
-                };
-                return Ok(format!("{call}.toLong()"));
+                return Ok(kotlin_real_to_int(op, &args[0])?.method("toLong", Vec::new()));
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
-                a.push(emit_kotlin(arg, argument_type(params, i))?);
+                a.push(kotlin_expr(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)?);
-            let call = format!("{symbol}({})", a.join(", "));
+            let callee = kotlin_expr(callee, InferredType::Unknown)?;
+            let symbol = callee.as_operand();
+            let call = KotlinExpr::call(callee, a);
+            // [`pass_failure_on`] is the one spelling of a `may-fail` call, the
+            // expression's and the statement's; what it writes is a call of the
+            // runtime around this one, which stands as one operand.
             if *fails {
-                pass_failure_on(ExprTarget::Kotlin, &symbol, &call, expr.ty)?
+                KotlinExpr::atom(pass_failure_on(
+                    ExprTarget::Kotlin,
+                    &symbol,
+                    &call.to_string(),
+                    expr.ty,
+                )?)
             } else {
                 call
             }
@@ -11138,10 +11093,8 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field → `ByteArray`
             // (the algorithm `bytes` param type), UTF-8 encoded.
-            format!(
-                "{}.toByteArray(Charsets.UTF_8)",
-                emit_kotlin(source, InferredType::Unknown)?
-            )
+            kotlin_expr(source, InferredType::Unknown)?
+                .method("toByteArray", vec![KotlinExpr::atom("Charsets.UTF_8")])
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
         // not known below its width ([`settle_shifts`]).
@@ -11181,23 +11134,27 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 InferredType::BytesBuffer => Some("getUByte"),
                 _ => None,
             };
-            if let Some(reader) = reader {
-                let buffer = wrap_postfix(left, emit_kotlin(left, InferredType::Unknown)?);
-                return Ok(format!(
-                    "{buffer}.{reader}(com.sce.forge.runtime.SceChecked.index(({}).toLong(), {buffer}.size))",
-                    emit_kotlin(index, InferredType::Unknown)?,
-                ));
-            }
-            let norm = if matches!(left.ty, InferredType::Bytes) {
-                ".toUByte()"
-            } else {
-                ""
+            // The index widened to the ¤Long¤ the checked read takes.
+            let position = |index: &TypedExpr| -> Result<KotlinExpr, ExprError> {
+                Ok(kotlin_expr(index, InferredType::Unknown)?.method("toLong", Vec::new()))
             };
-            format!(
-                "com.sce.forge.runtime.SceChecked.at({}, ({}).toLong()){norm}",
-                emit_kotlin(left, InferredType::Unknown)?,
-                emit_kotlin(index, InferredType::Unknown)?,
-            )
+            if let Some(reader) = reader {
+                let buffer = kotlin_expr(left, InferredType::Unknown)?;
+                let checked = KotlinExpr::path_call(
+                    "com.sce.forge.runtime.SceChecked.index",
+                    vec![position(index)?, buffer.clone().field("size")],
+                );
+                return Ok(buffer.method(reader, vec![checked]));
+            }
+            let element = KotlinExpr::path_call(
+                "com.sce.forge.runtime.SceChecked.at",
+                vec![kotlin_expr(left, InferredType::Unknown)?, position(index)?],
+            );
+            if matches!(left.ty, InferredType::Bytes) {
+                element.method("toUByte", Vec::new())
+            } else {
+                element
+            }
         }
         ExprKind::Checked {
             op: CheckedOp::Narrow,
@@ -11219,11 +11176,11 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     observed: None,
                 });
             };
-            let value = emit_kotlin(left, left.ty)?;
+            let value = kotlin_expr(left, left.ty)?;
             let widened = match (from_signed, from_bits) {
                 (true, 64) | (false, 64) => value,
-                (true, _) => format!("({value}).toLong()"),
-                (false, _) => format!("({value}).toULong()"),
+                (true, _) => value.method("toLong", Vec::new()),
+                (false, _) => value.method("toULong", Vec::new()),
             };
             let target = match (signed, bits) {
                 (true, 8) => "Byte",
@@ -11235,19 +11192,21 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 (false, 32) => "UInt",
                 (false, _) => "ULong",
             };
-            format!("com.sce.forge.runtime.SceChecked.narrowTo{target}({widened})")
+            KotlinExpr::path_call(
+                format!("com.sce.forge.runtime.SceChecked.narrowTo{target}"),
+                vec![widened],
+            )
         }
         ExprKind::Checked {
             op, left, right, ..
         } => {
-            let mut operands = vec![emit_kotlin(left, expr.ty)?];
+            let mut operands = vec![kotlin_expr(left, expr.ty)?];
             if let Some(right) = right {
-                operands.push(emit_kotlin(right, expr.ty)?);
+                operands.push(kotlin_expr(right, expr.ty)?);
             }
-            format!(
-                "com.sce.forge.runtime.SceChecked.{}({})",
-                op.helper(),
-                operands.join(", ")
+            KotlinExpr::path_call(
+                format!("com.sce.forge.runtime.SceChecked.{}", op.helper()),
+                operands,
             )
         }
     })
@@ -11267,9 +11226,9 @@ fn kotlin_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, ExprError> {
+) -> Result<KotlinExpr, ExprError> {
     settled_shift_width(expr)?;
-    let value = emit_kotlin(left, expr.ty)?;
+    let value = kotlin_expr(left, expr.ty)?;
     let (family, count_ty) = match discharge {
         Discharge::AtBuild | Discharge::Total => (
             "SceWrapping",
@@ -11286,10 +11245,10 @@ fn kotlin_settled_shift(
             },
         ),
     };
-    let places = emit_kotlin(count, count_ty)?;
-    Ok(format!(
-        "com.sce.forge.runtime.{family}.{}({value}, {places})",
-        op.helper()
+    let places = kotlin_expr(count, count_ty)?;
+    Ok(KotlinExpr::path_call(
+        format!("com.sce.forge.runtime.{family}.{}", op.helper()),
+        vec![value, places],
     ))
 }
 
@@ -11310,44 +11269,33 @@ fn kotlin_settled_shift(
 ///   beside a `Long?` is a `Long` and a `UShort?` beside a `UInt?` is widened;
 ///   a byte string is compared by its contents through the standard library's
 ///   `ByteArray?.contentEquals(ByteArray?)`, which is true of two absent ones.
-fn kotlin_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprError> {
-    // `side` spelled as an operand of `op`, parenthesised where Kotlin would
-    // otherwise bind it to something else.
-    let operand = |side: &TypedExpr, op: BinOp, is_left: bool, text: String| {
-        if child_needs_parens(side, op, is_left, kotlin_precedence) {
-            format!("({text})")
-        } else {
-            text
-        }
-    };
+fn kotlin_optional_form(
+    form: OptionalForm<'_>,
+    whole: &TypedExpr,
+) -> Result<KotlinExpr, ExprError> {
     Ok(match form {
-        OptionalForm::Test { subject, present } => {
-            let (op, spelled) = if present {
-                (BinOp::StrictNeq, "!=")
+        OptionalForm::Test { subject, present } => KotlinExpr::binary(
+            if present {
+                KotlinBinOp::Ne
             } else {
-                (BinOp::StrictEq, "==")
-            };
-            let tested = emit_kotlin(subject, InferredType::Unknown)?;
-            format!("{} {spelled} null", operand(subject, op, true, tested))
-        }
-        OptionalForm::Proven { subject } => format!(
-            "{KOTLIN_PROVEN}({})",
-            emit_kotlin(subject, InferredType::Unknown)?
+                KotlinBinOp::Eq
+            },
+            kotlin_expr(subject, InferredType::Unknown)?,
+            KotlinExpr::atom("null"),
+        ),
+        OptionalForm::Proven { subject } => KotlinExpr::path_call(
+            KOTLIN_PROVEN,
+            vec![kotlin_expr(subject, InferredType::Unknown)?],
         ),
         OptionalForm::Otherwise { value, fallback } => {
             let present = match whole.ty {
                 InferredType::Optional(elem) => elem.present(),
                 present => present,
             };
-            let read = emit_kotlin(value, InferredType::Unknown)?;
+            let read = kotlin_expr(value, InferredType::Unknown)?;
             let default =
-                kotlin_equality_operand(emit_kotlin(fallback, whole.ty)?, fallback, present);
-            format!(
-                "{} {} {}",
-                operand(value, BinOp::Coalesce, true, read),
-                kotlin_binop(BinOp::Coalesce),
-                operand(fallback, BinOp::Coalesce, false, default)
-            )
+                kotlin_equality_operand(kotlin_expr(fallback, whole.ty)?, fallback, present);
+            KotlinExpr::binary(KotlinBinOp::Elvis, read, default)
         }
         OptionalForm::Equality { left, right, equal } => {
             let present_of = |ty: InferredType| match ty {
@@ -11368,30 +11316,28 @@ fn kotlin_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Str
                 first
             };
             let optional = InferredType::Optional(elem);
-            let l_text = emit_kotlin(left, optional)?;
-            let r_text = emit_kotlin(right, optional)?;
+            let l_value = kotlin_expr(left, optional)?;
+            let r_value = kotlin_expr(right, optional)?;
             if elem == OptionalElem::Bytes {
-                let call = format!("{}.contentEquals({r_text})", wrap_postfix(left, l_text));
+                let call = l_value.method("contentEquals", vec![r_value]);
                 if equal {
                     call
                 } else {
-                    format!("!{call}")
+                    call.prefixed(KotlinUnOp::Not)
                 }
             } else {
-                let op = if equal {
-                    BinOp::StrictEq
-                } else {
-                    BinOp::StrictNeq
-                };
-                format!(
-                    "{} {} {}",
-                    operand(left, op, true, l_text),
-                    kotlin_binop(op),
-                    operand(right, op, false, r_text)
+                KotlinExpr::binary(
+                    if equal {
+                        KotlinBinOp::Eq
+                    } else {
+                        KotlinBinOp::Ne
+                    },
+                    l_value,
+                    r_value,
                 )
             }
         }
-        OptionalForm::Constant(answer) => answer.to_string(),
+        OptionalForm::Constant(answer) => KotlinExpr::atom(answer.to_string()),
     })
 }
 
@@ -11410,7 +11356,11 @@ fn kotlin_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Str
 /// An optional value supplies none either (docs/adr/0055): a `Long?` takes no
 /// `Int`, so the default of `x ?? d` and a present value lifted into an
 /// optional place are spelled the same way.
-fn kotlin_equality_operand(raw: String, node: &TypedExpr, operand_ty: InferredType) -> String {
+fn kotlin_equality_operand(
+    raw: KotlinExpr,
+    node: &TypedExpr,
+    operand_ty: InferredType,
+) -> KotlinExpr {
     if node.ty != InferredType::UntypedInt {
         return raw;
     }
@@ -11419,43 +11369,48 @@ fn kotlin_equality_operand(raw: String, node: &TypedExpr, operand_ty: InferredTy
             signed: true,
             bits: 64,
         } => match &node.kind {
-            ExprKind::NumberLit(text) if is_decimal_integer_literal(text) => format!("{raw}L"),
-            _ => wrap_dotcall(raw, node, "toLong"),
+            // The literal itself, written as a `Long` one.
+            ExprKind::NumberLit(text) if is_decimal_integer_literal(text) => {
+                KotlinExpr::atom(format!("{}L", portable_number_literal(text)))
+            }
+            _ => raw.method("toLong", Vec::new()),
         },
         InferredType::Int {
             signed: true,
             bits: 16,
-        } => wrap_dotcall(raw, node, "toShort"),
+        } => raw.method("toShort", Vec::new()),
         InferredType::Int {
             signed: true,
             bits: 8,
-        } => wrap_dotcall(raw, node, "toByte"),
+        } => raw.method("toByte", Vec::new()),
         _ => raw,
     }
 }
 
-fn kotlin_binop(op: BinOp) -> &'static str {
+/// The Kotlin operator `op` is written as, a named infix function for a
+/// bitwise one and a shift.
+fn kotlin_binop(op: BinOp) -> KotlinBinOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "==",
-        BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "and",
-        BinOp::BitOr => "or",
-        BinOp::BitXor => "xor",
-        BinOp::Shl => "shl",
-        BinOp::Shr => "shr",
-        BinOp::UShr => "ushr",
-        BinOp::Coalesce => "?:",
+        BinOp::Add => KotlinBinOp::Add,
+        BinOp::Sub => KotlinBinOp::Sub,
+        BinOp::Mul => KotlinBinOp::Mul,
+        BinOp::Div => KotlinBinOp::Div,
+        BinOp::Mod => KotlinBinOp::Rem,
+        BinOp::StrictEq => KotlinBinOp::Eq,
+        BinOp::StrictNeq => KotlinBinOp::Ne,
+        BinOp::Lt => KotlinBinOp::Lt,
+        BinOp::Gt => KotlinBinOp::Gt,
+        BinOp::LtEq => KotlinBinOp::Le,
+        BinOp::GtEq => KotlinBinOp::Ge,
+        BinOp::And => KotlinBinOp::And,
+        BinOp::Or => KotlinBinOp::Or,
+        BinOp::BitAnd => KotlinBinOp::BitAnd,
+        BinOp::BitOr => KotlinBinOp::BitOr,
+        BinOp::BitXor => KotlinBinOp::BitXor,
+        BinOp::Shl => KotlinBinOp::Shl,
+        BinOp::Shr => KotlinBinOp::Shr,
+        BinOp::UShr => KotlinBinOp::Ushr,
+        BinOp::Coalesce => KotlinBinOp::Elvis,
     }
 }
 
@@ -11465,7 +11420,12 @@ pub(crate) const KOTLIN_PROVEN: &str = "com.sce.forge.runtime.SceOptional.proven
 
 /// Apply language-specific coercion from a child's natural type to the
 /// expected parent type.
-fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+fn kotlin_coerce(
+    raw: KotlinExpr,
+    from: InferredType,
+    to: InferredType,
+    node: &TypedExpr,
+) -> KotlinExpr {
     use InferredType::*;
     // An optional number where an optional number of another width is
     // expected: a present value is converted as a value of `T` is, and an
@@ -11484,7 +11444,7 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
             _ => None,
         };
         return match ctor {
-            Some(ctor) => format!("{}?.{ctor}()", wrap_postfix(node, raw)),
+            Some(ctor) => raw.safe_method(ctor, Vec::new()),
             None => raw,
         };
     }
@@ -11496,10 +11456,10 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
     // Kotlin has no bare literal past `Long`: the unsigned value takes the
     // `uL` suffix, and `Long`'s minimum is its named constant.
     if matches!(to.strip_quantity(), Int { .. }) {
-        if let Some(spelled) = wide_literal(node)
-            .and_then(|wide| wide_literal_spelling(crate::generator::Language::Kotlin, wide, &raw))
-        {
-            return spelled;
+        if let Some(spelled) = wide_literal(node).and_then(|wide| {
+            wide_literal_spelling(crate::generator::Language::Kotlin, wide, &raw.to_string())
+        }) {
+            return KotlinExpr::atom(spelled);
         }
     }
     if from == to || matches!(to, Unknown) {
@@ -11512,17 +11472,22 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
         // `1.0` does not assign to one.
         (UntypedInt, Float { .. }) | (UntypedInt, UntypedFloat) => {
             let single = matches!(to, Float { bits: 32 });
-            if let ExprKind::NumberLit(text) = &node.kind {
-                if is_decimal_integer_literal(text) {
-                    return format!("{raw}.0{}", if single { "f" } else { "" });
+            match &node.kind {
+                // The literal itself, written as a real one.
+                ExprKind::NumberLit(text) if is_decimal_integer_literal(text) => {
+                    KotlinExpr::atom(format!(
+                        "{}.0{}",
+                        portable_number_literal(text),
+                        if single { "f" } else { "" }
+                    ))
                 }
+                // Computed subtree or hex/bin/oct literal — explicit cast.
+                _ => raw.method(if single { "toFloat" } else { "toDouble" }, Vec::new()),
             }
-            // Computed subtree or hex/bin/oct literal — explicit cast.
-            format!("({raw}).{}()", if single { "toFloat" } else { "toDouble" })
         }
         // Concrete int → float: explicit `.toDouble()` / `.toFloat()`.
-        (Int { .. }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
-        (Int { .. }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
+        (Int { .. }, Float { bits: 64 }) => raw.method("toDouble", Vec::new()),
+        (Int { .. }, Float { bits: 32 }) => raw.method("toFloat", Vec::new()),
         (
             UntypedInt,
             Int {
@@ -11534,9 +11499,9 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
             // is not always a lone literal: `c ? 1 : 0` is one too, and a
             // bare suffix bound to its last branch alone
             // (`if (c) 1 else 0.toUByte()`), which Kotlin types as
-            // `Comparable<*>`. Wrapped like every other conversion here.
-            let suffix = kotlin_unsigned_ctor(bits);
-            wrap_dotcall(raw, node, suffix)
+            // `Comparable<*>`. Converted like every other conversion here,
+            // which the printer groups.
+            raw.method(kotlin_unsigned_ctor(bits), Vec::new())
         }
         (UntypedInt, Int { signed: true, .. }) => raw,
         // Unsigned → signed: required for mixed-sign arithmetic in Kotlin.
@@ -11549,10 +11514,7 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
                 signed: true,
                 bits: bto,
             },
-        ) => {
-            let ctor = kotlin_signed_ctor(bfrom.max(bto));
-            wrap_dotcall(raw, node, ctor)
-        }
+        ) => raw.method(kotlin_signed_ctor(bfrom.max(bto)), Vec::new()),
         // Signed → unsigned: result suffix for unsigned outputs.
         (
             Int { signed: true, .. },
@@ -11560,10 +11522,7 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
                 signed: false,
                 bits: bto,
             },
-        ) => {
-            let ctor = kotlin_unsigned_ctor(bto);
-            wrap_dotcall(raw, node, ctor)
-        }
+        ) => raw.method(kotlin_unsigned_ctor(bto), Vec::new()),
         // Int widening among same signedness.
         (
             Int {
@@ -11580,19 +11539,21 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
             } else {
                 kotlin_unsigned_ctor(b2)
             };
-            wrap_dotcall(raw, node, ctor)
+            raw.method(ctor, Vec::new())
         }
         // Float widening.
-        (Float { bits: 32 }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
-        (Float { bits: 64 }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
+        (Float { bits: 32 }, Float { bits: 64 }) => raw.method("toDouble", Vec::new()),
+        (Float { bits: 64 }, Float { bits: 32 }) => raw.method("toFloat", Vec::new()),
         // Untyped float → a 64-bit real: the text is a `Double` already.
         (UntypedFloat, Float { bits: 64 }) => raw,
         // Untyped float → a 32-bit real: the literal is the single nearest to
         // it, written with the suffix that makes it one; a computed subtree is
         // narrowed.
         (UntypedFloat, Float { .. }) => match &node.kind {
-            ExprKind::NumberLit(_) => format!("{raw}f"),
-            _ => wrap_dotcall(raw, node, "toFloat"),
+            ExprKind::NumberLit(text) => {
+                KotlinExpr::atom(format!("{}f", portable_number_literal(text)))
+            }
+            _ => raw.method("toFloat", Vec::new()),
         },
         // Unknown on either side → no coercion.
         (Unknown, _) | (_, Unknown) => raw,
@@ -11605,15 +11566,30 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
 
 /// Kotlin's half-away-from-zero rounding, as a `Double`-valued expression.
 ///
-/// Factored out because two call sites need the same arithmetic and only
-/// differ in what they convert the result to — the width-aware arm in
-/// `emit_kotlin` and the width-free fallback in `kotlin_emit_node`. Writing it
-/// twice is how the two would drift apart at `.5`, which is the one input that
-/// distinguishes this from the language's own `round`.
-fn kotlin_round_half_away(inner: String) -> String {
-    format!(
-        "(({inner}).let {{ v -> if (v < 0.0) kotlin.math.ceil(v - 0.5) \
-         else kotlin.math.floor(v + 0.5) }})"
+/// [`kotlin_real_to_int`] writes it for both of its callers, which only differ
+/// in what they convert the result to — the width-aware arm in `kotlin_expr`
+/// and the width-free fallback in `kotlin_emit_node`. Writing it twice is how
+/// the two would drift apart at `.5`, which is the one input that distinguishes
+/// this from the language's own `round`.
+fn kotlin_round_half_away(inner: KotlinExpr) -> KotlinExpr {
+    let v = || KotlinExpr::atom("v");
+    let half = || KotlinExpr::atom("0.5");
+    inner.method_taking(
+        "let",
+        KotlinLambda::new(
+            Some("v"),
+            KotlinExpr::if_else(
+                KotlinExpr::binary(KotlinBinOp::Lt, v(), KotlinExpr::atom("0.0")),
+                KotlinExpr::path_call(
+                    "kotlin.math.ceil",
+                    vec![KotlinExpr::binary(KotlinBinOp::Sub, v(), half())],
+                ),
+                KotlinExpr::path_call(
+                    "kotlin.math.floor",
+                    vec![KotlinExpr::binary(KotlinBinOp::Add, v(), half())],
+                ),
+            ),
+        ),
     )
 }
 
@@ -11634,19 +11610,6 @@ fn kotlin_unsigned_ctor(bits: u8) -> &'static str {
         32 => "toUInt",
         64 => "toULong",
         _ => "toUInt",
-    }
-}
-
-/// Wrap a raw emitted string with `.call()` suffix, adding parens around the
-/// target if its AST shape would otherwise bind the call incorrectly.
-fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
-    if matches!(
-        &node.kind,
-        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
-    ) {
-        format!("({raw}).{method}()")
-    } else {
-        format!("{raw}.{method}()")
     }
 }
 
@@ -16853,7 +16816,7 @@ mod tests {
         );
         assert_eq!(
             tp_with("table[n]", ExprTarget::Kotlin, &ctx),
-            "table[(n).toInt()]"
+            "table[n.toInt()]"
         );
     }
 
@@ -17271,15 +17234,15 @@ mod tests {
         );
         assert_eq!(
             landed("m << 4", ExprTarget::Kotlin, u32t),
-            "((m.toInt() shl 4).toUByte()).toUInt()"
+            "(m.toInt() shl 4).toUByte().toUInt()"
         );
         assert_eq!(
             landed("h << 8", ExprTarget::Kotlin, i32t),
-            "((h.toInt() shl 8).toShort()).toInt()"
+            "(h.toInt() shl 8).toShort().toInt()"
         );
         assert_eq!(
             landed("~h", ExprTarget::Kotlin, i32t),
-            "((h.toInt().inv()).toShort()).toInt()"
+            "h.toInt().inv().toShort().toInt()"
         );
     }
 
@@ -17569,12 +17532,14 @@ mod tests {
     /// whose `(o.kind === WhoKind.of_department) === p.ofDepartment` passed
     /// `check` and was generated as `a == b == c`, which rustc refuses; Python
     /// ran the same text as a chained comparison and answered something else.
-    /// Go reads it as written (`a_go_comparison_is_grouped_by_left_association`).
+    /// Go and Kotlin read it as written
+    /// (`a_go_comparison_is_grouped_by_left_association`,
+    /// `a_kotlin_comparison_is_grouped_by_its_grammar`).
     #[test]
     fn a_comparison_under_a_comparison_keeps_its_parentheses() {
         for target in ExprTarget::ALL
             .into_iter()
-            .filter(|target| *target != ExprTarget::Go)
+            .filter(|target| !matches!(target, ExprTarget::Go | ExprTarget::Kotlin))
         {
             assert_eq!(tp("(a === b) === c", target), "(a == b) == c", "{target:?}");
             assert_eq!(tp("a === (b === c)", target), "a == (b == c)", "{target:?}");
@@ -17597,6 +17562,21 @@ mod tests {
         assert_eq!(
             tp("(a < b) === (c > d)", ExprTarget::Go),
             "a < b == (c > d)"
+        );
+    }
+
+    /// Kotlin's equality associates from the left and a comparison binds more
+    /// tightly than it ("Syntax and grammar", `equality`): the printer groups
+    /// an equality under an equality on the right alone, and a comparison under
+    /// an equality nowhere. A comparison under a comparison, which the grammar
+    /// takes on neither side, is held by `kotlin_tree.rs`'s tests.
+    #[test]
+    fn a_kotlin_comparison_is_grouped_by_its_grammar() {
+        assert_eq!(tp("(a === b) === c", ExprTarget::Kotlin), "a == b == c");
+        assert_eq!(tp("a === (b === c)", ExprTarget::Kotlin), "a == (b == c)");
+        assert_eq!(
+            tp("(a < b) === (c > d)", ExprTarget::Kotlin),
+            "a < b == c > d"
         );
     }
 
@@ -17782,7 +17762,7 @@ mod tests {
     #[test]
     fn double_bitnot() {
         assert_eq!(tp("~~mask", ExprTarget::Cpp), "~~mask");
-        assert_eq!(tp("~~mask", ExprTarget::Kotlin), "(mask.inv()).inv()");
+        assert_eq!(tp("~~mask", ExprTarget::Kotlin), "mask.inv().inv()");
     }
 
     #[test]
@@ -19510,7 +19490,7 @@ mod tests {
             (ExprTarget::Rust, "label.len()"),
             (ExprTarget::Cpp, "label.size()"),
             (ExprTarget::Go, "len(label)"),
-            (ExprTarget::Kotlin, "(label).encodeToByteArray().size"),
+            (ExprTarget::Kotlin, "label.encodeToByteArray().size"),
             (ExprTarget::Python, "len((label).encode(\"utf-8\"))"),
             (ExprTarget::C, "sce_text_length(label)"),
         ] {
@@ -19532,7 +19512,7 @@ mod tests {
         bytes.insert_var("frame", InferredType::Bytes);
         assert_eq!(
             tp_with("len(frame)", ExprTarget::Kotlin, &bytes),
-            "(frame).size"
+            "frame.size"
         );
         assert_eq!(tp_with("len(frame)", ExprTarget::C, &bytes), "frame.len");
     }

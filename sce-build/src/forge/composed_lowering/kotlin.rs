@@ -19,6 +19,19 @@
 //! a field of a case is written by assigning the holder the next value whole.
 
 use super::*;
+use crate::forge::expr::kotlin_tree::{KotlinBinOp, KotlinExpr, KotlinLambda, KotlinWhenArm};
+
+/// The value a walk holds, as the Kotlin expression a read of it is made on: a
+/// place or a call ([`Held::place`]), one operand, so a member read on it needs
+/// no pair the printer does not write.
+fn kotlin_held(held: &Held) -> KotlinExpr {
+    KotlinExpr::atom(held.text.as_str())
+}
+
+/// The lambda a walk writes `elem` in, reading `it`.
+fn kotlin_each(elem: &str) -> KotlinLambda {
+    KotlinLambda::new(None, KotlinExpr::atom(elem))
+}
 
 /// The property of a union's Kotlin sealed interface that answers the value of
 /// the tag's enum its case is for, whatever key the tag is written under
@@ -89,37 +102,40 @@ pub(crate) fn kotlin_unit_union_read(
         member,
         crate::generator::Language::Kotlin,
     );
-    Ok(match unit_union_member_of(union, left, member)? {
-        UnionMember::Tag => format!("{holder}.{KOTLIN_UNION_KIND}"),
-        UnionMember::Case(case) => {
-            format!(
-                "{holder}.{}().{field}",
-                kotlin_case_read(&case.variant.name)
-            )
-        }
+    let held = || KotlinExpr::atom(holder);
+    let read = match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => held().field(KOTLIN_UNION_KIND),
+        UnionMember::Case(case) => held()
+            .method(kotlin_case_read(&case.variant.name), Vec::new())
+            .field(field.as_str()),
         UnionMember::Shared => {
-            let arms: Vec<String> = left
+            let mut arms: Vec<KotlinWhenArm> = left
                 .iter()
-                .map(|case| {
-                    format!(
-                        "is {ty}.{} -> {holder}.value.{field}",
+                .map(|case| KotlinWhenArm {
+                    condition: format!(
+                        "is {ty}.{}",
                         crate::forge::generator::kotlin_case_ident(&case.variant.name)
-                    )
+                    ),
+                    body: held().field("value").field(field.as_str()),
                 })
                 .collect();
             // A `when` over every case of a sealed interface is exhaustive, and
             // an `else` beside it is one Kotlin warns is redundant.
-            let rest = if unit_union_leaves_others(union, left) {
-                format!(
-                    "; else -> throw IllegalStateException(\"{}\")",
-                    crate::filters::escape_kotlin(unit_union_other_case(union, left))
-                )
-            } else {
-                String::new()
-            };
-            format!("(when ({holder}) {{ {}{rest} }})", arms.join("; "))
+            if unit_union_leaves_others(union, left) {
+                arms.push(KotlinWhenArm {
+                    condition: "else".to_string(),
+                    body: KotlinExpr::atom(format!(
+                        "throw IllegalStateException(\"{}\")",
+                        crate::filters::escape_kotlin(unit_union_other_case(union, left))
+                    )),
+                });
+            }
+            KotlinExpr::when_of(held(), arms)
         }
-    })
+    };
+    // The read stands where the expression emitter splices it as it is
+    // (`ExprKind::Raw`), so it is printed as one operand.
+    Ok(read.as_operand())
 }
 
 /// A Kotlin string literal of `text`.
@@ -628,9 +644,13 @@ impl ComposedSpelling for KotlinComposed<'_> {
                 | SceType::Uint32
                 | SceType::Int8
                 | SceType::Int16
-                | SceType::Int32 => format!("({}).toLong()", held.text),
-                SceType::Uint64 | SceType::Int64 => format!("({}).toString()", held.text),
-                SceType::Float32 => format!("({}).toDouble()", held.text),
+                | SceType::Int32 => kotlin_held(held).method("toLong", Vec::new()).as_operand(),
+                SceType::Uint64 | SceType::Int64 => kotlin_held(held)
+                    .method("toString", Vec::new())
+                    .as_operand(),
+                SceType::Float32 => kotlin_held(held)
+                    .method("toDouble", Vec::new())
+                    .as_operand(),
                 SceType::Float64 | SceType::Bool => held.text.clone(),
                 SceType::String | SceType::Bytes | SceType::Enum(_) => unreachable!(
                     "a text, a byte string and an enum are cases of their own in the walk, \
@@ -661,16 +681,22 @@ impl ComposedSpelling for KotlinComposed<'_> {
             KotlinCarrier::Wire => format!("{KOTLIN_PAYLOAD}.bytesAsText({})", held.text),
         }
     }
-    // Parenthesised whole, so the elvis binds inside the member it is written
-    // in: an infix `to` binds tighter than `?:`. `null` where the value is
-    // absent, as an absent scalar param is.
+    // Printed as one operand, so the elvis binds inside the member it is
+    // written in: an infix `to` binds tighter than `?:`. `null` where the value
+    // is absent, as an absent scalar param is.
     fn write_optional(&self, held: &Held, elem: &str) -> String {
+        let present = kotlin_held(held).safe_method_taking("let", kotlin_each(elem));
         match self.carrier {
-            KotlinCarrier::Json => format!(
-                "(({})?.let {{ {elem} }} ?: {KOTLIN_PAYLOAD}.valueJson(null))",
-                held.text
-            ),
-            KotlinCarrier::Wire => format!("(({})?.let {{ {elem} }})", held.text),
+            KotlinCarrier::Json => KotlinExpr::binary(
+                KotlinBinOp::Elvis,
+                present,
+                KotlinExpr::path_call(
+                    format!("{KOTLIN_PAYLOAD}.valueJson"),
+                    vec![KotlinExpr::atom("null")],
+                ),
+            )
+            .as_operand(),
+            KotlinCarrier::Wire => present.as_operand(),
         }
     }
     fn write_list(&self, held: &Held, elem: &str) -> String {
@@ -678,7 +704,9 @@ impl ComposedSpelling for KotlinComposed<'_> {
             KotlinCarrier::Json => {
                 format!("{KOTLIN_PAYLOAD}.listJson({}) {{ {elem} }}", held.text)
             }
-            KotlinCarrier::Wire => format!("({}).map {{ {elem} }}", held.text),
+            KotlinCarrier::Wire => kotlin_held(held)
+                .method_taking("map", kotlin_each(elem))
+                .as_operand(),
         }
     }
     fn write_field(&self, held: &Held, field: &str) -> String {
@@ -701,10 +729,14 @@ impl ComposedSpelling for KotlinComposed<'_> {
     // The count held first, by the `AlgorithmFailure` a `<send>` catches of a
     // param that can fail, then the list written.
     fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        let short = KotlinExpr::binary(
+            KotlinBinOp::Lt,
+            kotlin_held(held).field("size"),
+            KotlinExpr::atom(least.to_string()),
+        );
         Some(format!(
-            "run {{ if (({}).size < {least}) throw com.sce.forge.runtime.AlgorithmFailure(\
-             com.sce.forge.runtime.AlgorithmError.Precondition); {sent} }}",
-            held.text
+            "run {{ if ({short}) throw com.sce.forge.runtime.AlgorithmFailure(\
+             com.sce.forge.runtime.AlgorithmError.Precondition); {sent} }}"
         ))
     }
 
@@ -725,14 +757,18 @@ impl ComposedSpelling for KotlinComposed<'_> {
         held.text.clone()
     }
     fn copy_optional(&self, held: &Held, elem: &str, _elem_ty: &str) -> String {
-        format!("({})?.let {{ {elem} }}", held.text)
+        kotlin_held(held)
+            .safe_method_taking("let", kotlin_each(elem))
+            .as_operand()
     }
     // A `T` stands where a `T?` is expected as it is.
     fn copy_present(&self, value: &str) -> String {
         value.to_string()
     }
     fn copy_list(&self, held: &Held, elem: &str, _elem_ty: &str) -> String {
-        format!("({}).map {{ {elem} }}", held.text)
+        kotlin_held(held)
+            .method_taking("map", kotlin_each(elem))
+            .as_operand()
     }
     // The data class's constructor, each field named as its declaration names
     // its parameter ([`ComposedSpelling::record_def`]), so the call reads as
@@ -770,10 +806,17 @@ impl ComposedSpelling for KotlinComposed<'_> {
     // The lambda names its parameter, since the walk binds `it` to the element
     // of a list or the record of a union's case the value is read from.
     fn unit_enum(&self, machine: &MachineEnum, _document: &str, held: &Held) -> Option<String> {
-        Some(format!(
-            "{}.entries.first {{ sceVariant -> sceVariant.declaredName == ({}).declaredName() }}",
-            machine.ty, held.text
-        ))
+        let same = KotlinExpr::binary(
+            KotlinBinOp::Eq,
+            KotlinExpr::atom("sceVariant").field("declaredName"),
+            kotlin_held(held).method("declaredName", Vec::new()),
+        );
+        Some(
+            KotlinExpr::atom(machine.ty.as_str())
+                .field("entries")
+                .method_taking("first", KotlinLambda::new(Some("sceVariant"), same))
+                .as_operand(),
+        )
     }
     // A `when` over every case of the unit's sealed interface, as a union
     // crosses a call (`kotlin_union_crossing`): an empty case by its object,
@@ -980,7 +1023,7 @@ impl ComposedSpelling for KotlinComposed<'_> {
     // `it` in its arm, as a record's writer reads it.
     fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
         let tag = kotlin_literal(tag);
-        let arms: Vec<String> = arms
+        let arms: Vec<KotlinWhenArm> = arms
             .iter()
             .map(|arm| {
                 let variant = kotlin_literal(&arm.variant);
@@ -1002,7 +1045,12 @@ impl ComposedSpelling for KotlinComposed<'_> {
                                 members.join(", ")
                             ),
                         };
-                        format!("is {case} -> it.value.let {{ {written} }}")
+                        KotlinWhenArm {
+                            condition: format!("is {case}"),
+                            body: KotlinExpr::atom("it")
+                                .field("value")
+                                .method_taking("let", kotlin_each(&written)),
+                        }
                     }
                     None => {
                         let written = match self.carrier {
@@ -1013,16 +1061,20 @@ impl ComposedSpelling for KotlinComposed<'_> {
                                 format!("mapOf<String, Any?>({tag} to {variant})")
                             }
                         };
-                        format!("{case} -> {written}")
+                        KotlinWhenArm {
+                            condition: case,
+                            body: KotlinExpr::atom(written),
+                        }
                     }
                 }
             })
             .collect();
-        format!(
-            "({}).let {{ when (it) {{ {} }} }}",
-            held.text,
-            arms.join("; ")
-        )
+        kotlin_held(held)
+            .method_taking(
+                "let",
+                KotlinLambda::new(None, KotlinExpr::when_of(KotlinExpr::atom("it"), arms)),
+            )
+            .as_operand()
     }
     fn union_member(
         &self,
@@ -1174,24 +1226,24 @@ mod tests {
         let write =
             |text: &str, at: Held| writer(&ty(text), None, &held, &wire, &at).expect("write");
         let p = "com.sce.runtime.EventPayload";
-        assert_eq!(write("uint8", Held::place("x.n")), "(x.n).toLong()");
-        assert_eq!(write("int64", Held::place("x.n")), "(x.n).toString()");
-        assert_eq!(write("float32", Held::place("x.n")), "(x.n).toDouble()");
+        assert_eq!(write("uint8", Held::place("x.n")), "x.n.toLong()");
+        assert_eq!(write("int64", Held::place("x.n")), "x.n.toString()");
+        assert_eq!(write("float32", Held::place("x.n")), "x.n.toDouble()");
         assert_eq!(write("float64", Held::place("x.n")), "x.n");
         assert_eq!(
             write("list<list<uint8>[2]>[2]", Held::place("x.grid")),
-            "(x.grid).map { (it).map { (it).toLong() } }"
+            "x.grid.map { it.map { it.toLong() } }"
         );
         assert_eq!(
             write("optional<list<uint8>[2]>", Held::place("x.spare")),
-            "((x.spare)?.let { (it).map { (it).toLong() } })"
+            "x.spare?.let { it.map { it.toLong() } }"
         );
         assert_eq!(
             write("list<record:Item>[3]", Held::place("x.items")),
             format!(
-                "(x.items).map {{ mapOf<String, Any?>(\"id\" to (it.id).toLong(), \"level\" to \
-                 it.level.declaredName, \"due\" to ((it.due)?.let {{ (it).toString() }}), \
-                 \"blob\" to {p}.bytesAsText(it.blob), \"tags\" to (it.tags).map {{ it }}) }}"
+                "x.items.map {{ mapOf<String, Any?>(\"id\" to it.id.toLong(), \"level\" to \
+                 it.level.declaredName, \"due\" to it.due?.let {{ it.toString() }}, \
+                 \"blob\" to {p}.bytesAsText(it.blob), \"tags\" to it.tags.map {{ it }}) }}"
             )
         );
     }
@@ -1415,7 +1467,7 @@ mod tests {
         assert_eq!(
             write("list<optional<uint16>>[2]", Held::place("x.maybe")),
             format!(
-                "{p}.listJson(x.maybe) {{ ((it)?.let {{ {p}.valueJson(it) }} ?: \
+                "{p}.listJson(x.maybe) {{ (it?.let {{ {p}.valueJson(it) }} ?: \
                  {p}.valueJson(null)) }}"
             )
         );
@@ -1424,7 +1476,7 @@ mod tests {
             format!(
                 "{p}.listJson(x.items) {{ {p}.recordJson(mapOf<String, Any?>(\"id\" to \
                  {p}.valueJson(it.id), \"level\" to {p}.valueJson(it.level.declaredName), \
-                 \"due\" to ((it.due)?.let {{ {p}.valueJson(it) }} ?: {p}.valueJson(null)), \
+                 \"due\" to (it.due?.let {{ {p}.valueJson(it) }} ?: {p}.valueJson(null)), \
                  \"blob\" to {p}.valueJson(it.blob), \"tags\" to {p}.listJson(it.tags) {{ \
                  {p}.valueJson(it) }})) }}"
             )
@@ -1464,7 +1516,7 @@ mod tests {
         );
         assert_eq!(
             copy("list<uint8>[2]", "list<optional<uint8>>[2]"),
-            Ok("(x).map { it }".to_string())
+            Ok("x.map { it }".to_string())
         );
     }
 
@@ -1719,7 +1771,7 @@ mod tests {
                 &Held::place("x.one")
             ),
             Ok(format!(
-                "(x.one).let {{ when (it) {{ MShapeUnion.DOT -> {p}.unionJson(\"kind\", \"dot\", \
+                "x.one.let {{ when (it) {{ MShapeUnion.DOT -> {p}.unionJson(\"kind\", \"dot\", \
                  emptyMap()); is MShapeUnion.CIRCLE -> it.value.let {{ {p}.unionJson(\"kind\", \
                  \"circle\", mapOf<String, Any?>(\"radius\" to {p}.valueJson(it.radius))) }}; is \
                  MShapeUnion.DISC -> it.value.let {{ {p}.unionJson(\"kind\", \"disc\", \
@@ -1739,11 +1791,11 @@ mod tests {
                 &Held::place("x.one")
             ),
             Ok(
-                "(x.one).let { when (it) { MShapeUnion.DOT -> mapOf<String, Any?>(\"kind\" to \
+                "x.one.let { when (it) { MShapeUnion.DOT -> mapOf<String, Any?>(\"kind\" to \
                  \"dot\"); is MShapeUnion.CIRCLE -> it.value.let { mapOf<String, Any?>(\"kind\" to \
-                 \"circle\", \"radius\" to (it.radius).toLong()) }; is MShapeUnion.DISC -> \
+                 \"circle\", \"radius\" to it.radius.toLong()) }; is MShapeUnion.DISC -> \
                  it.value.let { mapOf<String, Any?>(\"kind\" to \"disc\", \"radius\" to \
-                 (it.radius).toLong()) } } }"
+                 it.radius.toLong()) } } }"
                     .to_string()
             )
         );
@@ -1827,9 +1879,9 @@ mod tests {
         assert_eq!(
             read(&[case("circle"), case("disc")], "radius"),
             Ok(
-                "(when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
+                "when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
                  shape.value.radius; else -> throw IllegalStateException(\"a value of shape \
-                 read as one of its cases circle, disc is in another case\") })"
+                 read as one of its cases circle, disc is in another case\") }"
                     .to_string()
             )
         );
@@ -1841,8 +1893,8 @@ mod tests {
         assert_eq!(
             kotlin_unit_union_read("shape", "Shape", &both, &every, "radius"),
             Ok(
-                "(when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
-                 shape.value.radius })"
+                "when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
+                 shape.value.radius }"
                     .to_string()
             )
         );
@@ -1857,7 +1909,7 @@ mod tests {
         assert_eq!(
             KOTLIN.send_counted(&Held::place("vTaking"), "ops", 1, "W".to_string()),
             Some(
-                "run { if ((vTaking).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(\
+                "run { if (vTaking.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(\
                  com.sce.forge.runtime.AlgorithmError.Precondition); W }"
                     .to_string()
             )
@@ -1890,9 +1942,9 @@ mod tests {
             vec![
                 (
                     "items".to_string(),
-                    "(sceValue.items).map { MItemRecord(id = it.id, level = \
+                    "sceValue.items.map { MItemRecord(id = it.id, level = \
                      MLevelEnum.entries.first { sceVariant -> sceVariant.declaredName == \
-                     (it.level).declaredName() }, due = it.due, blob = it.blob, tags = it.tags) }"
+                     it.level.declaredName() }, due = it.due, blob = it.blob, tags = it.tags) }"
                         .to_string()
                 ),
                 ("grid".to_string(), "sceValue.grid".to_string()),

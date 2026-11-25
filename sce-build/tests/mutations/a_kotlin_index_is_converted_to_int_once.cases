@@ -22,6 +22,6 @@ mutation_oracles sce-build/src/forge/expr.rs sce-build/tests/forge_conformance.r
 
 mutation_case "an index converts from the type it is inferred to" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     r'''            let idx_emit = match kotlin_written_type(index) {''',
-     r'''            let idx_emit = match index.ty {''')
+     r'''            let position = match kotlin_written_type(index) {''',
+     r'''            let position = match index.ty {''')
 PY

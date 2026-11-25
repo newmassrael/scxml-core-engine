@@ -41,6 +41,6 @@ PY
 
 mutation_case "a payload's bytes are told equal by the identity of their array" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     "                let call = format!(\"{}.contentEquals({r})\", wrap_postfix(left, l));",
-     "                let call = format!(\"({} == {r})\", wrap_postfix(left, l));")
+     "                let call = kotlin_expr(left, InferredType::Unknown)?.method(\n                    \"contentEquals\",\n                    vec![kotlin_expr(right, InferredType::Unknown)?],\n                );",
+     "                let call = KotlinExpr::binary(\n                    KotlinBinOp::Eq,\n                    kotlin_expr(left, InferredType::Unknown)?,\n                    kotlin_expr(right, InferredType::Unknown)?,\n                );")
 PY

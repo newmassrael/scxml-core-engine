@@ -125,9 +125,7 @@ fn a_kotlin_algorithm_reads_walks_and_builds_a_list_of_unions() {
     holds(&at, &format!("shapes: List<{SHAPE}>"));
     holds(
         &at,
-        &format!(
-            "val picked: {SHAPE} = com.sce.forge.runtime.SceChecked.at(shapes, (at).toLong())"
-        ),
+        &format!("val picked: {SHAPE} = com.sce.forge.runtime.SceChecked.at(shapes, at.toLong())"),
     );
     holds(&at, "picked.provenCircle().radius");
     let (_, widest) = unit("algorithm_shapes_widest.scxml");

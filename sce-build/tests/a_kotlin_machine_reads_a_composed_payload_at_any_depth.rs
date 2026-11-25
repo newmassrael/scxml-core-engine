@@ -273,12 +273,12 @@ fn the_inject_seam_writes_each_field_as_its_json() {
                  {p}.recordJson(mapOf<String, Any?>(\"id\" to {p}.valueJson(it.id), "
             ),
             &format!("\"level\" to {p}.valueJson(it.level.declaredName), "),
-            &format!("\"due\" to ((it.due)?.let {{ {p}.valueJson(it) }} ?: {p}.valueJson(null)), "),
+            &format!("\"due\" to (it.due?.let {{ {p}.valueJson(it) }} ?: {p}.valueJson(null)), "),
             &format!(
                 "\"grid\" to {p}.listJson(scePayload.grid) {{ {p}.listJson(it) {{ {p}.valueJson(it) }} }}"
             ),
             &format!(
-                "\"spare\" to ((scePayload.spare)?.let {{ {p}.listJson(it) {{ {p}.valueJson(it) }} }} \
+                "\"spare\" to (scePayload.spare?.let {{ {p}.listJson(it) {{ {p}.valueJson(it) }} }} \
                  ?: {p}.valueJson(null))"
             ),
             &format!("\"note\" to {p}.valueJson(scePayload.note)"),
