@@ -158,6 +158,10 @@ tuple_write!(A.0, B.1);
 tuple_write!(A.0, B.1, C.2);
 tuple_write!(A.0, B.1, C.2, D.3);
 
+/// What a build with debug assertions stops on when a part of a bounded write
+/// put more bytes than its constant says.
+const PAST_MAX_BYTES: &str = "a bounded write put more bytes than its MAX_BYTES";
+
 impl SceSink for sealed::Fill<'_> {
     /// The array has room for the write's most, which the build checked, so
     /// there is no room to run out of.
@@ -175,13 +179,22 @@ impl SceSink for sealed::Fill<'_> {
         let dst = start
             .checked_add(bytes.len())
             .and_then(|end| self.buf.get_mut(start..end));
-        debug_assert!(
-            dst.is_some(),
-            "a bounded write put more bytes than its MAX_BYTES"
-        );
+        debug_assert!(dst.is_some(), "{PAST_MAX_BYTES}");
         if let Some(dst) = dst {
             dst.copy_from_slice(bytes);
             self.len = start + bytes.len();
+        }
+        Ok(())
+    }
+
+    /// The byte stored in its place, held to the array as `write_bytes` holds
+    /// a run of bytes.
+    fn write_u8(&mut self, b: u8) -> Result<(), Infallible> {
+        let slot = self.buf.get_mut(self.len);
+        debug_assert!(slot.is_some(), "{PAST_MAX_BYTES}");
+        if let Some(slot) = slot {
+            *slot = b;
+            self.len += 1;
         }
         Ok(())
     }
@@ -328,6 +341,32 @@ mod tests {
         let written = through.into_written();
         assert_eq!(sink.as_slice(), &written[..]);
         assert_eq!(sink.len(), written.len());
+    }
+
+    #[test]
+    fn a_byte_and_a_vle_of_each_width_are_the_bytes_the_slice_sink_writes() {
+        // The array's sink stores a byte itself and writes each VLE through
+        // the provided write, which assembles it whole: the bytes are those of
+        // the slice sink's direct stores at every bit boundary of each width.
+        for shift in 0..64u32 {
+            for v in [
+                (1u64 << shift) - 1,
+                1u64 << shift,
+                (1u64 << shift) + 1,
+                u64::MAX >> shift,
+            ] {
+                let parts = (0xA5u8, Vle(v as u16), Vle(v as u32), Vle(v));
+                let sink: ArraySink<18, 4> = ArraySink::written(&parts);
+                let mut expected = [0u8; 18];
+                let mut through = SliceSink::new(&mut expected);
+                through.write_u8(0xA5).expect("room for a byte");
+                through.write_vle_u16(v as u16).expect("room for a u16");
+                through.write_vle_u32(v as u32).expect("room for a u32");
+                through.write_vle_u64(v).expect("room for a u64");
+                let written = through.into_written();
+                assert_eq!(sink.as_slice(), &written[..], "{v:#x}");
+            }
+        }
     }
 
     #[test]

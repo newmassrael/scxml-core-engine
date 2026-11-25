@@ -4018,3 +4018,17 @@ consumer regenerates its Rust codecs.
   ring with no index operator and no remainder: a number past its table stops at the one cold call a row read past
   its table stops at, a queue's ring wraps its head by one comparison, and `SceCursor::peek_slice` and
   `into_written` read through `get`. Nothing a consumer calls changed.
+
+## A Rust sink stores a byte itself and is handed a VLE in one write
+
+Landing: the commits that add this section. No committed generated tree or golden changes; only the Rust forge
+runtime does, and a codec writes the bytes it wrote.
+
+- **`SceSink::write_u8` is required.** An implementor of `SceSink` outside the tree that did not write it fails with
+  `E0046` ("missing `write_u8`"). Store the byte in place (`buf.push(b)`, or the slot at the position and the position
+  moved on), refused as `write_bytes` refuses a write of one byte; `self.write_bytes(&[b])` builds, and is the general
+  copy of one byte this removes.
+- **The provided VLE write hands `write_bytes` the whole encoding in one call**, where it called `write_u8` once a
+  byte. A sink that keeps the provided `write_vle_*` sees one write of the exact length; the bytes are the same. A sink
+  of bounded room whose `write_bytes` refuses a write it has no room for, writing nothing, now refuses a VLE whole,
+  its position where it was, as `SliceSink` does; it wrote the bytes that fit before refusing.

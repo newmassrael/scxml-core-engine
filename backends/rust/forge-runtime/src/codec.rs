@@ -649,10 +649,11 @@ impl<'a> SceCursor<'a> {
 ///
 /// `SceSink` mirrors the read-side `SceCursor` borrow contract: callers
 /// own the destination storage, and codec bodies append bytes to it
-/// positionally without owning the buffer. The required method writes
-/// raw bytes; per-width helpers (`write_u8`, `write_u16_le`, …) are
-/// provided as default methods so concrete sinks MAY override them for
-/// efficiency without changing the call surface.
+/// positionally without owning the buffer. The required methods write
+/// raw bytes and one byte, each stored by the sink itself; the fixed-width
+/// integers (`write_u16_le`, …) and the VLEs are provided as default methods,
+/// each one call of `write_bytes` with its whole encoding, so concrete sinks
+/// MAY override them for efficiency without changing the call surface.
 ///
 /// The sink states what a write can refuse with (docs/adr/0065 §4): a sink of
 /// bounded room refuses with `CodecError::BufferOverflow`, and a sink that
@@ -684,10 +685,11 @@ pub trait SceSink {
     /// encoding regardless of coalesced-send prefix state.
     fn position(&self) -> usize;
 
-    /// Append a single byte. Default impl forwards to `write_bytes`.
-    fn write_u8(&mut self, b: u8) -> Result<(), Self::Error> {
-        self.write_bytes(&[b])
-    }
+    /// Append a single byte, refused as `write_bytes` refuses a write of one
+    /// byte. Required, as `write_bytes` is: a byte is the unit of every
+    /// header, flag and tag, and the sink stores it directly, where a write of
+    /// a one-byte slice is a general copy for each (docs/adr/0061).
+    fn write_u8(&mut self, b: u8) -> Result<(), Self::Error>;
 
     /// Append a little-endian `u16` (2 bytes).
     fn write_u16_le(&mut self, v: u16) -> Result<(), Self::Error> {
@@ -726,16 +728,18 @@ pub trait SceSink {
     /// continuation bytes) carries a full 8 data bits with no flag, so a
     /// u64 caps at 9 bytes — the canonical Zenoh ZInt form (RFC
     /// §synth-5-B Appendix B). `VLE_LEN = ceil((max_bits - 1) / 7)`.
+    ///
+    /// The encoding is assembled whole, [`vle_len`] bytes, and handed to
+    /// `write_bytes` in one call: a sink sees one write of the exact length,
+    /// and a sink of bounded room that refuses a write past its room writes
+    /// none of the VLE.
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), Self::Error> {
-        let cont_max = (max_bits - 1).div_ceil(7) - 1;
-        let mut v = value;
-        let mut n = 0u32;
-        while v >= 0x80 && n < cont_max {
-            self.write_u8((v as u8 & 0x7F) | 0x80)?;
-            v >>= 7;
-            n += 1;
-        }
-        self.write_u8(v as u8)
+        let mut encoding = [0u8; VLE_MAX_BYTES];
+        // `vle_len` is at most `VLE_MAX_BYTES` at every width (asserted where
+        // the constant is defined), so the bound only states that.
+        let (dst, _) = encoding.split_at_mut(vle_len(value, max_bits).min(VLE_MAX_BYTES));
+        fill_vle(dst, value);
+        self.write_bytes(dst)
     }
 
     /// Append a `vle_u16` field (1-3 wire bytes).
@@ -928,16 +932,7 @@ impl<'a> $name<'a> {
         let Some(dst) = self.buf.get_mut(self.pos..self.pos + n) else {
             return Err(CodecError::BufferOverflow);
         };
-        // `vle_len` is at least 1, so a slice that was found has a last byte.
-        let Some((last, lead)) = dst.split_last_mut() else {
-            return Err(CodecError::BufferOverflow);
-        };
-        let mut v = value;
-        for slot in lead {
-            *slot = (v as u8 & 0x7F) | 0x80;
-            v >>= 7;
-        }
-        *last = v as u8;
+        fill_vle(dst, value);
         self.pos += n;
         Ok(())
     }
@@ -1050,6 +1045,35 @@ impl SceSink for CountSink {
 }
 
 // ── Length without a buffer (docs/adr/0061) ──────────────────────
+
+/// The longest VLE [`SceSink::write_vle_inner`] writes at any width: ten, the
+/// seven-bit groups a `u64` has. A width of up to 64 bits writes at most nine,
+/// the ZInt's longest, whose last byte carries eight bits; only a width past 64
+/// leaves the tenth group a byte of its own.
+const VLE_MAX_BYTES: usize = 10;
+
+// The widest value at the widest width is the longest VLE: a write sized by
+// `vle_len` always fits an array of `VLE_MAX_BYTES`.
+const _: () = assert!(vle_len(u64::MAX, u32::MAX) == VLE_MAX_BYTES);
+
+/// Fill `dst` with the VLE of `value` in `dst.len()` bytes: each byte but the
+/// last carries the next seven data bits with the continuation flag set, and
+/// the last carries what is left. Sized by [`vle_len`], that is the encoding
+/// [`SceSink::write_vle_inner`] writes, the last byte a full eight bits in a
+/// ZInt's ninth. The one statement of the encoding, which the provided write
+/// fills an array with and the bounded sinks fill their room with in place.
+#[inline(always)]
+fn fill_vle(dst: &mut [u8], value: u64) {
+    let Some((last, lead)) = dst.split_last_mut() else {
+        return;
+    };
+    let mut v = value;
+    for slot in lead {
+        *slot = (v as u8 & 0x7F) | 0x80;
+        v >>= 7;
+    }
+    *last = v as u8;
+}
 
 /// The bytes [`SceSink::write_vle_inner`] writes for `value` at `max_bits`: seven
 /// data bits per byte, and at most `ceil((max_bits - 1) / 7)` bytes, the last of
@@ -2040,7 +2064,7 @@ mod tests {
 
     #[test]
     fn the_slice_sink_writes_the_bytes_of_the_provided_methods() {
-        // A sink that implements only the two required methods, so every
+        // A sink that implements only the three required methods, so every
         // integer and VLE is written by the trait's own provided code: the
         // reference the slice sink's direct stores must equal.
         struct Reference {
@@ -2053,6 +2077,11 @@ mod tests {
             fn write_bytes(&mut self, b: &[u8]) -> Result<(), CodecError> {
                 self.bytes[self.len..self.len + b.len()].copy_from_slice(b);
                 self.len += b.len();
+                Ok(())
+            }
+            fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+                self.bytes[self.len] = b;
+                self.len += 1;
                 Ok(())
             }
             fn position(&self) -> usize {
@@ -2145,6 +2174,244 @@ mod tests {
         assert_eq!(s.write_vle_u64(300), Err(CodecError::BufferOverflow));
         assert_eq!(s.position(), 2, "a refused VLE moved the position");
         assert_eq!(buf, [1, 2, 0xEE], "a refused VLE left a byte");
+    }
+
+    // ── Every sink writes a byte and a VLE as the provided writes did ──
+
+    /// The VLE the provided write wrote one byte at a time before it assembled
+    /// the encoding: while the value has more than seven bits, and at most
+    /// `ceil((max_bits - 1) / 7) - 1` times, a byte of seven data bits with
+    /// the flag set, then what is left. The bytes every sink's VLE must equal,
+    /// stated apart from the runtime's own encoder.
+    fn byte_by_byte_vle(value: u64, max_bits: u32) -> ([u8; 10], usize) {
+        let cont_max = (max_bits - 1).div_ceil(7) - 1;
+        let mut out = [0u8; 10];
+        let mut len = 0;
+        let mut v = value;
+        while v >= 0x80 && len < cont_max as usize {
+            out[len] = (v as u8 & 0x7F) | 0x80;
+            v >>= 7;
+            len += 1;
+        }
+        out[len] = v as u8;
+        (out, len + 1)
+    }
+
+    /// Each value of `bits` width at a boundary of its bits: `2^s - 1`,
+    /// `2^s` and `2^s + 1` for every `s` below the width, and the width's
+    /// largest.
+    fn vle_boundary_values(bits: u32) -> impl Iterator<Item = u64> {
+        let max = u64::MAX >> (64 - bits);
+        (0..bits)
+            .flat_map(|s| {
+                let p = 1u64 << s;
+                [p - 1, p, p + 1]
+            })
+            .chain([max])
+    }
+
+    /// Write `value` as a VLE of `bits` through the width's own method, or
+    /// through `write_vle_inner` when `inner`.
+    fn write_vle_of<K: SceSink + ?Sized>(
+        k: &mut K,
+        value: u64,
+        bits: u32,
+        inner: bool,
+    ) -> Result<(), K::Error> {
+        if inner {
+            return k.write_vle_inner(value, bits);
+        }
+        match bits {
+            16 => k.write_vle_u16(value as u16),
+            32 => k.write_vle_u32(value as u32),
+            _ => k.write_vle_u64(value),
+        }
+    }
+
+    /// A sink of bounded room that implements only the required methods, so
+    /// its integers and VLEs are the provided writes; a write past its room is
+    /// refused whole.
+    struct ProvidedOnly<'a> {
+        buf: &'a mut [u8],
+        len: usize,
+    }
+
+    impl SceSink for ProvidedOnly<'_> {
+        type Error = CodecError;
+
+        fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+            let end = self.len + bytes.len();
+            let dst = self
+                .buf
+                .get_mut(self.len..end)
+                .ok_or(CodecError::BufferOverflow)?;
+            dst.copy_from_slice(bytes);
+            self.len = end;
+            Ok(())
+        }
+
+        fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+            let slot = self
+                .buf
+                .get_mut(self.len)
+                .ok_or(CodecError::BufferOverflow)?;
+            *slot = b;
+            self.len += 1;
+            Ok(())
+        }
+
+        fn position(&self) -> usize {
+            self.len
+        }
+    }
+
+    /// What one sink of bounded room answered, its position after, and its
+    /// buffer as the write left it.
+    type BoundedRun = (Result<(), CodecError>, usize, [u8; 16]);
+
+    /// Run `write` on each sink of bounded room over the first `room` bytes
+    /// of a buffer of `0xEE`: the slice sink, the window sink, and a sink
+    /// that keeps the provided writes.
+    fn on_each_bounded_sink(
+        room: usize,
+        write: impl Fn(&mut dyn SceSink<Error = CodecError>) -> Result<(), CodecError>,
+    ) -> [BoundedRun; 3] {
+        core::array::from_fn(|kind| {
+            let mut buf = [0xEEu8; 16];
+            let region = &mut buf[..room];
+            let (answer, position) = match kind {
+                0 => {
+                    let mut k = SliceSink::new(region);
+                    let answer = write(&mut k);
+                    (answer, SceSink::position(&k))
+                }
+                1 => {
+                    let mut k = WindowSink::new(region);
+                    let answer = write(&mut k);
+                    (answer, SceSink::position(&k))
+                }
+                _ => {
+                    let mut k = ProvidedOnly {
+                        buf: region,
+                        len: 0,
+                    };
+                    let answer = write(&mut k);
+                    (answer, k.position())
+                }
+            };
+            (answer, position, buf)
+        })
+    }
+
+    #[test]
+    fn every_sink_writes_the_byte_by_byte_vle_after_a_byte() {
+        for bits in [16u32, 32, 64] {
+            for value in vle_boundary_values(bits) {
+                let (want, n) = byte_by_byte_vle(value, bits);
+                for inner in [false, true] {
+                    let runs = on_each_bounded_sink(16, |k| {
+                        k.write_u8(0x11)?;
+                        write_vle_of(k, value, bits, inner)
+                    });
+                    for (kind, (answer, position, buf)) in runs.into_iter().enumerate() {
+                        let at = (kind, value, bits, inner);
+                        assert_eq!(answer, Ok(()), "{at:x?}");
+                        assert_eq!(position, 1 + n, "{at:x?}");
+                        assert_eq!(buf[0], 0x11, "{at:x?}");
+                        assert_eq!(&buf[1..1 + n], &want[..n], "{at:x?}");
+                        assert!(buf[1 + n..].iter().all(|&b| b == 0xEE), "{at:x?}");
+                    }
+                    let mut count = CountSink::new();
+                    let Ok(()) = count.write_u8(0x11);
+                    let Ok(()) = write_vle_of(&mut count, value, bits, inner);
+                    assert_eq!(count.len(), 1 + n, "count sink, {value:#x} at {bits} bits");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_vec_sink_writes_the_byte_by_byte_vle_after_a_byte() {
+        for bits in [16u32, 32, 64] {
+            for value in vle_boundary_values(bits) {
+                let (want, n) = byte_by_byte_vle(value, bits);
+                for inner in [false, true] {
+                    let mut v: Vec<u8> = alloc::vec![0x99];
+                    let mut s = VecSink::new(&mut v);
+                    let Ok(()) = s.write_u8(0x11);
+                    let Ok(()) = write_vle_of(&mut s, value, bits, inner);
+                    let position = s.position();
+                    assert_eq!(position, 1 + n, "{value:#x} at {bits} bits");
+                    assert_eq!(&v[..2], &[0x99, 0x11]);
+                    assert_eq!(&v[2..], &want[..n], "{value:#x} at {bits} bits");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_bounded_sink_writes_a_vle_whole_or_refuses_it_at_every_room() {
+        for bits in [16u32, 32, 64] {
+            for value in vle_boundary_values(bits) {
+                let (want, n) = byte_by_byte_vle(value, bits);
+                for inner in [false, true] {
+                    // Two bytes before the VLE, so the position a refusal keeps
+                    // is not the start; then every room from none left to one
+                    // past the VLE.
+                    for room in 2..=2 + n + 1 {
+                        let runs = on_each_bounded_sink(room, |k| {
+                            k.write_u8(0x11)?;
+                            k.write_u8(0x22)?;
+                            write_vle_of(k, value, bits, inner)
+                        });
+                        for (kind, (answer, position, buf)) in runs.into_iter().enumerate() {
+                            let at = (kind, value, bits, inner, room);
+                            assert_eq!(&buf[..2], &[0x11, 0x22], "{at:x?}");
+                            if room >= 2 + n {
+                                assert_eq!(answer, Ok(()), "{at:x?}");
+                                assert_eq!(position, 2 + n, "{at:x?}");
+                                assert_eq!(&buf[2..2 + n], &want[..n], "{at:x?}");
+                                assert!(buf[2 + n..].iter().all(|&b| b == 0xEE), "{at:x?}");
+                            } else {
+                                assert_eq!(answer, Err(CodecError::BufferOverflow), "{at:x?}");
+                                assert_eq!(position, 2, "{at:x?}");
+                                assert!(buf[2..].iter().all(|&b| b == 0xEE), "{at:x?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_bounded_sink_writes_a_byte_or_refuses_it_with_its_position_kept() {
+        for room in 0..=3 {
+            let runs = on_each_bounded_sink(room, |k| {
+                k.write_u8(0x11)?;
+                k.write_u8(0x22)
+            });
+            for (kind, (answer, position, buf)) in runs.into_iter().enumerate() {
+                let fits = room.min(2);
+                let want = if room >= 2 {
+                    Ok(())
+                } else {
+                    Err(CodecError::BufferOverflow)
+                };
+                assert_eq!(answer, want, "sink {kind}, room {room}");
+                assert_eq!(position, fits, "sink {kind}, room {room}");
+                assert_eq!(
+                    &buf[..fits],
+                    &[0x11, 0x22][..fits],
+                    "sink {kind}, room {room}"
+                );
+                assert!(
+                    buf[fits..].iter().all(|&b| b == 0xEE),
+                    "sink {kind}, room {room}"
+                );
+            }
+        }
     }
 
     #[test]
