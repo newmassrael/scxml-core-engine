@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# no_std MCU-target compile gate for a generated machine whose states keep
+# deadlines computed by `delayexpr` (docs/adr/0134): a count joined to its unit
+# is computed from the count, and a delay that joins texts is written into a
+# buffer on the stack, so the machine builds for `thumbv7em-none-eabihf` with
+# no `#[global_allocator]`. A lowering that spelled `format!` or a `String`
+# into the delay fails here.
+#
+# This crate's `[lib] path` points at the machine the gate generates with
+# `--no-std` from `sce-build/tests/fixtures/no_std/session_deadline_probe.scxml`
+# (git-ignored, produced fresh by the gate, see README.md).
+#
+# Detached from the parent workspace (own empty `[workspace]` table), as
+# `nostd-composed` is: it is built for the MCU target by itself, and its `src`
+# exists only after the gate's generation step. Every dependency is asked for
+# no features: the bare-metal profile is their absence (docs/adr/0053).
+
+[package]
+name = "sce-nostd-delay-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "no_std MCU-target compile gate for a generated SCE machine whose delays are computed (docs/adr/0134)"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+name = "sce_nostd_delay_probe"
+path = "src/session_deadline_probe_sm.rs"
+
+[dependencies]
+sce-rust-runtime = { path = "../../runtime", default-features = false }
+# A delay whose count can fail is computed in a closure that returns the
+# algorithm's failure (`sce_forge_runtime::algorithm::AlgorithmError`).
+sce-forge-runtime = { path = "../../forge-runtime", default-features = false }
+
+[workspace]

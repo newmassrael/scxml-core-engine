@@ -125,6 +125,24 @@ sce_gate_tested \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "composed-payload probe compile"
 
+# The delay probe: a machine whose states keep deadlines computed by a
+# `delayexpr` (docs/adr/0134). A count joined to its unit is computed from the
+# count, and a delay that joins texts is written into a buffer on the stack the
+# build sizes, so the machine names no `format!` and no `String`; only this
+# build, which has no allocator, shows that. A crate of its own, as the
+# composed-payload probe's is, so the steps that stage other machines into
+# `nostd-build` cannot replace it.
+sce_gate_step "delay probe (no_std thumb)"
+"$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
+    -l rust --no-std --output-dir backends/rust/probes/nostd-delay/src \
+    sce-build/tests/fixtures/no_std/session_deadline_probe.scxml >/dev/null 2>&1 \
+    || sce_gate_fail "delay probe generation"
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/nostd-delay/src sce-build/tests/fixtures/no_std/session_deadline_probe.scxml" \
+    -- cargo build --manifest-path backends/rust/probes/nostd-delay/Cargo.toml \
+    --target=thumbv7em-none-eabihf \
+    || sce_gate_fail "delay probe compile"
+
 # One workspace holding a bare-metal crate and an application crate, as a
 # downstream workspace does (docs/adr/0053). Cargo builds one runtime for both
 # with the union of their features; when `no_std` refused `http-send`, this

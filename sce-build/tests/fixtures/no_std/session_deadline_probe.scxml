@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  docs/adr/0134: a session whose states keep deadlines, generated with
+  `--no-std` and compiled for an MCU target with no allocator by the nostd-mcu
+  gate (backends/rust/probes/nostd-delay). Each atomic state arms its deadline
+  with a delayed <send> in its onentry and cancels it by the same id in its
+  onexit, and the compound `session` keeps an overall limit the same way.
+
+  Every form a `delayexpr` takes is here, each computed with no heap:
+    - an integer joined to its unit (`limit_s + 's'`): the count, by checked
+      arithmetic, with no text;
+    - one whose integer can fail (`opening_ms + 100 + 'ms'`, a checked add):
+      the failure is the argument error;
+    - a join of texts (`idle + unit`): written into a buffer on the stack of
+      5 + 2 bytes, the digits of a uint16 and the capacity of `unit`;
+    - a conditional one of whose branches joins
+      (`retries > 0 ? grace : closing_ms + 'ms'`): both branches a buffer of
+      the larger bound, 10 + 2 bytes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="session" datamodel="sce-static" name="session_deadline_probe">
+  <datamodel>
+    <data id="limit_s" sce:type="uint16" expr="30"/>
+    <data id="opening_ms" sce:type="uint32" expr="500"/>
+    <data id="closing_ms" sce:type="uint32" expr="250"/>
+    <data id="idle" sce:type="uint16" expr="3000"/>
+    <data id="unit" sce:type="string" sce:capacity="2" expr="'ms'"/>
+    <data id="grace" sce:type="string" sce:capacity="8" expr="'100ms'"/>
+    <data id="retries" sce:type="uint8" expr="0"/>
+  </datamodel>
+  <state id="session" initial="opening">
+    <onentry>
+      <send id="session_limit" event="session.limit" delayexpr="limit_s + 's'"/>
+    </onentry>
+    <onexit>
+      <cancel sendid="session_limit"/>
+    </onexit>
+    <state id="opening">
+      <onentry>
+        <send id="opening_deadline" event="opening.timeout" delayexpr="opening_ms + 100 + 'ms'"/>
+      </onentry>
+      <onexit>
+        <cancel sendid="opening_deadline"/>
+      </onexit>
+      <transition event="opened" target="open"/>
+      <transition event="opening.timeout" target="closing">
+        <assign location="retries" expr="retries + 1"/>
+      </transition>
+    </state>
+    <state id="open">
+      <onentry>
+        <send id="idle_deadline" event="idle.timeout" delayexpr="idle + unit"/>
+      </onentry>
+      <onexit>
+        <cancel sendid="idle_deadline"/>
+      </onexit>
+      <transition event="close" target="closing"/>
+      <transition event="idle.timeout" target="closing"/>
+    </state>
+    <state id="closing">
+      <onentry>
+        <send id="closing_deadline" event="closing.timeout" delayexpr="retries > 0 ? grace : closing_ms + 'ms'"/>
+      </onentry>
+      <onexit>
+        <cancel sendid="closing_deadline"/>
+      </onexit>
+      <transition event="closed" target="ended"/>
+      <transition event="closing.timeout" target="ended"/>
+    </state>
+    <transition event="session.limit" target="ended"/>
+  </state>
+  <final id="ended"/>
+</scxml>

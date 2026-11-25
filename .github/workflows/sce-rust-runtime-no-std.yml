@@ -18,6 +18,10 @@ name: sce-rust-runtime no_std MCU target build
 # docs/adr/0086 section 7.4), so a change to the lowering or to `sce-portable-bytes` that brings an
 # allocator into such a machine fails here; those sources trigger it too.
 #
+# It also builds a generated machine whose states keep deadlines computed by `delayexpr`
+# (`backends/rust/probes/nostd-delay`, docs/adr/0134), so a lowering that joins a delay's text on
+# the heap fails here; the lowering, the expression emitter and the fixture trigger it.
+#
 # It also builds `sce-forge-runtime` without default features for `thumbv6m-none-eabi`, whose atomics
 # are loads and stores alone: a queue module that needs a compare-and-swap must be absent there
 # (`backends/rust/forge-runtime/src/queue/mod.rs`), which thumbv7em cannot show, and a consumer that
@@ -44,6 +48,7 @@ on:
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/probes/nostd-delay/**'
       - 'backends/rust/probes/nostd-codec-frame/**'
       - 'tests/forge/expected/codec_chain_has_envelope.rs'
       - 'tests/forge/expected/codec_chain_has_marker.rs'
@@ -66,6 +71,8 @@ on:
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/composed_lowering/rust.rs'
       - 'sce-build/src/forge/static_lowering.rs'
+      - 'sce-build/src/forge/delay_count.rs'
+      - 'sce-build/src/forge/expr.rs'
       - 'sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml'
       - 'sce-build/tests/fixtures/static_datamodel/event_batch.scxml'
       - 'sce-build/tests/fixtures/static_datamodel/event_batch_item.scxml'
@@ -94,6 +101,7 @@ on:
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/probes/nostd-delay/**'
       - 'backends/rust/probes/nostd-codec-frame/**'
       - 'tests/forge/expected/codec_chain_has_envelope.rs'
       - 'tests/forge/expected/codec_chain_has_marker.rs'
@@ -116,6 +124,8 @@ on:
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/composed_lowering/rust.rs'
       - 'sce-build/src/forge/static_lowering.rs'
+      - 'sce-build/src/forge/delay_count.rs'
+      - 'sce-build/src/forge/expr.rs'
       - 'sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml'
       - 'sce-build/tests/fixtures/static_datamodel/event_batch.scxml'
       - 'sce-build/tests/fixtures/static_datamodel/event_batch_item.scxml'
