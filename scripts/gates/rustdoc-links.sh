@@ -23,8 +23,8 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
+sce_gate_tested -- env RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
     || sce_gate_fail "broken intra-doc links (std profile)"
-RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
+sce_gate_tested -- env RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
     --no-default-features \
     || sce_gate_fail "broken intra-doc links (no_std profile)"

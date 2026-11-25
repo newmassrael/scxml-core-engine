@@ -40,8 +40,8 @@ BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/rust"
 rm -rf "$BROADCAST_HISTORIES"
 mkdir -p "$BROADCAST_HISTORIES"
 
-SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
-SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+sce_gate_tested -- env SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
+    SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
     cargo test --release -p sce-forge-conformance --features alloc \
     || sce_gate_fail "Rust forge conformance"
 
@@ -73,7 +73,7 @@ shopt -u nullglob
 # casefiles `an_spsc_queue_orders_every_slot_hand_over.cases` and
 # `an_scq_queue_orders_every_index_hand_over.cases` spell one command each,
 # and `target/loom` keeps the cfg from invalidating the release build above.
-cargo test --release -p sce-forge-runtime --target-dir target/loom \
+sce_gate_tested -- cargo test --release -p sce-forge-runtime --target-dir target/loom \
     --config 'build.rustflags=["--cfg","loom"]' \
     --test loom_queue_spsc --test loom_queue_scq --test loom_queue_lscq \
     --test loom_queue_lscq_race --test loom_broadcast_log \
@@ -101,11 +101,11 @@ source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
 sce_gate_step "queue runtime under Miri and ThreadSanitizer"
 sce_gate_require_rust "$QUEUE_SANITIZER_NIGHTLY"
 NIGHTLY_PATH="$SCE_GATE_RUST_BIN:$PATH"
-PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib queue:: \
+sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib queue:: \
     || sce_gate_fail "Rust forge queue unit tests under Miri"
 # Several seeds, because Miri's weak-memory emulation picks which store a load
 # sees from the seed and one seed explores one choice.
-MIRIFLAGS="-Zmiri-many-seeds=0..8" \
+sce_gate_tested -- env MIRIFLAGS="-Zmiri-many-seeds=0..8" \
     PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime \
     --test queue_threads \
     || sce_gate_fail "Rust forge queue threads under Miri"
@@ -120,16 +120,16 @@ MIRIFLAGS="-Zmiri-many-seeds=0..8" \
 # `broadcast_log::`: the algorithm is written once in `broadcast_log_core`, over the
 # width of the stamp, and the filter must reach its unit tests and the narrow row's
 # as well as the 64-bit alias's.
-PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib broadcast_log \
+sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib broadcast_log \
     || sce_gate_fail "Rust forge broadcast log unit tests under Miri"
-MIRIFLAGS="-Zmiri-many-seeds=0..8" \
+sce_gate_tested -- env MIRIFLAGS="-Zmiri-many-seeds=0..8" \
     PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime \
     --test broadcast_log_threads \
     || sce_gate_fail "Rust forge broadcast log threads under Miri"
 # `-Zbuild-std` because ThreadSanitizer needs the standard library
 # instrumented too, or every use of a std lock or channel reads as a race. Its
 # own target directory, so the flag does not invalidate the ordinary build.
-PATH="$NIGHTLY_PATH" cargo test -Zbuild-std \
+sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo test -Zbuild-std \
     --target x86_64-unknown-linux-gnu --target-dir target/tsan \
     --config 'build.rustflags=["-Zsanitizer=thread"]' \
     -p sce-forge-runtime --test queue_threads \

@@ -23,5 +23,5 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo test -p sce-build --features cli --lib \
+sce_gate_tested -- cargo test -p sce-build --features cli --lib \
     || sce_gate_fail "sce-build library suite (compiled-in inputs)"

@@ -191,7 +191,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # build does compile it now (`cmake/SCEBuildLowering.cmake`), but a
 # breakage found there is found by a 30-minute lane; found here it is
 # found in seconds.
-cargo test -p sce-build --features cli,ffi \
+sce_gate_tested -- cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
     --test a_declared_attribute_must_reach_the_ir \
     --test a_deployment_annotation_is_not_the_document \

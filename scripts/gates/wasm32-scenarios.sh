@@ -85,7 +85,7 @@ fi
 # never reads it, and a call into the operating system in one is exactly what
 # the runtime's `clippy.toml` bans. `-D warnings` as the workspace lint does.
 sce_gate_step "clippy for $TARGET"
-cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
+sce_gate_tested -- cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
     || sce_gate_fail "cargo clippy -p $CRATE --target $TARGET"
 
 # The dev profile, not release. Release is `lto = "thin"` with one codegen unit
@@ -95,7 +95,7 @@ cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
 # assertions and overflow checks on, as the native test profile does, so an
 # arithmetic overflow the optimiser would have wrapped is a trap here.
 sce_gate_step "building $CRATE for $TARGET"
-cargo build -p "$CRATE" --target "$TARGET" \
+sce_gate_tested -- cargo build -p "$CRATE" --target "$TARGET" \
     || sce_gate_fail "cargo build -p $CRATE --target $TARGET"
 
 module="${CARGO_TARGET_DIR:-$SCE_REPO_ROOT/target}/$TARGET/debug/${CRATE//-/_}.wasm"

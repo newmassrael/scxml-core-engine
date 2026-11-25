@@ -45,7 +45,11 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # and a gate that compares a run to an empty set compares nothing.
 sce_gate_step "listing the Rust W3C suite the build placed"
 cargo test --release -p sce-rust-tests --test w3c -- --list >"$LOG/list.log" 2>&1 \
-    || { cat "$LOG/list.log" >&2; sce_gate_fail "the Rust W3C suite did not build"; }
+    || {
+        cat "$LOG/list.log" >&2
+        sce_gate_repro_from "$LOG/list.log" -- cargo test --release -p sce-rust-tests --test w3c -- --list
+        sce_gate_fail "the Rust W3C suite did not build"
+    }
 expected="$(grep -cE '^test_[0-9]+[a-z]?::test_[0-9]+[a-z]?: test$' "$LOG/list.log" || true)"
 if (( expected < 200 )); then
     sce_gate_fail "the build placed only $expected W3C case(s) in the target w3c (expected at least 200) — the suite would cover less than its name claims"
@@ -55,11 +59,11 @@ sce_gate_http_fixture_server
 
 sce_gate_step "running the Rust conformance suite"
 
-# The log is printed whole because the lane's summary step reads its
-# `test result:` lines out of what this gate writes.
+# The log is printed whole, as it comes, because the lane's summary step reads
+# its `test result:` lines out of what this gate writes.
 status=0
-cargo test --release --no-fail-fast -p sce-rust-tests >"$LOG/rust.log" 2>&1 || status=$?
-cat "$LOG/rust.log"
+sce_gate_tested --log "$LOG/rust.log" -- cargo test --release --no-fail-fast -p sce-rust-tests \
+    || status=$?
 
 if (( status != 0 )); then
     grep -E '^(test .* \.\.\. FAILED|error(\[E[0-9]+\])?:)' "$LOG/rust.log" | head -n 40 >&2 || true

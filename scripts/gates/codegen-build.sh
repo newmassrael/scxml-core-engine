@@ -22,7 +22,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo build --bin sce-codegen --features cli -p sce-build \
+sce_gate_tested -- cargo build --bin sce-codegen --features cli -p sce-build \
     || sce_gate_fail "sce-codegen build"
 
 # The generator names no path of the machine that built it, so that two builds

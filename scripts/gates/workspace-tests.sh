@@ -53,11 +53,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/rust-workspace-tests.yml"
 sce_gate_step "building the Kotlin runtime jars and the JVM programs the suites run"
 # One task list per line, so `hook_ci_parity` reads each task as the gate's.
-./gradlew --console=plain :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar \
+sce_gate_tested -- ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar \
     || sce_gate_fail "the Kotlin runtime jars did not build"
-./gradlew --console=plain :sce-kotlin-world:installDist \
+sce_gate_tested -- ./gradlew --console=plain :sce-kotlin-world:installDist \
     || sce_gate_fail "the Kotlin step server did not build"
-./gradlew --console=plain :sce-kotlin-mls-replay:installDist :sce-kotlin-peer-replay:installDist \
+sce_gate_tested -- ./gradlew --console=plain :sce-kotlin-mls-replay:installDist :sce-kotlin-peer-replay:installDist \
     || sce_gate_fail "the Kotlin replays of the group key agreement and the peer core did not build"
 
 sce_gate_python
@@ -79,7 +79,7 @@ sce_gate_http_fixture_server
 # built here, so a stale one is dropped first.
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/sce_codegen.sh"
 sce_codegen_drop_stale_release
-cargo build --bin sce-codegen --features cli -p sce-build \
+sce_gate_tested -- cargo build --bin sce-codegen --features cli -p sce-build \
     || sce_gate_fail "cargo build --bin sce-codegen --features cli -p sce-build"
 
 # `SCE_GATE_NO_FAIL_FAST` is the one thing the CI lane wanted that this gate
@@ -143,7 +143,7 @@ if [[ -n "${SCE_WORKSPACE_SHARD:-}" ]]; then
     if (( core )); then
         sce_gate_run_suite "the workspace doc tests" \
             cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} --doc
-        cargo build --workspace --features cli,sce-rust-mesh/wss --examples \
+        sce_gate_tested -- cargo build --workspace --features cli,sce-rust-mesh/wss --examples \
             || sce_gate_fail "cargo build --workspace --features cli,sce-rust-mesh/wss --examples"
         product_line_sets
     fi

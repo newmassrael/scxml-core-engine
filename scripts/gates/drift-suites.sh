@@ -17,7 +17,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1 \
+sce_gate_tested -- cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1 \
     || sce_gate_fail "b9_drift_detection — committed-tree drift"
-cargo test -p sce-build --features cli --test sourcemap_addr2sce \
+sce_gate_tested -- cargo test -p sce-build --features cli --test sourcemap_addr2sce \
     || sce_gate_fail "sourcemap_addr2sce — traceability drift"

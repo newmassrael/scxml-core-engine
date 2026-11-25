@@ -29,10 +29,10 @@ sce_gate_require_rust_target thumbv7em-none-eabihf
 # The bare-metal profile is the runtime without its `std` feature
 # (docs/adr/0053): no features at all.
 sce_gate_step "no_std runtime build + clippy"
-cargo build -p sce-rust-runtime --no-default-features \
+sce_gate_tested -- cargo build -p sce-rust-runtime --no-default-features \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "no_std runtime build"
-cargo clippy -p sce-rust-runtime --no-default-features \
+sce_gate_tested -- cargo clippy -p sce-rust-runtime --no-default-features \
     --target=thumbv7em-none-eabihf -- -D warnings \
     || sce_gate_fail "no_std runtime clippy"
 
@@ -54,10 +54,10 @@ cargo clippy -p sce-rust-runtime --no-default-features \
 # `log` feature: the `sce_log_*!` macros then write nothing and evaluate
 # none of their arguments.
 sce_gate_step "std runtime without http-send or the macrostep report: clippy + tests"
-cargo clippy -p sce-rust-runtime --no-default-features --features std \
+sce_gate_tested -- cargo clippy -p sce-rust-runtime --no-default-features --features std \
     --all-targets -- -D warnings \
     || sce_gate_fail "std runtime without http-send, clippy"
-cargo test -p sce-rust-runtime --no-default-features --features std \
+sce_gate_tested -- cargo test -p sce-rust-runtime --no-default-features --features std \
     || sce_gate_fail "std runtime without http-send, tests"
 
 # The forge runtime on a target whose atomics are loads and stores alone (ARMv6-M). The queue algorithms
@@ -67,9 +67,9 @@ cargo test -p sce-rust-runtime --no-default-features --features std \
 # was compiled on every target. thumbv7em, the target above, has the compare-and-swap and cannot show it.
 sce_gate_step "forge runtime, no read-modify-write atomics (thumbv6m)"
 sce_gate_require_rust_target thumbv6m-none-eabi
-cargo build -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi \
+sce_gate_tested -- cargo build -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi \
     || sce_gate_fail "forge runtime build for thumbv6m"
-cargo clippy -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi -- -D warnings \
+sce_gate_tested -- cargo clippy -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi -- -D warnings \
     || sce_gate_fail "forge runtime clippy for thumbv6m"
 
 sce_gate_step "allocator-free probe machine"
@@ -77,7 +77,9 @@ sce_gate_step "allocator-free probe machine"
     -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \
     sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
     || sce_gate_fail "no_std probe generation"
-cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/nostd-build/src sce-build/tests/fixtures/no_std/parallel_history_probe.scxml" \
+    -- cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "no_std probe compile"
 
@@ -98,7 +100,10 @@ sce_gate_on_exit "rm -rf '$NATIVE_ACTION_OUT'"
 cp "$NATIVE_ACTION_OUT/statechart_native_action_sm.rs" \
     backends/rust/probes/nostd-build/src/parallel_history_probe_sm.rs \
     || sce_gate_fail "native-action probe staging"
-cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir target/native-action-probe sce-build/tests/fixtures/event_schema/statechart_native_action.scxml" \
+    --first "cp target/native-action-probe/statechart_native_action_sm.rs backends/rust/probes/nostd-build/src/parallel_history_probe_sm.rs" \
+    -- cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "native-action probe compile"
 
@@ -114,7 +119,9 @@ sce_gate_step "composed-payload probe (no_std thumb)"
     -l rust --no-std --output-dir backends/rust/probes/nostd-composed/src \
     sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml >/dev/null 2>&1 \
     || sce_gate_fail "composed-payload probe generation"
-cargo build --manifest-path backends/rust/probes/nostd-composed/Cargo.toml \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/nostd-composed/src sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml" \
+    -- cargo build --manifest-path backends/rust/probes/nostd-composed/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "composed-payload probe compile"
 
@@ -136,9 +143,13 @@ sce_gate_step "one workspace, an MCU crate and an AP crate (std host + MCU thumb
     -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
     sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
     || sce_gate_fail "portability probe generation"
-cargo check --manifest-path backends/rust/probes/feature-unification/Cargo.toml --workspace \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/portable-emit/src sce-build/tests/fixtures/no_std/portable_probe.scxml" \
+    -- cargo check --manifest-path backends/rust/probes/feature-unification/Cargo.toml --workspace \
     || sce_gate_fail "MCU and AP crates in one host build"
-cargo build --manifest-path backends/rust/probes/feature-unification/Cargo.toml \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/portable-emit/src sce-build/tests/fixtures/no_std/portable_probe.scxml" \
+    -- cargo build --manifest-path backends/rust/probes/feature-unification/Cargo.toml \
     -p sce-feature-unification-mcu --target=thumbv7em-none-eabihf \
     || sce_gate_fail "MCU crate alone, bare-metal runtime, thumb"
 
@@ -153,7 +164,9 @@ sce_gate_step "per-machine event-queue sizing"
     -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src \
     sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \
     || sce_gate_fail "queue-size probe generation"
-cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
+sce_gate_tested \
+    --first "target/debug/sce-codegen --workspace-root . generate -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml" \
+    -- cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "queue-size gate — const size assertion"
 

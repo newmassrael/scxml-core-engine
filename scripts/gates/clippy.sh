@@ -38,6 +38,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # generator's Rust for each forge kind. Without the feature they compile to
 # nothing, and 89 lints in generated procedure, filter, timer, lookup and
 # validator code went unseen until a sweep with every feature found them.
-cargo clippy --workspace --all-targets \
+sce_gate_tested -- cargo clippy --workspace --all-targets \
     --features cli,sce-rust-mesh/wss,sce-forge-conformance/alloc -- -D warnings \
     || sce_gate_fail "cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss,sce-forge-conformance/alloc"
