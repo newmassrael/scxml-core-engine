@@ -17,8 +17,8 @@ name: Windows MSVC
 #
 # STAND-IN in `LANES` of `sce-build/tests/ci_supersession_policy.rs`, which
 # borrows `ecma262-lowered-cpp.yml`'s 23.7 min median until the lane has 25 runs
-# of its own; `cancel-in-progress: false` keeps the run in flight either way, as
-# on every lane.
+# of its own. That is above a 17.6 min median gap between pushes to `main`, so
+# `cancel-in-progress: false` keeps the run in flight, as on every lane.
 #
 # Where a run's time went, measured in job 138963137937 (run 45542197963,
 # 28.8 min): the vcpkg ports 6.7 min, built from source on every run (4.9 of it
