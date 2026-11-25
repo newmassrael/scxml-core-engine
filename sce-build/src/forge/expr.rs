@@ -72,6 +72,7 @@ use std::fmt;
 /// answers with, so the caller holding the attribute can place it.
 pub type Refusal = Spanned<ExprError>;
 
+pub(crate) mod rust_tree;
 pub(crate) mod swift;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
