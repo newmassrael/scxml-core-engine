@@ -993,9 +993,11 @@ sce_gate_w3c_cpp_suite() {
     # The runner logs at the level SPDLOG_LEVEL names, off unless the caller
     # asks (the lane asks for its log-level input); a failing test's output is
     # in the log either way.
-    SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" \
+    # Through `sce_gate_tested`, so a red run ends with the one test number to
+    # rerun (its program built alone, `ctest -R '^w3c_cpp_<n>$'`).
+    sce_gate_tested --quiet --log "$log" -- env SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" \
         ctest --test-dir "$dir" -L w3c_cpp ${selection[@]+"${selection[@]}"} \
-              --output-on-failure --no-tests=error -j "$(sce_build_jobs)" >"$log" 2>&1 \
+              --output-on-failure --no-tests=error -j "$(sce_build_jobs)" \
         || status=$?
     local executed
     executed="$(grep -oE 'out of [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+' || true)"
