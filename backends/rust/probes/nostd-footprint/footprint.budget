@@ -211,7 +211,15 @@ ROW_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${ROW_WALK_PROCEDURES//
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129). Images of 209963 and 211449.
-MACHINE_BYTES=1486
+#
+# 1486 -> 1696 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). The two-machine image no longer folds the main loop into the first machine's run_turn, which
+# used to make the second machine look 922 bytes cheaper (measured by symbol: Turn::run 922 B
+# and the first policy's run_turn 926 B swapped places); the second machine is also the first
+# document of the static class, so it links the class walker's selection,
+# select_transition_from_rows (252 B), once for the program.
+MACHINE_BYTES=1696
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -284,7 +292,15 @@ MACHINE_BYTES=1486
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129). Images of 209789 and 211267.
-MACHINE_BYTES_NO_DIAGNOSTICS=1478
+#
+# 1478 -> 1688 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). The two-machine image no longer folds the main loop into the first machine's run_turn, which
+# used to make the second machine look 922 bytes cheaper (measured by symbol: Turn::run 922 B
+# and the first policy's run_turn 926 B swapped places); the second machine is also the first
+# document of the static class, so it links the class walker's selection,
+# select_transition_from_rows (252 B), once for the program.
+MACHINE_BYTES_NO_DIAGNOSTICS=1688
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -352,7 +368,11 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1478
 # own arguments, past the thumbv6m step): the delayed-send queue is sized by
 # what the document can leave waiting (docs/adr/0132) and its scans walk one
 # out-of-line slice for every capacity. Over 31 symbols.
-CORE_BYTES=8416
+#
+# 8416 -> 8758 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). The main loop is one symbol of the core in every image, over 34 symbols.
+CORE_BYTES=8758
 
 # The same without the report.
 #
@@ -403,7 +423,11 @@ CORE_BYTES=8416
 # own arguments, past the thumbv6m step): the delayed-send queue is sized by
 # what the document can leave waiting (docs/adr/0132) and its scans walk one
 # out-of-line slice for every capacity. Over 31 symbols.
-CORE_BYTES_NO_DIAGNOSTICS=8312
+#
+# 8312 -> 8654 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). Over 34 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=8654
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -490,8 +514,13 @@ CORE_BYTES_NO_DIAGNOSTICS=8312
 # own arguments, past the thumbv6m step): the delayed-send queue is sized by
 # what the document can leave waiting (docs/adr/0132) and its scans walk one
 # out-of-line slice for every capacity. Over 14 symbols.
-MACHINE_BYTES_PLAIN=906
-CORE_BYTES_PLAIN=2860
+#
+# 906 and 2860 -> 908 and 2664 (a machine, the core) (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). A plain document is the static class: its selection reads candidate rows, and the core loses the
+# per-form main loop.
+MACHINE_BYTES_PLAIN=908
+CORE_BYTES_PLAIN=2664
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -644,7 +673,12 @@ STACK_MIN_FUNCTIONS=200
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129).
-STACK_BYTES=1000
+#
+# 1000 -> 1104 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). The main loop is called through its one body and not inlined into a machine, so its frame
+# stands under the hooks.
+STACK_BYTES=1104
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -692,5 +726,9 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 # selected from its tables' rows by one shared first_enabled (docs/adr/0127), the
 # runtime's reads take no index that can panic, and the main loop is generic over
 # the two forms of a machine (docs/adr/0129).
-STACK_BYTES_PLAIN=576
+#
+# 576 -> 544 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, past the thumbv6m step): every machine runs one Turn body
+# (docs/adr/0135). The class walker selects from candidate rows.
+STACK_BYTES_PLAIN=544
 STACK_TOLERANCE_BYTES=256
