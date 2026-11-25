@@ -1,0 +1,70 @@
+2026-11-25T04:26:58.5463049Z [1m[92m   Compiling[0m sce-ttcn3-validator v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/sce-ttcn3-validator)
+2026-11-25T04:30:30.3926929Z [1m[92m    Finished[0m `test` profile [optimized + debuginfo] target(s) in 4m 54s
+2026-11-25T04:30:30.4997763Z [1m[92m     Running[0m tests/b9_drift_detection.rs (target/debug/build/sce-build/d4fcbf04f8740884/out/b9_drift_detection-d4fcbf04f8740884)
+2026-11-25T04:30:30.5032408Z 
+2026-11-25T04:30:30.5032734Z running 40 tests
+2026-11-25T04:30:30.5973113Z test a_staged_copy_carries_the_header_of_the_document_it_stands_for ... ok
+2026-11-25T04:30:30.6967801Z test a_written_child_carries_the_header_of_the_document_it_came_from ... ok
+2026-11-25T04:30:30.7476943Z test an_inline_child_carries_its_parents_header ... ok
+2026-11-25T04:30:30.8661617Z test committed_generated_files_carry_the_current_header_shape ... ok
+2026-11-25T04:30:30.8669638Z test common::xml_literal::tests::a_byte_string_keeps_an_even_number_of_hex_digits ... ok
+2026-11-25T04:30:30.8670098Z test common::xml_literal::tests::a_hex_literal_stays_hex_and_keeps_its_width ... ok
+2026-11-25T04:30:30.8670503Z test common::xml_literal::tests::a_non_number_is_not_a_number ... ok
+2026-11-25T04:30:30.8671001Z test common::xml_literal::tests::a_second_value_is_never_the_first ... ok
+2026-11-25T04:30:30.8671353Z test common::xml_literal::tests::carriers_compare_across_the_dot ... ok
+2026-11-25T04:30:31.0768935Z test editing_one_document_moves_no_header_whose_closure_excludes_it ... ok
+2026-11-25T04:30:31.0770668Z test fixture_helper_invariants ... ok
+2026-11-25T04:30:31.1217881Z test generate_allows_a_staged_derivative_under_a_declared_root ... ok
+2026-11-25T04:30:31.1666113Z test generate_does_not_hash_the_input_root_it_is_given ... ok
+2026-11-25T04:30:31.2545297Z test generate_hashes_a_symlinked_input_rather_than_the_empty_digest ... ok
+2026-11-25T04:30:31.2545887Z test helper_emits_python_header_with_hash_prefix ... ok
+2026-11-25T04:30:31.2546588Z test helper_is_idempotent_across_two_invocations ... ok
+2026-11-25T04:30:31.3229432Z test orchestrate_covers_every_document_of_its_set ... ok
+2026-11-25T04:30:31.3727734Z test the_depfile_names_the_closure_and_no_sibling ... ok
+2026-11-25T04:30:31.3734473Z test the_mesh_trees_hash_their_own_documents_and_no_other_part_of_the_library ... ok
+2026-11-25T04:30:31.3775072Z test verify_fails_when_source_drifts ... ok
+2026-11-25T04:30:31.3809996Z test verify_passes_on_clean_round_trip ... ok
+2026-11-25T04:30:31.3856694Z test verify_passes_on_real_committed_forge_default_round_trip_go_tree ... ok
+2026-11-25T04:30:31.3894119Z test verify_passes_on_real_committed_go_donedata_tree ... ok
+2026-11-25T04:30:31.3926903Z test verify_passes_on_real_committed_kotlin_donedata_tree ... ok
+2026-11-25T04:30:31.4160577Z test verify_passes_on_real_committed_kotlin_w3c_tree ... ok
+2026-11-25T04:30:31.4215825Z test verify_passes_on_real_committed_mesh_envelope_cpp_tree ... ok
+2026-11-25T04:30:31.4278637Z test verify_passes_on_real_committed_mesh_kotlin_tree ... ok
+2026-11-25T04:30:31.4380147Z test verify_passes_on_real_committed_mesh_peer_tables ... ok
+2026-11-25T04:30:31.4412810Z test verify_passes_on_real_committed_mesh_rate_rust_tree ... ok
+2026-11-25T04:30:31.4477075Z test verify_passes_on_real_committed_mesh_rust_tree ... ok
+2026-11-25T04:30:31.4540653Z test verify_passes_on_real_committed_mesh_swift_tree ... ok
+2026-11-25T04:30:31.4733080Z test verify_passes_on_real_committed_runtime_engine_trees ... ok
+2026-11-25T04:30:31.4767212Z test verify_passes_on_real_committed_runtime_rust_tree ... ok
+2026-11-25T04:30:44.8207093Z test verify_passes_on_the_materialized_rust_donedata_tree ... ok
+2026-11-25T04:31:01.6607795Z test verify_passes_on_the_materialized_rust_static_datamodel_tree ... FAILED
+2026-11-25T04:31:03.9946504Z test verify_passes_on_the_materialized_rust_w3c_tree ... ok
+2026-11-25T04:31:03.9984221Z test verify_passes_when_run_from_different_working_directory ... ok
+2026-11-25T04:31:04.0016328Z test verify_refuses_a_file_whose_document_is_under_no_root ... ok
+2026-11-25T04:31:04.0051917Z test verify_refuses_a_header_that_names_no_document ... ok
+2026-11-25T04:31:04.1532806Z test verify_refuses_exactly_the_files_whose_closure_moved ... ok
+2026-11-25T04:31:04.1533090Z 
+2026-11-25T04:31:04.1533195Z failures:
+2026-11-25T04:31:04.1533302Z 
+2026-11-25T04:31:04.1533519Z ---- verify_passes_on_the_materialized_rust_static_datamodel_tree stdout ----
+2026-11-25T04:31:04.1533801Z 
+2026-11-25T04:31:04.1534199Z thread 'verify_passes_on_the_materialized_rust_static_datamodel_tree' (7560) panicked at sce-build/tests/b9_drift_detection.rs:800:5:
+2026-11-25T04:31:04.1535559Z assertion `left == right` failed: verify must pass on the Rust static_datamodel tree the actions of `rust-static-datamodel` write: a file whose `source-hash` does not describe the closure of its documents is one the action keyed on other inputs than it read. stderr:
+2026-11-25T04:31:04.1538621Z lent_frame.scxml: §6.2.6 source-hash would not describe it — 0 file(s) collected from /home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/tests/fixtures/static_datamodel, /home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/tests/fixtures/test_profile, /home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/tests/fixtures/ttcn3_export, /home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/tests/fixtures/union, /home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/kind-examples; pass --input-root <DIR> containing the input
+2026-11-25T04:31:04.1540041Z 
+2026-11-25T04:31:04.1540112Z   left: Some(20)
+2026-11-25T04:31:04.1540259Z  right: Some(0)
+2026-11-25T04:31:04.1540628Z [1m[91merror[0m: test failed, to rerun pass `-p sce-build --test b9_drift_detection`
+2026-11-25T04:31:04.1541044Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-11-25T04:31:04.1541252Z 
+2026-11-25T04:31:04.1541256Z 
+2026-11-25T04:31:04.1541313Z failures:
+2026-11-25T04:31:04.1541517Z     verify_passes_on_the_materialized_rust_static_datamodel_tree
+2026-11-25T04:31:04.1541706Z 
+2026-11-25T04:31:04.1541986Z test result: FAILED. 39 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.65s
+2026-11-25T04:31:04.1542228Z 
+2026-11-25T04:31:04.1645400Z 
+2026-11-25T04:31:04.1646171Z ERROR gate[drift-suites]: b9_drift_detection — committed-tree drift
+2026-11-25T04:31:04.1648479Z 
+2026-11-25T04:31:04.1648792Z ERROR gate: drift-suites FAILED — run just this one with: scripts/gate drift-suites
+2026-11-25T04:31:04.1662102Z ##[error]Process completed with exit code 1.

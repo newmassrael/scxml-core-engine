@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.sce.integration.AChildTakesAHandedValueTest" tests="2" skipped="0" failures="1" errors="0" timestamp="2026-11-22T15:38:20" hostname="runner" time="0.412">
+  <properties/>
+  <testcase name="an object a parent hands arrives whole on every engine, as a copy()" classname="com.sce.integration.AChildTakesAHandedValueTest" time="0.301">
+    <failure message="org.opentest4j.AssertionFailedError: rhino: payload_seen=null record_seen=null." type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: rhino: payload_seen=null record_seen=null.
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+</failure>
+  </testcase>
+  <testcase name="a handed value is not evaluated again()" classname="com.sce.integration.AChildTakesAHandedValueTest" time="0.111"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -48,6 +48,14 @@
         # What spreads the suite over the lane's shards
         # (`SCE_WORKSPACE_SHARD`), which the gate script runs.
         "scripts/lib/workspace_shards.py",
+        # What `a_red_gate_names_the_smallest_rerun` runs and reads: the
+        # reader of a red runner's report, the gate library that hands it the
+        # report, the runner that prints its heading, and the mutation
+        # harness's one-case selector.
+        "scripts/lib/repro.py",
+        "scripts/gates/lib.sh",
+        "scripts/gate",
+        "scripts/mutate",
         "docs/SCE_ACCEPTED_SUBSET.md",
         "schemas/**",
         "apis/**",

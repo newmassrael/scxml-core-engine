@@ -22,6 +22,9 @@ cd "$SCE_REPO_ROOT"
 # Name of the running gate, used in failure messages. Derived from the
 # script filename so a gate cannot report a slug it is not.
 SCE_GATE_SLUG="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
+# The script itself, as a command run from the repository root.
+_SCE_GATE_SCRIPT="${BASH_SOURCE[1]:-unknown}"
+_SCE_GATE_SCRIPT="${_SCE_GATE_SCRIPT#"$SCE_REPO_ROOT"/}"
 
 # The mesh transport SDKs a build machine carries, put where CMake and the
 # loader look. `tests/CMakeLists.txt` registers the transport suites only where
@@ -133,21 +136,195 @@ sce_gate_skip() {
 # on three machines the unit sat in that `wait` after its suites had passed,
 # until the fleet's idle limit ended it (item 357, ten hours of the landing
 # queue).
+#
+# The suite runs through `sce_gate_tested`, so a failure ends the gate with
+# the command that reruns the one test that failed ("The smallest rerun of
+# what failed", below).
 sce_gate_run_suite() {
     local label="$1" log status=0
     shift
-    if ! sce_gate_landing; then
-        "$@" || sce_gate_fail "$label"
-        return 0
-    fi
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
-    SCE_REQUIRE_TOOLS=1 "$@" 2>&1 | tee "$log" || status="${PIPESTATUS[0]}"
+    if sce_gate_landing; then
+        sce_gate_tested --log "$log" -- env SCE_REQUIRE_TOOLS=1 "$@" || status=$?
+    else
+        sce_gate_tested --log "$log" -- "$@" || status=$?
+    fi
     (( status == 0 )) && return 0
-    if grep -q "SCE_REQUIRE_TOOLS" "$log"; then
+    if sce_gate_landing && grep -q "SCE_REQUIRE_TOOLS" "$log"; then
         sce_gate_cannot_run "$label: a case found a tool or a built program missing on this machine (its message names SCE_REQUIRE_TOOLS, above). This run is a landing's, where a skip is not a pass."
     fi
     sce_gate_fail "$label"
+}
+
+# ── The smallest rerun of what failed ──────────────────────────────
+#
+# A red gate ends with the commands that reproduce exactly what failed, under
+# one heading (`scripts/gate`, "What a red gate ends with"): the one test, the
+# one ctest case, the one output ninja could not make, the one mutation case.
+# A gate used to end with "run just this one with: scripts/gate <slug>", which
+# builds and runs the whole gate, or a whole shard of it, to see one test fail
+# again. Each runner names what failed in a report of its own, and
+# scripts/lib/repro.py reads that report and writes the commands; this is where
+# a gate hands it the report.
+#
+#   sce_gate_tested [--quiet] [--cwd <dir>] [--log <file>] [--first <command>]...
+#           [--report <dir>]... -- <command...>
+#       runs the command as a gate runs a suite, its output shown as it comes
+#       (not with --quiet, for a gate that shows only what it reads out of it)
+#       and kept (in <file>, when the gate reads it afterwards), with the
+#       runner asked for the machine-readable report the reader takes
+#       (`repro.py prepare`: ctest's JUnit, go's -json, pytest's JUnit,
+#       swift's xUnit). When it fails the commands are recorded; its status is
+#       the command's. `--first` is what a clean checkout runs before it, and
+#       `--report` a directory a Gradle test task writes its results to.
+#   sce_gate_repro_from <log> [--cwd <dir>] [--first <command>]...
+#           [--report <dir>]... [--changed <path>]... -- <command...>
+#       records from output the gate kept itself.
+#
+# The commands go to the file `scripts/gate` hands each gate
+# (SCE_GATE_REPRO_FILE), which it prints when the gate fails. A gate script run
+# by itself has no runner around it, so this library keeps a file of its own
+# and prints it when the script ends red. Recording never decides a verdict:
+# what goes wrong in it is said and the gate goes on.
+#
+# A CMake tree the gate configured is registered with how it was configured
+# (`sce_gate_configure_tree` and its siblings), so a command that builds in it
+# starts from a clean checkout with that configure.
+SCE_GATE_REPRO_PY="$SCE_REPO_ROOT/scripts/lib/repro.py"
+_SCE_GATE_REPRO_OWN=0
+if [[ -z "${SCE_GATE_REPRO_FILE:-}" ]]; then
+    SCE_GATE_REPRO_FILE="$(mktemp)"
+    _SCE_GATE_REPRO_OWN=1
+fi
+export SCE_GATE_REPRO_FILE
+declare -A SCE_GATE_TREES=()
+
+# Register CMake tree `$1` as configured by the command `$2...`.
+_sce_gate_tree_register() {
+    local dir="$1"
+    shift
+    SCE_GATE_TREES["$dir"]="$(printf '%q ' "$@")"
+}
+
+# What every record is handed besides the command: the trees and, while the
+# W3C HTTP fixture server is up, the path it serves.
+_sce_gate_repro_common() {
+    local dir
+    _SCE_GATE_REPRO_ARGS=()
+    for dir in "${!SCE_GATE_TREES[@]}"; do
+        _SCE_GATE_REPRO_ARGS+=(--tree "$dir" "${SCE_GATE_TREES[$dir]}")
+    done
+    if [[ -n "${SCE_GATE_HTTP_FIXTURE_PID:-}" ]]; then
+        _SCE_GATE_REPRO_ARGS+=(--http-fixture "${SCE_GATE_HTTP_FIXTURE_PATH:-/}")
+    fi
+}
+
+sce_gate_repro_from() {
+    local log="$1"
+    shift
+    local -a opts=()
+    while (( $# )); do
+        case "$1" in
+            --cwd | --first | --changed | --report | --dir | --since)
+                opts+=("$1" "$2")
+                shift 2
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                sce_gate_error "sce_gate_repro_from: unknown option $1; nothing recorded"
+                return 0
+                ;;
+        esac
+    done
+    [[ -f "$SCE_GATE_REPRO_PY" ]] || return 0
+    _sce_gate_repro_common
+    python3 -I "$SCE_GATE_REPRO_PY" record --out "$SCE_GATE_REPRO_FILE" --log "$log" \
+        ${opts[@]+"${opts[@]}"} ${_SCE_GATE_REPRO_ARGS[@]+"${_SCE_GATE_REPRO_ARGS[@]}"} -- "$@" \
+        || sce_gate_step "scripts/lib/repro.py could not record the command that reproduces this failure (above)"
+    return 0
+}
+
+# The command, in its directory, its stderr with its stdout; and what of it is
+# shown, all of it kept in the log.
+_sce_gate_tested_run() {
+    local cwd="$1"
+    shift
+    ( if [[ -n "$cwd" ]]; then cd "$cwd" || exit 1; fi; "$@" ) 2>&1
+}
+_sce_gate_tested_show() {
+    if [[ "$2" == 1 ]]; then
+        cat >"$1"
+    else
+        tee "$1"
+    fi
+}
+
+sce_gate_tested() {
+    local cwd="" log="" dir render="-" since status=0 quiet=0
+    local -a opts=() prepared=() run=()
+    while (( $# )); do
+        case "$1" in
+            --quiet)
+                quiet=1
+                shift
+                ;;
+            --cwd)
+                cwd="$2"
+                opts+=(--cwd "$2")
+                shift 2
+                ;;
+            --log)
+                log="$2"
+                shift 2
+                ;;
+            --first | --report)
+                opts+=("$1" "$2")
+                shift 2
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *) sce_gate_fail "sce_gate_tested: unknown option $1" ;;
+        esac
+    done
+    (( $# )) || sce_gate_fail "sce_gate_tested: no command to run"
+    dir="$(mktemp -d)"
+    sce_gate_on_exit "rm -rf '$dir'"
+    [[ -n "$log" ]] || log="$dir/output.log"
+    run=("$@")
+    # The command its runner reports in a form the reader takes. Should the
+    # reader be missing or refuse, the command runs as given: a report is
+    # worth asking for, never worth not running the suite.
+    if [[ -f "$SCE_GATE_REPRO_PY" ]] \
+            && mapfile -d '' -t prepared < <(python3 -I "$SCE_GATE_REPRO_PY" prepare --dir "$dir" -- "$@") \
+            && (( ${#prepared[@]} > 1 )); then
+        render="${prepared[0]}"
+        run=("${prepared[@]:1}")
+    fi
+    since="$(date +%s)"
+    # The group is on the left of `||`, so `set -e` does not end the gate
+    # when the pipeline fails; the command's own status is read from
+    # PIPESTATUS. "go" is `go test -json`, whose events are kept for the
+    # reader and given back to the log as the text `-v` prints.
+    {
+        if [[ "$render" == go ]]; then
+            _sce_gate_tested_run "$cwd" "${run[@]}" \
+                | tee "$dir/go.json" | python3 -I "$SCE_GATE_REPRO_PY" render-go | _sce_gate_tested_show "$log" "$quiet"
+            status="${PIPESTATUS[0]}"
+        else
+            _sce_gate_tested_run "$cwd" "${run[@]}" | _sce_gate_tested_show "$log" "$quiet"
+            status="${PIPESTATUS[0]}"
+        fi
+    } || true
+    if (( status != 0 )); then
+        sce_gate_repro_from "$log" --dir "$dir" --since "$since" ${opts[@]+"${opts[@]}"} -- "$@"
+    fi
+    return "$status"
 }
 
 # How many parallel jobs a build inside a gate may ask this machine for.
@@ -237,6 +414,7 @@ sce_gate_build() {
     if [[ "${statuses[0]:-1}" == 0 ]]; then
         return 0
     fi
+    sce_gate_repro_from "$log" -- cmake --build "$dir" "$@"
 
     # stderr, not stdout: the caller's `sce_gate_fail` writes there too, so the
     # cause and the verdict land in the same stream in the order they happened.
@@ -331,6 +509,7 @@ sce_gate_configure_tree() {
     sce_gate_build_cache "$dir" || return 1
     local args=(-S "$source" -B "$dir")
     [[ -n "$generator" ]] && args+=(-G "$generator")
+    _sce_gate_tree_register "$dir" cmake "${args[@]}" "$@"
     cmake "${args[@]}" "$@" >"$dir/sce_gate_configure.log" 2>&1
 }
 
@@ -342,7 +521,16 @@ sce_gate_configure_tree() {
 SCE_GATE_CLEANUPS=()
 sce_gate_on_exit() { SCE_GATE_CLEANUPS+=("$1"); }
 _sce_gate_run_cleanups() {
-    local c
+    local rc=$? c
+    # A script run by itself ends red with what reproduces its failure (3 is
+    # "could not run", which claims nothing about the tree to reproduce).
+    if (( _SCE_GATE_REPRO_OWN )); then
+        if (( rc != 0 && rc != 3 )) && [[ -s "$SCE_GATE_REPRO_FILE" && -f "$SCE_GATE_REPRO_PY" ]]; then
+            python3 -I "$SCE_GATE_REPRO_PY" report --slug "$SCE_GATE_SLUG" \
+                --file "$SCE_GATE_REPRO_FILE" --fallback "bash $_SCE_GATE_SCRIPT" >&2 || true
+        fi
+        rm -f "$SCE_GATE_REPRO_FILE"
+    fi
     for c in "${SCE_GATE_CLEANUPS[@]:-}"; do
         [[ -n "$c" ]] && eval "$c" || true
     done
@@ -443,6 +631,7 @@ _sce_gate_http_fixture_start() {
     fi
     path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
         || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint path"
+    SCE_GATE_HTTP_FIXTURE_PATH="$path"
 
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
@@ -552,6 +741,14 @@ sce_main_build_dir() {
     SCE_MAIN_BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
     sce_gate_build_cache "$SCE_MAIN_BUILD_DIR" \
         || sce_gate_fail "could not make $SCE_MAIN_BUILD_DIR, the main tree's build cache"
+    # What configures this tree from a clean checkout, for the commands that
+    # reproduce a failure in it: the script that runs this function alone.
+    if [[ "$SCE_MAIN_BUILD_DIR" == build ]]; then
+        _sce_gate_tree_register "$SCE_MAIN_BUILD_DIR" scripts/prepare_ctest_tree.sh
+    else
+        _sce_gate_tree_register "$SCE_MAIN_BUILD_DIR" env "SCE_W3C_BUILD_DIR=$SCE_MAIN_BUILD_DIR" \
+            scripts/prepare_ctest_tree.sh
+    fi
 
     # The generator this tree is built with, resolved before anything asks
     # CMake for anything.
@@ -888,6 +1085,9 @@ sce_gate_configure_wasm_build_dir() {
     # first time a tree was configured from nothing (2026-11-24).
     local codegen
     codegen="$(sce_gate_codegen)" || return 1
+    _sce_gate_tree_register "$dir" emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
+        -DSCE_WASM_THREADS="$threads" -DSCE_CODEGEN="$codegen" \
+        ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev
     emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
         -DSCE_WASM_THREADS="$threads" -DSCE_CODEGEN="$codegen" \
         ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null || return 1

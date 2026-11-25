@@ -1742,6 +1742,11 @@ RUNNER_INPUTS = (
     # What the gate library sources for every gate: the mapping that keeps
     # Cargo's home out of what a Rust build writes.
     "scripts/lib/reproducible_paths.sh",
+    # What the gate library runs around every suite a gate runs, and when one
+    # fails, to name the smallest command that reproduces it
+    # (`sce_gate_tested`), and the reading of a ctest tree it asks then.
+    "scripts/lib/repro.py",
+    "scripts/lib/ctest_shards.py",
     "scripts/install_mesh_transports.sh",
     "tools/git-hooks/gate_table.py",
     "rust-toolchain.toml",
@@ -2090,8 +2095,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 "argv": own + [slug],
                 "exclusive": [UNIT_EXCLUSIVE],
                 "cache": kept,
-                "broke": f"gate {name} FAILED: run just this one with "
-                         f"`scripts/gate {' '.join(own[len(argv):] + [slug])}`",
+                "broke": f"gate {name} FAILED: its log ends with the smallest "
+                         f"command that reproduces each failure, and the whole "
+                         f"gate is `scripts/gate {' '.join(own[len(argv):] + [slug])}`",
                 "blind": f"gate {name} COULD NOT RUN on that machine: its own "
                          f"tools or packages, or the Rust release the plan "
                          f"named, are missing there. Nothing is claimed about "

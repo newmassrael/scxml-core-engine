@@ -1,0 +1,52 @@
+2026-11-25T04:54:52.6268132Z test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+2026-11-25T04:54:52.6268436Z 
+2026-11-25T04:54:52.6289679Z [1m[92m     Running[0m tests/every_file_a_generation_reads_is_in_its_closure.rs (target/debug/build/sce-build/ad865c8a4e89aa90/out/every_file_a_generation_reads_is_in_its_closure-ad865c8a4e89aa90)
+2026-11-25T04:54:52.6313345Z 
+2026-11-25T04:54:52.6313785Z running 2 tests
+2026-11-25T04:54:52.6384505Z test a_static_src_child_is_a_recorded_read_of_the_document_that_starts_it ... ok
+2026-11-25T04:54:57.8301712Z test every_file_a_statechart_reads_is_in_its_closure ... ok
+2026-11-25T04:54:57.8302003Z 
+2026-11-25T04:54:57.8302306Z test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.20s
+2026-11-25T04:54:57.8302629Z 
+2026-11-25T04:54:57.8313030Z [1m[92m     Running[0m tests/every_ledger_binding_names_what_its_file_holds.rs (target/debug/build/sce-build/f77ca4abb2a7c324/out/every_ledger_binding_names_what_its_file_holds-f77ca4abb2a7c324)
+2026-11-25T04:54:57.8339503Z 
+2026-11-25T04:54:57.8339597Z running 3 tests
+2026-11-25T04:54:57.8342357Z test a_symbol_is_held_only_as_a_whole_word ... ok
+2026-11-25T04:54:57.8347922Z test every_dead_binding_is_reported_not_the_first ... ok
+2026-11-25T04:54:58.0256430Z test every_ledger_binding_names_what_its_file_holds ... FAILED
+2026-11-25T04:54:58.0256778Z 
+2026-11-25T04:54:58.0256872Z failures:
+2026-11-25T04:54:58.0256993Z 
+2026-11-25T04:54:58.0257187Z ---- every_ledger_binding_names_what_its_file_holds stdout ----
+2026-11-25T04:54:58.0257425Z 
+2026-11-25T04:54:58.0257814Z thread 'every_ledger_binding_names_what_its_file_holds' (48419) panicked at sce-build/tests/every_ledger_binding_names_what_its_file_holds.rs:248:5:
+2026-11-25T04:54:58.0258698Z 1 of 5300 binding(s) name what their file does not hold. Re-point each to the symbol that implements the section now, or remove it with a reason, through mnemosyne-cli remove-section-binding and add-section-binding:
+2026-11-25T04:54:58.0259510Z docs/spec/scxml: scxml-D-interpret binds backends/rust/runtime/src/engine.rs `enter_states`, which the file does not hold as a word
+2026-11-25T04:54:58.0260006Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-11-25T04:54:58.0260221Z 
+2026-11-25T04:54:58.0260225Z 
+2026-11-25T04:54:58.0260296Z failures:
+2026-11-25T04:54:58.0260482Z     every_ledger_binding_names_what_its_file_holds
+2026-11-25T04:54:58.0260644Z 
+2026-11-25T04:54:58.0260841Z test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+2026-11-25T04:54:58.0261088Z 
+2026-11-25T04:54:58.0274556Z [1m[91merror[0m: test failed, to rerun pass `-p sce-build --test every_ledger_binding_names_what_its_file_holds`
+2026-11-25T04:54:58.0275727Z [1m[92m     Running[0m tests/every_rust_machine_is_handed_its_event_data_through_one_hook_signature.rs (target/debug/build/sce-build/dcb0f42f978a31bf/out/every_rust_machine_is_handed_its_event_data_through_one_hook_signature-dcb0f42f978a31bf)
+2026-11-25T04:54:58.0297009Z 
+2026-11-25T04:54:58.0297124Z running 3 tests
+2026-11-25T04:54:58.0772820Z test a_machine_whose_events_carry_no_data_is_handed_none ... ok
+2026-11-25T04:54:58.1117366Z test a_machine_whose_guard_reads_its_data_is_handed_it_the_same_way ... ok
+2026-11-25T04:54:58.1117898Z test a_machine_whose_act_reads_its_data_is_handed_it_the_same_way ... ok
+2026-11-25T04:54:58.1118175Z 
+2026-11-25T04:54:58.1118376Z test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+2026-11-25T05:02:38.3190534Z test the_command_removes_and_refuses_what_it_does_not_read ... ok
+2026-11-25T05:02:38.7188212Z test a_save_that_waited_out_a_removal_writes_nothing ... ok
+2026-11-25T05:02:38.7188531Z 
+2026-11-25T05:02:38.7188786Z test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+2026-11-25T05:02:38.7189067Z 
+2026-11-25T05:02:38.7214988Z [1m[91merror[0m: 1 target failed:
+2026-11-25T05:02:38.7215474Z     `-p sce-build --test every_ledger_binding_names_what_its_file_holds`
+2026-11-25T05:02:38.7308306Z 
+2026-11-25T05:02:38.7308829Z ERROR gate[workspace-tests]: the workspace suite, shard 2/4
+2026-11-25T05:02:38.7324885Z 
+2026-11-25T05:02:38.7325569Z ERROR gate: workspace-tests FAILED — run just this one with: scripts/gate workspace-tests

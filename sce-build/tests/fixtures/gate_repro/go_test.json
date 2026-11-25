@@ -1,0 +1,24 @@
+{"Action":"start","Package":"github.com/newmassrael/sce-go-tests/generated/test144"}
+{"Action":"run","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C","Output":"=== RUN   TestW3C\n"}
+{"Action":"run","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C/test144"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C/test144","Output":"=== RUN   TestW3C/test144\n"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C/test144","Output":"    test144_test.go:44: expected final state pass, got fail\n"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C","Output":"--- FAIL: TestW3C (0.01s)\n"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C/test144","Output":"    --- FAIL: TestW3C/test144 (0.00s)\n"}
+{"Action":"fail","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C/test144","Elapsed":0}
+{"Action":"fail","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Test":"TestW3C","Elapsed":0.01}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Output":"FAIL\n"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Output":"FAIL\tgithub.com/newmassrael/sce-go-tests/generated/test144\t0.012s\n"}
+{"Action":"fail","Package":"github.com/newmassrael/sce-go-tests/generated/test144","Elapsed":0.012}
+{"Action":"start","Package":"github.com/newmassrael/sce-go-tests/generated/test150"}
+{"Action":"run","Package":"github.com/newmassrael/sce-go-tests/generated/test150","Test":"TestW3C"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test150","Test":"TestW3C","Output":"--- PASS: TestW3C (0.00s)\n"}
+{"Action":"pass","Package":"github.com/newmassrael/sce-go-tests/generated/test150","Test":"TestW3C","Elapsed":0}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/generated/test150","Output":"ok  \tgithub.com/newmassrael/sce-go-tests/generated/test150\t0.010s\n"}
+{"Action":"pass","Package":"github.com/newmassrael/sce-go-tests/generated/test150","Elapsed":0.01}
+{"Action":"start","Package":"github.com/newmassrael/sce-go-tests/harness"}
+{"Action":"output","Package":"github.com/newmassrael/sce-go-tests/harness","Output":"FAIL\tgithub.com/newmassrael/sce-go-tests/harness [build failed]\n"}
+{"Action":"fail","Package":"github.com/newmassrael/sce-go-tests/harness","Elapsed":0}
+# github.com/newmassrael/sce-go-tests/harness
+harness/harness.go:12:2: undefined: sendTarget

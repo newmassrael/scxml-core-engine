@@ -20,6 +20,8 @@
 #   scripts/lib/ctest_shards.py report --out <dir> --executed <n> --disabled <n>
 #   scripts/lib/ctest_shards.py verify <dir>       hold the shards of one run together
 #   scripts/lib/ctest_shards.py whole-tree-fixtures <build dir> < ctest JSON
+#   scripts/lib/ctest_shards.py closure --build <dir> <test>...
+#                                                 what running those tests needs built
 #   scripts/lib/ctest_shards.py --self-test
 #
 # WHY SHARDS. Each suite's build outgrew one hosted job, or was most of one.
@@ -426,6 +428,69 @@ def plan_of(tests: list[dict], registered: dict[str, list[str]], build_real: str
             "fixtures": fixtures, "left_out": left_out, "shards": spread}
 
 
+# ── What a run of some tests needs built ────────────────────────────────────
+#
+# The smallest rerun of a test that failed (scripts/lib/repro.py) builds what
+# that test runs and nothing else, which is a shard of one: the same reading
+# of the test's command, environment and required files, the setups and
+# cleanups of the fixtures it requires, which ctest adds to the run, and the
+# whole-tree build fixtures left out, whose setup would build everything.
+
+
+def closure_of(tests: list[dict], registered: dict[str, list[str]], build_real: str,
+               outputs: set[str], names: list[str]) -> dict:
+    """The outputs a run of exactly `names` needs built, the tests that run
+    with them, and the whole-tree build fixtures the run must leave out."""
+    by_name = {t.get("name"): t for t in tests}
+    missing = [n for n in names if n not in by_name]
+    if missing:
+        raise Refused(f"ctest registers no test named {missing}")
+    fixtures = whole_tree_build_fixtures(tests, build_real, registered)
+    excluded = set(fixtures)
+    run = list(names)
+    required: set[str] = set()
+    grew = True
+    while grew:
+        grew = False
+        for name in list(run):
+            for fixture in as_list(properties_of(by_name[name]).get("FIXTURES_REQUIRED")):
+                if fixture not in excluded and fixture not in required:
+                    required.add(fixture)
+                    grew = True
+        for test in tests:
+            props = properties_of(test)
+            provides = set(as_list(props.get("FIXTURES_SETUP"))) | set(
+                as_list(props.get("FIXTURES_CLEANUP")))
+            if provides & required and test["name"] not in run:
+                run.append(test["name"])
+                grew = True
+    targets: list[str] = []
+    for name in run:
+        test = by_name[name]
+        if properties_of(test).get("DISABLED"):
+            continue
+        # The same reading a shard's plan makes (`needed_outputs`), so a rerun of
+        # one test builds what the shard that ran it built.
+        for output in needed_outputs(test, registered, build_real, outputs):
+            if output not in targets:
+                targets.append(output)
+    return {"targets": sorted(targets), "fixtures": fixtures, "run": run}
+
+
+class ClosureReader:
+    """Each build tree read once, and the closure of any tests of it."""
+
+    def __init__(self) -> None:
+        self._trees: dict[str, tuple] = {}
+
+    def closure(self, build: str, names: list[str]) -> dict:
+        build_real = os.path.realpath(build)
+        if build_real not in self._trees:
+            self._trees[build_real] = read_tests(build)
+        tests, registered, outputs = self._trees[build_real]
+        return closure_of(tests, registered, build_real, outputs, names)
+
+
 # ── Running the tools ───────────────────────────────────────────────────────
 
 
@@ -452,7 +517,8 @@ def selection_args(label: str | None, label_exclude: str | None) -> list[str]:
     return []
 
 
-def read_tree(build: str, selection: list[str]) -> tuple[list[dict], dict[str, list[str]], str, set[str], Graph]:
+def require_ninja(build: str) -> str:
+    """The tree's real path, or CannotPlan when ninja does not build it."""
     build_real = os.path.realpath(build)
     cache = Path(build_real, "CMakeCache.txt")
     generator = ""
@@ -463,6 +529,25 @@ def read_tree(build: str, selection: list[str]) -> tuple[list[dict], dict[str, l
     if generator != "Ninja":
         raise CannotPlan(f"{build} is built by '{generator or 'no generator'}'; a shard "
                          f"reads its build closure from ninja")
+    return build_real
+
+
+def read_tests(build: str) -> tuple[list[dict], dict[str, list[str]], set[str]]:
+    """Every test the tree registers, the commands its configure step names,
+    and the outputs of its build graph."""
+    build_real = require_ninja(build)
+    listed = json.loads(run(["ctest", "--test-dir", build_real, "--show-only=json-v1"],
+                            "ctest --show-only=json-v1"))
+    registered = read_registered(run(["cmake", f"-DSCE_CTEST_TREE={build_real}", "-P",
+                                      str(READER)], "ctest_registered_commands.cmake",
+                                     stream="stderr"))
+    outputs = parse_targets(run(["ninja", "-C", build_real, "-t", "targets", "all"],
+                                "ninja -t targets all"))
+    return listed.get("tests", []), registered, outputs
+
+
+def read_tree(build: str, selection: list[str]) -> tuple[list[dict], dict[str, list[str]], str, set[str], Graph]:
+    build_real = require_ninja(build)
     listed = json.loads(run(["ctest", "--test-dir", build_real, *selection,
                              "--show-only=json-v1"], "ctest --show-only=json-v1"))
     tests = listed.get("tests", [])
@@ -686,6 +771,23 @@ def self_test() -> int:
           != plan_of(tests, registered, build, targets, graph, 3)["digest"],
           "a different count is a different plan")
 
+    joined_run = closure_of(tests, registered, build, targets, ["uses_server"])
+    check(joined_run["fixtures"] == ["sce_built"], f"the whole-tree fixture is left out: {joined_run}")
+    check(sorted(joined_run["run"]) == ["server_down", "server_up", "uses_server"],
+          f"a test runs with its fixture's setup and cleanup, not its other users: {joined_run}")
+    check(joined_run["targets"] == ["tests/a", "tests/b"],
+          f"and needs what all three run built: {joined_run}")
+    alone = closure_of(tests, registered, build, targets, ["ta"])
+    check(alone["run"] == ["ta"] and alone["targets"] == ["tests/a"],
+          f"a test whose one fixture is the whole-tree build needs only its program: {alone}")
+    check(closure_of(tests, registered, build, targets, ["off"])["targets"] == [],
+          "a disabled test needs nothing built")
+    try:
+        closure_of(tests, registered, build, targets, ["no_such_test"])
+        check(False, "a test the tree does not register is refused")
+    except Refused:
+        check(True, "refused")
+
     two = assign(list(units), 2)
     check(sum(1 for s in two if s) == 2,
           "units that build nothing still spread over the shards")
@@ -777,7 +879,21 @@ def main() -> int:
     fixtures = sub.add_parser("whole-tree-fixtures",
                               help="the whole-tree build fixtures, from ctest JSON on stdin")
     fixtures.add_argument("build")
+    closing = sub.add_parser("closure", help="what running exactly these tests needs built")
+    closing.add_argument("--build", required=True)
+    closing.add_argument("names", nargs="+")
     args = parser.parse_args()
+
+    if args.command == "closure":
+        try:
+            print(json.dumps(ClosureReader().closure(args.build, args.names), indent=1))
+        except CannotPlan as error:
+            print(f"ctest_shards: {error}", file=sys.stderr)
+            return CANNOT_PLAN
+        except Refused as error:
+            print(f"ctest_shards: {error}", file=sys.stderr)
+            return 1
+        return 0
 
     if args.command == "whole-tree-fixtures":
         tests = json.load(sys.stdin).get("tests", [])

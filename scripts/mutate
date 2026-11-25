@@ -422,6 +422,12 @@ MUTATION_JUDGED_CASES=()
 # round-robin so the report can name it as a range a reader can re-run.
 MUTATION_SHARD_INDEX=1
 MUTATION_SHARD_COUNT=1
+# `--case <label|n>` names ONE case, by its label or its 1-based place: the
+# smallest round that answers for it, which is what a red gate names when one
+# case did not turn red (scripts/lib/repro.py). It is the shard of one case,
+# n of every case the casefile declares, so the round and the record it writes
+# are a shard's and nothing else needs to know a second way to slice.
+MUTATION_CASE_WANT=""
 # The 1-based half-open bounds this invocation answers for, filled in by
 # `mutation_shard_resolve` once the declare pass has seen every case, and the
 # labels inside them. The labels are what a stopped round reconciles against:
@@ -4654,6 +4660,9 @@ mutation_report() {
 # disagree, and that is worth a name rather than a green tick.
 mutation_shard_resolve() {
     local total="${#MUTATION_DECLARED_CASES[@]}" base remainder i
+    if [[ -n "$MUTATION_CASE_WANT" ]]; then
+        mutation_case_resolve "$total"
+    fi
     if (( MUTATION_SHARD_COUNT < 1 || MUTATION_SHARD_INDEX < 1 \
           || MUTATION_SHARD_INDEX > MUTATION_SHARD_COUNT )); then
         red "--shard $MUTATION_SHARD_INDEX/$MUTATION_SHARD_COUNT is not a shard:"
@@ -4691,6 +4700,35 @@ mutation_shard_resolve() {
     dim "shard $MUTATION_SHARD_INDEX/$MUTATION_SHARD_COUNT: case(s) $MUTATION_SHARD_FIRST-$MUTATION_SHARD_LAST of $total"
 }
 
+# The shard of the one case `--case` named: its place among the declared
+# cases, of all of them. A label names the case it is the label of, and is
+# refused when no case or more than one carries it; a number is refused past
+# the last case.
+mutation_case_resolve() {
+    local total="$1" i found=0 at=0
+    if [[ "$MUTATION_CASE_WANT" =~ ^[0-9]+$ ]]; then
+        at="$MUTATION_CASE_WANT"
+        if (( at < 1 || at > total )); then
+            red "--case $at: the casefile declares $total case(s)"
+            exit 2
+        fi
+    else
+        for (( i = 1; i <= total; i++ )); do
+            if [[ "${MUTATION_DECLARED_CASES[i - 1]}" == "$MUTATION_CASE_WANT" ]]; then
+                found=$((found + 1))
+                at="$i"
+            fi
+        done
+        if (( found != 1 )); then
+            red "--case '$MUTATION_CASE_WANT': $found case(s) of the casefile carry that label;"
+            red "name it by its place (1 to $total) instead"
+            exit 2
+        fi
+    fi
+    MUTATION_SHARD_INDEX="$at"
+    MUTATION_SHARD_COUNT="$total"
+}
+
 # ── Driver ─────────────────────────────────────────────────────────
 
 MUTATION_ARGV=()
@@ -4712,6 +4750,13 @@ while (( $# )); do
             }
             MUTATION_SHARD_INDEX="${BASH_REMATCH[1]}"
             MUTATION_SHARD_COUNT="${BASH_REMATCH[2]}" ;;
+        --case)
+            shift
+            [[ -n "${1:-}" ]] || { red "mutate: --case takes a case's label or its place"; exit 2; }
+            MUTATION_CASE_WANT="$1" ;;
+        --case=*)
+            MUTATION_CASE_WANT="${1#--case=}"
+            [[ -n "$MUTATION_CASE_WANT" ]] || { red "mutate: --case takes a case's label or its place"; exit 2; } ;;
         --shard=*)
             [[ "${1#--shard=}" =~ ^([0-9]+)/([0-9]+)$ ]] || {
                 red "mutate: --shard takes I/N, e.g. --shard 2/6 — got '${1#--shard=}'"
@@ -4723,7 +4768,7 @@ while (( $# )); do
         # range: a range silently prints the wrong block the first time
         # anything above it grows, and this file's header has grown twice.
         -h|--help)
-            printf 'usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>\n'
+            printf 'usage: scripts/mutate [--check|--declares] [--shard I/N | --case <label|n>] <casefile>\n'
             printf '       scripts/mutate --declares <casefile> <casefile>...\n\n'
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
@@ -4732,7 +4777,9 @@ while (( $# )); do
             printf '              given several casefiles it declares them all in this one process,\n'
             printf '              each block introduced by a "casefile<TAB>path" line\n'
             printf '  --shard I/N run the I-th contiguous slice of the declared cases, so a\n'
-            printf '              casefile too large for one CI job is covered by N of them\n\n'
+            printf '              casefile too large for one CI job is covered by N of them\n'
+            printf '  --case X    run the one case labelled X, or the X-th, as the shard of\n'
+            printf '              one case: what a red gate names to reproduce a case\n\n'
             printf 'SCE_MUTATION_REPORT_DIR=<dir>  keep each ctest run'\''s console and JUnit\n'
             printf '                               document (or a marker when ctest wrote none),\n'
             printf '                               numbered in run order from the baseline\n'
@@ -4812,7 +4859,13 @@ if [[ "$MUTATION_MODE" == "declares" ]] && (( ${#MUTATION_ARGV[@]} >= 1 )); then
 fi
 
 if (( ${#MUTATION_ARGV[@]} != 1 )); then
-    echo "usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>" >&2
+    echo "usage: scripts/mutate [--check|--declares] [--shard I/N | --case <label|n>] <casefile>" >&2
+    exit 2
+fi
+# One case or one slice: a case inside a slice of other cases names nothing
+# this harness can count.
+if [[ -n "$MUTATION_CASE_WANT" ]] && (( MUTATION_SHARD_COUNT != 1 || MUTATION_SHARD_INDEX != 1 )); then
+    red "mutate: --case names one case; it takes no --shard"
     exit 2
 fi
 

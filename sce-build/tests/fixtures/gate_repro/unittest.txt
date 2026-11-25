@@ -1,0 +1,20 @@
+test_saturating_add (tests.test_numerical_conformance.NumericalConformanceTest.test_saturating_add) ... FAIL
+test_every_history_is_linearizable (tests.test_queue_history.QueueHistoryTest) ... ERROR
+
+======================================================================
+FAIL: test_saturating_add (tests.test_numerical_conformance.NumericalConformanceTest.test_saturating_add)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tests/test_numerical_conformance.py", line 88, in test_saturating_add
+AssertionError: 127 != -128
+
+======================================================================
+ERROR: test_every_history_is_linearizable (tests.test_queue_history.QueueHistoryTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+FileNotFoundError: target/queue-histories/python
+
+----------------------------------------------------------------------
+Ran 131 tests in 2.104s
+
+FAILED (failures=1, errors=1)

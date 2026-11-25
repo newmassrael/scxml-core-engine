@@ -1,0 +1,36 @@
+2026-11-24T23:20:54.5042743Z ==> gate[mutation-rounds]
+2026-11-24T23:20:58.2922661Z   [mutation-rounds] 1 of 580 casefile(s) to run — named by SCE_MUTATION_ROUNDS
+2026-11-24T23:20:58.3024555Z   [mutation-rounds] round: sce-build/tests/mutations/a_form_holds_what_its_deployment_says.cases (shard 1/1)
+2026-11-24T23:26:03.9022243Z resolved 1 test artifact(s) via cargo
+2026-11-24T23:26:03.9022626Z and 1 companion executable(s) the tests may spawn, hashed not run
+2026-11-24T23:27:12.9332200Z baseline: 1316 tests, 0 failing
+2026-11-24T23:27:12.9332439Z 
+2026-11-24T23:32:17.2940730Z CAUGHT        a list holds its bound whatever the deployment says  (42/1316 red)
+2026-11-24T23:32:17.3009321Z               red: a_byte_string_with_no_bound_reads_what_its_frame_holds, a_deployment_answers_for_every_field_of_its_set, a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on (+39 more)
+2026-11-24T23:41:32.1414915Z CAUGHT        a full list says its frame is malformed  (49/1316 red)
+2026-11-24T23:41:32.1472863Z               red: a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on, a_heap_node_holds_a_field_to_its_policy_limit, a_list_with_no_bound_reads_what_its_frame_holds (+46 more)
+2026-11-24T23:46:33.5692139Z SURVIVED      a frame is called too big to hold before it is judged whole  (0/1316 red)
+2026-11-24T23:55:30.9333978Z CAUGHT        a capacity past the bound is taken  (14/1316 red)
+2026-11-24T23:55:30.9386058Z               red: a_capacity_no_form_can_hold_is_refused, a_deployment_answers_for_every_field_of_its_set, a_deployment_that_names_what_its_set_has_not_is_refused (+11 more)
+2026-11-25T00:04:33.8363869Z CAUGHT        a C11 list past its capacity is called too many  (3/1316 red)
+2026-11-25T00:04:33.8414939Z               red: c11_holds_a_field_in_an_array_of_its_capacity, forge_c11_codec_zenoh_hello, forge_c11_codec_zenoh_value_zbuf
+2026-11-25T00:13:55.8074698Z CAUGHT        a heap node's list grows past its policy limit  (1/1316 red)
+2026-11-25T00:13:55.8127759Z               red: a_heap_node_holds_a_field_to_its_policy_limit
+2026-11-25T00:18:07.5945566Z INCONCLUSIVE  a capped text holds a view past its limit
+2026-11-25T00:18:07.5947649Z               every test binary is byte-identical to the baseline —
+2026-11-25T00:18:07.5947973Z               the mutation never reached the code under test
+2026-11-25T00:23:07.5447466Z CAUGHT        a heap node is held to an inline node's refusal  (1/1316 red)
+2026-11-25T00:23:07.5491102Z               red: a_heap_node_holds_a_field_to_its_policy_limit
+2026-11-25T00:27:16.2158218Z 
+2026-11-25T00:27:16.2159022Z 6/8 caught, 1 survived, 1 inconclusive
+2026-11-25T00:27:16.2796100Z recorded: /home/runner/.local/share/sce-mutation-corpus/verdicts/a_form_holds_what_its_deployment_says.jsonl
+2026-11-25T00:27:16.5326116Z   [mutation-rounds] this job took 69 of the 175 minutes its model promised
+2026-11-25T00:27:16.5326476Z 
+2026-11-25T00:27:16.5326976Z ERROR gate[mutation-rounds]: 1 casefile(s) no longer prove what they claim: sce-build/tests/mutations/a_form_holds_what_its_deployment_says.cases
+2026-11-25T00:27:16.5327748Z Read the verdict above for which case and which kind. INCONCLUSIVE means the
+2026-11-25T00:27:16.5328203Z mutated tree stopped compiling or the mutation reached nothing the tests
+2026-11-25T00:27:16.5328948Z build — re-aim the case at a site that is still compiled into them. SURVIVED
+2026-11-25T00:27:16.5329540Z means the suite no longer turns red, which is a finding about the suite, not
+2026-11-25T00:27:16.5329991Z about the case: the clause that case defends is currently defended by nothing.
+2026-11-25T00:27:16.5330438Z 
+2026-11-25T00:27:16.5330790Z ERROR gate: mutation-rounds FAILED — run just this one with: scripts/gate mutation-rounds

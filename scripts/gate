@@ -65,6 +65,10 @@
 # those gates alone ("One file per gate" there), and it leaves the drift
 # report below to a run that is not a unit, since the budget it checks is a
 # sum over the whole table and bx keeps a unit's timing itself.
+#
+# A gate that fails ends the run with the smallest command that reproduces
+# each thing it found, under one heading ("What a red gate ends with" below),
+# and in a hosted lane adds the same to the job's step summary.
 
 set -euo pipefail
 
@@ -89,6 +93,9 @@ AT_WANT=""
 LANDING=0
 UNIT=0
 SHARD_WANT=""
+# What this run made and removes when it ends, whatever the end.
+GATE_TEMPORARY=()
+trap 'rm -rf ${GATE_TEMPORARY[@]+"${GATE_TEMPORARY[@]}"}' EXIT
 
 while (( $# )); do
     case "$1" in
@@ -231,7 +238,7 @@ if (( ${#RANGES[@]} )); then
         exit 2
     fi
     CHANGED_FILE="$(mktemp)"
-    trap 'rm -f "$CHANGED_FILE"' EXIT
+    GATE_TEMPORARY+=("$CHANGED_FILE")
     for range in "${RANGES[@]}"; do
         base="${range%%..*}"
         tip="${range#*..}"
@@ -610,12 +617,17 @@ gate_in_container() {
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
         "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2
+    # The commands that reproduce a failure inside come back through the cache
+    # directory, and are printed out here, where the step summary is.
+    : >"$cache/repro.jsonl"
     docker run --rm "${user[@]}" "${mounts[@]}" -w "$REPO_ROOT" \
         -e SCE_GATE_CONTAINER="$containerfile" \
+        -e SCE_GATE_REPRO_HANDOFF=/sce-cache/repro.jsonl \
         -e HOME=/sce-cache/home -e CARGO_HOME=/sce-cache/cargo \
         -e PATH="/opt/clang-format-19/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         -e BX_GRANT_CORES -e BX_GRANT_MEM_MB -e SCE_GATE_NO_FAIL_FAST \
         "$tag" "${inner[@]}" || rc=$?
+    cat "$cache/repro.jsonl" >>"$SCE_GATE_REPRO_FILE" 2>/dev/null || true
     case "$rc" in
         125|126|127)
             printf '\nERROR gate: docker could not start the image of %s (status %s)\n' "$slug" "$rc" >&2
@@ -701,12 +713,69 @@ gate_now_ms() {
 # Milliseconds as seconds, the unit `cost_s` is written in.
 gate_ms_as_s() { printf '%d.%03d\n' $(( $1 / 1000 )) $(( $1 % 1000 )); }
 
+# ── What a red gate ends with ──────────────────────────────────────────
+#
+# The smallest command that reproduces each thing the gate found, from the root
+# of a clean checkout, under the one heading scripts/lib/repro.py writes: the
+# one test (`cargo test -p <pkg> --test <target> -- <name> --exact`), the one
+# ctest case after building just what it runs, the one go, pytest, Gradle or
+# Swift test, the one W3C case, the one mutation case, the one output ninja
+# could not make, the declared tree whose files a regeneration changed. Each
+# gate records them as its commands fail (`sce_gate_tested` in
+# scripts/gates/lib.sh) into the file this runner hands it, and the whole gate
+# (or the shard of it that ran) is named last. Measured 2026-11-25: a red shard
+# of `workspace-tests` said "run just this one with: scripts/gate
+# workspace-tests", 1363 seconds of suite, where one test had failed (job
+# 138951650414).
+#
+# In a hosted lane the same goes into the job's step summary, from here, so no
+# workflow carries a step for it. A gate run in an image hands its commands
+# back out (`gate_in_container`); the run inside prints nothing of its own.
+GATE_REPRO_DIR="$(mktemp -d)"
+GATE_TEMPORARY+=("$GATE_REPRO_DIR")
+
+# gate_repro_report <slug>: the heading, the commands the gate recorded and the
+# whole gate.
+gate_repro_report() {
+    local slug="$1" part="$SHARD_WANT" variable=""
+    local -a whole=(scripts/gate) args=()
+    # A lane runs one shard by its variable rather than `--shard`; the shard is
+    # what reruns it.
+    if [[ -z "$part" ]]; then
+        variable="$(python3 -I "$TABLE" shard-env "$slug" 2>/dev/null || true)"
+        if [[ -n "$variable" && -n "${!variable:-}" ]]; then
+            part="${!variable}"
+        fi
+    fi
+    if [[ -n "$part" ]]; then
+        whole+=(--shard "$part")
+    fi
+    whole+=("$slug")
+    if [[ -n "${SCE_GATE_REPRO_HANDOFF:-}" ]]; then
+        cat "$SCE_GATE_REPRO_FILE" >>"$SCE_GATE_REPRO_HANDOFF" 2>/dev/null || true
+        return 0
+    fi
+    args=(report --slug "$slug" --file "$SCE_GATE_REPRO_FILE" --fallback "${whole[*]}")
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        args+=(--summary "$GITHUB_STEP_SUMMARY")
+    fi
+    if [[ -n "${CONTAINER_OF[$slug]:-}" ]]; then
+        args+=(--note "$slug runs in the image ${CONTAINER_OF[$slug]} builds, and so does each command above: scripts/gate $slug builds the image and runs there")
+    fi
+    if ! python3 -I "$REPO_ROOT/scripts/lib/repro.py" "${args[@]}"; then
+        printf '\n==> reproduce gate[%s]\n  the whole gate: %s\n' "$slug" "${whole[*]}" >&2
+    fi
+    return 0
+}
+
 declare -A ELAPSED=()
 for slug in "${ORDER[@]}"; do
     [[ -n "$slug" ]] || continue
     script="$REPO_ROOT/scripts/gates/${slug}.sh"
     [[ -x "$script" ]] || { printf '\nERROR gate: %s is not executable\n' "$script" >&2; exit 1; }
     printf '\n==> gate[%s]\n' "$slug" >&2
+    export SCE_GATE_REPRO_FILE="$GATE_REPRO_DIR/$slug.jsonl"
+    : >"$SCE_GATE_REPRO_FILE"
     start_ms=$(gate_now_ms)
     if [[ -n "${CONTAINER_OF[$slug]:-}" ]]; then
         gate_cmd=(gate_in_container "$slug" "${CONTAINER_OF[$slug]}")
@@ -724,8 +793,8 @@ for slug in "${ORDER[@]}"; do
             printf '\nERROR gate: %s COULD NOT RUN — its own inputs are missing (see above). Nothing is claimed about the tree.\n' \
                 "$slug" >&2
         else
-            printf '\nERROR gate: %s FAILED — run just this one with: scripts/gate %s\n' \
-                "$slug" "$slug" >&2
+            printf '\nERROR gate: %s FAILED — the commands that reproduce what it found end this run\n' \
+                "$slug" >&2
         fi
         # WHAT DID NOT RUN, by name. The runner stops at the first failure, so
         # every gate after this one is UNRUN — and saying nothing about them
@@ -749,6 +818,9 @@ for slug in "${ORDER[@]}"; do
         if (( ${#unrun[@]} > 0 )); then
             printf 'gate: %d gate(s) after it did NOT run, so nothing is claimed about them: %s\n' \
                 "${#unrun[@]}" "${unrun[*]}" >&2
+        fi
+        if (( rc != 3 )); then
+            gate_repro_report "$slug" >&2
         fi
         exit "$rc"
     }

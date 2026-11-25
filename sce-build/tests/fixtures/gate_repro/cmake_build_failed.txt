@@ -1,0 +1,30 @@
+2026-11-23T08:58:33.8103726Z [1m[92m   Compiling[0m sce-rust-runtime v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/runtime)
+2026-11-23T08:59:25.9393784Z [1m[92m    Finished[0m `release` profile [optimized] target(s) in 52.42s
+2026-11-23T09:04:59.0833024Z   [cpp-suite] building the main tree
+2026-11-23T10:25:33.4416969Z   [cpp-suite] build failed; from the first FAILED edge:
+2026-11-23T10:25:33.4435595Z FAILED: [code=1] tests/CMakeFiles/saved_state_test.dir/saved/SavedStateTest.cpp.o 
+2026-11-23T10:25:33.4443265Z /usr/bin/ccache /usr/bin/c++ -DSCE_SAVED_FIXTURES_DIR=\"/home/runner/work/scxml-core-engine/scxml-core-engine/sce-build/tests/fixtures/static_datamodel/saved\" -DSCE_TEST_TARGET=1 -DSCE_USE_SPDLOG -I/home/runner/work/scxml-core-engine/scxml-core-engine/sce/include -I/home/runner/work/scxml-core-engine/scxml-core-engine/tests -I/home/runner/work/scxml-core-engine/scxml-core-engine/sce/include/common -I/home/runner/work/scxml-core-engine/scxml-core-engine/sce/../third_party/spdlog/include -I/home/runner/work/scxml-core-engine/scxml-core-engine/sce/../third_party/nlohmann_json/include -I/home/runner/work/scxml-core-engine/scxml-core-engine/sce/../third_party/pugixml/src -I/home/runner/work/scxml-core-engine/scxml-core-engine/backends/cpp/forge-runtime/include -isystem /home/runner/work/scxml-core-engine/scxml-core-engine/build/_deps/googletest-src/googletest/include -isystem /home/runner/work/scxml-core-engine/scxml-core-engine/build/_deps/googletest-src/googletest -O2 -g -DNDEBUG -std=c++20 -fPIE -gsplit-dwarf -Wall -Wextra -pedantic -Werror -include /home/runner/work/scxml-core-engine/scxml-core-engine/sce/include/common/DisableStdOut.h -Wno-maybe-uninitialized -MD -MT tests/CMakeFiles/saved_state_test.dir/saved/SavedStateTest.cpp.o -MF tests/CMakeFiles/saved_state_test.dir/saved/SavedStateTest.cpp.o.d -o tests/CMakeFiles/saved_state_test.dir/saved/SavedStateTest.cpp.o -c /home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp
+2026-11-23T10:25:33.4456085Z /home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp: In member function ‘virtual void SavedState_AnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded_Test::TestBody()’:
+2026-11-23T10:25:33.4546961Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:795:48: error: missing initializer for member ‘SCE::Saved::RecordHolder::part’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4566686Z   795 |     record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+2026-11-23T10:25:33.4567257Z       |                                                ^
+2026-11-23T10:25:33.4569149Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:795:48: error: missing initializer for member ‘SCE::Saved::RecordHolder::path’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4572105Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:795:76: error: missing initializer for member ‘SCE::Saved::RecordHolder::part’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4573449Z   795 |     record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+2026-11-23T10:25:33.4574018Z       |                                                                            ^
+2026-11-23T10:25:33.4575385Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:795:76: error: missing initializer for member ‘SCE::Saved::RecordHolder::path’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4577410Z /home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp: In member function ‘virtual void SavedState_ANullSavedBeforeAFieldWasWidenedIsRefused_Test::TestBody()’:
+2026-11-23T10:25:33.4579252Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:857:48: error: missing initializer for member ‘SCE::Saved::RecordHolder::part’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4580906Z   857 |     record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+2026-11-23T10:25:33.4581409Z       |                                                ^
+2026-11-23T10:25:33.4582783Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:857:48: error: missing initializer for member ‘SCE::Saved::RecordHolder::path’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4584863Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:857:76: error: missing initializer for member ‘SCE::Saved::RecordHolder::part’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4586522Z   857 |     record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+2026-11-23T10:25:33.4587076Z       |                                                                            ^
+2026-11-23T10:25:33.4588473Z ##[error]/home/runner/work/scxml-core-engine/scxml-core-engine/tests/saved/SavedStateTest.cpp:857:76: error: missing initializer for member ‘SCE::Saved::RecordHolder::path’ [-Werror=missing-field-initializers]
+2026-11-23T10:25:33.4589675Z cc1plus: all warnings being treated as errors
+2026-11-23T10:25:33.4590225Z ninja: build stopped: subcommand failed.
+2026-11-23T10:25:33.4590432Z 
+2026-11-23T10:25:33.4590619Z ERROR gate[cpp-suite]: main tree build
+2026-11-23T10:25:33.4590826Z 
+2026-11-23T10:25:33.4591231Z ERROR gate: cpp-suite FAILED — run just this one with: scripts/gate cpp-suite

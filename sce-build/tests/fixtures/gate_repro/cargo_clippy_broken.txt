@@ -1,0 +1,28 @@
+2026-11-25T00:32:43.7713430Z [1m[92m   Compiling[0m sce-rust-scenarios v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/scenarios)
+2026-11-25T00:32:43.7714808Z [1m[92m   Compiling[0m sce-rust-tests v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/tests)
+2026-11-25T00:32:43.7716029Z [1m[92m   Compiling[0m sce-rust-world v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/world)
+2026-11-25T00:32:43.7717359Z [1m[92m   Compiling[0m sce-forge-conformance v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/forge-conformance)
+2026-11-25T00:32:50.4702507Z [1m[92m   Compiling[0m sce-server-suite v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/tests/server)
+2026-11-25T00:32:53.6307327Z [1m[92m   Compiling[0m sce-deploy-conformance v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/deploy-conformance)
+2026-11-25T00:32:54.3806051Z [1m[92m   Compiling[0m sce-feature-conformance v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/feature-conformance)
+2026-11-25T00:34:36.7432368Z [1m[91merror[0m[1m: unnecessary parentheses around assigned value[0m
+2026-11-25T00:34:36.7481937Z   [1m[94m--> [0m/home/runner/work/scxml-core-engine/scxml-core-engine/target/debug/build/sce-forge-conformance/57f35e457cb0053c/out/algorithm_shift_count.rs:58:13
+2026-11-25T00:34:36.7515132Z    [1m[94m|[0m
+2026-11-25T00:34:36.7553056Z [1m[94m58[0m [1m[94m|[0m         r = (u64::checked_shr(l as u64, u32::from(n)).unwrap_or(0) as i64);
+2026-11-25T00:34:36.7553978Z    [1m[94m|[0m             [1m[91m^[0m                                                            [1m[91m^[0m
+2026-11-25T00:34:36.7554690Z    [1m[94m|[0m
+2026-11-25T00:34:36.7555251Z    [1m[94m= [0m[1mnote[0m: `-D unused-parens` implied by `-D warnings`
+2026-11-25T00:34:36.7556014Z    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(unused_parens)]`
+2026-11-25T00:34:36.7556652Z [1m[96mhelp[0m: remove these parentheses
+2026-11-25T00:34:36.7557074Z    [1m[94m|[0m
+2026-11-25T00:34:36.7557895Z [1m[94m58[0m [91m- [0m        r = [91m([0mu64::checked_shr(l as u64, u32::from(n)).unwrap_or(0) as i64[91m)[0m;
+2026-11-25T00:34:36.7558901Z [1m[94m58[0m [92m+ [0m        r = u64::checked_shr(l as u64, u32::from(n)).unwrap_or(0) as i64;
+2026-11-25T00:34:36.7559484Z    [1m[94m|[0m
+2026-11-25T00:34:36.7559652Z 
+2026-11-25T00:34:50.0036173Z [1m[91merror[0m: could not compile `sce-forge-conformance` (test "numerical_conformance") due to 1 previous error
+2026-11-25T00:34:50.0046637Z [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+2026-11-25T00:34:53.7655846Z [1m[91merror[0m: could not compile `sce-forge-conformance` (test "forge_source_round_trip") due to 1 previous error
+2026-11-25T00:34:53.9132737Z 
+2026-11-25T00:34:53.9133783Z ERROR gate[clippy]: cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss,sce-forge-conformance/alloc
+2026-11-25T00:34:53.9135953Z 
+2026-11-25T00:34:53.9136596Z ERROR gate: clippy FAILED — run just this one with: scripts/gate clippy

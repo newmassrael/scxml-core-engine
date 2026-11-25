@@ -1,0 +1,43 @@
+2026-11-25T04:49:58.3310863Z   [nostd-mcu] one workspace, an MCU crate and an AP crate (std host + MCU thumb)
+2026-11-25T04:49:58.5221917Z [1m[92m    Updating[0m crates.io index
+2026-11-25T04:49:58.5959166Z [1m[92m     Locking[0m 19 packages to highest compatible versions
+2026-11-25T04:49:58.5969884Z [1m[92m      Adding[0m heapless v0.8.0 [1m[33m(available: v0.9.4)[0m
+2026-11-25T04:49:58.6154538Z [1m[92m   Compiling[0m proc-macro2 v1.0.107
+2026-11-25T04:49:58.6154950Z [1m[92m   Compiling[0m unicode-ident v1.0.27
+2026-11-25T04:49:58.6155315Z [1m[92m   Compiling[0m quote v1.0.47
+2026-11-25T04:49:58.6155604Z [1m[92m   Compiling[0m libc v0.2.191
+2026-11-25T04:49:58.6595258Z [1m[92m    Checking[0m byteorder v1.5.0
+2026-11-25T04:49:58.7116692Z [1m[92m   Compiling[0m heapless v0.8.0
+2026-11-25T04:49:58.7308627Z [1m[92m    Checking[0m hash32 v0.3.1
+2026-11-25T04:49:58.7616766Z [1m[92m    Checking[0m stable_deref_trait v1.2.1
+2026-11-25T04:49:58.7745244Z [1m[92m   Compiling[0m thiserror v2.0.21
+2026-11-25T04:49:58.8328463Z [1m[92m   Compiling[0m portable-atomic v1.15.0
+2026-11-25T04:49:59.1578802Z [1m[92m   Compiling[0m syn v3.0.10
+2026-11-25T04:49:59.1862858Z [1m[92m    Checking[0m cfg-if v1.0.5
+2026-11-25T04:49:59.1905540Z [1m[92m    Checking[0m sce-portable-bytes v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/portable-bytes)
+2026-11-25T04:49:59.3177161Z [1m[92m    Checking[0m log v0.4.35
+2026-11-25T04:49:59.4895851Z [1m[92m    Checking[0m getrandom v0.2.17
+2026-11-25T04:50:00.1224049Z [1m[92m   Compiling[0m thiserror-impl v2.0.21
+2026-11-25T04:50:00.5255091Z [1m[92m    Checking[0m sce-rust-runtime v0.1.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/runtime)
+2026-11-25T04:50:01.4551838Z [1m[92m    Checking[0m sce-portable-emit-probe v0.0.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/probes/portable-emit)
+2026-11-25T04:50:01.4552833Z [1m[92m    Checking[0m sce-feature-unification-ap v0.0.0 (/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/probes/feature-unification/ap)
+2026-11-25T04:50:01.4780278Z [1m[91merror[E0053][0m[1m: method `admit_event_data` has an incompatible type for trait[0m
+2026-11-25T04:50:01.4781079Z    [1m[94m--> [0m/home/runner/work/scxml-core-engine/scxml-core-engine/backends/rust/probes/portable-emit/src/portable_probe_sm.rs:646:61
+2026-11-25T04:50:01.4781520Z     [1m[94m|[0m
+2026-11-25T04:50:01.4782344Z [1m[94m646[0m [1m[94m|[0m     fn admit_event_data(event_data: Self::EventData<'_>) -> bool {
+2026-11-25T04:50:01.4783150Z     [1m[94m|[0m                                                             [1m[91m^^^^[0m [1m[91mexpected `Result<(), PayloadRefusal>`, found `bool`[0m
+2026-11-25T04:50:01.4783485Z     [1m[94m|[0m
+2026-11-25T04:50:01.4784279Z     [1m[94m= [0m[1mnote[0m: expected signature `fn(PortableProbeEventData<[1m[35m'_[0m>) -> [1m[35mResult<(), PayloadRefusal>[0m`
+2026-11-25T04:50:01.4784853Z                found signature `fn(PortableProbeEventData<[1m[35m'_[0m>) -> [1m[35mbool[0m`
+2026-11-25T04:50:01.4785243Z [1m[96mhelp[0m: change the output type to match the trait
+2026-11-25T04:50:01.4785479Z     [1m[94m|[0m
+2026-11-25T04:50:01.4785853Z [1m[94m646[0m [91m- [0m    fn admit_event_data(event_data: Self::EventData<'_>) -> [91mbool[0m {
+2026-11-25T04:50:01.4786436Z [1m[94m646[0m [92m+ [0m    fn admit_event_data(event_data: Self::EventData<'_>) -> [92mResult<(), PayloadRefusal>[0m {
+2026-11-25T04:50:01.4786789Z     [1m[94m|[0m
+2026-11-25T04:50:01.4786877Z 
+2026-11-25T04:50:01.4890470Z [1mFor more information about this error, try `rustc --explain E0053`.[0m
+2026-11-25T04:50:01.4904101Z [1m[91merror[0m: could not compile `sce-portable-emit-probe` (lib) due to 1 previous error
+2026-11-25T04:50:01.4959365Z 
+2026-11-25T04:50:01.4959900Z ERROR gate[nostd-mcu]: MCU and AP crates in one host build
+2026-11-25T04:50:01.4973275Z 
+2026-11-25T04:50:01.4973796Z ERROR gate: nostd-mcu FAILED — run just this one with: scripts/gate nostd-mcu

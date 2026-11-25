@@ -89,6 +89,13 @@ on:
       - '.github/actions/install-rust/**'
       # What says which shard runs which part of the suite.
       - 'scripts/lib/workspace_shards.py'
+      # What `a_red_gate_names_the_smallest_rerun` runs and reads: the reader
+      # of a red runner's report, the gate library that hands it the report,
+      # the runner that prints its heading, and the mutation harness.
+      - 'scripts/lib/repro.py'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gate'
+      - 'scripts/mutate'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
@@ -278,6 +285,13 @@ on:
       - '.github/actions/install-rust/**'
       # What says which shard runs which part of the suite.
       - 'scripts/lib/workspace_shards.py'
+      # What `a_red_gate_names_the_smallest_rerun` runs and reads: the reader
+      # of a red runner's report, the gate library that hands it the report,
+      # the runner that prints its heading, and the mutation harness.
+      - 'scripts/lib/repro.py'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gate'
+      - 'scripts/mutate'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
