@@ -8974,11 +8974,14 @@ set_tests_properties(IntegrationTests PROPERTIES ENVIRONMENT "SCE_CODEGEN_BIN=${
 # Priority Level 4: W3C SCXML compliance validation (comprehensive validation, ~40s)
 # WASM: the same registry set and generated AOT headers, run under Node
 # Native: Full test suite including HTTP tests with txml-converter
-if(EMSCRIPTEN)
-    add_test(NAME W3CFullComplianceTests COMMAND node w3c_test_cli.js)
-else()
-    add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
-endif()
+#
+# The target is the command in both trees. Under emscripten ctest runs it
+# through CMAKE_CROSSCOMPILING_EMULATOR (Node), as it runs every other test
+# program here, and the command names the program by its full path, which is
+# what a shard of the suite (scripts/lib/ctest_shards.py) reads to know what to
+# build. Spelled `node w3c_test_cli.js`, it named a file relative to the
+# working directory, and a shard holding this test built no runner for it.
+add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
 
 # A run whose BasicHTTP listener cannot bind must say so: the test is an ERROR
 # on both engines and the run exits 1. One run reported 380 of 404 tests, all

@@ -530,19 +530,36 @@ jobs:
         fi
         exit "$status"
 
-  # The WebAssembly half of the suite above: the emscripten tree built whole
-  # and every case it registers run under Node, the engine compiled the way the
-  # published visualizer is. A job of its own rather than a step after the
-  # native suite: the two trees share no build, and either one red must not
-  # stop the other from reporting. SCE_REQUIRE_TOOLS turns the gate's "emsdk
-  # missing, skipping" into a failure here, where emsdk is installed.
+  # The WebAssembly half of the suite above: the emscripten tree's every case
+  # run under Node, the engine compiled the way the published visualizer is.
+  # Jobs of their own rather than steps after the native suite: the two trees
+  # share no build, and either one red must not stop the other from reporting.
+  # SCE_REQUIRE_TOOLS turns the gate's "emsdk missing, skipping" into a failure
+  # here, where emsdk is installed.
+  #
+  # In six shards, one job each, and a last job that holds them together, as
+  # the native suite is. Run whole, the tree built cold in 3328s before a case
+  # ran (run 41956988917, 2026-11-05) and the job ran 4745s before it failed
+  # (job 137573089028), with no compiler cache to warm it. Each job runs the
+  # cpp-suite-wasm gate with `SCE_CPP_SUITE_WASM_SHARD`, which builds only what
+  # the tests of its shard run (scripts/lib/ctest_shards.py) and runs those
+  # tests; `hook_ci_parity` holds the matrix and the variable to one count, and
+  # `cpp-suite-wasm-verdict` holds the shards of a run to one plan and every
+  # test of it to a shard that ran it. Six, because the cold build is about six
+  # times the ten minutes a shard is sized to, less what every shard compiles
+  # alike (the engine and its libraries), which the first sharded run's plan
+  # and build-time report measure; re-size from them. The build machines run
+  # the gate whole.
   cpp-suite-wasm:
-    name: C++ ctest Suite (WASM, under Node)
+    name: C++ ctest Suite (WASM, under Node, shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
-    # An allowance, not a measurement: the tree had never been built whole when
-    # this job arrived (2026-11-05). The W3C job's cold build of two of its
-    # programs took 21 minutes; the first run of this one is the reading.
+    # The whole suite's allowance until a sharded run is measured.
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
     - name: Checkout Repository
@@ -561,7 +578,9 @@ jobs:
           clang-format-19
     # clang-format-19: `sce-codegen` formats the C++ it generates with
     # clang-format pinned to major 19 and refuses without it
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). ninja-build: a shard reads what its
+    # tests need built from ninja's graph, and plans nothing in a tree of
+    # another generator.
 
     - name: Setup Problem Matchers
       run: |
@@ -614,19 +633,56 @@ jobs:
     - name: Run the C++ ctest suite under Node
       env:
         SCE_REQUIRE_TOOLS: 1
+        SCE_CPP_SUITE_WASM_SHARD: ${{ matrix.shard }}/6
       run: |
         source emsdk/emsdk_env.sh
         scripts/gate cpp-suite-wasm
 
-    # The gate keeps both logs in the build tree: the build's, which names
-    # every failed edge, and the run's.
-    - name: Upload the WASM suite logs
+    # The plan and what this shard ran (`cpp-suite-wasm-verdict` reads them),
+    # and the gate's two logs: the build's, which names every failed edge, and
+    # the run's.
+    - name: Upload this shard's plan and logs
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      if: ${{ !cancelled() }}
+      if: always()
       with:
-        name: cpp-suite-wasm-logs
+        name: cpp-suite-wasm-shard-${{ matrix.shard }}
         path: |
+          build_wasm/ctest-shard/
           build_wasm/cpp_suite_wasm_build.log
           build_wasm/cpp_suite_wasm_ctest.log
+          build_wasm/.ninja_log
         retention-days: 30
-        if-no-files-found: ignore
+        if-no-files-found: warn
+        include-hidden-files: true
+
+  # The verdict of the WebAssembly lane, for the reason `cpp-suite-verdict`
+  # gives: a matrix answers per shard, and "the suite passed" is a claim about
+  # the six together.
+  cpp-suite-wasm-verdict:
+    name: C++ ctest Suite (WASM, under Node)
+    needs: cpp-suite-wasm
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    - name: Download the shards' plans and reports
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: cpp-suite-wasm-shard-*
+        path: shards
+
+    - name: Hold the shards to one plan and the whole suite
+      env:
+        SHARDS_RESULT: ${{ needs.cpp-suite-wasm.result }}
+      run: |
+        status=0
+        python3 scripts/lib/ctest_shards.py verify shards || status=1
+        if [[ "$SHARDS_RESULT" != success ]]; then
+          echo "::error title=cpp-suite-wasm::a shard job ended $SHARDS_RESULT"
+          status=1
+        fi
+        exit "$status"

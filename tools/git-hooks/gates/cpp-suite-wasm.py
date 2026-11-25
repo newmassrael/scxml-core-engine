@@ -9,6 +9,11 @@
 # programs and the two gates above built three of them, and
 # `integration_tests` could not build there at all.
 #
+# Its script runs one shard of the suite when SCE_CPP_SUITE_WASM_SHARD
+# names `k/N`, as cpp-suite.yml's six jobs do (scripts/lib/ctest_shards.py
+# plans the part and builds only what its tests run). No `shard_env`: the
+# build machines run it whole, as they run `cpp-suite`.
+#
 # ⚠ `cost_s` is HALF a reading. The first run built the tree cold in 3328s
 # on a hosted runner and failed seven links before ctest started, so the
 # Node half is not in the figure; the arrival estimate it replaces, 2400s
@@ -25,7 +30,11 @@
                "settings and says what the tree does not declare), the "
                "generator and its templates, and the documents.",
     # The emsdk pin the build machines install for it comes first.
+    # Then what spreads the suite over the lane's shards and the reading of
+    # the tree it plans from, which the gate script runs.
     "extra": ["scripts/install_emsdk.sh",
+              "scripts/lib/ctest_shards.py",
+              "scripts/lib/ctest_registered_commands.cmake",
               "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
               "resources/**", "integration_resources/**",
               "tools/codegen/templates/**", "sce-build/src/**"],
@@ -37,7 +46,8 @@
                "links, so the figure is that build alone and the ctest "
                "half has no reading yet. It needs emsdk, which a push "
                "host is not required to carry. cpp-suite.yml runs it in "
-               "a job of its own beside the native suite.",
+               "six shards beside the native suite "
+               "(SCE_CPP_SUITE_WASM_SHARD).",
     "cost_s": 3328,
     "summary": "C++ ctest suite built with emscripten, every case under Node",
     # The SDK and the Node it ships are bx.toml's pinned emsdk tool.

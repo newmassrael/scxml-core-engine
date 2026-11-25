@@ -1760,10 +1760,11 @@ fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
 
 // ── The sharded ctest suites are wired to run what the unsharded suites run ─
 //
-// Two gates run a ctest suite as N jobs of a lane, each with a variable of its
+// Three gates run a ctest suite as N jobs of a lane, each with a variable of its
 // own that names `k/N`: cpp-suite (the main tree, `-LE c11`, `SCE_CTEST_SHARD`)
-// in cpp-suite.yml, and w3c-c11 (the main tree, `-L c11`, `SCE_W3C_C11_SHARD`)
-// in w3c-tests.yml. The build machines run each whole. Which tests a suite holds
+// and cpp-suite-wasm (the emscripten tree, `SCE_CPP_SUITE_WASM_SHARD`) in
+// cpp-suite.yml, and w3c-c11 (the main tree, `-L c11`, `SCE_W3C_C11_SHARD`) in
+// w3c-tests.yml. The build machines run each whole. Which tests a suite holds
 // is a fact of a configured tree, so the union is held where there is one:
 // every job plans the whole suite against the count the gate registered
 // (`ctest_shards.py plan --expect`), and the lane's verdict job holds the plans
@@ -1778,11 +1779,16 @@ const BUILD_TIME_REPORT: &str = "scripts/lib/build_time_report.py";
 
 /// Each lane that runs a ctest suite in shards: its workflow, the gate script
 /// its jobs run, and the variable that hands the gate its shard.
-const CTEST_SHARDED_LANES: [(&str, &str, &str); 2] = [
+const CTEST_SHARDED_LANES: [(&str, &str, &str); 3] = [
     (
         ".github/workflows/cpp-suite.yml",
         "scripts/gates/cpp-suite.sh",
         "SCE_CTEST_SHARD",
+    ),
+    (
+        ".github/workflows/cpp-suite.yml",
+        "scripts/gates/cpp-suite-wasm.sh",
+        "SCE_CPP_SUITE_WASM_SHARD",
     ),
     (
         ".github/workflows/w3c-tests.yml",
