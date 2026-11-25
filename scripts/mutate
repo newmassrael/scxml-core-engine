@@ -339,7 +339,11 @@ MUTATION_UNREADABLE="$WORK/unreadable.txt"
 # end. Without a clock here the round stops at that case forever and the author
 # reads a frozen terminal instead of CAUGHT. Five minutes is far past this
 # repository's slowest test binary (the workspace's longest single artifact
-# runs about two) and far short of a wait anyone would sit through.
+# runs about two) and far short of a wait anyone would sit through. It is the
+# floor of the bound, not the bound: a full round gives the baseline three times
+# it and each mutant twice what the baseline took and a minute when that is more
+# (the baseline's comment says why), so a suite near five minutes on a slow
+# runner is still judged.
 #
 # A casefile whose oracle is slower than that says so with `mutation_timeout`,
 # below; this is the bound for every other one. A value in the environment
@@ -3934,8 +3938,30 @@ mutation_init() {
         mutation_build_diagnostics >&2
         exit 2
     }
-    local baseline_timed_out
+    # The clock a mutant runs under is read off the baseline, not fixed. A fixed
+    # clock near a suite's own time is a verdict by the runner's speed: the whole
+    # library of sce-build ran 274 to 332 seconds on a hosted runner against the
+    # 300 every binary was given, so the baselines of every casefile that ran it
+    # "did not terminate" on one runner and passed on the next (Mutation Rounds
+    # run 45318713297: ten jobs). So the baseline runs under three times the
+    # bound (the casefile's or the default, at most `MUTATION_TIMEOUT_MAX`), and
+    # each mutant under twice what the baseline took and a minute, or the bound
+    # when that is longer: a mutant that does not end is still a verdict, at a
+    # cost in proportion to the suite. A bound the caller set in the environment
+    # is theirs, for the baseline and the mutants alike.
+    local baseline_timed_out bound="$MUTATION_ARTIFACT_TIMEOUT" baseline_started baseline_secs
+    if [[ -z "$MUTATION_TIMEOUT_PINNED" ]]; then
+        MUTATION_ARTIFACT_TIMEOUT=$(( bound * 3 ))
+        (( MUTATION_ARTIFACT_TIMEOUT > MUTATION_TIMEOUT_MAX )) && MUTATION_ARTIFACT_TIMEOUT=$MUTATION_TIMEOUT_MAX
+        (( MUTATION_ARTIFACT_TIMEOUT < bound )) && MUTATION_ARTIFACT_TIMEOUT=$bound
+    fi
+    baseline_started=$SECONDS
     read -r BASELINE_RUN BASELINE_FAILED baseline_timed_out <<<"$(mutation_run_artifacts)"
+    baseline_secs=$(( SECONDS - baseline_started ))
+    MUTATION_ARTIFACT_TIMEOUT="$bound"
+    if [[ -z "$MUTATION_TIMEOUT_PINNED" ]] && (( 2 * baseline_secs + 60 > bound )); then
+        MUTATION_ARTIFACT_TIMEOUT=$(( 2 * baseline_secs + 60 ))
+    fi
     if [[ -s "$MUTATION_UNREADABLE" ]]; then
         red "the baseline run produced no readable result — the round cannot start,"
         red "because there is nothing for the cases below to be compared against"
@@ -3992,6 +4018,7 @@ mutation_init() {
         exit 2
     fi
     green "baseline: $BASELINE_RUN tests, 0 failing"
+    dim "the baseline ran ${baseline_secs}s; a mutant's test binary is bounded at ${MUTATION_ARTIFACT_TIMEOUT}s"
     echo
 }
 

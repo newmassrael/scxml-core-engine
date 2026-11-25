@@ -21,9 +21,14 @@
 //     hour, declared once: anything else is refused (exit 2) before a build,
 //     because one case that never ends costs the whole bound and a typo must
 //     not be able to turn a round into a day;
-//   - the declared number is the clock the baseline and the cases run under,
-//     and a value in the environment, which is a person asking for a short
-//     round, wins over it.
+//   - the declared number is the floor of the clocks a round runs under: the
+//     baseline runs under three times it, and each mutant under twice what the
+//     baseline took and a minute when that is more, so a suite near its bound on
+//     a slow runner is judged rather than reported as never ending (Mutation
+//     Rounds run 45318713297: the whole sce-build library ran 274 to 332
+//     seconds against a fixed 300 on hosted runners);
+//   - a value in the environment, which is a person asking for a short round,
+//     is the clock for the baseline and the cases alike.
 //
 // The last is measured by running real rounds over a probe crate whose oracle
 // pauses for four seconds: a harness that parsed the word and kept the old
@@ -200,21 +205,45 @@ fn a_bound_that_is_not_a_whole_number_of_seconds_in_range_is_refused_before_a_bu
 }
 
 #[test]
-fn the_declared_bound_is_the_clock_the_baseline_and_the_cases_run_under() {
+fn the_declared_bound_is_the_floor_of_the_clocks_the_baseline_and_the_cases_run_under() {
     let p = probe("clock");
 
-    // A bound shorter than the oracle's pause ends the baseline, and the round
-    // says it was the clock that did.
-    p.write("mutation_timeout 2");
+    // Three times a bound shorter than a third of the oracle's pause ends the
+    // baseline, and the round says it was the clock that did.
+    p.write("mutation_timeout 1");
     let (status, out) = p.run(&[], &[]);
     assert_ne!(
         status,
         Some(0),
-        "a baseline the bound ends must not pass:\n{out}"
+        "a baseline three times the bound ends must not pass:\n{out}"
     );
     assert!(
-        out.contains("did not terminate within 2s"),
-        "the declared 2s was not the clock the baseline ran under:\n{out}"
+        out.contains("did not terminate within 3s"),
+        "three times the declared 1s was not the clock the baseline ran under:\n{out}"
+    );
+
+    // A bound shorter than the pause but more than a third of it lets the
+    // baseline finish, and each mutant is then bounded by what the baseline took:
+    // a suite slower than its bound is judged, not reported as never ending.
+    p.write("mutation_timeout 2");
+    let (status, out) = p.run(&[], &[]);
+    assert_eq!(
+        status,
+        Some(0),
+        "a baseline within three times its bound was not judged:\n{out}"
+    );
+    let bounded = out
+        .lines()
+        .find_map(|line| line.split("a mutant's test binary is bounded at ").nth(1))
+        .and_then(|rest| rest.trim_end_matches('s').trim().parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("the round did not say what bounds a mutant:\n{out}"));
+    assert!(
+        bounded >= 2 * 4 + 60,
+        "a mutant was bounded at {bounded}s, less than twice the 4s baseline and a minute:\n{out}"
+    );
+    assert!(
+        out.contains("CAUGHT") && out.contains("the subject answers two"),
+        "the case was not judged after the baseline finished:\n{out}"
     );
 
     // A bound longer than the pause lets the baseline finish, and the case that
