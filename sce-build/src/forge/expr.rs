@@ -78,6 +78,7 @@ pub(crate) mod go_tree;
 pub(crate) mod kotlin_tree;
 pub(crate) mod rust_tree;
 pub(crate) mod swift;
+pub(crate) mod swift_tree;
 
 use c_tree::{CBinOp, CExpr, CInit, CUnOp};
 use cpp_tree::{CppBinOp, CppExpr, CppUnOp};
@@ -633,7 +634,7 @@ fn lower_at(
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?.to_string(),
         ExprTarget::Go => emit_go(&ast, expected)?,
-        ExprTarget::Swift => swift::emit(&ast, expected)?,
+        ExprTarget::Swift => swift::emit(&ast, expected)?.to_string(),
         ExprTarget::Python => emit_python(&ast, expected)?.to_string(),
         ExprTarget::C if position == Position::Owned && expected == InferredType::Bytes => {
             emit_c_owned_bytes(&ast)?.to_string()
@@ -3614,7 +3615,7 @@ pub fn transpile_lvalue(
         }
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
-        ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
+        ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::C => emit_c(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?.to_string(),
@@ -16899,7 +16900,7 @@ mod tests {
         );
         assert_eq!(
             landed(source, ExprTarget::Swift, u64t),
-            "prev | (UInt64(1) << m)"
+            "prev | UInt64(1) << m"
         );
         // Python's left shift would make `1 * 2**m` whole before it is reduced.
         assert_eq!(
@@ -17007,7 +17008,7 @@ mod tests {
                 u64t,
                 "sce_algorithm.U64.wrapping_shl(prev, m)",
             ),
-            (ExprTarget::Swift, "h >> m", i16t, "(h >> m)"),
+            (ExprTarget::Swift, "h >> m", i16t, "h >> m"),
         ] {
             assert_eq!(landed(source, target, slot), want, "{target:?}: {source}");
         }
