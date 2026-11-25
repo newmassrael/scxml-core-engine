@@ -1610,9 +1610,15 @@ GATES: dict[str, dict] = {
         # The modules its projects declare every generation through, resolve
         # the generator through, and format generated C++ by, and the one that
         # says which warning classes its test programs turn off.
+        #
+        # And the JSON library its test programs include, vendored in the tree
+        # (backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt,
+        # NLOHMANN_JSON_INCLUDE_DIR): `bx --checks prepush --learn forge-cpp`
+        # (2026-11-24) read every header of it, and no trigger named it.
         "extra": ["backends/cpp/**", "sce/**", "cmake/SCECodegenPlan.cmake",
                   "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake",
-                  "cmake/SCETestWarnings.cmake"],
+                  "cmake/SCETestWarnings.cmake",
+                  "third_party/nlohmann_json/include/**"],
         "deps": ["codegen-build"],
         "ci_only": "59s, the last move needed to fit the ceiling. "
                    "forge-conformance.yml runs it beside the other arms.",

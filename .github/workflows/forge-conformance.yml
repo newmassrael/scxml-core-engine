@@ -32,6 +32,11 @@ on:
       - 'sce-build/src/**'
       - 'sce-build/kind-examples/**'
       - 'sce-build/tests/fixtures/**'
+      # The grammar the generator validates every document against at run
+      # time, read from disk and not compiled in (sce-build/src/forge/
+      # xsd_validator.rs), with the extension schema it imports.
+      - 'schemas/sce-forge.xsd'
+      - 'schemas/sce-forge-ext.xsd'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'
@@ -62,6 +67,8 @@ on:
       # The warning classes the C++ arm's test programs turn off, from the one
       # definition the C++ test tree reads too.
       - 'cmake/SCETestWarnings.cmake'
+      # The JSON library the C++ arm's test programs include, vendored.
+      - 'third_party/nlohmann_json/include/**'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.
@@ -85,6 +92,11 @@ on:
       - 'sce-build/src/**'
       - 'sce-build/kind-examples/**'
       - 'sce-build/tests/fixtures/**'
+      # The grammar the generator validates every document against at run
+      # time, read from disk and not compiled in (sce-build/src/forge/
+      # xsd_validator.rs), with the extension schema it imports.
+      - 'schemas/sce-forge.xsd'
+      - 'schemas/sce-forge-ext.xsd'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'
@@ -115,6 +127,8 @@ on:
       # The warning classes the C++ arm's test programs turn off, from the one
       # definition the C++ test tree reads too.
       - 'cmake/SCETestWarnings.cmake'
+      # The JSON library the C++ arm's test programs include, vendored.
+      - 'third_party/nlohmann_json/include/**'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.
