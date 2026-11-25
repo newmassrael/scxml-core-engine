@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -679,4 +680,24 @@ template <typename T, typename C> constexpr T ushr(AlgorithmFailure &f, T a, C n
 }
 
 }  // namespace Checked
+
+/// What a machine writes where the build proved it cannot fail (docs/adr/0133):
+/// no failure is recorded, so the statement around it has none to receive.
+namespace Proven {
+
+/// `value` held in `B`, a `Bounded` over a list that owns its elements
+/// (`OwnedText<N>`), where the build proved that its text is no longer than
+/// `B` holds: a copy of it, as `Checked::held` copies one that fits. A machine's
+/// texts are well-formed UTF-8 of the bounds their types declare, so the copy
+/// is whole; a value that breaks the proof stops the program rather than be
+/// cut or emptied, as a broken proof does in every runtime that prints one.
+template <typename B, typename V> B held(const V &value) {
+    auto made = B::make(typename B::list_type(Checked::Detail::plainOf(value)));
+    if (!made.has_value()) {
+        std::abort();
+    }
+    return std::move(*made);
+}
+
+}  // namespace Proven
 }  // namespace SCE::Forge

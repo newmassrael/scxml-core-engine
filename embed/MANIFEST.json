@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "3265158",
+  "embed_version": "7e2bae6",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 810,
+  "symbol_count": 811,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -4133,6 +4133,12 @@
       "kind": "function",
       "name": "SCE::Forge::Detail::toRing<T>",
       "signature": "Ring<T> SCE::Forge::Detail::toRing<T>(T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Proven::held<T>",
+      "signature": "B SCE::Forge::Proven::held<T>(const V &)"
     },
     {
       "header": "sce/forge/algorithm.h",

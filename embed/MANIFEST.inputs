@@ -5,7 +5,7 @@
 # is refused (scripts/gates/embed-manifest-stamp.sh).
 321033662b469ffb7a8c7949a76779d128f8d5b0 backends/cpp/forge-runtime/include/sce/forge/ProcedureServiceTypes.h
 2550dee5a3539462516f445060ce560e87866b68 backends/cpp/forge-runtime/include/sce/forge/ProcedureStateMachine.h
-c07df0120ff7c6d1943b94837db6b19b86b8395f backends/cpp/forge-runtime/include/sce/forge/algorithm.h
+d3a4444625cc2e69a2575529ef7a3fa370c4cb4e backends/cpp/forge-runtime/include/sce/forge/algorithm.h
 1e1ee298d0f54622c88c06e9efad2a82a134d8cb backends/cpp/forge-runtime/include/sce/forge/bounded.h
 af0a10b9f2ae3cb8206baf2c3768071fd70b9c39 backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 c89db24e1b5a3ae9d1137faa7c51f453c6c5259e backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
