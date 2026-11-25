@@ -523,3 +523,21 @@ Python, C11 and C++, where it was `CborMalformed`. No wire, schema or saved-stat
 vocabulary, which no Swift decode throws. A Swift positional decode refuses a closed enum's undeclared carrier as
 `undeclaredEnumValue`, and the Swift conformance fragments assert each reject vector's kind by
 `CodecFailure::symbol` (`CodecError.<case>`), as they asserted it by the hand-kept table this amendment retires.
+
+## Amendment of 2026-11-25: a throwing call is grouped where its parent needs it
+
+Section 3, item 2 wrote every throwing call `(try f(...))`, parentheses included, so it could stand as any operand
+without the generator knowing where it stood. The Swift emitter now builds a tree and one printer decides every
+parenthesis from the parent (`sce-build/src/forge/expr/swift_tree.rs`, the textbook unparsing rule the Rust emitter
+took first), so the rule is restated in the printer's terms:
+
+- A throwing call is marked `try` where it is evaluated, as before; nothing about which operations throw, the
+  `Checked.and` / `Checked.or` / `Checked.coalesce` short-circuits or a `try` on a closure the generator writes
+  changes.
+- Its parentheses are the parent's decision: grouped where Swift's grammar refuses a bare `try` (the right of a
+  binary operator, an operand that is not the whole of its statement, the text a caller splices as one operand), and
+  bare where it stands alone, as an argument or as the whole of an expression. `(try Checked.mul((try
+  Checked.add(count, step)), 2))` prints `(try Checked.mul(try Checked.add(count, step), 2))`.
+- The text API that hands a Swift expression to a caller as text still hands it grouped, so a caller that splices it
+  as an operand needs nothing more. `expr::swift::holds_throwing`, which reads that text for a `(try `, stays until
+  the static lowering's optional map builds trees too.

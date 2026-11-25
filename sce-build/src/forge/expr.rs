@@ -7114,16 +7114,6 @@ fn coalesced(value: InferredType, fallback: InferredType) -> InferredType {
     }
 }
 
-/// Whether the text of a string operand needs parentheses to stand beside a
-/// `+`. A binary child follows the backend's own precedence table; a
-/// conditional never stands bare, in the languages that spell it as an
-/// expression that reaches rightwards: Kotlin's `if (c) a else b + "E"` and
-/// Python's `a if c else b + "E"` both read the `+` into the else branch.
-fn concat_text_needs_parens(side: &TypedExpr, is_left: bool, precedence: fn(BinOp) -> u8) -> bool {
-    matches!(side.kind, ExprKind::Conditional { .. })
-        || child_needs_parens(side, BinOp::Add, is_left, precedence)
-}
-
 pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     expr.ty = match &mut expr.kind {
         ExprKind::NumberLit(n) => {
@@ -7519,71 +7509,12 @@ fn portable_number_literal(text: &str) -> String {
 // Operator precedence (per target language) + paren insertion
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// The precedence of `??` on every target: below every other binary operator,
-/// as ECMAScript places it (it is never written beside `&&` or `||` without
-/// parentheses, so the two never share a level in a parsed tree).
-const COALESCE_PRECEDENCE: u8 = 0;
-
 /// Why no emitter's operator table spells `??`: an expression that holds an
 /// optional value is refused before it reaches an emitter
 /// ([`reject_unlowered_optional`]), on every target until its step of
 /// docs/adr/0055 lowers one.
 const COALESCE_NOT_SPELLED: &str =
     "`??` is refused before an emitter spells an operator (reject_unlowered_optional)";
-
-fn ecma_precedence(op: BinOp) -> u8 {
-    match op {
-        BinOp::Coalesce => COALESCE_PRECEDENCE,
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::BitOr => 3,
-        BinOp::BitXor => 4,
-        BinOp::BitAnd => 5,
-        BinOp::StrictEq | BinOp::StrictNeq => 6,
-        BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 7,
-        BinOp::Shl | BinOp::Shr | BinOp::UShr => 8,
-        BinOp::Add | BinOp::Sub => 9,
-        BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
-    }
-}
-
-fn child_needs_parens(
-    child: &TypedExpr,
-    parent_op: BinOp,
-    is_left: bool,
-    prec: fn(BinOp) -> u8,
-) -> bool {
-    match &child.kind {
-        // A comparison that is an operand of a comparison is parenthesised
-        // whatever the table says, on either side: `(a === b) === c` is a
-        // test of a truth value against `c`, and no backend but ECMAScript
-        // and Go reads `a == b == c` that way. Rust and Swift refuse it
-        // ("comparison operators cannot be chained"), Python reads it as
-        // `a == b and b == c`, Kotlin will not chain `<`, and GCC flags it
-        // under `-Wparentheses`. Where it does associate, the parentheses
-        // change nothing.
-        //
-        // ⚠ Until 2026-11-23 a left operand at the same level was left bare,
-        // as an associative operator's is: Rust refused the generated file,
-        // and Python ran it and answered something else than the document.
-        ExprKind::Binary { op: child_op, .. }
-            if child_op.is_comparison() && parent_op.is_comparison() =>
-        {
-            true
-        }
-        ExprKind::Binary { op: child_op, .. } => {
-            let cp = prec(*child_op);
-            let pp = prec(parent_op);
-            if is_left {
-                cp < pp
-            } else {
-                cp <= pp
-            }
-        }
-        ExprKind::Conditional { .. } => true,
-        _ => false,
-    }
-}
 
 /// How C and C++ write a left shift, of the node type `ty`, so it wraps at the
 /// width of its type (SCE_FORGE.md §3.4.1, "The width of a shift"), which
@@ -7656,20 +7587,6 @@ fn c_family_real_literal(from: InferredType, to: InferredType, node: &TypedExpr)
             Some(format!("{written}f"))
         }
         _ => None,
-    }
-}
-
-/// Wrap an emitted sub-expression in parens when it is used as the base of a
-/// postfix access (`.`, `[]`, `()`) and the underlying AST shape would
-/// otherwise bind differently than intended.
-fn wrap_postfix(expr: &TypedExpr, emitted: String) -> String {
-    if matches!(
-        &expr.kind,
-        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
-    ) {
-        format!("({emitted})")
-    } else {
-        emitted
     }
 }
 
