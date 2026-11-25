@@ -180,7 +180,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     (
         "src/lib.rs",
         Why::Installation,
-        &[("search_template_base", 3)],
+        &[("search_template_base", 2)],
     ),
     ("src/requirement_manifest.rs", Why::Operator, &[("load", 1)]),
     ("src/requirement_sidecar.rs", Why::Operator, &[("load", 1)]),
@@ -283,7 +283,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         "src/cli/mod.rs",
         Why::Repository,
         &[
-            ("find_project_root", 3),
+            ("find_project_root", 1),
             ("read_metadata", 2),
             ("find_scxml", 1),
             ("validates", 1),
@@ -324,7 +324,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     (
         "src/forge/xsd_validator.rs",
         Why::Installation,
-        &[("find_schema_path", 3)],
+        &[("find_schema_path", 1)],
     ),
     (
         "src/mesh/codegen.rs",
