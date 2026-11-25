@@ -659,7 +659,8 @@ impl<'a> CodecZenohValueEntryView<'a> {
     /// The view is the value its read builds, answered as it is: no default of
     /// it is made first and copied over (docs/adr/0137).
     pub fn decode(cursor: &mut SceCursor<'a>, after_shm: u8) -> Result<Self, CodecError> {
-cursor.read_frame(|cursor| Self::read(cursor, after_shm))    }
+        cursor.read_frame(|cursor| Self::read(cursor, after_shm))
+    }
 
     /// [`Self::decode`] into a destination the caller owns. On `Err`, `_out`
     /// holds what the reads made of the frame and is not to be read.

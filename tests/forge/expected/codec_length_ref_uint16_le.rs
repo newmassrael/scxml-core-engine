@@ -97,7 +97,8 @@ impl<S: CodecLengthRefUint16LeStorage> CodecLengthRefUint16LeIn<S> {
     /// receives `NeedMoreBytes` reads the frame again from the same place once
     /// more bytes have arrived (RFC §synth-5-B L494-519, docs/adr/0128).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecLengthRefUint16LeFrom<'f> {
-cursor.read_frame(Self::read)    }
+        cursor.read_frame(Self::read)
+    }
 
     /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
     /// and the errors of [`Self::decode`], with each bounded list and embedded
