@@ -250,5 +250,17 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
+    # The corpus's oracles include the suites the staged citation stage runs,
+    # which refuse without the rev-pinned validator; the job reaches them as
+    # the hygiene parts do (`every_job_that_runs_the_pinned_validator_installs_it`).
+    - name: Cache mnemosyne-cli (rev-pinned)
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.local/share/mnemosyne-rev
+        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+
+    - name: Install the rev-pinned mnemosyne-cli
+      run: scripts/install_mnemosyne_cli.sh
+
     - name: Mutation casefiles still apply
       run: scripts/gate mutation-cases
