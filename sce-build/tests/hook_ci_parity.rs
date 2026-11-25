@@ -1595,15 +1595,26 @@ fn shard_helper_features(gate: &str) -> String {
 /// workspace member that is not `test = false` and whose `required-features`
 /// the resolve enables, which are the ones `cargo test --workspace` runs.
 fn units_the_whole_suite_runs(features: &str) -> BTreeSet<String> {
+    suite_units(Some(features), None)
+}
+
+/// Every unit a cargo suite runs: of the whole workspace, or of the one member
+/// named `package` (`cargo test -p <package>`), resolved with `features` when
+/// the suite enables any. The reading `units_the_whole_suite_runs` describes.
+fn suite_units(features: Option<&str>, package: Option<&str>) -> BTreeSet<String> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut args = vec!["metadata", "--format-version", "1"];
+    if let Some(features) = features {
+        args.extend(["--features", features]);
+    }
     let out = std::process::Command::new(cargo)
-        .args(["metadata", "--format-version", "1", "--features", features])
+        .args(&args)
         .current_dir(repo_root())
         .output()
         .expect("cargo metadata runs");
     assert!(
         out.status.success(),
-        "cargo metadata --features {features} failed:\n{}",
+        "cargo {args:?} failed:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
     let metadata: serde_json::Value =
@@ -1628,12 +1639,17 @@ fn units_the_whole_suite_runs(features: &str) -> BTreeSet<String> {
         })
         .collect();
     let mut units = BTreeSet::from(["core".to_string()]);
-    for package in metadata["packages"].as_array().expect("packages") {
-        let id = package["id"].as_str().expect("a package id");
+    let mut found = false;
+    for member in metadata["packages"].as_array().expect("packages") {
+        let id = member["id"].as_str().expect("a package id");
         if !members.contains(id) {
             continue;
         }
-        for target in package["targets"].as_array().expect("targets") {
+        if package.is_some_and(|name| member["name"].as_str() != Some(name)) {
+            continue;
+        }
+        found = true;
+        for target in member["targets"].as_array().expect("targets") {
             let is_test = target["kind"]
                 .as_array()
                 .is_some_and(|k| k.len() == 1 && k[0] == "test");
@@ -1657,7 +1673,64 @@ fn units_the_whole_suite_runs(features: &str) -> BTreeSet<String> {
             }
         }
     }
+    assert!(
+        found,
+        "cargo metadata names no workspace member {package:?}"
+    );
     units
+}
+
+/// The units `scripts/lib/workspace_shards.py <args> k/N` hands each shard k of
+/// `count`, each with the shards that hold it.
+fn units_of_each_shard(args: &[&str], count: usize) -> BTreeMap<String, Vec<usize>> {
+    let mut seen: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for shard in 1..=count {
+        let out = std::process::Command::new("python3")
+            .arg(SHARD_HELPER)
+            .args(args)
+            .arg(format!("{shard}/{count}"))
+            .current_dir(repo_root())
+            .output()
+            .expect("python3 runs the shard helper");
+        assert!(
+            out.status.success(),
+            "{SHARD_HELPER} {args:?} {shard}/{count} failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let units: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        assert!(!units.is_empty(), "shard {shard} of {count} runs nothing");
+        for unit in units {
+            seen.entry(unit).or_default().push(shard);
+        }
+    }
+    seen
+}
+
+/// The shards of `lane` are `expected`, each unit in exactly one of them.
+fn assert_the_shards_are_the_suite(
+    lane: &str,
+    count: usize,
+    seen: &BTreeMap<String, Vec<usize>>,
+    expected: &BTreeSet<String>,
+) {
+    let twice: Vec<String> = seen
+        .iter()
+        .filter(|(_, shards)| shards.len() > 1)
+        .map(|(unit, shards)| format!("{unit} in shards {shards:?}"))
+        .collect();
+    let missing: Vec<&String> = expected.iter().filter(|u| !seen.contains_key(*u)).collect();
+    let extra: Vec<&String> = seen.keys().filter(|u| !expected.contains(*u)).collect();
+    assert!(
+        twice.is_empty() && missing.is_empty() && extra.is_empty(),
+        "the {count} shards of {lane} are not the whole suite, each unit once:\n\
+         in more than one shard: {twice:?}\n\
+         in no shard (the whole suite runs it, the lane does not): {missing:?}\n\
+         in a shard and not in the whole suite: {extra:?}"
+    );
 }
 
 /// The lane's matrix and its variable name one shard count, and the gate is
@@ -1718,43 +1791,31 @@ fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
         expected.len()
     );
 
-    let mut seen: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    for shard in 1..=count {
-        let out = std::process::Command::new("python3")
-            .arg(SHARD_HELPER)
-            .args(["--features", &features, &format!("{shard}/{count}")])
-            .current_dir(repo_root())
-            .output()
-            .expect("python3 runs the shard helper");
-        assert!(
-            out.status.success(),
-            "{SHARD_HELPER} {shard}/{count} failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let units: Vec<String> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(str::to_string)
-            .collect();
-        assert!(!units.is_empty(), "shard {shard} of {count} runs nothing");
-        for unit in units {
-            seen.entry(unit).or_default().push(shard);
-        }
-    }
+    let seen = units_of_each_shard(&["--features", &features], count);
+    assert_the_shards_are_the_suite(WORKSPACE_LANE, count, &seen, &expected);
+}
 
-    let twice: Vec<String> = seen
-        .iter()
-        .filter(|(_, shards)| shards.len() > 1)
-        .map(|(unit, shards)| format!("{unit} in shards {shards:?}"))
-        .collect();
-    let missing: Vec<&String> = expected.iter().filter(|u| !seen.contains_key(*u)).collect();
-    let extra: Vec<&String> = seen.keys().filter(|u| !expected.contains(*u)).collect();
+/// The shard helper passes its own cases: every unit in one shard, a shard
+/// keeping the order its suite gives (the regeneration's steps run in order),
+/// the same suite planned the same way, a plan the verdict reads, and the
+/// reading of a job's log.
+#[test]
+fn the_workspace_shard_helper_passes_its_own_cases() {
+    let out = std::process::Command::new("python3")
+        .arg(SHARD_HELPER)
+        .arg("--self-test")
+        .current_dir(repo_root())
+        .output()
+        .expect("python3 runs the helper");
     assert!(
-        twice.is_empty() && missing.is_empty() && extra.is_empty(),
-        "the {count} shards of {WORKSPACE_LANE} are not the whole suite, each target once:\n\
-         in more than one shard: {twice:?}\n\
-         in no shard (the whole suite runs it, the lane does not): {missing:?}\n\
-         in a shard and not in the whole suite: {extra:?}"
+        out.status.success(),
+        "{SHARD_HELPER} --self-test failed:\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("checks passed"),
+        "{SHARD_HELPER} --self-test said nothing about its checks, so it may have run none"
     );
 }
 
