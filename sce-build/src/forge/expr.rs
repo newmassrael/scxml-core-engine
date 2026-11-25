@@ -634,7 +634,7 @@ fn lower_at(
         ExprTarget::Rust => emit_rust(&ast, expected)?.to_string(),
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Swift => swift::emit(&ast, expected)?,
-        ExprTarget::Python => emit_python(&ast, expected)?,
+        ExprTarget::Python => emit_python(&ast, expected)?.to_string(),
         ExprTarget::C if position == Position::Owned && expected == InferredType::Bytes => {
             emit_c_owned_bytes(&ast)?.to_string()
         }
@@ -3611,7 +3611,7 @@ pub fn transpile_lvalue(
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
-        ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
+        ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::C => emit_c(&ast, InferredType::Unknown)?.to_string(),
         ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?,
     };
@@ -7536,21 +7536,6 @@ fn ecma_precedence(op: BinOp) -> u8 {
         BinOp::BitAnd => 5,
         BinOp::StrictEq | BinOp::StrictNeq => 6,
         BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 7,
-        BinOp::Shl | BinOp::Shr | BinOp::UShr => 8,
-        BinOp::Add | BinOp::Sub => 9,
-        BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
-    }
-}
-
-fn python_precedence(op: BinOp) -> u8 {
-    match op {
-        BinOp::Coalesce => COALESCE_PRECEDENCE,
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
-        BinOp::BitOr => 5,
-        BinOp::BitXor => 6,
-        BinOp::BitAnd => 7,
         BinOp::Shl | BinOp::Shr | BinOp::UShr => 8,
         BinOp::Add | BinOp::Sub => 9,
         BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
@@ -13452,8 +13437,18 @@ fn go_nameable_type(ty: InferredType) -> Option<String> {
 // * Single-quoted string literals (PEP 8 idiomatic style).
 // * No float-literal promotion needed: Python's `/` is always true division
 //   (PEP 238), so `9 / 5` yields 1.8 without an explicit `.0` suffix.
+// * The expression is built as a tree of the Python expressions it is made
+//   of ([`PyExpr`], `expr/python_tree.rs`) and printed once, where it leaves
+//   this layer: every parenthesis is the printer's, decided by the kinds of the
+//   nodes around it and the precedence the Python Language Reference gives
+//   them, and no rule here groups anything or reads back what it has written.
 
-fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+pub(crate) mod python_tree;
+
+use python_tree::{PyBinOp, PyExpr, PyUnOp};
+
+/// The Python expression `expr` is where a value of `expected` is wanted.
+fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<PyExpr, ExprError> {
     // Push-down: propagate Float expectation into arithmetic sub-trees.
     // Python's `/` is true division so literal promotion is not required,
     // but the push-down is kept for structural symmetry with the other four
@@ -13463,19 +13458,11 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             && !is_string_concatenation(*op, left.ty, right.ty)
             && matches!(expected, InferredType::Float { .. })
         {
-            let l_raw = emit_python(left, expected)?;
-            let r_raw = emit_python(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, python_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, python_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            return Ok(format!("{l} {} {r}", python_binop(*op)));
+            return Ok(PyExpr::binary(
+                python_binop(*op),
+                emit_python(left, expected)?,
+                emit_python(right, expected)?,
+            ));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — structural symmetry
@@ -13488,28 +13475,14 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_python(operand, expected)?;
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                _ => unreachable!("guarded by outer match"),
-            };
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            return Ok(if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            });
+            return Ok(emit_python(operand, expected)?.prefixed(python_unop(*op)));
         }
     }
     let raw = python_emit_node(expr)?;
     Ok(python_coerce(raw, expr.ty, expected))
 }
 
-fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+fn python_emit_node(expr: &TypedExpr) -> Result<PyExpr, ExprError> {
     if let Some(form) = optional_form(expr) {
         return python_optional(form, expr);
     }
@@ -13519,66 +13492,57 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // never overflow, so this is where its `uint32` wraps.
         ExprKind::Total { op, rule, .. } => {
             let (signed, bits, operands) = total_parts(expr, "Python", emit_python)?;
-            format!(
-                "sce_algorithm.{}{bits}.{}_{}({})",
-                if signed { "I" } else { "U" },
-                rule.helper(),
-                op.helper(),
-                operands.join(", ")
+            PyExpr::path_call(
+                format!(
+                    "sce_algorithm.{}{bits}.{}_{}",
+                    if signed { "I" } else { "U" },
+                    rule.helper(),
+                    op.helper()
+                ),
+                operands,
             )
         }
-        ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value } => crate::filters::py_string_literal(value.clone()),
+        ExprKind::NumberLit(n) => PyExpr::atom(portable_number_literal(n)),
+        ExprKind::StringLit { value } => {
+            PyExpr::atom(crate::filters::py_string_literal(value.clone()))
+        }
         // `bytes == bytes` compares content, so the default `==`/`!=`
         // path needs no special-casing — only this constant rendering.
         // A `b"…"` literal (double-quoted so a `'` byte needs no escape).
         // RFC §bytesguard-3 B5.
-        ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
-        ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
-        ExprKind::NullLit => "None".to_string(),
+        ExprKind::BytesLit { bytes } => {
+            PyExpr::atom(format!("b\"{}\"", bytes_as_quoted_ascii(bytes)))
+        }
+        ExprKind::BoolLit(b) => PyExpr::atom(if *b { "True" } else { "False" }),
+        ExprKind::NullLit => PyExpr::atom("None"),
         // The spelling the function DECLARED the name with: the same function
         // spells its parameter and its variable, so a name that hides a
         // builtin is escaped in the read as it was in the declaration
         // ([`ExprTarget::local_spelling`]).
-        ExprKind::Ident(s) => ExprTarget::Python.local_spelling(s),
-        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Ident(s) => PyExpr::atom(ExprTarget::Python.local_spelling(s)),
+        // A fragment another pass wrote whole, which stands as one operand.
+        ExprKind::Raw(s) => PyExpr::atom(s.clone()),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `'E' + 5` is a `TypeError` in Python; `str(int)` is the
             // decimal digits, the one text ECMA-262 13.15.3 gives an integer.
-            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, ExprError> {
-                let text = emit_python(side, side.ty)?;
+            let operand = |side: &TypedExpr| -> Result<PyExpr, ExprError> {
+                let value = emit_python(side, side.ty)?;
                 match concat_operand(side.ty) {
-                    ConcatOperand::Text => Ok(
-                        if concat_text_needs_parens(side, is_left, python_precedence) {
-                            format!("({text})")
-                        } else {
-                            text
-                        },
-                    ),
-                    ConcatOperand::Decimal => Ok(format!("str({text})")),
-                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text)),
+                    ConcatOperand::Text => Ok(value),
+                    ConcatOperand::Decimal => Ok(PyExpr::path_call("str", vec![value])),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, value.to_string())),
                 }
             };
-            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+            PyExpr::binary(PyBinOp::Add, operand(left)?, operand(right)?)
         }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_python(left, operand_ty)?;
-            let r_raw = emit_python(right, right_operand_type(*op, operand_ty))?;
-            if let Some(lowered) = python_integer_div_rem(*op, operand_ty, &l_raw, &r_raw) {
-                return Ok(lowered);
+            let l = emit_python(left, operand_ty)?;
+            let r = emit_python(right, right_operand_type(*op, operand_ty))?;
+            if let Some(lowered) = python_integer_div_rem(*op, operand_ty) {
+                return Ok(PyExpr::call(lowered, vec![l, r]));
             }
-            let l = if child_needs_parens(left, *op, true, python_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, python_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            let raw = format!("{l} {} {r}", python_binop(*op));
+            let raw = PyExpr::binary(python_binop(*op), l, r);
             // RFC §synth-5-A: Python's `int` is arbitrary-precision, so an
             // operation that would truncate on a fixed-width unsigned
             // type in C/Rust (e.g. `crc << 1` where crc is u16, then
@@ -13618,25 +13582,10 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             raw
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_python(operand, expr.ty)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            let prefix = match op {
-                UnaryOp::Neg => "-",
-                UnaryOp::Pos => "+",
-                UnaryOp::Not => "not ",
-                UnaryOp::BitNot => "~",
-            };
-            let spelled = if wrap {
-                format!("{prefix}({inner})")
-            } else {
-                format!("{prefix}{inner}")
-            };
+            let spelled = emit_python(operand, expr.ty)?.prefixed(python_unop(*op));
             // Python's `~x` is `-x - 1`, a negative number for every `x` at
             // least 0, where an unsigned type holds the complement of `x`'s
-            // bits: it is reduced into the type, as one operand.
+            // bits: it is reduced into the type.
             match (op, expr.ty) {
                 (
                     UnaryOp::BitNot,
@@ -13653,52 +13602,39 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             consequent,
             alternate,
         } => {
-            // Python's conditional expression is `A if C else B`, and only
-            // the ELSE branch may hold another one unparenthesised -- it
-            // associates to the right. A conditional in the consequent or in
-            // the CONDITION must be wrapped: `x if a if g else b else 0` is a
+            // Python's conditional expression is `A if C else B`, which the
+            // printer groups as its grammar reads it ([`PyExpr`]): a
+            // conditional in the consequent or the condition is grouped, one in
+            // the else branch is not. `x if a if g else b else 0` is a
             // SyntaxError, which a document reading `(g ? a : b) ? x : 0`
             // produced (2026-09-28) while every other target compiled.
-            let wrap = |e: &TypedExpr, s: String| {
-                if matches!(&e.kind, ExprKind::Conditional { .. }) {
-                    format!("({s})")
-                } else {
-                    s
-                }
-            };
-            let cons = wrap(consequent, emit_python(consequent, expr.ty)?);
-            let cond = wrap(condition, emit_python(condition, InferredType::Bool)?);
-            format!("{cons} if {cond} else {}", emit_python(alternate, expr.ty)?,)
+            let consequent = emit_python(consequent, expr.ty)?;
+            let condition = emit_python(condition, InferredType::Bool)?;
+            PyExpr::conditional(consequent, condition, emit_python(alternate, expr.ty)?)
         }
         ExprKind::Member { object, property } => {
-            format!(
-                "{}.{property}",
-                wrap_postfix(object, emit_python(object, InferredType::Unknown)?)
-            )
+            emit_python(object, InferredType::Unknown)?.attribute(property.as_str())
         }
         ExprKind::Index { object, index } => {
-            format!(
-                "{}[{}]",
-                wrap_postfix(object, emit_python(object, InferredType::Unknown)?),
-                emit_python(index, InferredType::Unknown)?,
-            )
+            let object = emit_python(object, InferredType::Unknown)?;
+            object.subscript(emit_python(index, InferredType::Unknown)?)
         }
         ExprKind::Call {
             callee,
             args,
             params,
-            fails,
             ..
         } => {
             if is_len_builtin(callee, args) {
                 let measured = emit_python(&args[0], InferredType::Unknown)?;
                 // A string is measured in the UTF-8 bytes its bound counts, which
                 // `len` of a `str` (code points) is not; a list and `bytes` by `len`.
-                return Ok(if args[0].ty == InferredType::Str {
-                    format!("len(({measured}).encode(\"utf-8\"))")
+                let measured = if args[0].ty == InferredType::Str {
+                    python_utf8(measured)
                 } else {
-                    format!("len({measured})")
-                });
+                    measured
+                };
+                return Ok(PyExpr::path_call("len", vec![measured]));
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // ⚠ NOT the builtin `round`, which is banker's rounding:
@@ -13709,33 +13645,45 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 // ⚠ `math.floor` needs no such rewrite — it goes toward −∞ and
                 // returns an `int`, so only `round` is the odd one out.
                 let inner = emit_python(&args[0], InferredType::Float { bits: 64 })?;
+                let math = |function: &str| {
+                    PyExpr::path_call("__import__", vec![PyExpr::atom("'math'")])
+                        .attribute(function)
+                };
                 return Ok(match op {
-                    RealToInt::Round => format!(
-                        "int(__import__('math').floor(({inner}) + 0.5) \
-                         if ({inner}) >= 0 else __import__('math').ceil(({inner}) - 0.5))"
+                    RealToInt::Round => PyExpr::path_call(
+                        "int",
+                        vec![PyExpr::conditional(
+                            PyExpr::call(
+                                math("floor"),
+                                vec![PyExpr::binary(
+                                    PyBinOp::Add,
+                                    inner.clone(),
+                                    PyExpr::atom("0.5"),
+                                )],
+                            ),
+                            PyExpr::binary(PyBinOp::Ge, inner.clone(), PyExpr::atom("0")),
+                            PyExpr::call(
+                                math("ceil"),
+                                vec![PyExpr::binary(PyBinOp::Sub, inner, PyExpr::atom("0.5"))],
+                            ),
+                        )],
                     ),
-                    RealToInt::Floor => format!("__import__('math').floor({inner})"),
+                    RealToInt::Floor => PyExpr::call(math("floor"), vec![inner]),
                 });
             }
             let mut a = Vec::with_capacity(args.len());
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_python(arg, argument_type(params, i))?);
             }
-            let symbol = wrap_postfix(callee, emit_python(callee, InferredType::Unknown)?);
-            let call = format!("{symbol}({})", a.join(", "));
-            if *fails {
-                pass_failure_on(ExprTarget::Python, &symbol, &call, expr.ty)?
-            } else {
-                call
-            }
+            // A call of a `may-fail` function raises its failure, which passes
+            // itself on, as [`pass_failure_on`] spells it for Python: the call
+            // is written as it is.
+            PyExpr::call(emit_python(callee, InferredType::Unknown)?, a)
         }
+        // RFC c7-wildcard W-project: bounded-string field (`str`) → the
+        // algorithm `bytes` param type (`bytes`), UTF-8 encoded.
         ExprKind::BytesView { source, .. } => {
-            // RFC c7-wildcard W-project: bounded-string field (`str`) → the
-            // algorithm `bytes` param type (`bytes`), UTF-8 encoded.
-            format!(
-                "{}.encode(\"utf-8\")",
-                emit_python(source, InferredType::Unknown)?
-            )
+            python_utf8(emit_python(source, InferredType::Unknown)?)
         }
         // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
         // not known below its width ([`settle_shifts`]).
@@ -13756,10 +13704,12 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             left,
             right: Some(index),
             ..
-        } => format!(
-            "sce_algorithm.at({}, {})",
-            emit_python(left, InferredType::Unknown)?,
-            emit_python(index, InferredType::Unknown)?,
+        } => PyExpr::path_call(
+            "sce_algorithm.at",
+            vec![
+                emit_python(left, InferredType::Unknown)?,
+                emit_python(index, InferredType::Unknown)?,
+            ],
         ),
         // SCE_FORGE.md §3.4.1: the runtime's method for the operation's own
         // width, which computes exactly and raises `AlgorithmFailure` for a
@@ -13785,14 +13735,21 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             if let Some(right) = right {
                 operands.push(emit_python(right, expr.ty)?);
             }
-            format!(
-                "sce_algorithm.{}{bits}.{}({})",
-                if signed { "I" } else { "U" },
-                op.helper(),
-                operands.join(", ")
+            PyExpr::path_call(
+                format!(
+                    "sce_algorithm.{}{bits}.{}",
+                    if signed { "I" } else { "U" },
+                    op.helper()
+                ),
+                operands,
             )
         }
     })
+}
+
+/// `text`, a `str`, as the `bytes` of its UTF-8 encoding.
+fn python_utf8(text: PyExpr) -> PyExpr {
+    text.method("encode", vec![PyExpr::atom("\"utf-8\"")])
 }
 
 /// A shift the build settled ([`settle_shifts`]), in Python.
@@ -13800,15 +13757,15 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
 /// Python's own `>>` is the total right shift already: `x >> n` is the floor of
 /// `x / 2**n` for every `n` at least 0, so a count at or past the width leaves 0,
 /// or -1 for a negative value, and the value of a width is held reduced to it.
-/// It is written as the operator, parenthesised so it binds as one operand, for
-/// a `>>` and for a `>>>` of an unsigned value. A left shift is the runtime's
-/// `wrapping_shl` of the width, which is 0 for a count at or past the width: the
-/// operator would compute `x * 2**n` whole before reducing it, a number of `n`
-/// bits for a count as large as an unsigned type holds. A `>>>` of a signed
-/// value is the runtime's `wrapping_ushr`, which shifts the bits of its width.
-/// Python raises `ValueError` on a count below 0, which reaches a total shift
-/// only outside the bodies the contract covers, where it is the caller's to rule
-/// out, as a divisor of 0 is.
+/// It is written as the operator for a `>>` and for a `>>>` of an unsigned
+/// value. A left shift is the runtime's `wrapping_shl` of the width, which is 0
+/// for a count at or past the width: the operator would compute `x * 2**n`
+/// whole before reducing it, a number of `n` bits for a count as large as an
+/// unsigned type holds. A `>>>` of a signed value is the runtime's
+/// `wrapping_ushr`, which shifts the bits of its width. Python raises
+/// `ValueError` on a count below 0, which reaches a total shift only outside the
+/// bodies the contract covers, where it is the caller's to rule out, as a
+/// divisor of 0 is.
 ///
 /// The checked shift is the runtime's `shl`, `shr` or `ushr` of the width,
 /// which raises `AlgorithmFailure` with `out-of-range` for a count below 0.
@@ -13818,31 +13775,23 @@ fn python_settled_shift(
     left: &TypedExpr,
     count: &TypedExpr,
     discharge: Discharge,
-) -> Result<String, ExprError> {
+) -> Result<PyExpr, ExprError> {
     let (signed, bits) = settled_shift_width(expr)?;
     let width = format!("sce_algorithm.{}{bits}", if signed { "I" } else { "U" });
     let value = emit_python(left, expr.ty)?;
     let places = emit_python(count, InferredType::Unknown)?;
     let native = op == CheckedOp::Shr || (op == CheckedOp::UShr && !signed);
     Ok(match discharge {
-        Discharge::AtRun => format!("{width}.{}({value}, {places})", op.helper()),
+        Discharge::AtRun => {
+            PyExpr::path_call(format!("{width}.{}", op.helper()), vec![value, places])
+        }
         Discharge::AtBuild | Discharge::Total if native => {
-            let parenthesised = |child: &TypedExpr, is_left: bool, text: String| {
-                if child_needs_parens(child, BinOp::Shr, is_left, python_precedence) {
-                    format!("({text})")
-                } else {
-                    text
-                }
-            };
-            format!(
-                "({} >> {})",
-                parenthesised(left, true, value),
-                parenthesised(count, false, places)
-            )
+            PyExpr::binary(PyBinOp::Shr, value, places)
         }
-        Discharge::AtBuild | Discharge::Total => {
-            format!("{width}.wrapping_{}({value}, {places})", op.helper())
-        }
+        Discharge::AtBuild | Discharge::Total => PyExpr::path_call(
+            format!("{width}.wrapping_{}", op.helper()),
+            vec![value, places],
+        ),
     })
 }
 
@@ -13854,31 +13803,19 @@ fn python_settled_shift(
 /// `sce_algorithm.otherwise(x, lambda: d)`, which reads `x` once as its argument
 /// and calls the `lambda` only when `x` is absent, so a failure of `d` is raised
 /// only then. Equality is `==`, which is total over `None`.
-fn python_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprError> {
-    // An operand of a comparison, bracketed where its own operator binds less
-    // tightly than one.
-    let operand =
-        |node: &TypedExpr, expected: InferredType, is_left: bool| -> Result<String, ExprError> {
-            let text = emit_python(node, expected)?;
-            Ok(
-                if child_needs_parens(node, BinOp::StrictEq, is_left, python_precedence) {
-                    format!("({text})")
-                } else {
-                    text
-                },
-            )
-        };
+fn python_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<PyExpr, ExprError> {
     Ok(match form {
-        OptionalForm::Test { subject, present } => {
-            let test = if present { "is not None" } else { "is None" };
-            format!("{} {test}", operand(subject, subject.ty, true)?)
-        }
-        OptionalForm::Proven { subject } => emit_python(subject, InferredType::Unknown)?,
-        OptionalForm::Otherwise { value, fallback } => format!(
-            "sce_algorithm.otherwise({}, lambda: {})",
-            emit_python(value, value.ty)?,
-            emit_python(fallback, whole.ty)?
+        OptionalForm::Test { subject, present } => PyExpr::binary(
+            if present { PyBinOp::IsNot } else { PyBinOp::Is },
+            emit_python(subject, subject.ty)?,
+            PyExpr::atom("None"),
         ),
+        OptionalForm::Proven { subject } => emit_python(subject, InferredType::Unknown)?,
+        OptionalForm::Otherwise { value, fallback } => {
+            let value = emit_python(value, value.ty)?;
+            let fallback = PyExpr::lambda(&[], emit_python(fallback, whole.ty)?);
+            PyExpr::path_call("sce_algorithm.otherwise", vec![value, fallback])
+        }
         OptionalForm::Equality { left, right, equal } => {
             // Each side as the optional value of the one that is: a side of `T`
             // is lifted ([`InferredType::lifted_into`]).
@@ -13886,19 +13823,19 @@ fn python_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, 
                 .into_iter()
                 .find(|ty| ty.is_optional())
                 .unwrap_or(InferredType::Unknown);
-            let op = if equal { "==" } else { "!=" };
-            format!(
-                "{} {op} {}",
-                operand(left, optional, true)?,
-                operand(right, optional, false)?
+            PyExpr::binary(
+                if equal { PyBinOp::Eq } else { PyBinOp::Ne },
+                emit_python(left, optional)?,
+                emit_python(right, optional)?,
             )
         }
-        OptionalForm::Constant(answer) => if answer { "True" } else { "False" }.to_string(),
+        OptionalForm::Constant(answer) => PyExpr::atom(if answer { "True" } else { "False" }),
     })
 }
 
-/// Lower `/` and `%` between two integer operands to the truncating pair the
-/// other five backends compute (SCE_FORGE.md §3.4.1).
+/// The function `/` and `%` between two integer operands are lowered to,
+/// called with the two operands: the truncating pair the other five backends
+/// compute (SCE_FORGE.md §3.4.1).
 ///
 /// ⚠ Neither Python operator is that pair. `/` is true division (PEP 238), so
 /// an `int` output received a float; `//` and `%` both round toward −∞, so
@@ -13915,25 +13852,42 @@ fn python_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, 
 /// Only called outside a float context: [`emit_python`] returns before
 /// reaching here when the expected type is `Float`, which is where Python's
 /// true division is the right answer.
-fn python_integer_div_rem(op: BinOp, operand_ty: InferredType, l: &str, r: &str) -> Option<String> {
+fn python_integer_div_rem(op: BinOp, operand_ty: InferredType) -> Option<PyExpr> {
     if !matches!(
         operand_ty,
         InferredType::Int { .. } | InferredType::UntypedInt
     ) {
         return None;
     }
-    match op {
-        BinOp::Div => Some(format!(
-            "(lambda n, d: n // d if (n >= 0) == (d > 0) else -(-n // d))({l}, {r})"
-        )),
-        BinOp::Mod => Some(format!(
-            "(lambda n, d: n % abs(d) if n >= 0 else -(-n % abs(d)))({l}, {r})"
-        )),
-        _ => None,
-    }
+    let (n, d) = (PyExpr::atom("n"), PyExpr::atom("d"));
+    let zero = || PyExpr::atom("0");
+    let body = match op {
+        // `n // d if (n >= 0) == (d > 0) else -(-n // d)`
+        BinOp::Div => PyExpr::conditional(
+            PyExpr::binary(PyBinOp::FloorDiv, n.clone(), d.clone()),
+            PyExpr::binary(
+                PyBinOp::Eq,
+                PyExpr::binary(PyBinOp::Ge, n.clone(), zero()),
+                PyExpr::binary(PyBinOp::Gt, d.clone(), zero()),
+            ),
+            PyExpr::binary(PyBinOp::FloorDiv, n.prefixed(PyUnOp::Neg), d).prefixed(PyUnOp::Neg),
+        ),
+        // `n % abs(d) if n >= 0 else -(-n % abs(d))`
+        BinOp::Mod => {
+            let magnitude = || PyExpr::path_call("abs", vec![d.clone()]);
+            PyExpr::conditional(
+                PyExpr::binary(PyBinOp::Mod, n.clone(), magnitude()),
+                PyExpr::binary(PyBinOp::Ge, n.clone(), zero()),
+                PyExpr::binary(PyBinOp::Mod, n.prefixed(PyUnOp::Neg), magnitude())
+                    .prefixed(PyUnOp::Neg),
+            )
+        }
+        _ => return None,
+    };
+    Some(PyExpr::lambda(&["n", "d"], body))
 }
 
-fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
+fn python_coerce(raw: PyExpr, from: InferredType, to: InferredType) -> PyExpr {
     use InferredType::*;
     // A value of `T` where an optional value of `T` is expected is lifted
     // (docs/adr/0055, section 2): Python holds a present value as the value
@@ -13970,7 +13924,7 @@ fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
 ///
 /// ⚠ Python kept the whole value until 2026-09-24: a `uint32` of 300
 /// assigned to a `uint8` stayed 300 where the other five backends gave 44.
-fn python_wrap_int(raw: String, from: (bool, u8), to: (bool, u8)) -> String {
+fn python_wrap_int(raw: PyExpr, from: (bool, u8), to: (bool, u8)) -> PyExpr {
     let ((from_signed, from_bits), (signed, bits)) = (from, to);
     let holds_every_value = match (from_signed, signed) {
         (false, false) | (true, true) => from_bits <= bits,
@@ -13984,47 +13938,65 @@ fn python_wrap_int(raw: String, from: (bool, u8), to: (bool, u8)) -> String {
 }
 
 /// `raw`, any Python integer, reduced modulo 2^bits into the integer type of
-/// that width and sign — its two's-complement value for a signed one.
+/// that width and sign — its two's-complement value for a signed one:
+/// `raw & M`, and `(raw + H & M) - H` for a signed one.
 ///
-/// The reduction is one parenthesised operand, so it binds as the value it is
-/// under any operator its node stands beside: the node is still the operation
-/// or the read it reduces, and the parentheses a parent gives a child are
-/// decided by that node, not by the `&` and `-` written around it.
+/// The reduction is the operators it is made of, so the printer groups it as
+/// those operators under whatever stands beside it ([`PyExpr`]).
 ///
 /// ⚠ Until 2026-11-19 it was written bare, `(x) & M`: under a `>>` it read
 /// `(x) & (M >> n)`, under a `+` `(x) & (M + n)`, and under a comparison
 /// `(x) & (M == n)`, since Python's `&` binds looser than all three.
-fn python_reduce(raw: String, signed: bool, bits: u8) -> String {
+fn python_reduce(raw: PyExpr, signed: bool, bits: u8) -> PyExpr {
     let mask: u128 = (1u128 << bits) - 1;
+    let mask = PyExpr::atom(format!("0x{mask:X}"));
     if signed {
         let half: u128 = 1u128 << (bits - 1);
-        format!("(((({raw}) + 0x{half:X}) & 0x{mask:X}) - 0x{half:X})")
+        let half = PyExpr::atom(format!("0x{half:X}"));
+        PyExpr::binary(
+            PyBinOp::Sub,
+            PyExpr::binary(
+                PyBinOp::BitAnd,
+                PyExpr::binary(PyBinOp::Add, raw, half.clone()),
+                mask,
+            ),
+            half,
+        )
     } else {
-        format!("(({raw}) & 0x{mask:X})")
+        PyExpr::binary(PyBinOp::BitAnd, raw, mask)
     }
 }
 
-fn python_binop(op: BinOp) -> &'static str {
+fn python_unop(op: UnaryOp) -> PyUnOp {
     match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "==",
-        BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "and",
-        BinOp::Or => "or",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>",
+        UnaryOp::Neg => PyUnOp::Neg,
+        UnaryOp::Pos => PyUnOp::Pos,
+        UnaryOp::Not => PyUnOp::Not,
+        UnaryOp::BitNot => PyUnOp::Invert,
+    }
+}
+
+fn python_binop(op: BinOp) -> PyBinOp {
+    match op {
+        BinOp::Add => PyBinOp::Add,
+        BinOp::Sub => PyBinOp::Sub,
+        BinOp::Mul => PyBinOp::Mul,
+        BinOp::Div => PyBinOp::Div,
+        BinOp::Mod => PyBinOp::Mod,
+        BinOp::StrictEq => PyBinOp::Eq,
+        BinOp::StrictNeq => PyBinOp::Ne,
+        BinOp::Lt => PyBinOp::Lt,
+        BinOp::Gt => PyBinOp::Gt,
+        BinOp::LtEq => PyBinOp::Le,
+        BinOp::GtEq => PyBinOp::Ge,
+        BinOp::And => PyBinOp::And,
+        BinOp::Or => PyBinOp::Or,
+        BinOp::BitAnd => PyBinOp::BitAnd,
+        BinOp::BitOr => PyBinOp::BitOr,
+        BinOp::BitXor => PyBinOp::BitXor,
+        BinOp::Shl => PyBinOp::Shl,
+        BinOp::Shr => PyBinOp::Shr,
+        BinOp::UShr => PyBinOp::Shr,
         BinOp::Coalesce => unreachable!("{PYTHON_COALESCE_IS_A_CALL}"),
     }
 }
@@ -15774,7 +15746,7 @@ mod tests {
         );
         assert_eq!(
             python_of("!(due === null) ? due.value + 1 : 0", &ctx, day),
-            "due + 1 if not (due is None) else 0"
+            "due + 1 if not due is None else 0"
         );
         let proven = ctx.proving(crate::forge::narrowing::proves_written(
             "label !== null",
@@ -17023,7 +16995,7 @@ mod tests {
                 i16t,
                 "com.sce.forge.runtime.SceWrapping.shr(h, m.toULong())",
             ),
-            (ExprTarget::Python, "h >> m", i16t, "(h >> m)"),
+            (ExprTarget::Python, "h >> m", i16t, "h >> m"),
             (
                 ExprTarget::Python,
                 "h >>> m",
@@ -17164,20 +17136,20 @@ mod tests {
     fn python_reduces_a_shift_and_a_complement_to_their_width() {
         assert_eq!(
             landed("s << 3", ExprTarget::Python, int(true, 32)),
-            "((((s << 3) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
+            "((s << 3) + 0x80000000 & 0xFFFFFFFF) - 0x80000000"
         );
         assert_eq!(
             landed("~(1 << m)", ExprTarget::Python, int(false, 64)),
-            "((~sce_algorithm.U64.wrapping_shl(1, m)) & 0xFFFFFFFFFFFFFFFF)"
+            "~sce_algorithm.U64.wrapping_shl(1, m) & 0xFFFFFFFFFFFFFFFF"
         );
     }
 
-    /// A reduction is one operand under any operator around it. Written bare,
-    /// `(m << 4) & 0xFF >> 4` is `(m << 4) & 0x0F` in Python, whose `&` binds
-    /// looser than `>>`, `+` and `==`; parenthesised, each line below is the
-    /// wrapped value: `((1 << 63) & M) >> 1` is `2^62`, `((m << 4) & 0xFF) >> 4`
-    /// is the low four bits of `m`, and `((m << 4) & 0xFF) == 16` holds for
-    /// `m = 17`.
+    /// A reduction is the `&` it is made of, grouped as one under any operator
+    /// around it that binds tighter. Written bare, `m << 4 & 0xFF >> 4` is
+    /// `(m << 4) & 0x0F` in Python, whose `&` binds looser than `>>` and `+`;
+    /// grouped, each line below is the wrapped value: `(m << 4 & 0xFF) >> 4` is
+    /// the low four bits of `m`, and `m << 4 & 0xFF == 16`, the `&` binding
+    /// tighter than `==`, holds for `m = 17`.
     #[test]
     fn a_python_reduction_binds_as_one_operand() {
         assert_eq!(
@@ -17186,11 +17158,11 @@ mod tests {
         );
         assert_eq!(
             landed("(m << 4) >> 4", ExprTarget::Python, int(false, 8)),
-            "((m << 4) & 0xFF) >> 4"
+            "(m << 4 & 0xFF) >> 4"
         );
         assert_eq!(
             landed("(m << 4) === 16", ExprTarget::Python, InferredType::Bool),
-            "((m << 4) & 0xFF) == 16"
+            "m << 4 & 0xFF == 16"
         );
     }
 
@@ -18325,19 +18297,19 @@ mod tests {
         let py = |expr: &str, to: InferredType| {
             transpile_typed(expr, ExprTarget::Python, &ctx, &empty_renames(), to).unwrap()
         };
-        assert_eq!(py("wide", int(false, 8)), "((wide) & 0xFF)");
-        assert_eq!(py("signed_wide", int(false, 8)), "((signed_wide) & 0xFF)");
+        assert_eq!(py("wide", int(false, 8)), "wide & 0xFF");
+        assert_eq!(py("signed_wide", int(false, 8)), "signed_wide & 0xFF");
         assert_eq!(
             py("signed_wide", int(false, 64)),
-            "((signed_wide) & 0xFFFFFFFFFFFFFFFF)"
+            "signed_wide & 0xFFFFFFFFFFFFFFFF"
         );
         assert_eq!(
             py("big", int(true, 32)),
-            "((((big) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
+            "(big + 0x80000000 & 0xFFFFFFFF) - 0x80000000"
         );
         assert_eq!(
             py("wide", int(true, 32)),
-            "((((wide) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
+            "(wide + 0x80000000 & 0xFFFFFFFF) - 0x80000000"
         );
         // A type that holds every value of the source changes nothing.
         assert_eq!(py("wide", int(false, 64)), "wide");
@@ -19491,7 +19463,7 @@ mod tests {
             (ExprTarget::Cpp, "label.size()"),
             (ExprTarget::Go, "len(label)"),
             (ExprTarget::Kotlin, "label.encodeToByteArray().size"),
-            (ExprTarget::Python, "len((label).encode(\"utf-8\"))"),
+            (ExprTarget::Python, "len(label.encode(\"utf-8\"))"),
             (ExprTarget::C, "sce_text_length(label)"),
         ] {
             assert_eq!(tp_with("len(label)", target, &ctx), expected, "{target:?}");

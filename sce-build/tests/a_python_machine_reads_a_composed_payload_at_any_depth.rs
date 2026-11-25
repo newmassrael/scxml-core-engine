@@ -300,7 +300,7 @@ fn the_inject_seam_writes_each_field_as_its_json() {
                  lambda sce_element: {P}.record_json({{\"id\": {P}.value_json(sce_element.id), \
                  \"amount\": {P}.wide_json(sce_element.amount), "
             ),
-            &format!("\"level\": {P}.value_json((sce_element.level).sce_name), "),
+            &format!("\"level\": {P}.value_json(sce_element.level.sce_name), "),
             &format!(
                 "\"due\": {P}.value_json({P}.write_optional(sce_element.due, lambda \
                  sce_element: {P}.wide_json(sce_element))), "

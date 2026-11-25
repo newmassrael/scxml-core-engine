@@ -232,9 +232,9 @@ fn each_value_is_written_by_walking_its_type_on_python() {
             &format!(
                 "{put}\"items\", (_ScriptValue.of([{{\"id\": sce_element.id, \"amount\": \
                  str(sce_element.amount), \"label\": sce_element.label, \"level\": \
-                 (sce_element.level).sce_name, \"due\": (lambda sce_element: None if \
+                 sce_element.level.sce_name, \"due\": (lambda sce_element: None if \
                  sce_element is None else str(sce_element))(sce_element.due), \"blob\": \
-                 (sce_element.blob).decode(\"latin-1\"), \"tags\": [sce_element for \
+                 sce_element.blob.decode(\"latin-1\"), \"tags\": [sce_element for \
                  sce_element in sce_element.tags]}} for sce_element in {payload}.items])).to_python())"
             ),
             &format!(
@@ -242,7 +242,7 @@ fn each_value_is_written_by_walking_its_type_on_python() {
                  for sce_element in {payload}.grid])).to_python())"
             ),
             &format!(
-                "{put}\"levels\", (_ScriptValue.of([(sce_element).sce_name for sce_element in \
+                "{put}\"levels\", (_ScriptValue.of([sce_element.sce_name for sce_element in \
                  {payload}.levels])).to_python())"
             ),
             &format!(

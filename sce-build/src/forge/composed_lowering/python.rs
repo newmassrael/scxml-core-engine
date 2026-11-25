@@ -23,6 +23,7 @@
 //! whole, as Kotlin's is.
 
 use super::*;
+use crate::forge::expr::python_tree::{PyBinOp, PyExpr};
 
 /// The attribute a case of a Python union answers the value of its tag's enum
 /// by, whatever key the tag is written under (docs/adr/0092, section 7, the
@@ -117,6 +118,21 @@ pub(crate) fn python_unit_union_read(
 /// A Python string literal of `text`.
 fn python_literal(text: &str) -> String {
     crate::filters::py_string_literal(text.to_string())
+}
+
+/// The value `held` stands for, as the one operand a [`Held`] is: a place, or
+/// a name bound to the value.
+fn python_held(held: &Held) -> PyExpr {
+    PyExpr::atom(held.text.as_str())
+}
+
+/// `present`, written of the name `binding`, applied to the value `held`
+/// where it is present, and `None` where it is absent: a `lambda` called with
+/// the value, so the value is read once.
+fn python_present_map(binding: &str, present: &str, held: &Held) -> String {
+    let test = PyExpr::binary(PyBinOp::Is, PyExpr::atom(binding), PyExpr::atom("None"));
+    let mapped = PyExpr::conditional(PyExpr::atom("None"), test, PyExpr::opaque(present));
+    PyExpr::call(PyExpr::lambda(&[binding], mapped), vec![python_held(held)]).to_string()
 }
 
 /// The Python function value that writes a value of `ty` as a saved state does
@@ -498,11 +514,12 @@ impl ComposedSpelling for PythonComposed<'_> {
     }
     // The machine's enum answers the name its document declares (`sce_name`).
     fn write_enum(&self, held: &Held) -> String {
+        let name = python_held(held).attribute("sce_name");
         match self.carrier {
             PythonCarrier::Json => {
-                format!("{PYTHON_PAYLOAD}.value_json(({}).sce_name)", held.text)
+                PyExpr::path_call(format!("{PYTHON_PAYLOAD}.value_json"), vec![name]).to_string()
             }
-            PythonCarrier::Wire => format!("({}).sce_name", held.text),
+            PythonCarrier::Wire => name.to_string(),
         }
     }
     fn write_text(&self, held: &Held) -> String {
@@ -516,7 +533,9 @@ impl ComposedSpelling for PythonComposed<'_> {
     fn write_bytes(&self, held: &Held) -> String {
         match self.carrier {
             PythonCarrier::Json => format!("{PYTHON_PAYLOAD}.value_json({})", held.text),
-            PythonCarrier::Wire => format!("({}).decode(\"latin-1\")", held.text),
+            PythonCarrier::Wire => python_held(held)
+                .method("decode", vec![PyExpr::atom("\"latin-1\"")])
+                .to_string(),
         }
     }
     // `null` where the value is absent, its key always written; presence is
@@ -529,10 +548,7 @@ impl ComposedSpelling for PythonComposed<'_> {
                  sce_element: {elem}))",
                 held.text
             ),
-            PythonCarrier::Wire => format!(
-                "(lambda sce_element: None if sce_element is None else {elem})({})",
-                held.text
-            ),
+            PythonCarrier::Wire => python_present_map("sce_element", elem, held),
         }
     }
     fn write_list(&self, held: &Held, elem: &str) -> String {
@@ -601,10 +617,7 @@ impl ComposedSpelling for PythonComposed<'_> {
         held.text.clone()
     }
     fn copy_optional(&self, held: &Held, elem: &str, _elem_ty: &str) -> String {
-        format!(
-            "(lambda sce_copied: None if sce_copied is None else {elem})({})",
-            held.text
-        )
+        python_present_map("sce_copied", elem, held)
     }
     // A `T` stands where an `Optional[T]` is expected as it is.
     fn copy_present(&self, value: &str) -> String {
@@ -666,25 +679,33 @@ impl ComposedSpelling for PythonComposed<'_> {
     // machine's case of the same variant from the unit's case, whose record
     // is its `value`.
     fn unit_union(&self, held: &Held, _document: &str, arms: &[UnitUnionArm]) -> Option<String> {
-        let arms: Vec<String> = arms
+        let arms = arms
             .iter()
             .map(|arm| {
                 let built = if arm.holds_record {
-                    format!("(lambda sce_copied: {})(sce_case.value)", arm.value)
+                    PyExpr::call(
+                        PyExpr::lambda(&["sce_copied"], PyExpr::opaque(arm.value.as_str())),
+                        vec![PyExpr::atom("sce_case.value")],
+                    )
                 } else {
-                    arm.value.clone()
+                    PyExpr::opaque(arm.value.as_str())
                 };
-                format!(
-                    "{}: lambda sce_case: {built}",
-                    crate::filters::py_string_literal(arm.variant.clone())
+                (
+                    PyExpr::atom(python_literal(&arm.variant)),
+                    PyExpr::lambda(&["sce_case"], built),
                 )
             })
             .collect();
-        Some(format!(
-            "(lambda sce_case: {{{}}}[sce_case.kind.declared_name()](sce_case))({})",
-            arms.join(", "),
-            held.text
-        ))
+        let case = PyExpr::atom("sce_case");
+        let chosen = PyExpr::dict(arms)
+            .subscript(PyExpr::atom("sce_case.kind").method("declared_name", Vec::new()));
+        Some(
+            PyExpr::call(
+                PyExpr::lambda(&["sce_case"], PyExpr::call(chosen, vec![case])),
+                vec![python_held(held)],
+            )
+            .to_string(),
+        )
     }
 
     // The record's saved form, a `dict` of its fields keyed by their ids in the
@@ -938,7 +959,7 @@ impl ComposedSpelling for PythonComposed<'_> {
     // writer reads it.
     fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
         let tag = python_literal(tag);
-        let arms: Vec<String> = arms
+        let arms = arms
             .iter()
             .map(|arm| {
                 let variant = python_literal(&arm.variant);
@@ -959,21 +980,27 @@ impl ComposedSpelling for PythonComposed<'_> {
                         format!("{{{}}}", pairs.join(", "))
                     }
                 };
+                let written = PyExpr::opaque(written);
                 let body = match &arm.fields {
-                    Some(_) => format!(
-                        "(lambda {}: {written})(sce_union.{PYTHON_CASE_VALUE})",
-                        self.write_binding(held.depth)
+                    Some(_) => PyExpr::call(
+                        PyExpr::lambda(&[self.write_binding(held.depth).as_str()], written),
+                        vec![PyExpr::atom("sce_union").attribute(PYTHON_CASE_VALUE)],
                     ),
                     None => written,
                 };
-                format!("{ty}{}: lambda sce_union: {body}", arm.case_ident)
+                (
+                    PyExpr::atom(format!("{ty}{}", arm.case_ident)),
+                    PyExpr::lambda(&["sce_union"], body),
+                )
             })
             .collect();
-        format!(
-            "(lambda sce_union: {{{}}}[type(sce_union)](sce_union))({})",
-            arms.join(", "),
-            held.text
+        let value = PyExpr::atom("sce_union");
+        let chosen = PyExpr::dict(arms).subscript(PyExpr::path_call("type", vec![value.clone()]));
+        PyExpr::call(
+            PyExpr::lambda(&["sce_union"], PyExpr::call(chosen, vec![value])),
+            vec![python_held(held)],
         )
+        .to_string()
     }
     fn union_member(
         &self,
@@ -1279,7 +1306,7 @@ mod tests {
         );
         assert_eq!(
             write("enum:Level", Held::place("x.level")),
-            format!("{p}.value_json((x.level).sce_name)")
+            format!("{p}.value_json(x.level.sce_name)")
         );
         assert_eq!(
             write("list<optional<uint16>>[2]", Held::place("x.maybe")),
@@ -1293,7 +1320,7 @@ mod tests {
             format!(
                 "{p}.list_json(x.items, lambda sce_element: {p}.record_json({{\"id\": \
                  {p}.value_json(sce_element.id), \"level\": \
-                 {p}.value_json((sce_element.level).sce_name), \"due\": \
+                 {p}.value_json(sce_element.level.sce_name), \"due\": \
                  {p}.value_json({p}.write_optional(sce_element.due, lambda sce_element: \
                  {p}.wide_json(sce_element))), \"blob\": {p}.value_json(sce_element.blob), \
                  \"tags\": {p}.list_json(sce_element.tags, lambda sce_element: \
@@ -1331,10 +1358,10 @@ mod tests {
         );
         assert_eq!(
             write("list<record:Item>[3]", Held::place("x.items")),
-            "[{\"id\": sce_element.id, \"level\": (sce_element.level).sce_name, \"due\": \
+            "[{\"id\": sce_element.id, \"level\": sce_element.level.sce_name, \"due\": \
              (lambda sce_element: None if sce_element is None else \
              str(sce_element))(sce_element.due), \"blob\": \
-             (sce_element.blob).decode(\"latin-1\"), \"tags\": [sce_element for sce_element \
+             sce_element.blob.decode(\"latin-1\"), \"tags\": [sce_element for sce_element \
              in sce_element.tags]} for sce_element in x.items]"
         );
         assert_eq!(wire.send_param("[1]".to_string()), "_ScriptValue.of([1])");
