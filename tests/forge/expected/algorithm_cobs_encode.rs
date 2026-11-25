@@ -14,7 +14,7 @@ use sce_portable_bytes::{SceBytes, CapacityExceeded};
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
 pub fn algorithm_cobs_encode(data: &[u8], out: &mut SceBytes<32>) -> Result<(), CapacityExceeded> {
-    let n: u32 = (data).len() as u32;
+    let n: u32 = data.len() as u32;
     out.clear();
     out.reserve(32);
     let mut p: u32 = 0;

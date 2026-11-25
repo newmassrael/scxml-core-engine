@@ -44,7 +44,7 @@ pub fn causal_cut(
     }
     out.clear();
     out.reserve(64);
-    if (holders).len() as u32 >= members {
+    if holders.len() as u32 >= members {
         let mut done: bool = false;
         let mut low: u64 = 0;
         let mut value: u64 = 0;

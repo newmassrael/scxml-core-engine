@@ -12,11 +12,11 @@
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
 pub fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
-    if (a).len() != (b).len() {
+    if a.len() != b.len() {
         return false;
     }
     let mut i: u32 = 0;
-    while i < (a).len() as u32 {
+    while i < a.len() as u32 {
         if sce_forge_runtime::algorithm::proven::at(&a, i) != sce_forge_runtime::algorithm::proven::at(&b, i) {
             return false;
         }

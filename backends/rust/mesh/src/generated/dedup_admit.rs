@@ -24,7 +24,7 @@ pub fn dedup_admit(
     capacity: u32,
     out: &mut SceOwnedList<envelope_id::EnvelopeIdPayload, 256>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    if !(capacity > 0 && (window).len() as u32 <= capacity) {
+    if !(capacity > 0 && window.len() as u32 <= capacity) {
         return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);
     }
     let mut held: bool = false;
@@ -35,7 +35,7 @@ pub fn dedup_admit(
     }
     out.clear();
     out.reserve(256);
-    let skip: u32 = if held || ((window).len() as u32) < capacity {
+    let skip: u32 = if held || (window.len() as u32) < capacity {
         0
     } else {
         1

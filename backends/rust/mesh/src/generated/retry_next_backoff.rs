@@ -25,7 +25,7 @@ pub fn retry_next_backoff(
     let grown: f64 = prev_ms as f64 * multiplier;
     let mut next: i64 = max_ms;
     if grown < max_ms as f64 {
-        next = (grown).floor() as i64;
+        next = grown.floor() as i64;
     }
     return Ok(next);
 }
