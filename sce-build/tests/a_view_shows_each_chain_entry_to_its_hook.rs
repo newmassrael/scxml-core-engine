@@ -129,7 +129,8 @@ fn a_chain_scan_shows_each_entry_to_the_hook_by_its_site() {
     let code = rust_of("codec_zenoh_oam");
     let flat = code.split_whitespace().collect::<Vec<_>>().join(" ");
     let scanned = "::sce_forge_runtime::codec::walk_chain::<\
-                   super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, _, 0>(cursor, _hook, \
+                   super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, \
+                   CodecZenohOamExtensionsChain, _, 0>(cursor, _hook, \
                    ::sce_forge_runtime::codec::ChainScan { \
                    site: ::sce_forge_runtime::codec::ChainSite { codec: \"codec_zenoh_oam\", \
                    field: \"extensions\" },";

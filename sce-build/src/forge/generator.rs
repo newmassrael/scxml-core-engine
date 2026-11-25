@@ -15277,13 +15277,40 @@ fn render_codec(
                     } else {
                         Vec::new()
                     };
-                    // The type a Rust list holds an entry as, which the runtime's
-                    // read of the chain is instantiated at (docs/adr/0136).
-                    let entry_type = if is_rust {
-                        rust_held_entry(imports, alias, &body_type)
+                    // How a Rust chain is read: a type of its own, the rule the
+                    // runtime's read and a view's scan of the chain are
+                    // instantiated at, so each part of the rule is a call by name
+                    // and no part is a pointer (docs/adr/0136).
+                    let chain_rule = if is_rust {
+                        rust_chain_rule_name(&m.name, &f.id)
                     } else {
                         String::new()
                     };
+                    let rust_flag_acc = match terminate_on {
+                        crate::forge::model::TlvTerminateStrategy::ExhaustOrDepth => None,
+                        crate::forge::model::TlvTerminateStrategy::EntryFlag { flag_name } => {
+                            Some(flag_getter_name(flag_name, crate::generator::Language::Rust))
+                        }
+                    };
+                    if is_rust {
+                        obj.insert(
+                            "chain_rule_item".into(),
+                            rust_chain_rule_item(&RustChainRule {
+                                rule: &chain_rule,
+                                codec: &m.name,
+                                field: f,
+                                entry_type: &rust_held_entry(imports, alias, &body_type),
+                                body_type: &stored_body(lang, imports, alias, &body_type),
+                                entry_borrowed: import_codec_borrowed(imports, alias),
+                                inputs: &entry_thread.inputs,
+                                entry_binds: &entry_binds,
+                                max_depth: *max_depth,
+                                entry_flag_acc: rust_flag_acc.as_deref(),
+                                kinds: &kinds,
+                            })
+                            .into(),
+                        );
+                    }
                     let decode_stmt = if f.present_if.is_some() {
                         tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
                             field: f,
@@ -15292,7 +15319,7 @@ fn render_codec(
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
                             inputs: &entry_thread.inputs,
-                            entry_type: &entry_type,
+                            chain_rule: &chain_rule,
                             entry_binds: &entry_binds,
                             max_depth: *max_depth,
                             terminate_on,
@@ -15309,7 +15336,7 @@ fn render_codec(
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
                             inputs: &entry_thread.inputs,
-                            entry_type: &entry_type,
+                            chain_rule: &chain_rule,
                             entry_binds: &entry_binds,
                             max_depth: *max_depth,
                             terminate_on,
@@ -15379,6 +15406,25 @@ fn render_codec(
                             &rust_view::chain_advance(&view_list, &entry_binds),
                         );
                         obj.insert("view_walk_item".into(), walk.item.into());
+                        // The scan reads where the chain ends off the chain's
+                        // rule, of the entry as the walk reads it: its view.
+                        let entry_import = imports
+                            .iter()
+                            .find(|i| i.alias == alias)
+                            .expect("a chain imports its entry codec");
+                        obj.insert(
+                            "view_chain_rule_item".into(),
+                            rust_view::chain_scan_rule_item(
+                                &chain_rule,
+                                &format!(
+                                    "super::{}::{}View",
+                                    entry_import.namespace, entry_import.type_name
+                                ),
+                                import_codec_view_borrowed(imports, alias),
+                                rust_flag_acc.as_deref(),
+                            )
+                            .into(),
+                        );
                         obj.insert(
                             "view_rs_type".into(),
                             rust_view::list_type(
@@ -15395,8 +15441,7 @@ fn render_codec(
                             &rust_view::ViewChain {
                                 codec: &m.name,
                                 walk: &walk.ty,
-                                max_depth: *max_depth,
-                                terminate_on,
+                                rule: &chain_rule,
                             },
                         );
                         obj.insert(
@@ -21724,10 +21769,10 @@ struct TlvChainDecode<'a> {
     /// The same arguments one by one, which a Rust chain hands the runtime's
     /// read of the chain as its inputs (docs/adr/0136).
     inputs: &'a [ThreadInput],
-    /// The entry's type as a Rust list holds it ([`rust_held_entry`]), which
-    /// the runtime's read of the chain is instantiated at; empty on any other
-    /// backend.
-    entry_type: &'a str,
+    /// The chain's rule as a Rust decode names it ([`rust_chain_rule_name`]),
+    /// which the runtime's read of the chain is instantiated at; empty on any
+    /// other backend.
+    chain_rule: &'a str,
     /// The flag-inputs the chain supplies entry by entry; `decode_arg` names
     /// their locals, and the loop declares and rewrites them.
     entry_binds: &'a ChainEntryBinds,
@@ -21944,94 +21989,110 @@ fn rust_list_entry_lines(body_type: &str, decode_arg: &str) -> Vec<String> {
     vec![
         "if cursor.failed() { break; }".to_string(),
         format!("let _entry = {body_type}::read(cursor{decode_arg});"),
-        format!("{RUNTIME_CODEC}::push_keeping(_vec, _entry, &[], &mut {RUST_LIST_FULL});"),
+        format!(
+            "{RUNTIME_CODEC}::push_keeping::<_, {RUNTIME_CODEC}::NoKinds>(_vec, _entry, &mut {RUST_LIST_FULL});"
+        ),
     ]
 }
 
-/// What [`rust_chain_fill`] reads a chain by.
-struct RustChainFill<'a> {
+/// The values the first entry of a list is read with, joined: what the parent
+/// fixes for every entry, evaluated where the parent's decode runs, and 0 for
+/// what a chain carries from one entry to the next, which is 0 before its first
+/// entry ([`ChainEntryBinds::decls`]). The eager read of a chain and a view's
+/// scan and walk of a list start from them alike.
+fn list_start_args(inputs: &[ThreadInput]) -> String {
+    inputs
+        .iter()
+        .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The name of the marker type that is the rule of the chain field `field` of
+/// codec `codec` ([`rust_chain_rule_item`]): `{Codec}{Field}Chain`, both in
+/// Pascal case.
+fn rust_chain_rule_name(codec: &str, field: &str) -> String {
+    format!(
+        "{}{}Chain",
+        filters::to_pascal_case(codec.to_string()),
+        filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// What [`rust_chain_rule_item`] declares a chain's rule by.
+struct RustChainRule<'a> {
+    /// The name the rule is declared as ([`rust_chain_rule_name`]).
+    rule: &'a str,
+    /// The document name of the codec that holds the chain, whose storage
+    /// traits bound the entry's profile.
+    codec: &'a str,
     field: &'a CodecField,
     /// The entry's type as the list holds it ([`rust_held_entry`]).
     entry_type: &'a str,
     /// The entry's type as the path its read is called by ([`stored_body`]).
     body_type: &'a str,
+    /// Whether the entry takes the holder's storage profile
+    /// ([`import_codec_borrowed`]), so the rule is one for every profile.
+    entry_borrowed: bool,
     /// What the entry's read is handed after the reader, in the order the entry
     /// declares its inputs ([`embed_flag_bind_thread_args_supplying`]).
     inputs: &'a [ThreadInput],
     entry_binds: &'a ChainEntryBinds,
     max_depth: Option<u32>,
     /// The accessor of the flag that ends the chain, when an entry flag does.
-    entry_flag_acc: &'a Option<String>,
+    entry_flag_acc: Option<&'a str>,
     kinds: &'a [RustChainKind],
-    /// The indentation of the line the fill's closing brace stands on.
-    indent: &'a str,
 }
 
-/// The fill a Rust chain decode hands its list's `refill` (`|_vec| { .. }`):
-/// one call of the runtime's `read_chain_into` (docs/adr/0136), which reads
-/// each entry until the chain ends, holds it where the list has room, notes of
-/// every entry the kinds the gates ask for in the chain's found list
-/// ([`chain_found_list`]), judges how the chain ended as [`tlv_chain_guard`]
-/// does, and answers the chain past its capacity once it is read whole
-/// (docs/adr/0077 §7). What this chain is, the routine is handed as data
-/// ([`rust_chain_read`]), so every chain of one entry type and list is read by
-/// one copy of it. The ungated and the gated decode share the fill, and a group
-/// built in place reads its chain through it ([`rust_group_in_place`]).
-fn rust_chain_fill(ctx: &RustChainFill<'_>) -> String {
-    let RustChainFill {
+/// The rule of a Rust chain, as the runtime's read of it is instantiated at
+/// (`read_chain_into`, docs/adr/0136): a marker type of its own, and each part
+/// of the rule a constant or a function of it, so the read calls each by name
+/// and a bare-metal image's call graph has the callee of every call.
+///
+/// `ChainEnds` says where the chain ends: with its frame or on the entry flag,
+/// and at its depth. `ChainRule` says how the eager form of an entry is read,
+/// handed its inputs from the list of them; whether it declares a successor, by
+/// the flag that ends the chain; how what the chain carries is rewritten from
+/// it, with the test the walk of a view makes
+/// ([`ChainEntryBinds::previous_entry_test`]); and which kinds the gates ask of
+/// it, `EntryKinds` on the rule where they ask any. A view's scan of the chain
+/// reads where it ends off the same type ([`rust_view::chain_scan_rule_item`]).
+/// An entry at the holder's profile is read by one rule for every profile the
+/// holder decodes at: its read asks of the profile what the holder's decode
+/// asks (`{Codec}From<'f>`), and its kinds what the holder's type asks
+/// (`{Codec}Storage`).
+fn rust_chain_rule_item(ctx: &RustChainRule<'_>) -> String {
+    use crate::generator::Language;
+    let RustChainRule {
+        rule,
+        codec,
         field,
         entry_type,
-        inputs,
-        kinds,
-        indent,
-        ..
-    } = *ctx;
-    let block = format!("{indent}    ");
-    let found = if kinds.is_empty() {
-        "[]".to_string()
-    } else {
-        chain_found_list(&field.id)
-    };
-    format!(
-        "|_vec| {{\n{block}{RUNTIME_CODEC}::read_chain_into::<{entry_type}, _, {}>(cursor, _vec, {}, &mut {found})\n{indent}}}",
-        inputs.len(),
-        rust_chain_read(ctx, &block)
-    )
-}
-
-/// The `ChainRead` a Rust chain decode hands the runtime's `read_chain_into`
-/// (docs/adr/0136), its fields at `indent` and a level in: the entry's read,
-/// handed its inputs from the list of them; the inputs the first entry is read
-/// with, what the parent hands every entry and 0 for what the chain carries
-/// ([`ChainEntryBinds::decls`]); the chain's depth; where it ends; how what it
-/// carries is rewritten from the entry just read, with the test the walk of a
-/// view makes ([`ChainEntryBinds::previous_entry_test`]); and the kinds the
-/// gates ask for. Each closure captures nothing, so it is a function pointer.
-fn rust_chain_read(ctx: &RustChainFill<'_>, indent: &str) -> String {
-    use crate::generator::Language;
-    let RustChainFill {
-        field,
         body_type,
+        entry_borrowed,
         inputs,
         entry_binds,
         max_depth,
         entry_flag_acc,
         kinds,
-        ..
     } = *ctx;
-    let call_args: String = (0..inputs.len()).map(|i| format!(", _a[{i}]")).collect();
-    let args = inputs
-        .iter()
-        .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
-        .collect::<Vec<_>>()
-        .join(", ");
+    let holder = filters::to_pascal_case(codec.to_string());
+    let width = inputs.len();
+    let call_args: String = (0..width).map(|i| format!(", _a[{i}]")).collect();
     let depth = max_depth.map_or_else(|| "None".to_string(), |depth| format!("Some({depth})"));
-    let end = match entry_flag_acc {
-        Some(acc) => format!("{RUNTIME_CODEC}::ChainEnd::Flag(|_e| _e.{acc}())"),
-        None => format!("{RUNTIME_CODEC}::ChainEnd::Frame"),
+    let (end, follows) = match entry_flag_acc {
+        Some(acc) => (
+            "Flag",
+            format!(
+                "\n\n    fn follows(_e: &{entry_type}) -> bool {{\n        \
+                     _e.{acc}()\n    \
+                 }}"
+            ),
+        ),
+        None => ("Frame", String::new()),
     };
     let carry = if entry_binds.is_empty() {
-        "None".to_string()
+        String::new()
     } else {
         let rewrites = entry_binds
             .binds
@@ -22047,24 +22108,112 @@ fn rust_chain_read(ctx: &RustChainFill<'_>, indent: &str) -> String {
                 )
             })
             .collect::<Vec<_>>()
-            .join(" ");
-        format!("Some(|_e, _a| {{ {rewrites} }})")
+            .join("\n        ");
+        format!(
+            "\n\n    fn carry(_e: &{entry_type}, _a: &mut [u8; {width}]) {{\n        \
+                 {rewrites}\n    \
+             }}"
+        )
     };
-    let tests = kinds
-        .iter()
-        .map(|kind| format!("|_e| {}", kind.of_any))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let at = format!("{indent}    ");
+    let (read_generics, kinds_generics) = if entry_borrowed {
+        (
+            format!("<'f, {STORAGE_PARAM}: {holder}From<'f>>"),
+            format!("<{STORAGE_PARAM}: {holder}Storage>"),
+        )
+    } else {
+        ("<'f>".to_string(), String::new())
+    };
+    let (asked, kinds_item) = if kinds.is_empty() {
+        (format!("{RUNTIME_CODEC}::NoKinds"), String::new())
+    } else {
+        let arms: String = kinds
+            .iter()
+            .enumerate()
+            .map(|(at, kind)| format!("            {at} => {},\n", kind.of_any))
+            .collect();
+        (
+            "Self".to_string(),
+            format!(
+                "\n\nimpl{kinds_generics} {RUNTIME_CODEC}::EntryKinds<{entry_type}> for {rule} {{\n    \
+                     const COUNT: usize = {count};\n\n    \
+                     fn is(_e: &{entry_type}, kind: usize) -> bool {{\n        \
+                         match kind {{\n\
+                 {arms}            _ => false,\n        \
+                         }}\n    \
+                     }}\n\
+                 }}",
+                count = kinds.len()
+            ),
+        )
+    };
     format!(
-        "{RUNTIME_CODEC}::ChainRead {{\n\
-         {at}read: |_r, _a| {body_type}::read(_r{call_args}),\n\
-         {at}args: [{args}],\n\
-         {at}depth: {depth},\n\
-         {at}end: {end},\n\
-         {at}carry: {carry},\n\
-         {at}kinds: &[{tests}],\n\
-         {indent}}}"
+        "/// How the chain `{field_id}` is read (docs/adr/0136): where it ends, and\n\
+         /// how each entry is read, what it carries to the next and the kinds the\n\
+         /// gates ask of it, each a part of this type, so the runtime's read of the\n\
+         /// chain calls each by name.\n\
+         #[allow(dead_code)]\n\
+         pub struct {rule};\n\
+         \n\
+         impl {RUNTIME_CODEC}::ChainEnds for {rule} {{\n    \
+             const END: {RUNTIME_CODEC}::ChainEnd = {RUNTIME_CODEC}::ChainEnd::{end};\n    \
+             const DEPTH: Option<u32> = {depth};\n\
+         }}\n\
+         \n\
+         impl{read_generics} {RUNTIME_CODEC}::ChainRule<'f, {entry_type}, {width}> for {rule} {{\n    \
+             type Kinds = {asked};\n\
+         \n    \
+             #[inline(always)]\n    \
+             fn read(_r: &mut SceReader<'f>, _a: &[u8; {width}]) -> {entry_type} {{\n        \
+                 {body_type}::read(_r{call_args})\n    \
+             }}{follows}{carry}\n\
+         }}{kinds_item}\n",
+        field_id = field.id,
+    )
+}
+
+/// What [`rust_chain_fill`] reads a chain by.
+struct RustChainFill<'a> {
+    field: &'a CodecField,
+    /// The chain's rule ([`rust_chain_rule_name`]), which the runtime's read of
+    /// the chain is instantiated at.
+    rule: &'a str,
+    /// What the entry's read is handed after the reader, in the order the entry
+    /// declares its inputs ([`embed_flag_bind_thread_args_supplying`]).
+    inputs: &'a [ThreadInput],
+    kinds: &'a [RustChainKind],
+    /// The indentation of the line the fill's closing brace stands on.
+    indent: &'a str,
+}
+
+/// The fill a Rust chain decode hands its list's `refill` (`|_vec| { .. }`):
+/// one call of the runtime's `read_chain_into` (docs/adr/0136), instantiated at
+/// the chain's rule ([`rust_chain_rule_item`]), which reads each entry until
+/// the chain ends, holds it where the list has room, notes of every entry the
+/// kinds the gates ask for in the chain's found list ([`chain_found_list`]),
+/// judges how the chain ended as [`tlv_chain_guard`] does, and answers the chain
+/// past its capacity once it is read whole (docs/adr/0077 §7). What the call
+/// hands it beside the rule is what the parent's decode alone knows: the inputs
+/// the first entry is read with ([`list_start_args`]). The ungated and the
+/// gated decode share the fill, and a group built in place reads its chain
+/// through it ([`rust_group_in_place`]).
+fn rust_chain_fill(ctx: &RustChainFill<'_>) -> String {
+    let RustChainFill {
+        field,
+        rule,
+        inputs,
+        kinds,
+        indent,
+    } = *ctx;
+    let block = format!("{indent}    ");
+    let found = if kinds.is_empty() {
+        "[]".to_string()
+    } else {
+        chain_found_list(&field.id)
+    };
+    format!(
+        "|_vec| {{\n{block}{RUNTIME_CODEC}::read_chain_into::<{rule}, _, {}>(cursor, _vec, [{}], &mut {found})\n{indent}}}",
+        inputs.len(),
+        list_start_args(inputs)
     )
 }
 
@@ -22280,7 +22429,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         body_decoder,
         decode_arg,
         inputs,
-        entry_type,
+        chain_rule,
         entry_binds,
         max_depth,
         terminate_on,
@@ -22314,12 +22463,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         Language::Rust => {
             let fill = rust_chain_fill(&RustChainFill {
                 field,
-                entry_type,
-                body_type,
+                rule: chain_rule,
                 inputs,
-                entry_binds,
-                max_depth,
-                entry_flag_acc: &entry_flag_acc,
                 kinds,
                 indent: "        ",
             });
@@ -22707,8 +22852,8 @@ struct TlvChainDecodeGated<'a> {
     decode_arg: &'a str,
     /// See [`TlvChainDecode::inputs`].
     inputs: &'a [ThreadInput],
-    /// See [`TlvChainDecode::entry_type`].
-    entry_type: &'a str,
+    /// See [`TlvChainDecode::chain_rule`].
+    chain_rule: &'a str,
     /// See [`TlvChainDecode::entry_binds`].
     entry_binds: &'a ChainEntryBinds,
     max_depth: Option<u32>,
@@ -22752,7 +22897,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         body_decoder,
         decode_arg,
         inputs,
-        entry_type,
+        chain_rule,
         entry_binds,
         max_depth,
         terminate_on,
@@ -22787,12 +22932,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // flag is filled inside its list's `refill`, one level deeper.
             let fill = rust_chain_fill(&RustChainFill {
                 field,
-                entry_type,
-                body_type,
+                rule: chain_rule,
                 inputs,
-                entry_binds,
-                max_depth,
-                entry_flag_acc: &entry_flag_acc,
                 kinds,
                 indent: "            ",
             });

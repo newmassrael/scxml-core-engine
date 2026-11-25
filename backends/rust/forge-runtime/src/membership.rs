@@ -1193,25 +1193,34 @@ mod tests {
         }
     }
 
-    fn even(entry: &u8) -> bool {
-        *entry % 2 == 0
-    }
+    /// The kinds the gates of these chains ask for, the first `N` of: an even
+    /// entry, a small one, and 7.
+    struct Asked<const N: usize>;
 
-    fn small(entry: &u8) -> bool {
-        *entry < 3
+    impl<const N: usize> crate::codec::EntryKinds<u8> for Asked<N> {
+        const COUNT: usize = N;
+
+        fn is(entry: &u8, kind: usize) -> bool {
+            match kind {
+                0 => *entry % 2 == 0,
+                1 => *entry < 3,
+                _ => *entry == 7,
+            }
+        }
     }
 
     /// A fill that reads `entries` as a generated chain decode reads each one:
-    /// held where it fits, the kinds the gates ask for kept past the capacity,
-    /// and the chain past its capacity said once it is read whole.
-    fn keeping<'e, L: HeldList<Entry = u8> + 'e>(
-        entries: &'e [u8],
-        kinds: &'e [fn(&u8) -> bool],
-    ) -> impl FnOnce(&mut L) -> Result<(), CodecError> + 'e {
+    /// held where it fits, the kinds `A` the gates ask for kept past the
+    /// capacity, and the chain past its capacity said once it is read whole.
+    fn keeping<'e, L, A>(entries: &'e [u8]) -> impl FnOnce(&mut L) -> Result<(), CodecError> + 'e
+    where
+        L: HeldList<Entry = u8> + 'e,
+        A: crate::codec::EntryKinds<u8> + 'e,
+    {
         move |list| {
             let mut full = false;
             for entry in entries {
-                crate::codec::push_keeping(list, *entry, kinds, &mut full);
+                crate::codec::push_keeping::<L, A>(list, *entry, &mut full);
             }
             if full {
                 return Err(CodecError::CapacityExceeded);
@@ -1230,7 +1239,7 @@ mod tests {
                 &mut group,
                 ByEvenScant::Even,
                 scant_even_arm,
-                keeping(&[1, 3, 5, 4], &[even])
+                keeping::<_, Asked<1>>(&[1, 3, 5, 4])
             ),
             Ok((true, true))
         );
@@ -1245,7 +1254,7 @@ mod tests {
                 &mut group,
                 ByEvenScant::Even,
                 scant_even_arm,
-                keeping(&[2, 4, 6], &[even])
+                keeping::<_, Asked<1>>(&[2, 4, 6])
             ),
             Ok((true, true))
         );
@@ -1265,7 +1274,7 @@ mod tests {
                 &mut group,
                 ByEvenScant::Both,
                 scant_both_arm,
-                keeping(&[4, 5, 1], &[even, small])
+                keeping::<_, Asked<2>>(&[4, 5, 1])
             ),
             Ok((true, true))
         );
@@ -1281,7 +1290,7 @@ mod tests {
                 &mut group,
                 ByEvenScant::Both,
                 scant_both_arm,
-                keeping(&[4, 1, 7], &[even, small, |e: &u8| *e == 7])
+                keeping::<_, Asked<3>>(&[4, 1, 7])
             ),
             Ok((true, true))
         );
@@ -1327,7 +1336,7 @@ mod tests {
                 &mut group,
                 ByBothInOne::Both,
                 both_in_one_arm,
-                keeping(&[4, 1], &[even, small])
+                keeping::<_, Asked<2>>(&[4, 1])
             ),
             Ok((false, true))
         );

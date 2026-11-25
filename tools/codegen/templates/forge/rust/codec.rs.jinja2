@@ -365,6 +365,14 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
 {% endif %}
 
+{# The rule of each chain the codec holds: a marker type whose constants and functions say
+   how the chain ends and how each entry is read, carried and asked its kinds, so the
+   runtime's read of the chain calls each by name (docs/adr/0136). #}
+{% for field in wire_fields %}
+{% if field.chain_rule_item is defined %}
+{{ field.chain_rule_item }}
+{% endif %}
+{% endfor %}
 #[allow(dead_code)]
 {% if emit_owned %}
 impl{{ owned_generics_impl }} {{ struct_name }}In{{ owned_generics_args }} {
@@ -677,6 +685,9 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 {% for field in wire_fields %}
 {% if field.view_walk_item is defined %}
 {{ field.view_walk_item }}
+{% endif %}
+{% if field.view_chain_rule_item is defined %}
+{{ field.view_chain_rule_item }}
 {% endif %}
 {% endfor %}
 {% for field in fields %}

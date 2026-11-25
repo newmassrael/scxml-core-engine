@@ -318,7 +318,7 @@ fn a_decode_past_a_capacity_reads_its_frame_once() {
     assert_contains(
         "codec_repeat_unconditional_count",
         &body,
-        "push_keeping(_vec, _entry, &[], &mut _full);",
+        "push_keeping::<_, ::sce_forge_runtime::codec::NoKinds>(_vec, _entry, &mut _full);",
     );
     assert_contains("codec_repeat_unconditional_count", &body, "if _full {");
     // A chain notes the kinds its gates ask for of every entry it read, in the

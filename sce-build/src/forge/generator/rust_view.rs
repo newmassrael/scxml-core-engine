@@ -295,11 +295,7 @@ impl ViewList<'_> {
     /// for every entry, and 0 for what a chain carries from one entry to the
     /// next, which is 0 before the first entry (`ChainEntryBinds::decls`).
     fn start_args(&self) -> String {
-        self.inputs
-            .iter()
-            .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
-            .collect::<Vec<_>>()
-            .join(", ")
+        super::list_start_args(self.inputs)
     }
 
     /// The statement that makes the field's value from what the scan counted.
@@ -499,13 +495,46 @@ pub(super) struct ViewChain<'a> {
     /// The list's walk ([`list_walk`]): how the scan reads an entry and what it
     /// carries from one entry to the next, as a walk of the list does.
     pub walk: &'a str,
-    /// The chain's depth, `None` where the protocol states none.
-    pub max_depth: Option<u32>,
-    pub terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
+    /// The chain's rule (`rust_chain_rule_item`): where the chain ends, its
+    /// depth, and the flag that ends it read off the entry the walk reads
+    /// ([`chain_scan_rule_item`]).
+    pub rule: &'a str,
+}
+
+/// How a view's scan reads where the chain whose rule is `rule` ends, off the
+/// entry as its walk reads it (`ChainScanRule`, docs/adr/0136): the flag read
+/// by its accessor `follows` on a chain an entry flag ends, and nothing more on
+/// one that ends with its frame, whose end and depth the rule's `ChainEnds`
+/// says for the eager read and the scan alike. `entry` is the path of the
+/// entry's view, which carries the lifetime `'b` where `borrowed`; the scan
+/// names it by its path, as the walk it reads by may.
+pub(super) fn chain_scan_rule_item(
+    rule: &str,
+    entry: &str,
+    borrowed: bool,
+    follows: Option<&str>,
+) -> String {
+    let (generics, entry) = if borrowed {
+        ("<'b>", format!("{entry}<'b>"))
+    } else {
+        ("", entry.to_string())
+    };
+    let body = match follows {
+        Some(acc) => format!(
+            " {{\n    \
+                 fn follows(_e: &{entry}) -> bool {{\n        \
+                     _e.{acc}()\n    \
+                 }}\n\
+             }}"
+        ),
+        None => " {}".to_string(),
+    };
+    format!("impl{generics} {RUNTIME_CODEC}::ChainScanRule<{entry}> for {rule}{body}\n")
 }
 
 /// A `<sce:tlv-chain>` field of a view: one call of the runtime's `walk_chain`
-/// (docs/adr/0136), the scan every chain of a view read by one walk shares. It
+/// (docs/adr/0136), instantiated at the list's walk and the chain's rule, which
+/// says where the chain ends and its depth as it says them to the eager read. It
 /// makes every check the eager decode makes, in the same order: the entry's own
 /// read, the flag that ends the chain, and the guards after the loop that tell a
 /// chain cut short from one that ran past `max-depth` (`tlv_chain_guard`). Each
@@ -517,32 +546,16 @@ pub(super) struct ViewChain<'a> {
 /// (`ListWalk::advance`, [`chain_advance`]), the scan's and every later walk's
 /// alike, from the values the list starts with ([`ViewList::start_args`]).
 pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> String {
-    use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
     let field = list.field;
     let id = list.id();
-    let ViewChain {
-        codec,
-        walk,
-        max_depth,
-        terminate_on,
-    } = *chain;
-    let end = match terminate_on {
-        TlvTerminateStrategy::ExhaustOrDepth => format!("{RUNTIME_CODEC}::ChainEnd::Frame"),
-        TlvTerminateStrategy::EntryFlag { flag_name } => format!(
-            "{RUNTIME_CODEC}::ChainEnd::Flag(|_e| _e.{}())",
-            flag_getter_name(flag_name, Language::Rust)
-        ),
-    };
-    let depth = max_depth.map_or_else(|| "None".to_string(), |depth| format!("Some({depth})"));
+    let ViewChain { codec, walk, rule } = *chain;
     let value = list.value();
     let scan = format!(
         "let _rest = cursor.rest();\n            \
-         let _count = {RUNTIME_CODEC}::walk_chain::<{walk}, _, {inputs}>(cursor, _hook, {RUNTIME_CODEC}::ChainScan {{\n                \
+         let _count = {RUNTIME_CODEC}::walk_chain::<{walk}, {rule}, _, {inputs}>(cursor, _hook, {RUNTIME_CODEC}::ChainScan {{\n                \
              site: {RUNTIME_CODEC}::ChainSite {{ codec: \"{codec}\", field: \"{field_id}\" }},\n                \
-             args: [{args}],\n                \
-             depth: {depth},\n                \
-             end: {end},\n            \
+             args: [{args}],\n            \
          }});\n            \
          _out.{id} = {value};",
         inputs = list.inputs.len(),

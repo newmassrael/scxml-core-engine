@@ -8,85 +8,108 @@
 //! and what the next entry is handed, note the kinds of entry the gates ask
 //! for, hold the entry where the list has room, and judge how the chain ended.
 //! Written into each codec that holds a chain, that loop was a copy for every
-//! such codec, and an image whose every message holds a chain of one entry
-//! type carried one copy for each message. Here it is one function for each
-//! type of entry and list, out of line, and what differs from chain to chain
-//! is data the call passes: how an entry is read with the inputs the chain
-//! hands it, where the chain ends, what it carries from one entry to the next,
-//! and which kinds of entry the gates on it ask for.
+//! such codec, printed in full. Here it is one function, out of line, and what
+//! differs from chain to chain is the rule of the chain: how an entry is read
+//! with the inputs the chain hands it, where the chain ends, what it carries
+//! from one entry to the next, and which kinds of entry the gates on it ask
+//! for. The rule is a type, a marker the generated codec declares for each
+//! chain ([`ChainRule`], [`ChainScanRule`]), and each part of it a function or
+//! a constant of that type: the routine is instantiated at the rule and calls
+//! each part by name. No part is a function pointer, so a bare-metal image keeps
+//! a call graph every call of which has its callee, and its stack bound is one
+//! a tool can prove.
 //!
 //! Both read through the frame's reader (docs/adr/0128): every read is total
 //! and the first refusal sticks, so the loop tests the failure at its head and
 //! nowhere else, and records every refusal of the chain in the reader.
 
-use crate::codec::{push_keeping, CodecError};
+use crate::codec::{push_keeping, CodecError, EntryKinds};
 use crate::reader::SceReader;
 use crate::records::{show_entry, ChainHook, ChainSite};
 use crate::storage::HeldList;
 use crate::view::ListWalk;
 
-/// Where a chain ends (`sce:terminate-on`).
-pub enum ChainEnd<E> {
+/// How a chain ends (`sce:terminate-on`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainEnd {
     /// With its frame, or at its depth: an entry is read while bytes remain.
     Frame,
-    /// After the first entry whose flag, which `flag` reads off the entry, is
-    /// clear. Such a chain is one entry or more (docs/adr/0065 §6 R7), so its
-    /// first entry is read whatever follows.
-    Flag(fn(&E) -> bool),
+    /// After the first entry whose flag, which the rule reads off the entry
+    /// ([`ChainRule::follows`], [`ChainScanRule::follows`]), is clear. Such a
+    /// chain is one entry or more (docs/adr/0065 §6 R7), so its first entry is
+    /// read whatever follows.
+    Flag,
 }
 
-impl<E> Clone for ChainEnd<E> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<E> Copy for ChainEnd<E> {}
-
-impl<E> ChainEnd<E> {
+impl ChainEnd {
     /// Whether the chain ends with its frame, so that no entry is read once no
     /// byte remains.
-    const fn with_frame(&self) -> bool {
+    const fn with_frame(self) -> bool {
         matches!(self, ChainEnd::Frame)
     }
 }
 
-/// How one chain of an eager decode is read ([`read_chain_into`]): all of it
-/// but the type of its entries and of its list, which the routine is generic
-/// over, so that every chain of one entry type and list shares it.
-pub struct ChainRead<'k, 'f, E, const K: usize> {
-    /// Read one entry, handed the inputs it takes, in the order the entry
-    /// declares them.
-    pub read: fn(&mut SceReader<'f>, &[u8; K]) -> E,
+/// Where one chain ends, whatever form of its entry it is read as: what the
+/// eager read of the chain ([`ChainRule`]) and a view's scan of it
+/// ([`ChainScanRule`]) share. A generated codec implements it on the marker
+/// type it declares for the chain.
+pub trait ChainEnds {
+    /// How the chain ends.
+    const END: ChainEnd;
+    /// The most entries the chain holds, `None` where the protocol states no
+    /// depth (docs/adr/0077 §7).
+    const DEPTH: Option<u32>;
+}
+
+/// How one chain of an eager decode is read ([`read_chain_into`]): the rule of
+/// the chain whose entries are `E`, each read with `K` inputs, from a frame of
+/// the lifetime `'f`. A generated codec implements it on the marker type it
+/// declares for the chain, beside [`ChainEnds`].
+pub trait ChainRule<'f, E, const K: usize>: ChainEnds {
+    /// The kinds of entry the gates on the chain ask for (docs/adr/0065 §6 R6):
+    /// [`NoKinds`](crate::codec::NoKinds) for a chain no gate reads.
+    type Kinds: EntryKinds<E>;
+
+    /// Read one entry from `reader`, handed the inputs `args` in the order the
+    /// entry declares them: what the parent hands every entry, and what the
+    /// chain carried from the entry before.
+    fn read(reader: &mut SceReader<'f>, args: &[u8; K]) -> E;
+
+    /// Whether `entry` declares an entry after it: the flag a chain that ends
+    /// on a flag ([`ChainEnd::Flag`]) ends where it is clear. A chain that ends
+    /// with its frame asks it of no entry, and keeps this answer.
+    fn follows(_entry: &E) -> bool {
+        false
+    }
+
+    /// Rewrite the values the chain carries from `entry`, the entry just read
+    /// (`<sce:entry-flag-bind>`), in `args`. A chain that carries nothing
+    /// keeps this, which rewrites none.
+    fn carry(_entry: &E, _args: &mut [u8; K]) {}
+}
+
+/// How a view's scan reads one chain beside its walk ([`walk_chain`]): where
+/// the chain ends, read off the entry as the walk reads it, `E`. The walk
+/// reads each entry and carries what the chain carries ([`ListWalk`]); a
+/// generated codec implements this on the marker type of the chain, beside
+/// [`ChainEnds`].
+pub trait ChainScanRule<E>: ChainEnds {
+    /// Whether `entry` declares an entry after it, as [`ChainRule::follows`]
+    /// says of the eager form of the entry.
+    fn follows(_entry: &E) -> bool {
+        false
+    }
+}
+
+/// What a view's scan of one chain is handed beside its rule ([`walk_chain`]):
+/// the site its hook is told, and the inputs its first entry is read with.
+pub struct ChainScan<const K: usize> {
+    /// The chain each entry is shown to the hook as (docs/adr/0130).
+    pub site: ChainSite,
     /// The inputs the first entry is read with: what the parent hands every
     /// entry, and 0 for each value the chain carries, which is 0 before its
     /// first entry.
     pub args: [u8; K],
-    /// The most entries the chain holds, `None` where the protocol states no
-    /// depth (docs/adr/0077 §7).
-    pub depth: Option<u32>,
-    /// Where the chain ends.
-    pub end: ChainEnd<E>,
-    /// Rewrite the values the chain carries from the entry just read
-    /// (`<sce:entry-flag-bind>`); `None` for a chain that carries nothing.
-    pub carry: Option<fn(&E, &mut [u8; K])>,
-    /// The kinds of entry the gates on the chain ask for (docs/adr/0065 §6 R6),
-    /// each a test of an entry.
-    pub kinds: &'k [fn(&E) -> bool],
-}
-
-/// How a view's scan reads one chain beside its walk ([`walk_chain`]): the
-/// site its hook is told, the inputs its first entry is read with, its depth
-/// and where it ends, as [`ChainRead`] says them.
-pub struct ChainScan<E, const K: usize> {
-    /// The chain each entry is shown to the hook as (docs/adr/0130).
-    pub site: ChainSite,
-    /// The inputs the first entry is read with.
-    pub args: [u8; K],
-    /// The most entries the chain holds, `None` where the protocol states none.
-    pub depth: Option<u32>,
-    /// Where the chain ends.
-    pub end: ChainEnd<E>,
 }
 
 /// Whether one more entry may be read under `left`, the entries the chain's
@@ -112,14 +135,14 @@ fn take_one(left: &mut Option<u32>) -> bool {
 /// the loop did not take: with no byte left the frame ended inside the chain,
 /// and with bytes left the chain ran past its depth. A chain with no depth has
 /// no entry past it.
-fn close_chain<E>(reader: &mut SceReader<'_>, end: ChainEnd<E>, depth: Option<u32>, more: bool) {
+fn close_chain(reader: &mut SceReader<'_>, end: ChainEnd, depth: Option<u32>, more: bool) {
     match end {
         ChainEnd::Frame => {
             if depth.is_some() && reader.remaining() > 0 {
                 reader.fail(CodecError::TooManyElements);
             }
         }
-        ChainEnd::Flag(_) => {
+        ChainEnd::Flag => {
             if more && reader.remaining() == 0 {
                 reader.fail(CodecError::NeedMoreBytes);
             }
@@ -130,64 +153,57 @@ fn close_chain<E>(reader: &mut SceReader<'_>, end: ChainEnd<E>, depth: Option<u3
     }
 }
 
-/// Read the chain `chain` from `reader` into `list`, which the list's
-/// `refill` hands over cleared: the loop of every `<sce:tlv-chain>` of an
-/// eager decode whose entries are `E` and whose list is `L`, one function for
-/// all of them (docs/adr/0136).
+/// Read the chain whose rule is `C` from `reader` into `list`, which the
+/// list's `refill` hands over cleared, its first entry read with `args`: the
+/// loop of every `<sce:tlv-chain>` of an eager decode, one function instantiated
+/// at each chain's rule (docs/adr/0136).
 ///
 /// Each entry is read until the chain ends, the loop being left where the
 /// frame has failed, so a refusal makes no loop of reads that read nothing
 /// (docs/adr/0128). An entry is held where the list has room and read on and
 /// not held where it has none (docs/adr/0077 §7, [`push_keeping`]), and
-/// `found[i]` is set where an entry read, held or not, is of `kinds[i]`: the
-/// kinds a gate after the chain reads. Every refusal of the frame is recorded
-/// in `reader`; the answer is `CapacityExceeded` where an entry was read and
-/// not held, which the list's fill answers once the chain is read whole, and
-/// `Ok` otherwise.
+/// `found[i]` is set where an entry read, held or not, is of the kind `i` of
+/// the rule's [`ChainRule::Kinds`]: the kinds a gate after the chain reads.
+/// Every refusal of the frame is recorded in `reader`; the answer is
+/// `CapacityExceeded` where an entry was read and not held, which the list's
+/// fill answers once the chain is read whole, and `Ok` otherwise.
 #[inline(never)]
-pub fn read_chain_into<'f, E, L, const K: usize>(
+pub fn read_chain_into<'f, C, L, const K: usize>(
     reader: &mut SceReader<'f>,
     list: &mut L,
-    chain: ChainRead<'_, 'f, E, K>,
+    mut args: [u8; K],
     found: &mut [bool],
 ) -> Result<(), CodecError>
 where
-    L: HeldList<Entry = E>,
+    L: HeldList,
+    C: ChainRule<'f, L::Entry, K>,
 {
-    let ChainRead {
-        read,
-        mut args,
-        depth,
-        end,
-        carry,
-        kinds,
-    } = chain;
-    let mut left = depth;
+    let with_frame = C::END.with_frame();
+    let mut left = C::DEPTH;
     let mut full = false;
     let mut more = false;
     while take_one(&mut left) {
-        if end.with_frame() && reader.remaining() == 0 {
+        if with_frame && reader.remaining() == 0 {
             break;
         }
         if reader.failed() {
             break;
         }
-        let entry = read(reader, &args);
-        if let ChainEnd::Flag(flag) = end {
-            more = flag(&entry);
+        let entry = C::read(reader, &args);
+        if !with_frame {
+            more = C::follows(&entry);
         }
-        if let Some(carry) = carry {
-            carry(&entry, &mut args);
+        C::carry(&entry, &mut args);
+        let kinds = <C::Kinds as EntryKinds<L::Entry>>::COUNT;
+        for (kind, seen) in found.iter_mut().enumerate().take(kinds) {
+            *seen |= <C::Kinds as EntryKinds<L::Entry>>::is(&entry, kind);
         }
-        for (kind, seen) in kinds.iter().zip(found.iter_mut()) {
-            *seen |= kind(&entry);
-        }
-        push_keeping(list, entry, kinds, &mut full);
-        if !end.with_frame() && !more {
+        push_keeping::<L, C::Kinds>(list, entry, &mut full);
+        if !with_frame && !more {
             break;
         }
     }
-    close_chain(reader, end, depth, more);
+    close_chain(reader, C::END, C::DEPTH, more);
     if full {
         Err(CodecError::CapacityExceeded)
     } else {
@@ -195,10 +211,10 @@ where
     }
 }
 
-/// Scan the chain `scan` of a view from `reader`, each entry read by the walk
+/// Scan the chain whose rule is `C` from `reader`, each entry read by the walk
 /// `W` and shown to `hook`, and answer how many entries a walk of it yields:
-/// the scan of every `<sce:tlv-chain>` of a view read by `W`, one function for
-/// all of them (docs/adr/0136).
+/// the scan of every `<sce:tlv-chain>` of a view, one function instantiated at
+/// each chain's walk and rule (docs/adr/0136).
 ///
 /// Each entry is shown to `hook` right after it is read and before the next
 /// is, as the bytes it occupies, and what the hook refuses is the frame's
@@ -209,50 +225,48 @@ where
 /// be one the walk never reaches. The guards after the loop are
 /// [`read_chain_into`]'s.
 #[inline(never)]
-pub fn walk_chain<'f, W, H, const K: usize>(
+pub fn walk_chain<'f, W, C, H, const K: usize>(
     reader: &mut SceReader<'f>,
     hook: &mut H,
-    scan: ChainScan<W::Entry<'f>, K>,
+    scan: ChainScan<K>,
 ) -> u32
 where
     W: ListWalk<K>,
+    C: ChainScanRule<W::Entry<'f>>,
     H: ChainHook,
 {
-    let ChainScan {
-        site,
-        mut args,
-        depth,
-        end,
-    } = scan;
-    let mut left = depth;
+    let ChainScan { site, mut args } = scan;
+    let with_frame = C::END.with_frame();
+    let mut left = C::DEPTH;
     let mut count: u32 = 0;
     let mut more = false;
     while take_one(&mut left) {
         if reader.failed() {
             break;
         }
-        if end.with_frame() && reader.remaining() == 0 {
+        if with_frame && reader.remaining() == 0 {
             break;
         }
         let at = reader.mark();
         let entry = W::read_with(reader, &args, hook);
         show_entry(reader, hook, site, at);
-        if let ChainEnd::Flag(flag) = end {
-            more = flag(&entry);
+        if !with_frame {
+            more = C::follows(&entry);
         }
         W::advance(&entry, &mut args);
         count += u32::from(!reader.failed());
-        if !end.with_frame() && !more {
+        if !with_frame && !more {
             break;
         }
     }
-    close_chain(reader, end, depth, more);
+    close_chain(reader, C::END, C::DEPTH, more);
     count
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codec::NoKinds;
     use crate::records::EntryRefused;
 
     /// An entry of one byte, and one more where its low bit is set; its high
@@ -283,25 +297,51 @@ mod tests {
         e.head & 0x80 != 0
     }
 
-    fn is_four(e: &Entry) -> bool {
-        e.head == 4
-    }
-
     /// The next entry is handed whether this one's second bit was set.
     fn carry_second_bit(e: &Entry, a: &mut [u8; 1]) {
         a[0] = u8::from(e.head & 0x02 != 0);
     }
 
-    fn chain(depth: Option<u32>, end: ChainEnd<Entry>) -> ChainRead<'static, 'static, Entry, 1> {
-        ChainRead {
-            read: read_entry,
-            args: [0],
-            depth,
-            end,
-            carry: None,
-            kinds: &[],
-        }
+    /// A rule of a chain of [`Entry`] that ends as `$end` at the depth
+    /// `$depth`, its entries read by [`read_entry`] and its flag [`follows`],
+    /// for the eager read and the scan alike, as a generated codec declares one
+    /// for each chain. A chain that ends with its frame has the flag too, which
+    /// the routines ask of no entry of it.
+    macro_rules! rule {
+        ($name:ident, $end:expr, $depth:expr) => {
+            struct $name;
+
+            impl ChainEnds for $name {
+                const END: ChainEnd = $end;
+                const DEPTH: Option<u32> = $depth;
+            }
+
+            impl<'f> ChainRule<'f, Entry, 1> for $name {
+                type Kinds = NoKinds;
+
+                fn read(r: &mut SceReader<'f>, a: &[u8; 1]) -> Entry {
+                    read_entry(r, a)
+                }
+
+                fn follows(e: &Entry) -> bool {
+                    follows(e)
+                }
+            }
+
+            impl ChainScanRule<Entry> for $name {
+                fn follows(e: &Entry) -> bool {
+                    follows(e)
+                }
+            }
+        };
     }
+
+    rule!(FrameAt4, ChainEnd::Frame, Some(4));
+    rule!(FrameAt2, ChainEnd::Frame, Some(2));
+    rule!(FrameAny, ChainEnd::Frame, None);
+    rule!(FlagAt4, ChainEnd::Flag, Some(4));
+    rule!(FlagAt2, ChainEnd::Flag, Some(2));
+    rule!(FlagAny, ChainEnd::Flag, None);
 
     type List = heapless::Vec<Entry, 4>;
 
@@ -309,10 +349,10 @@ mod tests {
     /// routine answered.
     type Read = (List, Result<(), CodecError>, Result<(), CodecError>);
 
-    fn read_all(bytes: &'static [u8], chain: ChainRead<'_, 'static, Entry, 1>) -> Read {
+    fn read_all<C: ChainRule<'static, Entry, 1>>(bytes: &'static [u8]) -> Read {
         let mut r = SceReader::new(bytes);
         let mut list = List::new();
-        let answer = read_chain_into(&mut r, &mut list, chain, &mut []);
+        let answer = read_chain_into::<C, _, 1>(&mut r, &mut list, [0], &mut []);
         (list, r.verdict(), answer)
     }
 
@@ -322,30 +362,44 @@ mod tests {
 
     #[test]
     fn a_chain_to_the_end_of_its_frame_reads_every_entry() {
-        let (list, verdict, answer) = read_all(&[2, 3, 9, 4], chain(Some(4), ChainEnd::Frame));
+        let (list, verdict, answer) = read_all::<FrameAt4>(&[2, 3, 9, 4]);
         assert_eq!(heads(&list), [2, 3, 4]);
         assert_eq!(list[1].extra, Some(9));
         assert_eq!((verdict, answer), (Ok(()), Ok(())));
-        let (list, verdict, _) = read_all(&[], chain(Some(4), ChainEnd::Frame));
+        let (list, verdict, _) = read_all::<FrameAt4>(&[]);
         assert!(list.is_empty());
         assert_eq!(verdict, Ok(()));
     }
 
     #[test]
+    fn a_chain_that_ends_with_its_frame_reads_on_past_an_entry_whose_flag_is_clear() {
+        // Every entry's flag is clear, and each is read all the same: the end
+        // of the chain is its frame's, not an entry's.
+        let (list, verdict, _) = read_all::<FrameAny>(&[0x02, 0x04, 0x06]);
+        assert_eq!(heads(&list), [0x02, 0x04, 0x06]);
+        assert_eq!(verdict, Ok(()));
+        let mut r = SceReader::new(&[0x02, 0x04, 0x06]);
+        assert_eq!(
+            walk_chain::<Walk, FrameAny, _, 1>(&mut r, &mut (), scan()),
+            3
+        );
+        assert_eq!(r.verdict(), Ok(()));
+    }
+
+    #[test]
     fn a_byte_past_the_depth_of_a_chain_that_owns_its_frame_is_too_many() {
-        let (list, verdict, _) = read_all(&[2, 4, 6], chain(Some(2), ChainEnd::Frame));
+        let (list, verdict, _) = read_all::<FrameAt2>(&[2, 4, 6]);
         assert_eq!(heads(&list), [2, 4]);
         assert_eq!(verdict, Err(CodecError::TooManyElements));
         // With no depth the chain reads to the end of its frame.
-        let (list, verdict, _) = read_all(&[2, 4, 6], chain(None, ChainEnd::Frame));
+        let (list, verdict, _) = read_all::<FrameAny>(&[2, 4, 6]);
         assert_eq!(heads(&list), [2, 4, 6]);
         assert_eq!(verdict, Ok(()));
     }
 
     #[test]
     fn a_chain_closed_by_a_flag_ends_after_the_entry_whose_flag_is_clear() {
-        let (list, verdict, _) =
-            read_all(&[0x82, 0x04, 0x06], chain(Some(4), ChainEnd::Flag(follows)));
+        let (list, verdict, _) = read_all::<FlagAt4>(&[0x82, 0x04, 0x06]);
         assert_eq!(heads(&list), [0x82, 0x04]);
         assert_eq!(verdict, Ok(()));
     }
@@ -353,31 +407,45 @@ mod tests {
     #[test]
     fn a_chain_closed_by_a_flag_is_short_or_too_long_where_its_last_flag_is_set() {
         // The frame ends after an entry that says another follows.
-        let (_, verdict, _) = read_all(&[0x82], chain(Some(4), ChainEnd::Flag(follows)));
+        let (_, verdict, _) = read_all::<FlagAt4>(&[0x82]);
         assert_eq!(verdict, Err(CodecError::NeedMoreBytes));
-        let (_, verdict, _) = read_all(&[0x82], chain(None, ChainEnd::Flag(follows)));
+        let (_, verdict, _) = read_all::<FlagAny>(&[0x82]);
         assert_eq!(verdict, Err(CodecError::NeedMoreBytes));
         // The depth is reached with another entry announced and bytes left.
-        let (list, verdict, _) =
-            read_all(&[0x82, 0x84, 0x06], chain(Some(2), ChainEnd::Flag(follows)));
+        let (list, verdict, _) = read_all::<FlagAt2>(&[0x82, 0x84, 0x06]);
         assert_eq!(heads(&list), [0x82, 0x84]);
         assert_eq!(verdict, Err(CodecError::TooManyElements));
         // A chain with no depth has no entry past it, and reads on to the flag.
-        let (list, verdict, _) =
-            read_all(&[0x82, 0x84, 0x06], chain(None, ChainEnd::Flag(follows)));
+        let (list, verdict, _) = read_all::<FlagAny>(&[0x82, 0x84, 0x06]);
         assert_eq!(heads(&list), [0x82, 0x84, 0x06]);
         assert_eq!(verdict, Ok(()));
         // An empty frame is short: the chain is one entry or more.
-        let (_, verdict, _) = read_all(&[], chain(Some(4), ChainEnd::Flag(follows)));
+        let (_, verdict, _) = read_all::<FlagAt4>(&[]);
         assert_eq!(verdict, Err(CodecError::NeedMoreBytes));
     }
 
-    /// How many entries [`counted`] has read.
+    /// How many entries [`Counted`] has read.
     static READS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-    fn counted(r: &mut SceReader<'_>, a: &[u8; 1]) -> Entry {
-        READS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-        read_entry(r, a)
+    /// [`FlagAny`], counting the entries it reads.
+    struct Counted;
+
+    impl ChainEnds for Counted {
+        const END: ChainEnd = ChainEnd::Flag;
+        const DEPTH: Option<u32> = None;
+    }
+
+    impl<'f> ChainRule<'f, Entry, 1> for Counted {
+        type Kinds = NoKinds;
+
+        fn read(r: &mut SceReader<'f>, a: &[u8; 1]) -> Entry {
+            READS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+            read_entry(r, a)
+        }
+
+        fn follows(e: &Entry) -> bool {
+            follows(e)
+        }
     }
 
     #[test]
@@ -385,24 +453,34 @@ mod tests {
         // The entry announces another and asks for a byte the frame does not
         // have: its read is refused, and the loop reads nothing after it.
         READS.store(0, core::sync::atomic::Ordering::SeqCst);
-        let (_, verdict, answer) = read_all(
-            &[0x83],
-            ChainRead {
-                read: counted,
-                ..chain(None, ChainEnd::Flag(follows))
-            },
-        );
+        let (_, verdict, answer) = read_all::<Counted>(&[0x83]);
         assert_eq!((verdict, answer), (Err(CodecError::NeedMoreBytes), Ok(())));
         assert_eq!(READS.load(core::sync::atomic::Ordering::SeqCst), 1);
     }
 
+    /// [`FrameAny`], carrying each entry's second bit to the next.
+    struct Carried;
+
+    impl ChainEnds for Carried {
+        const END: ChainEnd = ChainEnd::Frame;
+        const DEPTH: Option<u32> = None;
+    }
+
+    impl<'f> ChainRule<'f, Entry, 1> for Carried {
+        type Kinds = NoKinds;
+
+        fn read(r: &mut SceReader<'f>, a: &[u8; 1]) -> Entry {
+            read_entry(r, a)
+        }
+
+        fn carry(e: &Entry, a: &mut [u8; 1]) {
+            carry_second_bit(e, a);
+        }
+    }
+
     #[test]
     fn a_chain_carries_a_value_from_each_entry_to_the_next() {
-        let carried = ChainRead {
-            carry: Some(carry_second_bit),
-            ..chain(None, ChainEnd::Frame)
-        };
-        let (list, verdict, _) = read_all(&[2, 4, 6], carried);
+        let (list, verdict, _) = read_all::<Carried>(&[2, 4, 6]);
         assert_eq!(verdict, Ok(()));
         let carried: heapless::Vec<u8, 4> = list.iter().map(|e| e.carried).collect();
         // The first entry is handed the start, 0; then each entry's second bit.
@@ -410,10 +488,21 @@ mod tests {
     }
 
     #[test]
+    fn a_chain_starts_from_the_inputs_its_call_hands_it() {
+        // What the parent hands every entry is the call's, not the rule's.
+        let mut r = SceReader::new(&[2, 4]);
+        let mut list = List::new();
+        let answer = read_chain_into::<FrameAny, _, 1>(&mut r, &mut list, [7], &mut []);
+        assert_eq!((r.verdict(), answer), (Ok(()), Ok(())));
+        let carried: heapless::Vec<u8, 4> = list.iter().map(|e| e.carried).collect();
+        assert_eq!(carried, [7, 7]);
+    }
+
+    #[test]
     fn a_chain_past_its_list_reads_on_and_answers_its_capacity_once_read_whole() {
         let mut r = SceReader::new(&[2, 4, 6]);
         let mut list: heapless::Vec<Entry, 1> = heapless::Vec::new();
-        let answer = read_chain_into(&mut r, &mut list, chain(None, ChainEnd::Frame), &mut []);
+        let answer = read_chain_into::<FrameAny, _, 1>(&mut r, &mut list, [0], &mut []);
         assert_eq!(answer, Err(CodecError::CapacityExceeded));
         // The frame is well formed and read to its end; the list holds what it can.
         assert_eq!(r.verdict(), Ok(()));
@@ -421,21 +510,44 @@ mod tests {
         assert_eq!(list.len(), 1);
     }
 
+    /// The kinds the gates on [`Kinded`] ask for: an entry whose head is 4, and
+    /// one that says another follows.
+    struct FourOrFollows;
+
+    impl EntryKinds<Entry> for FourOrFollows {
+        const COUNT: usize = 2;
+
+        fn is(e: &Entry, kind: usize) -> bool {
+            match kind {
+                0 => e.head == 4,
+                1 => follows(e),
+                _ => false,
+            }
+        }
+    }
+
+    /// [`FrameAny`], its gates asking for [`FourOrFollows`].
+    struct Kinded;
+
+    impl ChainEnds for Kinded {
+        const END: ChainEnd = ChainEnd::Frame;
+        const DEPTH: Option<u32> = None;
+    }
+
+    impl<'f> ChainRule<'f, Entry, 1> for Kinded {
+        type Kinds = FourOrFollows;
+
+        fn read(r: &mut SceReader<'f>, a: &[u8; 1]) -> Entry {
+            read_entry(r, a)
+        }
+    }
+
     #[test]
     fn the_kinds_of_every_entry_read_are_found_held_or_not() {
-        let kinds: [fn(&Entry) -> bool; 2] = [is_four, follows];
         let mut found = [false; 2];
         let mut r = SceReader::new(&[2, 4]);
         let mut list: heapless::Vec<Entry, 1> = heapless::Vec::new();
-        let answer = read_chain_into(
-            &mut r,
-            &mut list,
-            ChainRead {
-                kinds: &kinds,
-                ..chain(None, ChainEnd::Frame)
-            },
-            &mut found,
-        );
+        let answer = read_chain_into::<Kinded, _, 1>(&mut r, &mut list, [0], &mut found);
         assert_eq!(answer, Err(CodecError::CapacityExceeded));
         // The second entry, the only one of the first kind, was read past the
         // list's capacity and noted all the same; no entry is of the second.
@@ -465,12 +577,10 @@ mod tests {
         field: "entries",
     };
 
-    fn scan(depth: Option<u32>, end: ChainEnd<Entry>) -> ChainScan<Entry, 1> {
+    fn scan() -> ChainScan<1> {
         ChainScan {
             site: SITE,
             args: [0],
-            depth,
-            end,
         }
     }
 
@@ -497,25 +607,25 @@ mod tests {
     fn a_scan_counts_the_entries_a_walk_yields_and_judges_the_chain_as_the_read_does() {
         let mut r = SceReader::new(&[2, 3, 9, 4]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut (), scan(Some(4), ChainEnd::Frame)),
+            walk_chain::<Walk, FrameAt4, _, 1>(&mut r, &mut (), scan()),
             3
         );
         assert_eq!(r.verdict(), Ok(()));
         let mut r = SceReader::new(&[2, 4, 6]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut (), scan(Some(2), ChainEnd::Frame)),
+            walk_chain::<Walk, FrameAt2, _, 1>(&mut r, &mut (), scan()),
             2
         );
         assert_eq!(r.verdict(), Err(CodecError::TooManyElements));
         let mut r = SceReader::new(&[0x82, 0x04, 0x06]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut (), scan(Some(4), ChainEnd::Flag(follows))),
+            walk_chain::<Walk, FlagAt4, _, 1>(&mut r, &mut (), scan()),
             2
         );
         assert_eq!((r.verdict(), r.remaining()), (Ok(()), 1));
         let mut r = SceReader::new(&[0x82]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut (), scan(None, ChainEnd::Flag(follows))),
+            walk_chain::<Walk, FlagAny, _, 1>(&mut r, &mut (), scan()),
             1
         );
         assert_eq!(r.verdict(), Err(CodecError::NeedMoreBytes));
@@ -527,7 +637,7 @@ mod tests {
         // refused, and not counted, so the count is the entries a walk yields.
         let mut r = SceReader::new(&[2, 3]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut (), scan(None, ChainEnd::Frame)),
+            walk_chain::<Walk, FrameAny, _, 1>(&mut r, &mut (), scan()),
             1
         );
         assert_eq!(r.verdict(), Err(CodecError::NeedMoreBytes));
@@ -541,7 +651,7 @@ mod tests {
         };
         let mut r = SceReader::new(&[2, 3, 9, 4]);
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut hook, scan(None, ChainEnd::Frame)),
+            walk_chain::<Walk, FrameAny, _, 1>(&mut r, &mut hook, scan()),
             3
         );
         assert_eq!(hook.seen, [2, 3, 4]);
@@ -557,7 +667,7 @@ mod tests {
         let mut r = SceReader::new(&[2, 3, 9, 4]);
         // The refused entry is not counted, and no entry after it is read.
         assert_eq!(
-            walk_chain::<Walk, _, 1>(&mut r, &mut hook, scan(None, ChainEnd::Frame)),
+            walk_chain::<Walk, FrameAny, _, 1>(&mut r, &mut hook, scan()),
             1
         );
         assert_eq!(hook.seen, [2, 3]);
@@ -590,13 +700,13 @@ mod tests {
         }
         let mut r = SceReader::new(&[2, 4, 2]);
         assert_eq!(
-            walk_chain::<Strict, _, 1>(&mut r, &mut (), scan(None, ChainEnd::Frame)),
+            walk_chain::<Strict, FrameAny, _, 1>(&mut r, &mut (), scan()),
             3
         );
         assert_eq!(r.verdict(), Ok(()));
         let mut r = SceReader::new(&[2, 2]);
         assert_eq!(
-            walk_chain::<Strict, _, 1>(&mut r, &mut (), scan(None, ChainEnd::Frame)),
+            walk_chain::<Strict, FrameAny, _, 1>(&mut r, &mut (), scan()),
             1
         );
         assert_eq!(r.verdict(), Err(CodecError::PresentIfMismatch));

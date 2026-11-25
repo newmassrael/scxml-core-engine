@@ -309,7 +309,9 @@ pub use crate::records::{
 };
 // The one read of a chain into its list and the one scan of a chain a view
 // keeps as its bytes, which every generated chain calls (docs/adr/0136).
-pub use crate::chain::{read_chain_into, walk_chain, ChainEnd, ChainRead, ChainScan};
+pub use crate::chain::{
+    read_chain_into, walk_chain, ChainEnd, ChainEnds, ChainRule, ChainScan, ChainScanRule,
+};
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};
@@ -350,22 +352,47 @@ pub fn note_capacity(result: Result<(), CodecError>, over: &mut bool) -> Result<
     }
 }
 
+/// The kinds of entry the gates on a list ask for (docs/adr/0065 §6 R6), as
+/// [`push_keeping`] and the read of a chain ask them of each entry: a type for
+/// each chain whose gates ask, generated beside it, so each test is a call by
+/// name and none is through a pointer (docs/adr/0136).
+pub trait EntryKinds<E> {
+    /// How many kinds the gates ask for.
+    const COUNT: usize;
+
+    /// Whether `entry` is of the kind at `kind`, which is below
+    /// [`Self::COUNT`].
+    fn is(entry: &E, kind: usize) -> bool;
+}
+
+/// The kinds of a list no gate asks a kind of: none, so a full list holds what
+/// it holds and reads on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoKinds {}
+
+impl<E> EntryKinds<E> for NoKinds {
+    const COUNT: usize = 0;
+
+    fn is(_entry: &E, _kind: usize) -> bool {
+        false
+    }
+}
+
 /// Hold the decoded `entry` in `list`, or, past the list's capacity, note it in
 /// `full` and read on (docs/adr/0077 §7): the entry is read and not held, as the
 /// C11 backend reads an entry past its array.
 ///
-/// `kinds` are the kinds of entry the gates on the list ask for
-/// (docs/adr/0065 §6 R6), each a test of an entry. An entry past the capacity
-/// of a kind the list holds none of is held in place of the last entry each of
-/// whose kinds another entry also holds, so a full list still holds an entry of
-/// every kind it read while it has room for one of each. The arm the gates name
-/// is then one whose chain the value can hold.
-pub fn push_keeping<L: HeldList>(
-    list: &mut L,
-    entry: L::Entry,
-    kinds: &[fn(&L::Entry) -> bool],
-    full: &mut bool,
-) {
+/// `Asked` are the kinds of entry the gates on the list ask for
+/// (docs/adr/0065 §6 R6), [`NoKinds`] where none does. An entry past the
+/// capacity of a kind the list holds none of is held in place of the last entry
+/// each of whose kinds another entry also holds, so a full list still holds an
+/// entry of every kind it read while it has room for one of each. The arm the
+/// gates name is then one whose chain the value can hold.
+pub fn push_keeping<L, Asked>(list: &mut L, entry: L::Entry, full: &mut bool)
+where
+    L: HeldList,
+    Asked: EntryKinds<L::Entry>,
+{
     if !SceList::is_full(list) {
         if SceList::try_push(list, entry).is_err() {
             *full = true;
@@ -374,20 +401,19 @@ pub fn push_keeping<L: HeldList>(
     }
     *full = true;
     let held = SceList::as_slice(list);
-    let new_kind = kinds
-        .iter()
-        .any(|kind| kind(&entry) && !held.iter().any(kind));
+    let new_kind = (0..Asked::COUNT)
+        .any(|kind| Asked::is(&entry, kind) && !held.iter().any(|h| Asked::is(h, kind)));
     if !new_kind {
         return;
     }
     // An entry whose every kind some other entry also holds can make room.
     let spare = (0..held.len()).rev().find(|&at| {
-        kinds.iter().all(|kind| {
-            !kind(&held[at])
+        (0..Asked::COUNT).all(|kind| {
+            !Asked::is(&held[at], kind)
                 || held
                     .iter()
                     .enumerate()
-                    .any(|(other, h)| other != at && kind(h))
+                    .any(|(other, h)| other != at && Asked::is(h, kind))
         })
     });
     if let Some(at) = spare {

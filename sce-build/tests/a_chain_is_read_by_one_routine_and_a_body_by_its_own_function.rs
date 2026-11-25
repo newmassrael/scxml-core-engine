@@ -2,14 +2,18 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A Rust codec reads each `<sce:tlv-chain>` by one routine of the runtime,
-//! shared by every chain of one entry type (docs/adr/0136).
+//! instantiated at the chain's rule (docs/adr/0136).
 //!
-//! The eager decode hands `read_chain_into` the list it fills and what the
-//! chain is (how an entry is read with its inputs, where the chain ends, what
-//! it carries, which kinds the gates ask for), and prints no loop of its own; a
-//! view hands `walk_chain` its walk and its hook. What the routines do, frame by
-//! frame, is held by their unit tests in `backends/rust/forge-runtime/src/chain.rs`
-//! and by the round trips the conformance crate runs over the goldens.
+//! The codec declares the rule as a marker type of its own, whose constants and
+//! functions say what the chain is (how an entry is read with its inputs, where
+//! the chain ends, what it carries, which kinds the gates ask for). The eager
+//! decode hands `read_chain_into` the list it fills and the inputs its first
+//! entry is read with, and prints no loop of its own; a view hands `walk_chain`
+//! its walk and its hook. No part of a rule reaches a routine as a function
+//! pointer, so a bare-metal image's call graph has the callee of every call.
+//! What the routines do, frame by frame, is held by their unit tests in
+//! `backends/rust/forge-runtime/src/chain.rs` and by the round trips the
+//! conformance crate runs over the goldens.
 //!
 //! The function a parent reads a codec's body through (an arm of a dispatching
 //! variant, an embedded body, a chain's entry) is out of line, so it is one
@@ -218,7 +222,7 @@ fn an_eager_chain_is_read_by_one_call_of_the_runtime_and_no_loop_of_its_own() {
         for printed in [
             "loop {",
             "for _ in 0..",
-            "push_keeping(",
+            "push_keeping",
             "_more",
             "let _entry",
             "if cursor.failed() { break; }",
@@ -232,42 +236,133 @@ fn an_eager_chain_is_read_by_one_call_of_the_runtime_and_no_loop_of_its_own() {
     }
 }
 
-/// What a chain is reaches the routine as data: the entry's read handed its
-/// inputs by position, the inputs the first entry starts with, the depth, the
-/// flag that ends it and what it carries to the next entry, rewritten by the
-/// test the loop made.
+/// What a chain is reaches the routine as its rule, a type the codec declares:
+/// where the chain ends and its depth, the entry's read handed its inputs by
+/// position, the flag that ends it and what it carries to the next entry,
+/// rewritten by the test the loop made. The call hands the routine the rule by
+/// name and the inputs the first entry starts with.
 #[test]
-fn a_chain_hands_the_routine_what_it_is() {
+fn a_chain_hands_the_routine_its_rule() {
     let code = rust_of("codec_chain_prev_carrier");
     let body = flat(eager_read("codec_chain_prev_carrier", &code));
+    let call = format!(
+        "{RUNTIME}read_chain_into::<CodecChainPrevCarrierEntriesChain, _, 2>(cursor, _vec, [0, head & 0x1], &mut [])"
+    );
+    assert!(
+        body.contains(&call),
+        "codec_chain_prev_carrier does not hand the routine its rule:\n{body}"
+    );
+    let all = flat(&code);
     for said in [
-        format!("{RUNTIME}read_chain_into::<CodecChainPrevEntry, _, 2>(cursor, _vec, {RUNTIME}ChainRead {{"),
-        "read: |_r, _a| CodecChainPrevEntry::read(_r, _a[0], _a[1]),".to_string(),
-        "args: [0, head & 0x1],".to_string(),
-        "depth: Some(4),".to_string(),
-        format!("end: {RUNTIME}ChainEnd::Flag(|_e| _e.z()),"),
-        "carry: Some(|_e, _a| { _a[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }),".to_string(),
-        "kinds: &[], }, &mut [])".to_string(),
+        "pub struct CodecChainPrevCarrierEntriesChain;".to_string(),
+        format!(
+            "impl {RUNTIME}ChainEnds for CodecChainPrevCarrierEntriesChain {{ \
+             const END: {RUNTIME}ChainEnd = {RUNTIME}ChainEnd::Flag; \
+             const DEPTH: Option<u32> = Some(4); }}"
+        ),
+        format!(
+            "impl<'f> {RUNTIME}ChainRule<'f, CodecChainPrevEntry, 2> for CodecChainPrevCarrierEntriesChain {{ \
+             type Kinds = {RUNTIME}NoKinds; \
+             #[inline(always)] \
+             fn read(_r: &mut SceReader<'f>, _a: &[u8; 2]) -> CodecChainPrevEntry {{ \
+             CodecChainPrevEntry::read(_r, _a[0], _a[1]) }} \
+             fn follows(_e: &CodecChainPrevEntry) -> bool {{ _e.z() }} \
+             fn carry(_e: &CodecChainPrevEntry, _a: &mut [u8; 2]) {{ \
+             _a[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }} }}"
+        ),
     ] {
         assert!(
-            body.contains(&said),
-            "codec_chain_prev_carrier does not hand the routine `{said}`:\n{body}"
+            all.contains(&said),
+            "codec_chain_prev_carrier does not declare its chain's rule as `{said}`:\n{code}"
         );
     }
+    // An entry at the holder's profile is read by one rule for every profile;
+    // a chain that ends with its frame and carries nothing declares no flag and
+    // no carry.
     let code = rust_of("codec_tlv_chain_basic");
     let body = flat(eager_read("codec_tlv_chain_basic", &code));
+    let call = format!(
+        "{RUNTIME}read_chain_into::<CodecTlvChainBasicExtensionsChain, _, 0>(cursor, _vec, [], &mut [])"
+    );
+    assert!(
+        body.contains(&call),
+        "codec_tlv_chain_basic does not hand the routine its rule:\n{body}"
+    );
+    let all = flat(&code);
     for said in [
-        format!("{RUNTIME}read_chain_into::<CodecTlvEntryOwned<S>, _, 0>(cursor, _vec, "),
-        "read: |_r, _a| CodecTlvEntryOwned::<S>::read(_r),".to_string(),
-        "args: [],".to_string(),
-        "depth: Some(8),".to_string(),
-        format!("end: {RUNTIME}ChainEnd::Frame,"),
-        "carry: None,".to_string(),
+        format!(
+            "impl {RUNTIME}ChainEnds for CodecTlvChainBasicExtensionsChain {{ \
+             const END: {RUNTIME}ChainEnd = {RUNTIME}ChainEnd::Frame; \
+             const DEPTH: Option<u32> = Some(8); }}"
+        ),
+        format!(
+            "impl<'f, S: CodecTlvChainBasicFrom<'f>> {RUNTIME}ChainRule<'f, CodecTlvEntryOwned<S>, 0> \
+             for CodecTlvChainBasicExtensionsChain {{ \
+             type Kinds = {RUNTIME}NoKinds; \
+             #[inline(always)] \
+             fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecTlvEntryOwned<S> {{ \
+             CodecTlvEntryOwned::<S>::read(_r) }} }}"
+        ),
     ] {
         assert!(
-            body.contains(&said),
-            "codec_tlv_chain_basic does not hand the routine `{said}`:\n{body}"
+            all.contains(&said),
+            "codec_tlv_chain_basic does not declare its chain's rule as `{said}`:\n{code}"
         );
+    }
+}
+
+/// The call of the routine `routine` in `body`: from its name to the
+/// parenthesis that closes its arguments.
+fn call_of<'b>(body: &'b str, routine: &str) -> &'b str {
+    let at = body
+        .find(routine)
+        .unwrap_or_else(|| panic!("`{routine}` is called:\n{body}"));
+    let open = at
+        + body[at..]
+            .find('(')
+            .unwrap_or_else(|| panic!("`{routine}` has arguments:\n{body}"));
+    let mut depth = 0usize;
+    for (offset, c) in body[open..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &body[at..=open + offset];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("`{routine}`'s arguments close:\n{body}")
+}
+
+/// No part of a chain's rule reaches a routine as data: the call hands the
+/// routine no closure and no function, and the code holds no function pointer,
+/// so every call the routine makes has its callee, which the stack bound of a
+/// bare-metal image follows (docs/adr/0136).
+#[test]
+fn a_chain_hands_the_routine_no_function_as_data() {
+    for name in ONE_CHAIN.into_iter().chain(["codec_chain_has_tagged"]) {
+        let code = rust_of(name);
+        for (form, body, routine) in [
+            ("eager read", eager_read(name, &code), "read_chain_into::<"),
+            ("view read", view_read(name, &code), "walk_chain::<"),
+        ] {
+            let call = call_of(body, routine);
+            for printed in ["|", "fn(", "ChainEnd::"] {
+                assert!(
+                    !call.contains(printed),
+                    "{name}'s {form} hands its chain's routine `{printed}`:\n{call}"
+                );
+            }
+        }
+        for pointer in ["fn(&", "&dyn ", "Box<dyn"] {
+            assert!(
+                !code.contains(pointer),
+                "{name} holds a function or object pointer (`{pointer}`):\n{code}"
+            );
+        }
     }
 }
 
@@ -280,20 +375,44 @@ fn the_kinds_a_gate_asks_of_a_chain_are_the_list_the_routine_notes_them_in() {
     let code = rust_of("codec_chain_has_tagged");
     let body = flat(eager_read("codec_chain_has_tagged", &code));
     for said in [
-        "let mut _found_entries = [false; 2];",
-        "kinds: &[|_e| u64::from(_e.entry_type) == 7u64, |_e| u64::from(_e.entry_type) == 9u64], }, &mut _found_entries)",
-        "_has_entries_7 = _found_entries[0];",
-        "_has_entries_9 = _found_entries[1];",
+        "let mut _found_entries = [false; 2];".to_string(),
+        format!(
+            "{RUNTIME}read_chain_into::<CodecChainHasTaggedEntriesChain, _, 0>(cursor, _vec, [], &mut _found_entries)"
+        ),
+        "_has_entries_7 = _found_entries[0];".to_string(),
+        "_has_entries_9 = _found_entries[1];".to_string(),
     ] {
         assert!(
-            body.contains(said),
+            body.contains(&said),
             "codec_chain_has_tagged does not note its kinds as `{said}`:\n{body}"
         );
     }
     assert!(
-        !body.contains("push_keeping("),
+        !body.contains("push_keeping"),
         "codec_chain_has_tagged prints the chain's loop:\n{body}"
     );
+    // The kinds are the rule's, each told by its place in the found list.
+    let all = flat(&code);
+    for said in [
+        format!(
+            "{RUNTIME}ChainRule<'f, CodecChainHasTaggedEntry, 0> for CodecChainHasTaggedEntriesChain {{ \
+             type Kinds = Self;"
+        ),
+        format!(
+            "impl {RUNTIME}EntryKinds<CodecChainHasTaggedEntry> for CodecChainHasTaggedEntriesChain {{ \
+             const COUNT: usize = 2; \
+             fn is(_e: &CodecChainHasTaggedEntry, kind: usize) -> bool {{ \
+             match kind {{ \
+             0 => u64::from(_e.entry_type) == 7u64, \
+             1 => u64::from(_e.entry_type) == 9u64, \
+             _ => false, }} }} }}"
+        ),
+    ] {
+        assert!(
+            all.contains(&said),
+            "codec_chain_has_tagged does not declare its kinds as `{said}`:\n{code}"
+        );
+    }
 }
 
 /// A view scans a chain by one call of the runtime's `walk_chain` with its walk
@@ -330,17 +449,28 @@ fn a_view_scans_a_chain_by_one_call_of_the_runtime_with_its_walk() {
     let code = rust_of("codec_chain_prev_carrier");
     let body = flat(view_read("codec_chain_prev_carrier", &code));
     for said in [
-        format!("{RUNTIME}walk_chain::<CodecChainPrevCarrierEntriesWalk, _, 2>(cursor, _hook, {RUNTIME}ChainScan {{"),
+        format!(
+            "{RUNTIME}walk_chain::<CodecChainPrevCarrierEntriesWalk, CodecChainPrevCarrierEntriesChain, _, 2>(cursor, _hook, {RUNTIME}ChainScan {{"
+        ),
         format!("site: {RUNTIME}ChainSite {{ codec: \"codec_chain_prev_carrier\", field: \"entries\" }},"),
-        "args: [0, head & 0x1],".to_string(),
-        "depth: Some(4),".to_string(),
-        format!("end: {RUNTIME}ChainEnd::Flag(|_e| _e.z()),"),
+        "args: [0, head & 0x1], });".to_string(),
     ] {
         assert!(
             body.contains(&said),
             "codec_chain_prev_carrier's view does not hand the scan `{said}`:\n{body}"
         );
     }
+    // The scan reads where the chain ends off the rule the eager read reads it
+    // off, of the entry as the walk reads it.
+    let said = format!(
+        "impl {RUNTIME}ChainScanRule<super::codec_chain_prev_entry::CodecChainPrevEntryView> \
+         for CodecChainPrevCarrierEntriesChain {{ \
+         fn follows(_e: &super::codec_chain_prev_entry::CodecChainPrevEntryView) -> bool {{ _e.z() }} }}"
+    );
+    assert!(
+        flat(&code).contains(&said),
+        "codec_chain_prev_carrier's scan does not read its end off the chain's rule:\n{code}"
+    );
 }
 
 /// Each `read`, `read_into` and `read_with` the code declares as a method of

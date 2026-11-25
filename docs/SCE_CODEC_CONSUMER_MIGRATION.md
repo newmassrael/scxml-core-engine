@@ -4057,9 +4057,15 @@ Landing: the commits that add this section. The Rust codec goldens and every com
 change; a consumer regenerates its Rust codecs. No frame decodes differently.
 
 - **A generated decode reads each `<sce:tlv-chain>` by `codec::read_chain_into`**, and a view scans it by
-  `codec::walk_chain`: one out-of-line function of the runtime for each type of entry and list, where each codec held
-  a loop of its own. Nothing a consumer calls changes. A build that measures its size reads it again after it moves
-  its pin.
+  `codec::walk_chain`: one out-of-line function of the runtime, instantiated at the chain's rule, where each codec held
+  a loop of its own. The rule is a type each codec declares beside the chain, `{Codec}{Field}Chain`, implementing
+  `ChainEnds` and `ChainRule` (and `ChainScanRule` for its view): every part of it is called by name, so a bare-metal
+  image's call graph has no indirect call in a chain's read. A consumer that names no chain's rule changes nothing; a
+  build that measures its size or its stack reads them again after it moves its pin.
+- **`codec::push_keeping` takes the kinds the gates ask for as a type**: `push_keeping::<L, Asked>(list, entry, &mut
+  full)`, `Asked: EntryKinds<L::Entry>`, in place of a slice of tests. A call written by hand outside the tree fails
+  with `E0061` (three arguments, not four): drop the slice and name `NoKinds` where it was `&[]`, or a type that
+  implements `EntryKinds` (`COUNT`, and `is(entry, kind)` for each kind by its place) where it held tests.
 - **`ListWalk` is implemented by `read_with`**: `fn read_with<'b, H: ChainHook>(reader: &mut SceReader<'b>, args:
   &[u8; K], hook: &mut H) -> Self::Entry<'b>` is the required method, and `read` is provided (`read_with` with
   `()`). A walk written by hand outside the tree fails with `E0046` (missing `read_with`): rename its `read` to
