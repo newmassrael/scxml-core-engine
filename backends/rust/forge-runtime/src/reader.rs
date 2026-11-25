@@ -34,11 +34,7 @@
 //! that starts where the cursor stands and moves the cursor past the frame
 //! only when the frame was read whole.
 
-use crate::codec::{CodecError, SceCursor};
-
-/// The bytes of a ZInt that carry a continuation flag (see
-/// [`SceCursor::read_vle_u64`]): no ZInt is longer than nine bytes.
-const ZINT_FLAGGED_BYTES: u32 = 8;
+use crate::codec::{zint_byte, zint_tail, CodecError, SceCursor};
 
 /// `N` zero bytes that live for the whole program: what a read of a fixed
 /// count of bytes returns once the frame has failed, so that its length is
@@ -277,44 +273,30 @@ impl<'a> SceReader<'a> {
         }
     }
 
-    /// The next byte, consumed; zero and `NeedMoreBytes` recorded at the end
-    /// of the input.
-    #[inline]
-    fn take_u8(&mut self) -> u8 {
-        let byte = self.peek_u8();
-        if self.fault.is_none() {
-            self.pos += 1;
-        }
-        byte
-    }
-
-    /// One ZInt, read as [`SceCursor::read_vle_u64`] reads it: at most nine
-    /// bytes, seven data bits and a continuation flag in each of the first
-    /// eight, eight data bits in a ninth. A chain the input ends inside records
-    /// `NeedMoreBytes`; each read after it is zero, which ends the chain.
-    fn read_zint(&mut self) -> u64 {
-        let mut value: u64 = 0;
-        for group in 0..ZINT_FLAGGED_BYTES {
-            let b = self.take_u8();
-            value |= u64::from(b & 0x7F) << (7 * group);
-            if (b & 0x80) == 0 {
-                return value;
-            }
-        }
-        let last = self.take_u8();
-        value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES))
-    }
-
     /// One ZInt held to `max_bits`: a value past `2^max_bits - 1` records
     /// `VleWidthOverflow` and reads as zero, a longer encoding of a value the
-    /// width holds is that value (see [`SceCursor::read_vle_u64`]).
+    /// width holds is that value, and a chain the input ends inside records
+    /// `NeedMoreBytes` (see [`SceCursor::read_vle_u64`]). A ZInt of one byte is
+    /// read where this is inlined; a longer one is the cursor's one cold body
+    /// (`codec::zint_tail`), so the two readers of a ZInt run one decode
+    /// (docs/adr/0130).
+    #[inline(always)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        let value = self.read_zint();
-        if max_bits < u64::BITS && value >> max_bits != 0 {
-            self.fail(CodecError::VleWidthOverflow);
-            return 0;
+        if let Some(b) = zint_byte(self.buf, self.pos) {
+            self.pos += 1;
+            return u64::from(b);
         }
-        value
+        let (value, at) = zint_tail(self.buf, self.pos, max_bits);
+        match value {
+            Ok(value) => {
+                self.pos = at;
+                value
+            }
+            Err(refused) => {
+                self.fail(refused);
+                0
+            }
+        }
     }
 
     /// A `vle_u16` field: a ZInt whose value is at most `u16::MAX`.
@@ -536,6 +518,48 @@ mod tests {
         let mut cut = SceReader::new(&[0x80u8]);
         assert_eq!(cut.read_vle_u64(), 0);
         assert_eq!(cut.verdict(), Err(CodecError::NeedMoreBytes));
+    }
+
+    #[test]
+    fn the_reader_and_the_cursor_read_every_zint_alike() {
+        // Every length of chain, cut at every byte, at every width: the reader's
+        // verdict and value are the cursor's, since both run one body.
+        let chains: [&[u8]; 6] = [
+            &[0x05],
+            &[0x80, 0x01],
+            &[0xFF, 0xFF, 0x03],
+            &[0xFF, 0xFF, 0xFF, 0x0F],
+            &[0xFF; 9],
+            &[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00],
+        ];
+        for chain in chains {
+            for cut in 0..=chain.len() {
+                let bytes = &chain[..cut];
+                for bits in [16u32, 32, 64] {
+                    let mut cursor = SceCursor::new(bytes);
+                    let expected = match bits {
+                        16 => cursor.read_vle_u16().map(u64::from),
+                        32 => cursor.read_vle_u32().map(u64::from),
+                        _ => cursor.read_vle_u64(),
+                    };
+                    let mut r = SceReader::new(bytes);
+                    let value = match bits {
+                        16 => u64::from(r.read_vle_u16()),
+                        32 => u64::from(r.read_vle_u32()),
+                        _ => r.read_vle_u64(),
+                    };
+                    match expected {
+                        Ok(v) => {
+                            assert_eq!((value, r.verdict()), (v, Ok(())), "{bytes:?} at {bits}");
+                            assert_eq!(r.position(), bytes.len() - cursor.remaining());
+                        }
+                        Err(e) => {
+                            assert_eq!((value, r.verdict()), (0, Err(e)), "{bytes:?} at {bits}");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

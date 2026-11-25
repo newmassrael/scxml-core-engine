@@ -97,6 +97,13 @@ not make the first. An engine region allocated zeroed is a valid value that has 
 from the initial configuration, never from a zeroed field. The runtime's own enums (`EventPayload`'s kind, a state's
 kind) are `#[repr(u8)]` already.
 
+### 5. A ZInt is read by one body, the cursor's and the frame reader's alike (R1)
+
+A ZInt of one byte is read inline at each field and every longer one by one cold body (`codec::zint_tail`), which
+`SceCursor::read_vle_*` and ADR 0128's `SceReader::read_vle_*` both run: the generated decodes, which read through
+the reader, take the fast path the cursor took (forge-vle-fast, b6365060f0a), and the grammar of a ZInt is written once
+in the runtime.
+
 ## Consequences
 
 - Every Rust codec golden under `tests/forge/expected/` and `tests/forge/expected/views/`, every committed tree of

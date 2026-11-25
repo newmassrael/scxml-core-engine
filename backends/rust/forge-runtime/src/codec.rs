@@ -424,7 +424,7 @@ const ZINT_MAX_BYTES: usize = ZINT_FLAGGED_BYTES + 1;
 
 /// The ZInt at the start of `bytes` and the count of bytes it takes, or
 /// `None` when `bytes` ends inside its chain. Both paths of
-/// [`SceCursor::read_zint`] run this one decode: given nine bytes the length
+/// [`zint_tail`] run this one decode: given nine bytes the length
 /// is known where it is inlined, so the chain is read with no test of the
 /// end, since no chain can run past them; given a shorter tail, the iterator
 /// tests each byte once against the end, and the chain may end with the tail.
@@ -442,6 +442,46 @@ fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
         value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES)),
         ZINT_MAX_BYTES,
     ))
+}
+
+/// The byte at `pos` of `buf` when it is a whole ZInt by itself, its
+/// continuation flag clear; `None` at the end of `buf` or at a byte that
+/// begins a longer chain. The fast read of a ZInt, inlined at each field of
+/// the cursor's and the frame reader's reads alike (docs/adr/0130).
+#[inline(always)]
+pub(crate) fn zint_byte(buf: &[u8], pos: usize) -> Option<u8> {
+    buf.get(pos).copied().filter(|&b| (b & 0x80) == 0)
+}
+
+/// The ZInt at `pos` of `buf` held to `max_bits`, and where the read ends: past
+/// the ZInt when it is whole (a value past `2^max_bits - 1` refused with
+/// `VleWidthOverflow` there), and at the end of `buf` with `NeedMoreBytes`
+/// when `buf` ends inside its chain.
+///
+/// When nine bytes remain, the longest a ZInt is, they are taken as one array,
+/// whose length is the one test of the end, and the chain is read from it with
+/// no other; when fewer remain, the tail is read byte by byte. Both run the one
+/// decode, [`decode_zint`].
+///
+/// The one body of every ZInt longer than a byte, for every width and for the
+/// cursor's and the frame reader's reads alike (docs/adr/0130): cold, so the
+/// one-byte read inlined at each field stays a test and a branch, and shared,
+/// so the longer decode is compiled once in a program.
+#[cold]
+#[inline(never)]
+pub(crate) fn zint_tail(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
+    let tail = buf.get(pos..).unwrap_or_default();
+    let decoded = match tail.first_chunk::<ZINT_MAX_BYTES>() {
+        Some(chunk) => decode_zint(chunk),
+        None => decode_zint(tail),
+    };
+    match decoded {
+        Some((value, len)) if max_bits < u64::BITS && value >> max_bits != 0 => {
+            (Err(CodecError::VleWidthOverflow), pos + len)
+        }
+        Some((value, len)) => (Ok(value), pos + len),
+        None => (Err(CodecError::NeedMoreBytes), buf.len()),
+    }
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
@@ -524,67 +564,27 @@ impl<'a> SceCursor<'a> {
         }
     }
 
-    /// Read one ZInt, the canonical Zenoh variable-length integer, as
-    /// `zenoh` and `zenoh-pico` read every one of them: an unsigned 64-bit
-    /// value, LSB-first, in at most nine bytes. Each of the first eight
-    /// carries 7 data bits in its low 7 and a continuation flag in bit 7
-    /// (1 = another byte follows); a ninth carries a full 8 data bits and
-    /// has no flag, so bit 63 rides in its high bit and no chain is longer.
-    /// A chain the buffer ends inside is `NeedMoreBytes`.
+    /// Read a `vle_u<N>` field of `max_bits` width: one ZInt (RFC §synth-5-B
+    /// Appendix B), whatever the width, and then the value held to the width.
+    /// The wire of every width is the same ZInt64, and the type bounds the
+    /// value and not the encoding: a narrow field accepts every encoding of a
+    /// value it holds, the padded ones included, as upstream Zenoh does, and
+    /// refuses a value past `2^max_bits - 1` with `VleWidthOverflow` (the wire
+    /// is corrupt or a too-narrow `vle_u<N>` was used), never a longer
+    /// encoding. On `VleWidthOverflow` the ZInt was whole and the cursor is past
+    /// it; on `NeedMoreBytes` the cursor is at the end of the input, every byte
+    /// left having been a flagged byte of the chain. A caller that resumes once
+    /// more bytes have arrived reads again from a copy of the cursor taken
+    /// before this read (`SceCursor` is `Copy`).
     ///
-    /// When nine bytes remain, the longest a ZInt is, they are taken as one
-    /// array, whose length is the one test of the end, and the chain is read
-    /// from it with no other; when fewer remain, the tail is read byte by
-    /// byte. Both run the one decode, [`decode_zint`].
-    ///
-    /// The cursor after the read: past the ZInt when it is whole, and at the
-    /// end of the input on `NeedMoreBytes`, every byte left having been a
-    /// flagged byte of the chain. A caller that resumes once more bytes have
-    /// arrived reads again from a copy of the cursor taken before this read
-    /// (`SceCursor` is `Copy`).
+    /// Entered when the next byte is not a ZInt by itself ([`zint_byte`]); the
+    /// read is [`zint_tail`], the one body the frame reader's ZInt reads run too
+    /// (docs/adr/0130).
     #[inline(always)]
-    fn read_zint(&mut self) -> Result<u64, CodecError> {
-        let tail = self.buf.get(self.pos..).unwrap_or_default();
-        let decoded = match tail.first_chunk::<ZINT_MAX_BYTES>() {
-            Some(chunk) => decode_zint(chunk),
-            None => decode_zint(tail),
-        };
-        match decoded {
-            Some((value, len)) => {
-                self.pos += len;
-                Ok(value)
-            }
-            None => {
-                self.pos = self.buf.len();
-                Err(CodecError::NeedMoreBytes)
-            }
-        }
-    }
-
-    /// Read a `vle_u<N>` field of `max_bits` width: one ZInt
-    /// ([`Self::read_zint`], RFC §synth-5-B Appendix B), whatever the width,
-    /// and then the value held to the width. The wire of every width is the
-    /// same ZInt64, and the type bounds the value and not the encoding: a
-    /// narrow field accepts every encoding of a value it holds, the padded
-    /// ones included, as upstream Zenoh does, and refuses a value past
-    /// `2^max_bits - 1` with `VleWidthOverflow` (the wire is corrupt or a
-    /// too-narrow `vle_u<N>` was used), never a longer encoding. On
-    /// `VleWidthOverflow` the ZInt was whole and the cursor is past it.
-    ///
-    /// This is the one out-of-line body of every width's read, entered when
-    /// the next byte is not a ZInt by itself ([`Self::read_zint_byte`]): a
-    /// chain of two or more bytes, or the end of the input. It is cold so the
-    /// one-byte read inlined at each field stays a test and a branch, and it
-    /// is shared so the longer decode is compiled once, however many fields
-    /// of however many widths read a ZInt.
-    #[cold]
-    #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        let value = self.read_zint()?;
-        if max_bits < u64::BITS && value >> max_bits != 0 {
-            return Err(CodecError::VleWidthOverflow);
-        }
-        Ok(value)
+        let (value, at) = zint_tail(self.buf, self.pos, max_bits);
+        self.pos = at;
+        value
     }
 
     /// The next byte when it is a whole ZInt by itself, its continuation flag
@@ -594,11 +594,7 @@ impl<'a> SceCursor<'a> {
     /// tested.
     #[inline(always)]
     fn read_zint_byte(&mut self) -> Option<u8> {
-        let b = self
-            .buf
-            .get(self.pos)
-            .copied()
-            .filter(|&b| (b & 0x80) == 0)?;
+        let b = zint_byte(self.buf, self.pos)?;
         self.pos += 1;
         Some(b)
     }
