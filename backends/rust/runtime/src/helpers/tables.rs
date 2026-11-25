@@ -50,6 +50,13 @@
 //! only whether a guard holds. A table written by hand carries none, and its
 //! machine answers the selection itself.
 //!
+//! A document the row walk serves selects from its candidate rows instead
+//! ([`CandidateRows`], docs/adr/0135): the same lists fused over each atomic
+//! state's ancestors, so for an atomic state and an event the rows name every
+//! transition the selection tries, in the order it tries them, and the row
+//! walk's selection reads one list and asks the machine only whether a guard
+//! holds.
+//!
 //! `sce_build::document_tables` computes the rows from the document, and the
 //! generator writes them. A table written by hand states the same rows, and
 //! [`DocumentTables::check`] says whether they keep the rules above.
@@ -260,6 +267,8 @@ const _: () = assert!(core::mem::size_of::<EntryRow>() == 2);
 const _: () = assert!(core::mem::size_of::<EntryStep>() == 2);
 const _: () = assert!(core::mem::size_of::<TriggerRow>() == 2);
 const _: () = assert!(core::mem::size_of::<TriggerEvent>() == 2);
+const _: () = assert!(core::mem::size_of::<CandidateCell>() == 4);
+const _: () = assert!(core::mem::size_of::<Candidate>() == 2);
 
 /// The bit of a [`HistoryRow`]'s parent field that says it is deep.
 const DEEP_BIT: u16 = 1 << 15;
@@ -668,6 +677,128 @@ impl SelectionRows<'_> {
     }
 }
 
+/// One cell of a document's candidate rows (docs/adr/0135): an event an atomic
+/// state answers, and the position of the list of transitions the row walk's
+/// selection tries for it in [`CandidateRows::candidates`]. Four bytes, two
+/// numbers (docs/adr/0067).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CandidateCell {
+    event: EventId,
+    list: u16,
+}
+
+impl CandidateCell {
+    /// The cell of `event`, whose transitions are the list at `position` of
+    /// [`CandidateRows::candidates`].
+    #[inline]
+    pub const fn new(event: EventId, position: u16) -> Self {
+        Self {
+            event,
+            list: position,
+        }
+    }
+
+    /// The event the cell answers.
+    #[inline]
+    pub const fn event(self) -> EventId {
+        self.event
+    }
+
+    /// The position of its list in [`CandidateRows::candidates`].
+    #[inline]
+    const fn position(self) -> usize {
+        self.list as usize
+    }
+}
+
+/// One entry of a list of [`CandidateRows::candidates`] (docs/adr/0135): the
+/// first entry of a list is its length ([`Candidate::count`]), and each one
+/// after it a transition, in the order the selection tries them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Candidate(u16);
+
+impl Candidate {
+    /// A transition of a list.
+    #[inline]
+    pub const fn new(transition: TransitionId) -> Self {
+        Self(transition.0)
+    }
+
+    /// The first entry of a list: how many transitions follow it.
+    #[inline]
+    pub const fn count(len: u16) -> Self {
+        Self(len)
+    }
+
+    /// The transition it names.
+    #[inline]
+    pub const fn transition(self) -> TransitionId {
+        TransitionId(self.0)
+    }
+}
+
+/// What a document the row walk serves selects from (docs/adr/0135): for each
+/// atomic state and each event the machine numbers, the null event among them,
+/// the written transitions Appendix D's selection tries in a configuration
+/// whose atomic state it is, in the order it tries them: the state's own in
+/// the order they are written, then each ancestor's, outward. The row walk's
+/// selection reads the list of the configuration's atomic state and asks the
+/// machine [`Behaviour::guard_holds`] for each transition in turn, until one
+/// holds.
+///
+/// The relation is sparse, since a state answers a few of the events, and is
+/// held as compressed sparse rows: [`first_cell`](Self::first_cell) gives each
+/// state's range of [`cells`](Self::cells), a cell for each event the state
+/// answers in ascending order of the event, and each cell names its list in
+/// [`candidates`](Self::candidates). A state that is not atomic has no cell.
+/// Identical lists are held once.
+#[derive(Debug, Clone, Copy)]
+pub struct CandidateRows<'t> {
+    /// For each state, by [`StateId`], the position of its first cell, and
+    /// one entry past the last state, the number of cells: a state's cells are
+    /// the positions from its entry up to the next one's.
+    pub first_cell: &'t [u16],
+    /// The cells, each state's in ascending order of the event.
+    pub cells: &'t [CandidateCell],
+    /// The lists the cells name, each its length ([`Candidate::count`])
+    /// followed by its transitions.
+    pub candidates: &'t [Candidate],
+}
+
+impl CandidateRows<'_> {
+    /// The cells of `state`, in ascending order of the event; see
+    /// [`DocumentTables::state`] for how a missing row stops.
+    #[inline]
+    fn cells_of(&self, state: StateId) -> &[CandidateCell] {
+        let range = match (
+            self.first_cell.get(state.index()),
+            self.first_cell.get(state.index() + 1),
+        ) {
+            (Some(first), Some(end)) => usize::from(*first)..usize::from(*end),
+            _ => row_missing(),
+        };
+        match self.cells.get(range) {
+            Some(cells) => cells,
+            None => row_missing(),
+        }
+    }
+
+    /// The transitions the selection tries for `event` in a configuration
+    /// whose atomic state is `atomic`, in the order it tries them; none when
+    /// `event` enables no transition of `atomic` or of an ancestor.
+    pub fn candidates_of(&self, atomic: StateId, event: EventId) -> &[Candidate] {
+        let cells = self.cells_of(atomic);
+        let Ok(found) = cells.binary_search_by_key(&event, |cell| cell.event) else {
+            return &[];
+        };
+        match cells.get(found) {
+            Some(cell) => listed(self.candidates, cell.position(), |count| count.0),
+            None => row_missing(),
+        }
+    }
+}
+
 /// A document's tables, their rows borrowed for `'t`.
 ///
 /// A generated machine's rows are constants of its program,
@@ -710,8 +841,9 @@ pub struct DocumentTables<'t> {
     /// How the document's microsteps form their exit and entry sets
     /// (docs/adr/0125): `&GENERAL_WALK`, Appendix D's procedures computing them
     /// from the tree and the configuration, which serves every document; or
-    /// `&ROW_WALK`, which reads them from [`entry_rows`](Self::entry_rows), for
-    /// a document with no `<history>`, no `<parallel>` and no transition of more
+    /// `&ROW_WALK`, which reads them from [`entry_rows`](Self::entry_rows) and
+    /// selects from [`candidates`](Self::candidates) (docs/adr/0135), for a
+    /// document with no `<history>`, no `<parallel>` and no transition of more
     /// than one target. A program none of whose documents carries the general
     /// walk links none of it.
     pub walk: &'static WalkProcedures,
@@ -731,8 +863,13 @@ pub struct DocumentTables<'t> {
     /// generated machine's tables, whose selection reads them
     /// ([`first_enabled`](Self::first_enabled)); `None` in tables written by
     /// hand, whose machine answers the selection itself
-    /// ([`Behaviour::first_enabled_transition`]).
+    /// ([`Behaviour::first_enabled_transition`]). `None` too in the tables of
+    /// the row walk, which select from [`candidates`](Self::candidates).
     pub selection: Option<SelectionRows<'t>>,
+    /// What the row walk's selection reads (docs/adr/0135): `Some` exactly
+    /// when [`walk`](Self::walk) is the row walk, `None` in the tables of the
+    /// general walk, whose selection reads [`selection`](Self::selection).
+    pub candidates: Option<CandidateRows<'t>>,
 }
 
 /// Which rule a [`DocumentTables`] breaks; [`DocumentTables::check`].
@@ -775,6 +912,14 @@ pub enum TablesFault {
     /// A transition's list of events breaks a rule of the selection rows
     /// ([`DocumentTables::check`]).
     Triggers(TransitionId),
+    /// The row walk's tables carry no candidate rows or carry selection rows
+    /// beside them, the general walk's carry candidate rows, or the rows do
+    /// not have one entry for each state and one past the last, rising from
+    /// the first cell to the last (docs/adr/0135).
+    Candidates,
+    /// A state's cells break a rule of the candidate rows
+    /// ([`DocumentTables::check`]).
+    CandidateCell(StateId),
 }
 
 impl DocumentTables<'_> {
@@ -958,6 +1103,19 @@ impl DocumentTables<'_> {
             })
     }
 
+    /// The transitions the row walk's selection tries for `event` in a
+    /// configuration whose atomic state is `atomic`, in the order it tries
+    /// them, read from the [`candidates`](Self::candidates) rows
+    /// (docs/adr/0135). Tables that carry none are not the row walk's, and
+    /// stop as a row read past its table does.
+    #[inline]
+    pub fn candidates_of(&self, atomic: StateId, event: EventId) -> &[Candidate] {
+        match &self.candidates {
+            Some(rows) => rows.candidates_of(atomic, event),
+            None => row_missing(),
+        }
+    }
+
     /// Whether `event` is an `error.*` event ([`DocumentTables::error_events`]).
     #[inline]
     pub fn is_error_event(&self, event: EventId) -> bool {
@@ -979,7 +1137,9 @@ impl DocumentTables<'_> {
     /// document uses carried, for the row walk one entry row for each
     /// transition that keeps the rules of an entry path (docs/adr/0125), and
     /// selection rows whose ranges are each state's written transitions and
-    /// whose lists keep the rules of [`SelectionRows`] (docs/adr/0127). The
+    /// whose lists keep the rules of [`SelectionRows`] (docs/adr/0127), and
+    /// for the row walk candidate rows that keep the rules of
+    /// [`CandidateRows`] (docs/adr/0135). The
     /// procedures assume all of them; a debug build checks a machine's tables
     /// when it is built.
     pub fn check(&self) -> Result<(), TablesFault> {
@@ -1085,7 +1245,114 @@ impl DocumentTables<'_> {
             return Err(TablesFault::ProceduresMissing);
         }
         self.check_entry_rows(has_parallel)?;
+        self.check_candidates()?;
         self.check_selection()
+    }
+
+    /// The part of [`check`](Self::check) the candidate rows answer
+    /// (docs/adr/0135): the row walk's tables carry them and no selection rows,
+    /// and the general walk's carry none; one entry for each state and one past
+    /// the last, rising from the first cell to the last; cells only for an
+    /// atomic state, in ascending order of the event and none past the null
+    /// event; and each cell's list inside the pool, never empty, of written
+    /// transitions of the state or of one of its ancestors, in the order the
+    /// selection tries them: a state's own before an ancestor's, and one
+    /// state's in the order they are written.
+    fn check_candidates(&self) -> Result<(), TablesFault> {
+        let Some(rows) = &self.candidates else {
+            if self.walk.reads_rows() {
+                return Err(TablesFault::Candidates);
+            }
+            return Ok(());
+        };
+        if !self.walk.reads_rows() || self.selection.is_some() {
+            return Err(TablesFault::Candidates);
+        }
+        if rows.cells.len() > MAX_IDS || rows.candidates.len() > MAX_IDS {
+            return Err(TablesFault::TooMany);
+        }
+        let rising = rows
+            .first_cell
+            .windows(2)
+            .all(|pair| matches!(pair, [low, high] if low <= high));
+        if rows.first_cell.len() != self.states.len() + 1
+            || rows.first_cell.first() != Some(&0)
+            || rows.first_cell.last().map(|end| usize::from(*end)) != Some(rows.cells.len())
+            || !rising
+        {
+            return Err(TablesFault::Candidates);
+        }
+        for (index, range) in rows.first_cell.windows(2).enumerate() {
+            let state = StateId(index as u16);
+            let cells = match rows.cells.get(usize::from(range[0])..usize::from(range[1])) {
+                Some(cells) => cells,
+                None => return Err(TablesFault::Candidates),
+            };
+            let ascending = cells
+                .windows(2)
+                .all(|pair| pair[0].event() < pair[1].event());
+            if (!cells.is_empty() && !self.is_atomic(state)) || !ascending {
+                return Err(TablesFault::CandidateCell(state));
+            }
+            for cell in cells {
+                if cell.event() > self.null_event || !self.candidates_hold(state, rows, *cell) {
+                    return Err(TablesFault::CandidateCell(state));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `cell`, a cell of the atomic state `atomic`, names a list
+    /// inside the pool that is not empty and holds written transitions of
+    /// `atomic` or of its ancestors in the order the selection tries them
+    /// ([`check`](Self::check)).
+    fn candidates_hold(
+        &self,
+        atomic: StateId,
+        rows: &CandidateRows<'_>,
+        cell: CandidateCell,
+    ) -> bool {
+        let position = cell.position();
+        let Some(list) = rows.candidates.get(position).and_then(|len| {
+            rows.candidates
+                .get(position + 1..position + 1 + usize::from(len.0))
+        }) else {
+            return false;
+        };
+        if list.is_empty() {
+            return false;
+        }
+        let mut previous: Option<(StateId, TransitionId)> = None;
+        for candidate in list {
+            let transition = candidate.transition();
+            let Some(row) = self.transitions.get(transition.index()) else {
+                return false;
+            };
+            // A written transition has a source, and is not that source's
+            // initial transition; the class has no `<history>`, so no default.
+            let Some(source) = row.source() else {
+                return false;
+            };
+            let on_the_chain = source == atomic || self.is_descendant(atomic, source);
+            if self.state(source).initial() == Some(transition) || !on_the_chain {
+                return false;
+            }
+            // An ancestor is numbered before its descendants, so the order of
+            // the selection is falling sources, and within one source rising
+            // transitions.
+            let ordered = match previous {
+                None => true,
+                Some((before, earlier)) => {
+                    before > source || (before == source && earlier < transition)
+                }
+            };
+            if !ordered {
+                return false;
+            }
+            previous = Some((source, transition));
+        }
+        true
     }
 
     /// The part of [`check`](Self::check) the selection rows answer

@@ -194,6 +194,7 @@ impl CoreRows {
             history: None,
             parallel: None,
             selection: None,
+            candidates: None,
         }
     }
 

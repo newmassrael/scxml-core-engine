@@ -87,6 +87,7 @@ impl StatePolicy for HttpPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     const STATES: &'static [HttpState] = &[HttpState::Idle];

@@ -275,9 +275,17 @@ pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarch
 /// state's range of written transitions (`first_written`, one entry past the
 /// last state), and for each transition the list of events that enable it
 /// (`triggers`, a position in `trigger_events`, each list its length first),
-/// as the numbers of `{{ machine_name }}Event`. The runtime's one selection
-/// reads them for every machine and asks this machine only whether a guard
-/// holds (`guard_holds`).
+/// as the numbers of `{{ machine_name }}Event`. The general walk's selection
+/// reads them and asks this machine only whether a guard holds (`guard_holds`).
+///
+/// `candidates` is what a document the row walk serves selects from instead
+/// (docs/adr/0135): the same lists fused over each atomic state's ancestors,
+/// so for each atomic state and each event the transitions the selection
+/// tries, the state's own then each ancestor's, as compressed sparse rows
+/// (`first_cell` each state's range of `cells`, one past the last; a cell an
+/// event and the position of its list in `candidates`, each list its length
+/// first). Such a document's tables carry these and no `selection`, any
+/// other's `selection` and no candidates.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -285,9 +293,9 @@ pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarch
 /// same.
 pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, SelectionRows,
-        StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
-        TriggerRow,
+        Candidate, CandidateCell, CandidateRows, DocumentTables, EntryRow, EntryStep, EventId,
+        HistoryId, HistoryRow, SelectionRows, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow, TriggerEvent, TriggerRow,
     };
     DocumentTables {
         states: &[
@@ -330,14 +338,27 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
         entry_paths: &[{% for entry in tables.entry_paths %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
         history: {% if tables.history %}Some(&::sce_rust_runtime::HISTORY){% else %}None{% endif %},
         parallel: {% if tables.parallel %}Some(&::sce_rust_runtime::PARALLEL){% else %}None{% endif %},
+{% if tables.row_walk %}
+{# docs/adr/0135: the row walk's selection reads the candidate rows, made from
+   the lists of the selection rows, and asks the policy's `guard_holds` for
+   each transition of the atomic state's list in turn. #}
+        selection: None,
+        candidates: Some(CandidateRows {
+            first_cell: &[{% for entry in tables.candidates.first_cell %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
+            cells: &[{% for cell in tables.candidates.cells %}{{ cell }}{{ ", " if not loop.last }}{% endfor %}],
+            candidates: &[{% for entry in tables.candidates.candidates %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
+        }),
+{% else %}
 {# docs/adr/0127: what enables each written transition, as numbers of the
-   events above, read by the runtime's one selection, which asks the policy's
+   events above, read by the general walk's selection, which asks the policy's
    `guard_holds` only for a transition the event enables. #}
         selection: Some(SelectionRows {
             first_written: &[{% for entry in tables.selection.first_written %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
             triggers: &[{% for row in tables.selection.triggers %}{{ row }}{{ ", " if not loop.last }}{% endfor %}],
             trigger_events: &[{% for entry in tables.selection.trigger_events %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
         }),
+        candidates: None,
+{% endif %}
     }
 };
 {% if model.emitted_transition_table %}

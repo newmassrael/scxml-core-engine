@@ -815,6 +815,9 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
              history: Some(&::sce_rust_runtime::HISTORY),\n        \
              parallel: Some(&::sce_rust_runtime::PARALLEL),\n        \
              selection: Some(SelectionRows {",
+            // The general walk selects from the selection rows and carries no
+            // candidate rows (docs/adr/0135).
+            "candidates: None,",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables<'static> \
              = {",
             "const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = \
@@ -906,6 +909,14 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         "entry_rows: &[EntryRow::at(0), EntryRow::at(2)],",
         "entry_paths: &[EntryStep::count(1), EntryStep::new(StateId(1), false), \
          EntryStep::count(1), EntryStep::new(StateId(0), false)],",
+        // The row walk selects from candidate rows and carries no selection
+        // rows (docs/adr/0135): `s0` answers `go` (0) with its transition 0,
+        // `s1` answers nothing, so `s0` has one cell and `s1` none.
+        "selection: None,",
+        "candidates: Some(CandidateRows {",
+        "first_cell: &[0, 1, 1],",
+        "cells: &[CandidateCell::new(EventId(0), 0)],",
+        "candidates: &[Candidate::count(1), Candidate::new(TransitionId(0))],",
         "pub type PlainBoundsConfiguration = \
          ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PlainBoundsState, 1>;",
         // The row walk builds no set and walks no stack, so the workspace holds
@@ -923,6 +934,10 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "a flat machine must carry `{expected}`"
         );
     }
+    assert!(
+        !flat.contains("SelectionRows {"),
+        "a machine of the row walk carries no selection rows (docs/adr/0135)"
+    );
 }
 
 /// The `_MAX_SELECTED` a C11 machine is sized by.

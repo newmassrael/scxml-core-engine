@@ -167,6 +167,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     const STATES: &'static [St] = &[St::S];

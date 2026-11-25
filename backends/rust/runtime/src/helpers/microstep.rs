@@ -34,8 +34,13 @@
 //! them itself: what a transition enters depends on the transition alone, and
 //! what it exits is every active state below its domain. The generator ran the
 //! appendix's procedures for each of its transitions when it was built, and the
-//! row walk ([`ROW_WALK`]) reads their answers from the tables. The selection,
-//! the transitions' content and the main loop are the same for both.
+//! row walk ([`ROW_WALK`]) reads their answers from the tables. Such a document
+//! has one atomic state in every configuration, so its selection is the list of
+//! transitions its tables name for that state and the event, tried in order
+//! until a guard holds (docs/adr/0135); every other document's selection walks
+//! the configuration. The transitions' content and the main loop are the same
+//! for both, and each walk is one copy in the program whatever number of
+//! machines reads it.
 //!
 //! # Capacity
 //!
@@ -569,6 +574,16 @@ fn procedures_missing() -> ! {
 // How a microstep's sets are formed
 // ════════════════════════════════════════════════════════════════════════
 
+/// Appendix D's selectTransitions, or selectEventlessTransitions for the null
+/// event, as a walk makes it.
+type SelectTransitions = fn(
+    &DocumentTables<'_>,
+    &mut dyn Behaviour,
+    EventId,
+    &mut SliceVec<'_, TransitionId>,
+    Scratch<'_>,
+);
+
 /// Appendix D's exitStates over a microstep's transitions, as a walk forms it.
 type ExitStates = fn(&DocumentTables<'_>, &mut dyn Behaviour, &[TransitionId], Scratch<'_>);
 
@@ -581,10 +596,14 @@ type EnterStates =
 /// (docs/adr/0125): the general walk ([`GENERAL_WALK`]) or the row walk
 /// ([`ROW_WALK`]).
 ///
-/// Two procedures, the two of the appendix whose sets a document can fix:
-/// exitStates and enterStates. A microstep runs exitStates, then
-/// executeTransitionContent, then enterStates, and the entry into the initial
-/// configuration runs enterStates alone ([`enter_initial_configuration`]).
+/// Three procedures: the selection, and the two of the appendix whose sets a
+/// document can fix, exitStates and enterStates. A microstep runs exitStates,
+/// then executeTransitionContent, then enterStates, and the entry into the
+/// initial configuration runs enterStates alone
+/// ([`enter_initial_configuration`]). The selection is the walk's for the
+/// reason the sets are (docs/adr/0135): a document the row walk serves has one
+/// atomic state in every configuration and a selection that takes one
+/// transition at most, which its tables name in order.
 ///
 /// A program none of whose documents carries the general walk references
 /// neither [`GENERAL_WALK`] nor any function only it names, and the link drops
@@ -593,8 +612,10 @@ type EnterStates =
 pub struct WalkProcedures {
     /// The constant's name, which is what a reader of the tables is told.
     name: &'static str,
-    /// Whether the procedures read the tables' entry rows.
+    /// Whether the procedures read the tables' entry rows and candidate rows.
     reads_rows: bool,
+    /// selectTransitions and selectEventlessTransitions.
+    select_transitions: SelectTransitions,
     /// exitStates.
     exit_states: ExitStates,
     /// enterStates.
@@ -602,13 +623,15 @@ pub struct WalkProcedures {
 }
 
 /// The general walk, the value a generated table writes as
-/// `walk: &GENERAL_WALK`: the appendix's exitStates and enterStates
-/// ([`exit_states`], [`enter_states`]), which compute the sets from the tree,
-/// the configuration and the histories' records, for any document. A constant
-/// for the reason [`HISTORY`] is one.
+/// `walk: &GENERAL_WALK`: the appendix's selection over every atomic state of
+/// the configuration ([`select_transitions_on_tree`]), and its exitStates and
+/// enterStates ([`exit_states`], [`enter_states`]), which compute the sets from
+/// the tree, the configuration and the histories' records, for any document. A
+/// constant for the reason [`HISTORY`] is one.
 pub const GENERAL_WALK: WalkProcedures = WalkProcedures {
     name: "GENERAL_WALK",
     reads_rows: false,
+    select_transitions: select_transitions_on_tree,
     exit_states,
     enter_states,
 };
@@ -616,16 +639,20 @@ pub const GENERAL_WALK: WalkProcedures = WalkProcedures {
 /// The row walk, the value a generated table writes as `walk: &ROW_WALK` for a
 /// document with no `<history>`, no `<parallel>` and no transition of more
 /// than one target: the sets read from the entry rows the generator computed
-/// by the appendix's procedures (docs/adr/0125).
+/// by the appendix's procedures (docs/adr/0125), and the selection read from
+/// its candidate rows (docs/adr/0135). One copy in the program for every
+/// document of that class.
 pub const ROW_WALK: WalkProcedures = WalkProcedures {
     name: "ROW_WALK",
     reads_rows: true,
+    select_transitions: select_transition_from_rows,
     exit_states: exit_states_from_rows,
     enter_states: enter_states_from_rows,
 };
 
 impl WalkProcedures {
-    /// Whether these are the row walk's, which read a document's entry rows.
+    /// Whether these are the row walk's, which read a document's entry rows
+    /// and candidate rows.
     #[inline]
     pub const fn reads_rows(&self) -> bool {
         self.reads_rows
@@ -643,10 +670,33 @@ impl core::fmt::Debug for WalkProcedures {
 // ════════════════════════════════════════════════════════════════════════
 
 /// Appendix D's selectTransitions, or its selectEventlessTransitions when
-/// `event` is the machine's "no event".
+/// `event` is the machine's "no event", by the walk the document's tables
+/// carry (docs/adr/0135).
 ///
 /// Leaves the optimal enabled transition set in `enabled`, in selection order.
 pub fn select_transitions(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    event: EventId,
+    enabled: &mut SliceVec<'_, TransitionId>,
+    scratch: Scratch<'_>,
+) {
+    // §scxml-D-selectTransitions, and with the machine's "no event"
+    // §scxml-D-selectEventlessTransitions: each atomic state of the
+    // configuration first, then its proper ancestors, the first enabled
+    // transition in document order ending the walk for that atomic state. The
+    // general walk makes that walk over the configuration; the row walk reads
+    // it from the document's candidate rows (docs/adr/0135).
+    (tables.walk.select_transitions)(tables, machine, event, enabled, scratch);
+}
+
+/// Appendix D's selectTransitions, or its selectEventlessTransitions when
+/// `event` is the machine's "no event", the general walk's
+/// ([`GENERAL_WALK`]): every atomic state of the configuration, each with its
+/// ancestors, then removeConflictingTransitions over what they enabled.
+///
+/// Leaves the optimal enabled transition set in `enabled`, in selection order.
+pub fn select_transitions_on_tree(
     tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     event: EventId,
@@ -667,13 +717,13 @@ pub fn select_transitions(
             .find(|&state| tables.is_atomic(state))
     }) {
         next = atomic.0.checked_add(1).map(StateId);
-        // §scxml-D-selectTransitions: the atomic state first, then its proper
-        // ancestors, and the first enabled transition in document order ends
-        // the walk for this atomic state. The set is ORDERED and a set: two
-        // atomic states under one ancestor both reach its transition, and it is
-        // one transition, taken once. With the machine's "no event" this is
-        // §scxml-D-selectEventlessTransitions, the same walk over transitions
-        // that have no event.
+        // Appendix D's selectTransitions: the atomic state first, then its
+        // proper ancestors, and the first enabled transition in document order
+        // ends the walk for this atomic state. The set is ORDERED and a set:
+        // two atomic states under one ancestor both reach its transition, and
+        // it is one transition, taken once. With the machine's "no event" this
+        // is selectEventlessTransitions, the same walk over transitions that
+        // have no event.
         let mut current = Some(atomic);
         while let Some(state) = current {
             if let Some(found) = tables.first_enabled(state, event, machine) {
@@ -1313,6 +1363,37 @@ fn enter_one(
 // transition's entry row. What the transition exits is every active state
 // below the domain, which is the parent of the path's first state; the
 // configuration says which those are, as it says for exitInterpreter.
+
+/// Appendix D's selectTransitions, or its selectEventlessTransitions for the
+/// null event, for a document of the row walk (docs/adr/0135).
+///
+/// Such a document has no `<parallel>`, so its configuration has one atomic
+/// state, the configuration's last: every other active state is one of its
+/// ancestors, and a state is numbered after its ancestors. The transitions
+/// Appendix D's selectTransitions tries from it, its own in document order and
+/// then each ancestor's outward, are the list its candidate rows name for the
+/// event; the first whose guard holds is the selection, and a selection of one
+/// transition has nothing to conflict with. The empty configuration, before
+/// the run is entered and after it is exited, selects nothing.
+fn select_transition_from_rows(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    event: EventId,
+    enabled: &mut SliceVec<'_, TransitionId>,
+    _scratch: Scratch<'_>,
+) {
+    enabled.clear();
+    let Some(atomic) = machine.store().as_ref().configuration().last() else {
+        return;
+    };
+    for candidate in tables.candidates_of(atomic, event) {
+        let transition = candidate.transition();
+        if machine.guard_holds(transition) {
+            enabled.push(transition);
+            return;
+        }
+    }
+}
 
 /// Appendix D's exitStates for a document of the row walk: for each
 /// transition, every active state below its domain, the parent of the first

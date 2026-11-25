@@ -101,6 +101,7 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     const STATES: &'static [St] = &[St::S];

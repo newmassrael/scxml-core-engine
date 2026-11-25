@@ -21,6 +21,15 @@
 // the same guards in the same order, and Appendix D's selectTransitions over a
 // configuration answers the same set. What `DocumentTables::check` refuses of
 // the rows is asked of hand-made faults.
+//
+// docs/adr/0135: a document with no `<history>`, no `<parallel>` and no
+// transition of more than one target is served by the row walk, which selects
+// from candidate rows: for each atomic state and event, the transitions the
+// selection tries, the state's own as written then each ancestor's. Each random
+// document is written a third time as such tables, and from every atomic state
+// and for every event the row walk selects what the machine's own selection
+// selects and evaluates the same guards in the same order. What the check
+// refuses of the candidate rows is asked of hand-made faults too.
 
 use std::collections::BTreeMap;
 
@@ -29,8 +38,9 @@ use sce_rust_runtime::helpers::run_store::RunStoreMut;
 use sce_rust_runtime::helpers::state_set::Word;
 use sce_rust_runtime::helpers::tables::TablesFault;
 use sce_rust_runtime::{
-    state_words, DocumentTables, EventId, SelectionRows, StateId, StateKind, StateRow, Target,
-    TransitionId, TransitionRow, TriggerEvent, TriggerRow, Workspace, GENERAL_WALK,
+    state_words, Candidate, CandidateCell, CandidateRows, DocumentTables, EntryRow, EntryStep,
+    EventId, Named, SelectionRows, StateId, StateKind, StateRow, Target, TransitionId,
+    TransitionRow, TriggerEvent, TriggerRow, Workspace, GENERAL_WALK, ROW_WALK,
 };
 
 /// Lent for the life of the test process: the tables hand out `&'static`
@@ -277,12 +287,113 @@ fn tables_of(doc: &Document, rows: bool) -> &'static DocumentTables<'static> {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection,
     };
     assert_eq!(
         tables.check(),
         Ok(()),
         "the test wrote tables that break the rules `helpers::tables` states"
+    );
+    Box::leak(Box::new(tables))
+}
+
+/// The tables of `doc` for the row walk (docs/adr/0135): the rows of
+/// [`tables_of`], each transition's entry path, and the candidate rows in
+/// place of the selection rows. Every written transition targets its own
+/// source and is external, so its domain is the source's parent and it enters
+/// the source again and, down each compound state's initial transition to its
+/// first child, an atomic state, each compound state of the path by default;
+/// the document's initial transition enters state 0 the same way. The
+/// candidate cell of an atomic state and an event lists the written
+/// transitions the event enables, the state's own as written then each
+/// ancestor's, outward: computed here from the document, not from the rows.
+fn class_tables_of(doc: &Document) -> &'static DocumentTables<'static> {
+    let general = tables_of(doc, false);
+    let mut paths: Vec<EntryStep> = Vec::new();
+    let mut rows: Vec<EntryRow> = Vec::new();
+    for index in 0..general.transitions.len() {
+        let transition = TransitionId(index as u16);
+        let initial = general
+            .states
+            .iter()
+            .any(|row| row.initial() == Some(transition));
+        let target = general
+            .targets(transition)
+            .first()
+            .map(|target| match target.named() {
+                Named::State(state) => state,
+                Named::History(_) => unreachable!("the documents have no <history>"),
+            });
+        let Some(target) = target.filter(|_| !initial) else {
+            rows.push(EntryRow::NONE);
+            continue;
+        };
+        let mut path = vec![target];
+        let mut last = target;
+        while doc.kind[last.index()] == StateKind::Compound {
+            last = StateId(last.0 + 1);
+            path.push(last);
+        }
+        rows.push(EntryRow::at(paths.len() as u16));
+        paths.push(EntryStep::count(path.len() as u16));
+        paths.extend(
+            path.iter().map(|&state| {
+                EntryStep::new(state, doc.kind[state.index()] == StateKind::Compound)
+            }),
+        );
+    }
+
+    let mut first_cell: Vec<u16> = Vec::with_capacity(doc.parent.len() + 1);
+    let mut cells: Vec<CandidateCell> = Vec::new();
+    let mut pool: Vec<Candidate> = Vec::new();
+    for (state, kind) in doc.kind.iter().enumerate() {
+        first_cell.push(cells.len() as u16);
+        if *kind == StateKind::Compound {
+            continue;
+        }
+        let mut chain = vec![StateId(state as u16)];
+        while let Some(parent) = doc.parent[chain[chain.len() - 1].index()] {
+            chain.push(parent);
+        }
+        for event in 0..=doc.events {
+            let event = EventId(event);
+            let list: Vec<usize> = chain
+                .iter()
+                .flat_map(|&source| {
+                    (0..doc.written.len()).filter(move |&index| doc.written[index].source == source)
+                })
+                .filter(|&index| doc.enables(index, event))
+                .collect();
+            if list.is_empty() {
+                continue;
+            }
+            cells.push(CandidateCell::new(event, pool.len() as u16));
+            pool.push(Candidate::count(list.len() as u16));
+            pool.extend(
+                list.iter()
+                    .map(|&index| Candidate::new(TransitionId(index as u16))),
+            );
+        }
+    }
+    first_cell.push(cells.len() as u16);
+
+    let tables = DocumentTables {
+        walk: &ROW_WALK,
+        entry_rows: leak(rows),
+        entry_paths: leak(paths),
+        selection: None,
+        candidates: Some(CandidateRows {
+            first_cell: leak(first_cell),
+            cells: leak(cells),
+            candidates: leak(pool),
+        }),
+        ..*general
+    };
+    assert_eq!(
+        tables.check(),
+        Ok(()),
+        "the test wrote candidate rows that break the rules `helpers::tables` states"
     );
     Box::leak(Box::new(tables))
 }
@@ -374,12 +485,15 @@ impl Behaviour for Machine<'_> {
 #[test]
 fn the_rows_select_what_the_machines_own_selection_selects_for_any_document() {
     let (mut found, mut guarded, mut eventless, mut refused_by_a_guard) = (0, 0, 0, 0);
+    let mut class_selections = 0usize;
     for seed in 1..=3000u64 {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
         let doc = random_document(&mut rng);
         let by_hand = tables_of(&doc, false);
         let rows = tables_of(&doc, true);
+        let class = class_tables_of(&doc);
         assert!(by_hand.selection.is_none() && rows.selection.is_some());
+        assert!(class.selection.is_none() && class.candidates.is_some());
 
         // Every state, every event and the null event: the same transition, and
         // the same guards evaluated in the same order.
@@ -422,19 +536,27 @@ fn the_rows_select_what_the_machines_own_selection_selects_for_any_document() {
             }
             for event in 0..=doc.events {
                 let event = EventId(event);
-                let mut answers: Vec<Vec<TransitionId>> = Vec::new();
-                for (tables, answers_itself) in [(by_hand, true), (rows, false)] {
+                let mut answers: Vec<(Vec<TransitionId>, Vec<TransitionId>)> = Vec::new();
+                for (tables, answers_itself) in [(by_hand, true), (rows, false), (class, false)] {
                     let mut machine = Machine::new(&doc, answers_itself);
                     machine.store().set_configuration(active.iter().copied());
                     let mut workspace = Workspace::<0, 4, 0, 0>::new();
                     let (mut enabled, scratch) = workspace.split();
                     select_transitions(tables, &mut machine, event, &mut enabled, scratch);
-                    answers.push(enabled.to_vec());
+                    answers.push((enabled.to_vec(), machine.guards));
                 }
                 assert_eq!(
-                    answers[1], answers[0],
+                    answers[1].0, answers[0].0,
                     "seed {seed}: selectTransitions in {active:?} for {event:?}"
                 );
+                // docs/adr/0135: the row walk's selection, from the candidate
+                // rows, selects the same transition and evaluates the same
+                // guards in the same order.
+                assert_eq!(
+                    answers[2], answers[0],
+                    "seed {seed}: the row walk's selection in {active:?} for {event:?}"
+                );
+                class_selections += usize::from(!answers[2].0.is_empty());
             }
         }
     }
@@ -449,6 +571,10 @@ fn the_rows_select_what_the_machines_own_selection_selects_for_any_document() {
     assert!(
         refused_by_a_guard >= 300,
         "{refused_by_a_guard} selections ran a guard and found none"
+    );
+    assert!(
+        class_selections >= 2000,
+        "{class_selections} selections of the row walk found a transition"
     );
 }
 
@@ -471,6 +597,7 @@ fn two_states(selection: SelectionRows<'static>) -> DocumentTables<'static> {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: Some(selection),
     }
 }
@@ -684,5 +811,290 @@ fn rows_that_break_a_rule_are_refused() {
         empty,
         Err(TablesFault::Triggers(TransitionId(2))),
         "an empty list, which is a transition no selection returns"
+    );
+}
+
+/// `two_states` for the row walk (docs/adr/0135): the transitions enter one
+/// path each (`a`'s `go` enters `b`, `b`'s transition and the document's
+/// initial one enter `a`, the eventless one enters nothing), and the
+/// candidate rows in place of the selection rows.
+fn two_states_on_rows(candidates: Option<CandidateRows<'static>>) -> DocumentTables<'static> {
+    DocumentTables {
+        walk: &ROW_WALK,
+        entry_rows: TWO_ENTRY_ROWS,
+        entry_paths: TWO_ENTRY_PATHS,
+        selection: None,
+        candidates,
+        ..two_states(SelectionRows {
+            first_written: FIRST_WRITTEN,
+            triggers: TRIGGERS,
+            trigger_events: TRIGGER_EVENTS,
+        })
+    }
+}
+
+const TWO_ENTRY_ROWS: &[EntryRow] = &[
+    EntryRow::at(0),
+    EntryRow::NONE,
+    EntryRow::at(2),
+    EntryRow::at(2),
+];
+const TWO_ENTRY_PATHS: &[EntryStep] = &[
+    EntryStep::count(1),
+    EntryStep::new(StateId(1), false),
+    EntryStep::count(1),
+    EntryStep::new(StateId(0), false),
+];
+/// `a` answers event 0 with row 0 and the null event with row 1; `b` answers
+/// events 0 and 1 with row 2, one list for both.
+const FIRST_CELL: &[u16] = &[0, 2, 4];
+const CELLS: &[CandidateCell] = &[
+    CandidateCell::new(EventId(0), 0),
+    CandidateCell::new(EventId(3), 2),
+    CandidateCell::new(EventId(0), 4),
+    CandidateCell::new(EventId(1), 4),
+];
+const CANDIDATES: &[Candidate] = &[
+    Candidate::count(1),
+    Candidate::new(TransitionId(0)),
+    Candidate::count(1),
+    Candidate::new(TransitionId(1)),
+    Candidate::count(1),
+    Candidate::new(TransitionId(2)),
+];
+
+const CANDIDATE_ROWS: CandidateRows<'static> = CandidateRows {
+    first_cell: FIRST_CELL,
+    cells: CELLS,
+    candidates: CANDIDATES,
+};
+
+#[test]
+fn candidate_rows_that_keep_the_rules_are_read_back_as_written() {
+    let tables = two_states_on_rows(Some(CANDIDATE_ROWS));
+    assert_eq!(tables.check(), Ok(()));
+    let tried = |state: u16, event: u16| -> Vec<TransitionId> {
+        tables
+            .candidates_of(StateId(state), EventId(event))
+            .iter()
+            .map(|candidate| candidate.transition())
+            .collect()
+    };
+    assert_eq!(tried(0, 0), [TransitionId(0)]);
+    assert_eq!(tried(0, 3), [TransitionId(1)]);
+    assert!(tried(0, 1).is_empty(), "`a` answers no event 1");
+    assert_eq!(tried(1, 0), [TransitionId(2)]);
+    assert_eq!(tried(1, 1), [TransitionId(2)]);
+    assert!(tried(1, 3).is_empty(), "`b` has no eventless transition");
+}
+
+#[test]
+fn candidate_rows_that_break_a_rule_are_refused() {
+    let with = |first_cell: &'static [u16],
+                cells: &'static [CandidateCell],
+                candidates: &'static [Candidate]| {
+        two_states_on_rows(Some(CandidateRows {
+            first_cell,
+            cells,
+            candidates,
+        }))
+        .check()
+    };
+    let general_with_rows = DocumentTables {
+        walk: &GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
+        ..two_states_on_rows(Some(CANDIDATE_ROWS))
+    };
+    let beside_selection_rows = DocumentTables {
+        selection: Some(SelectionRows {
+            first_written: FIRST_WRITTEN,
+            triggers: TRIGGERS,
+            trigger_events: TRIGGER_EVENTS,
+        }),
+        ..two_states_on_rows(Some(CANDIDATE_ROWS))
+    };
+    let faults: [(&str, Result<(), TablesFault>, Result<(), TablesFault>); 13] = [
+        (
+            "the general walk's tables with candidate rows",
+            general_with_rows.check(),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "the row walk's tables without them",
+            two_states_on_rows(None).check(),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "candidate rows beside selection rows",
+            beside_selection_rows.check(),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "no entry past the last state",
+            with(&FIRST_CELL[..2], CELLS, CANDIDATES),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "a first entry past the first cell",
+            with(&[1, 2, 4], CELLS, CANDIDATES),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "a last entry short of the cells",
+            with(&[0, 2, 3], CELLS, CANDIDATES),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "a range that falls",
+            with(&[0, 5, 4], CELLS, CANDIDATES),
+            Err(TablesFault::Candidates),
+        ),
+        (
+            "cells out of the order of their events",
+            with(
+                FIRST_CELL,
+                leak(vec![CELLS[1], CELLS[0], CELLS[2], CELLS[3]]),
+                CANDIDATES,
+            ),
+            Err(TablesFault::CandidateCell(StateId(0))),
+        ),
+        (
+            "an event past the null event",
+            with(
+                FIRST_CELL,
+                leak(vec![
+                    CELLS[0],
+                    CandidateCell::new(EventId(4), 2),
+                    CELLS[2],
+                    CELLS[3],
+                ]),
+                CANDIDATES,
+            ),
+            Err(TablesFault::CandidateCell(StateId(0))),
+        ),
+        (
+            "a list past the pool",
+            with(
+                FIRST_CELL,
+                leak(vec![
+                    CELLS[0],
+                    CELLS[1],
+                    CELLS[2],
+                    CandidateCell::new(EventId(1), 9),
+                ]),
+                CANDIDATES,
+            ),
+            Err(TablesFault::CandidateCell(StateId(1))),
+        ),
+        (
+            "another state's transition",
+            with(
+                FIRST_CELL,
+                CELLS,
+                leak(vec![
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(2)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(1)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(2)),
+                ]),
+            ),
+            Err(TablesFault::CandidateCell(StateId(0))),
+        ),
+        (
+            "a state's transitions out of the order they are written",
+            with(
+                FIRST_CELL,
+                leak(vec![
+                    CandidateCell::new(EventId(0), 0),
+                    CandidateCell::new(EventId(3), 3),
+                    CandidateCell::new(EventId(0), 5),
+                    CandidateCell::new(EventId(1), 5),
+                ]),
+                leak(vec![
+                    Candidate::count(2),
+                    Candidate::new(TransitionId(1)),
+                    Candidate::new(TransitionId(0)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(1)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(2)),
+                ]),
+            ),
+            Err(TablesFault::CandidateCell(StateId(0))),
+        ),
+        (
+            "the document's initial transition, which no selection returns",
+            with(
+                FIRST_CELL,
+                CELLS,
+                leak(vec![
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(3)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(1)),
+                    Candidate::count(1),
+                    Candidate::new(TransitionId(2)),
+                ]),
+            ),
+            Err(TablesFault::CandidateCell(StateId(0))),
+        ),
+    ];
+    for (why, answer, expected) in faults {
+        assert_eq!(answer, expected, "{why}");
+    }
+    let empty = with(
+        FIRST_CELL,
+        leak(vec![
+            CELLS[0],
+            CELLS[1],
+            CELLS[2],
+            CandidateCell::new(EventId(1), 6),
+        ]),
+        leak(vec![
+            Candidate::count(1),
+            Candidate::new(TransitionId(0)),
+            Candidate::count(1),
+            Candidate::new(TransitionId(1)),
+            Candidate::count(1),
+            Candidate::new(TransitionId(2)),
+            Candidate::count(0),
+        ]),
+    );
+    assert_eq!(
+        empty,
+        Err(TablesFault::CandidateCell(StateId(1))),
+        "an empty list, which is an event that enables nothing and has no cell"
+    );
+
+    // A compound state is never a configuration's atomic state, so it has no
+    // cell: `p` (0) holds `c` (1), whose transition answers event 0.
+    let nested = Document {
+        parent: vec![None, Some(StateId(0))],
+        kind: vec![StateKind::Compound, StateKind::Atomic],
+        written: vec![Written {
+            source: StateId(1),
+            answers: Answers::Events(vec![0]),
+            guard: None,
+        }],
+        events: 1,
+    };
+    let tables = class_tables_of(&nested);
+    let rows = tables
+        .candidates
+        .expect("the row walk's tables carry candidate rows");
+    assert_eq!(rows.first_cell, [0, 0, 1]);
+    let compound_with_a_cell = DocumentTables {
+        candidates: Some(CandidateRows {
+            first_cell: &[0, 1, 1],
+            ..rows
+        }),
+        ..*tables
+    };
+    assert_eq!(
+        compound_with_a_cell.check(),
+        Err(TablesFault::CandidateCell(StateId(0)))
     );
 }

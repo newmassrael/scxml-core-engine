@@ -61,9 +61,9 @@ use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
 use sce_rust_runtime::helpers::tables::TablesFault;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, EntryRow, EntryStep, EventId, HistoryId,
-    HistoryRow, StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, Workspace,
-    GENERAL_WALK, HISTORY, PARALLEL, ROW_WALK,
+    state_scratch, state_words, CandidateRows, DocumentTables, EntryRow, EntryStep, EventId,
+    HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId, TransitionRow,
+    Workspace, GENERAL_WALK, HISTORY, PARALLEL, ROW_WALK,
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -207,6 +207,8 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
         // carries are held to such a machine in
         // `what_enables_a_transition_is_a_row_of_its_tables`.
         selection: None,
+        // The general walk reads no candidate rows (docs/adr/0135).
+        candidates: None,
     };
     assert_eq!(
         tables.check(),
@@ -255,10 +257,19 @@ fn row_tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
             paths.push(EntryStep::new(state, by_default));
         }
     }
+    // The row walk selects from candidate rows (docs/adr/0135). No case here
+    // selects over these tables, which the machine under test answers by
+    // hand, so every state's range of cells is empty.
+    let candidates = CandidateRows {
+        first_cell: leak(vec![0; general.states.len() + 1]),
+        cells: &[],
+        candidates: &[],
+    };
     let tables = DocumentTables {
         walk: &ROW_WALK,
         entry_rows: leak(rows),
         entry_paths: leak(paths),
+        candidates: Some(candidates),
         ..*general
     };
     assert_eq!(
@@ -686,6 +697,7 @@ fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     assert_eq!(TABLES.check(), Err(TablesFault::ListOutOfRange));

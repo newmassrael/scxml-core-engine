@@ -138,6 +138,7 @@ impl StatePolicy for SessionPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     const STATES: &'static [St] = &[St::Root, St::X1, St::X2];

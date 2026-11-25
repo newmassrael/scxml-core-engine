@@ -29,15 +29,12 @@
 mod common;
 
 use std::mem::MaybeUninit;
-use std::path::Path;
 
 use sce_build::document_tables::{
     DocumentTables, PathStep, Span, StateKind, TargetRef, TransitionOrigin, TransitionRow,
 };
-use sce_build::generator::Language;
 use sce_build::microstep_bounds::MicrostepBounds;
 use sce_build::model::SCXMLModel;
-use sce_build::parser::SCXMLParser;
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, ExitScope, Scratch, WalkStep,
 };
@@ -46,17 +43,7 @@ use sce_rust_runtime::helpers::state_set::Word;
 use sce_rust_runtime::helpers::tables as rt;
 use sce_rust_runtime::{state_scratch, state_words};
 
-/// The model the Rust backend renders `path` from, or `None` when the document
-/// does not parse or the generator refuses it: the corpus carries deliberate
-/// negative fixtures and forge documents, which the stages that judge them
-/// report.
-fn generatable(path: &Path) -> Option<SCXMLModel> {
-    let label = path.to_str()?;
-    let mut model = SCXMLParser::new().parse_file(label).ok()?;
-    sce_build::analyzer::analyze(&mut model, label);
-    sce_build::analyzer::can_generate_static(&model, label).ok()?;
-    Some(sce_build::host_processor_analyzer::lower_mesh(&model, Language::Rust).into_owned())
-}
+use common::runtime_tables;
 
 /// The ids a span of the target pool names, a `<history>` by its own id.
 fn target_ids(tables: &DocumentTables, span: Span) -> Vec<String> {
@@ -395,7 +382,7 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
     // And the runtime, reading the rows as a generated machine states them,
     // finds every rule it relies on kept.
     assert_eq!(
-        runtime_tables(tables).check(),
+        runtime_tables::general(tables, None, 0).check(),
         Ok(()),
         "{name}: runtime check"
     );
@@ -408,8 +395,14 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
         Some(paths) => {
             assert!(tables.fixes_its_sets(), "{name}: paths only in the class");
             paths_hold(name, tables, &paths);
+            // The row walk selects from candidate rows made from the
+            // selection rows (ADR 0135), numbered as the machine numbers its
+            // events, the null event after them.
+            let names = runtime_tables::event_names(model);
+            let selection = runtime_tables::selection(tables, model, &names);
+            let null_event = names.len() as u16;
             assert_eq!(
-                row_walk_tables(tables, &paths).check(),
+                runtime_tables::row_walk(tables, &paths, &selection, null_event).check(),
                 Ok(()),
                 "{name}: runtime check of the row walk's tables"
             );
@@ -428,7 +421,7 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
 /// state. A compound state's initial transition, which no microstep takes,
 /// has none.
 fn paths_hold(name: &str, tables: &DocumentTables, paths: &[Vec<PathStep>]) {
-    let general = runtime_tables(tables);
+    let general = runtime_tables::general(tables, None, 0);
     let states = tables.states.len();
     // No `<history>`, so no record; the sets the procedures compute read none
     // of the configuration.
@@ -498,130 +491,6 @@ fn paths_hold(name: &str, tables: &DocumentTables, paths: &[Vec<PathStep>]) {
     }
 }
 
-/// `tables` as the runtime's `DocumentTables` of the row walk (ADR 0125): the
-/// rows of [`runtime_tables`], and `paths` as entry rows, each path its length
-/// first in a pool the rows name it in.
-fn row_walk_tables(
-    tables: &DocumentTables,
-    paths: &[Vec<PathStep>],
-) -> rt::DocumentTables<'static> {
-    let mut pool: Vec<rt::EntryStep> = Vec::new();
-    let rows: Vec<rt::EntryRow> = paths
-        .iter()
-        .map(|path| {
-            if path.is_empty() {
-                return rt::EntryRow::NONE;
-            }
-            let position = pool.len() as u16;
-            pool.push(rt::EntryStep::count(path.len() as u16));
-            pool.extend(
-                path.iter()
-                    .map(|step| rt::EntryStep::new(rt::StateId(step.state), step.by_default)),
-            );
-            rt::EntryRow::at(position)
-        })
-        .collect();
-    rt::DocumentTables {
-        walk: &sce_rust_runtime::ROW_WALK,
-        entry_rows: rows.leak(),
-        entry_paths: pool.leak(),
-        ..runtime_tables(tables)
-    }
-}
-
-/// `tables` as the runtime's `DocumentTables`, the rows a generated machine's
-/// constant states. The runtime's rows borrow for `'static`, so each pool is
-/// leaked, for the life of the test process.
-fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables<'static> {
-    let states: Vec<rt::StateRow> = tables
-        .states
-        .iter()
-        .map(|row| {
-            let kind = match row.kind {
-                StateKind::Atomic => rt::StateKind::Atomic,
-                StateKind::Compound => rt::StateKind::Compound,
-                StateKind::Parallel => rt::StateKind::Parallel,
-                StateKind::Final => rt::StateKind::Final,
-            };
-            rt::StateRow::new(
-                row.parent.map(rt::StateId),
-                kind,
-                rt::StateId(row.last_descendant),
-                row.initial.map(rt::TransitionId),
-            )
-        })
-        .collect();
-    let histories: Vec<rt::HistoryRow> = tables
-        .histories
-        .iter()
-        .map(|row| {
-            rt::HistoryRow::new(
-                rt::StateId(row.parent),
-                rt::TransitionId(row.default),
-                row.deep,
-            )
-        })
-        .collect();
-    let target_of = |target: &TargetRef| match *target {
-        TargetRef::State(id) => rt::Target::state(rt::StateId(id)),
-        TargetRef::History(id) => rt::Target::history(rt::HistoryId(id)),
-    };
-    // Packed as the generator packs them (docs/adr/0067): a transition holds
-    // its only target itself, and the pool holds only lists of more than one,
-    // each its length first.
-    let mut pool: Vec<rt::Target> = Vec::new();
-    let transitions: Vec<rt::TransitionRow> = tables
-        .transitions
-        .iter()
-        .map(|row| {
-            let targets = match &tables.targets[row.targets.range()] {
-                [] => rt::Target::NONE,
-                [only] => target_of(only),
-                list => {
-                    let position = pool.len() as u16;
-                    pool.push(rt::Target::count(list.len() as u16));
-                    pool.extend(list.iter().map(target_of));
-                    rt::Target::list(position)
-                }
-            };
-            rt::TransitionRow::new(
-                row.source.map(rt::StateId),
-                targets,
-                row.internal,
-                row.has_content,
-            )
-        })
-        .collect();
-    rt::DocumentTables {
-        states: states.leak(),
-        histories: histories.leak(),
-        transitions: transitions.leak(),
-        targets: pool.leak(),
-        initial: rt::TransitionId(tables.initial),
-        // What these tests ask is the state tree; the main loop's events and
-        // the state an engine names before it starts are the template's
-        // (docs/adr/0068), not this model's.
-        default_state: rt::StateId(0),
-        null_event: rt::EventId(0),
-        error_events: &[],
-        // The general walk, which serves every document (docs/adr/0125);
-        // `row_walk_tables` gives a document that fixes its sets the row walk.
-        walk: &sce_rust_runtime::GENERAL_WALK,
-        entry_rows: &[],
-        entry_paths: &[],
-        // The feature procedures exactly when the document uses the feature,
-        // as the generator writes them (docs/adr/0066).
-        history: tables.uses_history().then_some(&sce_rust_runtime::HISTORY),
-        parallel: tables
-            .uses_parallel()
-            .then_some(&sce_rust_runtime::PARALLEL),
-        // What enables a transition is not the state tree: the selection rows
-        // are held to the descriptors in
-        // `a_transitions_enabling_events_are_the_rows_its_event_enum_numbers`.
-        selection: None,
-    }
-}
-
 #[test]
 fn the_generator_numbers_no_more_ids_than_the_runtime_reads() {
     assert_eq!(
@@ -637,7 +506,7 @@ fn every_generatable_document_has_tables_in_document_order() {
     let mut judged = 0usize;
     let mut fixed = 0usize;
     for path in &corpus {
-        let Some(model) = generatable(path) else {
+        let Some(model) = runtime_tables::generatable(path) else {
             continue;
         };
         let name = path.display().to_string();

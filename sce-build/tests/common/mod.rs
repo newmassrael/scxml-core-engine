@@ -43,6 +43,7 @@ pub mod python_runtime;
 pub mod repository;
 pub mod routes;
 pub mod row_oracle;
+pub mod runtime_tables;
 pub mod rust_runtime;
 pub mod rust_source;
 pub mod source_lexing;

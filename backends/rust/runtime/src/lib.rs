@@ -612,9 +612,9 @@ pub use helpers::microstep::{
 pub use helpers::run_store::{record_words, RunStore};
 pub use helpers::state_set::state_words;
 pub use helpers::tables::{
-    DocumentTables, EntryRow, EntryStep, EventId, HistoryId, HistoryRow, Named, NoHistory,
-    SelectionRows, StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, TriggerEvent,
-    TriggerRow,
+    Candidate, CandidateCell, CandidateRows, DocumentTables, EntryRow, EntryStep, EventId,
+    HistoryId, HistoryRow, Named, NoHistory, SelectionRows, StateId, StateKind, StateRow, Target,
+    TransitionId, TransitionRow, TriggerEvent, TriggerRow,
 };
 #[cfg(feature = "std")]
 pub use host_processor::{

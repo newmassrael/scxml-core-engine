@@ -2895,7 +2895,12 @@ fn rust_tables(
     }
     let row_walk = entry_paths.is_some();
     let walk = if row_walk { "ROW_WALK" } else { "GENERAL_WALK" };
-    let selection = rust_selection_rows(model, &tables, &events)?;
+    // What enables each written transition (docs/adr/0127), and for a
+    // document the row walk serves the same lists fused over each atomic
+    // state's ancestors (docs/adr/0135): the template writes the candidate
+    // rows for such a document and the selection rows for any other, so its
+    // tables carry what its walk's selection reads and nothing else.
+    let (selection, candidates) = rust_selection_rows(model, &tables, &events, row_walk)?;
     Ok(serde_json::json!({
         "states": states,
         "histories": histories,
@@ -2915,6 +2920,7 @@ fn rust_tables(
         "written": written,
         "events": events,
         "selection": selection,
+        "candidates": candidates,
     }))
 }
 
@@ -2922,7 +2928,10 @@ fn rust_tables(
 /// runtime's `SelectionRows` spells them: each state's first written
 /// transition and one past the last (`first_written`), each transition's
 /// list of events (`triggers`), and the lists (`trigger_events`), each its
-/// length first, each distinct list in the pool once.
+/// length first, each distinct list in the pool once. With them, for a
+/// document the row walk serves (`row_walk`), its candidate rows
+/// ([`rust_candidate_rows`], docs/adr/0135), made from the same lists;
+/// `null` for any other document.
 ///
 /// The events each transition answers are asked of the names the machine's
 /// `get_event_name` answers for `events`, the list its enum numbers, so they
@@ -2931,7 +2940,8 @@ fn rust_selection_rows(
     model: &SCXMLModel,
     tables: &crate::document_tables::DocumentTables,
     events: &[&str],
-) -> Result<serde_json::Value, GenerateError> {
+    row_walk: bool,
+) -> Result<(serde_json::Value, serde_json::Value), GenerateError> {
     let names: Vec<String> = events
         .iter()
         .map(|event| filters::event_wire_name((*event).to_string()))
@@ -2977,10 +2987,78 @@ fn rust_selection_rows(
         .iter()
         .map(|number| format!("TransitionId({number})"))
         .collect();
-    Ok(serde_json::json!({
+    let rows = serde_json::json!({
         "first_written": first_written,
         "triggers": triggers,
         "trigger_events": pool,
+    });
+    // The null event is numbered after the named events, which `rust_tables`
+    // has held to a `u16`.
+    let candidates = if row_walk {
+        let null_event = rust_table_number(events.len(), "events before its null event")?;
+        rust_candidate_rows(tables, &selection, null_event)?
+    } else {
+        serde_json::Value::Null
+    };
+    Ok((rows, candidates))
+}
+
+/// The candidate rows of a Rust machine the row walk serves (docs/adr/0135),
+/// as the runtime's `CandidateRows` spells them: each state's first cell and
+/// one past the last (`first_cell`), each cell an event and the position of
+/// its list (`cells`), and the lists (`candidates`), each its length first,
+/// each distinct list in the pool once. The lists are
+/// [`DocumentTables::candidates`](crate::document_tables::DocumentTables::candidates),
+/// made from `selection`, the machine's selection rows.
+fn rust_candidate_rows(
+    tables: &crate::document_tables::DocumentTables,
+    selection: &crate::document_tables::Selection,
+    null_event: u16,
+) -> Result<serde_json::Value, GenerateError> {
+    let mut first_cell: Vec<usize> = Vec::with_capacity(tables.states.len() + 1);
+    let mut cells: Vec<String> = Vec::new();
+    let mut pool: Vec<String> = Vec::new();
+    let mut positions: std::collections::BTreeMap<Vec<u16>, usize> =
+        std::collections::BTreeMap::new();
+    for state_cells in tables.candidates(selection, null_event) {
+        first_cell.push(cells.len());
+        for cell in state_cells {
+            let position =
+                *positions
+                    .entry(cell.candidates)
+                    .or_insert_with_key(|candidates| {
+                        let position = pool.len();
+                        pool.push(format!("Candidate::count({})", candidates.len()));
+                        pool.extend(candidates.iter().map(|transition| {
+                            format!("Candidate::new(TransitionId({transition}))")
+                        }));
+                        position
+                    });
+            cells.push(format!(
+                "CandidateCell::new(EventId({}), {position})",
+                cell.event
+            ));
+        }
+    }
+    first_cell.push(cells.len());
+    // A cell's position and a list's are `u16`s of the runtime's rows, held to
+    // the bound every pool of the tables keeps (docs/adr/0067).
+    for (count, what) in [
+        (cells.len(), "cells"),
+        (pool.len(), "entries in the pool of candidates"),
+    ] {
+        if count > crate::document_tables::MAX_IDS {
+            return Err(GenerateError::unsupported(format!(
+                "the document's selection needs {count} {what}, and a Rust machine's tables \
+                 hold at most {} (docs/adr/0135)",
+                crate::document_tables::MAX_IDS
+            )));
+        }
+    }
+    Ok(serde_json::json!({
+        "first_cell": first_cell,
+        "cells": cells,
+        "candidates": pool,
     }))
 }
 
@@ -9655,5 +9733,69 @@ mod tests {
         assert_eq!(tables["walk"], "GENERAL_WALK");
         assert_eq!(tables["entry_rows"], serde_json::json!([]));
         assert_eq!(tables["entry_paths"], serde_json::json!([]));
+        // Its selection is the general walk's, over the selection rows, so it
+        // has no candidate rows (docs/adr/0135).
+        assert!(tables["candidates"].is_null(), "{}", tables["candidates"]);
+        assert!(tables["selection"].is_object(), "{}", tables["selection"]);
+    }
+
+    /// docs/adr/0135: a document the row walk serves selects from candidate
+    /// rows, made from the selection rows' lists: for each atomic state and
+    /// each event the transitions the selection tries, the state's own as
+    /// written then each ancestor's, each list once in the pool, its length
+    /// first, and the cells of a state in ascending order of the event.
+    #[test]
+    fn rust_tables_of_a_document_of_the_class_carry_its_candidate_rows() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="first">
+  <state id="outer">
+    <transition event="tick" target="gone"/>
+    <transition event="go" target="first"/>
+    <state id="first">
+      <transition event="tick" target="second"/>
+      <transition target="second"/>
+    </state>
+    <state id="second"/>
+  </state>
+  <state id="gone"/>
+</scxml>"#,
+                "rust_candidate_rows",
+            )
+            .expect("parse");
+        let bounds = crate::microstep_bounds::MicrostepBounds::of(&model);
+        let tables = rust_tables(&model, &bounds).expect("tables");
+        assert_eq!(tables["walk"], "ROW_WALK");
+        // `go` is 0, `tick` 1 and the null event 2. `outer` (0) is not
+        // atomic and `gone` (3) answers nothing, so neither has a cell;
+        // `first` (1) tries its own `tick` (2) before `outer`'s (0), and
+        // `second` (2) only `outer`'s.
+        assert_eq!(tables["events"], serde_json::json!(["go", "tick"]));
+        let candidates = &tables["candidates"];
+        assert_eq!(candidates["first_cell"], serde_json::json!([0, 0, 3, 5, 5]));
+        assert_eq!(
+            candidates["cells"],
+            serde_json::json!([
+                "CandidateCell::new(EventId(0), 0)",
+                "CandidateCell::new(EventId(1), 2)",
+                "CandidateCell::new(EventId(2), 5)",
+                "CandidateCell::new(EventId(0), 0)",
+                "CandidateCell::new(EventId(1), 7)"
+            ])
+        );
+        assert_eq!(
+            candidates["candidates"],
+            serde_json::json!([
+                "Candidate::count(1)",
+                "Candidate::new(TransitionId(1))",
+                "Candidate::count(2)",
+                "Candidate::new(TransitionId(2))",
+                "Candidate::new(TransitionId(0))",
+                "Candidate::count(1)",
+                "Candidate::new(TransitionId(3))",
+                "Candidate::count(1)",
+                "Candidate::new(TransitionId(0))"
+            ])
+        );
     }
 }

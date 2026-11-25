@@ -108,6 +108,7 @@ impl StatePolicy for HwPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        candidates: None,
         selection: None,
     };
     const STATES: &'static [HwState] = &[HwState::Stopped, HwState::Running, HwState::Done];

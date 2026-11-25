@@ -262,6 +262,7 @@ fn runtime_tables(
         parallel: tables
             .uses_parallel()
             .then_some(&sce_rust_runtime::PARALLEL),
+        candidates: None,
         selection: Some(rt::SelectionRows {
             first_written: first_written.leak(),
             triggers: triggers.leak(),

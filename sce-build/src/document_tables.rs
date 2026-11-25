@@ -205,6 +205,20 @@ pub struct Selection {
     pub triggers: Vec<Vec<u16>>,
 }
 
+/// One cell of the candidate rows of a document the row walk serves (ADR 0135):
+/// an event an atomic state answers, and the transitions the selection tries
+/// for it in a configuration whose atomic state that is, in the order it tries
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateCell {
+    /// The event's number, the null event's for the eventless selection.
+    pub event: u16,
+    /// The `TransitionId`s of the written transitions the event enables, the
+    /// atomic state's own in the order they are written, then each ancestor's,
+    /// outward. Never empty: an event that enables none has no cell.
+    pub candidates: Vec<u16>,
+}
+
 /// One state of a transition's entry path (ADR 0125): a state the transition
 /// enters, and whether it is entered by default (Appendix D's
 /// statesForDefaultEntry), so its initial transition's content runs after its
@@ -491,6 +505,52 @@ impl DocumentTables {
             first_written,
             triggers,
         })
+    }
+
+    /// The candidate rows of a document the row walk serves (ADR 0135): for
+    /// each state, by `StateId`, its cells in ascending order of the event,
+    /// from `selection`, these tables' selection rows
+    /// ([`selection`](Self::selection)), whose null event is `null_event`.
+    ///
+    /// The cell of an atomic state `s` for an event `e` lists every written
+    /// transition of `s` that `e` enables in the order written, then of
+    /// `s`'s parent, and so on to the root: the order Appendix D's
+    /// selectTransitions tries them in for a configuration whose atomic state
+    /// is `s`, since that walk tries a state's transitions in document order and
+    /// goes on to the parent only when none of them is enabled. So the two
+    /// selections are made from one list of the events each transition answers.
+    /// A state that is not atomic is never the atomic state of a configuration
+    /// and has no cell, and an event that enables nothing from `s` has none.
+    pub fn candidates(&self, selection: &Selection, null_event: u16) -> Vec<Vec<CandidateCell>> {
+        self.states
+            .iter()
+            .enumerate()
+            .map(|(number, row)| {
+                if !matches!(row.kind, StateKind::Atomic | StateKind::Final) {
+                    return Vec::new();
+                }
+                // The atomic state, then each ancestor, outward.
+                let mut chain: Vec<u16> = Vec::new();
+                let mut state = Some(number as u16);
+                while let Some(current) = state {
+                    chain.push(current);
+                    state = self.state_row(current).parent;
+                }
+                (0..=null_event)
+                    .filter_map(|event| {
+                        let mut candidates: Vec<u16> = Vec::new();
+                        for &source in &chain {
+                            let first = selection.first_written[usize::from(source)];
+                            let end = selection.first_written[usize::from(source) + 1];
+                            candidates.extend((first..end).filter(|&transition| {
+                                selection.triggers[usize::from(transition)].contains(&event)
+                            }));
+                        }
+                        (!candidates.is_empty()).then_some(CandidateCell { event, candidates })
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// The entry path of one transition of a document that fixes its sets, or
@@ -982,6 +1042,46 @@ mod tests {
         assert_eq!(tables.transition_id("first", 0), Some(2));
         assert_eq!(children_of(&tables, 0), [1u16, 2]);
         assert!(children_of(&tables, 3).is_empty());
+    }
+
+    /// ADR 0135: the candidate rows list, for each atomic state and each event,
+    /// the written transitions the selection tries from it, in order: the
+    /// state's own as written, then each ancestor's. A state that is not
+    /// atomic, and an event that enables nothing from a state, have no cell.
+    #[test]
+    fn an_atomic_states_candidates_are_its_own_transitions_then_its_ancestors() {
+        let (model, tables) = tables_of(
+            r#" initial="first">
+  <state id="outer">
+    <transition event="tick" target="gone"/>
+    <transition event="go" target="first"/>
+    <state id="first">
+      <transition event="tick" target="second"/>
+      <transition target="second"/>
+    </state>
+    <state id="second"/>
+  </state>
+  <state id="gone"/>
+"#,
+        );
+        // `go` is 0, `tick` 1 and the null event 2; `outer`'s rows are 0
+        // (`tick`) and 1 (`go`), `first`'s 2 (`tick`) and 3 (eventless).
+        let selection = tables
+            .selection(&model, &["go", "tick"])
+            .expect("selection");
+        let cell = |event: u16, candidates: &[u16]| CandidateCell {
+            event,
+            candidates: candidates.to_vec(),
+        };
+        assert_eq!(
+            tables.candidates(&selection, 2),
+            vec![
+                vec![],
+                vec![cell(0, &[1]), cell(1, &[2, 0]), cell(2, &[3])],
+                vec![cell(0, &[1]), cell(1, &[0])],
+                vec![],
+            ]
+        );
     }
 
     /// ADR 0125: a document with no `<history>`, no `<parallel>` and no

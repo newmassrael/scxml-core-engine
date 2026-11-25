@@ -149,9 +149,10 @@ ends the run by `Entered::ended_in` (ADR 0123); the order of `<onexit>`, transit
   from the seed, raises `done.state.<id>` on entering a `<final>` child of a compound state where the document
   numbers it, and keeps a journal of every hook call. After every step the configurations and `Entered` must be
   equal, and at the end the journals: the guards asked, the exits, the contents and the entries, in order.
-- **Random documents of the class** (`backends/rust/runtime/tests/the_class_walker_selects_as_the_general_selection_does.rs`):
-  for every atomic state and every event, the walker's selection and the general selection answer the same
-  transition and ask the same guards in the same order, and the check refuses each fault of the candidate rows.
+- **Random documents of the class** (`backends/rust/runtime/tests/what_enables_a_transition_is_a_row_of_its_tables.rs`,
+  beside ADR 0127's rows): each random document is tabled a third time for the row walk, and from every atomic
+  state and for every event the walker's selection and the general selection answer the same transition and ask
+  the same guards in the same order; the check refuses each fault of the candidate rows.
 
 ### 5. The footprint gate
 

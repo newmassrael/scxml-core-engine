@@ -107,16 +107,18 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # `<parallel>` and a `<history>`: the gate holds the row walk linked in every configuration, the
 # general walk linked with that first machine and absent from `plain-documents`.
 #
-# GENERAL_WALK_PROCEDURES are the two `GENERAL_WALK` holds, Appendix D's exitStates and enterStates,
-# which a linked general walk always has as symbols of their own (they are reached through a
-# pointer); GENERAL_WALK_COMPUTATIONS are what only they reach, which may be inlined into them when
+# GENERAL_WALK_PROCEDURES are the three `GENERAL_WALK` holds, Appendix D's selection over the
+# configuration and its exitStates and enterStates, which a linked general walk always has as
+# symbols of their own (they are reached through a pointer, and the selection is one since
+# docs/adr/0135); GENERAL_WALK_COMPUTATIONS are what only they reach, which may be inlined into them when
 # linked and must not appear at all when absent (the exit set and the domain of one transition,
 # which removeConflictingTransitions reaches as well, are not among them).
-# ROW_WALK_PROCEDURES are the two `ROW_WALK` holds.
-GENERAL_WALK_PROCEDURES='exit_states enter_states'
+# ROW_WALK_PROCEDURES are the three `ROW_WALK` holds: the class walker's selection from the
+# candidate rows (docs/adr/0135) and its exit and entry from the entry rows.
+GENERAL_WALK_PROCEDURES='select_transitions_on_tree exit_states enter_states'
 GENERAL_WALK_COMPUTATIONS='compute_states_to_exit compute_entry_set add_transition_to_entry_set walk_entry listed_target listed_stop first_proper_ancestor enter_entry_set current_state'
 GENERAL_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${GENERAL_WALK_PROCEDURES// /|}|${GENERAL_WALK_COMPUTATIONS// /|})"
-ROW_WALK_PROCEDURES='exit_states_from_rows enter_states_from_rows'
+ROW_WALK_PROCEDURES='select_transition_from_rows exit_states_from_rows enter_states_from_rows'
 ROW_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${ROW_WALK_PROCEDURES// /|})"
 
 # What one more machine costs with the macrostep report: the probe built with
@@ -604,12 +606,13 @@ WALKS="^${P}(${GENERAL_WALK_PROCEDURES// /|}|${ROW_WALK_PROCEDURES// /|})\$"
 STACK_DYN="^${P}(effective_target_states_on|compute_exit_set|remove_conflicting_transitions)\$=${EFFECTIVE}"
 STACK_DYN+=" ^${P}(walk_entry|listed_target)\$=${WALK}"
 STACK_DYN+=" ^${P}(add_transition_to_entry_set|compute_entry_set|current_state|enter_states|enter_entry_set)\$=(${HOOKS}|${EFFECTIVE}|${WALK})"
-STACK_DYN+=" ^${P}select_transitions\$=(${HOOKS}|^${P}remove_conflicting_transitions\$|${EFFECTIVE})"
+STACK_DYN+=" ^${P}select_transitions\$=${WALKS}"
+STACK_DYN+=" ^${P}select_transitions_on_tree\$=(${HOOKS}|^${P}remove_conflicting_transitions\$|${EFFECTIVE})"
 STACK_DYN+=" ^${P}(exit_states|compute_states_to_exit|exit_interpreter|execute_transition_content)\$=(${HOOKS}|^${P}record_histories\$|${EFFECTIVE})"
 STACK_DYN+=" ^${P}is_in_final_state\$=^${P}parallel_in_final_state\$"
 STACK_DYN+=" ^(${P}microstep\$|<sce_rust_runtime::engine::Turn[<>]|sce_rust_runtime::engine::exit_interpreter)=(${HOOKS}|${ALL_FEATURES}|${WALKS})"
 STACK_DYN+=" ^${P}enter_initial_configuration\$=${WALKS}"
-STACK_DYN+=" ^${P}(exit_states_from_rows|enter_states_from_rows|exit_active|exit_one|enter_one)\$=${HOOKS}"
+STACK_DYN+=" ^${P}(select_transition_from_rows|exit_states_from_rows|enter_states_from_rows|exit_active|exit_one|enter_one)\$=${HOOKS}"
 STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
 # The inbox's drain (docs/adr/0084, D2 as amended at step 9) is the one part of a machine's
 # `Engine` code that does not drive the main loop: it reads the attached inbox through
