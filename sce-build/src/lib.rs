@@ -47,6 +47,10 @@ pub mod attribute_spelling;
 /// for them — read from a file beside the specification, enforced the same
 /// way for every entry point, and pinned by an acceptance record.
 pub mod authoring_profile;
+/// What the proofs of a machine's bounds read of its document alike: which
+/// states can be active together, the places a `<foreach>` walks, and a basis
+/// in lines of a comment (docs/adr/0076, docs/adr/0132).
+mod bound_reading;
 /// The linearizability checker for broadcast-log histories and the JSON form
 /// a backend's stress run writes one in (RFC §synth-5-S, ADR 0062 §5). Here, and not in a
 /// backend's tests, so `sce-codegen check-broadcast-history` judges the

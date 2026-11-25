@@ -390,6 +390,14 @@ pub fn check_host_declarations(
 /// beside its own `_mesh_deadline_ms`.
 pub const HOST_INVOKE_DEADLINE_PARAM: &str = "_sce_deadline_ms";
 
+/// Whether `invoke` is a host-run invocation that names its deadline
+/// ([`HOST_INVOKE_DEADLINE_PARAM`]): each start of it arms one entry on the
+/// machine's delayed-send queue, which the engine drops when the start ends.
+pub fn arms_host_invoke_deadline(invoke: &Invoke) -> bool {
+    matches!(invoke, Invoke::Unsupported(info) if info.host_served
+        && info.base.params.iter().any(|p| p.name == HOST_INVOKE_DEADLINE_PARAM))
+}
+
 /// Read the text of a deadline value as milliseconds: one or more ASCII
 /// digits, optionally followed by `.` and one or more `0`, within a signed
 /// 64-bit count; anything else is `None`.
@@ -493,10 +501,7 @@ pub fn declare_host_surfaces(
         // `error.invoke` — so the machine must be driven with `tick()` and the
         // generic event must exist. `needs_tick_driving` was settled by
         // analysis before this declaration, so it is settled again here.
-        if model.invokes.iter().any(|i| {
-            matches!(i, Invoke::Unsupported(info) if info.host_served
-                && info.base.params.iter().any(|p| p.name == HOST_INVOKE_DEADLINE_PARAM))
-        }) {
+        if model.invokes.iter().any(arms_host_invoke_deadline) {
             model.events.insert("error.invoke".to_string());
             model.needs_event_scheduler = Some(true);
             model.needs_tick_driving = model.needs_event_scheduler_driving();

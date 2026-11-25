@@ -1355,6 +1355,19 @@ impl Action {
         }
     }
 
+    /// Whether this `<send>` waits before it is delivered (docs/adr/0132): it
+    /// writes a `delay` other than none, or a `delayexpr`, as written or as
+    /// the static lowering left it. A delay of a `delayexpr` is known only when
+    /// the send runs and may be none, and a written one may be refused
+    /// ([`Self::delay_invalid`]), so this says the send may wait, which is
+    /// what a reader that bounds what waits must count.
+    pub fn delays(&self) -> bool {
+        self.delay_is_native()
+            || !self.delayexpr.is_empty()
+            || self.delay_ms > 0
+            || (!self.delay.is_empty() && self.delay != "0s" && self.delay != "0ms")
+    }
+
     /// An `<if>` carrying one `then` block.
     ///
     /// ⭐ The third thing a definition of "inside an action" owes its

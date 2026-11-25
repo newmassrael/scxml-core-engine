@@ -19,7 +19,7 @@
 
 mutation_tests -p sce-build --features cli --lib --test c3_no_std_template
 mutation_oracles sce-build/src/internal_queue_bound.rs sce-build/tests/c3_no_std_template.rs
-mutation_targets sce-build/src/internal_queue_bound.rs tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets sce-build/src/internal_queue_bound.rs sce-build/src/bound_reading.rs tools/codegen/templates/rust/state_machine.rs.jinja2
 
 # ── The sources counted ─────────────────────────────────────────────
 
@@ -167,11 +167,8 @@ PY
 # state is given its body's count, once.
 mutation_case "a raising foreach body over an unbounded list is not refused" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''            .and_then(|n| usize::try_from(n).ok())
-        else {''',
-     r'''            .and_then(|n| usize::try_from(n).ok())
-            .or(Some(1))
-        else {''')
+     r'''        let Some(passes) = bound_reading::passes(list.as_ref()) else {''',
+     r'''        let Some(passes) = bound_reading::passes(list.as_ref()).or(Some(1)) else {''')
 PY
 
 # A `<foreach>` over a bounded list is given its body's count, once, not once
@@ -193,15 +190,15 @@ PY
 # holds has no bound to count by (docs/adr/0086, section 6.3).
 mutation_case "a loop over an item's list is not counted" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''            self.places.push((action.item.trim().to_string(), item));''',
+     r'''            self.places.hold(&action.item, item);''',
      r'''            let _ = item;''')
 PY
 
 # A value of any type bounds a loop over it, as if it were a list.
 mutation_case "a variable that is not a list bounds a foreach" <<'PY'
-edit("sce-build/src/internal_queue_bound.rs",
-     r'''            .and_then(Place::list_bound)''',
-     r'''            .map(|_| 4u32)''')
+edit("sce-build/src/bound_reading.rs",
+     r'''    list.and_then(Place::list_bound)''',
+     r'''    list.map(|_| 4u32)''')
 PY
 
 # A delayed send to `#_internal` is counted as delivered nowhere.
@@ -257,7 +254,7 @@ PY
 # the compound is still active, and its eventless transition is the next
 # microstep.
 mutation_case "an ancestor's eventless transition does not follow" <<'PY'
-edit("sce-build/src/internal_queue_bound.rs",
+edit("sce-build/src/bound_reading.rs",
      r'''        if above_a.contains(&b) {''',
      r'''        if above_a.contains(&b) && false {''')
 PY
@@ -266,7 +263,7 @@ PY
 # together, so an eventless transition one region's microstep enables in the
 # other is missed, and the chain is not seen to loop.
 mutation_case "two regions of a parallel are not active together" <<'PY'
-edit("sce-build/src/internal_queue_bound.rs",
+edit("sce-build/src/bound_reading.rs",
      r'''            .is_some_and(|common| common.is_parallel)''',
      r'''            .is_some_and(|common| common.is_parallel && false)''')
 PY

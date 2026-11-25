@@ -142,10 +142,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::bound_reading::{self, BlockPlaces, Tree};
 use crate::event_descriptor::attribute_matches;
-use crate::forge::event_schema_check::EVENT_DATA_PATH;
-use crate::forge::value_path::{self, Place};
-use crate::forge::value_type::TypeScope;
+use crate::forge::value_path::Place;
 use crate::microstep_bounds::MicrostepBounds;
 use crate::model::{Action, BlockRole, DoneData, DoneDataContent, SCXMLModel};
 
@@ -238,7 +237,7 @@ impl InternalQueueBound {
 
     /// [`basis`](Self::basis) in lines of a comment's width.
     pub fn basis_lines(&self) -> Vec<String> {
-        wrap(&self.basis(), 72)
+        bound_reading::wrap(&self.basis(), 72)
     }
 }
 
@@ -291,65 +290,30 @@ struct Analysis<'m> {
     held: BTreeSet<String>,
     /// Whether some counted site raises an error event.
     may_raise_error: bool,
-    /// The scope the places a `<foreach>` walks are typed in
-    /// ([`crate::forge::value_path::statechart_scope`]).
-    scope: TypeScope,
-    /// Each name that holds a value where the walk stands, innermost last: the
-    /// document's variables, `_event.data` in a transition taken on an event
-    /// whose schema it imports, and the item of each `<foreach>` around it.
-    places: Vec<(String, Place)>,
+    /// The places that hold a value where the walk stands, which a
+    /// `<foreach>` walks.
+    places: BlockPlaces,
 }
 
 impl<'m> Analysis<'m> {
     fn new(model: &'m SCXMLModel) -> Self {
-        let places = model
-            .variables
-            .iter()
-            .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-            .filter_map(|var| Some((var.id.clone(), value_path::variable_place(var)?)))
-            .collect();
         Self {
             model,
             raises_execution: model.events.contains("error.execution"),
             raises_communication: model.events.contains("error.communication"),
             held: BTreeSet::new(),
             may_raise_error: false,
-            scope: value_path::statechart_scope(model),
-            places,
+            places: BlockPlaces::of(model),
         }
-    }
-
-    /// The place `path` (written as [`value_path`] writes one) names where the
-    /// walk stands ([`value_path::resolve`]).
-    fn place(&self, path: &str) -> Option<Place> {
-        value_path::resolve(
-            Some(&self.scope),
-            |name| {
-                self.places
-                    .iter()
-                    .rev()
-                    .find(|(held, _)| held == name)
-                    .map(|(_, place)| place)
-            },
-            path,
-        )
     }
 
     /// The most one run of a transition's content enqueues: the content read
     /// where `_event.data` is the payload of the event it is taken on.
     fn transition(&mut self, transition: &crate::model::Transition) -> Result<usize, String> {
-        let payload = self
-            .model
-            .imported_event_schemas
-            .get(&transition.event)
-            .and_then(|schema| value_path::payload_place(self.model, &schema.name));
-        let held = payload.is_some();
-        if let Some(payload) = payload {
-            self.places.push((EVENT_DATA_PATH.to_string(), payload));
-        }
+        let held = self.places.enter_transition(self.model, transition);
         let run = self.block(&transition.actions);
         if held {
-            self.places.pop();
+            self.places.release();
         }
         run
     }
@@ -584,26 +548,21 @@ impl<'m> Analysis<'m> {
     fn walked(&mut self, action: &Action) -> Result<Cost, String> {
         // The list walked is a place, a variable's, the payload's or an
         // enclosing item's, and its item is a place of its body's.
-        let list =
-            crate::forge::expr::written_place(&action.array).and_then(|path| self.place(&path));
+        let list = self.places.walked_list(action);
         let item = list.as_ref().and_then(Place::element);
         let bound_item = item.is_some();
         if let Some(item) = item {
-            self.places.push((action.item.trim().to_string(), item));
+            self.places.hold(&action.item, item);
         }
         let body = self.list(&action.actions);
         if bound_item {
-            self.places.pop();
+            self.places.release();
         }
         let body = body?;
         if body.completes == 0 {
             return Ok(Cost::ending(body.ends));
         }
-        let Some(passes) = list
-            .as_ref()
-            .and_then(Place::list_bound)
-            .and_then(|n| usize::try_from(n).ok())
-        else {
+        let Some(passes) = bound_reading::passes(list.as_ref()) else {
             return Err(format!(
                 "a <foreach> body enqueues an internal event on each pass, and `{}` is not a \
                  list whose bound the document declares, so the passes are not counted",
@@ -629,10 +588,7 @@ impl<'m> Analysis<'m> {
             && crate::scxml_self_send::sends_to_itself(action);
         let computed_target = !action.targetexpr.is_empty() || !action.native_target.is_empty();
         let computed_event = !action.eventexpr.is_empty() || !action.native_event.is_empty();
-        let delayed = action.delay_is_native()
-            || !action.delayexpr.is_empty()
-            || action.delay_ms > 0
-            || (!action.delay.is_empty() && action.delay != "0s" && action.delay != "0ms");
+        let delayed = action.delays();
         let refused = action.send_type_unsupported
             || action.target_unsupported
             || (action.delay_invalid && action.delayexpr.is_empty());
@@ -857,7 +813,7 @@ impl<'m> Analysis<'m> {
                 eventless.push((id.as_str(), entered));
             }
         }
-        let tree = Tree { model };
+        let tree = Tree::of(model);
         let next: Vec<Vec<usize>> = eventless
             .iter()
             .map(|(_, entered)| {
@@ -917,71 +873,6 @@ fn longest_chain(
     on_path[start] = false;
     longest[start] = Some(below + 1);
     Ok(below + 1)
-}
-
-/// The states of a document, as which can be in one configuration together.
-struct Tree<'m> {
-    model: &'m SCXMLModel,
-}
-
-impl Tree<'_> {
-    /// `id` and every state above it, nearest first. A parent chain that loops
-    /// is cut where it repeats, as the parser refuses one elsewhere.
-    fn up_from<'s>(&'s self, id: &'s str) -> Vec<&'s str> {
-        let mut chain = vec![id];
-        let mut current = id;
-        while let Some(parent) = self
-            .model
-            .states
-            .get(current)
-            .and_then(|state| state.parent.as_deref())
-        {
-            if chain.contains(&parent) {
-                break;
-            }
-            chain.push(parent);
-            current = parent;
-        }
-        chain
-    }
-
-    /// Whether `a` and `b` can be in one configuration: one is the other or
-    /// above it, or the nearest state above both is a `<parallel>`, whose
-    /// regions are all active at once.
-    fn coexist(&self, a: &str, b: &str) -> bool {
-        let above_a = self.up_from(a);
-        if above_a.contains(&b) {
-            return true;
-        }
-        let above_b = self.up_from(b);
-        if above_b.contains(&a) {
-            return true;
-        }
-        above_a
-            .iter()
-            .find(|state| above_b.contains(*state))
-            .and_then(|common| self.model.states.get(*common))
-            .is_some_and(|common| common.is_parallel)
-    }
-}
-
-/// `text` in lines of at most `width` characters, broken between words.
-fn wrap(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        if !line.is_empty() && line.len() + 1 + word.len() > width {
-            lines.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    if !line.is_empty() {
-        lines.push(line);
-    }
-    lines
 }
 
 #[cfg(test)]
