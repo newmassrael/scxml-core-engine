@@ -242,11 +242,10 @@ endif()
 # build with no git checkout to read (release tarball, vendored tree) and
 # is what the schema's pattern allows alongside a hex commit.
 #
-# Applied to `sce_runtime`, which is the target that compiles
-# `src/parsing/Diagnostic.cpp` — the definition is attached below, after
-# that target exists. PRIVATE: the envelope helper in that one file is
-# the only reader, and a consumer compiling against the installed
-# headers never needs the macro.
+# Applied to `src/parsing/Diagnostic.cpp` alone, the source of `sce_runtime`
+# whose envelope helper is the only reader — attached below, after that
+# target exists. A consumer compiling against the installed headers never
+# needs the macro.
 #
 # The ref files are configure-dependencies for the same reason
 # `sce-build/build.rs` watches them on the Rust side: resolved once and
@@ -666,7 +665,14 @@ sce_force_include(sce_runtime PRIVATE common/DisableStdOut.h)
 # its `unknown` branch and every record still validates, because `unknown`
 # is a legal value for a checkout-less build. `DiagnosticWire.GeneratorStampNamesThisCheckout`
 # is what distinguishes "no checkout to read" from "read the wrong target".
-target_compile_definitions(sce_runtime PRIVATE SCE_GIT_COMMIT="${SCE_GIT_COMMIT}")
+#
+# On the one source that reads it, not on the target. The value is new with
+# every commit, and a definition on the target is on the command line of every
+# source the target compiles, so each commit changed the compile of all of
+# them: a compiler cache keyed on the command line missed on every one, and an
+# incremental build recompiled the whole library for one string.
+set_property(SOURCE src/parsing/Diagnostic.cpp APPEND PROPERTY
+    COMPILE_DEFINITIONS "SCE_GIT_COMMIT=\"${SCE_GIT_COMMIT}\"")
 
 # sce_runtime links sce_scripting (which transitively provides sce_base → sce_core)
 # This makes sce_runtime an umbrella target: linking sce_runtime gives you everything.
