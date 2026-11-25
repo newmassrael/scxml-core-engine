@@ -14,8 +14,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore,
-    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, HistoryId, NoHistory,
+    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 // Declared in document order, so a variant's discriminant is its `StateId`.
@@ -174,7 +175,7 @@ impl StatePolicy for HwPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
         // No entry actions in this minimal test
@@ -184,7 +185,7 @@ impl StatePolicy for HwPolicy {
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         // No exit actions
     }
@@ -194,7 +195,7 @@ impl StatePolicy for HwPolicy {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (HwState::Stopped, HwEvent::Play) => Some(STOPPED_PLAY),
@@ -208,7 +209,7 @@ impl StatePolicy for HwPolicy {
         &mut self,
         _transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         // No transition actions
     }

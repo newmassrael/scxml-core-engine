@@ -22,9 +22,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, EventId, HistoryId, HostInvokeEnding,
-    HostInvokeEvent, HostInvokeRequest, InboxInput, NoHistory, RunStore, StateId, StateKind,
-    StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, HistoryId,
+    HostInvokeEnding, HostInvokeEvent, HostInvokeRequest, InboxInput, NoHistory, RunStore, StateId,
+    StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
 };
 
 /// The type the machine's invocation names, which the host serves.
@@ -49,8 +49,10 @@ enum Ev {
 const S_DONE: TransitionId = TransitionId(0);
 
 /// A machine that says whether its document hands an `<invoke>` to a host
-/// (`RUNS`), and records each `done.invoke.job` it took.
+/// (`RUNS`), starts `JOB` as it enters `s`, and records what the engine
+/// answered and each `done.invoke.job` it took.
 struct HostPolicy<const RUNS: bool> {
+    started: Option<bool>,
     taken: usize,
 }
 
@@ -151,20 +153,33 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
     ) -> Self::EventData<'a> {
     }
 
+    // The start a generated invoke site makes, from the entry hook: the policy
+    // and the state are handed over apart, and the engine names the session
+    // that starts it by asking the policy (docs/adr/0131).
     fn execute_entry_actions(
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        engine: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
+        let started = Engine::perform_host_invoke(
+            self,
+            engine,
+            HostInvokeRequest {
+                processor_type: TYPE.to_string(),
+                invoke_id: JOB.to_string(),
+                ..HostInvokeRequest::default()
+            },
+        );
+        self.started = Some(started);
     }
 
     fn execute_exit_actions(
         &mut self,
         _state: StateId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
     }
 
@@ -173,7 +188,7 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
         state: StateId,
         event: EventId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
             (St::S, Ev::DoneJob) => Some(S_DONE),
@@ -185,7 +200,7 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
         &mut self,
         transition: TransitionId,
         _event_data: Self::EventData<'_>,
-        _engine: &mut Engine<Self>,
+        _engine: &mut EngineState<Self>,
     ) {
         if transition == S_DONE {
             self.taken += 1;
@@ -193,11 +208,15 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
     }
 }
 
-/// A running machine whose host serves `TYPE`, after it asked the host to start
-/// `JOB`: the engine, whether it answered that the invocation started, and the
-/// token of each start the host's invoker was handed, in order.
+/// A running machine whose host serves `TYPE`, after its entry into `s` asked
+/// the engine to start `JOB`: the engine, whether it answered that the
+/// invocation started, and the token of each start the host's invoker was
+/// handed, in order.
 fn asked_to_start<const RUNS: bool>() -> (Engine<HostPolicy<RUNS>>, bool, Vec<u64>) {
-    let mut engine = Engine::new(HostPolicy::<RUNS> { taken: 0 });
+    let mut engine = Engine::new(HostPolicy::<RUNS> {
+        started: None,
+        taken: 0,
+    });
     let starts = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&starts);
     engine.register_invoker(TYPE, move |event| {
@@ -209,11 +228,10 @@ fn asked_to_start<const RUNS: bool>() -> (Engine<HostPolicy<RUNS>>, bool, Vec<u6
         None
     });
     let Ok(()) = engine.initialize();
-    let started = engine.perform_host_invoke(HostInvokeRequest {
-        processor_type: TYPE.to_string(),
-        invoke_id: JOB.to_string(),
-        ..HostInvokeRequest::default()
-    });
+    let started = engine
+        .policy()
+        .started
+        .expect("entering s asked the engine to start the invocation");
     let starts = starts
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

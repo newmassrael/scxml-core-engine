@@ -23,9 +23,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, Engine, EventId, Hal, HistoryId, NoHistory,
-    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
-    Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, Hal, HistoryId,
+    NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
+    TransitionRow, Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ impl StatePolicy for MockPolicy {
         &mut self,
         _s: StateId,
         _event_data: Self::EventData<'_>,
-        _eng: &mut Engine<Self>,
+        _eng: &mut EngineState<Self>,
         _is_default_entry: bool,
     ) {
     }
@@ -198,7 +198,7 @@ impl StatePolicy for MockPolicy {
         &mut self,
         _s: StateId,
         _event_data: Self::EventData<'_>,
-        _eng: &mut Engine<Self>,
+        _eng: &mut EngineState<Self>,
     ) {
     }
     fn first_enabled_transition(
@@ -206,7 +206,7 @@ impl StatePolicy for MockPolicy {
         _s: StateId,
         _e: EventId,
         _event_data: Self::EventData<'_>,
-        _eng: &mut Engine<Self>,
+        _eng: &mut EngineState<Self>,
     ) -> Option<TransitionId> {
         None
     }
@@ -214,7 +214,7 @@ impl StatePolicy for MockPolicy {
         &mut self,
         _t: TransitionId,
         _event_data: Self::EventData<'_>,
-        _eng: &mut Engine<Self>,
+        _eng: &mut EngineState<Self>,
     ) {
     }
 }
