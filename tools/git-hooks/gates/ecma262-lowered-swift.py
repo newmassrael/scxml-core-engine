@@ -6,8 +6,8 @@
 #
 # The Swift twin of `ecma262-lowered-kotlin`: one machine that asks every case of the shared
 # ECMA-262 table, generated with the build-time lowering (the only route Swift has), compiled
-# and run. A third step of the same job as `swift-backend` and `w3c-swift`, for the same
-# reason: the generator built and the pinned toolchain installed are steps it shares.
+# and run. A step of the `swift-machines` job of `swift-backend.yml` after `w3c-swift`, for
+# the same reason: the generator built and the pinned toolchain installed are steps it shares.
 #
 # `ci_only` for the reason `swift-backend` is: the toolchain pin.
 {

@@ -2169,3 +2169,81 @@ fn the_interface_standard_lane_and_its_gate_agree_on_the_shards() {
          its shards to one plan and the whole floors"
     );
 }
+
+// ── The Swift backend lane runs its gate in parts ───────────────────────────
+//
+// `swift-backend` runs one line of `SWIFT_BACKEND_SHARDS` in its gate script
+// when `SCE_SWIFT_BACKEND_SHARD` names `k/N`, as the lane's jobs do, and every
+// line when it is unset. The parts are fixed lists, so the union is held here:
+// together they are the script's default list, each package once, and the lane
+// runs as many jobs as there are parts.
+
+const SWIFT_LANE: &str = ".github/workflows/swift-backend.yml";
+const SWIFT_GATE: &str = "scripts/gates/swift-backend.sh";
+const SWIFT_SCRIPT: &str = "scripts/test_swift_backend.sh";
+
+/// The parts of the gate, one line of `SWIFT_BACKEND_SHARDS=( ... )` each.
+fn swift_backend_parts() -> Vec<Vec<String>> {
+    uncommented(&read(SWIFT_GATE))
+        .lines()
+        .skip_while(|l| l.trim() != "SWIFT_BACKEND_SHARDS=(")
+        .skip(1)
+        .take_while(|l| l.trim() != ")")
+        .map(|l| {
+            l.trim()
+                .trim_matches('"')
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        })
+        .collect()
+}
+
+/// The packages `scripts/test_swift_backend.sh` runs when it is given none.
+fn swift_backend_default_list() -> BTreeSet<String> {
+    uncommented(&read(SWIFT_SCRIPT))
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("PACKAGES=(")?.strip_suffix(')'))
+        .find(|list| !list.contains('$'))
+        .map(|list| list.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_else(|| panic!("{SWIFT_SCRIPT} declares no default `PACKAGES=(...)`"))
+}
+
+/// The gate's parts are the script's default list, each package once, and the
+/// lane's matrix and variable name as many shards as there are parts.
+#[test]
+fn the_swift_backend_parts_are_its_default_list_each_package_once() {
+    let parts = swift_backend_parts();
+    assert!(
+        parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()),
+        "{SWIFT_GATE} declares the parts {parts:?}; the lane runs one per job, and an \
+         empty part is a job that tests nothing"
+    );
+    let listed: usize = parts.iter().map(Vec::len).sum();
+    let once: BTreeSet<String> = parts.iter().flatten().cloned().collect();
+    assert_eq!(
+        once.len(),
+        listed,
+        "a package is in two parts of {SWIFT_GATE}, so two jobs run it: {parts:?}"
+    );
+    let default = swift_backend_default_list();
+    assert_eq!(
+        once, default,
+        "the parts of {SWIFT_GATE} are not {SWIFT_SCRIPT}'s default list: a package in the \
+         list and in no part runs in no job, and one in a part only is not the whole gate"
+    );
+    let lane = read(SWIFT_LANE);
+    let (job, (count, matrix)) = sharded_job(SWIFT_LANE, &lane, "SCE_SWIFT_BACKEND_SHARD:");
+    assert_eq!(
+        count,
+        parts.len(),
+        "{SWIFT_LANE}'s job `{job}` names {count} shard(s) and {SWIFT_GATE} has {} parts, \
+         so the gate refuses every job",
+        parts.len()
+    );
+    assert_eq!(
+        matrix,
+        (1..=count).collect::<Vec<_>>(),
+        "{SWIFT_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}"
+    );
+}

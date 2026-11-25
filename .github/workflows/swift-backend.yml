@@ -119,8 +119,100 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The packages in three shards, one job each, and the three gates that write and run machines
+  # of their own in a fourth job. Whole, the job took 1842 s (job 138967193099, 57602a3bb8,
+  # 2026-11-25): the generator build and the toolchain about six minutes, the swift-backend gate
+  # 1209 s, and the W3C, ECMA-262 and Forge gates about five minutes after it. Each shard runs
+  # the swift-backend gate with `SCE_SWIFT_BACKEND_SHARD`, which runs one line of the gate's
+  # parts (scripts/gates/swift-backend.sh says how they were cut) and holds that part's
+  # verdicts; `hook_ci_parity` holds the parts to the script's default list, each package once,
+  # and the matrix to their count. The parts are fixed lists, so there is no plan to hold the
+  # shards to after they run. Each job is about six minutes of setup and six to eight of its
+  # part.
   swift-backend:
-    name: Swift packages build and pass, machines replay the shared scenarios
+    name: Swift packages build and pass, machines replay the shared scenarios (shard ${{ matrix.shard }} of 3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        submodules: recursive
+
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not
+        # a product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    # What swift.org lists for the toolchain on Ubuntu 24.04, as `bx.toml` lists it
+    # for the build machines. Without them the tarball unpacks and `swift --version`
+    # answers, and a compile or a link dies later.
+    - name: Install the packages the Swift toolchain links against
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y binutils libc6-dev libcurl4-openssl-dev libedit2 \
+          libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
+          pkg-config tzdata unzip zlib1g-dev
+
+    # The release and the tarball's digest are `bx.toml`'s `[platform.linux.tools.swift]` and nothing in
+    # this file, so the key moves with the pin and the build machines and this lane cannot
+    # disagree about the compiler.
+    - name: Read the Swift pin
+      id: swift-pin
+      run: |
+        SCE_REPO_ROOT="$PWD"
+        source scripts/lib/swift_pin.sh
+        echo "version=$(sce_swift_pin_version)" >> "$GITHUB_OUTPUT"
+        echo "digest=$(sce_swift_pin_digest 24.04)" >> "$GITHUB_OUTPUT"
+
+    # The toolchain lives where the build machines keep it, under
+    # `~/.local/share/swift/<version>/`, which is where the gate looks.
+    - name: Cache the Swift toolchain
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.local/share/swift/${{ steps.swift-pin.outputs.version }}
+        key: swift-toolchain-ubuntu24.04-${{ steps.swift-pin.outputs.version }}-${{ steps.swift-pin.outputs.digest }}
+
+    # Checked against the pinned digest, and a no-op on a toolchain the cache restored.
+    # The runner image carries a Swift of its own on PATH, and the gate takes this one
+    # and not that one.
+    - name: Install the pinned Swift toolchain
+      run: scripts/install_swift_toolchain.sh
+
+    - name: Run the Swift backend gate
+      env:
+        SCE_SWIFT_BACKEND_SHARD: ${{ matrix.shard }}/3
+      run: scripts/gate swift-backend
+
+  # The gates that write machines of their own into `backends/swift/tests` and run them, in a job
+  # beside the packages': each needs the generator built and the toolchain installed, which are
+  # the same steps, and none of them is a part of the swift-backend gate.
+  swift-machines:
+    name: Swift W3C, ECMA-262 lowered-artifact and Forge conformance gates
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -188,21 +280,15 @@ jobs:
     - name: Install the pinned Swift toolchain
       run: scripts/install_swift_toolchain.sh
 
-    - name: Run the Swift backend gate
-      run: scripts/gate swift-backend
-
-    # The W3C suite, written by `generate-w3c -l swift` and run against the engine. A step of
-    # this job and not a job of its own: it needs the generator built and the toolchain
-    # installed, which are the steps above, and a second job would repeat them.
+    # The W3C suite, written by `generate-w3c -l swift` and run against the engine.
     - name: Run the Swift W3C gate
       run: scripts/gate w3c-swift
 
     # One machine that asks every case of the shared ECMA-262 table, generated with the
-    # build-time lowering, compiled and run. A step of this job for the same reason.
+    # build-time lowering, compiled and run.
     - name: Run the Swift ECMA-262 lowered-artifact gate
       run: scripts/gate ecma262-lowered-swift
 
-    # The forge runtime's tests and every generated unit held to the numerical oracle. A step of
-    # this job for the same reason.
+    # The forge runtime's tests and every generated unit held to the numerical oracle.
     - name: Run the Swift Forge conformance gate
       run: scripts/gate forge-swift

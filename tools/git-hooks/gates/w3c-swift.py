@@ -5,10 +5,11 @@
 # ("One file per gate" in tools/git-hooks/gate_table.py).
 #
 # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
-# suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
-# the same job, as `mutation-cases` rides `tree-hygiene.yml`, because what the two need is the
-# same: the generator built, the pinned toolchain installed and checked against its digest.
-# A job of its own would repeat those steps and pay for them twice.
+# suite and the engine runs it. It rides the workflow of `swift-backend` as the first step of
+# the `swift-machines` job, with `ecma262-lowered-swift` and `forge-swift`, because what the
+# three need is the same: the generator built, the pinned toolchain installed and checked
+# against its digest. The `swift-backend` gate's parts run in jobs of their own beside it
+# (`SCE_SWIFT_BACKEND_SHARD`), so the three gates no longer wait for its twenty minutes.
 #
 # `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin,
 # and the gate fails loudly without it. An update to main runs it where bx placed it.

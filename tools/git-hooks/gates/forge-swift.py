@@ -5,8 +5,9 @@
 # ("One file per gate" in tools/git-hooks/gate_table.py).
 #
 # The Swift twin of `forge-kotlin`: the forge runtime's own tests and every unit the generator
-# writes for a forge document, held to the numerical oracle. A fourth step of the same job as
-# `swift-backend`, `w3c-swift` and `ecma262-lowered-swift`, for the same reason. It takes the
+# writes for a forge document, held to the numerical oracle. A step of the `swift-machines`
+# job of `swift-backend.yml` after `w3c-swift` and `ecma262-lowered-swift`, for the same
+# reason. It takes the
 # `forge-<canonical name>` slug the `swift-backend` entry said it would, now that Swift writes
 # forge kinds in part and holds what it writes to the oracle; the queue and broadcast-log
 # history checks the other arms make are read here when Swift has those kinds.
