@@ -17,15 +17,16 @@
 # one, and none was executed. So of 382 registered cases, 223 ran and 159 —
 # 114 of them `mesh_*`, including all 19 zenoh cases, plus twenty-four C++ unit
 # suites — were run by nothing at all. Not by a gate, and not by CI either: no
-# workflow configures the main tree, and the C++ conformance job builds the
+# workflow configured the main tree, and the C++ conformance job built the
 # single `w3c_test_cli` target.
 #
 # `-L c11` and `-LE c11` are exact complements, so the pair of gates covers the
 # registered set with no third list to keep current — that partition is
 # asserted below and pinned by `sce-build/tests/ctest_lane_partition.rs`. The
-# W3C C++ cases are not in it: they are not ctest cases at all, they are the
-# 404 the `w3c-cpp` binary runs, so nothing here is a second spelling of a run
-# another gate already makes.
+# C++ W3C programs, one per test number, and the interactive suite carry the
+# label `w3c_cpp` and not `c11`, so they are in this half too: this gate runs
+# them with the rest of the tree, and `w3c-cpp` runs that label alone, as the
+# conformance lane that publishes their reports.
 #
 # SHARDED, when `SCE_CTEST_SHARD=k/N` asks for one part: cpp-suite.yml runs the
 # suite as N jobs, since its build outgrew one hosted job (job 138540727626, on

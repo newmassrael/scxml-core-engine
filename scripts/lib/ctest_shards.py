@@ -3,13 +3,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The shards of a ctest suite: which tests of a configured tree one job of a
-# lane builds and runs. Three gates run their suite this way, each with its
+# lane builds and runs. Five gates run their suite this way, each with its
 # own selection of the tests its tree registers and its own variable:
 #
-#   gate            tree                selection  variable                  lane
-#   cpp-suite       build               -LE c11    SCE_CTEST_SHARD           cpp-suite.yml
-#   w3c-c11         build               -L c11     SCE_W3C_C11_SHARD         w3c-tests.yml
-#   cpp-suite-wasm  build_wasm          (every)    SCE_CPP_SUITE_WASM_SHARD  cpp-suite.yml
+#   gate            tree                selection    variable                  lane
+#   cpp-suite       build               -LE c11      SCE_CTEST_SHARD           cpp-suite.yml
+#   w3c-c11         build               -L c11       SCE_W3C_C11_SHARD         w3c-tests.yml
+#   w3c-cpp         build               -L w3c_cpp   SCE_W3C_CPP_SHARD         w3c-tests.yml
+#   w3c-wasm        build_wasm,         -L w3c_cpp   SCE_W3C_WASM_SHARD        w3c-tests.yml
+#                   build_wasm_web      (one tree, SCE_W3C_WASM_TREE)
+#   cpp-suite-wasm  build_wasm          (every)      SCE_CPP_SUITE_WASM_SHARD  cpp-suite.yml
 #
 # Unset, each gate builds its whole suite and runs it, which is what the build
 # machines and a developer run. The plan's form and `verify` also serve the

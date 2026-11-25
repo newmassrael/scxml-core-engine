@@ -8959,7 +8959,8 @@ add_test(NAME SCESCXMLTests COMMAND sce_scxml_tests)
 add_test(NAME ReadySCXMLEngineTests COMMAND ready_scxml_engine_tests)
 add_test(NAME TimerManagerTests COMMAND timer_manager_tests)
 add_test(NAME GameLoopTimerTests COMMAND game_loop_timer_tests)
-add_test(NAME ComprehensiveInteractiveTests COMMAND comprehensive_interactive_test)
+# ComprehensiveInteractiveTests is registered beside its program, in
+# w3c/W3CPrograms.cmake, so the tree without threads registers it too.
 
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
@@ -8971,17 +8972,12 @@ add_test(NAME IntegrationTests COMMAND integration_tests)
 # skips that case.
 set_tests_properties(IntegrationTests PROPERTIES ENVIRONMENT "SCE_CODEGEN_BIN=${SCE_CODEGEN}")
 
-# Priority Level 4: W3C SCXML compliance validation (comprehensive validation, ~40s)
-# WASM: the same registry set and generated AOT headers, run under Node
-# Native: Full test suite including HTTP tests with txml-converter
-#
-# The target is the command in both trees. Under emscripten ctest runs it
-# through CMAKE_CROSSCOMPILING_EMULATOR (Node), as it runs every other test
-# program here, and the command names the program by its full path, which is
-# what a shard of the suite (scripts/lib/ctest_shards.py) reads to know what to
-# build. Spelled `node w3c_test_cli.js`, it named a file relative to the
-# working directory, and a shard holding this test built no runner for it.
-add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
+# Priority Level 4: W3C SCXML compliance validation. Each test number's
+# program is its own ctest, `w3c_cpp_<number>`, registered in
+# w3c/W3CPrograms.cmake under the label `w3c_cpp`, natively and in both
+# emscripten trees alike. The tests below hold the runner's own reporting,
+# each through the program of the fixture it runs (the AOT machines a program
+# holds are its own number's; its Interpreter runs any fixture).
 
 # A run whose BasicHTTP listener cannot bind must say so: the test is an ERROR
 # on both engines and the run exits 1. One run reported 380 of 404 tests, all
@@ -8989,15 +8985,17 @@ add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
 # runner logged the listener's exception and made no report. The wrapper holds
 # a kernel-assigned port and points SCE_W3C_HTTP_PORT at it, so it collides
 # with nothing else on the host. The fixture it runs is the first the registry
-# runs under its `http` harness (W3C_HTTP_TEST_IDS). Not under
-# ThreadSanitizer, where the HTTP tests are skipped on both engines
-# (W3CTestRunner::tsanSkipReport).
+# runs under its `http` harness (W3C_HTTP_TEST_IDS), in the program of its
+# test number. Not under ThreadSanitizer, where the HTTP tests are skipped on
+# both engines (W3CTestRunner::tsanSkipReport).
 if(Python3_FOUND AND NOT EMSCRIPTEN AND NOT ENABLE_TSAN AND W3C_HTTP_TEST_IDS)
     list(GET W3C_HTTP_TEST_IDS 0 _W3C_UNBINDABLE_LISTENER_FIXTURE)
+    string(REGEX MATCH "^[0-9]+" _W3C_UNBINDABLE_LISTENER_NUMBER "${_W3C_UNBINDABLE_LISTENER_FIXTURE}")
     add_test(NAME W3CUnbindableListenerReportsErrors
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_unbindable_listener_errors.py"
-                "$<TARGET_FILE:w3c_test_cli>" "${_W3C_UNBINDABLE_LISTENER_FIXTURE}"
+                "$<TARGET_FILE:w3c_cpp_test_${_W3C_UNBINDABLE_LISTENER_NUMBER}>"
+                "${_W3C_UNBINDABLE_LISTENER_FIXTURE}"
     )
     set_tests_properties(W3CUnbindableListenerReportsErrors PROPERTIES TIMEOUT 300)
 endif()
@@ -9008,7 +9006,8 @@ endif()
 # the runs it made. The AOT reports once reached the XML reporter only where
 # the CLI handed them over in the run of every test. The fixtures are the
 # first test number the registry runs as variants (403 as 403a, 403b, 403c),
-# read from W3C_AOT_TESTS, so the variant suffix is in every name checked.
+# read from W3C_AOT_TESTS, so the variant suffix is in every name checked, and
+# the program run is that number's, which holds the AOT machine of each.
 set(_W3C_VARIANT_NUMBER "")
 foreach(_w3c_id IN LISTS W3C_AOT_TESTS)
     if(_w3c_id MATCHES "^([0-9]+)[a-z]$")
@@ -9026,7 +9025,7 @@ if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_IDS)
     add_test(NAME W3COneReporterForBothEngines
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_one_reporter_for_both_engines.py"
-                "$<TARGET_FILE:w3c_test_cli>" "${_W3C_VARIANT_NUMBER}" ${_W3C_VARIANT_IDS}
+                "$<TARGET_FILE:w3c_cpp_test_${_W3C_VARIANT_NUMBER}>" "${_W3C_VARIANT_NUMBER}" ${_W3C_VARIANT_IDS}
     )
     set_tests_properties(W3COneReporterForBothEngines PROPERTIES TIMEOUT 300)
 endif()
@@ -9041,12 +9040,15 @@ endif()
 # list each test once per iteration, named "Test_<id>@<iteration>": the run
 # of every fixture once began a new test run per iteration and dropped the
 # ones before it. The fixtures are every one the registry runs
-# (W3C_AOT_TESTS), the variant number the one found above.
+# (W3C_AOT_TESTS), the variant number the one found above, and the program the
+# variant number's: the repeated run of the variants needs their AOT machines,
+# and every other run here is on the Interpreter, which runs any fixture.
 if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_NUMBER)
     add_test(NAME W3CSkipsAndRepeatsReported
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_skips_and_repeats_reported.py"
-                "$<TARGET_FILE:w3c_test_cli>" "${CMAKE_SOURCE_DIR}/resources" "${_W3C_VARIANT_NUMBER}"
+                "$<TARGET_FILE:w3c_cpp_test_${_W3C_VARIANT_NUMBER}>" "${CMAKE_SOURCE_DIR}/resources"
+                "${_W3C_VARIANT_NUMBER}"
                 ${W3C_AOT_TESTS}
     )
     set_tests_properties(W3CSkipsAndRepeatsReported PROPERTIES TIMEOUT 900)
@@ -9074,9 +9076,6 @@ set_tests_properties(ComprehensiveInteractiveTests PROPERTIES COST 4000)
 set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
 set_tests_properties(ConcurrencyTests PROPERTIES COST 3000)
 set_tests_properties(IntegrationTests PROPERTIES COST 3000)
-
-# Priority Level 4: COST 2500 (W3C SCXML compliance validation, higher priority than benchmarks)
-set_tests_properties(W3CFullComplianceTests PROPERTIES COST 2500)
 
 # SSOT byte-equivalence harness — Rust vs C++ `sce:template`
 # expansion parity. Skipped on WASM because the harness spawns
@@ -9113,9 +9112,7 @@ set_tests_properties(StatesTests PROPERTIES DEPENDS "StateMachineTests")
 set_tests_properties(IntegrationTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests;ActionTests")
 set_tests_properties(ConcurrencyTests PROPERTIES DEPENDS "StateMachineTests;StatesTests")
 
-# W3C tests run after all basic functionality is validated
 set_tests_properties(TXMLConverterTests PROPERTIES DEPENDS "CoreParserTests")
-set_tests_properties(W3CFullComplianceTests PROPERTIES DEPENDS "IntegrationTests;TXMLConverterTests")
 
 # Test timeout configuration (in seconds)
 set_tests_properties(SCESCXMLTests PROPERTIES TIMEOUT 30)
@@ -9126,11 +9123,8 @@ set_tests_properties(JSEngineTests CoreParserTests StateMachineTests PROPERTIES 
 set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)
 set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)
 set_tests_properties(TXMLConverterTests PROPERTIES TIMEOUT 120)
-set_tests_properties(W3CFullComplianceTests PROPERTIES TIMEOUT 300)
-set_tests_properties(ComprehensiveInteractiveTests PROPERTIES TIMEOUT 600)
 
 # Limit parallel execution (resource-intensive tests)
-set_tests_properties(W3CFullComplianceTests PROPERTIES RUN_SERIAL TRUE)
 set_tests_properties(ConcurrencyTests PROPERTIES RUN_SERIAL TRUE)
 
 # Apply SCE policy to all test targets

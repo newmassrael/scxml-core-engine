@@ -14,6 +14,11 @@
 # runs its cases. That run is not the lane's: it takes the committed tree
 # in the test profile, while the lane regenerates and runs in release. So
 # the lane kept its own inline spelling, and it is `w3c-rust` now.
+#
+# Its script runs one shard of the suite when SCE_W3C_CPP_SHARD names `k/N`,
+# as w3c-tests.yml's six jobs do (scripts/lib/ctest_shards.py plans the part
+# and builds only the W3C programs its tests run). No `shard_env`: the build
+# machines run it whole, as they run `cpp-suite`.
 {
     "workflows": ["w3c-tests.yml"],
     "builds": ["main-tree"],
@@ -29,7 +34,13 @@
               # through, and the one the test tree takes the warning
               # classes its test programs turn off from.
               "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
-              "cmake/SCECodegenPlan.cmake", "cmake/SCETestWarnings.cmake"],
+              "cmake/SCECodegenPlan.cmake", "cmake/SCETestWarnings.cmake",
+              # What spreads the suite over the lane's shards and the
+              # reading of the tree it plans from, which the gate script
+              # runs, and the mock the runner core compiles.
+              "scripts/lib/ctest_shards.py",
+              "scripts/lib/ctest_registered_commands.cmake",
+              "tests/mocks/**"],
     "deps": ["codegen-build"],
     "ci_only": "55s, and it is the gate that decides whether the budget "
                "is met on a good run or on every run. Without it the set "

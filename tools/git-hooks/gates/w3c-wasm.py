@@ -21,6 +21,13 @@
 # threaded engine's and the host-driven engine's (the browser's), so a run
 # does that work twice and `cost_s` is twice the sum above: still a sum,
 # still not a timing of the script.
+#
+# Since 2026-11-25 the W3C runner is one program per test number, each a
+# link of its own, so the figures above, taken of one program, no longer
+# describe the work. Its script runs one tree when SCE_W3C_WASM_TREE names
+# it and one shard of that tree's suite when SCE_W3C_WASM_SHARD names `k/N`,
+# as w3c-tests.yml's jobs do (two trees, four shards each). No
+# `shard_env`: the build machines run it whole.
 {
     "workflows": ["w3c-tests.yml"],
     "builds": ["main-tree"],
@@ -36,6 +43,11 @@
     # generator and its templates, and the documents. And the emsdk pin
     # the build machines install it with (`scripts/install_emsdk.sh`).
     "extra": ["scripts/install_emsdk.sh",
+              # What spreads a tree's suite over the lane's shards and the
+              # reading of the tree it plans from, which the gate script
+              # runs.
+              "scripts/lib/ctest_shards.py",
+              "scripts/lib/ctest_registered_commands.cmake",
               "sce/**", "tests/w3c/**", "tests/mocks/**",
               "tests/CMakeLists.txt", "CMakeLists.txt", "cmake/**",
               "tools/codegen/templates/**", "sce-build/src/**",
@@ -48,7 +60,8 @@
                "trigger usually finds them in, and it needs emsdk, which "
                "a push host is not required to carry. w3c-tests.yml "
                "declares no `paths:` filter, so CI runs this arm on every "
-               "push, in a job of its own (`test-cpp-wasm`).",
+               "push, in jobs of its own (`test-cpp-wasm-shard`, one per "
+               "tree and shard).",
     "cost_s": 226,
     "summary": "W3C conformance and the interactive suite, C++ "
                "Interpreter + AOT built with emscripten, under Node, on "

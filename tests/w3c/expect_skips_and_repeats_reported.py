@@ -2,10 +2,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """A manual fixture is judged, a skip is reported as a skip, and a repeated run keeps every iteration.
 
-Usage: expect_skips_and_repeats_reported.py <w3c_test_cli> <resources dir> <variant number> <fixture id>...
+Usage: expect_skips_and_repeats_reported.py <runner> <resources dir> <variant number> <fixture id>...
 
-The fixture ids are every fixture the build registers; the variant number is a
-test number whose fixtures are variants (403 for 403a 403b 403c). Each run is
+The runner is the W3C program of the variant number (`w3c_cpp_test_<number>`,
+tests/w3c/W3CPrograms.cmake): the repeated run of the variants needs their AOT
+machines, which it holds, and every other run here is on the Interpreter,
+which runs any fixture. The fixture ids are every fixture the build registers;
+the variant number is a test number whose fixtures are variants (403 for 403a
+403b 403c). Each run is
 made in a directory of its own, and the XML report it writes there is read.
 
 Manual verdicts. A fixture whose metadata says `manual: True` names an

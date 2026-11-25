@@ -25,8 +25,9 @@
 //! the other copy that went: what a machine links is the generator's
 //! statement (`a_c11_machine_includes_what_it_states_it_requires`).
 //!
-//! The C++ route has one runner, `w3c_test_cli`, built natively and under
-//! Emscripten, and the WASM build was the third copy. Its configure was
+//! The C++ route's runners, one program per test number
+//! (`w3c_cpp_test_<number>`), are built natively and under Emscripten, and
+//! the WASM build was the third copy. Its configure was
 //! fenced off from the registration ("WASM cannot run sce-codegen") and read
 //! the set back out of a CMake list the native configure wrote into the
 //! source tree's `build/`, and the machines out of that native build tree:
@@ -401,9 +402,12 @@ fn a_link_stated_by_hand_is_refused() {
 /// variables a registration accumulates into its caller's scope.
 const CPP_ROUTE_MODULE: &str = "cmake/SCEStaticW3CTest.cmake";
 
-/// The runner the C++ route registers its fixtures for, built natively and
-/// under Emscripten from the one CMake file.
-const CPP_RUNNER: &str = "w3c_test_cli";
+/// The programs the C++ route registers its fixtures for, one per test number
+/// (`w3c_cpp_test_<number>`), built natively and under Emscripten from the one
+/// CMake file, by the name every one of them begins with: the route declares
+/// them in one `add_executable(w3c_cpp_test_${...} ...)` in a loop over the
+/// test numbers.
+const CPP_PROGRAM: &str = "w3c_cpp_test_";
 
 /// The CMake list the native configure used to write into the source tree
 /// for the WASM configure to `include()`. Spelled here because it is gone
@@ -515,7 +519,7 @@ fn accumulated_variables(module: &str, function: &str) -> Vec<String> {
     found
 }
 
-/// Every way `tree` lets the WASM build of [`CPP_RUNNER`] take its fixtures,
+/// Every way `tree` lets the WASM build of the [`CPP_PROGRAM`]s take their fixtures,
 /// or their machines, from anywhere but where the native build takes them:
 /// the inclusion of the route module, the reading of the registry, the
 /// prefetch of the plans, every registration, and every assignment of a
@@ -529,8 +533,8 @@ fn accumulated_variables(module: &str, function: &str) -> Vec<String> {
 fn wasm_fork_violations(tree: &str, module: &str, registration: &str) -> Vec<String> {
     let mut found = Vec::new();
     let structure = strings_blanked(&cmake_code(tree));
-    let Some(runner_at) = structure.find(&format!("add_executable({CPP_RUNNER}")) else {
-        found.push(format!("no `add_executable({CPP_RUNNER} ...)`"));
+    let Some(runner_at) = structure.find(&format!("add_executable({CPP_PROGRAM}")) else {
+        found.push(format!("no `add_executable({CPP_PROGRAM}<number> ...)`"));
         return found;
     };
     let expected = emscripten_branches_at(&structure, runner_at);
@@ -607,9 +611,9 @@ fn wasm_fork_violations(tree: &str, module: &str, registration: &str) -> Vec<Str
         let branches = emscripten_branches_at(&structure, at);
         if branches != expected {
             found.push(format!(
-                "{what} at line {} is configured under {branches:?}, and `{CPP_RUNNER}` under \
-                 {expected:?}: one toolchain's runner would take its fixtures from somewhere \
-                 else",
+                "{what} at line {} is configured under {branches:?}, and `{CPP_PROGRAM}<number>` \
+                 under {expected:?}: one toolchain's runner would take its fixtures from \
+                 somewhere else",
                 line_of(&structure, at)
             ));
         }
@@ -627,8 +631,9 @@ fn the_wasm_build_reads_the_set_the_native_build_reads() {
     );
     assert!(
         found.is_empty(),
-        "{} does not register and generate the fixtures of `{CPP_RUNNER}` under the \
-         toolchains it builds `{CPP_RUNNER}` under:\n  {}\nThe generator is a host program: \
+        "{} does not register and generate the fixtures of `{CPP_PROGRAM}<number>` under \
+         the toolchains it builds `{CPP_PROGRAM}<number>` under:\n  {}\nThe generator is a \
+         host program: \
          a cross build runs it at configure and at build time as a native one does.",
         route.file,
         found.join("\n  ")
@@ -645,7 +650,6 @@ fn a_wasm_branch_with_a_set_of_its_own_is_refused() {
     let registered = format!(
         "include(${{CMAKE_SOURCE_DIR}}/{CPP_ROUTE_MODULE})\n\
          set(STATIC_W3C_OUTPUT_DIR \"${{CMAKE_CURRENT_BINARY_DIR}}/w3c_static_generated\")\n\
-         set(GENERATED_W3C_HEADERS \"\")\n\
          set(W3C_AOT_TESTS \"\")\n\
          sce_w3c_registry_fixtures(_IDS _HARNESS_OF_)\n\
          sce_prefetch_static_w3c_tests(\"${{STATIC_W3C_OUTPUT_DIR}}\" cpp ${{_IDS}})\n\
@@ -657,7 +661,7 @@ fn a_wasm_branch_with_a_set_of_its_own_is_refused() {
         "if(EMSCRIPTEN)\n\
          \x20   message(\"if(NOT EMSCRIPTEN) is text\")\n\
          endif()\n\
-         add_executable({CPP_RUNNER} ${{GENERATED_W3C_HEADERS}})\n"
+         add_executable({CPP_PROGRAM}${{_NUMBER}} ${{_SOURCES}})\n"
     );
 
     let derived = format!("# if(NOT EMSCRIPTEN)\n{registered}{runner}");
@@ -677,8 +681,7 @@ fn a_wasm_branch_with_a_set_of_its_own_is_refused() {
     for refused in [
         "`sce_w3c_registry_fixtures(`",
         "`W3C_AOT_TESTS`",
-        "`GENERATED_W3C_HEADERS`",
-        "`STATIC_W3C_OUTPUT_DIR` at line 13",
+        "`STATIC_W3C_OUTPUT_DIR` at line 12",
     ] {
         assert!(
             found.iter().any(|v| v.contains(refused)),

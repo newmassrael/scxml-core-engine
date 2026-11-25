@@ -2,10 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """Both engines report through the one reporter, under each fixture's full ID.
 
-Usage: expect_one_reporter_for_both_engines.py <w3c_test_cli> <test number> <variant id>...
+Usage: expect_one_reporter_for_both_engines.py <runner> <test number> <variant id>...
 
-The test number must be one whose fixtures are variants, and the variant ids
-all of them (403 with 403a 403b 403c). This runs the CLI four ways, each in a
+The runner is the W3C program of that test number (`w3c_cpp_test_<number>`,
+tests/w3c/W3CPrograms.cmake), which holds the AOT machine of each of its
+variants. The test number must be one whose fixtures are variants, and the
+variant ids all of them (403 with 403a 403b 403c). This runs the CLI four ways, each in a
 directory of its own, and reads the XML report each run writes there:
 
 - the test number on both engines: every variant is listed once in the

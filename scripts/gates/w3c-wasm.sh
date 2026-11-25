@@ -4,12 +4,13 @@
 #
 # Mirrors: w3c-tests.yml
 #
-# The W3C runner built with emscripten and run under Node: the same 404 cases
-# `w3c-cpp` runs natively (Interpreter and AOT), then the interactive suite
-# that steps every fixture forward, back and to its reset.
+# The C++ W3C programs built with emscripten and run under Node: the same 404
+# cases `w3c-cpp` runs natively (Interpreter and AOT), one program per test
+# number, and the interactive suite that steps every fixture forward, back and
+# to its reset — the ctest label `w3c_cpp` (tests/w3c/W3CPrograms.cmake).
 #
-# Both, in both emscripten trees (lib.sh, the two emscripten trees), because
-# the engine is a different one in each (sce/include/common/ThreadSupport.h):
+# In both emscripten trees (lib.sh, the two emscripten trees), because the
+# engine is a different one in each (sce/include/common/ThreadSupport.h):
 #
 #   build_wasm      threads: the threaded engine, the one the native build runs
 #   build_wasm_web  no threads: the host-driven engine, the one the browser
@@ -27,10 +28,18 @@
 # link only to a BasicHTTP answer that lost its data, each invisible to every
 # native build. A route nothing checks rots again; this is the check.
 #
-# Both programs are judged by what they print and write, not by the status
-# alone. The W3C runner is judged by the rules `w3c-cpp` uses for the native
-# one (`sce_gate_judge_w3c_report`). The interactive suite's summary lines are
-# read as well as its status.
+# Every run is judged by what the programs write as well as by how they exit,
+# by the rules `w3c-cpp` uses natively (`sce_gate_w3c_cpp_suite`, lib.sh).
+#
+# ONE TREE, when `SCE_W3C_WASM_TREE` names it (`threaded` or `host-driven`),
+# and ONE SHARD of that tree's suite, when `SCE_W3C_WASM_SHARD=k/N` asks for
+# one: w3c-tests.yml runs each tree as N jobs, since each tree spent about 22
+# minutes building the one program that held every fixture and a minute
+# running it (job 138891691350), and the two trees ran one after the other.
+# scripts/lib/ctest_shards.py plans the part as `w3c-cpp` plans its own, and
+# the lane's last job holds each tree's parts together. Unset, the gate builds
+# and runs every test of the label in both trees, which is what the build
+# machines and a developer run.
 #
 # Skip-capable: emscripten (and the Node it ships) is a toolchain a developer
 # may not have. The lane sets SCE_REQUIRE_TOOLS, so the skip that keeps a local
@@ -43,82 +52,84 @@ sce_gate_requires_tool emcmake emsdk || exit 0
 sce_gate_requires_tool node emsdk || exit 0
 
 # The fixture listener is started by the program's own Node host
-# (tests/w3c/wasm_polyfill.js), for both programs, on the port SCE_W3C_HTTP_PORT
+# (tests/w3c/wasm_polyfill.js), for every program, on the port SCE_W3C_HTTP_PORT
 # names or else one the kernel assigns; the host then sets SCE_W3C_HTTP_PORT to
 # the port it bound, and the program reads it from the host's environment, which
-# NODERAWFS makes the program's own. No port need be free.
+# NODERAWFS makes the program's own. No port need be free, and programs run side
+# by side each start their own.
 
 # The configure asks the generator for its plans and refuses a stale one.
 sce_gate_codegen >/dev/null \
     || sce_gate_fail "could not provide sce-codegen, which configuring the emscripten trees requires"
 
-# Configure one tree, build the two programs in it, run both and judge them.
-#   $1  the build directory
-#   $2  the function that configures it (lib.sh)
-#   $3  the engine it builds, for the messages
-w3c_wasm_run_tree() {
-    local dir="$1" configure="$2" engine="$3"
+case "${SCE_W3C_WASM_TREE:-}" in
+    "") TREES=(threaded host-driven) ;;
+    threaded | host-driven) TREES=("$SCE_W3C_WASM_TREE") ;;
+    *) sce_gate_fail "SCE_W3C_WASM_TREE is '$SCE_W3C_WASM_TREE', which names neither tree (threaded, host-driven)" ;;
+esac
+# A shard is a part of one tree's suite: the two trees plan apart.
+if [[ -n "${SCE_W3C_WASM_SHARD:-}" && -z "${SCE_W3C_WASM_TREE:-}" ]]; then
+    sce_gate_fail "SCE_W3C_WASM_SHARD names a shard of one tree's suite, and SCE_W3C_WASM_TREE names no tree"
+fi
 
-    sce_gate_step "configuring $dir (emscripten, $engine engine, Release)"
+# Configure one tree, then build, run and judge its suite, whole or the shard
+# SCE_W3C_WASM_SHARD names.
+#   $1  the tree: threaded or host-driven
+w3c_wasm_run_tree() {
+    local tree="$1" dir configure
+    case "$tree" in
+        threaded) dir="$SCE_WASM_BUILD_DIR" configure=sce_gate_configure_wasm_tree ;;
+        host-driven) dir="$SCE_WASM_WEB_BUILD_DIR" configure=sce_gate_configure_wasm_web_tree ;;
+    esac
+
+    sce_gate_step "configuring $dir (emscripten, $tree engine, Release)"
     "$configure" \
         || sce_gate_fail "WASM emcmake configure ($dir)"
-
-    sce_gate_step "building w3c_test_cli and comprehensive_interactive_test ($dir)"
-    sce_gate_build "$dir" --target w3c_test_cli comprehensive_interactive_test \
-        || sce_gate_fail "WASM build of w3c_test_cli and comprehensive_interactive_test ($dir)"
-
-    # Each program writes into the directory it is started from, which is the
-    # build tree's (gitignored): the runner its `w3c_test_results.xml`, the
-    # `.html` beside it and `w3c_failed_test_logs/`, and this gate the two run
-    # logs. The runner's three are removed first, so a run that dies before
-    # writing cannot be judged by the report of an earlier one.
-    local run_dir="$dir/tests"
-    rm -rf "$run_dir/w3c_test_results.xml" "$run_dir/w3c_test_results.html" \
-        "$run_dir/w3c_failed_test_logs"
-
-    sce_gate_step "running the W3C conformance suite under Node, $engine engine (Interpreter + AOT)"
-    local status=0
-    sce_gate_tested --quiet --log "$run_dir/w3c_wasm_output.log" --cwd "$run_dir" \
-        --first "${SCE_GATE_TREES[$dir]:-}" \
-        --first "cmake --build $dir --target w3c_test_cli comprehensive_interactive_test" \
-        -- node w3c_test_cli.js || status=$?
+    sce_prune_ctest_temporaries "$dir"
 
     # The floor is the native suite's: the WASM configure registers the same
-    # set from the same registry, 404 cases today.
-    sce_gate_judge_w3c_report "$run_dir/w3c_test_results.xml" \
-        "$run_dir/w3c_wasm_output.log" "$status" 400
-    sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed, $SCE_GATE_W3C_SKIPPED skipped, under Node, $engine engine"
+    # set from the same registry, 200 test numbers and the interactive suite.
+    local registered
+    registered="$(ctest --test-dir "$dir" -N -L w3c_cpp | grep -cE '^ *Test +#' || true)"
+    sce_gate_step "registered w3c_cpp tests in $dir: $registered"
+    if (( registered < 200 )); then
+        sce_gate_fail "only $registered w3c_cpp test(s) registered in $dir (expected at least 200) — the gate would report on a smaller set than its name claims"
+    fi
 
-    sce_gate_step "running the interactive suite under Node, $engine engine"
-    local log="$run_dir/comprehensive_interactive_wasm_output.log"
-    status=0
-    ( cd "$run_dir" && node comprehensive_interactive_test.js ) >"$log" 2>&1 || status=$?
+    # One shard of this tree's suite, planned as `w3c-cpp` plans its own
+    # (`--expect` holds the helper to the count above).
+    local plan="" plan_status=0
+    if [[ -n "${SCE_W3C_WASM_SHARD:-}" ]]; then
+        plan="$dir/ctest-shard-w3c-wasm"
+        rm -rf "$plan"
+        python3 scripts/lib/ctest_shards.py plan --build "$dir" --label w3c_cpp \
+            --expect "$registered" --out "$plan" "$SCE_W3C_WASM_SHARD" || plan_status=$?
+        case "$plan_status" in
+            0) ;;
+            3) sce_gate_cannot_run "scripts/lib/ctest_shards.py could not plan shard $SCE_W3C_WASM_SHARD of $dir on this machine (above)" ;;
+            *) sce_gate_fail "scripts/lib/ctest_shards.py refused to plan shard $SCE_W3C_WASM_SHARD of $dir (above)" ;;
+        esac
+        if (( $(grep -c . "$plan/tests" || true) == 0 )); then
+            python3 scripts/lib/ctest_shards.py report --out "$plan" --executed 0 --disabled 0
+            sce_gate_step "shard $SCE_W3C_WASM_SHARD of $dir holds no test; the other shards run the suite"
+            return 0
+        fi
+    fi
 
-    # GoogleTest's summary: `[  PASSED  ] <n> tests.`, and a `[  FAILED  ]`
-    # line per failing test. Read as well as the status, so the verdict is the
-    # suite's own account of its cases and not only how Node ended.
-    #
-    # 928 pass today and 75 are skipped by design. The floor stands under the
-    # 928 so a run that loaded fewer fixtures (each one it cannot find is a
-    # skip, not a failure) is refused rather than reported as a smaller green
-    # suite.
-    if grep -q '^\[  FAILED  ]' "$log"; then
-        grep '^\[  FAILED  ]' "$log" | head -n 20 >&2 || true
-        sce_gate_fail "the interactive suite reported failing tests under Node ($engine engine)"
+    # The joined report and the ctest log go into the tree's tests directory
+    # (gitignored), where the lane uploads them from.
+    sce_gate_w3c_cpp_suite "$dir" "$plan" "$dir/tests" \
+        "$dir, the $tree engine, under Node${plan:+ (shard $SCE_W3C_WASM_SHARD)}"
+    sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed, $SCE_GATE_W3C_SKIPPED skipped, under Node, $tree engine${plan:+, shard $SCE_W3C_WASM_SHARD}"
+
+    # What this shard ran, for the lane's last job to hold beside the other
+    # shards' of the tree (`ctest_shards.py verify`).
+    if [[ -n "$plan" ]]; then
+        python3 scripts/lib/ctest_shards.py report --out "$plan" \
+            --executed "$SCE_GATE_W3C_EXECUTED" --disabled 0
     fi
-    if (( status != 0 )); then
-        tail -n 30 "$log" >&2
-        sce_gate_fail "the interactive suite exited $status under Node ($engine engine) while it reported no failing test"
-    fi
-    local passed
-    passed="$(sed -n '/^\[  PASSED  ] [0-9]\{1,\} tests\{0,1\}\./{s/^\[  PASSED  ] \([0-9]\{1,\}\).*/\1/p;q;}' "$log")"
-    passed="${passed:-0}"
-    if (( passed < 900 )); then
-        tail -n 30 "$log" >&2
-        sce_gate_fail "only $passed interactive test(s) passed under Node ($engine engine; expected at least 900) — the suite covered less than its name claims"
-    fi
-    sce_gate_step "$passed interactive test(s) passed under Node, $engine engine"
 }
 
-w3c_wasm_run_tree "$SCE_WASM_BUILD_DIR" sce_gate_configure_wasm_tree threaded
-w3c_wasm_run_tree "$SCE_WASM_WEB_BUILD_DIR" sce_gate_configure_wasm_web_tree host-driven
+for tree in "${TREES[@]}"; do
+    w3c_wasm_run_tree "$tree"
+done

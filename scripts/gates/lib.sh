@@ -838,10 +838,12 @@ sce_main_build_dir() {
     fi
 }
 
-# Judge a run of the W3C runner (`w3c_test_cli`) by both of its verdicts: the
-# JUnit report it wrote and the status it exited with.
+# Judge a run of the W3C runner by both of its verdicts: the JUnit report it
+# wrote and the status it exited with. The runner is the C++ W3C programs, one
+# per test number, whose reports `sce_gate_w3c_cpp_suite` (below) joins into
+# one, and the status is theirs.
 #
-# Two runs of the one runner are judged this way, the native build (`w3c-cpp`)
+# Two builds of the one runner are judged this way, the native build (`w3c-cpp`)
 # and the emscripten build under Node (`w3c-wasm`), and the rules are the
 # runner's rather than either gate's, so they are written once.
 #
@@ -909,6 +911,143 @@ sce_gate_judge_w3c_report() {
 
 _sce_gate_w3c_report_attr() {
     sed -n "/[^a-z]$2=\"[0-9]\{1,\}\"/{s/.*[^a-z]$2=\"\([0-9]\{1,\}\)\".*/\1/p;q;}" "$1"
+}
+
+# ── The C++ W3C programs of one tree ──────────────────────────────────
+#
+# tests/w3c/W3CPrograms.cmake declares, in every tree that includes it (the
+# main tree and both emscripten trees), one program per W3C test number,
+# `w3c_cpp_test_<number>`, registered as the ctest `w3c_cpp_<number>`, and the
+# interactive suite, registered as `ComprehensiveInteractiveTests`, all under
+# the label `w3c_cpp`. `w3c-cpp` runs them in the main tree and `w3c-wasm` in
+# each emscripten tree, the whole label or one shard of it
+# (scripts/lib/ctest_shards.py), and both judge a run here, by one set of rules:
+#
+#   - every test the run selected ran (ctest's count against the selection's);
+#   - each W3C program wrote its JUnit report into its own run directory
+#     (`<tree>/tests/w3c_runs/<number>/`), every report lists each fixture of
+#     its test number once on each engine, and a run of the whole label covers
+#     every fixture of the registry (tests/w3c/scripts/w3c_reports.py
+#     `collect`); the reports are joined into one, which
+#     `sce_gate_judge_w3c_report` judges with the W3C programs' own status;
+#   - the interactive suite, when the run holds it, passed, and its GoogleTest
+#     report counts at least SCE_GATE_W3C_INTERACTIVE_FLOOR passing cases: a
+#     fixture it cannot load is a skip, not a failure, so a suite that loaded
+#     fewer would still exit 0. 928 pass today and 75 are skipped by design.
+#
+# Usage: sce_gate_w3c_cpp_suite <build dir> <plan dir> <report dir> <what>
+#   <plan dir>    the shard ctest_shards.py planned into, or "" for the label
+#                 whole (which builds `w3c_cpp_tests`, every program of it)
+#   <report dir>  where the joined report (w3c_test_results.xml), the ctest log
+#                 (w3c_test_output.log) and the list of the tests run go
+#   <what>        the tree and the shard, for the messages
+# Fails the gate on any finding; on a pass it sets SCE_GATE_W3C_EXECUTED to the
+# number of tests that ran, and SCE_GATE_W3C_CASES and SCE_GATE_W3C_SKIPPED as
+# `sce_gate_judge_w3c_report` does.
+SCE_GATE_W3C_INTERACTIVE_FLOOR=900
+SCE_GATE_W3C_EXECUTED=0
+sce_gate_w3c_cpp_suite() {
+    local dir="$1" plan="$2" report="$3" what="$4"
+    local tests_file targets=() selection=() line expected
+    mkdir -p "$report"
+    report="$(cd "$report" && pwd)"
+    tests_file="$report/w3c_cpp_tests"
+    # A run that dies before it joins must not leave an earlier run's report
+    # to be read as its own.
+    rm -f "$report/w3c_test_results.xml" "$report/w3c_test_output.log" "$tests_file"
+
+    if [[ -n "$plan" ]]; then
+        cp "$plan/tests" "$tests_file"
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && targets+=("$line")
+        done <"$plan/targets"
+        selection=(-R "$(<"$plan/run-regex")")
+        local fixture_regex
+        fixture_regex="$(<"$plan/fixture-regex")"
+        if [[ -n "$fixture_regex" ]]; then
+            selection+=(--fixture-exclude-setup "$fixture_regex")
+        fi
+    else
+        ctest --test-dir "$dir" -N -L w3c_cpp \
+            | sed -n 's/^ *Test  *#[0-9][0-9]*: *\(.*\)$/\1/p' >"$tests_file" \
+            || sce_gate_fail "could not list the w3c_cpp tests of $what"
+        targets=(w3c_cpp_tests)
+    fi
+    expected="$(grep -c . "$tests_file" || true)"
+
+    sce_gate_step "building the ${#targets[@]} output(s) $what runs and what they are built from"
+    if (( ${#targets[@]} > 0 )); then
+        sce_gate_build "$dir" --target "${targets[@]}" \
+            || sce_gate_fail "build of $what"
+    fi
+
+    # Each test writes into its own run directory, which the configure made;
+    # what an earlier run left there is cleared, and the directories kept.
+    local runs="$dir/tests/w3c_runs"
+    if [[ -d "$runs" ]]; then
+        find "$runs" -mindepth 2 -delete
+    fi
+
+    local log="$report/w3c_test_output.log" status=0
+    sce_gate_step "running the $expected test(s) of $what (Interpreter + AOT, and the interactive suite)"
+    # The runner logs at the level SPDLOG_LEVEL names, off unless the caller
+    # asks (the lane asks for its log-level input); a failing test's output is
+    # in the log either way.
+    SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" \
+        ctest --test-dir "$dir" -L w3c_cpp ${selection[@]+"${selection[@]}"} \
+              --output-on-failure --no-tests=error -j "$(sce_build_jobs)" >"$log" 2>&1 \
+        || status=$?
+    local executed
+    executed="$(grep -oE 'out of [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+' || true)"
+    SCE_GATE_W3C_EXECUTED="${executed:-0}"
+
+    # Which tests failed, by ctest's own list, so a W3C program's failure is
+    # judged with its report and the interactive suite's with its own.
+    local failed=() name w3c_status=0 interactive_failed=0 others=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && failed+=("$line")
+    done < <(sed -n '/The following tests FAILED:/,$s/^[[:space:]]*[0-9][0-9]* - \([^ ]*\) .*$/\1/p' "$log")
+    for name in ${failed[@]+"${failed[@]}"}; do
+        case "$name" in
+            w3c_cpp_[0-9]*) w3c_status=1 ;;
+            ComprehensiveInteractiveTests) interactive_failed=1 ;;
+            *) others+=("$name") ;;
+        esac
+    done
+
+    if (( SCE_GATE_W3C_EXECUTED != expected )); then
+        sed -n '/tests passed,/,$p' "$log" >&2
+        sce_gate_fail "ran $SCE_GATE_W3C_EXECUTED of the $expected test(s) of $what (full log: $log)"
+    fi
+
+    local cases collect_status=0 whole=()
+    [[ -n "$plan" ]] || whole=(--whole)
+    cases="$(python3 tests/w3c/scripts/w3c_reports.py collect \
+        --registry tests/w3c/conformance/fixtures.json --runs "$runs" \
+        --tests "$tests_file" --out "$report/w3c_test_results.xml" ${whole[@]+"${whole[@]}"})" \
+        || collect_status=$?
+    if (( collect_status != 0 )); then
+        sed -n '/tests passed,/,$p' "$log" >&2
+        sce_gate_fail "the W3C programs of $what did not report every fixture of their test numbers once on each engine (above; full log: $log)"
+    fi
+    sce_gate_judge_w3c_report "$report/w3c_test_results.xml" "$log" "$w3c_status" "${cases:-0}"
+
+    if grep -qx ComprehensiveInteractiveTests "$tests_file"; then
+        if (( interactive_failed )); then
+            sed -n '/tests passed,/,$p' "$log" >&2
+            sce_gate_fail "the interactive suite failed in $what (full log: $log)"
+        fi
+        local passed
+        passed="$(python3 tests/w3c/scripts/w3c_reports.py interactive \
+            --xml "$runs/interactive/gtest.xml" --floor "$SCE_GATE_W3C_INTERACTIVE_FLOOR")" \
+            || sce_gate_fail "the interactive suite's report in $what does not hold (above)"
+        sce_gate_step "$passed interactive test(s) passed in $what"
+    fi
+
+    if (( ${#others[@]} > 0 )) || (( status != 0 && ${#failed[@]} == 0 )); then
+        sed -n '/tests passed,/,$p' "$log" >&2
+        sce_gate_fail "ctest exited $status for $what${others[0]:+ (failed: ${others[*]})} (full log: $log)"
+    fi
 }
 
 # Put emscripten's tools on PATH when emsdk is installed and not active.

@@ -344,9 +344,12 @@ endfunction()
 # sce_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
 # This does NOT create an executable: it declares the generation of the
-# fixture's machines (`_sce_generate_w3c_fixture`) and appends every header
-# they write to GENERATED_W3C_HEADERS, which `w3c_test_cli` lists so that each
-# is generated before any unit including it is compiled.
+# fixture's machines (`_sce_generate_w3c_fixture`) and sets
+# W3C_AOT_TEST_<id>_HEADERS (PARENT_SCOPE) to every header they write. The
+# program of the fixture's test number (`w3c_cpp_test_<number>`,
+# tests/w3c/W3CPrograms.cmake) lists them, so each is generated before the
+# unit including it is compiled, and a program waits for the generation of
+# its own fixtures and of no other.
 function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # Parse optional TYPE parameter (SIMPLE, SCHEDULED, HTTP)
     cmake_parse_arguments(_SWT "" "TYPE" "" ${ARGN})
@@ -368,21 +371,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     _sce_generate_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" cpp
         FORMAT_ARGS ${_FORMAT_ARGS})
 
-    list(APPEND GENERATED_W3C_HEADERS ${_W3C_FIXTURE_HEADERS})
-    set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
-endfunction()
-
-# sce_generate_static_w3c_test_batch: Generate C++ code for multiple W3C tests
-#
-# NOTE: PARENT_SCOPE propagation for W3C_AOT_TESTS and GENERATED_W3C_HEADERS
-# requires explicit forwarding from this wrapper function to the caller's scope.
-function(sce_generate_static_w3c_test_batch OUTPUT_DIR)
-    foreach(TEST_NUM ${ARGN})
-        sce_generate_static_w3c_test(${TEST_NUM} ${OUTPUT_DIR})
-    endforeach()
-    # Propagate accumulated variables to caller's scope (grandparent of inner calls)
-    set(W3C_AOT_TESTS ${W3C_AOT_TESTS} PARENT_SCOPE)
-    set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
+    set(W3C_AOT_TEST_${TEST_NUM}_HEADERS ${_W3C_FIXTURE_HEADERS} PARENT_SCOPE)
 endfunction()
 
 # sce_generate_static_w3c_c_test: Register a W3C test generated as C11

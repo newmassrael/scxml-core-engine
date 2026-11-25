@@ -2,10 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """A W3C run whose BasicHTTP listener cannot bind reports ERRORS and fails.
 
-Usage: expect_unbindable_listener_errors.py <w3c_test_cli> <test id>
+Usage: expect_unbindable_listener_errors.py <runner> <test id>
 
 The test id must be one the conformance registry runs under its ``http``
-harness. This holds a port, points ``SCE_W3C_HTTP_PORT`` at it, runs that one
+harness, and the runner the W3C program of its test number
+(``w3c_cpp_test_<number>``, tests/w3c/W3CPrograms.cmake), which holds its AOT
+machine. This holds a port, points ``SCE_W3C_HTTP_PORT`` at it, runs that one
 test on both engines, and asserts the run says what happened: the test is
 listed as an error on the Interpreter AND on AOT, and the process exits 1.
 
