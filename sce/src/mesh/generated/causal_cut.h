@@ -44,7 +44,7 @@ causal_cut(uint32_t members, SCE::Forge::Span<const SCE::Generated::CausalKnown:
     }
     std::vector<SCE::Generated::CausalEntry::CausalEntryPayload> out;
     out.reserve(64);
-    if ((holders).size() >= members) {
+    if (holders.size() >= members) {
         bool done = false;
         uint64_t low = 0;
         uint64_t value = 0;

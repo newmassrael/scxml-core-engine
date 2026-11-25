@@ -21,7 +21,7 @@ public enum Utf8Length {
         var i: UInt32 = 0
         var count: UInt32 = 0
         while i < n {
-            let lead: UInt32 = UInt32((try Checked.at(data, i)))
+            let lead: UInt32 = UInt32(try Checked.at(data, i))
             var tails: UInt32 = 0
             var lo: UInt32 = 128
             var hi: UInt32 = 191
@@ -61,18 +61,18 @@ public enum Utf8Length {
                     }
                 }
             }
-            if !(tails <= (try Checked.sub((try Checked.sub(n, i)), 1))) {
+            if !(tails <= (try Checked.sub(try Checked.sub(n, i), 1))) {
                 throw AlgorithmError.precondition
             }
             var k: UInt32 = 1
             while k <= tails {
-                let b: UInt32 = UInt32((try Checked.at(data, (try Checked.add(i, k)))))
+                let b: UInt32 = UInt32(try Checked.at(data, try Checked.add(i, k)))
                 if !(b >= (k == 1 ? lo : 128) && b <= (k == 1 ? hi : 191)) {
                     throw AlgorithmError.precondition
                 }
                 k = (try Checked.add(k, 1))
             }
-            i = (try Checked.add((try Checked.add(i, tails)), 1))
+            i = (try Checked.add(try Checked.add(i, tails), 1))
             count = (try Checked.add(count, 1))
         }
         return count

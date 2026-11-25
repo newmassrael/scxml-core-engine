@@ -585,7 +585,7 @@ class StaticBytesStateMachine(
     private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_bytes.scxml:57 :: idle :: _transition_7
 
-            vSize = (vFrame).size.toUInt()
+            vSize = vFrame.size.toUInt()
     }
 
     private fun transitionContentOfIdleAt8() {

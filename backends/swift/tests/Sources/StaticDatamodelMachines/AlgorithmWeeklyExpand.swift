@@ -21,9 +21,9 @@ public enum AlgorithmWeeklyExpand {
         out.reserveCapacity(366)
         var d: Int64 = window_start > dtstart ? window_start : dtstart
         while d < window_end {
-            let weekday: Int64 = (try Checked.rem((try Checked.add(d, 3)), 7))
-            let week: Int64 = (try Checked.div((try Checked.sub(d, dtstart)), 7))
-            if (try Checked.and(((try Checked.shr(mask, weekday)) & 1) == 1, { () throws(AlgorithmError) -> Bool in (try Checked.rem(week, interval)) == 0 })) {
+            let weekday: Int64 = (try Checked.rem(try Checked.add(d, 3), 7))
+            let week: Int64 = (try Checked.div(try Checked.sub(d, dtstart), 7))
+            if (try Checked.and((try Checked.shr(mask, weekday)) & 1 == 1, { () throws(AlgorithmError) -> Bool in (try Checked.rem(week, interval)) == 0 })) {
                 out.append(d)
             }
             d = (try Checked.add(d, 1))

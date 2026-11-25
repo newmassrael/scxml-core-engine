@@ -23,7 +23,7 @@ public enum AlgorithmListParamSum {
         }
         let n: UInt32 = UInt32(truncatingIfNeeded: xs.count)
         if n > 0 {
-            s = (try Checked.add(s, Int64((try Checked.at(xs, (try Checked.sub(n, 1)))))))
+            s = (try Checked.add(s, Int64(try Checked.at(xs, try Checked.sub(n, 1)))))
         }
         return s
     }

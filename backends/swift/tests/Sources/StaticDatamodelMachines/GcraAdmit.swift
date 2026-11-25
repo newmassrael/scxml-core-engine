@@ -21,8 +21,8 @@ public enum GcraAdmit {
             throw AlgorithmError.precondition
         }
         let start: Int64 = tat > now ? tat : now
-        let arrival: Int64 = (try Checked.add(start, (try Checked.mul(Int64(cost), interval))))
-        let limit: Int64 = (try Checked.add(now, (try Checked.mul(Int64(burst), interval))))
+        let arrival: Int64 = (try Checked.add(start, try Checked.mul(Int64(cost), interval)))
+        let limit: Int64 = (try Checked.add(now, try Checked.mul(Int64(burst), interval)))
         let decision: GcraDecisionPayload = GcraDecisionPayload(admitted: arrival <= limit, tat: arrival <= limit ? arrival : tat, retryAfter: arrival <= limit ? 0 : (try Checked.sub(arrival, limit)))
         return decision
     }

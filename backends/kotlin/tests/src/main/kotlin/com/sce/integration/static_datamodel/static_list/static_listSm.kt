@@ -436,7 +436,7 @@ class StaticListStateMachine(
     // collecting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCollecting(state: StaticListState, event: StaticListEvent?): EnabledTransition<StaticListState, HistoryId>? = when {
         event is StaticListEvent.Day.Picked -> TransitionsPart0.transitionCollectingAt0
-        event is StaticListEvent.Full && (vPicked).size.toUInt() == 3.toUInt() -> TransitionsPart0.transitionCollectingAt1
+        event is StaticListEvent.Full && vPicked.size.toUInt() == 3.toUInt() -> TransitionsPart0.transitionCollectingAt1
         event is StaticListEvent.Reset -> TransitionsPart0.transitionCollectingAt2
         event is StaticListEvent.Error.Execution -> TransitionsPart0.transitionCollectingAt3
         else -> null
@@ -521,7 +521,7 @@ class StaticListStateMachine(
                 return
             }
 
-            vCount = (vPicked).size.toUInt()
+            vCount = vPicked.size.toUInt()
     }
 
     private fun transitionContentOfCollectingAt2() {

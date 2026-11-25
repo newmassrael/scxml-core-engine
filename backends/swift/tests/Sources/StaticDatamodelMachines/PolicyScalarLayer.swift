@@ -15,7 +15,7 @@
 
 public enum PolicyScalarLayer {
     public static func policyScalarLayer(_ base: PolicyScalarSettingsPayload, _ over: PolicyScalarSettingsPayload, _ mask: UInt64) -> PolicyScalarSettingsPayload {
-        let out: PolicyScalarSettingsPayload = PolicyScalarSettingsPayload(strict: over.strict || base.strict, limitDays: (mask & 1) != 0 ? over.limitDays : base.limitDays, burst: (mask & 2) != 0 ? over.burst : base.burst, locked: (mask & 4) != 0 ? over.locked : base.locked)
+        let out: PolicyScalarSettingsPayload = PolicyScalarSettingsPayload(strict: over.strict || base.strict, limitDays: mask & 1 != 0 ? over.limitDays : base.limitDays, burst: mask & 2 != 0 ? over.burst : base.burst, locked: mask & 4 != 0 ? over.locked : base.locked)
         return out
     }
 }

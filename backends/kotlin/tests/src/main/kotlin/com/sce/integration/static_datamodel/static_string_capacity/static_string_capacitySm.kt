@@ -560,7 +560,7 @@ class StaticStringCapacityStateMachine(
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_string_capacity.scxml:53 :: idle :: _transition_6
 
-            vMeasured = (vBody).encodeToByteArray().size.toUInt()
+            vMeasured = vBody.encodeToByteArray().size.toUInt()
     }
 
     private fun transitionContentOfIdleAt7() {

@@ -17,10 +17,10 @@ public enum AlgorithmLiteralShift {
     public static func algorithmLiteralShift(_ prev: UInt64, _ m: UInt8, _ op: UInt8) -> UInt64 {
         var r: UInt64 = prev
         if op == 0 {
-            r = prev | (UInt64(1) << m)
+            r = prev | UInt64(1) << m
         }
         if op == 1 {
-            r = prev ^ (UInt64(1) << m)
+            r = prev ^ UInt64(1) << m
         }
         if op == 2 {
             r = prev & ~(UInt64(1) << m)
@@ -29,10 +29,10 @@ public enum AlgorithmLiteralShift {
             r = ~(UInt64(1) << m)
         }
         if op == 4 {
-            r = prev | (UInt64(4294967295) >> m)
+            r = prev | UInt64(4294967295) >> m
         }
         if op == 5 {
-            r = prev | (UInt64(1) << 40)
+            r = prev | UInt64(1) << 40
         }
         return r
     }

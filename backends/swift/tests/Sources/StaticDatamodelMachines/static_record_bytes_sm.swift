@@ -945,7 +945,7 @@ public final class StaticRecordBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32(truncatingIfNeeded: (try Checked.at(self.vFrames, (try Checked.sub(UInt32(truncatingIfNeeded: self.vFrames.count), 1)))).frame.count); self.vSize = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, reason: .expressionFailed, message: "<assign location='size'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32(truncatingIfNeeded: (try Checked.at(self.vFrames, try Checked.sub(UInt32(truncatingIfNeeded: self.vFrames.count), 1))).frame.count); self.vSize = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, reason: .expressionFailed, message: "<assign location='size'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

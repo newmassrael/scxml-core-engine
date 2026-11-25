@@ -2022,7 +2022,7 @@ func (p *StaticOptionalPolicy) ExecuteTransitionContent(source StaticOptionalSta
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := func() int64 { if !(!p.vDue.IsPresent()) { return scealgorithm.AddInt64(&sceFailure, p.vDue.Proven(), 1) }; return 0 }(); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='following'>: an integer operation overflowed or failed")); return true }; p.vFollowing = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := func() int64 { if !!p.vDue.IsPresent() { return scealgorithm.AddInt64(&sceFailure, p.vDue.Proven(), 1) }; return 0 }(); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='following'>: an integer operation overflowed or failed")); return true }; p.vFollowing = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

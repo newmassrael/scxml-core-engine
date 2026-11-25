@@ -19,7 +19,7 @@
 namespace SCE::Generated::AlgorithmCobsEncode {
 
 inline std::vector<std::uint8_t> algorithm_cobs_encode(SCE::Forge::Span<const std::uint8_t> data) {
-    uint32_t n = (data).size();
+    uint32_t n = data.size();
     std::vector<std::uint8_t> out;
     out.reserve(32);
     uint32_t p = 0;

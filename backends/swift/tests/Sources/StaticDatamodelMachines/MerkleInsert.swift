@@ -37,7 +37,7 @@ public enum MerkleInsert {
                 let created: MerkleNodePayload = MerkleNodePayload(depth: (try Checked.narrow(pd, to: UInt8.self)), prefix: pp, hash: hash)
                 out.append(created)
                 pd = (try Checked.add(pd, 1))
-                pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+                pp = (try Checked.narrow(try Checked.div(minute, div), to: UInt64.self))
                 if div > 1 {
                     div = (try Checked.div(div, 3))
                 }
@@ -46,7 +46,7 @@ public enum MerkleInsert {
                 let merged: MerkleNodePayload = MerkleNodePayload(depth: x.depth, prefix: x.prefix, hash: x.hash ^ hash)
                 out.append(merged)
                 pd = (try Checked.add(pd, 1))
-                pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+                pp = (try Checked.narrow(try Checked.div(minute, div), to: UInt64.self))
                 if div > 1 {
                     div = (try Checked.div(div, 3))
                 }
@@ -58,7 +58,7 @@ public enum MerkleInsert {
             let tail: MerkleNodePayload = MerkleNodePayload(depth: (try Checked.narrow(pd, to: UInt8.self)), prefix: pp, hash: hash)
             out.append(tail)
             pd = (try Checked.add(pd, 1))
-            pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+            pp = (try Checked.narrow(try Checked.div(minute, div), to: UInt64.self))
             if div > 1 {
                 div = (try Checked.div(div, 3))
             }

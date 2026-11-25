@@ -882,7 +882,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue = StaticForgeCallsLevelEnumFromDocument((try Checked.found(ForgeCallWeight.lookupWeight(StaticForgeCallsStatusEnumToDocument(self.vPhase))))); self.vWeight = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weight'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticForgeCallsLevelEnumFromDocument(try Checked.found(ForgeCallWeight.lookupWeight(StaticForgeCallsStatusEnumToDocument(self.vPhase)))); self.vWeight = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weight'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

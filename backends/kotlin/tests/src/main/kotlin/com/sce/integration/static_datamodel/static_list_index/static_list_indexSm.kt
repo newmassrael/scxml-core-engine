@@ -583,7 +583,7 @@ class StaticListIndexStateMachine(
         event is StaticListIndexEvent.More -> TransitionsPart0.transitionReadingAt4
         event is StaticListIndexEvent.Next -> TransitionsPart0.transitionReadingAt5
         event is StaticListIndexEvent.Back -> TransitionsPart0.transitionReadingAt6
-        event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()) < com.sce.forge.runtime.SceChecked.at(vPicked, (1).toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionReadingAt7
+        event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(vPicked, 0.toLong()) < com.sce.forge.runtime.SceChecked.at(vPicked, 1.toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionReadingAt7
         event is StaticListIndexEvent.Compare -> TransitionsPart0.transitionReadingAt8
         event is StaticListIndexEvent.Reset -> TransitionsPart0.transitionReadingAt9
         event is StaticListIndexEvent.Error.Execution -> TransitionsPart0.transitionReadingAt10
@@ -668,7 +668,7 @@ class StaticListIndexStateMachine(
     private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_list_index.scxml:45 :: reading :: _transition_1
 
-            if (try { vFirst = com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirst = com.sce.forge.runtime.SceChecked.at(vPicked, 0.toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -676,7 +676,7 @@ class StaticListIndexStateMachine(
     private fun transitionContentOfReadingAt2() {
                 // SCE-MAP: static_list_index.scxml:48 :: reading :: _transition_2
 
-            if (try { vLast = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = com.sce.forge.runtime.SceChecked.at(vPicked, com.sce.forge.runtime.SceChecked.sub(vPicked.size.toUInt(), 1.toUInt()).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -684,7 +684,7 @@ class StaticListIndexStateMachine(
     private fun transitionContentOfReadingAt3() {
                 // SCE-MAP: static_list_index.scxml:51 :: reading :: _transition_3
 
-            if (try { vCount = com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.sub(vPicked.size.toUInt(), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -692,13 +692,13 @@ class StaticListIndexStateMachine(
     private fun transitionContentOfReadingAt4() {
                 // SCE-MAP: static_list_index.scxml:54 :: reading :: _transition_4
 
-            vRoom = vCursor < (vPicked).size.toUInt().toInt()
+            vRoom = vCursor < vPicked.size.toUInt().toInt()
     }
 
     private fun transitionContentOfReadingAt5() {
                 // SCE-MAP: static_list_index.scxml:57 :: reading :: _transition_5
 
-            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (vCursor).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, vCursor.toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -710,7 +710,7 @@ class StaticListIndexStateMachine(
     private fun transitionContentOfReadingAt6() {
                 // SCE-MAP: static_list_index.scxml:61 :: reading :: _transition_6
 
-            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub(vCursor, 1)).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, com.sce.forge.runtime.SceChecked.sub(vCursor, 1).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

@@ -32,15 +32,15 @@ fun sheetSettle(cells: List<LwwCellPayload>, rows: List<RgaNodePayload>, gone: L
         val trail = SceListBuf(768)
         var moving: Boolean = true
         var passes: Long = 0
-        while (moving && passes <= (cells).size) {
+        while (moving && passes <= cells.size) {
             moving = false
             passes = com.sce.forge.runtime.SceChecked.add(passes, 1)
             var at: Long = 0
             for (c in cells) {
                 var settled: Boolean = false
                 var d: Long = 0
-                while (d < (trail).size) {
-                    if (trail.getLong(com.sce.forge.runtime.SceChecked.index((d).toLong(), trail.size)) == at) {
+                while (d < trail.size) {
+                    if (trail.getLong(com.sce.forge.runtime.SceChecked.index(d.toLong(), trail.size)) == at) {
                         settled = true
                     }
                     d = com.sce.forge.runtime.SceChecked.add(d, 3)
@@ -76,11 +76,11 @@ fun sheetSettle(cells: List<LwwCellPayload>, rows: List<RgaNodePayload>, gone: L
                             if (found) {
                                 var hit: Boolean = false
                                 var m: Long = 0
-                                while (m < (trail).size) {
-                                    if (trail.getLong(com.sce.forge.runtime.SceChecked.index((m).toLong(), trail.size)) == holder) {
+                                while (m < trail.size) {
+                                    if (trail.getLong(com.sce.forge.runtime.SceChecked.index(m.toLong(), trail.size)) == holder) {
                                         hit = true
-                                        xv = trail.getLong(com.sce.forge.runtime.SceChecked.index((com.sce.forge.runtime.SceChecked.add(m, 1)).toLong(), trail.size))
-                                        xf = trail.getLong(com.sce.forge.runtime.SceChecked.index((com.sce.forge.runtime.SceChecked.add(m, 2)).toLong(), trail.size))
+                                        xv = trail.getLong(com.sce.forge.runtime.SceChecked.index(com.sce.forge.runtime.SceChecked.add(m, 1).toLong(), trail.size))
+                                        xf = trail.getLong(com.sce.forge.runtime.SceChecked.index(com.sce.forge.runtime.SceChecked.add(m, 2).toLong(), trail.size))
                                     }
                                     m = com.sce.forge.runtime.SceChecked.add(m, 3)
                                 }
@@ -185,11 +185,11 @@ fun sheetSettle(cells: List<LwwCellPayload>, rows: List<RgaNodePayload>, gone: L
                                 if (!qgone && qr >= rowLow && qr <= rowHigh && qc >= colLow && qc <= colHigh) {
                                     var seen: Boolean = false
                                     var w: Long = 0
-                                    while (w < (trail).size) {
-                                        if (trail.getLong(com.sce.forge.runtime.SceChecked.index((w).toLong(), trail.size)) == walked) {
+                                    while (w < trail.size) {
+                                        if (trail.getLong(com.sce.forge.runtime.SceChecked.index(w.toLong(), trail.size)) == walked) {
                                             seen = true
-                                            var mv: Long = trail.getLong(com.sce.forge.runtime.SceChecked.index((com.sce.forge.runtime.SceChecked.add(w, 1)).toLong(), trail.size))
-                                            var mf: Long = trail.getLong(com.sce.forge.runtime.SceChecked.index((com.sce.forge.runtime.SceChecked.add(w, 2)).toLong(), trail.size))
+                                            var mv: Long = trail.getLong(com.sce.forge.runtime.SceChecked.index(com.sce.forge.runtime.SceChecked.add(w, 1).toLong(), trail.size))
+                                            var mf: Long = trail.getLong(com.sce.forge.runtime.SceChecked.index(com.sce.forge.runtime.SceChecked.add(w, 2).toLong(), trail.size))
                                             if (mf != 0L) {
                                                 worst = if (worst == 0L) mf else if (mf < worst) mf else worst
                                             }

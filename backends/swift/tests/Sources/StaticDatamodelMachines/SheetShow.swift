@@ -44,8 +44,8 @@ public enum SheetShow {
                 var u: Int64 = 0
                 while u < Int64(truncatingIfNeeded: trail.count) {
                     if (try Checked.at(trail, u)) == bestAt {
-                        shownValue = (try Checked.at(trail, (try Checked.add(u, 1))))
-                        shownFault = (try Checked.narrow((try Checked.at(trail, (try Checked.add(u, 2)))), to: UInt8.self))
+                        shownValue = (try Checked.at(trail, try Checked.add(u, 1)))
+                        shownFault = (try Checked.narrow(try Checked.at(trail, try Checked.add(u, 2)), to: UInt8.self))
                     }
                     u = (try Checked.add(u, 3))
                 }

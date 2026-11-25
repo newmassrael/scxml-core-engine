@@ -29,23 +29,23 @@ public enum EventAgenda {
             let length: Int64 = s.length
             let count: Int64 = s.count
             let until: Int64 = s.until
-            let hasSP: Bool = (s.spPos | s.spNeg) != 0
+            let hasSP: Bool = s.spPos | s.spNeg != 0
             let timeOfDay: Int64 = (try Checked.rem(startAt, day))
-            let startDay: Int64 = (try Checked.div((try Checked.sub(startAt, timeOfDay)), day))
-            let endDay: Int64 = (try Checked.div((try Checked.sub((try Checked.add(windowEnd, day)), 1)), day))
-            let startWeekday: Int64 = (try Checked.rem((try Checked.add((try Checked.rem(startDay, 7)), 11)), 7))
+            let startDay: Int64 = (try Checked.div(try Checked.sub(startAt, timeOfDay), day))
+            let endDay: Int64 = (try Checked.div(try Checked.sub(try Checked.add(windowEnd, day), 1), day))
+            let startWeekday: Int64 = (try Checked.rem(try Checked.add(try Checked.rem(startDay, 7), 11), 7))
             let wkst0: Int64 = s.wkst
             let wkst: Int64 = wkst0 >= 0 && wkst0 <= 6 ? wkst0 : 1
-            let week0Start: Int64 = (try Checked.sub(startDay, (try Checked.rem((try Checked.add((try Checked.sub(startWeekday, wkst)), 7)), 7))))
+            let week0Start: Int64 = (try Checked.sub(startDay, try Checked.rem(try Checked.add(try Checked.sub(startWeekday, wkst), 7), 7)))
             let z: Int64 = (try Checked.add(startDay, 719468))
             let era: Int64 = (try Checked.div(z, 146097))
-            let doe: Int64 = (try Checked.sub(z, (try Checked.mul(era, 146097))))
-            let yoe: Int64 = (try Checked.div((try Checked.sub((try Checked.add((try Checked.sub(doe, (try Checked.div(doe, 1460)))), (try Checked.div(doe, 36524)))), (try Checked.div(doe, 146096)))), 365))
-            let doy: Int64 = (try Checked.sub(doe, (try Checked.sub((try Checked.add((try Checked.mul(365, yoe)), (try Checked.div(yoe, 4)))), (try Checked.div(yoe, 100))))))
-            let mp: Int64 = (try Checked.div((try Checked.add((try Checked.mul(5, doy)), 2)), 153))
-            let m0: Int64 = mp < 10 ? (try Checked.add(mp, 3)) : (try Checked.sub(mp, 9))
-            let y0: Int64 = m0 <= 2 ? (try Checked.add((try Checked.add(yoe, (try Checked.mul(era, 400)))), 1)) : (try Checked.add(yoe, (try Checked.mul(era, 400))))
-            let months0: Int64 = (try Checked.sub((try Checked.add((try Checked.mul(y0, 12)), m0)), 1))
+            let doe: Int64 = (try Checked.sub(z, try Checked.mul(era, 146097)))
+            let yoe: Int64 = (try Checked.div(try Checked.sub(try Checked.add(try Checked.sub(doe, try Checked.div(doe, 1460)), try Checked.div(doe, 36524)), try Checked.div(doe, 146096)), 365))
+            let doy: Int64 = (try Checked.sub(doe, try Checked.sub(try Checked.add(try Checked.mul(365, yoe), try Checked.div(yoe, 4)), try Checked.div(yoe, 100))))
+            let mp: Int64 = (try Checked.div(try Checked.add(try Checked.mul(5, doy), 2), 153))
+            let m0: Int64 = mp < 10 ? try Checked.add(mp, 3) : (try Checked.sub(mp, 9))
+            let y0: Int64 = m0 <= 2 ? try Checked.add(try Checked.add(yoe, try Checked.mul(era, 400)), 1) : (try Checked.add(yoe, try Checked.mul(era, 400)))
+            let months0: Int64 = (try Checked.sub(try Checked.add(try Checked.mul(y0, 12), m0), 1))
             var p: Int64 = 0
             var nth: Int64 = 0
             var going: Bool = true
@@ -53,31 +53,31 @@ public enum EventAgenda {
                 var ps: Int64 = startDay
                 var plen: Int64 = 1
                 if freq == 1 {
-                    ps = (try Checked.add(startDay, (try Checked.mul(p, every))))
+                    ps = (try Checked.add(startDay, try Checked.mul(p, every)))
                 }
                 if freq == 2 {
-                    ps = (try Checked.add(week0Start, (try Checked.mul((try Checked.mul(p, every)), 7))))
+                    ps = (try Checked.add(week0Start, try Checked.mul(try Checked.mul(p, every), 7)))
                     plen = 7
                 }
                 if freq == 3 || freq == 4 {
-                    let pty: Int64 = freq == 3 ? (try Checked.div((try Checked.add(months0, (try Checked.mul(p, every)))), 12)) : (try Checked.add(y0, (try Checked.mul(p, every))))
-                    let ptm: Int64 = freq == 3 ? (try Checked.add((try Checked.rem((try Checked.add(months0, (try Checked.mul(p, every)))), 12)), 1)) : 1
-                    let pleap: Bool = (try Checked.or((try Checked.and((try Checked.rem(pty, 4)) == 0, { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 100)) != 0 })), { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 400)) == 0 }))
-                    let pcy: Int64 = ptm <= 2 ? (try Checked.sub(pty, 1)) : pty
+                    let pty: Int64 = freq == 3 ? try Checked.div(try Checked.add(months0, try Checked.mul(p, every)), 12) : (try Checked.add(y0, try Checked.mul(p, every)))
+                    let ptm: Int64 = freq == 3 ? try Checked.add(try Checked.rem(try Checked.add(months0, try Checked.mul(p, every)), 12), 1) : 1
+                    let pleap: Bool = (try Checked.or(try Checked.and((try Checked.rem(pty, 4)) == 0, { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 100)) != 0 }), { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 400)) == 0 }))
+                    let pcy: Int64 = ptm <= 2 ? try Checked.sub(pty, 1) : pty
                     let pcera: Int64 = (try Checked.div(pcy, 400))
-                    let pcyoe: Int64 = (try Checked.sub(pcy, (try Checked.mul(pcera, 400))))
-                    let pcmp: Int64 = ptm > 2 ? (try Checked.sub(ptm, 3)) : (try Checked.add(ptm, 9))
-                    let pcdoy: Int64 = (try Checked.div((try Checked.add((try Checked.mul(153, pcmp)), 2)), 5))
-                    ps = (try Checked.sub((try Checked.add((try Checked.sub((try Checked.add((try Checked.add((try Checked.mul(pcera, 146097)), (try Checked.mul(pcyoe, 365)))), (try Checked.div(pcyoe, 4)))), (try Checked.div(pcyoe, 100)))), pcdoy)), 719468))
-                    plen = freq == 4 ? (pleap ? 366 : 365) : (ptm == 2 ? (pleap ? 29 : 28) : (ptm == 4 || ptm == 6 || ptm == 9 || ptm == 11 ? 30 : 31))
+                    let pcyoe: Int64 = (try Checked.sub(pcy, try Checked.mul(pcera, 400)))
+                    let pcmp: Int64 = ptm > 2 ? try Checked.sub(ptm, 3) : (try Checked.add(ptm, 9))
+                    let pcdoy: Int64 = (try Checked.div(try Checked.add(try Checked.mul(153, pcmp), 2), 5))
+                    ps = (try Checked.sub(try Checked.add(try Checked.sub(try Checked.add(try Checked.add(try Checked.mul(pcera, 146097), try Checked.mul(pcyoe, 365)), try Checked.div(pcyoe, 4)), try Checked.div(pcyoe, 100)), pcdoy), 719468))
+                    plen = freq == 4 ? pleap ? 366 : 365 : ptm == 2 ? pleap ? 29 : 28 : ptm == 4 || ptm == 6 || ptm == 9 || ptm == 11 ? 30 : 31
                 }
-                if (try Checked.or(ps >= endDay, { () throws(AlgorithmError) -> Bool in (try Checked.and(until > 0, { () throws(AlgorithmError) -> Bool in (try Checked.mul(ps, day)) > until })) })) {
+                if (try Checked.or(ps >= endDay, { () throws(AlgorithmError) -> Bool in try Checked.and(until > 0, { () throws(AlgorithmError) -> Bool in (try Checked.mul(ps, day)) > until }) })) {
                     going = false
                 } else {
                     var n: Int64 = 0
                     var k: Int64 = 0
                     while k < plen {
-                        if (try EventSelects.eventSelects(s, (try Checked.add(ps, k)), startDay)) {
+                        if (try EventSelects.eventSelects(s, try Checked.add(ps, k), startDay)) {
                             n = (try Checked.add(n, 1))
                         }
                         k = (try Checked.add(k, 1))
@@ -90,10 +90,10 @@ public enum EventAgenda {
                             rank = (try Checked.add(rank, 1))
                             var keep: Bool = true
                             if hasSP {
-                                keep = (try Checked.or((try Checked.and(rank <= 62, { () throws(AlgorithmError) -> Bool in ((try Checked.shr(s.spPos, rank)) & 1) == 1 })), { () throws(AlgorithmError) -> Bool in (try Checked.and((try Checked.add((try Checked.sub(n, rank)), 1)) <= 62, { () throws(AlgorithmError) -> Bool in ((try Checked.shr(s.spNeg, (try Checked.add((try Checked.sub(n, rank)), 1)))) & 1) == 1 })) }))
+                                keep = (try Checked.or(try Checked.and(rank <= 62, { () throws(AlgorithmError) -> Bool in (try Checked.shr(s.spPos, rank)) & 1 == 1 }), { () throws(AlgorithmError) -> Bool in try Checked.and((try Checked.add(try Checked.sub(n, rank), 1)) <= 62, { () throws(AlgorithmError) -> Bool in (try Checked.shr(s.spNeg, try Checked.add(try Checked.sub(n, rank), 1))) & 1 == 1 }) }))
                             }
                             if keep && dd >= startDay {
-                                let occStart: Int64 = (try Checked.add((try Checked.mul(dd, day)), timeOfDay))
+                                let occStart: Int64 = (try Checked.add(try Checked.mul(dd, day), timeOfDay))
                                 let occEnd: Int64 = (try Checked.add(occStart, length))
                                 if occStart >= windowEnd || until > 0 && occStart > until {
                                     going = false
@@ -105,7 +105,7 @@ public enum EventAgenda {
                                             var excluded: Bool = false
                                             var mark: UInt8 = (try Checked.narrow(s.flag, to: UInt8.self))
                                             if dd >= 0 && dd < 65472 {
-                                                let xfield: UInt64 = (try Checked.narrow((try Checked.add(dd, 64)), to: UInt64.self))
+                                                let xfield: UInt64 = (try Checked.narrow(try Checked.add(dd, 64), to: UInt64.self))
                                                 var xfound: Bool = false
                                                 var xheld: Int64 = 0
                                                 var xw: Int64 = 0

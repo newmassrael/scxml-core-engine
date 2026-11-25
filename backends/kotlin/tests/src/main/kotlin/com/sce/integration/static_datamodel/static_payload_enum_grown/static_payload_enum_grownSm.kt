@@ -386,7 +386,7 @@ class StaticPayloadEnumGrownStateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("layout" to com.sce.runtime.EventPayload.valueJson(scePayload.layout.declaredName), "marks" to com.sce.runtime.EventPayload.listJson(scePayload.marks) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("day" to com.sce.runtime.EventPayload.valueJson(it.day), "shift" to ((it.shift)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)))) })).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("layout" to com.sce.runtime.EventPayload.valueJson(scePayload.layout.declaredName), "marks" to com.sce.runtime.EventPayload.listJson(scePayload.marks) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("day" to com.sce.runtime.EventPayload.valueJson(it.day), "shift" to (it.shift?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)))) })).json
             )
         )
     }
@@ -574,7 +574,7 @@ class StaticPayloadEnumGrownStateMachine(
 
             vLayout = pendingViewGrownPayload!!.layout
 
-            vMarks = (pendingViewGrownPayload!!.marks).size.toUInt()
+            vMarks = pendingViewGrownPayload!!.marks.size.toUInt()
 
             if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEnumGrownEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -597,7 +597,7 @@ class StaticPayloadEnumGrownStateMachine(
             vLayout = pendingViewGrownPayload!!.layout
             }
 
-            vMarks = (pendingViewGrownPayload!!.marks).size.toUInt()
+            vMarks = pendingViewGrownPayload!!.marks.size.toUInt()
 
             if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEnumGrownEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return

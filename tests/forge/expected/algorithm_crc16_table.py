@@ -18,5 +18,5 @@ def algorithm_crc16_table(data: bytes) -> int:
     crc: int = 0xFFFF
     for b in data:
         idx: int = (crc >> 8 ^ b) & 0xFF
-        crc = ((crc << 8) & 0xFFFF) ^ CRC16_TABLE[idx]
+        crc = crc << 8 & 0xFFFF ^ CRC16_TABLE[idx]
     return crc

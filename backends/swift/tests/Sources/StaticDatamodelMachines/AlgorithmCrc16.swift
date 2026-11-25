@@ -18,11 +18,11 @@ public enum AlgorithmCrc16 {
         var crc: UInt16 = 0xFFFF
         for b in data {
             let hi: UInt16 = UInt16(b)
-            crc = crc ^ (hi << 8)
+            crc = crc ^ hi << 8
             var i: UInt8 = 0
             while i < 8 {
-                if (crc & 0x8000) != 0 {
-                    crc = (crc << 1) ^ 0x1021
+                if crc & 0x8000 != 0 {
+                    crc = crc << 1 ^ 0x1021
                 } else {
                     crc = crc << 1
                 }

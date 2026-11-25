@@ -1628,7 +1628,7 @@ class RecordListParentStateMachine(
 
             putParam(sendPayload, "counter", (pendingRecordListChangePayload!!.counter).toLong())
 
-            putParam(sendPayload, "ops", (pendingRecordListChangePayload!!.ops).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) })
+            putParam(sendPayload, "ops", pendingRecordListChangePayload!!.ops.map { mapOf<String, Any?>("kind" to it.kind.toLong(), "id" to it.id.toLong(), "field" to it.field.toLong(), "value" to it.value.toString(), "text" to it.text, "wallTime" to it.wallTime.toString(), "counter" to it.counter.toLong(), "nodeId" to it.nodeId.toString()) })
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build

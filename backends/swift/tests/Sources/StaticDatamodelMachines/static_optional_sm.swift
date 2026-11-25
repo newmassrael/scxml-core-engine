@@ -1136,7 +1136,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = !(self.vDue == nil) ? (try Checked.add(SceOptional.proven(self.vDue), 1)) : 0; self.vFollowing = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, reason: .expressionFailed, message: "<assign location='following'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = !(self.vDue == nil) ? try Checked.add(SceOptional.proven(self.vDue), 1) : 0; self.vFollowing = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, reason: .expressionFailed, message: "<assign location='following'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1242,7 +1242,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.coalesce(self.vDue, { () throws(AlgorithmError) -> Int64 in (try Checked.mul(self.vHuge, self.vHuge)) })); self.vDays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, reason: .expressionFailed, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.coalesce(self.vDue, { () throws(AlgorithmError) -> Int64 in try Checked.mul(self.vHuge, self.vHuge) })); self.vDays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, reason: .expressionFailed, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

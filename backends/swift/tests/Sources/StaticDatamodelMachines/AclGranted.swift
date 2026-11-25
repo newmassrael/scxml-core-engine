@@ -48,7 +48,7 @@ public enum AclGranted {
             while climbing {
                 for a in acl {
                     if a.privilege == at {
-                        var applies: Bool = a.principal == 4294967295 || (a.principal == 4294967294 ? user != 0 : (a.principal == 4294967293 ? user == 0 : false))
+                        var applies: Bool = a.principal == 4294967295 || (a.principal == 4294967294 ? user != 0 : a.principal == 4294967293 ? user == 0 : false)
                         let who: UInt32 = a.principal == 4294967292 ? owner : a.principal
                         if who != 0 && user != 0 && who < 4294967292 {
                             if who == user {

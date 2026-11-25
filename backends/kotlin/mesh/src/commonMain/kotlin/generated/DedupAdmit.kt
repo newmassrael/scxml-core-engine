@@ -23,7 +23,7 @@ fun dedupAdmit(window: List<EnvelopeIdPayload>, id: EnvelopeIdPayload, capacity:
     // SCE_FORGE.md §3.4.1: a checked operation throws its failure, and this
     // boundary hands it to the caller as a value — never as an exception.
     try {
-        if (!(capacity > 0.toUInt() && (window).size.toUInt() <= capacity)) {
+        if (!(capacity > 0.toUInt() && window.size.toUInt() <= capacity)) {
             return com.sce.forge.runtime.AlgorithmResult.Failed(com.sce.forge.runtime.AlgorithmError.Precondition)
         }
         var held: Boolean = false
@@ -33,7 +33,7 @@ fun dedupAdmit(window: List<EnvelopeIdPayload>, id: EnvelopeIdPayload, capacity:
             }
         }
         val out = ArrayList<EnvelopeIdPayload>(256)
-        var skip: UInt = (if (held || (window).size.toUInt() < capacity) 0 else 1).toUInt()
+        var skip: UInt = (if (held || window.size.toUInt() < capacity) 0 else 1).toUInt()
         var i: UInt = 0.toUInt()
         for (kept in window) {
             if (i >= skip) {

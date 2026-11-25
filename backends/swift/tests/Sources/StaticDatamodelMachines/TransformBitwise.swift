@@ -15,7 +15,7 @@
 public enum TransformBitwise {
 
     public static func computeHighNibble(_ byte: UInt8) -> UInt8 {
-        (byte >> 4) & 0x0F
+        byte >> 4 & 0x0F
     }
 
     public static func computeLowNibble(_ byte: UInt8) -> UInt8 {

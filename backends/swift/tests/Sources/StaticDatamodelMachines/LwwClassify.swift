@@ -26,6 +26,6 @@ public enum LwwClassify {
                 later = true
             }
         }
-        return duplicate ? 2 : (later ? 1 : 0)
+        return duplicate ? 2 : later ? 1 : 0
     }
 }

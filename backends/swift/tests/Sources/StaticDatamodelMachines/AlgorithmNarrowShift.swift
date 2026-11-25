@@ -17,19 +17,19 @@ public enum AlgorithmNarrowShift {
     public static func algorithmNarrowShift(_ x: UInt8, _ h: Int16, _ n: UInt8, _ op: UInt8) -> Int64 {
         var r: Int64 = 0
         if op == 0 {
-            r = Int64((x << n))
+            r = Int64(x << n)
         }
         if op == 1 {
-            r = Int64(((x << n) >> n))
+            r = Int64((x << n) >> n)
         }
         if op == 2 {
             r = Int64(~x)
         }
         if op == 3 {
-            r = Int64((h << n))
+            r = Int64(h << n)
         }
         if op == 4 {
-            r = Int64(((h << n) >> n))
+            r = Int64((h << n) >> n)
         }
         if op == 5 {
             r = Int64(~h)

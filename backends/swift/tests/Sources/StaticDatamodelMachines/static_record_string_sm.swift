@@ -968,7 +968,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded((try Checked.at(self.vLabels, (try Checked.sub(UInt32(truncatingIfNeeded: self.vLabels.count), 1)))).label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded((try Checked.at(self.vLabels, try Checked.sub(UInt32(truncatingIfNeeded: self.vLabels.count), 1))).label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

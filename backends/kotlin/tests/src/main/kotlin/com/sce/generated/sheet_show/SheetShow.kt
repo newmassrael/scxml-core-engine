@@ -48,10 +48,10 @@ fun sheetShow(cells: List<LwwCellPayload>, trail: LongArray): com.sce.forge.runt
                 var shownValue: Long = 0
                 var shownFault: UByte = 1.toUByte()
                 var u: Long = 0
-                while (u < (trail).size) {
-                    if (com.sce.forge.runtime.SceChecked.at(trail, (u).toLong()) == bestAt) {
-                        shownValue = com.sce.forge.runtime.SceChecked.at(trail, (com.sce.forge.runtime.SceChecked.add(u, 1)).toLong())
-                        shownFault = com.sce.forge.runtime.SceChecked.narrowToUByte(com.sce.forge.runtime.SceChecked.at(trail, (com.sce.forge.runtime.SceChecked.add(u, 2)).toLong()))
+                while (u < trail.size) {
+                    if (com.sce.forge.runtime.SceChecked.at(trail, u.toLong()) == bestAt) {
+                        shownValue = com.sce.forge.runtime.SceChecked.at(trail, com.sce.forge.runtime.SceChecked.add(u, 1).toLong())
+                        shownFault = com.sce.forge.runtime.SceChecked.narrowToUByte(com.sce.forge.runtime.SceChecked.at(trail, com.sce.forge.runtime.SceChecked.add(u, 2).toLong()))
                     }
                     u = com.sce.forge.runtime.SceChecked.add(u, 3)
                 }

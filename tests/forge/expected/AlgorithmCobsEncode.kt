@@ -17,14 +17,14 @@ package com.sce.generated.algorithm_cobs_encode
 import com.sce.forge.runtime.SceByteBuf
 
 fun algorithmCobsEncode(data: ByteArray): ByteArray {
-    var n: UInt = (data).size.toUInt()
+    var n: UInt = data.size.toUInt()
     val out = SceByteBuf(32)
     var p: UInt = 0.toUInt()
     var done: Boolean = false
     while (done == false) {
         var q: UInt = p
         var run: UShort = 0.toUShort()
-        while (q < n && run < 254.toUShort() && data[(q).toInt()].toUByte() != 0.toUByte()) {
+        while (q < n && run < 254.toUShort() && data[q.toInt()].toUByte() != 0.toUByte()) {
             q = q + 1.toUInt()
             run = (run.toUInt() + 1.toUInt()).toUShort()
         }
@@ -32,7 +32,7 @@ fun algorithmCobsEncode(data: ByteArray): ByteArray {
         out.add((code).toByte())
         var k: UInt = p
         while (k < q) {
-            out.add((data[(k).toInt()].toUByte()).toByte())
+            out.add((data[k.toInt()].toUByte()).toByte())
             k = k + 1.toUInt()
         }
         if (q >= n) {

@@ -791,7 +791,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, (try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1)))).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1))).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -831,7 +831,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32((try Checked.add((try Checked.at(self.vDays, 0)).dayOfMonth, (try Checked.at(self.vDays, 1)).dayOfMonth))); self.vSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32(try Checked.add((try Checked.at(self.vDays, 0)).dayOfMonth, (try Checked.at(self.vDays, 1)).dayOfMonth)); self.vSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

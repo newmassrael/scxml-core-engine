@@ -511,7 +511,7 @@ class StaticListAssignStateMachine(
                 return
             }
 
-            vSize = (vShown).size.toUInt()
+            vSize = vShown.size.toUInt()
     }
 
     private fun transitionContentOfShowingAt1() {
@@ -521,7 +521,7 @@ class StaticListAssignStateMachine(
                 return
             }
 
-            vSize = (vShown).size.toUInt()
+            vSize = vShown.size.toUInt()
     }
 
     private fun transitionContentOfShowingAt2() {
@@ -531,7 +531,7 @@ class StaticListAssignStateMachine(
                 return
             }
 
-            vSize = (vShown).size.toUInt()
+            vSize = vShown.size.toUInt()
     }
 
     private fun transitionContentOfShowingAt3() {
@@ -541,7 +541,7 @@ class StaticListAssignStateMachine(
                 return
             }
 
-            vCount = (vFew).size.toUInt()
+            vCount = vFew.size.toUInt()
     }
 
     private fun transitionContentOfShowingAt4() {
@@ -551,7 +551,7 @@ class StaticListAssignStateMachine(
                 return
             }
 
-            vCount = (vFew).size.toUInt()
+            vCount = vFew.size.toUInt()
     }
 
     private fun transitionContentOfShowingAt5() {

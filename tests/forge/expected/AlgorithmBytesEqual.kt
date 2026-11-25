@@ -15,12 +15,12 @@
 package com.sce.generated.bytes_equal
 
 fun bytesEqual(a: ByteArray, b: ByteArray): Boolean {
-    if ((a).size != (b).size) {
+    if (a.size != b.size) {
         return false
     }
     var i: UInt = 0.toUInt()
-    while (i < (a).size.toUInt()) {
-        if (a[(i).toInt()].toUByte() != b[(i).toInt()].toUByte()) {
+    while (i < a.size.toUInt()) {
+        if (a[i.toInt()].toUByte() != b[i.toInt()].toUByte()) {
             return false
         }
         i = i + 1.toUInt()

@@ -635,7 +635,7 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                         // operation that fails, or a value that is no time, is the argument
                         // error, and the message is not scheduled under some default wait.
                         do {
-                            let sceDelay = String((try Checked.mul(self.vWait, 100000000))) + "ms"
+                            let sceDelay = String(try Checked.mul(self.vWait, 100000000)) + "ms"
                             if let ms = parseDelayToMs(sceDelay) {
                                 sendDelayMs = ms
                             } else {

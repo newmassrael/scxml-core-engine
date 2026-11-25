@@ -185,7 +185,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var clamped bool = func() bool { if s.Invalid == 1 { return dom == dom0 }; return dom == (func() int64 { if dom0 < last { return dom0 }; return last }()) }()
+        var clamped bool = func() bool { if s.Invalid == 1 { return dom == dom0 }; return dom == func() int64 { if dom0 < last { return dom0 }; return last }() }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -216,7 +216,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceCond2 := freq == 2; sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         } else if sceCond2 {
-            ok = ok && (func() bool { if hasDay { return plainDay }; return wd == startWd }());
+            ok = ok && func() bool { if hasDay { return plainDay }; return wd == startWd }();
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             }

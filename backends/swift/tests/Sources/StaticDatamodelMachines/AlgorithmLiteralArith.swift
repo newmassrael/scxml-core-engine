@@ -19,16 +19,16 @@ public enum AlgorithmLiteralArith {
     public static func algorithmLiteralArith(_ prev: UInt64, _ m: UInt8, _ op: UInt8) throws(AlgorithmError) -> UInt64 {
         var r: UInt64 = prev
         if op == 0 {
-            r = (try Checked.add(prev, (try Checked.mul(UInt64(65536), UInt64(65536)))))
+            r = (try Checked.add(prev, try Checked.mul(UInt64(65536), UInt64(65536))))
         }
         if op == 1 {
-            r = prev & (try Checked.sub((UInt64(1) << m), UInt64(1)))
+            r = prev & (try Checked.sub(UInt64(1) << m, UInt64(1)))
         }
         if op == 2 {
-            r = (try Checked.sub(prev, (UInt64(1) << m)))
+            r = (try Checked.sub(prev, UInt64(1) << m))
         }
         if op == 3 {
-            r = (try Checked.mul((UInt64(1) << m), UInt64(3)))
+            r = (try Checked.mul(UInt64(1) << m, UInt64(3)))
         }
         if op == 4 {
             r = (try Checked.add((UInt64(1) << m) >> 1, UInt64(1)))

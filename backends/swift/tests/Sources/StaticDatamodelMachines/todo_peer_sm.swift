@@ -1687,7 +1687,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.pendingTodoEditPayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add(try Checked.mul(self.vEntry.element, 65536), UInt64(self.pendingTodoEditPayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2027,7 +2027,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add(try Checked.mul(self.vEntry.element, 65536), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2635,7 +2635,7 @@ break sceBlock
                 if (self.vZoneRows != 0) {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), (try Checked.sub(self.pendingTodoAgendaPayload.windowStart, 86400000)), (try Checked.add(self.pendingTodoAgendaPayload.windowEnd, 86400000)), self.pendingTodoAgendaPayload.skip)), capacity: 64)); self.vLocal = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='local'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), try Checked.sub(self.pendingTodoAgendaPayload.windowStart, 86400000), try Checked.add(self.pendingTodoAgendaPayload.windowEnd, 86400000), self.pendingTodoAgendaPayload.skip)), capacity: 64)); self.vLocal = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='local'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2667,19 +2667,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try call_UtcFromLocal__vv(self.vZoneStarts, self.vZoneOffsets, (try Checked.div(l.start, 1000)))); self.vUtcSec = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try call_UtcFromLocal__vv(self.vZoneStarts, self.vZoneOffsets, try Checked.div(l.start, 1000))); self.vUtcSec = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add((try Checked.mul(self.vUtcSec, 1000)), (try Checked.rem(l.start, 1000)))); self.vOcc.start = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add(try Checked.mul(self.vUtcSec, 1000), try Checked.rem(l.start, 1000))); self.vOcc.start = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add(self.vOcc.start, (try Checked.sub(l.end, l.start)))); self.vOcc.end = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='occ.end'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add(self.vOcc.start, try Checked.sub(l.end, l.start))); self.vOcc.end = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='occ.end'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

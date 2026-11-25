@@ -844,7 +844,7 @@ public final class StaticRecordEnumPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vSeen, (try Checked.sub(UInt32(truncatingIfNeeded: self.vSeen.count), 1)))).layout; self.vShown.layout = sceValue } catch { return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vSeen, try Checked.sub(UInt32(truncatingIfNeeded: self.vSeen.count), 1))).layout; self.vShown.layout = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

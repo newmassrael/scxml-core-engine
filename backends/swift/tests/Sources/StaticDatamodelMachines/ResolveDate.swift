@@ -50,7 +50,7 @@ public enum ResolveDate {
         }
         if expression.kind == DateKind.relativeWeeks {
             let weekShift: Int64 = Int64(expression.provenRelativeWeeks.count)
-            return (try Checked.add(today, (try Checked.mul(weekShift, 7))))
+            return (try Checked.add(today, try Checked.mul(weekShift, 7)))
         }
         if expression.kind == DateKind.relativeMonths {
             let monthFrom: CivilDatePayload = (try CivilFromDays.civilFromDays(today))
@@ -69,7 +69,7 @@ public enum ResolveDate {
             }
             let comingWanted: Int64 = Int64(expression.provenComingWeekday.weekday)
             let comingNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
-            let comingGap: Int64 = (try Checked.rem((try Checked.add((try Checked.sub(comingWanted, comingNow)), 7)), 7))
+            let comingGap: Int64 = (try Checked.rem(try Checked.add(try Checked.sub(comingWanted, comingNow), 7), 7))
             return (try Checked.add(today, comingGap == 0 ? 7 : comingGap))
         }
         if expression.kind == DateKind.previousWeekday {
@@ -78,7 +78,7 @@ public enum ResolveDate {
             }
             let previousWanted: Int64 = Int64(expression.provenPreviousWeekday.weekday)
             let previousNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
-            let previousGap: Int64 = (try Checked.rem((try Checked.add((try Checked.sub(previousNow, previousWanted)), 7)), 7))
+            let previousGap: Int64 = (try Checked.rem(try Checked.add(try Checked.sub(previousNow, previousWanted), 7), 7))
             return (try Checked.sub(today, previousGap == 0 ? 7 : previousGap))
         }
         if expression.kind == DateKind.dayOfMonthOffset {
@@ -96,7 +96,7 @@ public enum ResolveDate {
             let isoWanted: Int64 = Int64(expression.provenWeekdayOfWeek.weekday)
             let isoNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
             let weeks: Int64 = Int64(expression.provenWeekdayOfWeek.count)
-            return (try Checked.add(today, (try Checked.sub((try Checked.add((try Checked.mul(weeks, 7)), (try Checked.rem((try Checked.add(isoWanted, 6)), 7)))), (try Checked.rem((try Checked.add(isoNow, 6)), 7))))))
+            return (try Checked.add(today, try Checked.sub(try Checked.add(try Checked.mul(weeks, 7), try Checked.rem(try Checked.add(isoWanted, 6), 7)), try Checked.rem(try Checked.add(isoNow, 6), 7))))
         }
         preconditionFailure("resolve_date: every case of its union returned before the end of its body")
     }

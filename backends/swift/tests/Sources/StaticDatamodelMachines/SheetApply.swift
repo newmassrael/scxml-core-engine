@@ -18,18 +18,18 @@ import SceForgeRuntime
 public enum SheetApply {
     public static func sheetApply(_ op: UInt8, _ a: Int64, _ b: Int64) throws(AlgorithmError) -> SheetValuePayload {
         let top: Int64 = 9223372036854775807
-        let bottom: Int64 = (try Checked.sub((try Checked.neg(top)), 1))
+        let bottom: Int64 = (try Checked.sub(try Checked.neg(top), 1))
         var value: Int64 = 0
         var fault: UInt8 = 0
         if op == 2 {
-            if (try Checked.or((try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.sub(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.sub(bottom, b)) })) })) {
+            if (try Checked.or(try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.sub(top, b)) }), { () throws(AlgorithmError) -> Bool in try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.sub(bottom, b)) }) })) {
                 fault = 3
             } else {
                 value = (try Checked.add(a, b))
             }
         } else {
             if op == 3 {
-                if (try Checked.or((try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.add(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.add(bottom, b)) })) })) {
+                if (try Checked.or(try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.add(top, b)) }), { () throws(AlgorithmError) -> Bool in try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.add(bottom, b)) }) })) {
                     fault = 3
                 } else {
                     value = (try Checked.sub(a, b))
@@ -39,7 +39,7 @@ public enum SheetApply {
                     if a == 0 || b == 0 {
                         value = 0
                     } else {
-                        if (try Checked.or((try Checked.or((try Checked.or((try Checked.and(a > 0 && b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.div(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a > 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(bottom, a)) })) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a < 0 && b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.div(bottom, b)) })) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a < 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(top, a)) })) })) {
+                        if (try Checked.or(try Checked.or(try Checked.or(try Checked.and(a > 0 && b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.div(top, b)) }), { () throws(AlgorithmError) -> Bool in try Checked.and(a > 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(bottom, a)) }) }), { () throws(AlgorithmError) -> Bool in try Checked.and(a < 0 && b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.div(bottom, b)) }) }), { () throws(AlgorithmError) -> Bool in try Checked.and(a < 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(top, a)) }) })) {
                             fault = 3
                         } else {
                             value = (try Checked.mul(a, b))

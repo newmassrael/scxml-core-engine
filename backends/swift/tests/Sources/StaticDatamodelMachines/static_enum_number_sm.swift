@@ -632,7 +632,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying((try Checked.narrow(self.pendingStatusNumberPayload.number, to: UInt8.self))))); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, reason: .expressionFailed, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying(try Checked.narrow(self.pendingStatusNumberPayload.number, to: UInt8.self)))); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, reason: .expressionFailed, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

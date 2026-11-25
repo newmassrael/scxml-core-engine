@@ -21,7 +21,7 @@ typedef struct {
 } algorithm_cobs_encode_bytes_t;
 
 static inline bool algorithm_cobs_encode(sce_forge_bytes_view_t data, algorithm_cobs_encode_bytes_t *out) {
-    uint32_t n = (data).len;
+    uint32_t n = data.len;
     (*out).len = 0u;
     uint32_t p = 0;
     bool done = false;

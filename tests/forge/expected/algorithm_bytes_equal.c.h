@@ -16,11 +16,11 @@
 #include <stddef.h>
 #include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 static inline bool bytes_equal(sce_forge_bytes_view_t a, sce_forge_bytes_view_t b) {
-    if ((a).len != (b).len) {
+    if (a.len != b.len) {
         return false;
     }
     uint32_t i = 0;
-    while (i < (a).len) {
+    while (i < a.len) {
         if (a.data[i] != b.data[i]) {
             return false;
         }

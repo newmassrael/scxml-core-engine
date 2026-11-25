@@ -21,30 +21,30 @@ fun utcFromLocal(starts: LongArray, offsets: IntArray, local: Long): com.sce.for
     // SCE_FORGE.md §3.4.1: a checked operation throws its failure, and this
     // boundary hands it to the caller as a value — never as an exception.
     try {
-        if (!((starts).size == (offsets).size && (starts).size > 0)) {
+        if (!(starts.size == offsets.size && starts.size > 0)) {
             return com.sce.forge.runtime.AlgorithmResult.Failed(com.sce.forge.runtime.AlgorithmError.Precondition)
         }
-        if (!(com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, (0).toLong()).toLong()) >= com.sce.forge.runtime.SceChecked.at(starts, (0).toLong()))) {
+        if (!(com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, 0.toLong()).toLong()) >= com.sce.forge.runtime.SceChecked.at(starts, 0.toLong()))) {
             return com.sce.forge.runtime.AlgorithmResult.Failed(com.sce.forge.runtime.AlgorithmError.Precondition)
         }
-        var n: UInt = (starts).size.toUInt()
+        var n: UInt = starts.size.toUInt()
         var k: UInt = 0.toUInt()
         while (k < n) {
             if (k > 0.toUInt()) {
-                if (!(com.sce.forge.runtime.SceChecked.at(starts, (k).toLong()) > com.sce.forge.runtime.SceChecked.at(starts, (com.sce.forge.runtime.SceChecked.sub(k, 1.toUInt())).toLong()))) {
+                if (!(com.sce.forge.runtime.SceChecked.at(starts, k.toLong()) > com.sce.forge.runtime.SceChecked.at(starts, com.sce.forge.runtime.SceChecked.sub(k, 1.toUInt()).toLong()))) {
                     return com.sce.forge.runtime.AlgorithmResult.Failed(com.sce.forge.runtime.AlgorithmError.Precondition)
                 }
             }
-            var u: Long = com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, (k).toLong()).toLong())
-            if (u >= com.sce.forge.runtime.SceChecked.at(starts, (k).toLong()) && (com.sce.forge.runtime.SceChecked.add(k, 1.toUInt()) == n || u < com.sce.forge.runtime.SceChecked.at(starts, (com.sce.forge.runtime.SceChecked.add(k, 1.toUInt())).toLong()))) {
+            var u: Long = com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, k.toLong()).toLong())
+            if (u >= com.sce.forge.runtime.SceChecked.at(starts, k.toLong()) && (com.sce.forge.runtime.SceChecked.add(k, 1.toUInt()) == n || u < com.sce.forge.runtime.SceChecked.at(starts, com.sce.forge.runtime.SceChecked.add(k, 1.toUInt()).toLong()))) {
                 return com.sce.forge.runtime.AlgorithmResult.Ok(u)
             }
             k = com.sce.forge.runtime.SceChecked.add(k, 1.toUInt())
         }
         var g: UInt = 1.toUInt()
         while (g < n) {
-            var before: Long = com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, (com.sce.forge.runtime.SceChecked.sub(g, 1.toUInt())).toLong()).toLong())
-            if (before >= com.sce.forge.runtime.SceChecked.at(starts, (g).toLong()) && com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, (g).toLong()).toLong()) < com.sce.forge.runtime.SceChecked.at(starts, (g).toLong())) {
+            var before: Long = com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, com.sce.forge.runtime.SceChecked.sub(g, 1.toUInt()).toLong()).toLong())
+            if (before >= com.sce.forge.runtime.SceChecked.at(starts, g.toLong()) && com.sce.forge.runtime.SceChecked.sub(local, com.sce.forge.runtime.SceChecked.at(offsets, g.toLong()).toLong()) < com.sce.forge.runtime.SceChecked.at(starts, g.toLong())) {
                 return com.sce.forge.runtime.AlgorithmResult.Ok(before)
             }
             g = com.sce.forge.runtime.SceChecked.add(g, 1.toUInt())

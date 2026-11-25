@@ -644,7 +644,7 @@ class StaticPayloadBytesStateMachine(
                 return
             }
 
-            vSize = (pendingFramedTakenPayload!!.frame).size.toUInt()
+            vSize = pendingFramedTakenPayload!!.frame.size.toUInt()
     }
 
     private fun transitionContentOfIdleAt4() {
@@ -653,7 +653,7 @@ class StaticPayloadBytesStateMachine(
                     return
                 }
 
-            vSize = (pendingFramedTakenPayload!!.frame).size.toUInt()
+            vSize = pendingFramedTakenPayload!!.frame.size.toUInt()
     }
 
     private fun transitionContentOfIdleAt5() {

@@ -26,7 +26,7 @@ public enum UtcOffsetAt {
         var k: UInt32 = 0
         var i: UInt32 = 1
         while i < UInt32(truncatingIfNeeded: starts.count) {
-            if !((try Checked.at(starts, i)) > (try Checked.at(starts, (try Checked.sub(i, 1))))) {
+            if !((try Checked.at(starts, i)) > (try Checked.at(starts, try Checked.sub(i, 1)))) {
                 throw AlgorithmError.precondition
             }
             if (try Checked.at(starts, i)) <= t {

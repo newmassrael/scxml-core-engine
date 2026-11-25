@@ -489,7 +489,7 @@ class StaticComposedSendStateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to ((it.due)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { ((it)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to ((scePayload.spare)?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to (it.due?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { (it?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to (scePayload.spare?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
             )
         )
     }
@@ -719,18 +719,18 @@ class StaticComposedSendStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "items", (pendingBatchSentPayload!!.items).map { mapOf<String, Any?>("id" to (it.id).toLong(), "amount" to (it.amount).toString(), "label" to it.label, "level" to it.level.declaredName, "due" to ((it.due)?.let { (it).toString() }), "blob" to com.sce.runtime.EventPayload.bytesAsText(it.blob), "tags" to (it.tags).map { it }) })
+            putParam(sendPayload, "items", pendingBatchSentPayload!!.items.map { mapOf<String, Any?>("id" to it.id.toLong(), "amount" to it.amount.toString(), "label" to it.label, "level" to it.level.declaredName, "due" to it.due?.let { it.toString() }, "blob" to com.sce.runtime.EventPayload.bytesAsText(it.blob), "tags" to it.tags.map { it }) })
 
-            putParam(sendPayload, "grid", (pendingBatchSentPayload!!.grid).map { (it).map { (it).toLong() } })
+            putParam(sendPayload, "grid", pendingBatchSentPayload!!.grid.map { it.map { it.toLong() } })
 
-            putParam(sendPayload, "levels", (pendingBatchSentPayload!!.levels).map { it.declaredName })
+            putParam(sendPayload, "levels", pendingBatchSentPayload!!.levels.map { it.declaredName })
 
-            putParam(sendPayload, "maybe", (pendingBatchSentPayload!!.maybe).map { ((it)?.let { (it).toLong() }) })
+            putParam(sendPayload, "maybe", pendingBatchSentPayload!!.maybe.map { it?.let { it.toLong() } })
 
-            putParam(sendPayload, "spare", ((pendingBatchSentPayload!!.spare)?.let { (it).map { (it).toLong() } }))
+            putParam(sendPayload, "spare", pendingBatchSentPayload!!.spare?.let { it.map { it.toLong() } })
 
             putParam(sendPayload, "note", "echo")
-            putParam(sendPayload, "late", (vLate).map { (it).toLong() })
+            putParam(sendPayload, "late", vLate.map { it.toLong() })
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
@@ -747,7 +747,7 @@ class StaticComposedSendStateMachine(
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
+                putParam(sendPayload, "kept", run { if (vHeld.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); vHeld.map { it.toLong() } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
@@ -780,19 +780,19 @@ class StaticComposedSendStateMachine(
                 return
             }
 
-            vItemCount = (pendingBatchSentPayload!!.items).size.toUInt()
+            vItemCount = pendingBatchSentPayload!!.items.size.toUInt()
 
-            vLevelCount = (pendingBatchSentPayload!!.levels).size.toUInt()
+            vLevelCount = pendingBatchSentPayload!!.levels.size.toUInt()
 
 
             for ((sce_position_of_i, row) in pendingBatchSentPayload!!.items.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, (row.tags).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, row.tags.size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (i).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, i.toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -818,9 +818,9 @@ class StaticComposedSendStateMachine(
             }
 
 
-            if ((pendingBatchSentPayload!!.maybe).size.toUInt() > 0.toUInt()) {
+            if (pendingBatchSentPayload!!.maybe.size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, 0.toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -833,7 +833,7 @@ class StaticComposedSendStateMachine(
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
+                putParam(sendPayload, "kept", run { if (vHeld.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); vHeld.map { it.toLong() } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
@@ -867,7 +867,7 @@ class StaticComposedSendStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "kept", (pendingCountedSentPayload!!.kept).map { (it).toLong() })
+            putParam(sendPayload, "kept", pendingCountedSentPayload!!.kept.map { it.toLong() })
 
             putParam(sendPayload, "hops", (pendingCountedSentPayload!!.hops).toLong())
 

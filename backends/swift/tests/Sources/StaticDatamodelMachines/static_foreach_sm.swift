@@ -741,7 +741,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     let i = UInt32(truncatingIfNeeded: sceIndex); _ = i; _ = v
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWeighted, (try Checked.mul(UInt32(v), (try Checked.add(i, 1)))))); self.vWeighted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWeighted, try Checked.mul(UInt32(v), try Checked.add(i, 1)))); self.vWeighted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

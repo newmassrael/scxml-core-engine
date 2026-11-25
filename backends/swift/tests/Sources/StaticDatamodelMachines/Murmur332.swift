@@ -21,30 +21,30 @@ public enum Murmur332 {
         var j: UInt32 = 0
         while j < n {
             let b: UInt64 = UInt64(data[Int(j)])
-            k = (k | (b << (8 * (j & 3)))) & 0xFFFFFFFF
-            if (j & 3) == 3 {
-                k = ((k & 0xFFFFFFFF) * 0xcc9e2d51) & 0xFFFFFFFF
-                k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
-                k = ((k & 0xFFFFFFFF) * 0x1b873593) & 0xFFFFFFFF
+            k = (k | b << (8 * (j & 3))) & 0xFFFFFFFF
+            if j & 3 == 3 {
+                k = k & 0xFFFFFFFF * 0xcc9e2d51 & 0xFFFFFFFF
+                k = (k << 15 | k >> 17) & 0xFFFFFFFF
+                k = k & 0xFFFFFFFF * 0x1b873593 & 0xFFFFFFFF
                 h = (h ^ k) & 0xFFFFFFFF
-                h = ((h << 13) | (h >> 19)) & 0xFFFFFFFF
-                h = ((h & 0xFFFFFFFF) * 5 + 0xe6546b64) & 0xFFFFFFFF
+                h = (h << 13 | h >> 19) & 0xFFFFFFFF
+                h = (h & 0xFFFFFFFF * 5 + 0xe6546b64) & 0xFFFFFFFF
                 k = 0
             }
             j = j + 1
         }
-        if (n & 3) != 0 {
-            k = ((k & 0xFFFFFFFF) * 0xcc9e2d51) & 0xFFFFFFFF
-            k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
-            k = ((k & 0xFFFFFFFF) * 0x1b873593) & 0xFFFFFFFF
+        if n & 3 != 0 {
+            k = k & 0xFFFFFFFF * 0xcc9e2d51 & 0xFFFFFFFF
+            k = (k << 15 | k >> 17) & 0xFFFFFFFF
+            k = k & 0xFFFFFFFF * 0x1b873593 & 0xFFFFFFFF
             h = (h ^ k) & 0xFFFFFFFF
         }
         h = (h ^ UInt64(n)) & 0xFFFFFFFF
-        h = (h ^ (h >> 16)) & 0xFFFFFFFF
-        h = ((h & 0xFFFFFFFF) * 0x85ebca6b) & 0xFFFFFFFF
-        h = (h ^ (h >> 13)) & 0xFFFFFFFF
-        h = ((h & 0xFFFFFFFF) * 0xc2b2ae35) & 0xFFFFFFFF
-        h = (h ^ (h >> 16)) & 0xFFFFFFFF
+        h = (h ^ h >> 16) & 0xFFFFFFFF
+        h = h & 0xFFFFFFFF * 0x85ebca6b & 0xFFFFFFFF
+        h = (h ^ h >> 13) & 0xFFFFFFFF
+        h = h & 0xFFFFFFFF * 0xc2b2ae35 & 0xFFFFFFFF
+        h = (h ^ h >> 16) & 0xFFFFFFFF
         return UInt32(truncatingIfNeeded: h & 0xFFFFFFFF)
     }
 }

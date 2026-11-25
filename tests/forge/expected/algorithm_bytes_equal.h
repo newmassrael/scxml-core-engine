@@ -18,11 +18,11 @@
 namespace SCE::Generated::BytesEqual {
 
 inline bool bytes_equal(SCE::Forge::Span<const std::uint8_t> a, SCE::Forge::Span<const std::uint8_t> b) {
-    if ((a).size() != (b).size()) {
+    if (a.size() != b.size()) {
         return false;
     }
     uint32_t i = 0;
-    while (i < (a).size()) {
+    while (i < a.size()) {
         if (a[i] != b[i]) {
             return false;
         }

@@ -1339,7 +1339,7 @@ class TodoPeerStateMachine(
             vForbidden = false
 
 
-            if ((vRoster).size.toUInt() > 0.toUInt()) {
+            if (vRoster.size.toUInt() > 0.toUInt()) {
 
             vForbidden = true
 
@@ -1377,7 +1377,7 @@ class TodoPeerStateMachine(
             }
 
 
-            if (!vForbidden && vRoomValues > 0.toUInt() && vGone == 0.toUInt() && (vValues).size.toUInt() >= vRoomValues) {
+            if (!vForbidden && vRoomValues > 0.toUInt() && vGone == 0.toUInt() && vValues.size.toUInt() >= vRoomValues) {
 
             if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1494,7 +1494,7 @@ class TodoPeerStateMachine(
             vAuthorized = true
 
 
-            if ((vRoster).size.toUInt() > 0.toUInt()) {
+            if (vRoster.size.toUInt() > 0.toUInt()) {
 
             vAuthorized = false
 
@@ -1678,7 +1678,7 @@ class TodoPeerStateMachine(
             putParam(sendPayload, "counter", (vDot.counter).toLong())
 
             try {
-                putParam(sendPayload, "ops", run { if ((vTaking).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vTaking).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) } })
+                putParam(sendPayload, "ops", run { if (vTaking.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); vTaking.map { mapOf<String, Any?>("kind" to it.kind.toLong(), "id" to it.id.toLong(), "field" to it.field.toLong(), "value" to it.value.toString(), "text" to it.text, "wallTime" to it.wallTime.toString(), "counter" to it.counter.toLong(), "nodeId" to it.nodeId.toString()) } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,

@@ -688,7 +688,7 @@ class StaticLiftListStateMachine(
 
             vPriority = com.sce.forge.runtime.SceOptional.proven(vAnswer).priority
 
-            vHeldItems = (com.sce.forge.runtime.SceOptional.proven(vAnswer).items).size.toUInt()
+            vHeldItems = com.sce.forge.runtime.SceOptional.proven(vAnswer).items.size.toUInt()
             }
     }
 

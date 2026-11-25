@@ -21,19 +21,19 @@ def algorithm_cobs_encode(data: bytes) -> bytes:
         q: int = p
         run: int = 0
         while q < n and run < 254 and data[q] != 0:
-            q = ((q + 1) & 0xFFFFFFFF)
-            run = ((run + 1) & 0xFFFF)
-        code: int = ((((run + 1) & 0xFFFF)) & 0xFF)
+            q = q + 1 & 0xFFFFFFFF
+            run = run + 1 & 0xFFFF
+        code: int = run + 1 & 0xFFFF & 0xFF
         out.append(code)
         k: int = p
         while k < q:
             out.append(data[k])
-            k = ((k + 1) & 0xFFFFFFFF)
+            k = k + 1 & 0xFFFFFFFF
         if q >= n:
             done = True
         else:
             if run < 254:
-                p = ((q + 1) & 0xFFFFFFFF)
+                p = q + 1 & 0xFFFFFFFF
                 if p >= n:
                     last: int = 1
                     out.append(last)

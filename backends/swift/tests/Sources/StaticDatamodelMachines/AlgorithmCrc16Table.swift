@@ -20,8 +20,8 @@ public enum AlgorithmCrc16Table {
     public static func algorithmCrc16Table(_ data: [UInt8]) -> UInt16 {
         var crc: UInt16 = 0xFFFF
         for b in data {
-            let idx: UInt16 = ((crc >> 8) ^ UInt16(b)) & 0xFF
-            crc = (crc << 8) ^ CRC16_TABLE[Int(idx)]
+            let idx: UInt16 = (crc >> 8 ^ UInt16(b)) & 0xFF
+            crc = crc << 8 ^ CRC16_TABLE[Int(idx)]
         }
         return crc
     }

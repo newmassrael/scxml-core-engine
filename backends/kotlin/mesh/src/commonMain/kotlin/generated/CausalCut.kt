@@ -37,7 +37,7 @@ fun causalCut(members: UInt, known: List<CausalKnownPayload>): List<CausalEntryP
         }
     }
     val out = ArrayList<CausalEntryPayload>(64)
-    if ((holders).size.toUInt() >= members) {
+    if (holders.size.toUInt() >= members) {
         var done: Boolean = false
         var low: ULong = 0.toULong()
         var value: ULong = 0.toULong()

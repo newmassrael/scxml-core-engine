@@ -17,49 +17,49 @@ public enum AlgorithmShiftCount {
     public static func algorithmShiftCount(_ x: UInt8, _ h: Int16, _ w: UInt32, _ s: Int32, _ q: UInt64, _ l: Int64, _ n: UInt8, _ op: UInt8) -> Int64 {
         var r: Int64 = 0
         if op == 0 {
-            r = Int64((x << n))
+            r = Int64(x << n)
         }
         if op == 1 {
-            r = Int64((x >> n))
+            r = Int64(x >> n)
         }
         if op == 2 {
-            r = Int64((h << n))
+            r = Int64(h << n)
         }
         if op == 3 {
-            r = Int64((h >> n))
+            r = Int64(h >> n)
         }
         if op == 4 {
-            r = Int64((Int16(truncatingIfNeeded: UInt16(truncatingIfNeeded: h) >> n)))
+            r = Int64(Int16(truncatingIfNeeded: UInt16(truncatingIfNeeded: h) >> n))
         }
         if op == 5 {
-            r = Int64((w << n))
+            r = Int64(w << n)
         }
         if op == 6 {
-            r = Int64((w >> n))
+            r = Int64(w >> n)
         }
         if op == 7 {
-            r = Int64((s << n))
+            r = Int64(s << n)
         }
         if op == 8 {
-            r = Int64((s >> n))
+            r = Int64(s >> n)
         }
         if op == 9 {
-            r = Int64((Int32(truncatingIfNeeded: UInt32(truncatingIfNeeded: s) >> n)))
+            r = Int64(Int32(truncatingIfNeeded: UInt32(truncatingIfNeeded: s) >> n))
         }
         if op == 10 {
-            r = Int64(truncatingIfNeeded: (q << n) & 9223372036854775807)
+            r = Int64(truncatingIfNeeded: q << n & 9223372036854775807)
         }
         if op == 11 {
-            r = Int64(truncatingIfNeeded: (q >> n) & 9223372036854775807)
+            r = Int64(truncatingIfNeeded: q >> n & 9223372036854775807)
         }
         if op == 12 {
-            r = (l << n)
+            r = l << n
         }
         if op == 13 {
-            r = (l >> n)
+            r = l >> n
         }
         if op == 14 {
-            r = (Int64(truncatingIfNeeded: UInt64(truncatingIfNeeded: l) >> n))
+            r = Int64(truncatingIfNeeded: UInt64(truncatingIfNeeded: l) >> n)
         }
         if op == 15 && n < 32 {
             r = Int64(s << n)

@@ -1886,15 +1886,15 @@ class RecordListStateMachine(
         event is RecordListEvent.RecordList.Join -> TransitionsPart0.transitionOpenAt0
         event is RecordListEvent.RecordList.Room -> TransitionsPart0.transitionOpenAt1
         event is RecordListEvent.RecordList.Role -> TransitionsPart0.transitionOpenAt2
-        event is RecordListEvent.RecordList.Edit && (vOffered).size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt3
-        event is RecordListEvent.RecordList.Clear && (vOffered).size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt4
-        event is RecordListEvent.RecordList.Retire && (vOffered).size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt5
+        event is RecordListEvent.RecordList.Edit && vOffered.size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt3
+        event is RecordListEvent.RecordList.Clear && vOffered.size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt4
+        event is RecordListEvent.RecordList.Retire && vOffered.size.toUInt() > 0.toUInt() -> TransitionsPart0.transitionOpenAt5
         event is RecordListEvent.RecordList.Edit -> TransitionsPart0.transitionOpenAt6
         event is RecordListEvent.RecordList.Clear -> TransitionsPart0.transitionOpenAt7
         event is RecordListEvent.RecordList.Retire -> TransitionsPart0.transitionOpenAt8
         event is RecordListEvent.RecordList.Close -> TransitionsPart0.transitionOpenAt9
         event is RecordListEvent.RecordList.Offer -> TransitionsPart0.transitionOpenAt10
-        event is RecordListEvent.RecordList.Verdict && pendingRecordListVerdictPayload != null && ((vOffered).size.toUInt() > 0.toUInt() && pendingRecordListVerdictPayload!!.outcome != RecordListOutcomeEnum.NONE && pendingRecordListVerdictPayload!!.wallTime == vOfferedAt.wallTime && pendingRecordListVerdictPayload!!.counter == vOfferedAt.counter) -> TransitionsPart0.transitionOpenAt11
+        event is RecordListEvent.RecordList.Verdict && pendingRecordListVerdictPayload != null && (vOffered.size.toUInt() > 0.toUInt() && pendingRecordListVerdictPayload!!.outcome != RecordListOutcomeEnum.NONE && pendingRecordListVerdictPayload!!.wallTime == vOfferedAt.wallTime && pendingRecordListVerdictPayload!!.counter == vOfferedAt.counter) -> TransitionsPart0.transitionOpenAt11
         event is RecordListEvent.RecordList.Verdict -> TransitionsPart0.transitionOpenAt12
         event is RecordListEvent.RecordList.Conclude -> TransitionsPart0.transitionOpenAt13
         event is RecordListEvent.RecordList.Change -> TransitionsPart0.transitionOpenAt14
@@ -2238,7 +2238,7 @@ class RecordListStateMachine(
                 // SCE-MAP: record_list.scxml:598 :: open :: _transition_9
 
 
-            if (!vSpoiled && (vRoster).size.toUInt() > 0.toUInt()) {
+            if (!vSpoiled && vRoster.size.toUInt() > 0.toUInt()) {
 
             vForbidden = true
 
@@ -2350,7 +2350,7 @@ class RecordListStateMachine(
 
 
             var ifCondFailed17 = false
-            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomValues > 0.toUInt() && vWrites > vGone && com.sce.forge.runtime.SceChecked.add((vValues).size.toUInt(), vWrites) > com.sce.forge.runtime.SceChecked.add(vRoomValues, vGone) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"); ifCondFailed17 = true; false })) {
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomValues > 0.toUInt() && vWrites > vGone && com.sce.forge.runtime.SceChecked.add(vValues.size.toUInt(), vWrites) > com.sce.forge.runtime.SceChecked.add(vRoomValues, vGone) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"); ifCondFailed17 = true; false })) {
 
             if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -2366,7 +2366,7 @@ class RecordListStateMachine(
 
 
             var ifCondFailed18 = false
-            if ((try { !vSpoiled && vJournal && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && (vProvisional).size.toUInt() >= 8.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"); ifCondFailed18 = true; false })) {
+            if ((try { !vSpoiled && vJournal && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vProvisional.size.toUInt() >= 8.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"); ifCondFailed18 = true; false })) {
 
             vSpoiled = true
 
@@ -2704,7 +2704,7 @@ RecordListEvent.RecordList.Refused,
             putParam(sendPayload, "counter", (vOfferedAt.counter).toLong())
 
             try {
-                putParam(sendPayload, "ops", run { if ((vOffered).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vOffered).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) } })
+                putParam(sendPayload, "ops", run { if (vOffered.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); vOffered.map { mapOf<String, Any?>("kind" to it.kind.toLong(), "id" to it.id.toLong(), "field" to it.field.toLong(), "value" to it.value.toString(), "text" to it.text, "wallTime" to it.wallTime.toString(), "counter" to it.counter.toLong(), "nodeId" to it.nodeId.toString()) } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
@@ -2768,17 +2768,17 @@ RecordListEvent.RecordList.Refused,
 
             vStanding = vStanding.copy(command = vClosingCommand)
 
-            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vOffered, 0.toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vOffered, 0.toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             var ifCondFailed30 = false
-            if ((try { com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed30 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.at(vOffered, 0.toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed30 = true; false })) {
 
             vStanding = vStanding.copy(kind = RecordListCommandEnum.EDIT)
             } else {
@@ -2891,7 +2891,7 @@ RecordListEvent.RecordList.Refused,
 
             if (pendingRecordListVerdictPayload!!.outcome != RecordListOutcomeEnum.REFUSED) {
 
-            vClosedOps = (vOffered).size.toUInt()
+            vClosedOps = vOffered.size.toUInt()
 
             vClosedFor = null
 
@@ -3088,7 +3088,7 @@ RecordListEvent.RecordList.Pending,
             vAuthorized = true
 
 
-            if ((vRoster).size.toUInt() > 0.toUInt()) {
+            if (vRoster.size.toUInt() > 0.toUInt()) {
 
             vAuthorized = false
 
@@ -3172,17 +3172,17 @@ RecordListEvent.RecordList.Pending,
 
             vStanding = vStanding.copy(command = pendingRecordListRecallPayload!!.command)
 
-            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vTaking, 0.toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vTaking, 0.toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             var ifCondFailed42 = false
-            if ((try { com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed42 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.at(vTaking, 0.toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed42 = true; false })) {
 
             vStanding = vStanding.copy(kind = RecordListCommandEnum.EDIT)
             } else {
@@ -3457,7 +3457,7 @@ RecordListEvent.RecordList.Pending,
             }
 
 
-            if (!vWasLive && (vUndo).size.toUInt() > 0.toUInt()) {
+            if (!vWasLive && vUndo.size.toUInt() > 0.toUInt()) {
 
             vUndoKept = emptyList()
 
@@ -3535,7 +3535,7 @@ RecordListEvent.RecordList.Pending,
             putParam(sendPayload, "counter", (vDot.counter).toLong())
 
             try {
-                putParam(sendPayload, "ops", run { if ((vTaking).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vTaking).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) } })
+                putParam(sendPayload, "ops", run { if (vTaking.size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); vTaking.map { mapOf<String, Any?>("kind" to it.kind.toLong(), "id" to it.id.toLong(), "field" to it.field.toLong(), "value" to it.value.toString(), "text" to it.text, "wallTime" to it.wallTime.toString(), "counter" to it.counter.toLong(), "nodeId" to it.nodeId.toString()) } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
@@ -3784,7 +3784,7 @@ RecordListEvent.RecordList.Confirmed,
     private fun transitionContentOfOpenAt23() {
                 // SCE-MAP: record_list.scxml:1194 :: open :: _transition_23
 
-            if (try { vStanding = com.sce.forge.runtime.SceChecked.at(vProvisional, (com.sce.forge.runtime.SceChecked.sub((vProvisional).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = com.sce.forge.runtime.SceChecked.at(vProvisional, (com.sce.forge.runtime.SceChecked.sub(vProvisional.size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3970,7 +3970,7 @@ RecordListEvent.RecordList.Confirmed,
 
 
             var ifCondFailed72 = false
-            if ((try { com.sce.forge.runtime.SceChecked.add(at, 1.toUInt()) < (vProvisional).size.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"); ifCondFailed72 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.add(at, 1.toUInt()) < vProvisional.size.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"); ifCondFailed72 = true; false })) {
 
             if (if (vProvisionalKept.size < 8) { vProvisionalKept = vProvisionalKept + (p); false } else { raisePlatformError(RecordListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"); true }) {
                 return
@@ -4082,7 +4082,7 @@ RecordListEvent.RecordList.Refused,
             }
 
 
-            if ((vMoved).size.toUInt() == 0.toUInt()) {
+            if (vMoved.size.toUInt() == 0.toUInt()) {
 
 
             if (run send@{
@@ -4126,7 +4126,7 @@ RecordListEvent.RecordList.Refused,
             }
 
 
-            if ((vLive).size.toUInt() == 0.toUInt()) {
+            if (vLive.size.toUInt() == 0.toUInt()) {
 
 
             if (run send@{
@@ -4228,7 +4228,7 @@ RecordListEvent.RecordList.Register,
 
             putParam(sendPayload, "field", (vShareField).toLong())
 
-            putParam(sendPayload, "count", ((vLive).size.toUInt()).toLong())
+            putParam(sendPayload, "count", (vLive.size.toUInt()).toLong())
 
             putParam(sendPayload, "value", (r.value).toString())
 

@@ -548,6 +548,6 @@ class StaticStringLiteralStateMachine(
     private fun transitionContentOfIdleAt8() {
                 // SCE-MAP: static_string_literal.scxml:52 :: idle :: _transition_8
 
-            vMeasured = (vHeld).encodeToByteArray().size.toUInt()
+            vMeasured = vHeld.encodeToByteArray().size.toUInt()
     }
 }

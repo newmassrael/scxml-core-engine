@@ -42,7 +42,7 @@ public enum SheetSettle {
                     var fa: Int64 = 0
                     var vb: Int64 = 0
                     var fb: Int64 = 0
-                    let sides: Int64 = c.op >= 1 && c.op <= 5 ? (c.op == 1 ? 1 : 2) : 0
+                    let sides: Int64 = c.op >= 1 && c.op <= 5 ? c.op == 1 ? 1 : 2 : 0
                     var side: Int64 = 0
                     while side < sides {
                         let isRef: Bool = side == 0 ? c.aRef : c.bRef
@@ -68,8 +68,8 @@ public enum SheetSettle {
                                 while m < Int64(truncatingIfNeeded: trail.count) {
                                     if (try Checked.at(trail, m)) == holder {
                                         hit = true
-                                        xv = (try Checked.at(trail, (try Checked.add(m, 1))))
-                                        xf = (try Checked.at(trail, (try Checked.add(m, 2))))
+                                        xv = (try Checked.at(trail, try Checked.add(m, 1)))
+                                        xf = (try Checked.at(trail, try Checked.add(m, 2)))
                                     }
                                     m = (try Checked.add(m, 3))
                                 }
@@ -96,7 +96,7 @@ public enum SheetSettle {
                     }
                     if c.op >= 2 && c.op <= 5 {
                         if fa != 0 || fb != 0 {
-                            f = fa == 0 ? fb : (fb == 0 ? fa : (fa < fb ? fa : fb))
+                            f = fa == 0 ? fb : fb == 0 ? fa : fa < fb ? fa : fb
                         } else {
                             let applied: SheetValuePayload = (try SheetApply.sheetApply(c.op, va, vb))
                             v = applied.value
@@ -177,10 +177,10 @@ public enum SheetSettle {
                                     while w < Int64(truncatingIfNeeded: trail.count) {
                                         if (try Checked.at(trail, w)) == walked {
                                             seen = true
-                                            let mv: Int64 = (try Checked.at(trail, (try Checked.add(w, 1))))
-                                            let mf: Int64 = (try Checked.at(trail, (try Checked.add(w, 2))))
+                                            let mv: Int64 = (try Checked.at(trail, try Checked.add(w, 1)))
+                                            let mf: Int64 = (try Checked.at(trail, try Checked.add(w, 2)))
                                             if mf != 0 {
-                                                worst = worst == 0 ? mf : (mf < worst ? mf : worst)
+                                                worst = worst == 0 ? mf : mf < worst ? mf : worst
                                             }
                                             if mf == 0 && mv > 0 {
                                                 let grown: SheetValuePayload = (try SheetApply.sheetApply(2, above, mv))

@@ -20,8 +20,8 @@ public enum RetryJittered {
         if !(baseMs > 0 && jitterPct >= 0 && jitterPct <= 100 && draw >= 0) {
             throw AlgorithmError.precondition
         }
-        let delta: Int64 = (try Checked.add((try Checked.mul((try Checked.div(baseMs, 100)), jitterPct)), (try Checked.div((try Checked.mul((try Checked.rem(baseMs, 100)), jitterPct)), 100))))
-        let waited: Int64 = (try Checked.add((try Checked.sub(baseMs, delta)), (try Checked.rem(draw, (try Checked.add((try Checked.mul(2, delta)), 1))))))
+        let delta: Int64 = (try Checked.add(try Checked.mul(try Checked.div(baseMs, 100), jitterPct), try Checked.div(try Checked.mul(try Checked.rem(baseMs, 100), jitterPct), 100)))
+        let waited: Int64 = (try Checked.add(try Checked.sub(baseMs, delta), try Checked.rem(draw, try Checked.add(try Checked.mul(2, delta), 1))))
         return waited < 1 ? 1 : waited
     }
 }

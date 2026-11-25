@@ -26,12 +26,12 @@ public enum DaysFromCivil {
         let yr: Int64 = Int64(year)
         let mo: Int64 = Int64(month)
         let dy: Int64 = Int64(day)
-        let y: Int64 = mo <= 2 ? (try Checked.sub(yr, 1)) : yr
+        let y: Int64 = mo <= 2 ? try Checked.sub(yr, 1) : yr
         let era: Int64 = (try Checked.div(y >= 0 ? y : (try Checked.sub(y, 399)), 400))
-        let yoe: Int64 = (try Checked.sub(y, (try Checked.mul(era, 400))))
-        let mp: Int64 = mo > 2 ? (try Checked.sub(mo, 3)) : (try Checked.add(mo, 9))
-        let doy: Int64 = (try Checked.sub((try Checked.add((try Checked.div((try Checked.add((try Checked.mul(153, mp)), 2)), 5)), dy)), 1))
-        let doe: Int64 = (try Checked.add((try Checked.sub((try Checked.add((try Checked.mul(yoe, 365)), (try Checked.div(yoe, 4)))), (try Checked.div(yoe, 100)))), doy))
-        return (try Checked.sub((try Checked.add((try Checked.mul(era, 146097)), doe)), 719468))
+        let yoe: Int64 = (try Checked.sub(y, try Checked.mul(era, 400)))
+        let mp: Int64 = mo > 2 ? try Checked.sub(mo, 3) : (try Checked.add(mo, 9))
+        let doy: Int64 = (try Checked.sub(try Checked.add(try Checked.div(try Checked.add(try Checked.mul(153, mp), 2), 5), dy), 1))
+        let doe: Int64 = (try Checked.add(try Checked.sub(try Checked.add(try Checked.mul(yoe, 365), try Checked.div(yoe, 4)), try Checked.div(yoe, 100)), doy))
+        return (try Checked.sub(try Checked.add(try Checked.mul(era, 146097), doe), 719468))
     }
 }

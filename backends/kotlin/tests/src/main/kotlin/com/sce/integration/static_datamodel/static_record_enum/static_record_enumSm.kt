@@ -573,7 +573,7 @@ class StaticRecordEnumStateMachine(
         event is StaticRecordEnumEvent.Recall -> TransitionsPart0.transitionViewingAt7
         event is StaticRecordEnumEvent.Peek -> TransitionsPart0.transitionViewingAt8
         event is StaticRecordEnumEvent.Peeklast -> TransitionsPart0.transitionViewingAt9
-        event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> TransitionsPart0.transitionViewingAt10
+        event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vSeen, 0.toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> TransitionsPart0.transitionViewingAt10
         event is StaticRecordEnumEvent.Take -> TransitionsPart0.transitionViewingAt11
         event is StaticRecordEnumEvent.Takelast -> TransitionsPart0.transitionViewingAt12
         event is StaticRecordEnumEvent.Forget -> TransitionsPart0.transitionViewingAt13
@@ -726,7 +726,7 @@ class StaticRecordEnumStateMachine(
     private fun transitionContentOfViewingAt8() {
                 // SCE-MAP: static_record_enum.scxml:71 :: viewing :: _transition_8
 
-            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, 0.toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
     }
@@ -734,7 +734,7 @@ class StaticRecordEnumStateMachine(
     private fun transitionContentOfViewingAt9() {
                 // SCE-MAP: static_record_enum.scxml:74 :: viewing :: _transition_9
 
-            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, com.sce.forge.runtime.SceChecked.sub(vSeen.size.toUInt(), 1.toUInt()).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
     }
@@ -758,7 +758,7 @@ class StaticRecordEnumStateMachine(
     private fun transitionContentOfViewingAt12() {
                 // SCE-MAP: static_record_enum.scxml:87 :: viewing :: _transition_12
 
-            if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub(vSeen.size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
     }

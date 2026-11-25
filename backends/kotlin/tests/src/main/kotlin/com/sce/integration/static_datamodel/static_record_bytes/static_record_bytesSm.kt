@@ -641,7 +641,7 @@ class StaticRecordBytesStateMachine(
         event is StaticRecordBytesEvent.Tally -> TransitionsPart0.transitionIdleAt11
         event is StaticRecordBytesEvent.Peek -> TransitionsPart0.transitionIdleAt12
         event is StaticRecordBytesEvent.Width -> TransitionsPart0.transitionIdleAt13
-        event is StaticRecordBytesEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vFrames, (0).toLong()).frame.contentEquals("ab".toByteArray()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<transition cond='frames[0].frame === 'ab''>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionIdleAt14
+        event is StaticRecordBytesEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vFrames, 0.toLong()).frame.contentEquals("ab".toByteArray()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<transition cond='frames[0].frame === 'ab''>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionIdleAt14
         event is StaticRecordBytesEvent.Take -> TransitionsPart0.transitionIdleAt15
         event is StaticRecordBytesEvent.Takelast -> TransitionsPart0.transitionIdleAt16
         event is StaticRecordBytesEvent.Forget -> TransitionsPart0.transitionIdleAt17
@@ -796,7 +796,7 @@ class StaticRecordBytesStateMachine(
     private fun transitionContentOfIdleAt9() {
                 // SCE-MAP: static_record_bytes.scxml:70 :: idle :: _transition_9
 
-            vSize = (vLast.frame).size.toUInt()
+            vSize = vLast.frame.size.toUInt()
     }
 
     private fun transitionContentOfIdleAt10() {
@@ -822,7 +822,7 @@ class StaticRecordBytesStateMachine(
     private fun transitionContentOfIdleAt12() {
                 // SCE-MAP: static_record_bytes.scxml:89 :: idle :: _transition_12
 
-            if (try { vSpare = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vFrames, (0).toLong()).frame, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='spare'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSpare = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vFrames, 0.toLong()).frame, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='spare'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -830,7 +830,7 @@ class StaticRecordBytesStateMachine(
     private fun transitionContentOfIdleAt13() {
                 // SCE-MAP: static_record_bytes.scxml:92 :: idle :: _transition_13
 
-            if (try { vSize = (com.sce.forge.runtime.SceChecked.at(vFrames, (com.sce.forge.runtime.SceChecked.sub((vFrames).size.toUInt(), 1.toUInt())).toLong()).frame).size.toUInt(); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='size'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSize = com.sce.forge.runtime.SceChecked.at(vFrames, com.sce.forge.runtime.SceChecked.sub(vFrames.size.toUInt(), 1.toUInt()).toLong()).frame.size.toUInt(); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='size'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -854,7 +854,7 @@ class StaticRecordBytesStateMachine(
     private fun transitionContentOfIdleAt16() {
                 // SCE-MAP: static_record_bytes.scxml:105 :: idle :: _transition_16
 
-            if (try { vLast = com.sce.forge.runtime.SceChecked.at(vFrames, (com.sce.forge.runtime.SceChecked.sub((vFrames).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = com.sce.forge.runtime.SceChecked.at(vFrames, (com.sce.forge.runtime.SceChecked.sub(vFrames.size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

@@ -430,7 +430,7 @@ class StaticComposedTextStateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to ((it.due)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { ((it)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to ((scePayload.spare)?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to (it.due?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { (it?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to (scePayload.spare?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
             )
         )
     }
@@ -614,12 +614,12 @@ class StaticComposedTextStateMachine(
 
             vNoteIsAb = true
 
-            vNoteLen = (pendingBatchSentPayload!!.note).encodeToByteArray().size.toUInt()
+            vNoteLen = pendingBatchSentPayload!!.note.encodeToByteArray().size.toUInt()
 
 
-            if ((pendingBatchSentPayload!!.items).size.toUInt() > 0.toUInt()) {
+            if (pendingBatchSentPayload!!.items.size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstLabelIsAb = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (0).toLong()).label == "ab"; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstLabelIsAb = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, 0.toLong()).label == "ab"; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -637,7 +637,7 @@ class StaticComposedTextStateMachine(
 
 
             var ifCondFailed3 = false
-            if ((try { (row.tags).size.toUInt() > 0.toUInt() && com.sce.forge.runtime.SceChecked.at(row.tags, (0).toLong()) == "ab" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed"); ifCondFailed3 = true; false })) {
+            if ((try { row.tags.size.toUInt() > 0.toUInt() && com.sce.forge.runtime.SceChecked.at(row.tags, 0.toLong()) == "ab" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed"); ifCondFailed3 = true; false })) {
 
             if (try { vFirstTagsAb = com.sce.forge.runtime.SceChecked.add(vFirstTagsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_tags_ab'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -663,7 +663,7 @@ class StaticComposedTextStateMachine(
                 return
             }
 
-            if (try { vBlobBytes = com.sce.forge.runtime.SceChecked.add(vBlobBytes, (row.blob).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='blob_bytes'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBlobBytes = com.sce.forge.runtime.SceChecked.add(vBlobBytes, row.blob.size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='blob_bytes'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -683,7 +683,7 @@ class StaticComposedTextStateMachine(
                     return
                 }
 
-            vNoteLen = (pendingBatchSentPayload!!.note).encodeToByteArray().size.toUInt()
+            vNoteLen = pendingBatchSentPayload!!.note.encodeToByteArray().size.toUInt()
     }
 
     private fun transitionContentOfIdleAt2() {

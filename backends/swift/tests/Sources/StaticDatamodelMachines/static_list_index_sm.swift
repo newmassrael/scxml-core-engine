@@ -768,7 +768,7 @@ public final class StaticListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vPicked, (try Checked.sub(UInt32(truncatingIfNeeded: self.vPicked.count), 1)))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vPicked, try Checked.sub(UInt32(truncatingIfNeeded: self.vPicked.count), 1))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -812,7 +812,7 @@ public final class StaticListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vPicked, (try Checked.sub(self.vCursor, 1)))); self.vUnder = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='under'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vPicked, try Checked.sub(self.vCursor, 1))); self.vUnder = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='under'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

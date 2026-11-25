@@ -37,7 +37,7 @@ public enum AlgorithmCheckedArith {
             r = (try Checked.neg(a))
         }
         if op == 6 {
-            r = Int32((try Checked.sub(op, 7)))
+            r = Int32(try Checked.sub(op, 7))
         }
         return r
     }

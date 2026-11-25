@@ -20,27 +20,27 @@ public enum UtcFromLocal {
         if !(starts.count == offsets.count && starts.count > 0) {
             throw AlgorithmError.precondition
         }
-        if !((try Checked.sub(local, Int64((try Checked.at(offsets, 0))))) >= (try Checked.at(starts, 0))) {
+        if !((try Checked.sub(local, Int64(try Checked.at(offsets, 0)))) >= (try Checked.at(starts, 0))) {
             throw AlgorithmError.precondition
         }
         let n: UInt32 = UInt32(truncatingIfNeeded: starts.count)
         var k: UInt32 = 0
         while k < n {
             if k > 0 {
-                if !((try Checked.at(starts, k)) > (try Checked.at(starts, (try Checked.sub(k, 1))))) {
+                if !((try Checked.at(starts, k)) > (try Checked.at(starts, try Checked.sub(k, 1)))) {
                     throw AlgorithmError.precondition
                 }
             }
-            let u: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, k)))))
-            if (try Checked.and(u >= (try Checked.at(starts, k)), { () throws(AlgorithmError) -> Bool in (try Checked.or((try Checked.add(k, 1)) == n, { () throws(AlgorithmError) -> Bool in u < (try Checked.at(starts, (try Checked.add(k, 1)))) })) })) {
+            let u: Int64 = (try Checked.sub(local, Int64(try Checked.at(offsets, k))))
+            if (try Checked.and(u >= (try Checked.at(starts, k)), { () throws(AlgorithmError) -> Bool in try Checked.or((try Checked.add(k, 1)) == n, { () throws(AlgorithmError) -> Bool in u < (try Checked.at(starts, try Checked.add(k, 1))) }) })) {
                 return u
             }
             k = (try Checked.add(k, 1))
         }
         var g: UInt32 = 1
         while g < n {
-            let before: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, (try Checked.sub(g, 1)))))))
-            if (try Checked.and(before >= (try Checked.at(starts, g)), { () throws(AlgorithmError) -> Bool in (try Checked.sub(local, Int64((try Checked.at(offsets, g))))) < (try Checked.at(starts, g)) })) {
+            let before: Int64 = (try Checked.sub(local, Int64(try Checked.at(offsets, try Checked.sub(g, 1)))))
+            if (try Checked.and(before >= (try Checked.at(starts, g)), { () throws(AlgorithmError) -> Bool in (try Checked.sub(local, Int64(try Checked.at(offsets, g)))) < (try Checked.at(starts, g)) })) {
                 return before
             }
             g = (try Checked.add(g, 1))

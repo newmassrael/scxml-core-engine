@@ -203,7 +203,7 @@ func StaticPayloadEnumGrownRaiseViewGrown(e *sce.Engine[StaticPayloadEnumGrownSt
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: string(sce.RecordJSON(sce.Pair("layout", sce.ValueJSON(scePayload.layout.String())), sce.Pair("marks", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.marks)); for _, sceElement := range scePayload.marks { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("day", sce.ValueJSON(sceElement.day)), sce.Pair("shift", func() sce.RawJSON { if sceElement, sceIs := (sceElement.shift).Get(); sceIs { return sce.ValueJSON(sce.Int64PayloadText(sceElement)) }; return sce.ValueJSON(nil) }()))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))),
+			Data: string(sce.RecordJSON(sce.Pair("layout", sce.ValueJSON(scePayload.layout.String())), sce.Pair("marks", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.marks)); for _, sceElement := range scePayload.marks { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("day", sce.ValueJSON(sceElement.day)), sce.Pair("shift", func() sce.RawJSON { if sceElement, sceIs := sceElement.shift.Get(); sceIs { return sce.ValueJSON(sce.Int64PayloadText(sceElement)) }; return sce.ValueJSON(nil) }()))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))),
 		},
 	})
 	return nil

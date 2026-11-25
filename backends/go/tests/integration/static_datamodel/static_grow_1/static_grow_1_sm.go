@@ -243,7 +243,7 @@ func StaticGrow1RaiseGrowHolding(e *sce.Engine[StaticGrow1State, StaticGrow1Even
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: string(sce.RecordJSON(sce.Pair("outer", func() sce.RawJSON { if sceElement, sceIs := (scePayload.outer).Get(); sceIs { return sce.RecordJSON(sce.Pair("id", sce.ValueJSON(sceElement.id)), sce.Pair("inner", sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.inner.n)))), sce.Pair("inners", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement.inners)); for _, sceElement := range sceElement.inners { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.n)))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }())) }; return sce.ValueJSON(nil) }()))),
+			Data: string(sce.RecordJSON(sce.Pair("outer", func() sce.RawJSON { if sceElement, sceIs := scePayload.outer.Get(); sceIs { return sce.RecordJSON(sce.Pair("id", sce.ValueJSON(sceElement.id)), sce.Pair("inner", sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.inner.n)))), sce.Pair("inners", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement.inners)); for _, sceElement := range sceElement.inners { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.n)))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }())) }; return sce.ValueJSON(nil) }()))),
 		},
 	})
 	return nil
@@ -308,7 +308,7 @@ func StaticGrow1RaiseGrowMaybe(e *sce.Engine[StaticGrow1State, StaticGrow1Event]
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: string(sce.RecordJSON(sce.Pair("inner", func() sce.RawJSON { if sceElement, sceIs := (scePayload.inner).Get(); sceIs { return sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.n))) }; return sce.ValueJSON(nil) }()))),
+			Data: string(sce.RecordJSON(sce.Pair("inner", func() sce.RawJSON { if sceElement, sceIs := scePayload.inner.Get(); sceIs { return sce.RecordJSON(sce.Pair("n", sce.ValueJSON(sceElement.n))) }; return sce.ValueJSON(nil) }()))),
 		},
 	})
 	return nil

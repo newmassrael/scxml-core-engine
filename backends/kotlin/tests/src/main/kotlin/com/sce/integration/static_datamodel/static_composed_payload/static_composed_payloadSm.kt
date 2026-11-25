@@ -429,7 +429,7 @@ class StaticComposedPayloadStateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to ((it.due)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { ((it)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to ((scePayload.spare)?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to (it.due?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { (it?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to (scePayload.spare?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
             )
         )
     }
@@ -600,7 +600,7 @@ class StaticComposedPayloadStateMachine(
                     return
                 }
 
-            vItemCount = (pendingBatchSentPayload!!.items).size.toUInt()
+            vItemCount = pendingBatchSentPayload!!.items.size.toUInt()
 
             vLate = pendingBatchSentPayload!!.late
 
@@ -608,11 +608,11 @@ class StaticComposedPayloadStateMachine(
             for ((sce_position_of_i, row) in pendingBatchSentPayload!!.items.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, (row.tags).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, row.tags.size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (i).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, i.toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -639,9 +639,9 @@ class StaticComposedPayloadStateMachine(
 
 
             var ifCondFailed1 = false
-            if ((try { (pendingBatchSentPayload!!.grid).size.toUInt() > 1.toUInt() && (com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.grid, (1).toLong())).size.toUInt() > 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
+            if ((try { pendingBatchSentPayload!!.grid.size.toUInt() > 1.toUInt() && com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.grid, 1.toLong()).size.toUInt() > 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
 
-            if (try { vCell = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.grid, (1).toLong()), (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='cell'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCell = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.grid, 1.toLong()), 0.toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='cell'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -650,17 +650,17 @@ class StaticComposedPayloadStateMachine(
             }
 
 
-            if ((pendingBatchSentPayload!!.items).size.toUInt() > 0.toUInt()) {
+            if (pendingBatchSentPayload!!.items.size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstTags = (com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (0).toLong()).tags).size.toUInt(); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_tags'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstTags = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, 0.toLong()).tags.size.toUInt(); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_tags'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
 
-            if ((pendingBatchSentPayload!!.maybe).size.toUInt() > 0.toUInt()) {
+            if (pendingBatchSentPayload!!.maybe.size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, 0.toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

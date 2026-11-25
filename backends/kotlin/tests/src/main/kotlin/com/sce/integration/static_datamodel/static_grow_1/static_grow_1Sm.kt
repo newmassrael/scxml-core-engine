@@ -456,7 +456,7 @@ class StaticGrow1StateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("outer" to ((scePayload.outer)?.let { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "inner" to com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.inner.n))), "inners" to com.sce.runtime.EventPayload.listJson(it.inners) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) })) } ?: com.sce.runtime.EventPayload.valueJson(null)))).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("outer" to (scePayload.outer?.let { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "inner" to com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.inner.n))), "inners" to com.sce.runtime.EventPayload.listJson(it.inners) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) })) } ?: com.sce.runtime.EventPayload.valueJson(null)))).json
             )
         )
     }
@@ -505,7 +505,7 @@ class StaticGrow1StateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("inner" to ((scePayload.inner)?.let { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) } ?: com.sce.runtime.EventPayload.valueJson(null)))).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("inner" to (scePayload.inner?.let { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) } ?: com.sce.runtime.EventPayload.valueJson(null)))).json
             )
         )
     }
@@ -522,7 +522,7 @@ class StaticGrow1StateMachine(
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("shape" to (scePayload.shape).let { when (it) { is StaticGrow1GrowShape1Union.SINGLE -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "single", mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) }; StaticGrow1GrowShape1Union.NONE -> com.sce.runtime.EventPayload.unionJson("kind", "none", emptyMap()) } })).json
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("shape" to scePayload.shape.let { when (it) { is StaticGrow1GrowShape1Union.SINGLE -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "single", mapOf<String, Any?>("n" to com.sce.runtime.EventPayload.valueJson(it.n))) }; StaticGrow1GrowShape1Union.NONE -> com.sce.runtime.EventPayload.unionJson("kind", "none", emptyMap()) } })).json
             )
         )
     }

@@ -26,12 +26,12 @@ public enum AddMonths {
         let yr: Int64 = Int64(year)
         let mo: Int64 = Int64(month)
         let step: Int64 = Int64(n)
-        let total: Int64 = (try Checked.add((try Checked.add((try Checked.mul(yr, 12)), (try Checked.sub(mo, 1)))), step))
+        let total: Int64 = (try Checked.add(try Checked.add(try Checked.mul(yr, 12), try Checked.sub(mo, 1)), step))
         let q: Int64 = (try Checked.div(total, 12))
         let r: Int64 = (try Checked.rem(total, 12))
-        let ny: Int64 = r < 0 ? (try Checked.sub(q, 1)) : q
-        let nm: Int64 = (try Checked.add(r < 0 ? (try Checked.add(r, 12)) : r, 1))
-        let last: UInt8 = (try DaysInMonth.daysInMonth((try Checked.narrow(ny, to: Int32.self)), (try Checked.narrow(nm, to: UInt8.self))))
+        let ny: Int64 = r < 0 ? try Checked.sub(q, 1) : q
+        let nm: Int64 = (try Checked.add(r < 0 ? try Checked.add(r, 12) : r, 1))
+        let last: UInt8 = (try DaysInMonth.daysInMonth(try Checked.narrow(ny, to: Int32.self), try Checked.narrow(nm, to: UInt8.self)))
         let date: CivilDatePayload = CivilDatePayload(year: (try Checked.narrow(ny, to: Int32.self)), month: (try Checked.narrow(nm, to: UInt8.self)), day: day < last ? day : last)
         return date
     }

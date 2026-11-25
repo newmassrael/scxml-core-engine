@@ -19,5 +19,5 @@ def bytes_equal(a: bytes, b: bytes) -> bool:
     while i < len(a):
         if a[i] != b[i]:
             return False
-        i = ((i + 1) & 0xFFFFFFFF)
+        i = i + 1 & 0xFFFFFFFF
     return True
