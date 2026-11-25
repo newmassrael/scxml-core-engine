@@ -11,6 +11,10 @@
 #
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
+#
+# The answer is fixed by joining a constant to the comparison rather than by replacing it: the crate
+# denies warnings, and `CONFLICT_SINCE` is imported for that comparison alone, so a mutant without it
+# does not compile (Mutation Rounds job 138193767093).
 
 mutation_tests -p sce-rust-relay --lib --test a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof --test a_device_told_its_operation_conflicts_freezes_at_once
 mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/client.rs
@@ -21,13 +25,13 @@ mutation_oracles backends/rust/relay/tests/a_relay_answers_an_operation_that_con
 mutation_case "A relay answers accepted to an operation that conflicts with what it holds" <<'PY'
 edit("backends/rust/relay/src/relay.rs",
      "    let told = version >= CONFLICT_SINCE;",
-     "    let told = false;")
+     "    let told = version >= CONFLICT_SINCE && false;")
 PY
 
 mutation_case "A relay answers conflict to a client of the version before it" <<'PY'
 edit("backends/rust/relay/src/relay.rs",
      "    let told = version >= CONFLICT_SINCE;",
-     "    let told = true;")
+     "    let told = version >= CONFLICT_SINCE || true;")
 PY
 
 mutation_case "A relay answers conflict without what it held" <<'PY'
