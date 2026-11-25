@@ -821,11 +821,14 @@ for line in sys.stdin:
 }
 
 # The lines on stdin with each resolved `<tree>:<path>` target replaced by the
-# files it stands for; every other line as it came.
+# files it stands for; every other line as it came. An empty line (the list of a
+# casefile that declares no target of that kind) is no key: bash refuses an empty
+# subscript of an associative array ("bad array subscript"), so it is passed on
+# without the lookup.
 mutation_physical() {
     local line
     while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ -n "${MUTATION_TREE_PATHS[$line]+set}" ]]; then
+        if [[ -n "$line" && -n "${MUTATION_TREE_PATHS[$line]+set}" ]]; then
             printf '%s\n' "${MUTATION_TREE_PATHS[$line]}"
         else
             printf '%s\n' "$line"
