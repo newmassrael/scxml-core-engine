@@ -4929,6 +4929,9 @@ RUNNER_INPUTS = (
     "scripts/lib/sce_http_endpoint.sh",
     "scripts/lib/wasm_rust.sh",
     "scripts/lib/swift_pin.sh",
+    # What the gate library sources for every gate: the mapping that keeps
+    # Cargo's home out of what a Rust build writes.
+    "scripts/lib/reproducible_paths.sh",
     "scripts/install_mesh_transports.sh",
     "tools/git-hooks/gate_registry.py",
     "rust-toolchain.toml",
