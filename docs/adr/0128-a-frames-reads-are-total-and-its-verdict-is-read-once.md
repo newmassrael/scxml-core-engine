@@ -70,10 +70,12 @@ frame is bounded by the code, not by what the frame says.
 A value past what a storage profile holds is not a refusal of the frame (ADR 0077 §7). The reader notes it
 (`note_capacity`, `hold`, `hold_with`) and the reads go on; its verdict is `CapacityExceeded` only where nothing was
 refused. A list's fill answers its capacity to the list it fills (`Bounded::refill`, `decode_chain_in`), as before, and
-the reader holds that answer. A group whose construction relies on what the gates the reads found
-(`Chain::new(..).expect(..)`) is built only on a frame read with no refusal and no capacity (`cursor.clean()`), as it
-was built only with no capacity before: a total read gives such a construction no input its type does not describe,
-and no panic path is added.
+the reader holds that answer. A group whose construction relies on what the gates the reads found (`Chain::new(..)`,
+`Aligned::new(..)`) is built only on a frame read with no refusal and no capacity (`cursor.clean()`), as it was built
+only with no capacity before: a total read gives such a construction no input its type does not describe. The
+construction is still a `Result`, settled in the reader, and a branch the gates leave no frame to take (an arm that does
+not hold what they read, a chain read again that lacks the kinds it was read with) records `PresentIfMismatch`
+(`fail`), so no panic path is added and no `?` either.
 
 ### 4. A view is built once as a value, and its walk reads with the same total read
 
