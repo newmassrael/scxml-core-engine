@@ -62,6 +62,9 @@ pub mod membership;
 pub mod observer;
 pub mod optional;
 pub mod queue;
+/// The reader a generated decode reads one frame through, every read total and
+/// the frame's verdict said once (docs/adr/0128), re-exported from [`codec`].
+pub mod reader;
 pub mod storage;
 /// The fence of a text template's untrusted hole (docs/adr/0087, section 3.1):
 /// every marker removed from the value, in place, with no allocator.

@@ -14,11 +14,15 @@
 //!
 //! The walk is the work `decode` did once, done again per walk, and `get` walks
 //! from the start: that is the price of a record that does not hold its entries.
+//! A walk reads each entry with the same total read the scan made
+//! (docs/adr/0128): the scan verified the entries, so the walk tests no refusal
+//! field by field; it ends where its reader has failed, which a span the scan
+//! read never does, and never panics.
 
 use core::fmt;
 use core::marker::PhantomData;
 
-use crate::codec::{CodecError, SceCursor};
+use crate::reader::SceReader;
 
 /// How the entries of one list are read: what a walk decodes each entry with, and
 /// how it updates the values it carries from one entry to the next.
@@ -29,21 +33,19 @@ use crate::codec::{CodecError, SceCursor};
 /// made the list invariant in that lifetime: a view decoded from a buffer that
 /// lives long could not be lent where a shorter lifetime is asked for, the
 /// one thing a borrowed view exists to allow. An entry is [`Self::Entry`]
-/// of whatever lifetime the cursor it is decoded from has, which is what a
+/// of whatever lifetime the reader it is read from has, which is what a
 /// generic associated type says and a function pointer's return type cannot.
 ///
 /// `K` is the number of flag inputs an entry's decode takes, each a `u8`.
 pub trait ListWalk<const K: usize> {
-    /// An entry, borrowing from the bytes of the cursor it was read from.
+    /// An entry, borrowing from the bytes of the reader it was read from.
     type Entry<'b>;
 
-    /// Read one entry from `cursor` given the current values `args`: what the
+    /// Read one entry from `reader` given the current values `args`: what the
     /// parent threads to every entry, and what a chain carried from the entry
-    /// before.
-    fn decode<'b>(
-        cursor: &mut SceCursor<'b>,
-        args: &[u8; K],
-    ) -> Result<Self::Entry<'b>, CodecError>;
+    /// before. The read is total (docs/adr/0128): a refusal is recorded in
+    /// `reader`, and the entry read with it is not one the walk yields.
+    fn read<'b>(reader: &mut SceReader<'b>, args: &[u8; K]) -> Self::Entry<'b>;
 
     /// Update the carried values from the entry just read, so that a walk
     /// rebuilds the values the scan saw.
@@ -53,8 +55,8 @@ pub trait ListWalk<const K: usize> {
 /// A bounded list as the bytes its entries occupy.
 ///
 /// `span` runs from the first entry to the end of the frame the list was read
-/// from, not to the end of its last entry, so that each entry is decoded from a
-/// cursor that holds what the scan's cursor held at that entry: a decode that
+/// from, not to the end of its last entry, so that each entry is read from a
+/// reader that holds what the scan's reader held at that entry: a read that
 /// looks at how many bytes remain sees the same number in a walk as in the
 /// scan. `count` says where the list stops.
 ///
@@ -95,7 +97,7 @@ impl<'a, W: ListWalk<K>, const K: usize> ListView<'a, W, K> {
     /// The entries in order, each decoded as it is reached.
     pub fn iter(&self) -> ListIter<'a, W, K> {
         ListIter {
-            cursor: SceCursor::new(self.span),
+            reader: SceReader::new(self.span),
             left: self.count,
             args: self.args,
             walk: PhantomData,
@@ -176,14 +178,16 @@ impl<'a, W: ListWalk<K>, const K: usize> NonEmptyListView<'a, W, K> {
         if list.count == 0 {
             return None;
         }
-        let mut cursor = SceCursor::new(list.span);
+        let mut reader = SceReader::new(list.span);
         let mut args = list.args;
-        let first = W::decode(&mut cursor, &args).ok()?;
+        let first = W::read(&mut reader, &args);
+        if reader.failed() {
+            return None;
+        }
         W::advance(&first, &mut args);
-        let rest_span = cursor.peek_slice(cursor.remaining()).ok()?;
         Some(Self {
             first,
-            rest: ListView::new(rest_span, list.count - 1, args),
+            rest: ListView::new(reader.rest(), list.count - 1, args),
         })
     }
 
@@ -281,7 +285,7 @@ where
 
 /// The walk of a [`ListView`].
 pub struct ListIter<'a, W: ListWalk<K>, const K: usize> {
-    cursor: SceCursor<'a>,
+    reader: SceReader<'a>,
     left: u32,
     args: [u8; K],
     walk: PhantomData<fn() -> W>,
@@ -292,7 +296,7 @@ pub struct ListIter<'a, W: ListWalk<K>, const K: usize> {
 impl<'a, W: ListWalk<K>, const K: usize> Clone for ListIter<'a, W, K> {
     fn clone(&self) -> Self {
         Self {
-            cursor: self.cursor,
+            reader: self.reader.clone(),
             left: self.left,
             args: self.args,
             walk: PhantomData,
@@ -303,15 +307,22 @@ impl<'a, W: ListWalk<K>, const K: usize> Clone for ListIter<'a, W, K> {
 impl<'a, W: ListWalk<K>, const K: usize> Iterator for ListIter<'a, W, K> {
     type Item = W::Entry<'a>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.left == 0 {
             return None;
         }
         self.left -= 1;
-        // The scan decoded this entry from these bytes with these values, so
-        // it decodes again; the arm is there because the type cannot say so,
-        // and ends the walk rather than panicking.
-        let entry = W::decode(&mut self.cursor, &self.args).ok()?;
+        // The scan read this entry from these bytes with these values, so it
+        // reads again with no refusal; the test is there because the type
+        // cannot say so (a span a caller built by hand need not be one a scan
+        // read), and it ends the walk rather than yielding the entry a refused
+        // read made, once per entry and not once per field.
+        let entry = W::read(&mut self.reader, &self.args);
+        if self.reader.failed() {
+            self.left = 0;
+            return None;
+        }
         W::advance(&entry, &mut self.args);
         Some(entry)
     }
@@ -339,21 +350,18 @@ mod tests {
     impl ListWalk<1> for Walk {
         type Entry<'b> = Entry;
 
-        fn decode<'b>(c: &mut SceCursor<'b>, a: &[u8; 1]) -> Result<Entry, CodecError> {
-            let head = c.peek_slice(1)?[0];
-            c.advance(1)?;
+        fn read<'b>(r: &mut SceReader<'b>, a: &[u8; 1]) -> Entry {
+            let head = r.take_array::<1>()[0];
             let extra = if head & 1 == 1 {
-                let e = c.peek_slice(1)?[0];
-                c.advance(1)?;
-                Some(e)
+                Some(r.take_array::<1>()[0])
             } else {
                 None
             };
-            Ok(Entry {
+            Entry {
                 head,
                 extra,
                 after_odd: a[0],
-            })
+            }
         }
 
         fn advance(e: &Entry, a: &mut [u8; 1]) {
@@ -374,10 +382,8 @@ mod tests {
     impl ListWalk<0> for BorrowedWalk {
         type Entry<'b> = &'b [u8];
 
-        fn decode<'b>(c: &mut SceCursor<'b>, _: &[u8; 0]) -> Result<&'b [u8], CodecError> {
-            let one = c.peek_slice(1)?;
-            c.advance(1)?;
-            Ok(one)
+        fn read<'b>(r: &mut SceReader<'b>, _: &[u8; 0]) -> &'b [u8] {
+            r.take_slice(1)
         }
 
         fn advance(_: &&[u8], _: &mut [u8; 0]) {}
@@ -442,11 +448,9 @@ mod tests {
     impl ListWalk<0> for CountingWalk {
         type Entry<'b> = u8;
 
-        fn decode<'b>(c: &mut SceCursor<'b>, _: &[u8; 0]) -> Result<u8, CodecError> {
+        fn read<'b>(r: &mut SceReader<'b>, _: &[u8; 0]) -> u8 {
             DECODED.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-            let one = c.peek_slice(1)?[0];
-            c.advance(1)?;
-            Ok(one)
+            r.take_array::<1>()[0]
         }
 
         fn advance(_: &u8, _: &mut [u8; 0]) {}
@@ -497,6 +501,27 @@ mod tests {
         assert!(NonEmptyListView::from_scan(ListView::<'static, Walk, 1>::default()).is_none());
     }
 
+    // A span no scan read: its second entry is cut short. The walk yields the
+    // entry it read whole and ends at the one it could not, with no panic and
+    // no entry made of the zeros a refused read returns.
+    #[test]
+    fn a_walk_ends_where_its_reader_fails() {
+        static CUT: [u8; 2] = [2, 3];
+        let l: ListView<'static, Walk, 1> = ListView::new(&CUT, 3, [0]);
+        let mut it = l.iter();
+        assert_eq!(
+            it.next(),
+            Some(Entry {
+                head: 2,
+                extra: None,
+                after_odd: 0
+            })
+        );
+        assert_eq!(it.next(), None, "the odd entry's second byte is missing");
+        assert_eq!(it.next(), None, "a walk that ended stays ended");
+        assert_eq!(l.iter().count(), 1);
+    }
+
     #[test]
     fn the_default_list_is_empty() {
         let l: ListView<'static, Walk, 1> = ListView::default();
@@ -526,8 +551,8 @@ mod tests {
     impl ListWalk<1> for WideWalk {
         type Entry<'b> = [u8; 512];
 
-        fn decode<'b>(_: &mut SceCursor<'b>, _: &[u8; 1]) -> Result<[u8; 512], CodecError> {
-            Ok([0; 512])
+        fn read<'b>(_: &mut SceReader<'b>, _: &[u8; 1]) -> [u8; 512] {
+            [0; 512]
         }
 
         fn advance(_: &[u8; 512], _: &mut [u8; 1]) {}

@@ -5,54 +5,47 @@
 #
 # A codec has one storing value type, and any profile may hold less than a bound
 # (docs/adr/0077 §7). A storing decode reads its frame whole and says
-# `CapacityExceeded` only of a frame that parses. The first two cases let a decode
-# that noted a capacity answer `Ok`, on a codec that reads by fields one by one
-# and on one whose fields sit at fixed places; the third has a body past its
-# capacity stop the decode that holds it, so a frame malformed after the body
-# reports `CapacityExceeded`; the fourth has a stored list keep the entries of a
-# failed fill; the fifth lets a stored list stay past its bound.
+# `CapacityExceeded` only of a frame that parses, through the frame's reader
+# (docs/adr/0128). The first case lets the reader's verdict answer `Ok` for a
+# frame that noted a capacity; the second has a value past its capacity not
+# noted at all; the third has a value past its capacity stop the frame, so a
+# frame malformed after it reports `CapacityExceeded`; the fourth has a stored
+# list keep the entries of a failed fill; the fifth lets a stored list stay past
+# its bound.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-forge-conformance --features alloc --test forge_view_round_trip
-mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2 sce-build/src/forge/generator.rs backends/rust/forge-runtime/src/bounded.rs
+mutation_targets backends/rust/forge-runtime/src/reader.rs backends/rust/forge-runtime/src/bounded.rs
 mutation_oracles backends/rust/forge-conformance/tests/forge_view_round_trip.rs
 
 mutation_case "a decode read past a capacity answers as one that held the frame" <<'PY'
-edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
-     r'''{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-{% endif %}
-        Ok(())
-{% elif has_variable_fields %}''',
-     r'''        Ok(())
-{% elif has_variable_fields %}''')
+edit("backends/rust/forge-runtime/src/reader.rs",
+     r'''            None if self.over => Err(CodecError::CapacityExceeded),
+            None => Ok(()),''',
+     r'''            None => Ok(()),''')
 PY
 
 mutation_case "a body with no list read past a capacity answers as one that held it" <<'PY'
-edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
-     r'''        cursor.advance(_consumed)?;
-{% endif %}
-{% if notes_over %}
-        if _over {
-            return Err(CodecError::CapacityExceeded);
-        }
-{% endif %}
-        Ok(value)''',
-     r'''        cursor.advance(_consumed)?;
-{% endif %}
-        Ok(value)''')
+edit("backends/rust/forge-runtime/src/reader.rs",
+     r'''            Err(CodecError::CapacityExceeded) => {
+                self.over = true;
+                T::default()
+            }''',
+     r'''            Err(CodecError::CapacityExceeded) => T::default(),''')
 PY
 
 mutation_case "a body past a capacity stops the decode that holds it" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''                if stores {
-                    rust_noted(&call)''',
-     r'''                if false {
-                    rust_noted(&call)''')
+edit("backends/rust/forge-runtime/src/reader.rs",
+     r'''            Err(CodecError::CapacityExceeded) => {
+                self.over = true;
+                T::default()
+            }''',
+     r'''            Err(CodecError::CapacityExceeded) => {
+                self.fail(CodecError::CapacityExceeded);
+                T::default()
+            }''')
 PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'

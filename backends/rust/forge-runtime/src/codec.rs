@@ -15,6 +15,13 @@
 //! dedicated `read_u8`, `read_tag`, `skip_field`) are not provided until a
 //! consumer needs them.
 //!
+//! A generated decode does not read through the cursor's fallible readers: it
+//! reads one frame through a [`SceReader`] (`crate::reader`, docs/adr/0128),
+//! whose every read is total and whose first refusal is the frame's verdict,
+//! said once; [`SceCursor::read_frame`] starts one where the cursor stands and
+//! moves the cursor past the frame it read whole. The fallible readers here are
+//! for hand-written readers of a stream.
+//!
 //! Encode-side sink + `BufferOverflow` is the symmetric write half of
 //! the cursor contract: `SceSink` is the object-safe trait that codec
 //! `encode` bodies emit into; `VecSink` (heap-backed, infallible) and
@@ -285,6 +292,9 @@ where
 pub use crate::storage::*;
 // The list of a generated view, spelled from the same path as the rest.
 pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
+// The reader a generated decode reads one frame through (docs/adr/0128), spelled
+// from the same path as the cursor it starts from.
+pub use crate::reader::SceReader;
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};
@@ -320,22 +330,6 @@ pub fn note_capacity(result: Result<(), CodecError>, over: &mut bool) -> Result<
         Err(CodecError::CapacityExceeded) => {
             *over = true;
             Ok(())
-        }
-        other => other,
-    }
-}
-
-/// [`note_capacity`] for a value a profile holds a field in, such as the bytes
-/// or text a copying profile stores: past its capacity the field holds its
-/// default, which is inside its bounds, and the decode reads on.
-pub fn note_held<T: Default>(
-    held: Result<T, CodecError>,
-    over: &mut bool,
-) -> Result<T, CodecError> {
-    match held {
-        Err(CodecError::CapacityExceeded) => {
-            *over = true;
-            Ok(T::default())
         }
         other => other,
     }
