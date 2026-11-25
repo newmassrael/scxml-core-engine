@@ -33,20 +33,23 @@ edit("sce-build/src/reader_names.rs",
      "    is_reserved_word(language, spelled) || (false && reserved(language).covers(spelled, machine))")
 PY
 
+# Each backend mutant discards `machine` by name: a reader that asks only the
+# keywords reads no machine, and an unread parameter does not compile under
+# `-D warnings`.
 mutation_case "Go asks only its keywords" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "(!crate::reader_names::reader_is_taken(Language::Go, &spelled, machine)).then_some(spelled)",
-     "(!crate::reader_names::is_reserved_word(Language::Go, &spelled)).then_some(spelled)")
+     "(!{ let _ = machine; crate::reader_names::is_reserved_word(Language::Go, &spelled) }).then_some(spelled)")
 PY
 
 mutation_case "Python asks only its keywords" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "(!crate::reader_names::reader_is_taken(Language::Python, &spelled, machine))",
-     "(!crate::reader_names::is_reserved_word(Language::Python, &spelled))")
+     "(!{ let _ = machine; crate::reader_names::is_reserved_word(Language::Python, &spelled) })")
 PY
 
 mutation_case "C++ asks only its keywords" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "(!crate::reader_names::reader_is_taken(Language::Cpp, &spelled, machine)).then_some(spelled)",
-     "(!crate::reader_names::is_reserved_word(Language::Cpp, &spelled)).then_some(spelled)")
+     "(!{ let _ = machine; crate::reader_names::is_reserved_word(Language::Cpp, &spelled) }).then_some(spelled)")
 PY
