@@ -75,6 +75,25 @@ arguments = [
 place = "backends/rust/tests/src/integration/static_datamodel"
 keep = ["*.rs"]
 
+# docs/adr/0124: the data of an event, owned by a queue or lent by a host,
+# read the same way and held to one contract. A `sce-static` machine whose
+# guards and content read a bounded text and a bounded byte string, and whose
+# content hands a payload whole to an imported algorithm, with every document
+# it imports, generated beside the others as each machine above is;
+# tests/lent_payload.rs drives it.
+[[generation]]
+arguments = [
+    "generate", "--with-imports",
+    "sce-build/tests/fixtures/lent_payload/statechart_lent_payload.scxml",
+    "sce-build/tests/fixtures/lent_payload/lent_note.scxml",
+    "sce-build/tests/fixtures/lent_payload/lent_frame.scxml",
+    "sce-build/tests/fixtures/lent_payload/lent_tally.scxml",
+    "sce-build/tests/fixtures/lent_payload/lent_tally_amount.scxml",
+    "-l", "rust", "-o", "{out}",
+]
+place = "backends/rust/tests/src/integration/static_datamodel"
+keep = ["*.rs"]
+
 # The test profile (docs/SCE_TEST_PROFILE.md): the templates
 # tests/a_test_template_matches_its_values.rs matches against values (§11.4,
 # §11.9), with the records, enums and unions they name; the components

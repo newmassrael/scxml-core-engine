@@ -7,7 +7,7 @@
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
-       name="schema_tally"
+       name="lent_tally"
        sce:event-name="tally.received">
   <datamodel>
     <data id="amount" sce:type="uint32" sce:direction="in"/>
