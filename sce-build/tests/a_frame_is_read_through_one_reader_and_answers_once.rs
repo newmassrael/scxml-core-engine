@@ -277,9 +277,10 @@ fn a_contradiction_of_the_gates_is_recorded_in_the_reader() {
         }
     }
     // A view of a variant reads its arm as a value, so where the tag is outside
-    // the arms it records the refusal and is the arm the verdict discards.
+    // the arms it records the refusal and is the arm the verdict discards. The
+    // view's body is its `read_with`, which `read` hands no hook (docs/adr/0136).
     let code = rust_of("codec_variant_peek_basic");
-    let recorded = ["read", "read_into"]
+    let recorded = ["read", "read_into", "read_with"]
         .into_iter()
         .flat_map(|fun| bodies(&code, fun))
         .filter(|body| body.contains("cursor.fail(CodecError::UndeclaredEnumValue)"))

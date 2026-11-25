@@ -914,7 +914,13 @@ fn candidate_rows_that_break_a_rule_are_refused() {
         }),
         ..two_states_on_rows(Some(CANDIDATE_ROWS))
     };
-    let faults: [(&str, Result<(), TablesFault>, Result<(), TablesFault>); 13] = [
+    // What each case is, what `check` answers, and what it should answer.
+    type Case = (
+        &'static str,
+        Result<(), TablesFault>,
+        Result<(), TablesFault>,
+    );
+    let faults: [Case; 13] = [
         (
             "the general walk's tables with candidate rows",
             general_with_rows.check(),
