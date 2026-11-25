@@ -7540,21 +7540,6 @@ fn go_precedence(op: BinOp) -> u8 {
     }
 }
 
-fn rust_precedence(op: BinOp) -> u8 {
-    match op {
-        BinOp::Coalesce => COALESCE_PRECEDENCE,
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
-        BinOp::BitOr => 5,
-        BinOp::BitXor => 6,
-        BinOp::BitAnd => 7,
-        BinOp::Shl | BinOp::Shr | BinOp::UShr => 8,
-        BinOp::Add | BinOp::Sub => 9,
-        BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
-    }
-}
-
 fn python_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Coalesce => COALESCE_PRECEDENCE,
@@ -12732,65 +12717,6 @@ fn rust_coerce(
     }
 }
 
-fn rust_cast(raw: String, node: &TypedExpr, target: &str) -> String {
-    if matches!(
-        &node.kind,
-        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
-    ) {
-        format!("({raw}) as {target}")
-    } else {
-        format!("{raw} as {target}")
-    }
-}
-
-/// The left operand of a Rust binary operator, parenthesised where the
-/// grammar needs it. Beyond precedence there is one case precedence does
-/// not see: a cast. `a as u32 < b` and `a as u32 << b` do not parse —
-/// rustc reads the `<` after a type as the start of its generic arguments —
-/// and a cast reaches this operand from several places (`len` and
-/// `round`/`floor` widened to the expected integer, `rust_coerce`,
-/// `rust_cast`), none of which knows the operator it will stand before.
-/// So the operator decides, from the text it was handed.
-fn rust_left_operand(left: &TypedExpr, op: BinOp, raw: String) -> String {
-    let before_angle = matches!(op, BinOp::Lt | BinOp::Shl);
-    if child_needs_parens(left, op, true, rust_precedence)
-        || (before_angle && rust_is_top_level_cast(&raw))
-    {
-        format!("({raw})")
-    } else {
-        raw
-    }
-}
-
-/// Whether emitted Rust text is, at its top level, an `as` cast — an ` as `
-/// outside every bracket, brace and string literal.
-fn rust_is_top_level_cast(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut depth = 0usize;
-    let mut in_str = false;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if in_str {
-            match b {
-                b'\\' => i += 1,
-                b'"' => in_str = false,
-                _ => {}
-            }
-        } else {
-            match b {
-                b'"' => in_str = true,
-                b'(' | b'[' | b'{' => depth += 1,
-                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
-                b' ' if depth == 0 && bytes[i..].starts_with(b" as ") => return true,
-                _ => {}
-            }
-        }
-        i += 1;
-    }
-    false
-}
-
 fn rust_int_type(signed: bool, bits: u8) -> &'static str {
     match (signed, bits) {
         (true, 8) => "i8",
@@ -15689,15 +15615,6 @@ mod tests {
             tp_with("n > len(buf)", ExprTarget::Rust, &ctx),
             "n > buf.len() as u32"
         );
-    }
-
-    #[test]
-    fn rust_top_level_cast_ignores_brackets_and_strings() {
-        assert!(rust_is_top_level_cast("(a).len() as u32"));
-        assert!(!rust_is_top_level_cast("(a as u32)"));
-        assert!(!rust_is_top_level_cast("f(a as u8)"));
-        assert!(!rust_is_top_level_cast("\"was as is\""));
-        assert!(!rust_is_top_level_cast("alias"));
     }
 
     #[test]
