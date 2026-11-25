@@ -1646,6 +1646,11 @@ pub enum DiagnosticCode {
     /// [`GenerateError::CodegenStandardHostBoundRelation`].
     #[serde(rename = "codegen/standard-host-bound-relation")]
     CodegenStandardHostBoundRelation,
+    /// A Rust machine asked to be printed as its own step function whose
+    /// document is outside the class that form serves (docs/adr/0129) — see
+    /// [`GenerateError::CodegenStepFunctionOutsideClass`].
+    #[serde(rename = "codegen/step-function-outside-class")]
+    CodegenStepFunctionOutsideClass,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -4322,6 +4327,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenStandardHostTypeNotServed,
         // ADR 0109, D17: a build whose record bounds break a relation
         CodegenStandardHostBoundRelation,
+        // ADR 0129: a step function asked of a document outside its class
+        CodegenStepFunctionOutsideClass,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -4974,6 +4981,9 @@ impl DiagnosticCode {
 
             // ── The relations of the records' named bounds (docs/adr/0109, D17) ──
             CodegenStandardHostBoundRelation => Some("ADR 0109 D17"),
+
+            // ── A document printed as its own step function (docs/adr/0129) ──
+            CodegenStepFunctionOutsideClass => Some("ADR 0129"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -6116,6 +6126,7 @@ impl DiagnosticCode {
             | CodegenGenericKindBackendEmitMissing
             | CodegenStandardHostTypeNotServed
             | CodegenStandardHostBoundRelation
+            | CodegenStepFunctionOutsideClass
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
@@ -6700,6 +6711,7 @@ impl DiagnosticCode {
             CodegenFeatureLiftingMismatch => "codegen/feature-lifting-mismatch",
             CodegenStandardHostTypeNotServed => "codegen/standard-host-type-not-served",
             CodegenStandardHostBoundRelation => "codegen/standard-host-bound-relation",
+            CodegenStepFunctionOutsideClass => "codegen/step-function-outside-class",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -12729,6 +12741,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 relation.object.to_string(),
             ],
         },
+        // docs/adr/0129: the repair is the build's choice of form, or the
+        // document's own structure, which no `Fix` spells. The reasons name
+        // the refusal, so a document that moves into the class by one of them
+        // and out by another gets a new id.
+        GenerateError::CodegenStepFunctionOutsideClass {
+            document,
+            reasons,
+            at: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenStepFunctionOutsideClass,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), reasons.clone()],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -17412,6 +17440,20 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:bfc046de4f21dc35","code":"codegen/standard-host-bound-relation","stage":"generate","spec":"ADR 0109 D17","message":"<invoke id=\"sign\"> runs the standard host type 'sce-host-cose-sign1', whose records hold 8192 bytes under `cose_payload` and 4352 under `cose_signed`: an object takes up to 256 bytes more than what it holds, so `cose_signed` is at least 8448; build with --limit cose_signed=8448 or more"}"#,
             ),
+            (
+                // A step function asked of a document with a <parallel>
+                // (docs/adr/0129).
+                "codegen/step-function-outside-class",
+                GenerateError::CodegenStepFunctionOutsideClass {
+                    document: "demo".into(),
+                    reasons: "the <parallel> `p`, whose regions make a configuration more than \
+                              one path down the tree"
+                        .into(),
+                    at: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b9bfc1862bd63ecf","code":"codegen/step-function-outside-class","stage":"generate","spec":"ADR 0129","message":"the Rust machine of 'demo' cannot be printed as its own step function (--step-function): its document has the <parallel> `p`, whose regions make a configuration more than one path down the tree. A step function serves a document with no <parallel>, no <history>, no <invoke> and no transition of more than one target; generate it without --step-function for the shared interpreter (ADR 0129)"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -22009,6 +22051,9 @@ mod tests {
             // ADR 0109, D17: the repair is a number the build is given, which
             // the message states; no candidate set and no fix.
             | CodegenStandardHostBoundRelation
+            // ADR 0129: the repair is the build's choice of form or the
+            // document's structure, which the message states; no fix.
+            | CodegenStepFunctionOutsideClass
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -22893,6 +22938,7 @@ mod tests {
                 | CodegenFeatureLiftingMismatch
                 | CodegenStandardHostTypeNotServed
                 | CodegenStandardHostBoundRelation
+                | CodegenStepFunctionOutsideClass
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -24024,6 +24070,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Located on the `<invoke>` the same way; no scenario builds a
             // machine with moved bounds.
             | CodegenStandardHostBoundRelation
+            // Located on the element that puts the document outside the class
+            // and resolved through `locate_codegen_error`; no scenario asks for
+            // a step function yet (docs/adr/0129).
+            | CodegenStepFunctionOutsideClass
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch

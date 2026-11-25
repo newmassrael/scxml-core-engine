@@ -551,6 +551,7 @@ fn statechart_caller_injected_extra_derives_appear() {
         ],
         host_processor_types: Vec::new(),
         host_invoker_types: Vec::new(),
+        form: sce_build::generator::RustMachineForm::Interpreted,
     };
     let output = sce_build::compile_scxml_lang_typed_with_section(
         fixture.to_str().unwrap(),

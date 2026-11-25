@@ -826,6 +826,7 @@ references against a real document and drift silently.
 | `codegen/no-std-script-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/standard-host-bound-relation` | `generate` | no | ADR 0109 D17 |
 | `codegen/standard-host-type-not-served` | `generate` | no |  |
+| `codegen/step-function-outside-class` | `generate` | no | ADR 0129 |
 | `collection/capacity-unresolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
 | `collection/element-type-not-a-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
 | `collection/index-by-field-missing` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |

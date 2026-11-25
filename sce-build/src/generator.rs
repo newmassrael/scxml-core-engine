@@ -2634,6 +2634,32 @@ pub struct StatechartCodegenOptions {
     /// Separate from [`Self::host_processor_types`] because they are
     /// separate contracts; see that field. Empty ⇒ unchanged behaviour.
     pub host_invoker_types: Vec<String>,
+    /// The form the machine is printed in (docs/adr/0129): for the shared
+    /// interpreter, the default, or as its own step function. The library
+    /// equivalent of `sce-codegen generate --step-function`; the build that
+    /// generates the machines of one image states it for each document. A
+    /// document outside the class a step function serves is refused
+    /// (`codegen/step-function-outside-class`), never printed for the
+    /// interpreter in its place.
+    pub form: RustMachineForm,
+}
+
+/// How a Rust machine is printed (docs/adr/0129). The two forms implement the
+/// same Appendix D for the same document, with the same policy, the same
+/// hooks and the same names, so a host's code binds to either alike; the
+/// differential test of the ADR holds the one to the other.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustMachineForm {
+    /// For the shared interpreter: the main loop and Appendix D's procedures
+    /// are one copy in the program and read the document's tables
+    /// (docs/adr/0064). Every document can be printed this way.
+    #[default]
+    Interpreted,
+    /// As its own step function: a document of the static class, whose every
+    /// step is fixed when it is built, printed as arms of constants the
+    /// engine runs in place of the shared procedures
+    /// ([`crate::step_function`]).
+    StepFunction,
 }
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
@@ -2982,6 +3008,41 @@ fn rust_selection_rows(
         "triggers": triggers,
         "trigger_events": pool,
     }))
+}
+
+/// The step function of `model` as the Rust template writes it
+/// (docs/adr/0129), or the refusal of a document outside the class it serves:
+/// `codegen/step-function-outside-class`, naming every reason and located on
+/// the element the first is about.
+fn rust_step_function(
+    model: &SCXMLModel,
+) -> Result<crate::step_function::StepFunction, GenerateError> {
+    let tables = crate::document_tables::DocumentTables::of(model).map_err(|refusal| {
+        GenerateError::unsupported(format!("the Rust machine's tables: {refusal}"))
+    })?;
+    crate::step_function::StepFunction::of(&tables, !model.invokes.is_empty()).map_err(|outside| {
+        // The element the first reason is about: the state it names, or the
+        // first `<invoke>`, or the document itself.
+        let at = outside.first().and_then(|first| match first {
+            crate::step_function::OutsideClass::Invoke => model
+                .invokes
+                .iter()
+                .find_map(|invoke| invoke.base().source_location.clone()),
+            other => other
+                .state()
+                .and_then(|state| model.states.get(state))
+                .and_then(|state| state.source_location.clone()),
+        });
+        GenerateError::CodegenStepFunctionOutsideClass {
+            document: model.name.clone(),
+            reasons: outside
+                .iter()
+                .map(crate::step_function::OutsideClass::describe)
+                .collect::<Vec<_>>()
+                .join("; "),
+            at: at.or_else(|| model.source_location.clone()),
+        }
+    })
 }
 
 /// `text`, a condition or a statement of a Rust machine, with each test of
@@ -3917,7 +3978,7 @@ fn render_rust(
     // The document's tables (docs/adr/0064), the one source of every row the
     // machine writes and of the numbers its states, histories and transitions
     // are known by in the runtime.
-    let tables = rust_tables(model, &microstep_bounds)?;
+    let mut tables = rust_tables(model, &microstep_bounds)?;
     // How deep the internal queue must be (docs/adr/0076), and the case or the
     // reason the policy states beside it. Read from the lowered model and per
     // rendered model, unlike the buffers above: which statement and which
@@ -3926,6 +3987,20 @@ fn render_rust(
     let internal_queue = crate::internal_queue_bound::InternalQueueBound::of(&model_lowered);
     let internal_queue_depth = internal_queue.depth();
     let internal_queue_basis = internal_queue.basis_lines();
+    // docs/adr/0129: the form the build asked for. A step function is the
+    // document's arms; its tables then carry no walk and no entry rows, since
+    // no shared procedure walks its microsteps.
+    let step_function = match options.form {
+        RustMachineForm::Interpreted => None,
+        RustMachineForm::StepFunction => {
+            let function = rust_step_function(model)?;
+            tables["walk"] = serde_json::json!("NO_WALK");
+            tables["row_walk"] = serde_json::json!(false);
+            tables["entry_rows"] = serde_json::json!([]);
+            tables["entry_paths"] = serde_json::json!([]);
+            Some(function)
+        }
+    };
 
     model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
@@ -3933,6 +4008,7 @@ fn render_rust(
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
         no_std => options.no_std,
+        step_function => minijinja::Value::from_serialize(&step_function),
         max_configuration => microstep_bounds.configuration,
         tables => minijinja::Value::from_serialize(&tables),
         max_send_id => bounds.send_id,
@@ -9474,5 +9550,97 @@ mod tests {
         assert_eq!(tables["walk"], "GENERAL_WALK");
         assert_eq!(tables["entry_rows"], serde_json::json!([]));
         assert_eq!(tables["entry_paths"], serde_json::json!([]));
+    }
+
+    /// A flat document of the static class: one transition to a sibling, one
+    /// back, one with no target (docs/adr/0129).
+    const STEP_FUNCTION_SCXML: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="idle">
+  <state id="idle"><transition event="go" target="busy"/></state>
+  <state id="busy">
+    <transition event="back" target="idle"/>
+    <transition event="stay"/>
+  </state>
+</scxml>"#;
+
+    fn step_function_options() -> StatechartCodegenOptions {
+        StatechartCodegenOptions {
+            form: RustMachineForm::StepFunction,
+            ..Default::default()
+        }
+    }
+
+    /// The form a build asks for is the form the machine is printed in: the
+    /// step function's arms, its constant on the policy, the workspace of one
+    /// transition and tables that carry no walk; and nothing of it when the
+    /// build asks for the shared interpreter, which is the default.
+    #[test]
+    fn a_machine_printed_as_its_own_step_function_carries_its_arms_and_no_walk() {
+        let model = parse(STEP_FUNCTION_SCXML);
+        let templates = crate::find_template_base().join("rust");
+        let interpreted = generate(&model, &templates, false).expect("interpreted");
+        let printed =
+            generate_with_options(&model, &templates, &step_function_options()).expect("printed");
+
+        assert!(!interpreted.contains("StepFunction"), "{interpreted}");
+        assert!(
+            interpreted.contains("walk: &::sce_rust_runtime::ROW_WALK,"),
+            "{interpreted}"
+        );
+
+        assert!(
+            printed.contains("walk: &::sce_rust_runtime::NO_WALK,"),
+            "{printed}"
+        );
+        assert!(printed.contains("entry_rows: &[],"), "{printed}");
+        assert!(printed.contains("entry_paths: &[],"), "{printed}");
+        assert!(
+            printed.contains("impl ::sce_rust_runtime::StepFunction for BrakePolicy {"),
+            "{printed}"
+        );
+        assert!(
+            printed.contains("Some(::sce_rust_runtime::StepFunctionForm::of());"),
+            "{printed}"
+        );
+        assert!(
+            printed.contains("type Workspace = ::sce_rust_runtime::Workspace<0, 1, 0, 0>;"),
+            "{printed}"
+        );
+        // `go`, transition 0, from `idle`: `idle` exits and `busy` is entered.
+        assert!(
+            printed.contains(
+                "(::sce_rust_runtime::TransitionId(0), BrakeState::ID_Idle) => {\n                machine.exit(BrakeState::ID_Idle);\n                machine.enter(BrakeState::ID_Busy, false);"
+            ),
+            "{printed}"
+        );
+        // `stay`, transition 2, has no target: one arm, from any state.
+        assert!(
+            printed.contains("(::sce_rust_runtime::TransitionId(2), _) => {"),
+            "{printed}"
+        );
+    }
+
+    /// A step function asked of a document outside its class is refused with
+    /// what puts it outside, never printed for the interpreter in its place
+    /// (docs/adr/0129).
+    #[test]
+    fn a_step_function_of_a_document_outside_its_class_is_refused() {
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="p">
+  <parallel id="p">
+    <state id="a"/>
+    <state id="b"/>
+  </parallel>
+</scxml>"#,
+        );
+        let templates = crate::find_template_base().join("rust");
+        match generate_with_options(&model, &templates, &step_function_options()) {
+            Err(GenerateError::CodegenStepFunctionOutsideClass {
+                document, reasons, ..
+            }) => {
+                assert_eq!(document, model.name);
+                assert!(reasons.contains("the <parallel> `p`"), "{reasons}");
+            }
+            other => panic!("a step function of a <parallel> is refused, got {other:?}"),
+        }
     }
 }

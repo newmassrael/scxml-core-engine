@@ -1802,6 +1802,104 @@ impl Default for {{ machine_name }}Policy {
 }
 {% endif %}
 
+{% if step_function %}
+// ======================================================================
+// The document's own step function (docs/adr/0129)
+// ======================================================================
+
+{# docs/adr/0129: this document is printed as its own step function, which the
+   engine runs in place of the shared interpreter. Every list below is read
+   from `step_function`, the one value
+   `sce_build::step_function::StepFunction::of` computes from the document's
+   tables, so the arms cannot disagree with the rows the shared interpreter
+   would walk. Each arm calls the engine's `Steps`, which run the hooks of the
+   policy below: the guards, every <onexit>, every transition's content and
+   every <onentry> are this policy's in both forms. #}
+/// This document printed as its own step function: what Appendix D does for
+/// each step of this document, written out when it was built. The engine runs
+/// these arms in place of its shared procedures, and calls the hooks of this
+/// policy from them as it would from those.
+impl{{ policy_generics_decl }} ::sce_rust_runtime::StepFunction for {{ machine_name }}Policy{{ policy_generics_use }} {
+    fn enter_initial_configuration<M: ::sce_rust_runtime::Steps>(
+        machine: &mut M,
+    ) -> ::sce_rust_runtime::Entered {
+{% for entry in step_function.initial.entries %}
+        machine.enter({{ machine_name }}State::ID_{{ entry.state | to_state_variant }}, {{ 'true' if entry.by_default else 'false' }});
+{% endfor %}
+        ::sce_rust_runtime::Entered { states: {{ step_function.initial.entries | length }}, current: {% if step_function.initial.current %}Some({{ machine_name }}State::ID_{{ step_function.initial.current | to_state_variant }}){% else %}None{% endif %}, ended_in: {% if step_function.initial.ends_the_run %}Some({{ machine_name }}State::ID_{{ step_function.initial.current | to_state_variant }}){% else %}None{% endif %} }
+    }
+
+    fn select_transition<M: ::sce_rust_runtime::Steps>(
+        machine: &mut M,
+        atomic: ::sce_rust_runtime::StateId,
+        event: ::sce_rust_runtime::EventId,
+    ) -> Option<::sce_rust_runtime::TransitionId> {
+        match atomic {
+{% for selection in step_function.selections %}
+            {{ machine_name }}State::ID_{{ selection.atomic | to_state_variant }} => {
+{% for state in selection.asked %}
+{% if loop.last %}
+                machine.enabled({{ machine_name }}State::ID_{{ state | to_state_variant }}, event)
+{% else %}
+                if let Some(transition) = machine.enabled({{ machine_name }}State::ID_{{ state | to_state_variant }}, event) {
+                    return Some(transition);
+                }
+{% endif %}
+{% endfor %}
+            }
+{% endfor %}
+            _ => None,
+        }
+    }
+
+    fn microstep<M: ::sce_rust_runtime::Steps>(
+        machine: &mut M,
+        atomic: ::sce_rust_runtime::StateId,
+        transition: ::sce_rust_runtime::TransitionId,
+    ) -> ::sce_rust_runtime::Entered {
+        match (transition, atomic) {
+{% for step in step_function.microsteps %}
+            (::sce_rust_runtime::TransitionId({{ step.transition }}), {% if step.atomic %}{{ machine_name }}State::ID_{{ step.atomic | to_state_variant }}{% else %}_{% endif %}) => {
+{% for state in step.arm.exits %}
+                machine.exit({{ machine_name }}State::ID_{{ state | to_state_variant }});
+{% endfor %}
+{% if step.arm.content %}
+                machine.content(::sce_rust_runtime::TransitionId({{ step.transition }}));
+{% endif %}
+{% for entry in step.arm.entries %}
+                machine.enter({{ machine_name }}State::ID_{{ entry.state | to_state_variant }}, {{ 'true' if entry.by_default else 'false' }});
+{% endfor %}
+                ::sce_rust_runtime::Entered { states: {{ step.arm.entries | length }}, current: {% if step.arm.current %}Some({{ machine_name }}State::ID_{{ step.arm.current | to_state_variant }}){% else %}None{% endif %}, ended_in: {% if step.arm.ends_the_run %}Some({{ machine_name }}State::ID_{{ step.arm.current | to_state_variant }}){% else %}None{% endif %} }
+            }
+{% endfor %}
+            // No other pair is selected: a transition is selected only from
+            // an atomic state below the state it is written in.
+            _ => ::sce_rust_runtime::Entered {
+                states: 0,
+                current: None,
+                ended_in: None,
+            },
+        }
+    }
+
+    fn exit_configuration<M: ::sce_rust_runtime::Steps>(
+        machine: &mut M,
+        atomic: ::sce_rust_runtime::StateId,
+    ) {
+        match atomic {
+{% for exit in step_function.exits %}
+            {{ machine_name }}State::ID_{{ exit.atomic | to_state_variant }} => {
+{% for state in exit.exits %}
+                machine.exit({{ machine_name }}State::ID_{{ state | to_state_variant }});
+{% endfor %}
+            }
+{% endfor %}
+            _ => {}
+        }
+    }
+}
+
+{% endif %}
 // ======================================================================
 // StatePolicy trait implementation
 // ======================================================================
@@ -1960,6 +2058,14 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
         ::sce_rust_runtime::EventId(event as u16)
     }
+{% if step_function %}
+
+    // docs/adr/0129: this document is printed as its own step function, the
+    // `StepFunction` above, which the engine runs in place of the shared
+    // interpreter.
+    const STEP_FUNCTION: Option<::sce_rust_runtime::StepFunctionForm<Self>> =
+        Some(::sce_rust_runtime::StepFunctionForm::of());
+{% endif %}
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
@@ -1975,7 +2081,12 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // headroom. The workspace is a local of the call that runs a macrostep; the
     // run store, the configuration and what each of the {{ tables.histories | length }} `<history>`
     // element(s) recorded, one such set each, is the engine's.
-{% if tables.row_walk %}
+{% if step_function %}
+    // docs/adr/0129: this document's microsteps are its step function's, which
+    // takes one transition a microstep and builds no set of states, so the
+    // workspace holds that one transition alone.
+    type Workspace = ::sce_rust_runtime::Workspace<0, 1, 0, 0>;
+{% elif tables.row_walk %}
     // docs/adr/0125: this document's microsteps are walked from the entry rows
     // of its tables, which builds no set of states and walks no stack, so the
     // workspace holds the enabled set alone.
