@@ -2092,36 +2092,17 @@ if outputs:
 # case that took away a companion's build survived because that whole-tree
 # build made the companion anyway.
 #
-# CMake reads its own language here, with the three commands those files are
-# made of (`add_test`, `set_tests_properties`, `subdirs`) defined to report
-# instead of to register. A file that calls anything else stops the reading,
-# and this prints nothing, so the round builds the whole tree, as it does for a
-# tree whose graph it cannot read.
+# The reading is scripts/lib/ctest_registered_commands.cmake, which the C++
+# suite's shards read the same way (scripts/lib/ctest_shards.py). A file that
+# calls anything it does not define stops the reading, and this prints
+# nothing, so the round builds the whole tree, as it does for a tree whose
+# graph it cannot read.
 mutation_ctest_registered_commands() {
-    local script="$WORK/ctest-commands.cmake" out
-    cat >"$script" <<'CMAKE'
-function(add_test name)
-  string(REPLACE ";" "\t" command "${ARGN}")
-  message("${name}\t${command}")
-endfunction()
-function(set_tests_properties)
-endfunction()
-function(subdirs)
-  foreach(dir IN LISTS ARGN)
-    if(IS_ABSOLUTE "${dir}")
-      set(file "${dir}/CTestTestfile.cmake")
-    else()
-      set(file "${CMAKE_CURRENT_LIST_DIR}/${dir}/CTestTestfile.cmake")
-    endif()
-    if(EXISTS "${file}")
-      include("${file}")
-    endif()
-  endforeach()
-endfunction()
-include("${SCE_CTEST_TREE}/CTestTestfile.cmake")
-CMAKE
+    local out
     # `message` writes to standard error, which is the channel read here.
-    out="$(cmake -DSCE_CTEST_TREE="$1" -P "$script" 2>&1 >/dev/null)" || return 0
+    out="$(cmake -DSCE_CTEST_TREE="$1" \
+        -P "$SCE_REPO_ROOT/scripts/lib/ctest_registered_commands.cmake" 2>&1 >/dev/null)" \
+        || return 0
     printf '%s\n' "$out"
 }
 
@@ -2202,30 +2183,10 @@ mutation_ctest_scope() {
         MUTATION_CTEST_BUILD_TARGETS+=("$relative")
     done
 
-    fixtures="$(printf '%s\n' "$json" | python3 -c '
-import json, os, re, sys
-
-build = os.path.realpath(sys.argv[1])
-names = []
-for test in json.load(sys.stdin).get("tests", []):
-    properties = {
-        entry.get("name"): entry.get("value")
-        for entry in test.get("properties") or []
-    }
-    setup = properties.get("FIXTURES_SETUP")
-    command = test.get("command") or []
-    if not setup or not command or not os.path.basename(command[0]).startswith("cmake"):
-        continue
-    if "--build" not in command or "--target" in command or "-t" in command:
-        continue
-    at = command.index("--build") + 1
-    if at >= len(command) or os.path.realpath(command[at]) != build:
-        continue
-    for name in setup if isinstance(setup, list) else [setup]:
-        if name not in names:
-            names.append(name)
-print("|".join(re.escape(name) for name in names))
-' "$build_real")"
+    fixtures="$(printf '%s\n' "$json" \
+        | python3 "$SCE_REPO_ROOT/scripts/lib/ctest_shards.py" whole-tree-fixtures "$build_real")"
+    # Those are the fixtures whose setup is `cmake --build` of this tree with no
+    # target, named the way the C++ suite's shards name the ones they leave out.
     if [[ -n "$fixtures" ]]; then
         MUTATION_CTEST_FIXTURE_ARGS=(--fixture-exclude-setup "^(${fixtures})\$")
     fi

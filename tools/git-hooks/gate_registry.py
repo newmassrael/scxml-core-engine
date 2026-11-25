@@ -1077,8 +1077,14 @@ GATES: dict[str, dict] = {
         #
         # And the script a landing configures `build/` with for the ctest
         # casefiles (the gate runs it itself there, rather than refusing).
+        #
+        # And the two readings of a ctest tree the harness shares with the C++
+        # suite's shards: the commands a configured tree registers, and the
+        # fixtures whose setup builds the whole tree.
         "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock",
-                  "scripts/prepare_ctest_tree.sh"],
+                  "scripts/prepare_ctest_tree.sh",
+                  "scripts/lib/ctest_registered_commands.cmake",
+                  "scripts/lib/ctest_shards.py"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
         "cache": False,
