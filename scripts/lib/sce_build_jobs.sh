@@ -45,6 +45,19 @@
 # cores than were granted. MEASURED 2026-11-21: on a build machine with 32
 # cores at load 31, the reading below answered 1, whatever bx had granted.
 #
+# A GitHub-hosted runner (`RUNNER_ENVIRONMENT=github-hosted`, which the runner
+# sets) comes after that, and answers every processor it has. Each job is a
+# virtual machine of its own, so no other run shares it, and the load the
+# reading below subtracts is the job's own previous step. A ctest mutation
+# round's first build follows the configure, whose plan batch runs one
+# generator per processor (`SCE_CODEGEN_PLAN_JOBS`, cmake/SCECodegenPlan.cmake,
+# since 6135e2dc371 on 2026-11-03), so on a runner of four processors the
+# reading is taken right after the machine was full. That first build of
+# `static_datamodel_generated_cpp_test` was 24 minutes on 2026-10-26 (run
+# 40406006492) and 56 to 78 in three jobs of one commit on 2026-11-24 (run
+# 45318713297); the round did not then say how many jobs it asked for, and now
+# does (`scripts/mutate`, "N job(s) at a time").
+#
 # Usage:
 #   source "<repo>/scripts/lib/sce_build_jobs.sh"
 #   cmake --build "$dir" --parallel "$(sce_build_jobs_value)"
@@ -61,6 +74,10 @@ sce_build_jobs_value() {
             return 0
             ;;
     esac
+    if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+        printf '%s' "$(nproc)"
+        return 0
+    fi
     local cores queued jobs
     cores="$(nproc)"
     queued="$(awk '{printf "%d", ($1 == int($1)) ? $1 : int($1) + 1}' /proc/loadavg)"
