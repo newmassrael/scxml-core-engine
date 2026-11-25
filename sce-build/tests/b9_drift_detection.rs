@@ -769,11 +769,12 @@ fn verify_passes_on_the_materialized_rust_w3c_tree() {
 
 /// ADR 0094 test 16 for the tree the defect was measured on: every file of
 /// the Rust `static_datamodel` tree states the closure of the documents it
-/// was generated from. Its generations name documents of three fixture
-/// directories (`static_datamodel`, `test_profile`, `ttcn3_export`), and
+/// was generated from. Its generations name documents of four fixture
+/// directories (`static_datamodel`, `test_profile`, `ttcn3_export`, and
+/// `lent_payload` since the lent payload machine joined the tree), and
 /// those import from two more (`union`, `sce-build/kind-examples`); with
 /// `--with-imports` every imported document is written as a file of its
-/// own, so each of the five is a root (standard documents need none).
+/// own, so each of the six is a root (standard documents need none).
 /// Before the ADR one digest of the whole fixture directory stood in all of
 /// them.
 #[test]
@@ -788,6 +789,7 @@ fn verify_passes_on_the_materialized_rust_static_datamodel_tree() {
         fixtures.join("static_datamodel"),
         fixtures.join("test_profile"),
         fixtures.join("ttcn3_export"),
+        fixtures.join("lent_payload"),
         fixtures.join("union"),
         workspace.join("sce-build/kind-examples"),
     ];
