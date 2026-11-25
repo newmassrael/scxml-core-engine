@@ -713,9 +713,7 @@ pub struct DocumentTables<'t> {
     /// `&ROW_WALK`, which reads them from [`entry_rows`](Self::entry_rows), for
     /// a document with no `<history>`, no `<parallel>` and no transition of more
     /// than one target. A program none of whose documents carries the general
-    /// walk links none of it. A document printed as its own step function
-    /// carries `&NO_WALK` and no entry rows: its policy's step function takes
-    /// its microsteps, and no shared walk does (docs/adr/0129).
+    /// walk links none of it.
     pub walk: &'static WalkProcedures,
     /// For each transition, by [`TransitionId`], what it enters: one row each
     /// when [`walk`](Self::walk) is the row walk, none otherwise.
@@ -943,17 +941,11 @@ impl DocumentTables<'_> {
     /// and a transition that `event` does not enable runs none. Tables written
     /// by hand carry no rows, and the machine answers
     /// ([`Behaviour::first_enabled_transition`]).
-    ///
-    /// Both forms of a document read it (docs/adr/0129). The shared selection
-    /// asks it with the machine as `&mut dyn Behaviour`, one copy for every
-    /// machine it serves; a document printed as its own step function asks it
-    /// from its arms (`Steps::enabled`) with the engine itself, so its guards
-    /// are direct calls. Either way the rows are the same and so is the answer.
-    pub fn first_enabled<M: Behaviour + ?Sized>(
+    pub fn first_enabled(
         &self,
         state: StateId,
         event: EventId,
-        machine: &mut M,
+        machine: &mut dyn Behaviour,
     ) -> Option<TransitionId> {
         let Some(selection) = &self.selection else {
             return machine.first_enabled_transition(state, event);

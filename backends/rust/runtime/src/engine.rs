@@ -101,11 +101,6 @@ use crate::http::{HttpSendOutcome, HttpSendRequest};
 use crate::policy::{CurrentEventData, StatePolicy};
 use crate::{sce_log_debug, sce_log_error, BoundedPush, SceString, MAX_SCHEDULED_EVENTS};
 
-// A document printed as its own step function (docs/adr/0129): the trait its
-// policy implements, the calls its arms make, and how the engine holds it.
-mod step_function;
-pub use step_function::{StepFunction, StepFunctionForm, Steps};
-
 /// Why a child's Mesh router lock is never poisoned: nothing a router does
 /// while the engine holds it panics, and a router that did would have left
 /// the session's state half-written, which no later call can repair.
@@ -1666,15 +1661,9 @@ impl<P: StatePolicy> Engine<P> {
     /// a run that has not ended. Runs once per run.
     pub(crate) fn exit_interpreter(&mut self) {
         // Called outside a turn, where no event is being processed: the exits
-        // are handed no data (docs/adr/0124). Exited by the form the policy is
-        // printed in (docs/adr/0129).
-        match P::STEP_FUNCTION {
-            Some(form) => exit_interpreter(&form, &mut EngineHost::new(self, None)),
-            None => {
-                let host: &mut dyn MainLoop = &mut EngineHost::new(self, None);
-                exit_interpreter(&Tables, host);
-            }
-        }
+        // are handed no data (docs/adr/0124). The same procedure the main loop
+        // ends a run with, one body for every machine (docs/adr/0135).
+        exit_interpreter(&mut EngineHost::new(self, None));
     }
 
     /// Execute the policy's `initialize_data_model`, which establishes the
@@ -3047,38 +3036,22 @@ impl<P: StatePolicy> Engine<P> {
     /// the data of the event being processed beside the engine, never in it
     /// (docs/adr/0124).
     ///
-    /// The loop is the one every machine's source shares, run in the form the
-    /// policy is printed in (docs/adr/0129): over this engine as a trait
-    /// object, which the program compiles once for every machine printed for
-    /// the shared interpreter, or over this engine itself with the policy's
-    /// own step function, which it compiles for this machine alone. The form
-    /// is a constant of the policy, so a machine names the code of its own
-    /// form and no other.
+    /// What is this machine's own is the workspace of its document's size and
+    /// the `EngineHost` that hands the loop its storage: the loop itself is
+    /// `Turn::run` over this engine as a trait object, one body in the program
+    /// whatever number of machines it holds (docs/adr/0135).
     #[inline(never)]
     fn run_turn(&mut self, initial: bool, lend: Option<Lend<'_, P>>) {
         let mut workspace = <P::Workspace as Buffers>::EMPTY;
         let (enabled, scratch) = workspace.split();
-        match P::STEP_FUNCTION {
-            Some(form) => Turn {
-                host: &mut EngineHost::new(self, lend),
-                form,
-                tables: P::TABLES,
-                enabled,
-                scratch,
-            }
-            .run(initial),
-            None => {
-                let host: &mut dyn MainLoop = &mut EngineHost::new(self, lend);
-                Turn {
-                    host,
-                    form: Tables,
-                    tables: P::TABLES,
-                    enabled,
-                    scratch,
-                }
-                .run(initial);
-            }
+        let host: &mut dyn MainLoop = &mut EngineHost::new(self, lend);
+        Turn {
+            host,
+            tables: P::TABLES,
+            enabled,
+            scratch,
         }
+        .run(initial);
     }
 
     /// Bind the event `queued`, just taken off the internal queue or (when
@@ -6576,116 +6549,45 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
 
 /// §scxml-D-exitInterpreter, once per run: every state still active is exited,
 /// and the run is over.
-fn exit_interpreter<H: ?Sized + MainLoop, F: Form<H>>(form: &F, host: &mut H) {
+///
+/// Out of line and over `&mut dyn MainLoop`, so the end of a run, whether the
+/// main loop reached a top-level `<final>` or the host stopped the machine, is
+/// one body for every machine (docs/adr/0135).
+#[inline(never)]
+fn exit_interpreter(host: &mut dyn MainLoop) {
     if host.core().interpreter_exited {
         return;
     }
-    form.exit_configuration(host);
+    microstep::exit_interpreter(host.behaviour());
     let core = host.core();
     core.interpreter_exited = true;
     core.main_loop.is_running = false;
 }
 
-/// The form a machine's document is printed in (docs/adr/0129): what of a
-/// turn reads the document. Everything else the main loop does is the same
-/// for both forms and written once, over [`MainLoop`].
+/// One call of the main event loop: the engine it drives, the document it
+/// reads, and the buffers the call lends every microstep it takes. Held by
+/// the procedures below through one pointer, so what they share is not handed
+/// from call to call.
 ///
-/// - [`Tables`], the shared interpreter: the procedures of
-///   [`helpers::microstep`](crate::helpers::microstep) over the document's
-///   tables, reaching the machine through `&mut dyn MainLoop`, so the loop and
-///   the procedures are one copy for every machine printed this way.
-/// - [`StepFunctionForm`], the machine's own step function: the arms its
-///   generator printed, over the engine itself, so the loop is compiled for
-///   the machine and every hook is a direct call.
-trait Form<H: ?Sized> {
-    /// Enter the initial configuration, from an empty one.
-    fn enter_initial_configuration(
-        &self,
-        host: &mut H,
-        tables: &DocumentTables<'_>,
-        scratch: microstep::Scratch<'_>,
-    ) -> Entered;
-
-    /// The optimal enabled transition set `event` selects, left in `enabled`.
-    fn select_transitions(
-        &self,
-        host: &mut H,
-        tables: &DocumentTables<'_>,
-        event: EventId,
-        enabled: &mut microstep::SliceVec<'_, TransitionId>,
-        scratch: microstep::Scratch<'_>,
-    );
-
-    /// One microstep over `enabled`.
-    fn microstep(
-        &self,
-        host: &mut H,
-        tables: &DocumentTables<'_>,
-        enabled: &[TransitionId],
-        scratch: microstep::Scratch<'_>,
-    ) -> Entered;
-
-    /// Exit every state still active.
-    fn exit_configuration(&self, host: &mut H);
-}
-
-/// The shared interpreter's form: Appendix D's procedures over the tables,
-/// reaching the machine as a trait object (docs/adr/0064).
-#[derive(Debug, Clone, Copy)]
-struct Tables;
-
-impl<'h> Form<dyn MainLoop + 'h> for Tables {
-    fn enter_initial_configuration(
-        &self,
-        host: &mut (dyn MainLoop + 'h),
-        tables: &DocumentTables<'_>,
-        scratch: microstep::Scratch<'_>,
-    ) -> Entered {
-        host.behaviour().store().configuration().clear();
-        microstep::enter_initial_configuration(tables, host.behaviour(), scratch)
-    }
-
-    fn select_transitions(
-        &self,
-        host: &mut (dyn MainLoop + 'h),
-        tables: &DocumentTables<'_>,
-        event: EventId,
-        enabled: &mut microstep::SliceVec<'_, TransitionId>,
-        scratch: microstep::Scratch<'_>,
-    ) {
-        microstep::select_transitions(tables, host.behaviour(), event, enabled, scratch);
-    }
-
-    fn microstep(
-        &self,
-        host: &mut (dyn MainLoop + 'h),
-        tables: &DocumentTables<'_>,
-        enabled: &[TransitionId],
-        scratch: microstep::Scratch<'_>,
-    ) -> Entered {
-        microstep::microstep(tables, host.behaviour(), enabled, scratch)
-    }
-
-    fn exit_configuration(&self, host: &mut (dyn MainLoop + 'h)) {
-        microstep::exit_interpreter(host.behaviour());
-    }
-}
-
-/// One call of the main event loop: the engine it drives, the form the
-/// document is printed in, the document it reads, and the buffers the call
-/// lends every microstep it takes. Held by the procedures below through one
-/// pointer, so what they share is not handed from call to call.
-struct Turn<'a, H: ?Sized + MainLoop, F: Form<H>> {
-    host: &'a mut H,
-    form: F,
+/// Not generic: the engine is a trait object and the document its tables, so
+/// the program compiles the loop once whatever number of machines it holds,
+/// and each reaches the procedures its document needs through the tables'
+/// walk (docs/adr/0064, docs/adr/0135).
+struct Turn<'a> {
+    host: &'a mut dyn MainLoop,
     tables: &'static DocumentTables<'static>,
     enabled: microstep::SliceVec<'a, TransitionId>,
     scratch: microstep::Scratch<'a>,
 }
 
-impl<H: ?Sized + MainLoop, F: Form<H>> Turn<'_, H, F> {
+impl Turn<'_> {
     /// One turn: the entry into the initial configuration first when
     /// `initial`, then the main event loop.
+    ///
+    /// Out of line, so it is one body that every machine's `run_turn` calls
+    /// and not inlined into the only caller an image of one machine has, where
+    /// a second machine would then bring a second copy (docs/adr/0135).
+    #[inline(never)]
     fn run(&mut self, initial: bool) {
         if initial {
             self.enter_initial_configuration();
@@ -6704,9 +6606,12 @@ impl<H: ?Sized + MainLoop, F: Form<H>> Turn<'_, H, F> {
     /// may name several states and a `<history>`, so it is a target list, not a
     /// leaf to walk down to. The configuration starts empty.
     fn enter_initial_configuration(&mut self) {
-        let entered =
-            self.form
-                .enter_initial_configuration(self.host, self.tables, self.scratch.reborrow());
+        self.host.behaviour().store().configuration().clear();
+        let entered = microstep::enter_initial_configuration(
+            self.tables,
+            self.host.behaviour(),
+            self.scratch.reborrow(),
+        );
         self.host.core().settle(entered);
     }
 
@@ -6924,9 +6829,9 @@ impl<H: ?Sized + MainLoop, F: Form<H>> Turn<'_, H, F> {
         // §scxml-5.10: the event whose transitions are about to be selected is
         // the `_event` their guards read — bound before the first guard runs.
         self.host.bind_current_event(event);
-        self.form.select_transitions(
-            self.host,
+        microstep::select_transitions(
             self.tables,
+            self.host.behaviour(),
             event,
             &mut self.enabled,
             self.scratch.reborrow(),
@@ -6940,9 +6845,9 @@ impl<H: ?Sized + MainLoop, F: Form<H>> Turn<'_, H, F> {
         // transition once and in selection order, as the Python engine tells it.
         #[cfg(feature = "transition-observer")]
         self.host.observe_transitions(&self.enabled);
-        let entered = self.form.microstep(
-            self.host,
+        let entered = microstep::microstep(
             self.tables,
+            self.host.behaviour(),
             &self.enabled,
             self.scratch.reborrow(),
         );
@@ -7163,7 +7068,7 @@ impl<H: ?Sized + MainLoop, F: Form<H>> Turn<'_, H, F> {
         }
         self.host.drop_external_payloads();
         if self.loop_state().terminal_state.is_some() {
-            exit_interpreter(&self.form, &mut *self.host);
+            exit_interpreter(&mut *self.host);
         }
     }
 

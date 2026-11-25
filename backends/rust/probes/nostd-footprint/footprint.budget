@@ -69,9 +69,8 @@ MEASURED_WITH='rustc 1.100.0 (0ef1bc386 2026-11-09)'
 # expression over the demangled name): Appendix D's procedures
 # (`helpers::microstep`), the document's tables (`helpers::tables`), the sets of
 # states and the run store (`helpers::state_set`, `helpers::run_store`), the
-# main event loop (`engine::Turn`, generic over the form a document is printed
-# in since docs/adr/0129, so its symbols carry `<..>`; the shared interpreter's
-# form is `engine::Tables` and the end of a run `engine::exit_interpreter`),
+# main event loop (`engine::Turn`, one body over `dyn MainLoop` again since
+# docs/adr/0135, and the end of a run `engine::exit_interpreter`),
 # and since docs/adr/0068 the queues as the
 # loop sees them (`helpers::event_queue`: a queue holds numbers, and the view
 # the loop drives has no machine type), and since docs/adr/0069 the delayed-send
@@ -83,7 +82,7 @@ MEASURED_WITH='rustc 1.100.0 (0ef1bc386 2026-11-09)'
 # steps taken before any tick, which every machine's entry points call out of
 # line). A machine's implementation of the core's traits
 # names the trait inside its `<.. as ..>` and is not matched.
-CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::(Turn[<>:]|Tables[ >:]|exit_interpreter|PullScheduler<|EngineCore[>:]))'
+CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::(Turn[<>:]|exit_interpreter|PullScheduler<|EngineCore[>:]))'
 
 # The probe machines' crates (an extended regular expression): a core symbol
 # that names one was instantiated for that machine.
@@ -608,7 +607,7 @@ STACK_DYN+=" ^${P}(add_transition_to_entry_set|compute_entry_set|current_state|e
 STACK_DYN+=" ^${P}select_transitions\$=(${HOOKS}|^${P}remove_conflicting_transitions\$|${EFFECTIVE})"
 STACK_DYN+=" ^${P}(exit_states|compute_states_to_exit|exit_interpreter|execute_transition_content)\$=(${HOOKS}|^${P}record_histories\$|${EFFECTIVE})"
 STACK_DYN+=" ^${P}is_in_final_state\$=^${P}parallel_in_final_state\$"
-STACK_DYN+=" ^(${P}microstep\$|<sce_rust_runtime::engine::Turn[<>]|<sce_rust_runtime::engine::Tables\sas\s|sce_rust_runtime::engine::exit_interpreter)=(${HOOKS}|${ALL_FEATURES}|${WALKS})"
+STACK_DYN+=" ^(${P}microstep\$|<sce_rust_runtime::engine::Turn[<>]|sce_rust_runtime::engine::exit_interpreter)=(${HOOKS}|${ALL_FEATURES}|${WALKS})"
 STACK_DYN+=" ^${P}enter_initial_configuration\$=${WALKS}"
 STACK_DYN+=" ^${P}(exit_states_from_rows|enter_states_from_rows|exit_active|exit_one|enter_one)\$=${HOOKS}"
 STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
@@ -621,7 +620,7 @@ STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
 DRAIN='>>::(enqueue_external|drain_inbox|apply_held_inputs)$'
 STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<(?!.*${DRAIN})|\sas\ssce_rust_runtime::engine::MainLoop>::=(${ALL_FEATURES}|${WALKS})"
 STACK_DYN+=" ${DRAIN}=\sas\ssce_rust_runtime::inbox::InboxSource<"
-STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[<>:]|engine::Tables as )'
+STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[<>:])'
 STACK_MIN_FUNCTIONS=200
 #
 # 1120 -> 1032 (2026-10-30): the workspace's buffers are not filled before a
