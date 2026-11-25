@@ -15,8 +15,11 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance
-mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs sce-build/src/forge/deployment.rs tools/codegen/templates/_macros/forge_rust_storage.jinja2 backends/rust/forge-runtime/src/capped.rs
-mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs backends/rust/forge-runtime/src/codec.rs
+mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs sce-build/src/forge/deployment.rs tools/codegen/templates/_macros/forge_rust_storage.jinja2
+# The forge runtime is no dependency of sce-build: the suite compiles it into
+# the crates it generates and spawns, so its sources are read at run time and
+# the test binary is byte-identical whichever of them a case edits.
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs backends/rust/forge-runtime/src/codec.rs backends/rust/forge-runtime/src/capped.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
@@ -32,6 +35,12 @@ edit("sce-build/src/forge/generator.rs",
      r'''        "if {RUST_LIST_FULL} {{\n{indent}    return Err(CodecError::TooManyElements);\n{indent}}}\n{indent}Ok(())"''')
 PY
 
+# Killed by `a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on`
+# (a nested body past its capacity, then a list the frame cuts short: the
+# frame is NeedMoreBytes, not CapacityExceeded). A list past its capacity
+# notes it in its own fill and answers once it is read whole, so a frame cut
+# inside one list never reaches this rule; only a value after the one past
+# its capacity does.
 mutation_case "a frame is called too big to hold before it is judged whole" <<'PY'
 edit("backends/rust/forge-runtime/src/codec.rs",
      r'''    match result {
@@ -74,8 +83,9 @@ edit("tools/codegen/templates/_macros/forge_rust_storage.jinja2",
 PY
 
 # A capped text takes a view past its limit. Killed by
-# `a_heap_node_holds_a_field_to_its_policy_limit` (a description of nine bytes
-# past eight).
+# `a_heap_node_holds_a_field_to_its_policy_limit` (a name of three bytes past
+# two). The description is read into its text one character at a time
+# (`try_push_str`), so its nine bytes past eight never reach `from_view`.
 mutation_case "a capped text holds a view past its limit" <<'PY'
 edit("backends/rust/forge-runtime/src/capped.rs",
      r'''    fn from_view(s: &str) -> Result<Self, CodecError> {

@@ -8180,6 +8180,20 @@ mod tests {
         );
     }
 
+    // A text of a frame is held from the frame's view, to the limit and no
+    // further: the name's length could say up to 255.
+    #[test]
+    fn a_text_holds_its_limit_and_refuses_past_it() {
+        let two = [0x02, b'a', b'b', 0x01];
+        let held = CodecOpenBytesIn::<Policy>::decode(&mut SceCursor::new(&two)).expect("two");
+        assert_eq!(held.name.len(), 2);
+        let three = [0x03, b'a', b'b', b'c', 0x01];
+        assert_eq!(
+            CodecOpenBytesIn::<Policy>::decode(&mut SceCursor::new(&three)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
     #[test]
     fn a_field_with_no_bound_and_no_limit_grows() {
         let mut wire = String::from("BEGIN:VEVENT\r\nDESCRIPTION:d\r\n");
@@ -8221,6 +8235,10 @@ mod tests {
     if let Some(line) = deployment.capacities.get_mut("codec_open_line") {
         line.remove("attendee");
     }
+    // A limit on the name below the 255 its length's width bounds it by.
+    if let Some(bytes) = deployment.capacities.get_mut("codec_open_bytes") {
+        bytes.insert("name".to_string(), 2);
+    }
     let paths: Vec<std::path::PathBuf> = set.iter().map(|d| dir.path().join(d)).collect();
     let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
     let output =
@@ -8233,6 +8251,7 @@ mod tests {
         .collect::<String>();
     assert!(policy.contains("CappedVec<T, 2>"), "{policy}");
     assert!(policy.contains("CappedStr<8>"), "{policy}");
+    assert!(policy.contains("CappedStr<2>"), "{policy}");
     assert!(policy.contains("CappedBytes<4>"), "{policy}");
     assert!(policy.contains("GrowVec<T>"), "{policy}");
     files.extend(output.files);
@@ -18191,6 +18210,7 @@ fn a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on() {
     const HARNESS: &str = r#"// Injected by a_form_that_stores_refuses_past_its_capacity_*.
 #[cfg(test)]
 mod tests {
+    use crate::codec_nested_parent::CodecNestedParentIn;
     use crate::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicIn, CodecRepeatBasicView};
     use crate::narrow::Narrow;
     use ::sce_forge_runtime::codec::{CodecError, Lent, SceCursor};
@@ -18230,9 +18250,9 @@ mod tests {
         assert_eq!(view.frags.len(), 3);
     }
 
-    // The eager decode stops at the third entry, and the frame is cut short at
-    // the fourth: it is judged as the frame it is, not as one the node cannot
-    // hold (docs/adr/0077 §7).
+    // The eager decode reads past the third entry, which it does not hold, and
+    // the frame is cut short at the fourth: it is judged as the frame it is,
+    // not as one the node cannot hold (docs/adr/0077 §7).
     #[test]
     fn a_frame_is_judged_whole_before_it_is_called_too_big_to_hold() {
         const CUT: [u8; 8] = [4, 0, 1, 0, 2, 0, 3, 0];
@@ -18258,21 +18278,60 @@ mod tests {
             Some(CodecError::TooManyElements)
         );
     }
+
+    // A body past its capacity has read its own frame whole and says so, and
+    // the parent notes it and reads on: a list the frame then cuts short is
+    // judged as the frame it is, and only a frame read whole is called too big
+    // to hold (docs/adr/0077 §7). The parent holds no list past a capacity of
+    // its own here, so the body's refusal is what the decode reads past.
+    #[test]
+    fn a_body_past_its_capacity_is_read_past_to_the_end_of_the_frame() {
+        // No optional body, one body in the list, which the frame cuts short,
+        // and a required body of two locators, past the capacity of one.
+        const CUT: [u8; 7] = [0x00, 0x01, 0x02, 0x01, b'a', 0x01, b'b'];
+        // The same with no body in the list: the frame read whole.
+        const WHOLE: [u8; 7] = [0x00, 0x00, 0x02, 0x01, b'a', 0x01, b'b'];
+        // A required body of one locator, which the capacity holds.
+        const ONE: [u8; 5] = [0x00, 0x00, 0x01, 0x01, b'a'];
+        let held = CodecNestedParentIn::<Narrow>::decode(&mut SceCursor::new(&ONE))
+            .expect("one locator");
+        assert_eq!(held.required_body.locs.len(), 1);
+        assert_eq!(
+            CodecNestedParentIn::<Narrow>::decode(&mut SceCursor::new(&CUT)).err(),
+            Some(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(
+            CodecNestedParentIn::<Narrow>::decode(&mut SceCursor::new(&WHOLE)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
 }
 "#;
     let language = sce_build::generator::Language::Rust;
     let mut files = generate_files_for_codec_set_with(
         &resource_dir(),
-        &["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"],
+        &[
+            "codec_repeat_elem.scxml",
+            "codec_repeat_basic.scxml",
+            "codec_zenoh_locator.scxml",
+            "codec_nested_body.scxml",
+            "codec_nested_parent.scxml",
+        ],
         language,
         with_views(),
     )
     .expect("the codec set generates");
+    // Two of the list's entries, and one locator of each nested body's four.
+    let mut capacities = narrow_frags();
+    capacities.insert(
+        "codec_nested_body".to_string(),
+        [("locs".to_string(), 1)].into(),
+    );
     files.push(
         deployment_file(
-            &["codec_repeat_basic.scxml"],
+            &["codec_repeat_basic.scxml", "codec_nested_parent.scxml"],
             "Narrow",
-            narrow_frags(),
+            capacities,
             Default::default(),
         )
         .expect("the deployment generates"),
