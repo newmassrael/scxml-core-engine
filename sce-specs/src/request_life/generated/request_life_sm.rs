@@ -394,10 +394,52 @@ pub struct RequestLifeClaimPayload {
     pub now: u64,
 }
 
+/// The data of `schema_claim` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifeClaimRef<'e> {
+    pub holder: &'e str,
+    pub ttl: u64,
+    pub resume: bool,
+    pub offeredMatches: bool,
+    pub laneOpen: bool,
+    pub now: u64,
+}
+
+impl RequestLifeClaimPayload {
+    /// This payload, read as `RequestLifeClaimRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeClaimRef<'_> {
+        RequestLifeClaimRef {
+            holder: &self.holder,
+            ttl: self.ttl,
+            resume: self.resume,
+            offeredMatches: self.offeredMatches,
+            laneOpen: self.laneOpen,
+            now: self.now,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RequestLifeFailPayload {
     pub holder: ::sce_rust_runtime::SceString,
     pub attempt: u32,
+}
+
+/// The data of `schema_fail` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifeFailRef<'e> {
+    pub holder: &'e str,
+    pub attempt: u32,
+}
+
+impl RequestLifeFailPayload {
+    /// This payload, read as `RequestLifeFailRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeFailRef<'_> {
+        RequestLifeFailRef {
+            holder: &self.holder,
+            attempt: self.attempt,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -408,9 +450,43 @@ pub struct RequestLifeHeartbeatPayload {
     pub now: u64,
 }
 
+/// The data of `schema_heartbeat` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifeHeartbeatRef<'e> {
+    pub holder: &'e str,
+    pub attempt: u32,
+    pub ttl: u64,
+    pub now: u64,
+}
+
+impl RequestLifeHeartbeatPayload {
+    /// This payload, read as `RequestLifeHeartbeatRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeHeartbeatRef<'_> {
+        RequestLifeHeartbeatRef {
+            holder: &self.holder,
+            attempt: self.attempt,
+            ttl: self.ttl,
+            now: self.now,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RequestLifeNormalizePayload {
     pub now: u64,
+}
+
+/// The data of `schema_normalize` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifeNormalizeRef {
+    pub now: u64,
+}
+
+impl RequestLifeNormalizePayload {
+    /// This payload, read as `RequestLifeNormalizeRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeNormalizeRef {
+        RequestLifeNormalizeRef { now: self.now }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -420,10 +496,46 @@ pub struct RequestLifePublishPayload {
     pub bundle: ::sce_rust_runtime::SceString,
 }
 
+/// The data of `schema_publish` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifePublishRef<'e> {
+    pub holder: &'e str,
+    pub attempt: u32,
+    pub bundle: &'e str,
+}
+
+impl RequestLifePublishPayload {
+    /// This payload, read as `RequestLifePublishRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifePublishRef<'_> {
+        RequestLifePublishRef {
+            holder: &self.holder,
+            attempt: self.attempt,
+            bundle: &self.bundle,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RequestLifeWritePayload {
     pub holder: ::sce_rust_runtime::SceString,
     pub attempt: u32,
+}
+
+/// The data of `schema_write` as every reader reads it, owned by a queue or lent by a host alike (docs/adr/0124): one member per field, a text and a byte string borrowed. A host lends a view it decoded by filling these from it.
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLifeWriteRef<'e> {
+    pub holder: &'e str,
+    pub attempt: u32,
+}
+
+impl RequestLifeWritePayload {
+    /// This payload, read as `RequestLifeWriteRef` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeWriteRef<'_> {
+        RequestLifeWriteRef {
+            holder: &self.holder,
+            attempt: self.attempt,
+        }
+    }
 }
 
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
@@ -440,34 +552,85 @@ pub enum RequestLifePayload {
     Write(RequestLifeWritePayload),
 }
 
+/// The data of the event being processed, as every guard, `<sce:arg>` and transition content reads it: the payload a queue owns or the data a host lent, borrowed (docs/adr/0124).
+#[derive(Clone, Copy, Debug)]
+pub enum RequestLifeEventData<'e> {
+    /// An event that carries no data.
+    None,
+    Claim(RequestLifeClaimRef<'e>),
+    Fail(RequestLifeFailRef<'e>),
+    Heartbeat(RequestLifeHeartbeatRef<'e>),
+    Normalize(RequestLifeNormalizeRef),
+    Publish(RequestLifePublishRef<'e>),
+    Write(RequestLifeWriteRef<'e>),
+}
+
+impl RequestLifePayload {
+    /// The data this payload holds, read as `RequestLifeEventData` (docs/adr/0124).
+    pub fn data(&self) -> RequestLifeEventData<'_> {
+        match self {
+            RequestLifePayload::None => RequestLifeEventData::None,
+            RequestLifePayload::Claim(payload) => RequestLifeEventData::Claim(payload.data()),
+            RequestLifePayload::Fail(payload) => RequestLifeEventData::Fail(payload.data()),
+            RequestLifePayload::Heartbeat(payload) => {
+                RequestLifeEventData::Heartbeat(payload.data())
+            }
+            RequestLifePayload::Normalize(payload) => {
+                RequestLifeEventData::Normalize(payload.data())
+            }
+            RequestLifePayload::Publish(payload) => RequestLifeEventData::Publish(payload.data()),
+            RequestLifePayload::Write(payload) => RequestLifeEventData::Write(payload.data()),
+        }
+    }
+}
+
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
 /// Bring into scope with `use …::RequestLifeInject;` to call the
-/// `raise_<event>` methods on the engine.
+/// `raise_<event>` methods on the engine, and the `process_<event>_with`
+/// methods that lend an event's data for one call (docs/adr/0124).
 pub trait RequestLifeInject {
     /// Typed `_event.data` inject for `claim`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_claim(&mut self, payload: RequestLifeClaimPayload);
+    /// `claim` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_claim_with(&mut self, event_data: RequestLifeClaimRef<'_>);
     /// Typed `_event.data` inject for `fail`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_fail(&mut self, payload: RequestLifeFailPayload);
+    /// `fail` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_fail_with(&mut self, event_data: RequestLifeFailRef<'_>);
     /// Typed `_event.data` inject for `heartbeat`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_heartbeat(&mut self, payload: RequestLifeHeartbeatPayload);
+    /// `heartbeat` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_heartbeat_with(&mut self, event_data: RequestLifeHeartbeatRef<'_>);
     /// Typed `_event.data` inject for `normalize`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_normalize(&mut self, payload: RequestLifeNormalizePayload);
+    /// `normalize` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_normalize_with(&mut self, event_data: RequestLifeNormalizeRef);
     /// Typed `_event.data` inject for `publish`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_publish(&mut self, payload: RequestLifePublishPayload);
+    /// `publish` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_publish_with(&mut self, event_data: RequestLifePublishRef<'_>);
     /// Typed `_event.data` inject for `write`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_write(&mut self, payload: RequestLifeWritePayload);
+    /// `write` processed now with `event_data`, its data, lent for this
+    /// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).
+    fn process_write_with(&mut self, event_data: RequestLifeWriteRef<'_>);
 }
 
 impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
@@ -481,6 +644,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             &data,
         );
     }
+    fn process_claim_with(&mut self, event_data: RequestLifeClaimRef<'_>) {
+        self.process_event_with(
+            RequestLifeEvent::Claim,
+            RequestLifeEventData::Claim(event_data),
+        );
+    }
     fn raise_fail(&mut self, payload: RequestLifeFailPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
             "{{\"holder\":{}, \"attempt\":{}}}",
@@ -491,6 +660,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             RequestLifeEvent::Fail,
             RequestLifePayload::Fail(payload),
             &data,
+        );
+    }
+    fn process_fail_with(&mut self, event_data: RequestLifeFailRef<'_>) {
+        self.process_event_with(
+            RequestLifeEvent::Fail,
+            RequestLifeEventData::Fail(event_data),
         );
     }
     fn raise_heartbeat(&mut self, payload: RequestLifeHeartbeatPayload) {
@@ -507,6 +682,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             &data,
         );
     }
+    fn process_heartbeat_with(&mut self, event_data: RequestLifeHeartbeatRef<'_>) {
+        self.process_event_with(
+            RequestLifeEvent::Heartbeat,
+            RequestLifeEventData::Heartbeat(event_data),
+        );
+    }
     fn raise_normalize(&mut self, payload: RequestLifeNormalizePayload) {
         let data =
             ::sce_rust_runtime::payload_wire(format_args!("{{\"now\":\"{}\"}}", payload.now));
@@ -514,6 +695,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             RequestLifeEvent::Normalize,
             RequestLifePayload::Normalize(payload),
             &data,
+        );
+    }
+    fn process_normalize_with(&mut self, event_data: RequestLifeNormalizeRef) {
+        self.process_event_with(
+            RequestLifeEvent::Normalize,
+            RequestLifeEventData::Normalize(event_data),
         );
     }
     fn raise_publish(&mut self, payload: RequestLifePublishPayload) {
@@ -529,6 +716,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             &data,
         );
     }
+    fn process_publish_with(&mut self, event_data: RequestLifePublishRef<'_>) {
+        self.process_event_with(
+            RequestLifeEvent::Publish,
+            RequestLifeEventData::Publish(event_data),
+        );
+    }
     fn raise_write(&mut self, payload: RequestLifeWritePayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
             "{{\"holder\":{}, \"attempt\":{}}}",
@@ -539,6 +732,12 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
             RequestLifeEvent::Write,
             RequestLifePayload::Write(payload),
             &data,
+        );
+    }
+    fn process_write_with(&mut self, event_data: RequestLifeWriteRef<'_>) {
+        self.process_event_with(
+            RequestLifeEvent::Write,
+            RequestLifeEventData::Write(event_data),
         );
     }
 }
@@ -1024,10 +1223,6 @@ pub struct RequestLifeInvokeParams {
 // ======================================================================
 
 pub struct RequestLifePolicy {
-    // NL→IR Item C1 Path A: typed `_event.data` payload for the current
-    // event, stored by `populate_event_payload` and read by native
-    // transition guards (`matches!(&self.pending_payload, …)`).
-    pending_payload: RequestLifePayload,
     /// W3C SCXML 5.2: the `holder` datamodel variable, published (`sce:direction="out"`).
     holder: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `attempt` datamodel variable, published (`sce:direction="out"`).
@@ -1072,7 +1267,6 @@ impl RequestLifePolicy {
         let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
 
         Self {
-            pending_payload: RequestLifePayload::default(),
             holder,
             attempt,
             expires_at,
@@ -1221,6 +1415,9 @@ impl StatePolicy for RequestLifePolicy {
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = RequestLifePayload;
+    // docs/adr/0124: the data of the event being processed, as every guard,
+    // `<sce:arg>` and transition content reads it, queued or lent alike.
+    type EventData<'e> = RequestLifeEventData<'e>;
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML Appendix D externalQueue: what the host and other sessions
@@ -1431,13 +1628,17 @@ impl StatePolicy for RequestLifePolicy {
         RequestLifeEvent::Null
     }
 
-    // NL→IR Item C1 Path A: store the current event's typed `_event.data`
-    // payload so native transition guards can read it without a script
-    // engine. Called by the engine's pop loop for every dequeued event;
-    // events injected without a typed payload carry the `#[default] None`
-    // variant, against which the variant-specific guards simply fail.
-    fn populate_event_payload(&mut self, payload: &Self::Payload) {
-        self.pending_payload = payload.clone();
+    // docs/adr/0124: the data the engine holds for the event being processed,
+    // read as `RequestLifeEventData`: a payload a queue owned, read in
+    // place, or the data a host lent, as it is. Events injected without a typed
+    // payload read as `None`, against which the variant-specific guards fail.
+    fn event_data<'a>(
+        held: &'a ::sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+        match held {
+            ::sce_rust_runtime::CurrentEventData::Queued(payload) => payload.data(),
+            ::sce_rust_runtime::CurrentEventData::Lent(event_data) => *event_data,
+        }
     }
 
     // NL→IR Item C1 Path A: …and when no typed payload rode with the event,
@@ -1447,19 +1648,19 @@ impl StatePolicy for RequestLifePolicy {
     // a refusal, on which the engine refuses the delivery whole and takes an
     // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
-        &mut self,
         event: Self::Event,
         data: &str,
+        payload: &mut Self::Payload,
     ) -> ::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {
-        // A typed payload already bound the view, so the producer was the inject
-        // seam and there is nothing to read out of `data`.
-        if self.pending_payload != RequestLifePayload::None {
+        // A typed payload already rode with the event, so the producer was the
+        // inject seam and there is nothing to read out of `data`.
+        if *payload != RequestLifePayload::None {
             return Ok(());
         }
         match event {
             RequestLifeEvent::Claim => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Claim(RequestLifeClaimPayload {
+                *payload = RequestLifePayload::Claim(RequestLifeClaimPayload {
                     holder: fields.text("holder", 64)?,
                     ttl: fields.unsigned64("ttl")?,
                     resume: fields.truth("resume")?,
@@ -1470,14 +1671,14 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeEvent::Fail => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Fail(RequestLifeFailPayload {
+                *payload = RequestLifePayload::Fail(RequestLifeFailPayload {
                     holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                 });
             }
             RequestLifeEvent::Heartbeat => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Heartbeat(RequestLifeHeartbeatPayload {
+                *payload = RequestLifePayload::Heartbeat(RequestLifeHeartbeatPayload {
                     holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                     ttl: fields.unsigned64("ttl")?,
@@ -1486,13 +1687,13 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeEvent::Normalize => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Normalize(RequestLifeNormalizePayload {
+                *payload = RequestLifePayload::Normalize(RequestLifeNormalizePayload {
                     now: fields.unsigned64("now")?,
                 });
             }
             RequestLifeEvent::Publish => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Publish(RequestLifePublishPayload {
+                *payload = RequestLifePayload::Publish(RequestLifePublishPayload {
                     holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                     bundle: fields.text("bundle", 64)?,
@@ -1500,10 +1701,38 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeEvent::Write => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
-                self.pending_payload = RequestLifePayload::Write(RequestLifeWritePayload {
+                *payload = RequestLifePayload::Write(RequestLifeWritePayload {
                     holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                 });
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // docs/adr/0124, D2: data a host lends meets the door a wire delivery
+    // meets: each text and byte string held to the bound the lift holds it to,
+    // and refused in the lift's words.
+    fn admit_event_data(
+        event_data: Self::EventData<'_>,
+    ) -> ::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {
+        match event_data {
+            RequestLifeEventData::Claim(ev) => {
+                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+            }
+            RequestLifeEventData::Fail(ev) => {
+                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+            }
+            RequestLifeEventData::Heartbeat(ev) => {
+                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+            }
+            RequestLifeEventData::Publish(ev) => {
+                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
+                ::sce_rust_runtime::event_payload::lent_within("bundle", ev.bundle.len(), 64)?;
+            }
+            RequestLifeEventData::Write(ev) => {
+                ::sce_rust_runtime::event_payload::lent_within("holder", ev.holder.len(), 64)?;
             }
             _ => {}
         }
@@ -1520,6 +1749,7 @@ impl StatePolicy for RequestLifePolicy {
     fn execute_entry_actions(
         &mut self,
         state: ::sce_rust_runtime::StateId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
@@ -1537,6 +1767,7 @@ impl StatePolicy for RequestLifePolicy {
     fn execute_exit_actions(
         &mut self,
         state: ::sce_rust_runtime::StateId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1559,6 +1790,7 @@ impl StatePolicy for RequestLifePolicy {
         &mut self,
         state: ::sce_rust_runtime::StateId,
         event: ::sce_rust_runtime::EventId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
@@ -1573,7 +1805,7 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeState::ID_Completed => {
                 if event == RequestLifeEvent::ID_Publish {
-                    if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
+                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
                     {
                         // completed, transition 0
                         return Some(::sce_rust_runtime::TransitionId(31));
@@ -1622,7 +1854,7 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeState::ID_Failed => {
                 if event == RequestLifeEvent::ID_Fail {
-                    if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // failed, transition 0
                         return Some(::sce_rust_runtime::TransitionId(32));
@@ -1632,28 +1864,28 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeState::ID_Interrupted => {
                 if event == RequestLifeEvent::ID_Heartbeat {
-                    if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 0
                         return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == RequestLifeEvent::ID_Publish {
-                    if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 1
                         return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 if event == RequestLifeEvent::ID_Fail {
-                    if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 2
                         return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
                 if event == RequestLifeEvent::ID_Write {
-                    if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 3
                         return Some(::sce_rust_runtime::TransitionId(24));
@@ -1702,14 +1934,14 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeState::ID_Request => {
                 if event == RequestLifeEvent::ID_Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.offeredMatches)
+                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.offeredMatches)
                     {
                         // request, transition 0
                         return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == RequestLifeEvent::ID_Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
+                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
                     {
                         // request, transition 1
                         return Some(::sce_rust_runtime::TransitionId(1));
@@ -1722,7 +1954,7 @@ impl StatePolicy for RequestLifePolicy {
                     }
                 }
                 if event == RequestLifeEvent::ID_Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
+                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
                     {
                         // request, transition 3
                         return Some(::sce_rust_runtime::TransitionId(3));
@@ -1735,14 +1967,14 @@ impl StatePolicy for RequestLifePolicy {
                     }
                 }
                 if event == RequestLifeEvent::ID_Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
+                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
                     {
                         // request, transition 5
                         return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == RequestLifeEvent::ID_Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
+                    if matches!(sce_event_data, RequestLifeEventData::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
                     {
                         // request, transition 6
                         return Some(::sce_rust_runtime::TransitionId(6));
@@ -1770,35 +2002,35 @@ impl StatePolicy for RequestLifePolicy {
             }
             RequestLifeState::ID_Running => {
                 if event == RequestLifeEvent::ID_Heartbeat {
-                    if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 0
                         return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == RequestLifeEvent::ID_Publish {
-                    if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 1
                         return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 if event == RequestLifeEvent::ID_Fail {
-                    if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 2
                         return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == RequestLifeEvent::ID_Write {
-                    if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
+                    if matches!(sce_event_data, RequestLifeEventData::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 3
                         return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == RequestLifeEvent::ID_Normalize {
-                    if matches!(&self.pending_payload, RequestLifePayload::Normalize(ev) if self.expires_at <= ev.now)
+                    if matches!(sce_event_data, RequestLifeEventData::Normalize(ev) if self.expires_at <= ev.now)
                     {
                         // running, transition 4
                         return Some(::sce_rust_runtime::TransitionId(20));
@@ -1818,6 +2050,7 @@ impl StatePolicy for RequestLifePolicy {
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         match transition.0 {
@@ -1915,8 +2148,8 @@ impl StatePolicy for RequestLifePolicy {
             21 => {
                 // SCE-MAP: request_life.scxml:142 :: interrupted :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Heartbeat(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Heartbeat(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -1943,8 +2176,8 @@ impl StatePolicy for RequestLifePolicy {
             22 => {
                 // SCE-MAP: request_life.scxml:146 :: interrupted :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Publish(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Publish(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2073,8 +2306,8 @@ impl StatePolicy for RequestLifePolicy {
             2 => {
                 // SCE-MAP: request_life.scxml:57 :: request :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Claim(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Claim(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2130,8 +2363,8 @@ impl StatePolicy for RequestLifePolicy {
             3 => {
                 // SCE-MAP: request_life.scxml:63 :: request :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Claim(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Claim(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2197,8 +2430,8 @@ impl StatePolicy for RequestLifePolicy {
             5 => {
                 // SCE-MAP: request_life.scxml:73 :: request :: _transition_5
                 // W3C SCXML 3.13: Transition 5 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Claim(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Claim(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2294,8 +2527,8 @@ impl StatePolicy for RequestLifePolicy {
             16 => {
                 // SCE-MAP: request_life.scxml:118 :: running :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Heartbeat(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Heartbeat(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2322,8 +2555,8 @@ impl StatePolicy for RequestLifePolicy {
             17 => {
                 // SCE-MAP: request_life.scxml:122 :: running :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                let ev = match &self.pending_payload {
-                    RequestLifePayload::Publish(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    RequestLifeEventData::Publish(ev) => ev,
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
