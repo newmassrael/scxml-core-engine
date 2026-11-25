@@ -33,6 +33,13 @@
 // The real `scripts/mutate` is run, over a real CMake/CTest project, for the
 // reason `mutation_round_survives_a_moved_baseline` gives: the code under test is
 // the harness's own build step, and a copy of it here would be a second spelling.
+//
+// The first build is the setup of every ctest round, and the round says how it
+// ran it: how many jobs it asked for, and how much of it the compiler cache the
+// tree compiles through answered. A launcher that counts what it is handed
+// stands in for ccache, so the count the round reports is one this file knows.
+
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -174,9 +181,43 @@ fn run(cmd: &mut Command, what: &str) -> String {
     text
 }
 
+/// A compiler launcher named `ccache` that answers `--print-stats` as ccache
+/// does. It runs every compilation it is handed and counts it beside itself: a
+/// unit of `subject.c` as a hit from the manifest, one of `helper.c` as a hit
+/// from the preprocessed source, and any other as a miss.
+const COUNTING_CCACHE: &str = r#"#!/bin/sh
+here=$(dirname "$0")
+if [ "$1" = "--print-stats" ]; then
+    n() { if [ -f "$here/$1" ]; then wc -l < "$here/$1"; else echo 0; fi; }
+    printf 'direct_cache_hit\t%s\n' "$(n subject)"
+    printf 'preprocessed_cache_hit\t%s\n' "$(n helper)"
+    printf 'cache_miss\t%s\n' "$(n other)"
+    printf 'called_for_link\t9\n'
+    exit 0
+fi
+case "$*" in
+    *subject.c*) echo x >> "$here/subject" ;;
+    *helper.c*) echo x >> "$here/helper" ;;
+    *) echo x >> "$here/other" ;;
+esac
+exec "$@"
+"#;
+
 /// `generator` is passed to CMake as is; `ninja` is put on the round's `PATH`
 /// either way, so a control differs from the subject in what it names alone.
 fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
+    project_with(name, generator, shape, ninja, None)
+}
+
+/// [`project`], with the C compiler launched through `launcher` when one is
+/// given: a script installed at `bin/ccache` under the project.
+fn project_with(
+    name: &str,
+    generator: &str,
+    shape: Shape,
+    ninja: &Path,
+    launcher: Option<&str>,
+) -> Project {
     let root = repo_root().join("tmp").join(format!("g7-{name}"));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("create the fixture directory");
@@ -188,6 +229,14 @@ fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
     fs::write(root.join("helper.c"), HELPER).expect("write helper.c");
     fs::write(root.join("driver.c"), DRIVER).expect("write driver.c");
     fs::write(root.join("CMakeLists.txt"), cmakelists(shape)).expect("write CMakeLists.txt");
+    let mut configure_args: Vec<String> = Vec::new();
+    if let Some(body) = launcher {
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).expect("create the launcher's directory");
+        let ccache = bin.join("ccache");
+        common::executable::install_executable(&ccache, body).expect("install the launcher");
+        configure_args.push(format!("-DCMAKE_C_COMPILER_LAUNCHER={}", ccache.display()));
+    }
 
     let ninja_dir = ninja.parent().expect("ninja lives in a directory");
     let path = match std::env::var_os("PATH") {
@@ -212,7 +261,8 @@ fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
             .arg(&build)
             .arg("-G")
             .arg(generator)
-            .arg("-DCMAKE_BUILD_TYPE=Release"),
+            .arg("-DCMAKE_BUILD_TYPE=Release")
+            .args(configure_args),
         "cmake configure",
     );
     // A spawning tree is configured and not built, as the lane hands a round
@@ -300,6 +350,12 @@ fn a_case_is_judged_by_its_tests_when_a_target_they_do_not_run_breaks() {
         !output.contains("g7_tree_is_current"),
         "the whole-tree build ran as a test of the round:\n{output}"
     );
+    // This tree names no launcher, so there is no cache whose answer to count;
+    // the round says so rather than printing a count of nothing.
+    assert!(
+        output.contains("the first build compiles through no compiler cache this round can count"),
+        "the round did not say its first build has no compiler cache to count:\n{output}"
+    );
 }
 
 #[test]
@@ -370,5 +426,39 @@ fn an_executable_a_test_is_handed_to_spawn_is_rebuilt_and_hashed() {
     assert!(
         output.contains("the first build covers 2 build output(s) and their closure"),
         "the first build of an unbuilt tree was not the closure of what the test runs:\n{output}"
+    );
+}
+
+/// The setup of a ctest round is its first build, and the round says how it
+/// ran it: at how many jobs, and how much of it the tree's compiler cache
+/// answered. On the sweep of 2026-11-24 (run 45318713297) that build was 56 to
+/// 78 minutes of three jobs, and nothing in their logs said either.
+///
+/// The counting launcher starts with three answers already given (two hits and
+/// a miss) so the count is the first build's own: the closure compiles
+/// `driver.c`, `helper.c` and `subject.c` once each, two hits and one miss.
+#[test]
+fn the_first_build_says_its_jobs_and_what_the_compiler_cache_answered() {
+    let Some(ninja) = ninja() else { return };
+    let p = project_with(
+        "counted",
+        "Ninja",
+        Shape::Spawned,
+        &ninja,
+        Some(COUNTING_CCACHE),
+    );
+    fs::write(p.root.join("bin").join("subject"), "x\nx\n").expect("seed the hits");
+    fs::write(p.root.join("bin").join("other"), "x\n").expect("seed the misses");
+    let output = p.round();
+
+    assert!(
+        output.contains(
+            "the first build covers 2 build output(s) and their closure, 2 job(s) at a time"
+        ),
+        "the first build did not say how many jobs it ran at:\n{output}"
+    );
+    assert!(
+        output.contains("the compiler cache answered 2 of the first build's 3 compilation(s)"),
+        "the first build did not count what the compiler cache answered of it:\n{output}"
     );
 }
