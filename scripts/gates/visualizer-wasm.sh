@@ -71,8 +71,15 @@ part_engine() {
         || sce_gate_fail "visualizer WASM build"
 }
 
+# The example configures the engine in a tree of its own, which reads no
+# SCE_WASM_THREADS and so builds without threads, and links the ECMAScript
+# frontend that tree builds with Rust: the part asks for that Rust itself,
+# as the engine's configure does, since run as its own job no other part has
+# (job 139101350366: "can't find crate for `std`" for wasm32-unknown-emscripten).
 part_doom() {
     emscripten_found || return 0
+    sce_gate_prepare_wasm_rust OFF \
+        || sce_gate_fail "the DOOM example builds the ECMAScript frontend for wasm32-unknown-emscripten, and the Rust it needs is missing (above)"
     sce_gate_step "building the DOOM example (emscripten)"
     ( cd examples/doom_wasm && ./build.sh ) >/dev/null \
         || sce_gate_fail "DOOM WASM example build"

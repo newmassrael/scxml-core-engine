@@ -2513,6 +2513,86 @@ fn the_visualizer_wasm_parts_are_its_builds_each_once() {
     );
 }
 
+/// The shell functions of `script`, each `name() {` at the start of a line
+/// to the `}` alone at the start of a line, by name.
+fn shell_functions(script: &str) -> BTreeMap<String, String> {
+    let mut functions = BTreeMap::new();
+    let mut current: Option<String> = None;
+    let mut body: Vec<&str> = Vec::new();
+    for line in script.lines() {
+        if current.is_some() {
+            if line == "}" {
+                if let Some(name) = current.take() {
+                    functions.insert(name, body.join("\n"));
+                }
+                body.clear();
+            } else {
+                body.push(line);
+            }
+            continue;
+        }
+        if let Some(name) = line.strip_suffix("() {") {
+            if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                current = Some(name.to_string());
+            }
+        }
+    }
+    functions
+}
+
+/// The words of a shell text that can name a function.
+fn shell_words(text: &str) -> BTreeSet<&str> {
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Each part of visualizer-wasm runs as a job of its own, so a part that builds
+/// with emscripten asks for the Rust its tree links itself
+/// (`sce_gate_prepare_wasm_rust`, in its body or through a configure that
+/// asks): the DOOM part had built on the target the engine's part installed
+/// before it, and failed the first time it ran alone (job 139101350366).
+#[test]
+fn every_emscripten_part_of_the_visualizer_asks_for_its_own_rust() {
+    let mut functions = shell_functions(&uncommented(&read("scripts/gates/lib.sh")));
+    let gate = shell_functions(&uncommented(&read(VISUALIZER_GATE)));
+    functions.extend(gate.clone());
+    let mut asking: BTreeSet<String> = BTreeSet::from(["sce_gate_prepare_wasm_rust".to_string()]);
+    loop {
+        let more: Vec<String> = functions
+            .iter()
+            .filter(|(name, body)| {
+                !asking.contains(*name) && shell_words(body).iter().any(|w| asking.contains(*w))
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        if more.is_empty() {
+            break;
+        }
+        asking.extend(more);
+    }
+    let emscripten: Vec<&String> = gate
+        .iter()
+        .filter(|(name, body)| {
+            name.starts_with("part_") && shell_words(body).contains("emscripten_found")
+        })
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        emscripten.len() >= 2,
+        "{VISUALIZER_GATE} has the emscripten parts {emscripten:?}; the engine and the DOOM \
+         example are two, so this reading of the script went blind"
+    );
+    for name in emscripten {
+        assert!(
+            asking.contains(name),
+            "{VISUALIZER_GATE}'s `{name}` builds with emscripten and asks for none of the \
+             Rust its tree links (`sce_gate_prepare_wasm_rust`), so run as its own job it \
+             builds on what another part's job installed, which no job has"
+        );
+    }
+}
+
 // ── Every sharded job lists each of its shards once ─────────────────────────
 
 /// A job that hands its gate `<VARIABLE>_SHARD: ${{ matrix.shard }}/N` runs a
