@@ -463,11 +463,9 @@ const ZINT_FLAGGED_BYTES: usize = 8;
 const ZINT_MAX_BYTES: usize = ZINT_FLAGGED_BYTES + 1;
 
 /// The ZInt at the start of `bytes` and the count of bytes it takes, or
-/// `None` when `bytes` ends inside its chain. Both paths of
-/// [`zint_tail`] run this one decode: given nine bytes the length
-/// is known where it is inlined, so the chain is read with no test of the
-/// end, since no chain can run past them; given a shorter tail, the iterator
-/// tests each byte once against the end, and the chain may end with the tail.
+/// `None` when `bytes` ends inside its chain: the iterator tests each byte
+/// once against the end, and the chain may end with the input. The one decode
+/// of [`zint_tail`], inlined there once (docs/adr/0137).
 #[inline(always)]
 fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
     let mut value: u64 = 0;
@@ -498,10 +496,9 @@ pub(crate) fn zint_byte(buf: &[u8], pos: usize) -> Option<u8> {
 /// `VleWidthOverflow` there), and at the end of `buf` with `NeedMoreBytes`
 /// when `buf` ends inside its chain.
 ///
-/// When nine bytes remain, the longest a ZInt is, they are taken as one array,
-/// whose length is the one test of the end, and the chain is read from it with
-/// no other; when fewer remain, the tail is read byte by byte. Both run the one
-/// decode, [`decode_zint`].
+/// The tail is read by one loop, [`decode_zint`], whatever remains of it: a
+/// second copy of the loop for a tail of nine bytes or more would spare one
+/// test a byte at the price of the loop's size again (docs/adr/0137).
 ///
 /// The one body of every ZInt longer than a byte, for every width and for the
 /// cursor's and the frame reader's reads alike (docs/adr/0130): cold, so the
@@ -511,11 +508,7 @@ pub(crate) fn zint_byte(buf: &[u8], pos: usize) -> Option<u8> {
 #[inline(never)]
 pub(crate) fn zint_tail(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
     let tail = buf.get(pos..).unwrap_or_default();
-    let decoded = match tail.first_chunk::<ZINT_MAX_BYTES>() {
-        Some(chunk) => decode_zint(chunk),
-        None => decode_zint(tail),
-    };
-    match decoded {
+    match decode_zint(tail) {
         Some((value, len)) if max_bits < u64::BITS && value >> max_bits != 0 => {
             (Err(CodecError::VleWidthOverflow), pos + len)
         }

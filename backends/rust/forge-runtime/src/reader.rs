@@ -112,7 +112,12 @@ impl<'a> SceReader<'a> {
 
     /// Record `refusal` as the frame's, unless one is recorded already, and
     /// end the input, so that every later read is a no-op.
+    ///
+    /// One function, out of line, for every read of every codec: the refusal of
+    /// each read is a call, not the record written again at each read
+    /// (docs/adr/0137).
     #[cold]
+    #[inline(never)]
     pub fn fail(&mut self, refusal: CodecError) {
         if self.fault.is_none() {
             self.fault = Some(refusal);
@@ -158,14 +163,23 @@ impl<'a> SceReader<'a> {
     pub fn hold<T: Default>(&mut self, result: Result<T, CodecError>) -> T {
         match result {
             Ok(value) => value,
-            Err(CodecError::CapacityExceeded) => {
-                self.over = true;
-                T::default()
-            }
             Err(refused) => {
-                self.fail(refused);
+                self.refuse_held(refused);
                 T::default()
             }
+        }
+    }
+
+    /// What [`Self::hold`] records of a value it does not hold: a capacity
+    /// noted, any other refusal recorded. One function, out of line, for every
+    /// held field of every codec, as [`Self::fail`] is (docs/adr/0137).
+    #[cold]
+    #[inline(never)]
+    fn refuse_held(&mut self, refused: CodecError) {
+        if matches!(refused, CodecError::CapacityExceeded) {
+            self.over = true;
+        } else {
+            self.fail(refused);
         }
     }
 
@@ -277,15 +291,26 @@ impl<'a> SceReader<'a> {
     /// `VleWidthOverflow` and reads as zero, a longer encoding of a value the
     /// width holds is that value, and a chain the input ends inside records
     /// `NeedMoreBytes` (see [`SceCursor::read_vle_u64`]). A ZInt of one byte is
-    /// read where this is inlined; a longer one is the cursor's one cold body
-    /// (`codec::zint_tail`), so the two readers of a ZInt run one decode
-    /// (docs/adr/0130).
+    /// read where this is inlined, a test and a branch; a longer one is a call
+    /// of [`Self::read_vle_long`], so no field holds the longer read's answer
+    /// and its record (docs/adr/0137).
     #[inline(always)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
         if let Some(b) = zint_byte(self.buf, self.pos) {
             self.pos += 1;
             return u64::from(b);
         }
+        self.read_vle_long(max_bits)
+    }
+
+    /// A ZInt longer than a byte, held to `max_bits`, consumed, and its refusal
+    /// recorded: the cursor's one cold body (`codec::zint_tail`) read through
+    /// this reader, so the two readers of a ZInt run one decode (docs/adr/0130).
+    /// One function, out of line, for every ZInt field of every codec
+    /// (docs/adr/0137).
+    #[cold]
+    #[inline(never)]
+    fn read_vle_long(&mut self, max_bits: u32) -> u64 {
         let (value, at) = zint_tail(self.buf, self.pos, max_bits);
         match value {
             Ok(value) => {
@@ -592,5 +617,16 @@ mod tests {
             0,
             "a frame past a capacity is read whole"
         );
+    }
+
+    #[test]
+    fn a_held_value_past_its_capacity_is_noted_and_any_other_refusal_recorded() {
+        let mut r = SceReader::new(&[]);
+        assert_eq!(r.hold::<u8>(Err(CodecError::CapacityExceeded)), 0);
+        assert!(r.exceeded() && !r.failed());
+        assert_eq!(r.hold::<u8>(Err(CodecError::InvalidUtf8)), 0);
+        assert!(r.failed());
+        assert_eq!(r.hold(Ok::<u8, CodecError>(3)), 3);
+        assert_eq!(r.verdict(), Err(CodecError::InvalidUtf8));
     }
 }

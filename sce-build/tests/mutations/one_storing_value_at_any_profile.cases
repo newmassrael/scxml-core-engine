@@ -29,23 +29,21 @@ PY
 
 mutation_case "a body with no list read past a capacity answers as one that held it" <<'PY'
 edit("backends/rust/forge-runtime/src/reader.rs",
-     r'''            Err(CodecError::CapacityExceeded) => {
-                self.over = true;
-                T::default()
-            }''',
-     r'''            Err(CodecError::CapacityExceeded) => T::default(),''')
+     r'''        if matches!(refused, CodecError::CapacityExceeded) {
+            self.over = true;
+        } else {''',
+     r'''        if matches!(refused, CodecError::CapacityExceeded) {
+        } else {''')
 PY
 
 mutation_case "a body past a capacity stops the decode that holds it" <<'PY'
 edit("backends/rust/forge-runtime/src/reader.rs",
-     r'''            Err(CodecError::CapacityExceeded) => {
-                self.over = true;
-                T::default()
-            }''',
-     r'''            Err(CodecError::CapacityExceeded) => {
-                self.fail(CodecError::CapacityExceeded);
-                T::default()
-            }''')
+     r'''        if matches!(refused, CodecError::CapacityExceeded) {
+            self.over = true;
+        } else {''',
+     r'''        if matches!(refused, CodecError::CapacityExceeded) {
+            self.fail(CodecError::CapacityExceeded);
+        } else {''')
 PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'
