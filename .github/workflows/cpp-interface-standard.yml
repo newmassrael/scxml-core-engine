@@ -224,20 +224,28 @@ jobs:
       - name: Install Rust Toolchain
         uses: ./.github/actions/install-rust
 
-      # The image's own cache (`gate_in_container` in scripts/gate): its cargo
-      # registry and its build directory, kept apart from this runner's because
-      # a generator linked in the image is not one to hand to another libc, or
-      # back. Keyed on the pin, as every Rust cache is.
-      - name: Cache the image's cargo registry and build directory
+      # Rust compiles through the shared compile cache
+      # (.github/actions/compile-cache), inside the image too: the gate hands
+      # the image sccache and the cache's address and token (`gate_in_container`
+      # in scripts/gate). The image's cargo keeps a home of its own, whose
+      # registry download the step after restores.
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
+        with:
+          registry: false
+
+      # The image's cargo registry download, keyed as every registry download is
+      # (.github/actions/compile-cache): the crates Cargo.lock names, not their
+      # unpacked sources, and no build directory, which the compile cache answers.
+      - name: Cache the image's cargo registry download
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
-            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry
-            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/git
-            ~/.cache/sce-gate-containers/cpp-interface-standard/target
-          key: gcc15-image-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('tools/interface-standard/Containerfile', 'sce-build/Cargo.toml') }}
-          restore-keys: |
-            gcc15-image-${{ hashFiles('rust-toolchain.toml') }}-
+            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry/index
+            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry/cache
+            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/git/db
+          key: gcc15-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
 
       # Guards, configure, the plan, this shard's generation, then its
       # compiles at both standards are one gate, so the check has one spelling
@@ -259,6 +267,12 @@ jobs:
           path: build/interface-standard-shard/
           retention-days: 30
           if-no-files-found: warn
+
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats
 
   # The verdict of the lane: every shard planned the measurement alike,
   # accounted for every subject it was given, and the outcomes the whole run

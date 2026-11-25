@@ -1,12 +1,16 @@
 name: Keep one cache of a family
 description: >-
   Delete every cache of this ref whose key begins with `prefix`, except `keep`.
-  A cache saved under a key that is new on every run (a compiler cache keyed by
-  the commit) otherwise leaves one entry per run in the repository's 10 GB, and
-  GitHub makes room by evicting the least recently used caches of every lane
-  (2026-11-24: the C++ lanes' compiler caches, whose builds then ran cold past
-  their ceiling). Run it after the save succeeded, so the family is never empty;
-  the job needs `actions: write`.
+  A family whose key moves with what it holds (vcpkg's binary packages by their
+  ABI, the generator's plans by their inputs) otherwise leaves an entry for every
+  key it ever had in the repository's 10 GB, and GitHub makes room by evicting
+  the least recently used caches of every lane (2026-11-24: the C++ lanes'
+  compiler caches, whose builds then ran cold past their ceiling). Compile output
+  is not kept this way but through ./.github/actions/compile-cache, one entry per
+  compilation for every lane, and no cache is keyed by the run
+  (`per_run_cache_failures` in tools/git-hooks/gate_registry.py). Run it after
+  the save succeeded, so the family is never empty; the job needs
+  `actions: write`.
 inputs:
   prefix:
     description: The beginning every key of the family shares.

@@ -113,12 +113,14 @@ jobs:
   # with it (3.6 min, "Done in 3m 34s"). Apart, the codegen WASM is the longest
   # part, about 10 min on its own, and the others build the generator beside it.
   #
-  # No compiler cache: the emscripten parts (about 9 min each, the generator's
-  # 3.5 with them) end before the codegen WASM does, so a cache of their
-  # objects would take room in the repository's caches and shorten no run. The
-  # codegen WASM's time is a release compile of sce-build and wasm-opt over its
-  # output: a compiler cache answers the first only for a commit that left
-  # sce-build as it was, and nothing here caches the second.
+  # Rust compiles through the shared compile cache
+  # (.github/actions/compile-cache): the codegen WASM's time is a release
+  # compile of sce-build and wasm-opt over its output, and the cache answers the
+  # dependencies of the first on every commit and sce-build itself on one that
+  # left it as it was; nothing here caches the second. What emcc compiles is not
+  # handed to it: the emscripten parts (about 9 min each, the generator's 3.5
+  # with them) end before the codegen WASM does, so their objects would take
+  # room in the repository's caches and shorten no run.
   build:
     name: Visualizer WebAssembly (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
@@ -160,45 +162,17 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    # The jobs that build the generator restore and save the shared Cargo
-    # cache, as every lane that builds it does.
-    - name: Cache Cargo (codegen)
-      if: matrix.shard != 1
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
-
-    # The codegen WASM job restores the same entry (cargo's registry, and the
-    # host build state of the build scripts and macros it shares) and never
-    # saves it: its `target` holds the wasm32 build and not the generator's, and
-    # saved under the shared key it would hand every lane that restores it a
-    # generator to build from nothing.
-    - name: Restore Cargo (codegen)
-      if: matrix.shard == 1
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       if: matrix.shard != 1
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -307,6 +281,12 @@ jobs:
           examples/doom_wasm/build/doom_sce.data
         retention-days: 1
         if-no-files-found: error
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The diagram's layout, measured on the two modules the page loads: the
   # codegen WASM turns a document into a structure through `gui_structure()`,

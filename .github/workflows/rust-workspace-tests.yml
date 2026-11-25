@@ -578,15 +578,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # The generator is built by the gate this lane delegates to
     # (`scripts/gates/workspace-tests.sh`), before the suite, and by the
@@ -693,3 +687,9 @@ jobs:
       run: |
         df -h .
         du -sh target ~/.cargo/registry ~/.cargo/git 2>/dev/null || true
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

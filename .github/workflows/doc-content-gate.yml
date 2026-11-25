@@ -136,17 +136,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-doc-content-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-doc-content-${{ hashFiles('rust-toolchain.toml') }}-
-          ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # Delegates to the gate runner rather than restating the command, so
     # the scope has one spelling for both callers.
@@ -164,6 +156,12 @@ jobs:
         path: target/doc-content-shard/
         retention-days: 30
         if-no-files-found: warn
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The verdict of the library's tests: every part planned the modules alike
   # and ran every module of its part (`ctest_shards.py verify`). It keeps the

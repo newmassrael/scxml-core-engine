@@ -1615,11 +1615,13 @@ fn stripping_prose_keeps_the_line_numbering() {
 const MIN_CODEGEN_BUILD_STEPS: usize = 11;
 
 /// A step that builds only the debug binary must first delete the
-/// release one the cache may have restored.
+/// release one an earlier build may have left.
 ///
-/// The Cargo cache in these workflows restores all of `target`, while
-/// every `Build sce-codegen` step builds the debug profile alone. A
-/// release binary left by an older cache therefore survives into a run
+/// Until 2026-11-25 the Cargo cache in these workflows restored all of
+/// `target` (they now keep none: .github/actions/compile-cache), and a
+/// tree a build machine reuses keeps its own, while every
+/// `Build sce-codegen` step builds the debug profile alone. A release
+/// binary left by an older cache or build therefore survives into a run
 /// that never produced it, and a debug-only build that has not yet
 /// produced its own binary leaves that stale one as the only candidate
 /// the locators can hand out — which is how CI once executed a binary

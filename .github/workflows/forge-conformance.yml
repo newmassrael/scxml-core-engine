@@ -214,28 +214,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        # Keyed by what the dependencies are, not by the sources: cargo rebuilds a
-        # changed crate from its fingerprints whatever the cache holds, and a key
-        # that hashed sce-build's sources saved a new copy of `target` on every
-        # commit that touched them, which evicted the caches beside it.
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -247,6 +235,12 @@ jobs:
         path: target/debug/sce-codegen
         retention-days: 1
         if-no-files-found: error
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # ============================================================
   # Rust — in-process codegen via build.rs (independent of artifact)
@@ -287,17 +281,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-forge-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-forge-${{ hashFiles('rust-toolchain.toml') }}-
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Run Rust Conformance Harness
       run: |
@@ -324,6 +310,12 @@ jobs:
         name: forge-conformance-rust
         path: rust_conformance.log
         retention-days: 14
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # ============================================================
   # Python — conftest.py bootstrap uses downloaded sce-codegen

@@ -1,0 +1,193 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The one way a lane keeps what it compiles: sccache, on the GitHub Actions
+# cache, for Rust (RUSTC_WRAPPER), for C and C++ under CMake
+# (CMAKE_<LANG>_COMPILER_LAUNCHER) and for what emcc compiles
+# (EM_COMPILER_WRAPPER).
+#
+# Why a content-addressed cache and not a snapshot. Until 2026-11-25 each Rust
+# lane saved its whole `target` under a family of its own and each C/C++ job
+# its own ccache directory: 10.14 GB in 31 entries that day, against the
+# repository's 10 GB, so GitHub evicted the least recently used entry of every
+# lane, and most of those bytes were the same dependency crates stored once per
+# lane. sccache stores one entry per compilation, keyed by its inputs (the
+# compiler, its arguments, the preprocessed source or the crate's sources and
+# environment): every lane and shard that compiles a unit alike shares the one
+# entry, nothing is saved twice, and the eviction that makes room drops one
+# object, not a lane's whole build. `compile-cache-is-content-addressed` in
+# tools/git-hooks/gate_registry.py refuses a snapshot of a Rust `target` or a
+# compiler cache directory, and a lane that installs sccache another way.
+#
+# What it cannot answer, which then runs every time: a crate that links (bin,
+# dylib, cdylib, proc-macro: build scripts, test and tool binaries) and the
+# link itself; a compile that emits metadata alone (`cargo check`, clippy and
+# the dependencies `cargo doc` reads), since sccache needs `--emit=link`;
+# rustdoc; and incremental compilation, so CARGO_INCREMENTAL is 0 wherever the
+# wrapper is.
+#
+# sccache knows no emcc (its compilers are gcc, clang, MSVC, NVCC and a few
+# others), so emcc is not wrapped: emscripten runs the wrapper that
+# EM_COMPILER_WRAPPER names in front of the clang it compiles each source with
+# (`phase_compile_inputs` in emcc.py of the release scripts/install_emsdk.sh
+# pins), and sccache caches that clang call. A lane that builds with
+# emscripten asks for `emscripten` and not `cmake`: a launcher in front of
+# emcc would be taken for a clang whose identity is the emcc script and not
+# the compiler behind it.
+#
+# The release and its checksums are pinned here, as install-rust pins Rust; the
+# checksums are those the release publishes beside each archive, checked
+# against the archives on 2026-11-25. The cache service's address and token
+# are handed to every later step by actions/github-script, the way sccache's
+# own documentation (docs/GHA.md) does it, since a `run:` step is never given
+# them. ACTIONS_CACHE_SERVICE_V2 picks the service GitHub runs (the first one
+# was retired in 2025): the cache client in sccache takes the first unless the
+# variable is set to anything.
+#
+# Cargo's registry download is the one Rust snapshot kept: the crates
+# Cargo.lock names, the archives and not their unpacked sources, one entry for
+# every lane, filled whole by `cargo fetch` on a miss and saved at once, so it
+# holds the same crates whichever lane saves it. It is keyed by the release and
+# Cargo.lock with no prefix to restore from, so a Cargo.lock that moves
+# downloads afresh and the entry before it, no longer read, ages out.
+#
+# A job that uses this action ends with a step that prints `sccache
+# --show-stats` (the registry requires it), so its log says what the cache
+# answered and what it could not.
+name: Compile through the shared compile cache
+description: Installs the pinned sccache on the GitHub Actions cache and compiles Rust, CMake's C and C++, and emcc through it; keeps cargo's registry download. Runs after install-rust.
+
+inputs:
+  rust:
+    description: Compile Rust through sccache and restore cargo's registry download.
+    default: 'true'
+  cmake:
+    description: Compile C and C++ through sccache in every CMake project the job configures.
+    default: 'false'
+  emscripten:
+    description: Compile what emcc compiles through sccache.
+    default: 'false'
+  registry:
+    description: With rust, restore cargo's registry download; 'false' for a job whose cargo runs with a home of its own.
+    default: 'true'
+  write:
+    description: Store what the job compiles; 'false' reads the cache and stores nothing.
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned sccache
+      shell: bash
+      env:
+        SCCACHE_RELEASE: v0.19.0
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)
+            target=x86_64-unknown-linux-musl exe=sccache
+            sha256=aa73c7270c997894038c0d8f0d297865f57569e1687883322bc431713d4bb9dd
+            dir="$RUNNER_TEMP/sccache-bin"
+            ;;
+          Windows-X64)
+            target=x86_64-pc-windows-msvc exe=sccache.exe
+            sha256=130e4f8eb672e76590e9993c2ab890c4763b88238577bb11d8062158c7698353
+            dir="$(cygpath -u "$RUNNER_TEMP")/sccache-bin"
+            ;;
+          *)
+            echo "::error title=compile-cache::no sccache is pinned for $RUNNER_OS $RUNNER_ARCH"
+            exit 1
+            ;;
+        esac
+        name="sccache-$SCCACHE_RELEASE-$target"
+        mkdir -p "$dir"
+        curl -fsSL --retry 5 --retry-all-errors -o "$dir/$name.tar.gz" \
+          "https://github.com/mozilla/sccache/releases/download/$SCCACHE_RELEASE/$name.tar.gz"
+        echo "$sha256  $dir/$name.tar.gz" | sha256sum --check --strict
+        tar -xzf "$dir/$name.tar.gz" -C "$dir" --strip-components=1 "$name/$exe"
+        rm "$dir/$name.tar.gz"
+        path="$dir/$exe"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          path="$(cygpath -w "$path")"
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+        else
+          echo "$dir" >> "$GITHUB_PATH"
+        fi
+        echo "SCCACHE_PATH=$path" >> "$GITHUB_ENV"
+
+    # Pinned to a commit, as every action from outside the repository is.
+    - name: Hand sccache the cache service's address and token
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        script: |
+          for (const name of ['ACTIONS_RESULTS_URL', 'ACTIONS_RUNTIME_TOKEN']) {
+            if (!process.env[name]) {
+              core.setFailed(`the runner gave this action no ${name}, which the cache needs`);
+              return;
+            }
+            core.exportVariable(name, process.env[name]);
+          }
+          core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
+
+    # The server is started here, with the cache it is to use, so a cache it
+    # cannot reach fails this step and not the first compilation. It runs to the
+    # end of the job (SCCACHE_IDLE_TIMEOUT=0), so the counts the job prints at
+    # its end are the whole job's.
+    - name: Compile through sccache
+      shell: bash
+      env:
+        RUST: ${{ inputs.rust }}
+        CMAKE: ${{ inputs.cmake }}
+        EMSCRIPTEN: ${{ inputs.emscripten }}
+        WRITE: ${{ inputs.write }}
+      run: |
+        set -euo pipefail
+        export SCCACHE_GHA_ENABLED=true SCCACHE_IDLE_TIMEOUT=0
+        export SCCACHE_GHA_RW_MODE=READ_WRITE
+        if [[ "$WRITE" == false ]]; then
+          SCCACHE_GHA_RW_MODE=READ_ONLY
+        fi
+        {
+          echo "SCCACHE_GHA_ENABLED=$SCCACHE_GHA_ENABLED"
+          echo "SCCACHE_IDLE_TIMEOUT=$SCCACHE_IDLE_TIMEOUT"
+          echo "SCCACHE_GHA_RW_MODE=$SCCACHE_GHA_RW_MODE"
+          if [[ "$RUST" == true ]]; then
+            echo "RUSTC_WRAPPER=$SCCACHE_PATH"
+            echo "CARGO_INCREMENTAL=0"
+          fi
+          if [[ "$CMAKE" == true ]]; then
+            echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH"
+          fi
+          if [[ "$EMSCRIPTEN" == true ]]; then
+            echo "EM_COMPILER_WRAPPER=$SCCACHE_PATH"
+          fi
+        } >> "$GITHUB_ENV"
+        sccache --version
+        sccache --start-server
+
+    - name: Restore cargo's registry download
+      id: registry
+      if: inputs.rust == 'true' && inputs.registry == 'true'
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Download every crate Cargo.lock names
+      if: steps.registry.outcome == 'success' && steps.registry.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo fetch --locked
+
+    - name: Save cargo's registry download
+      if: steps.registry.outcome == 'success' && inputs.write == 'true' && steps.registry.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ steps.registry.outputs.cache-primary-key }}

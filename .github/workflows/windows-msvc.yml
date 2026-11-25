@@ -31,10 +31,12 @@ name: Windows MSVC
 #
 # What does not change between commits is now kept between runs: the ports as
 # vcpkg's binary packages, keyed by the vcpkg baseline and the MSVC that build
-# them, and the Rust compilations through sccache, one entry for the lane. The rest
-# is the commit's own work: a generator whose sources changed is compiled
-# again, and the configure plans every generation of the tree whatever the
-# lane builds of it.
+# them, and the Rust compilations through the shared compile cache
+# (.github/actions/compile-cache), which knows a crate whose sources did not
+# change by their content, however the checkout dates them. The rest is the
+# commit's own work: a generator whose sources changed is compiled again, and
+# the configure plans every generation of the tree whatever the lane builds of
+# it.
 #
 # MSVC's own compilations (the 2.3 min build) are not cached. The Visual Studio
 # generator does not run a compiler launcher (CMake reads
@@ -167,16 +169,9 @@ jobs:
       - name: Install Rust Toolchain
         uses: ./.github/actions/install-rust
 
-      - name: Cache Cargo
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
 
       # The scripts the gate runs read a Python 3 (scripts/package_embed.sh).
       - name: Install Python
@@ -249,66 +244,11 @@ jobs:
           prefix: ${{ steps.vcpkg-cache.outputs.family }}
           keep: ${{ steps.vcpkg-restore.outputs.cache-primary-key }}
 
-      # The Rust compilations through sccache. The Cargo cache above restores the
-      # dependencies' build state, and cargo still compiles the workspace's own
-      # crates after every checkout, since it dates their sources by the
-      # checkout: 7.2 min for the generator and 1.2 for the release lowering
-      # library the configure builds (job 138963137937), on a run whose Cargo
-      # cache hit its key exactly. sccache answers a compilation whose inputs it
-      # has seen by their content, so a crate whose sources did not change is not
-      # compiled again; one whose sources did is, and its result replaces the
-      # old one in the cache. Pinned: without a version the action asks the
-      # GitHub releases API for the newest, the lookup that handed
-      # deploy-visualizer.yml an old wasm-pack when it was rate limited.
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-
-      # The cache in a directory the cache steps name, and bounded, so the lane's
-      # one entry cannot grow past 1 GB: what it holds is the workspace crates in
-      # the two profiles the lane builds and the few dependencies cargo rebuilds
-      # beside them.
-      - name: Compile Rust through sccache
-        run: |
-          {
-            echo "RUSTC_WRAPPER=sccache"
-            echo "SCCACHE_DIR=$RUNNER_TEMP\\sccache"
-            echo "SCCACHE_CACHE_SIZE=1G"
-          } >> "$GITHUB_ENV"
-
-      - name: Restore sccache
-        id: sccache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ runner.temp }}/sccache
-          key: ${{ runner.os }}-sccache-windows-msvc-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-sccache-windows-msvc-
-
       - name: Build and run the C++ host with MSVC, through CMake and Bazel
         run: bash scripts/gates/windows-msvc.sh
 
-      # What sccache answered and missed, and its server stopped, so the
-      # directory the save reads is no longer being written.
-      - name: Report what sccache answered
-        if: always()
-        run: |
-          sccache --show-stats
-          sccache --stop-server
-
-      - name: Save sccache
-        id: sccache-save
-        if: always() && steps.sccache.outputs.cache-primary-key != ''
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ runner.temp }}/sccache
-          key: ${{ steps.sccache.outputs.cache-primary-key }}
-      # One entry for the lane: the save above is under a key new on every run
-      # (.github/actions/keep-one-cache says why that is kept to one).
-      - name: Keep only the lane's newest sccache
-        if: always() && steps.sccache-save.outcome == 'success'
-        uses: ./.github/actions/keep-one-cache
-        with:
-          prefix: ${{ runner.os }}-sccache-windows-msvc-
-          keep: ${{ steps.sccache.outputs.cache-primary-key }}
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

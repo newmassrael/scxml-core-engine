@@ -54,10 +54,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache cargo registry + target
-      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      with:
-        key: ${{ hashFiles('rust-toolchain.toml') }}
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # Both profiles, delegated to the gate runner. The gate sets
     # `RUSTDOCFLAGS=-D warnings` per command; this workflow set it as a
@@ -65,3 +64,9 @@ jobs:
     # as nobody moved the `env:` block.
     - name: Broken intra-doc links (std + no_std profiles)
       run: scripts/gate rustdoc-links
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

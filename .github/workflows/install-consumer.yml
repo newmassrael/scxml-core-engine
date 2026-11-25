@@ -150,10 +150,8 @@ jobs:
   install-consumer:
     name: Generated C++ builds against an installed SCE
     runs-on: ubuntu-24.04
-    # actions: write deletes the lane's older compiler caches (keep-one-cache).
     permissions:
       contents: read
-      actions: write
     timeout-minutes: 80
 
     steps:
@@ -177,7 +175,6 @@ jobs:
             cmake \
             g++ \
             ninja-build \
-            ccache \
             pkg-config \
             libxml2-dev \
             libssl-dev \
@@ -188,31 +185,14 @@ jobs:
       - name: Install Rust Toolchain
         uses: ./.github/actions/install-rust
 
-      - name: Cache Cargo
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      # Rust, and the C and C++ of every CMake tree the job configures, compile
+      # through the shared compile cache (.github/actions/compile-cache): a unit
+      # another shard or lane compiled alike is answered from it.
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
-
-      # The compiler cache: a directory named for ccache, a restore here and a
-      # save after the gate that runs whatever the gate did. The reason for the
-      # three steps is written beside the same steps in cpp-suite.yml.
-      - name: Keep ccache in the directory its cache restores and saves
-        run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
-
-      - name: Restore ccache
-        id: ccache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-install-consumer-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-install-consumer-
+          cmake: true
 
       # Configure, build, install and the four probes are one gate, so the check
       # has one spelling here and for a developer. The runner builds
@@ -220,19 +200,8 @@ jobs:
       - name: Build generated C++ against an installed SCE
         run: scripts/gate install-consumer
 
-      - name: Save ccache
-        id: ccache-save
-        if: always() && steps.ccache.outputs.cache-primary-key != ''
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.ccache
-          key: ${{ steps.ccache.outputs.cache-primary-key }}
-      # One compiler cache per lane: the save above is under a key new on every run,
-      # and the entries it leaves would fill the repository's 10 GB and evict the
-      # caches of every other lane (.github/actions/keep-one-cache says why).
-      - name: Keep only this lane's newest ccache
-        if: always() && steps.ccache-save.outcome == 'success'
-        uses: ./.github/actions/keep-one-cache
-        with:
-          prefix: ${{ runner.os }}-ccache-install-consumer-
-          keep: ${{ steps.ccache.outputs.cache-primary-key }}
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

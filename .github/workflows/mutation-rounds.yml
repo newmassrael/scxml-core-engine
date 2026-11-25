@@ -612,7 +612,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential cmake g++ meson ninja-build lld ccache \
+          build-essential cmake g++ meson ninja-build lld \
           pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev \
           clang-format-19
 
@@ -751,16 +751,32 @@ jobs:
     - name: Install the rev-pinned mnemosyne-cli
       run: scripts/install_mnemosyne_cli.sh
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    # Rust, and the C and C++ of the ctest rounds' tree, compile through the
+    # shared compile cache (.github/actions/compile-cache), read and never
+    # written.
+    #
+    # The setup of a ctest round is its first build: the closure of what the
+    # casefile's tests run, compiled from nothing on every job. It was 24
+    # minutes for `static_datamodel_generated_cpp_test` on the sweep of
+    # 2026-10-26 (run 40406006492) and 56 to 78 in three jobs of one commit on
+    # 2026-11-24 (run 45318713297). Every ctest job of a sweep compiles the same
+    # units of the same commit, and the C++ suite (cpp-suite.yml) compiles them
+    # too, under the same configure (`sce_main_build_dir`: RelWithDebInfo, Ninja,
+    # BUILD_TESTS, SCE_ENABLE_MESH), the same compiler from the same image and
+    # the same checkout path, which is what the cache keys a compilation by. The
+    # transport SDKs that lane adds only register targets of their own
+    # (tests/CMakeLists.txt), none a round builds.
+    #
+    # Read-only, because what a round compiles after its baseline is a mutant,
+    # which no run compiles again: stored, it would only take room from the
+    # lanes' entries. The round counts what the cache answered of its first build
+    # (`mutation_ctest_say_compiler_cache` in scripts/mutate).
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-mutation-rounds-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-mutation-rounds-${{ hashFiles('rust-toolchain.toml') }}-
+        cmake: true
+        write: false
 
     # The build type is in the key, not only in the recipe. A cache entry is
     # restored by prefix, and the run that first reached this path left a
@@ -794,46 +810,6 @@ jobs:
         key: ${{ runner.os }}-sce-codegen-plans-mutation-rounds-${{ hashFiles('sce-build/src/**', 'tools/codegen/templates/**', 'cmake/**', '**/CMakeLists.txt', 'resources/**', 'integration_resources/**', 'tests/mesh/**') }}
         restore-keys: |
           ${{ runner.os }}-sce-codegen-plans-mutation-rounds-
-
-    # The C++ suite's compiler cache, restored and never saved.
-    #
-    # The setup of a ctest round is its first build: the closure of what the
-    # casefile's tests run, compiled from nothing on every job. It was 24
-    # minutes for `static_datamodel_generated_cpp_test` on the sweep of
-    # 2026-10-26 (run 40406006492) and 56 to 78 in three jobs of one commit on
-    # 2026-11-24 (run 45318713297), as the tree that target compiles grew, and
-    # ccache was installed and handed an empty directory each time. Every ctest
-    # job of a sweep compiles the same units of the same commit, and the C++
-    # suite (cpp-suite.yml) compiles them too, under the same configure
-    # (`sce_main_build_dir`: RelWithDebInfo, Ninja, BUILD_TESTS, SCE_ENABLE_MESH),
-    # the same compiler from the same image and the same checkout path, which is
-    # what ccache hashes. The transport SDKs that lane adds only register
-    # targets of their own (tests/CMakeLists.txt), none a round builds.
-    #
-    # Read-only, because the repository's 10 GB of Actions cache is full: a
-    # family of this lane's own would evict another lane's to make room.
-    # `actions/cache/restore` saves nothing. That family keeps one entry
-    # (`keep-one-cache` in cpp-suite.yml), so its prefix names the newest. The
-    # directory is the one that lane restores and saves, for the reason its own
-    # step gives.
-    - name: Keep ccache in the directory the C++ suite's cache holds
-      if: matrix.runner == 'ctest'
-      run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
-
-    - name: Restore the C++ suite's compiler cache
-      if: matrix.runner == 'ctest'
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-ccache-cpp-suite-
-        restore-keys: |
-          ${{ runner.os }}-ccache-cpp-suite-
-
-    # From here the counters are this job's: the round prints what the cache
-    # answered of its first build, and the step after it the job's whole.
-    - name: Count only this job's compilations
-      if: matrix.runner == 'ctest'
-      run: ccache --zero-stats
 
     # A ctest round selects from a configured tree; without one the gate
     # refuses (exit 3) rather than reporting green over what it cannot run.
@@ -875,9 +851,8 @@ jobs:
         SCE_MUTATION_SHARD: ${{ matrix.shard }}
       run: scripts/gate mutation-rounds
 
-    # The hit rate of the whole job, the per-case builds with the first, and
-    # whatever the round's verdict was: a red round is the one whose time most
-    # needs explaining.
-    - name: What the compiler cache answered
-      if: always() && matrix.runner == 'ctest'
-      run: ccache --show-stats --verbose
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

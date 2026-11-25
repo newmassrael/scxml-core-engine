@@ -123,16 +123,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # B9 integration suite — synthetic input/template fixtures cover the
     # verify subcommand's clean-pass / drifted-source / older-header-shape /
@@ -165,3 +158,9 @@ jobs:
 
     - name: Verify drift suites (B9 + §5.O sourcemap)
       run: scripts/gate drift-suites
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

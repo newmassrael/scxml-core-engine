@@ -148,22 +148,14 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only builds
-        # the debug profile, so a release binary the cache still holds is not
-        # a product of this commit.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this commit.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -208,6 +200,12 @@ jobs:
         SCE_SWIFT_BACKEND_SHARD: ${{ matrix.shard }}/3
       run: scripts/gate swift-backend
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # The gates that write machines of their own into `backends/swift/tests` and run them, in a job
   # beside the packages': each needs the generator built and the toolchain installed, which are
   # the same steps, and none of them is a part of the swift-backend gate.
@@ -225,22 +223,14 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only builds
-        # the debug profile, so a release binary the cache still holds is not
-        # a product of this commit.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this commit.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -292,3 +282,9 @@ jobs:
     # The forge runtime's tests and every generated unit held to the numerical oracle.
     - name: Run the Swift Forge conformance gate
       run: scripts/gate forge-swift
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

@@ -79,10 +79,8 @@ jobs:
   test-cpp-shard:
     name: C++ W3C Tests (shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
-    # actions: write deletes the lane's older compiler caches (keep-one-cache).
     permissions:
       contents: read
-      actions: write
     # An allowance until a sharded run is read: a sixth of the build that
     # took 41 minutes in one job, the shared core and engine on top of it.
     timeout-minutes: 45
@@ -108,7 +106,6 @@ jobs:
           meson \
           ninja-build \
           lld \
-          ccache \
           pkg-config \
           libxml2-dev \
           libspdlog-dev \
@@ -127,24 +124,21 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    # Rust, and the C and C++ of every CMake tree the job configures, compile
+    # through the shared compile cache (.github/actions/compile-cache): a unit
+    # another shard or lane compiled alike is answered from it.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+        cmake: true
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -173,26 +167,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-sce-codegen-plans-w3c-cpp-
 
-    # The compiler cache: a directory named for ccache, a restore here and a
-    # save after the suite that runs whatever the suite did. The reason for
-    # the three steps is written beside the same steps in cpp-suite.yml. One
-    # cache per shard: a shard compiles its own part, and a cache shared
-    # between six jobs would hold whichever saved last. The lane's cache from
-    # before it was sharded is the fallback a shard's first run restores from.
-    - name: Keep ccache in the directory its cache restores and saves
-      run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
-
-    - name: Restore ccache
-      id: ccache
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-
-          ${{ runner.os }}-ccache-w3c-cpp-
-          ${{ runner.os }}-ccache-
-
     - name: Verify lld Installation
       run: |
         echo "=== Checking lld installation ==="
@@ -218,23 +192,6 @@ jobs:
         SCE_W3C_REPORT_DIR=build/tests \
           scripts/gate w3c-cpp
 
-    - name: Save ccache
-      id: ccache-save
-      if: always() && steps.ccache.outputs.cache-primary-key != ''
-      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.ccache
-        key: ${{ steps.ccache.outputs.cache-primary-key }}
-    # One compiler cache per shard: the save above is under a key new on every
-    # run, and the entries it leaves would fill the repository's 10 GB and evict
-    # the caches of every other lane (.github/actions/keep-one-cache says why).
-    - name: Keep only this shard's newest ccache
-      if: always() && steps.ccache-save.outcome == 'success'
-      uses: ./.github/actions/keep-one-cache
-      with:
-        prefix: ${{ runner.os }}-ccache-w3c-cpp-shard${{ matrix.shard }}-
-        keep: ${{ steps.ccache.outputs.cache-primary-key }}
-
     # The plan and what this shard ran (`test-cpp` reads them), its joined
     # report and ctest log, and the logs the runner keeps of a failed fixture.
     - name: Upload this shard's plan, report and log
@@ -259,6 +216,12 @@ jobs:
           build/CMakeFiles/*.log
           build/Testing/Temporary/
         retention-days: 7
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The verdict of the C++ lane: every shard planned the label alike and ran
   # every test of its part (`ctest_shards.py verify`), and the shards' joined
@@ -459,16 +422,13 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    # Rust, and what emcc compiles, through the shared compile cache
+    # (.github/actions/compile-cache says how emcc reaches it).
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+        emscripten: true
 
     - name: Build sce-codegen
       run: |
@@ -525,6 +485,12 @@ jobs:
           build_wasm_web/tests/w3c_runs/*/w3c_failed_test_logs/
         retention-days: 30
         if-no-files-found: warn
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The verdict of the WASM lane, for each tree: its shards planned the label
   # alike and ran every test of their parts (`ctest_shards.py verify`), and
@@ -618,16 +584,9 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # Generation, the fixture server and the suite are one gate, the shape
     # `test-go` has, so a developer runs this job's check by name with the
@@ -655,6 +614,12 @@ jobs:
           target/w3c-rust-shard/
         retention-days: 30
         if-no-files-found: warn
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The verdict of the Rust arm: every shard planned the suite alike and ran
   # every unit of its part, for the reason `cpp-suite-verdict` gives. It keeps
@@ -773,24 +738,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -886,6 +843,12 @@ jobs:
         retention-days: 7
         if-no-files-found: ignore
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # Python Bindings (pybind11 → C++ Interpreter) — 202 tests
   # Distinct from the AOT family member (`test-python`); this job
@@ -920,24 +883,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -1006,6 +961,12 @@ jobs:
         retention-days: 7
         if-no-files-found: ignore
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # Python AOT (sce-codegen → *_sm.py + lupa runtime) — 202 tests
   # Mirrors test-rust / test-kotlin / test-go: same codegen pipeline,
@@ -1024,24 +985,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -1105,6 +1058,12 @@ jobs:
         retention-days: 7
         if-no-files-found: ignore
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # Go AOT — 202 tests
   # ============================================================
@@ -1120,24 +1079,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -1201,6 +1152,12 @@ jobs:
         retention-days: 7
         if-no-files-found: ignore
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # C11 (MCU backend) — 218 ctest cases
   #   204 W3C + 11 integration + 3 unit (+2 HTTP fixtures)
@@ -1231,10 +1188,8 @@ jobs:
   test-c11-shard:
     name: C11 W3C Tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    # actions: write deletes the lane's older compiler caches (keep-one-cache).
     permissions:
       contents: read
-      actions: write
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -1255,7 +1210,6 @@ jobs:
           build-essential \
           cmake \
           ninja-build \
-          ccache \
           pkg-config \
           libxml2-dev \
           libspdlog-dev \
@@ -1279,47 +1233,24 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Cache Cargo (codegen)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    # Rust, and the C and C++ of every CMake tree the job configures, compile
+    # through the shared compile cache (.github/actions/compile-cache): a unit
+    # another shard or lane compiled alike is answered from it.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+        cmake: true
 
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # This step builds the debug profile alone, so a release binary
+        # another build left in `target` is not a product of this
+        # commit. The locator knows which path that is; naming it here
+        # would put a build-layout detail back into every workflow.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
-
-    # The compiler cache, as in the C++ job above (the reason is in
-    # cpp-suite.yml). This job reached its ceiling inside a cold build of
-    # `sce_c11_tests` on 2026-11-15 (job 132834013514), with no cache to start
-    # from and none saved after it. One cache per shard: a shard compiles its
-    # own part, and a cache shared between three jobs would hold whichever
-    # saved last. The lane's cache from before it was sharded is the fallback
-    # a shard's first run restores from.
-    - name: Keep ccache in the directory its cache restores and saves
-      run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
-
-    - name: Restore ccache
-      id: ccache
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-ccache-c11-shard${{ matrix.shard }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-c11-shard${{ matrix.shard }}-
-          ${{ runner.os }}-ccache-c11-
 
     # Configure, build and run are one gate, the same one the pre-push hook
     # runs. The floor on registered tests and the executed-vs-registered
@@ -1331,23 +1262,6 @@ jobs:
       run: |
         set -o pipefail
         scripts/gate w3c-c11 2>&1 | tee c11_ctest.log
-
-    - name: Save ccache
-      id: ccache-save
-      if: always() && steps.ccache.outputs.cache-primary-key != ''
-      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.ccache
-        key: ${{ steps.ccache.outputs.cache-primary-key }}
-    # One compiler cache per shard: the save above is under a key new on every
-    # run, and the entries it leaves would fill the repository's 10 GB and evict
-    # the caches of every other lane (.github/actions/keep-one-cache says why).
-    - name: Keep only this shard's newest ccache
-      if: always() && steps.ccache-save.outcome == 'success'
-      uses: ./.github/actions/keep-one-cache
-      with:
-        prefix: ${{ runner.os }}-ccache-c11-shard${{ matrix.shard }}-
-        keep: ${{ steps.ccache.outputs.cache-primary-key }}
 
     # The plan and what this shard ran (`test-c11` reads them), and the log
     # its summary is read from.
@@ -1361,6 +1275,12 @@ jobs:
           build/ctest-shard-c11/
         retention-days: 30
         if-no-files-found: warn
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The verdict of the C11 lane: every shard planned the suite alike and ran
   # every test of its part, for the reason `cpp-suite-verdict` gives. It keeps

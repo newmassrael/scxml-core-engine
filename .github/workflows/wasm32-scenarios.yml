@@ -126,16 +126,9 @@ jobs:
       with:
         node-version: '22'
 
-    - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-wasm32-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-wasm32-${{ hashFiles('rust-toolchain.toml') }}-
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
     # The version is read from the lock and not written here, so the tool follows
     # the library when `Cargo.lock` moves. The gate refuses a tool at any other
@@ -178,3 +171,9 @@ jobs:
       env:
         SCE_WASM32_SCENARIOS_SHARD: ${{ matrix.shard }}/2
       run: scripts/gate wasm32-scenarios
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

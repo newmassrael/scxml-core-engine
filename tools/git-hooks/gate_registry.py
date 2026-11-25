@@ -2340,10 +2340,11 @@ def msrv_release(version: str):
 # action is code that runs between the pin and the compiler, so it is named
 # by a commit, not a branch or a tag; that holds for every action a lane
 # runs, and `unpinned_action_failures` below is where it is held. And a cache
-# of a Rust `target/` or of cargo's registry built by one release is restored
-# into a run of the next: its key, and every restore-key prefix, carry the
-# hash of `rust-toolchain.toml`, so a move starts each cache afresh instead
-# of dragging the old release's artefacts along for good.
+# of cargo's registry downloaded by one release is restored into a run of the
+# next (Rust build state is kept by no cache: "The compile cache" below): its
+# key, and every restore-key prefix, carry the hash of `rust-toolchain.toml`,
+# so a move starts the cache afresh instead of dragging the old release's
+# index along for good.
 RUST_INSTALL_ACTION = ".github/actions/install-rust/action.yml"
 # The upstream action the one above delegates the install to; no lane names it.
 RUST_INSTALL_UPSTREAM = "dtolnay/rust-toolchain"
@@ -2493,28 +2494,69 @@ def unpinned_action_failures(repo_root: Path) -> list[str]:
     return failures
 
 
+def step_bounds(lines: list[str], index: int) -> tuple[int, int]:
+    """The step of a workflow or action that holds line `index` (0-based):
+    from the line that opens it (`- `) to the next line at that indent or
+    less, as a 0-based start and end."""
+    start = index
+    while start > 0 and not re.match(r"^\s*-\s", lines[start]):
+        start -= 1
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = start + 1
+    while end < len(lines):
+        nxt = lines[end]
+        if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+            break
+        end += 1
+    return start, end
+
+
 def workflow_steps(lines: list[str], uses: "re.Pattern[str]"):
     """Each step of a workflow or action whose `uses:` line matches `uses`.
 
     Yields the 1-based number of the `uses:` line, the action it names and
-    the step's lines: from the line that opens the step (`- `) to the next
-    line at that indent or less.
+    the step's lines (`step_bounds`).
     """
     for i, line in enumerate(lines):
         match = uses.match(line)
         if not match:
             continue
-        start = i
-        while start > 0 and not re.match(r"^\s*-\s", lines[start]):
-            start -= 1
-        indent = len(lines[start]) - len(lines[start].lstrip())
-        end = start + 1
-        while end < len(lines):
-            nxt = lines[end]
-            if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
-                break
-            end += 1
+        start, end = step_bounds(lines, i)
         yield i + 1, match.group(1), lines[start:end]
+
+
+def workflow_jobs(lines: list[str]) -> list[tuple[str, int, int]]:
+    """Each job of a workflow, as its name and the 0-based start and end of
+    its lines: the keys two spaces in under the top-level `jobs:`."""
+    heads: list[tuple[str, int]] = []
+    end = len(lines)
+    inside = False
+    for i, line in enumerate(lines):
+        if not inside:
+            inside = bool(re.match(r"^jobs:\s*$", line))
+            continue
+        if line.strip() and not line[0].isspace() and not line.startswith("#"):
+            end = i
+            break
+        match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if match:
+            heads.append((match.group(1), i))
+    return [(name, start, heads[k + 1][1] if k + 1 < len(heads) else end)
+            for k, (name, start) in enumerate(heads)]
+
+
+def workflow_texts(repo_root: Path) -> dict[str, list[str]]:
+    """Every tracked workflow and action file under .github, by its path, as
+    its lines."""
+    workflows: dict[str, list[str]] = {}
+    for rel in tracked_paths(repo_root, ".github"):
+        if Path(rel).suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            workflows[rel] = (repo_root / rel).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+    return workflows
 
 
 def step_values(step: list[str], key: str) -> list[str]:
@@ -2545,11 +2587,13 @@ HASHED_FILES = re.compile(r"hashFiles\(([^)]*)\)")
 def key_hashed_sources(key: str) -> list[str]:
     """The source files a cache key hashes: a `.rs` glob or a `src/` tree.
 
-    A key of Rust build state names what its dependencies are (the toolchain,
-    Cargo.lock, a manifest). On 2026-11-24 five lanes hashed sce-build's
-    sources into theirs, so each commit that touched them saved a new
-    `target` of 380 to 620 MB, and with the repository's caches past their
-    10 GB GitHub evicted the C++ compiler caches.
+    A key of cargo's registry download names what it holds (the toolchain
+    and Cargo.lock), never the sources: a key that moves with every commit
+    saves a new entry for each. On 2026-11-24 five lanes hashed sce-build's
+    sources into the key of their `target`, so each commit that touched them
+    saved a new one of 380 to 620 MB, and with the repository's caches past
+    their 10 GB GitHub evicted the C++ compiler caches. Rust build state is now
+    kept by no key at all (`compile_cache_failures`).
     """
     found = []
     for args in HASHED_FILES.findall(key):
@@ -2559,58 +2603,65 @@ def key_hashed_sources(key: str) -> list[str]:
     return found
 
 
-def rust_cache_failures(repo_root: Path) -> list[str]:
-    """A cache of Rust build state whose key does not move with the release.
+CARGO_DOWNLOAD = re.compile(r"(?:^|/)\.?cargo/(?:registry|git)(?:/|$)")
+SAVED_KEY = re.compile(r"^\$\{\{\s*steps\.([\w-]+)\.outputs\.cache-primary-key\s*\}\}$")
 
-    A Rust cache is a `Swatinem/rust-cache` step, or an `actions/cache` step
-    whose `path` holds a `target` directory or cargo's registry or git
-    checkouts. Its `key`, and each of its `restore-keys`, must carry
-    `hashFiles('rust-toolchain.toml')`: a restore-key prefix without it hands
-    a miss the previous release's `target/`, which cargo rebuilds beside and
-    the next save keeps.
+
+def rust_cache_failures(repo_root: Path) -> list[str]:
+    """A cache of cargo's registry download whose key does not move with the
+    release, or moves with the sources.
+
+    Rust build state is kept by no snapshot (`compile_cache_failures`): what a
+    lane compiles goes through the shared compile cache, and the one Rust
+    cache kept is cargo's registry download, which
+    `.github/actions/compile-cache` restores. A cache whose `path` holds
+    cargo's registry or git checkouts carries `hashFiles('rust-toolchain.toml')`
+    in its `key` and each of its `restore-keys`: a prefix without it hands a
+    miss the previous release's index. A save that names its restore's key
+    (`steps.<id>.outputs.cache-primary-key`) is read as that key.
     """
     failures: list[str] = []
     found = 0
-    for rel in tracked_paths(repo_root, ".github"):
-        if Path(rel).suffix not in (".yml", ".yaml"):
-            continue
-        try:
-            lines = (repo_root / rel).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        for number, action, step in workflow_steps(lines, CACHE_STEP):
+    for rel, lines in sorted(workflow_texts(repo_root).items()):
+        restored: dict[str, list[str]] = {}
+        for _number, _action, step in workflow_steps(lines, CACHE_STEP):
+            ids = step_values(step, "id")
+            if ids:
+                restored[ids[0]] = step_values(step, "key")
+        for number, _action, step in workflow_steps(lines, CACHE_STEP):
             paths = step_values(step, "path")
-            rust = action == "Swatinem/rust-cache" or any(
-                p == "target" or p.endswith("/target")
-                or ".cargo/registry" in p or ".cargo/git" in p
-                for p in paths)
-            if not rust:
+            if not any(CARGO_DOWNLOAD.search(p) for p in paths):
                 continue
             found += 1
-            keys = step_values(step, "key")
+            keys: list[str] = []
+            for key in step_values(step, "key"):
+                saved = SAVED_KEY.match(key)
+                keys.extend(restored.get(saved.group(1), [key]) if saved else [key])
             if not keys:
                 failures.append(
-                    f"{rel}:{number} caches Rust build state with no `key` that "
+                    f"{rel}:{number} caches cargo's registry with no `key` that "
                     f"carries {TOOLCHAIN_CACHE_KEY}, so a release move restores the "
-                    f"old release's artefacts")
+                    f"old release's index")
             for key in keys:
                 for source in key_hashed_sources(key):
                     failures.append(
-                        f"{rel}:{number} keys Rust build state by the sources "
+                        f"{rel}:{number} keys cargo's registry by the sources "
                         f"{source!r}: every commit that touches them saves another "
-                        f"copy of `target`, which evicts the caches beside it; key it "
-                        f"by the toolchain and Cargo.lock, cargo rebuilds a changed crate")
+                        f"copy, which evicts the caches beside it; key it by the "
+                        f"toolchain and Cargo.lock, which name what it holds")
             for key in keys + step_values(step, "restore-keys"):
                 if TOOLCHAIN_CACHE_KEY not in key:
                     failures.append(
-                        f"{rel}:{number} caches Rust build state under {key!r}, "
+                        f"{rel}:{number} caches cargo's registry under {key!r}, "
                         f"which lacks {TOOLCHAIN_CACHE_KEY}: a release move would "
-                        f"restore the old release's artefacts into the new one's run")
-    # A lower bound, so a step parse that stopped finding caches cannot pass.
-    if found < 30:
+                        f"restore the old release's index into the new one's run")
+    # A lower bound, so a step parse that stopped finding caches cannot pass:
+    # the compile cache's restore and save, and the image's own in
+    # cpp-interface-standard.yml.
+    if found < 3:
         failures.append(
-            f"found {found} Rust cache step(s) in .github; a broken step parse "
-            f"passes by finding none")
+            f"found {found} cargo registry cache step(s) in .github; a broken step "
+            f"parse passes by finding none")
     return failures
 
 
@@ -2650,15 +2701,7 @@ def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str]
 
 def gradle_cache_failures(repo_root: Path) -> list[str]:
     """`shared_gradle_cache_keys` over every workflow in the tree."""
-    workflows: dict[str, list[str]] = {}
-    for rel in tracked_paths(repo_root, ".github"):
-        if Path(rel).suffix not in (".yml", ".yaml"):
-            continue
-        try:
-            workflows[rel] = (repo_root / rel).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-    failures, found = shared_gradle_cache_keys(workflows)
+    failures, found = shared_gradle_cache_keys(workflow_texts(repo_root))
     # A lower bound, so a step parse that stopped finding caches cannot pass.
     if found < 5:
         failures.append(
@@ -2672,35 +2715,38 @@ PER_RUN_KEY = re.compile(r"\$\{\{\s*github\.(?:sha|run_id)\s*\}\}")
 
 
 def per_run_cache_failures(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
-    """Caches saved under a key new on every run that nothing keeps to one.
+    """Caches saved under a key new on every run, and families of which
+    `keep-one-cache` keeps one that begin one another; with how many cache
+    steps were read.
 
-    A key that carries the commit or the run (a compiler cache's) saves a new
-    entry on every run; the entries before it stay until GitHub evicts the least
-    recently used caches of the whole repository to stay within its 10 GB. So a
-    workflow that saves one runs `./.github/actions/keep-one-cache` with the key's
-    family (the key up to the commit), and no family is the beginning of
-    another's, or keeping one of it would delete the other lane's.
+    A key that carries the commit or the run saves a new entry on every run.
+    It is the shape a snapshot of build state takes (a ccache or sccache
+    directory saved after each build), and every run's entry stayed until
+    GitHub evicted the least recently used caches of the whole repository to
+    stay within its 10 GB; such state now goes through the shared compile
+    cache (`compile_cache_failures`), so no key carries the run. A family
+    whose key moves with what it holds (vcpkg's packages, the generator's
+    plans) is kept to one entry by `./.github/actions/keep-one-cache`, and no
+    family it keeps is the beginning of another's, or keeping one of it would
+    delete the other lane's.
     """
     failures: list[str] = []
     families: dict[str, str] = {}
     found = 0
     for rel, lines in sorted(workflows.items()):
-        kept = {value for _n, _a, step in workflow_steps(lines, KEEP_ONE_CACHE_STEP)
-                for value in step_values(step, "prefix")}
         for number, _action, step in workflow_steps(lines, CACHE_STEP):
+            found += 1
             for key in step_values(step, "key"):
-                match = PER_RUN_KEY.search(key)
-                if not match:
-                    continue
-                found += 1
-                family = key[:match.start()]
-                families.setdefault(family, f"{rel}:{number}")
-                if family not in kept:
+                if PER_RUN_KEY.search(key):
                     failures.append(
-                        f"{rel}:{number} saves a cache under {key!r}, new on every run, and "
-                        f"the workflow keeps no one of its family {family!r} "
-                        f"(./.github/actions/keep-one-cache): each run's entry would stay "
-                        f"until GitHub evicts other lanes' caches for room")
+                        f"{rel}:{number} saves a cache under {key!r}, new on every "
+                        f"run: each run's entry stays until GitHub evicts other "
+                        f"lanes' caches for room. Compile output goes through "
+                        f"./.github/actions/compile-cache; any other cache is keyed "
+                        f"by what it holds")
+        for number, _action, step in workflow_steps(lines, KEEP_ONE_CACHE_STEP):
+            for family in step_values(step, "prefix"):
+                families.setdefault(family, f"{rel}:{number}")
     for family, place in sorted(families.items()):
         for other, other_place in sorted(families.items()):
             if other != family and other.startswith(family):
@@ -2712,19 +2758,134 @@ def per_run_cache_failures(workflows: dict[str, list[str]]) -> tuple[list[str], 
 
 def per_run_cache_sweep(repo_root: Path) -> list[str]:
     """`per_run_cache_failures` over every workflow in the tree."""
-    workflows: dict[str, list[str]] = {}
-    for rel in tracked_paths(repo_root, ".github"):
-        if Path(rel).suffix not in (".yml", ".yaml"):
-            continue
-        try:
-            workflows[rel] = (repo_root / rel).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-    failures, found = per_run_cache_failures(workflows)
-    if found < 5:
+    failures, found = per_run_cache_failures(workflow_texts(repo_root))
+    if found < 30:
         failures.append(
-            f"found {found} cache step(s) keyed by the run in .github; a broken step "
-            f"parse passes by finding none")
+            f"found {found} cache step(s) in .github; a broken step parse passes "
+            f"by finding none")
+    return failures
+
+
+# ── The compile cache ─────────────────────────────────────────────
+#
+# What a lane compiles is kept by its content, not by the lane:
+# `.github/actions/compile-cache` installs sccache, pinned by release and
+# checksum, on the GitHub Actions cache, and compiles Rust (RUSTC_WRAPPER),
+# CMake's C and C++ (CMAKE_<LANG>_COMPILER_LAUNCHER) and emcc
+# (EM_COMPILER_WRAPPER) through it: one cache entry per compilation, keyed by
+# its inputs, so every lane and shard that compiles a unit alike shares the
+# one entry, and the eviction that makes room drops one object, not a lane's
+# whole build. The structure it replaced, a snapshot per Rust lane of its
+# whole `target` and per C/C++ job of its ccache directory, held 10.14 GB in
+# 31 entries on 2026-11-25 against the repository's 10 GB, most of it the
+# same dependency crates stored once per lane.
+#
+# So no cache step holds compile output (a Rust `target`, which
+# Swatinem/rust-cache saves too; a compiler cache's directory; a whole CMake
+# build tree), no lane installs or names a compiler cache past that action,
+# and a job that uses it prints `sccache --show-stats` after it, whatever the
+# job's outcome, so its log says what the cache answered and what it could
+# not. The sweep reads every tracked workflow and action file; whole-line
+# comments are prose and are not read.
+COMPILE_CACHE_ACTION = ".github/actions/compile-cache/action.yml"
+COMPILE_CACHE_USES = re.compile(r"^\s*(?:-\s+)?uses:\s*\./\.github/actions/compile-cache\s*$")
+COMPILER_CACHE_ACTIONS = ("mozilla-actions/sccache-action", "hendrikmuhs/ccache-action")
+CCACHE_WORD = re.compile(r"(?<![\w.~/-])ccache(?![\w-])")
+COMPILER_CACHE_DIRS = frozenset({"ccache", ".ccache", "sccache", ".sccache"})
+
+
+def compile_snapshot(path: str) -> str:
+    """What compile output a cache step's `path` entry holds, or "" for none."""
+    parts = [part for part in re.split(r"[\\/]", path.strip()) if part not in ("", ".", "~")]
+    if not parts:
+        return ""
+    if parts[-1] == "target":
+        return "a Rust `target`"
+    if COMPILER_CACHE_DIRS.intersection(parts):
+        return "a compiler cache's directory"
+    if len(parts) == 1 and re.fullmatch(r"build(?:_[\w-]*)?", parts[0]):
+        return "a whole CMake build tree"
+    return ""
+
+
+def compile_cache_failures(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
+    """Where a workflow or action keeps compile output as a snapshot, compiles
+    through a cache past `./.github/actions/compile-cache`, or uses that action
+    and never says what it answered; with how many jobs use the action."""
+    failures: list[str] = []
+    users = 0
+    for rel, lines in sorted(workflows.items()):
+        for number, action, step in workflow_steps(lines, CACHE_STEP):
+            if action == "Swatinem/rust-cache":
+                failures.append(
+                    f"{rel}:{number} caches with Swatinem/rust-cache, a snapshot of "
+                    f"`target` for this lane alone: Rust compiles through "
+                    f"./.github/actions/compile-cache, which every lane shares")
+                continue
+            for path in step_values(step, "path"):
+                what = compile_snapshot(path)
+                if what:
+                    failures.append(
+                        f"{rel}:{number} saves {what} ({path!r}), compile output "
+                        f"stored again for one lane: compilations go through "
+                        f"./.github/actions/compile-cache, one entry per compilation "
+                        f"for every lane")
+        for number, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for action in COMPILER_CACHE_ACTIONS:
+                if re.match(r"^\s*(?:-\s+)?uses:\s*" + re.escape(action) + r"@", line):
+                    failures.append(
+                        f"{rel}:{number} installs a compiler cache with {action}: a "
+                        f"lane compiles through ./.github/actions/compile-cache, which "
+                        f"pins sccache by release and checksum")
+            if CCACHE_WORD.search(line):
+                failures.append(
+                    f"{rel}:{number} names ccache ({line.strip()[:80]!r}): a lane "
+                    f"compiles through ./.github/actions/compile-cache")
+        for job, start, end in workflow_jobs(lines):
+            opened = next((i for i in range(start, end)
+                           if COMPILE_CACHE_USES.match(lines[i])), None)
+            if opened is None:
+                continue
+            users += 1
+            reported = False
+            for i in range(opened + 1, end):
+                if lines[i].lstrip().startswith("#") or "sccache --show-stats" not in lines[i]:
+                    continue
+                step_start, step_end = step_bounds(lines, i)
+                if any(re.match(r"^\s*(?:-\s+)?if:.*\balways\(\)", step_line)
+                       for step_line in lines[step_start:step_end]):
+                    reported = True
+            if not reported:
+                failures.append(
+                    f"{rel}:{opened + 1} job `{job}` compiles through "
+                    f"./.github/actions/compile-cache and prints no "
+                    f"`sccache --show-stats` after it in a step that runs "
+                    f"`if: always()`: its log would not say what the cache answered")
+    return failures, users
+
+
+def compile_cache_sweep(repo_root: Path) -> list[str]:
+    """`compile_cache_failures` over every workflow and action in the tree,
+    and the action's own pin: a release, and a checksum checked for every
+    archive it downloads."""
+    failures, users = compile_cache_failures(workflow_texts(repo_root))
+    action = repo_root / COMPILE_CACHE_ACTION
+    text = action.read_text(encoding="utf-8") if action.is_file() else ""
+    targets = re.findall(r"^\s*target=\S+", text, re.M)
+    sums = re.findall(r"^\s*sha256=[0-9a-f]{64}\s*$", text, re.M)
+    if not re.search(r"^\s*SCCACHE_RELEASE:\s*v\d+\.\d+\.\d+\s*$", text, re.M) \
+            or not targets or len(targets) != len(sums) or "sha256sum --check" not in text:
+        failures.append(
+            f"{COMPILE_CACHE_ACTION} does not pin sccache: a release (vX.Y.Z) in "
+            f"SCCACHE_RELEASE and a sha256 checked for each archive it names "
+            f"({len(targets)} target(s), {len(sums)} checksum(s))")
+    # A lower bound, so a job parse that stopped finding the action cannot pass.
+    if users < 35:
+        failures.append(
+            f"found {users} job(s) that compile through ./.github/actions/compile-cache; "
+            f"a broken job parse passes by finding none")
     return failures
 
 
@@ -6267,15 +6428,15 @@ def self_test(repo_root: Path) -> int:
     failures.extend(f"every-lane-keys-its-own-gradle-cache: {f}"
                     for f in gradle_cache_failures(repo_root))
 
-    # a-cache-keyed-by-the-run-is-kept-to-one. A cache saved under a key new on
-    # every run is kept to one entry of its family, and no family begins another
+    # a-cache-keyed-by-the-run-is-refused. No cache is saved under a key new
+    # on every run, and no family keep-one-cache keeps begins another
     # (`per_run_cache_failures`). The fixture holds the reader to each refusal.
     cases += 1
-    def per_run_job(key, prefix=None):
-        lines = ["    - name: Restore ccache",
+    def cache_job(key, prefix=None):
+        lines = ["    - name: Restore",
                  "      uses: actions/cache/restore@" + "e" * 40,
                  "      with:",
-                 "        path: ~/.ccache",
+                 "        path: ~/.local/thing",
                  f"        key: {key}"]
         if prefix is not None:
             lines += ["    - name: Keep",
@@ -6285,18 +6446,71 @@ def self_test(repo_root: Path) -> int:
                       "        keep: x"]
         return lines
     sha = "${{ github.sha }}"
+    content = "${{ hashFiles('a') }}"
     for label, workflows, want in (
-            ("kept", {"a.yml": per_run_job(f"L-ccache-a-{sha}", "L-ccache-a-")}, 0),
-            ("not kept", {"a.yml": per_run_job(f"L-ccache-a-{sha}")}, 1),
+            ("keyed by what it holds and kept", {"a.yml": cache_job(f"L-a-{content}", "L-a-")}, 0),
+            ("keyed by the run, though kept", {"a.yml": cache_job(f"L-a-{sha}", "L-a-")}, 1),
+            ("keyed by the run", {"a.yml": cache_job(f"L-a-{sha}")}, 1),
             ("a family that begins another",
-             {"a.yml": per_run_job(f"L-ccache-{sha}", "L-ccache-"),
-              "b.yml": per_run_job(f"L-ccache-b-{sha}", "L-ccache-b-")}, 1)):
+             {"a.yml": cache_job(f"L-{content}", "L-"),
+              "b.yml": cache_job(f"L-b-{content}", "L-b-")}, 1)):
         got, _ = per_run_cache_failures(workflows)
         if len(got) != want:
-            failures.append(f"a-cache-keyed-by-the-run-is-kept-to-one: {label} gave "
+            failures.append(f"a-cache-keyed-by-the-run-is-refused: {label} gave "
                             f"{len(got)} refusal(s), not {want}: {got!r}")
-    failures.extend(f"a-cache-keyed-by-the-run-is-kept-to-one: {f}"
+    failures.extend(f"a-cache-keyed-by-the-run-is-refused: {f}"
                     for f in per_run_cache_sweep(repo_root))
+
+    # compile-cache-is-content-addressed. No cache step saves compile output, no
+    # lane compiles through a cache past ./.github/actions/compile-cache, and a
+    # job that uses it prints what it answered (see "The compile cache"
+    # above). The fixture holds the reader to each refusal and to each shape it
+    # leaves alone, so the sweep's silence is a reading.
+    cases += 1
+    def cached(*paths, action="actions/cache"):
+        return (["jobs:", "  a:", "    steps:", "    - name: Cache",
+                 f"      uses: {action}@" + "e" * 40, "      with:", "        path: |"]
+                + [f"          {p}" for p in paths] + ["        key: k"])
+    def compiled(*report):
+        return (["jobs:", "  a:", "    steps:",
+                 "    - name: Compile through the shared compile cache",
+                 "      id: compile-cache",
+                 "      uses: ./.github/actions/compile-cache",
+                 "    - name: Build",
+                 "      run: cargo build"] + list(report))
+    reported = ["    - name: Report what the compile cache answered",
+                "      if: always() && steps.compile-cache.outcome == 'success'",
+                "      run: sccache --show-stats"]
+    for label, lines, want in (
+            ("cargo's registry download",
+             cached("~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db"), 0),
+            ("configure state of a CMake tree",
+             cached("build/CMakeCache.txt", "build/CMakeFiles", "build_python/_deps"), 0),
+            ("a Rust target", cached("~/.cargo/registry", "target"), 1),
+            ("an image's Rust target", cached("~/.cache/sce-gate-containers/x/target"), 1),
+            ("Swatinem/rust-cache", cached(action="Swatinem/rust-cache"), 1),
+            ("a ccache directory", cached("~/.ccache"), 1),
+            ("an sccache directory", cached("${{ runner.temp }}/sccache"), 1),
+            ("a whole CMake build tree", cached("build_wasm"), 1),
+            ("sccache installed past the action",
+             ["      - uses: mozilla-actions/sccache-action@" + "e" * 40 + " # v0.0.11"], 1),
+            ("ccache installed", ["          sudo apt-get install -y cmake ccache ninja-build"], 1),
+            ("ccache in prose", ["      # ccache and ~/.ccache are what this replaced"], 0),
+            ("the action, reported", compiled(*reported), 0),
+            ("the action, never reported", compiled(), 1),
+            ("the action, reported only on success",
+             compiled(*[line for line in reported if "if:" not in line]), 1)):
+        got, _ = compile_cache_failures({"a.yml": lines})
+        if len(got) != want:
+            failures.append(f"compile-cache-is-content-addressed: {label} gave "
+                            f"{len(got)} refusal(s), not {want}: {got!r}")
+    _, users = compile_cache_failures({"a.yml": compiled(*reported),
+                                       "b.yml": compiled(*reported)})
+    if users != 2:
+        failures.append(f"compile-cache-is-content-addressed: two jobs that use the "
+                        f"action read as {users}")
+    failures.extend(f"compile-cache-is-content-addressed: {f}"
+                    for f in compile_cache_sweep(repo_root))
 
     # every-action-is-named-by-its-commit. No workflow or action runs an
     # action from outside the repository by a tag or a branch (see "The
