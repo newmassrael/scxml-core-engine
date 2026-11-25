@@ -8,7 +8,7 @@
 //! `<cancel sendid>` can find and remove the matching pending entry. That id is
 //! read **only** by [`PullScheduler::cancel_event`](crate::engine::PullScheduler::cancel_event):
 //! the timer-fire drain ([`Engine::tick`](crate::Engine::tick)) hands the popped
-//! event to [`raise_external`](crate::Engine::raise_external) with an empty
+//! event to [`raise_external`](crate::EngineState::raise_external) with an empty
 //! `send_id`/`origin`, so the stored id never reaches the fired event's
 //! metadata on either build profile. A state machine whose document contains no
 //! `<cancel>` element therefore never reads the stored id at all.

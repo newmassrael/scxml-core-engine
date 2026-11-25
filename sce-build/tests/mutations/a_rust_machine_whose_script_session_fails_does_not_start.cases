@@ -44,12 +44,12 @@ edit("backends/rust/runtime/src/engine.rs",
             self.initialize_data_model_dispatch()?;
         }
 
-        self.core.main_loop.is_running = true;""",
+        self.state.core.main_loop.is_running = true;""",
      """        if concepts::has_data_model_init::<P>() {
             let _ = self.initialize_data_model_dispatch();
         }
 
-        self.core.main_loop.is_running = true;""")
+        self.state.core.main_loop.is_running = true;""")
 PY
 
 # ── The resumed start goes on past a session that failed ────────────

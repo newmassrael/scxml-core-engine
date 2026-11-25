@@ -73,6 +73,6 @@ PY
 
 mutation_case "a delayed internal send is raised without the name its entry carried" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                meta.metadata.send_id = send_id;\n                meta.metadata.name = name;\n                meta.set_event_data(event_data);\n                self.raise(meta);",
-     "                meta.metadata.send_id = send_id;\n                let _ = name;\n                meta.set_event_data(event_data);\n                self.raise(meta);")
+     "                meta.metadata.send_id = send_id;\n                meta.metadata.name = name;\n                meta.set_event_data(event_data);\n                self.state.raise(meta);",
+     "                meta.metadata.send_id = send_id;\n                let _ = name;\n                meta.set_event_data(event_data);\n                self.state.raise(meta);")
 PY

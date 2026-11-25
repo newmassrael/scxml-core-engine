@@ -60,7 +60,7 @@ impl SchedulerStorage for NoDelayedSends {}
 /// full ring stops the program rather than drop the send), for a queue whose
 /// capacity is none: a send dropped in silence would be a transition that never
 /// happens, which no host could see. A host that arms one by hand, through
-/// `Engine::schedule_event`, names [`PullScheduler`] in its policy.
+/// `EngineState::schedule_event`, names [`PullScheduler`] in its policy.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NoDelayedSends;
 

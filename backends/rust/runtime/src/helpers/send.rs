@@ -234,7 +234,7 @@ pub fn requires_target_attribute(send_type: &str) -> bool {
 /// BasicHTTP type, and a send naming it is refused with `error.execution` as
 /// any type the platform does not support is. This is the one answer: the
 /// generated `typeexpr` check, the generated BasicHTTP send site and
-/// `Engine::schedule_http_send` all ask it.
+/// `EngineState::schedule_http_send` all ask it.
 ///
 /// Ports C++ `SendHelper::isSupportedSendType`.
 pub fn is_supported_send_type(send_type: &str) -> bool {

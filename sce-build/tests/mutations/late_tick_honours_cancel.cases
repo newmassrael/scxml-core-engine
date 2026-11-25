@@ -38,7 +38,7 @@ edit("backends/rust/runtime/src/engine.rs",
      """            // The macrostep this event drives may `<cancel>` a later one, so
             // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
-            if !self.core.main_loop.is_running || self.is_in_final_state() {
+            if !self.state.core.main_loop.is_running || self.state.is_in_final_state() {
                 break;
             }
         }""",
@@ -86,8 +86,8 @@ PY
 
 mutation_case "the deadline is measured from the wrong end of the interval" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            .map(|next| next.saturating_sub(self.sched_now()));""",
-     """            .map(|next| self.sched_now().saturating_sub(next));""")
+     """            .map(|next| next.saturating_sub(self.state.sched_now()));""",
+     """            .map(|next| self.state.sched_now().saturating_sub(next));""")
 PY
 
 # ── The polling loop uses the answer ───────────────────────────────
@@ -163,9 +163,9 @@ PY
 
 mutation_case "advance_time_ms moves the clock without running what it made due" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.core.clock = SceClock::Manual(now.saturating_add(ms));
+     """        self.state.core.clock = SceClock::Manual(now.saturating_add(ms));
         self.tick();""",
-     """        self.core.clock = SceClock::Manual(now.saturating_add(ms));""")
+     """        self.state.core.clock = SceClock::Manual(now.saturating_add(ms));""")
 PY
 
 # Silently doing nothing is the failure mode the panic exists to prevent: the
@@ -173,7 +173,7 @@ PY
 # choose.
 mutation_case "advance_time_ms accepts a clock the host does not own" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        let SceClock::Manual(now) = self.core.clock else {
+     """        let SceClock::Manual(now) = self.state.core.clock else {
             panic!(
                 "Engine::advance_time_ms needs SceClock::Manual; this engine has a \\
                  clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \\
@@ -181,7 +181,7 @@ edit("backends/rust/runtime/src/engine.rs",
                  time_until_next_scheduled_ms()"
             );
         };""",
-     """        let SceClock::Manual(now) = self.core.clock else {
+     """        let SceClock::Manual(now) = self.state.core.clock else {
             return;
         };""")
 PY

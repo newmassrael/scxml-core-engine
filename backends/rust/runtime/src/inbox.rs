@@ -46,14 +46,14 @@
 //! top-level final state, or was stopped, is applied where the owner next
 //! reaches the end of its loop, as the direct call made at that moment would
 //! be: an external event is counted with the machine's unseen events
-//! (`Engine::unseen_external_events`), and an ending finds its invocation over.
+//! (`EngineState::unseen_external_events`), and an ending finds its invocation over.
 //! A closing gate would need the owner to wait for the posts in flight to
 //! finish, which a bare-metal owner sharing one core with its posters cannot
 //! do.
 //!
 //! A Mesh delivery is not an input here. The Rust Mesh endpoint and a child
 //! session's router hold what arrives until the owner pulls it
-//! (`Engine::apply_mesh_calls`, the endpoint crate's `apply_to`), so no Mesh
+//! (`EngineState::apply_mesh_calls`, the endpoint crate's `apply_to`), so no Mesh
 //! delivery has a caller on another thread, and the set is the inputs that
 //! have one.
 
@@ -96,11 +96,11 @@ use crate::policy::StatePolicy;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum InboxInput<E, D = ()> {
-    /// An external event, applied with `Engine::raise_external_with_meta`.
-    /// [`InboxInput::external`] builds the one `Engine::raise_external` raises.
+    /// An external event, applied with `EngineState::raise_external_with_meta`.
+    /// [`InboxInput::external`] builds the one `EngineState::raise_external` raises.
     ExternalEvent(EventWithMetadata<E, D>),
     /// An external event named by text, applied with
-    /// `Engine::raise_external_by_name_with_meta`: delivered as the document's
+    /// `EngineState::raise_external_by_name_with_meta`: delivered as the document's
     /// event of that name, or of the longest token prefix of it the document
     /// writes, when the input is applied, and dropped then if the document has
     /// none.
@@ -112,8 +112,8 @@ pub enum InboxInput<E, D = ()> {
         metadata: EventMetadata,
     },
     /// The end of one start of a host-run invocation of a session of the
-    /// tree, applied by that session with `Engine::complete_host_invoke` or
-    /// `Engine::fail_host_invoke`. With no `session_id`, or with the id of
+    /// tree, applied by that session with `EngineState::complete_host_invoke` or
+    /// `EngineState::fail_host_invoke`. With no `session_id`, or with the id of
     /// the session whose inbox takes the post, it is that session's own; with
     /// the id of another session, [`EngineInbox::post`] posts it to that
     /// session's inbox, and refuses it when the tree does not hold that
@@ -151,7 +151,7 @@ pub enum InboxInput<E, D = ()> {
 pub type InboxInputOf<P> = InboxInput<<P as StatePolicy>::Event, <P as StatePolicy>::Payload>;
 
 impl<E, D: Default> InboxInput<E, D> {
-    /// The external event `Engine::raise_external(event, data)` raises, as an
+    /// The external event `EngineState::raise_external(event, data)` raises, as an
     /// input: `data` as `_event.data`, and no origin (docs/adr/0090, section
     /// 3). `data` is dropped in the bare-metal profile, as that call drops it.
     pub fn external(event: E, data: &str) -> Self {
@@ -161,7 +161,7 @@ impl<E, D: Default> InboxInput<E, D> {
         InboxInput::ExternalEvent(raised)
     }
 
-    /// The external event `Engine::raise_external_from(event, data, origin)`
+    /// The external event `EngineState::raise_external_from(event, data, origin)`
     /// raises, as an input: `origin` is the pair the host names for it in its
     /// own terms, `None` for no party (docs/adr/0090, section 2).
     #[cfg(feature = "std")]
@@ -177,7 +177,7 @@ impl<E, D: Default> InboxInput<E, D> {
 #[cfg(feature = "std")]
 impl<E, D> InboxInput<E, D> {
     /// The external event named `name`, carrying `data` as `_event.data`: what
-    /// `Engine::raise_external_by_name(name, data)` raises, as an input.
+    /// `EngineState::raise_external_by_name(name, data)` raises, as an input.
     pub fn external_by_name(name: &str, data: &str) -> Self {
         let mut metadata = EventMetadata::external("");
         metadata.data = crate::sce_string_from_str(data);
@@ -263,11 +263,11 @@ pub type InboxWaker = Arc<dyn Fn() + Send + Sync>;
 ///
 /// The engine the host built makes it, and a parent hands its own to each
 /// child it starts or resumes, before the child's first macrostep
-/// ([`Engine::share_tree_inboxes_with`]); the child leaves it when it ends
+/// ([`EngineState::share_tree_inboxes_with`]); the child leaves it when it ends
 /// ([`Engine::leave_tree_inboxes`]). Opaque: the generated parent only passes
 /// it on.
 ///
-/// [`Engine::share_tree_inboxes_with`]: crate::Engine::share_tree_inboxes_with
+/// [`EngineState::share_tree_inboxes_with`]: crate::EngineState::share_tree_inboxes_with
 /// [`Engine::leave_tree_inboxes`]: crate::Engine::leave_tree_inboxes
 #[cfg(feature = "std")]
 #[derive(Clone, Default)]

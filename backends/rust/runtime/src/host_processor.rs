@@ -215,12 +215,12 @@ pub fn parse_host_invoke_deadline_ms(written: &str) -> Option<u64> {
 pub const RESERVED_TYPE_PREFIX: &str = "sce:";
 
 /// The `<send type>` a Mesh send is lowered to on every backend whose Mesh
-/// router the host registers — see `Engine::register_mesh_router`.
+/// router the host registers — see `EngineState::register_mesh_router`.
 pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
 
 /// The `<invoke type>` a Mesh request/reply is: SCE_MESH.md §mesh-9.5's
 /// `sce:mesh-rpc`, run by the host's Mesh router like any host-run invoke —
-/// see `Engine::register_mesh_rpc_invoker`.
+/// see `EngineState::register_mesh_rpc_invoker`.
 pub const MESH_RPC_INVOKE_TYPE: &str = "sce:mesh-rpc";
 
 /// `_event.origin` of a Mesh-delivered event is this scheme and the sending
@@ -254,9 +254,9 @@ pub fn mesh_event_metadata(data: String, source: &str, send_id: String) -> crate
 }
 
 /// One thing a Mesh endpoint has for the engine it serves, in the order the
-/// endpoint came to know it: what [`Engine::apply_mesh_calls`] applies.
+/// endpoint came to know it: what [`EngineState::apply_mesh_calls`] applies.
 ///
-/// [`Engine::apply_mesh_calls`]: crate::Engine::apply_mesh_calls
+/// [`EngineState::apply_mesh_calls`]: crate::EngineState::apply_mesh_calls
 #[derive(Debug, Clone)]
 pub enum MeshCall {
     /// Raise this event on the external queue, with the `_event` the
@@ -295,14 +295,14 @@ pub enum MeshCall {
 /// child it starts, before the child initializes, since an `<onentry>` of the
 /// child's initial state may already send: the child's `<send type="sce:mesh">`
 /// goes to [`Self::send`] and its `<invoke type="sce:mesh-rpc">` to
-/// [`Self::invoke`], as [`Engine::register_mesh_router`] and
-/// [`Engine::register_mesh_rpc_invoker`] route a machine's. What arrives for
+/// [`Self::invoke`], as [`EngineState::register_mesh_router`] and
+/// [`EngineState::register_mesh_rpc_invoker`] route a machine's. What arrives for
 /// the child waits here until the parent drives the child, which takes it with
 /// [`Self::take_calls`] before the child's macrostep. When the session ends the
 /// parent says so with [`Self::detach`], after the child has stopped.
 ///
-/// [`Engine::register_mesh_router`]: crate::Engine::register_mesh_router
-/// [`Engine::register_mesh_rpc_invoker`]: crate::Engine::register_mesh_rpc_invoker
+/// [`EngineState::register_mesh_router`]: crate::EngineState::register_mesh_router
+/// [`EngineState::register_mesh_rpc_invoker`]: crate::EngineState::register_mesh_rpc_invoker
 pub trait ChildMeshRouter: Send {
     /// A `<send type="sce:mesh">` of the child. Answered as a registered
     /// router answers: the events to raise at once, usually none.
@@ -407,7 +407,7 @@ pub struct HostInvokeRequest {
     /// Inline `<content>`, empty when the document carried none.
     pub content: String,
     /// Which start of this invoke this is. The engine assigns it, and a host
-    /// that finishes later hands it back to `Engine::complete_host_invoke`.
+    /// that finishes later hands it back to `EngineState::complete_host_invoke`.
     ///
     /// The id alone cannot say it: a state that exits and is entered again
     /// starts the same `<invoke>` a second time under the same id, and a
@@ -525,10 +525,10 @@ impl std::error::Error for HostInvokeEndRefusal {}
 /// The invokers a host registered for the types it serves, shared by every
 /// session of one tree (docs/adr/0045): the engine the host built makes it,
 /// and a parent hands its own to each child it starts or resumes. Opaque: a
-/// host registers through [`Engine::register_invoker`], and the generated
+/// host registers through [`EngineState::register_invoker`], and the generated
 /// parent only passes it on.
 ///
-/// [`Engine::register_invoker`]: crate::Engine::register_invoker
+/// [`EngineState::register_invoker`]: crate::EngineState::register_invoker
 #[derive(Clone, Default)]
 pub struct TreeInvokers(std::sync::Arc<std::sync::Mutex<HashMap<String, HostInvokeHandler>>>);
 
@@ -586,7 +586,7 @@ pub struct HostInvokeResponse {
     /// invocation that completed before returning.
     ///
     /// `None` is the ordinary case: the work outlives the call, and the
-    /// host reports it through `Engine::complete_host_invoke` with the
+    /// host reports it through `EngineState::complete_host_invoke` with the
     /// request's token when it finishes. SCE does not synthesise a completion
     /// the host did not report — an invoked process that never terminates
     /// never fires `done.invoke`, which is what §scxml-6.4 says.
@@ -1203,7 +1203,7 @@ pub(crate) fn note_refused_posted_ending(ending: &HostInvokeEnding<'_>) {
 /// `done.invoke` a document that names no specific completion receives,
 /// whose invokeid is one of them.
 ///
-/// Such an event is accepted only through `Engine::complete_host_invoke`,
+/// Such an event is accepted only through `EngineState::complete_host_invoke`,
 /// which is the one path that knows the invocation is still running. Raised
 /// any other way it could be a cancelled run's late reply, so the engine
 /// refuses it at dequeue.

@@ -1392,7 +1392,7 @@ pub struct SavedEvent {
     /// `_event.invokeid`.
     pub invoke_id: String,
     /// The token a host-run invocation's completion or failure was stamped
-    /// with when `Engine::complete_host_invoke` accepted it, `None` for any
+    /// with when `EngineState::complete_host_invoke` accepted it, `None` for any
     /// other event.
     ///
     /// The engine refuses a host `done.invoke` that carries none when it is
@@ -3866,7 +3866,7 @@ fn judge_child_entry<P: StatePolicy>(
 /// Re-arm each of `host_invokes` on `engine`, in the order a saved state lists
 /// them. None starts here: the host registers its invokers on the engine this
 /// restore returns, so each starts at the top of the first macrostep it drives
-/// (`Engine::start_restored_host_invokes`). A deadline comes due
+/// (`EngineState::start_restored_host_invokes`). A deadline comes due
 /// `due - wall_now_ms` after now on the engine's own clock; one already due
 /// ends the invocation without a start.
 fn rearm_host_invokes<P: StatePolicy>(

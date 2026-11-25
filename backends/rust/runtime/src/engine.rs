@@ -23,13 +23,15 @@
 //! profile, and the `BoundedInbox` a bare-metal deployment declares and hands
 //! to `attach_inbox`, with the `bounded-inbox` feature.
 //!
-//! ## Safety invariants
+//! ## The policy and the state
 //!
-//! The engine uses one scoped `unsafe` block, in `Engine::with_policy`, to
-//! split-borrow `self.policy` from the rest of `self` when dispatching policy
-//! methods that take both `&mut self` (the policy) and `&mut Engine<Self>`
-//! (the engine). Every dispatch goes through it, so the argument is made once.
-//! Generated code never writes `unsafe`.
+//! An [`Engine<P>`] is two fields: its policy and its [`EngineState<P>`]. A
+//! policy method that takes the engine takes `&mut self` (the policy) and
+//! `&mut EngineState<Self>` (everything else), and `Engine::with_policy`
+//! hands it the two fields borrowed apart, so the compiler checks that no
+//! reference reaches the policy twice (docs/adr/0131). Neither the dispatch nor
+//! generated code writes `unsafe`: the engine's only `unsafe` blocks are its
+//! constructors', which write the fields into an uninitialised slot.
 //!
 //! ## Public surface
 //!
@@ -122,7 +124,7 @@ const CHILD_MESH_ROUTER_HELD: &str =
 // below.
 
 /// How many links an `error.*` chain may have before the engine stops feeding
-/// it — see [`Engine::error_cascade_events`].
+/// it — see [`EngineState::error_cascade_events`].
 ///
 /// §scxml-3.12.2 says what to do with an error event nothing matches. It does
 /// not say what to do when something *does* match it and that handler fails
@@ -140,7 +142,7 @@ const CHILD_MESH_ROUTER_HELD: &str =
 pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;
 
 /// How many microsteps one macrostep may take before this engine stops taking
-/// them — see `Engine::truncated_macrosteps` (the `macrostep-diagnostics`
+/// them — see `EngineState::truncated_macrosteps` (the `macrostep-diagnostics`
 /// feature).
 ///
 /// The specification defines a macrostep as a chain of microsteps ending in a
@@ -174,7 +176,7 @@ pub(crate) const MAX_MACROSTEP_MICROSTEPS: usize = 1000;
 
 /// How many external events one invocation of the main event loop may take off
 /// the queue before this engine hands control back — see
-/// `Engine::truncated_event_chains` and ARCHITECTURE.md "External-Event
+/// `EngineState::truncated_event_chains` and ARCHITECTURE.md "External-Event
 /// Budget", the contract every engine here holds.
 ///
 /// A machine that answers an event by sending itself the next one, with no
@@ -189,7 +191,7 @@ pub(crate) const MAX_MACROSTEP_MICROSTEPS: usize = 1000;
 /// the longest invocation measured over the authoring suite (6 external
 /// events). It is a margin and not a proof, and a host that hands a machine a
 /// backlog it means to work through in one call can choose another
-/// ([`Engine::set_max_external_events_per_call`]).
+/// ([`EngineState::set_max_external_events_per_call`]).
 pub(crate) const MAX_EXTERNAL_EVENTS_PER_CALL: u32 = 10_000;
 
 /// Comparable timestamp used by the scheduler: `u64` millisecond ticks read
@@ -424,7 +426,7 @@ struct ScheduledEntry<S> {
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` there
     /// is only one thing it can be, and the `_event.data` string it would carry
     /// is elided too — the no_std build has no script engine, and the scheduler
-    /// drain ([`Engine::tick`] → [`Engine::raise_external`]) discards the data
+    /// drain ([`Engine::tick`] → [`EngineState::raise_external`]) discards the data
     /// string there anyway (`let _ = (event_data, sender)`), so storing it per
     /// entry is pure dead weight (~264 B `heapless::String<256>` ×
     /// `MAX_SCHEDULED_EVENTS`). Mirrors the `EventMetadata.data` profile-level
@@ -645,7 +647,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// processor serves, to be performed once `ready_at` arrives.
     ///
     /// The delayed twin of the immediate dispatch the generated send site makes
-    /// through [`Engine::perform_host_send`]. It lands in the same queue as
+    /// through [`EngineState::perform_host_send`]. It lands in the same queue as
     /// [`schedule_event_at`](Self::schedule_event_at), which is the contract:
     /// the deferred act is ordered against every other delayed send by
     /// deadline, and [`cancel_event`](Self::cancel_event) drops it by send id
@@ -859,7 +861,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// data string is elided too (see the private `ScheduledEntry`'s field
     /// docs), so the popped event carries no data. The no_std drain in
     /// [`Engine::tick`] passes `""` to
-    /// [`raise_external`](Engine::raise_external), which discards it anyway —
+    /// [`raise_external`](EngineState::raise_external), which discards it anyway —
     /// returning `Option<EventId>` avoids both the act discriminant and moving a
     /// 264 B empty `heapless::String` out on every timer fire.
     ///
@@ -993,13 +995,26 @@ pub(crate) struct RunningHostInvoke {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Engine<P>
+// Engine<P> and EngineState<P>
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// The SCXML execution engine.
 ///
 /// Generic over a [`StatePolicy`] `P` that encodes the state machine structure
 /// at compile time. Matches C++ `StaticExecutionEngine<StatePolicy>`.
+///
+/// ## The policy and the state, owned apart (docs/adr/0131)
+///
+/// An engine is two fields: its policy, and its [`EngineState`], which is
+/// everything else. A policy hook that runs executable content is handed the
+/// policy as `&mut self` and the state as `&mut EngineState<P>`, two borrows
+/// of two fields, so the compiler holds them apart and nothing reached through
+/// the state leads back to the policy. What needs the policy (a turn, the main
+/// event loop, the dispatch of a hook, `policy()`) is a method of `Engine`;
+/// everything else is a method of `EngineState`, written once. `Engine`
+/// dereferences to its state, as a `Vec<T>` does to `[T]`: the owner adds the
+/// policy to what the view reads and writes, and a host that holds an engine
+/// calls the state's methods on it.
 ///
 /// ## Threading (ARCHITECTURE.md "Engine Threading")
 ///
@@ -1013,8 +1028,8 @@ pub(crate) struct RunningHostInvoke {
 ///
 /// The std-touching surface (ticks / wake / irq-save) is reachable through
 /// the [`crate::hal::Hal`] trait via the policy's [`StatePolicy::Hal`]
-/// associated type. Two consumer methods on [`Engine`]
-/// — [`Self::hal_now_ticks_ms`] and [`Self::hal_wake`] — forward to
+/// associated type. Two consumer methods on [`EngineState`]
+/// — [`EngineState::hal_now_ticks_ms`] and [`EngineState::hal_wake`] — forward to
 /// `<P::Hal>::*`. Generated code emits `type Hal = StdHal;` per policy by
 /// default, so existing call sites read the host monotonic clock and a
 /// no-op waker. A future codegen `-l rust --no-std` flag (Atomic B-β) can
@@ -1023,6 +1038,24 @@ pub(crate) struct RunningHostInvoke {
 pub struct Engine<P: StatePolicy> {
     /// Generated per-SM policy struct (datamodel, last-transition flags, etc.).
     pub(crate) policy: P,
+    /// Everything else of the engine, which a policy hook is handed apart from
+    /// the policy (docs/adr/0131).
+    pub(crate) state: EngineState<P>,
+}
+
+/// Everything of an [`Engine`] but its policy: the configuration, the queues,
+/// the scheduler, the host's registrations and the counts the engine keeps
+/// (docs/adr/0131).
+///
+/// What a [`StatePolicy`] hook is handed as `engine`, beside the policy's own
+/// `&mut self`. The two are fields of the engine borrowed apart, so a hook
+/// that writes the policy and raises an event through the state holds two
+/// references to two places. Nothing here reaches the policy: a method that
+/// needs it is [`Engine`]'s.
+///
+/// A host does not build one. It holds an [`Engine`], which dereferences to
+/// its state, so the methods below are called on the engine itself.
+pub struct EngineState<P: StatePolicy> {
     /// The configuration and what each `<history>` recorded, as Appendix D's
     /// procedures read and write them (docs/adr/0064).
     pub(crate) run_store: P::RunStore,
@@ -1072,7 +1105,7 @@ pub struct Engine<P: StatePolicy> {
     /// `--no-std` — a declared type is refused at build time there.
     #[cfg(feature = "std")]
     pub(crate) host_processors: crate::host_processor::HostProcessorRegistry,
-    /// See [`Engine::refused_host_invoke_completions`].
+    /// See [`EngineState::refused_host_invoke_completions`].
     #[cfg(feature = "std")]
     pub(crate) refused_host_invoke_completions: u64,
     /// Host-run invocations a restore re-armed and the engine has not yet
@@ -1099,13 +1132,13 @@ pub struct Engine<P: StatePolicy> {
     /// This machine is a child a restore resumed, and its parent's factory has
     /// not been asked for its router yet (docs/adr/0045; docs/adr/0043): the
     /// restore built it before the host could register that factory, so it is
-    /// asked when the factory is there ([`Engine::start_owed_child_mesh`]).
+    /// asked when the factory is there ([`EngineState::start_owed_child_mesh`]).
     #[cfg(feature = "std")]
     pub(crate) child_mesh_owed: bool,
     /// §scxml-C-2: HTTP send dispatch callback — the BasicHTTP processor this
     /// build has with the `http-send` feature and only with it
     /// (docs/adr/0053). Without the feature no callback can be registered,
-    /// and a BasicHTTP send is refused (see [`Engine::perform_http_send`]).
+    /// and a BasicHTTP send is refused (see [`EngineState::perform_http_send`]).
     ///
     /// Carries the same `+ Send` bound as `completion_callback` so the engine
     /// stays host-movable; see that field for the rationale.
@@ -1150,7 +1183,7 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox>,
     /// The inboxes of the tree this session is in (ARCHITECTURE.md "Engine
     /// Threading", item 3): its own until a parent hands it the tree's
-    /// ([`share_tree_inboxes_with`](Engine::share_tree_inboxes_with)).
+    /// ([`share_tree_inboxes_with`](EngineState::share_tree_inboxes_with)).
     #[cfg(feature = "std")]
     pub(crate) tree_inboxes: crate::inbox::TreeInboxes,
     /// The inbox a deployment declared and handed over with `attach_inbox`
@@ -1160,14 +1193,14 @@ pub struct Engine<P: StatePolicy> {
     #[cfg(feature = "bounded-inbox")]
     pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
     /// A drain of the inboxes is applying what they held
-    /// (`Engine::drain_inbox`). Applying an input queues an external event,
+    /// (`EngineState::drain_inbox`). Applying an input queues an external event,
     /// and a queued external event asks for a drain first; the drain already
     /// running is that drain, so the flag turns the second one into nothing
     /// rather than into a drain inside a drain. Only in a build that has an
     /// inbox: the `std` profile's own, or one attached with `bounded-inbox`.
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     pub(crate) draining_inbox: bool,
-    /// What [`set_transition_observer`](Engine::set_transition_observer) set,
+    /// What [`set_transition_observer`](EngineState::set_transition_observer) set,
     /// told each transition the engine takes (docs/adr/0089); `None` until a
     /// host sets one. Absent from a build without the feature, so such a build
     /// carries neither the field nor the check.
@@ -1175,8 +1208,9 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) transition_observer: Option<crate::transition_observer::Observer<P::State>>,
 }
 
-/// Every field of a new [`Engine`] and the value it starts at, handed to
-/// `$consumer!` as a list of `field: value,` (attributes kept).
+/// The policy of a new [`Engine`] and every field of its [`EngineState`] with
+/// the value it starts at, handed to `$consumer!` as `policy: value;` and a list
+/// of `field: value,` (attributes kept).
 ///
 /// The one list the two constructors share, [`Engine::new_in_place`] (which writes
 /// each field to a slot) and `Engine::new_const` (which builds the engine in a
@@ -1191,8 +1225,8 @@ macro_rules! engine_initial_fields {
         policy: $policy:expr,
     ) => {
         $consumer! {
+            policy: $policy;
             run_store: <P::RunStore as RunStorage>::EMPTY,
-            policy: $policy,
             internal_queue: <P::InternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
             external_queue: <P::ExternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
             core: EngineCore::new(P::TABLES.default_state),
@@ -1275,19 +1309,24 @@ impl<P: StatePolicy> Engine<P> {
         // once, so a field added to the struct and not listed below is a
         // compile error and not a slot left uninitialised.
         macro_rules! write_fields {
-            ($($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
+            (policy: $policy:expr; $($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
                 // SAFETY: `engine` is the slot's address, which is valid for
-                // writes of an `Engine<P>` and aligned for it; each field is
-                // written exactly once, through its own address, so no
-                // reference to uninitialised memory is formed.
+                // writes of an `Engine<P>` and aligned for it; the policy and
+                // each field of the state are written exactly once, through
+                // their own addresses, so no reference to uninitialised memory
+                // is formed.
                 unsafe {
+                    core::ptr::addr_of_mut!((*engine).policy).write($policy);
                     $(
                         $(#[$attr])*
-                        core::ptr::addr_of_mut!((*engine).$field).write($value);
+                        core::ptr::addr_of_mut!((*engine).state.$field).write($value);
                     )*
                 }
                 let _every_field_is_listed = |engine: &Self| {
-                    let Self { $($(#[$attr])* $field: _,)* } = engine;
+                    let Self {
+                        policy: _,
+                        state: EngineState { $($(#[$attr])* $field: _,)* },
+                    } = engine;
                 };
             };
         }
@@ -1320,8 +1359,11 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "std"))]
     pub const fn new_const(policy: P) -> Self {
         macro_rules! struct_literal {
-            ($($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
-                Self { $($(#[$attr])* $field: $value,)* }
+            (policy: $policy:expr; $($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
+                Self {
+                    policy: $policy,
+                    state: EngineState { $($(#[$attr])* $field: $value,)* },
+                }
             };
         }
         engine_initial_fields! {
@@ -1334,32 +1376,11 @@ impl<P: StatePolicy> Engine<P> {
     // Scheduler clock readers (per-build cfg-branched, HAL-routed under no_std)
     // ════════════════════════════════════════
 
-    /// The one part of reading the [`clock`](Self::clock) that is this
-    /// machine's: what its HAL answers for [`SceClock::Hal`]. Handed to the
-    /// clock code in [`EngineCore`], which is one copy for every machine.
-    const HAL_NOW: fn() -> SchedTimePoint = <P::Hal as Hal>::now_ticks_ms;
-
-    /// §scxml-3.13: what time it is, for everything this turn arms or judges.
-    ///
-    /// The clause executes a microstep's executable content as one unit and a
-    /// macrostep as a chain of those, so "now" is a property of the turn the
-    /// engine is in rather than of the statement asking for it. Between turns
-    /// there is no turn for it to be a property of, and the host's queries
-    /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms),
-    /// [`now_ms`](Self::now_ms)) read the clock live.
-    ///
-    /// The latch and the reading are [`EngineCore::sched_now`], one copy for
-    /// every machine; this hands it the machine's HAL.
-    #[inline]
-    fn sched_now(&self) -> SchedTimePoint {
-        self.core.sched_now(Self::HAL_NOW)
-    }
-
-    /// Open a turn: take the single [`clock`](Self::clock) reading that
+    /// Open a turn: take the single [`clock`](EngineState::clock) reading that
     /// everything inside it uses.
     ///
     /// Returns whether this call is the one that opened it, which
-    /// [`end_turn`](Self::end_turn) needs so a nested entry point
+    /// [`end_turn`](EngineState::end_turn) needs so a nested entry point
     /// ([`process_event`](Self::process_event) delegating to
     /// [`step`](Self::step), [`tick`](Self::tick) doing the same) does not
     /// close the outer turn early.
@@ -1389,18 +1410,1727 @@ impl<P: StatePolicy> Engine<P> {
     /// the sessions it invoked.
     #[inline]
     fn begin_turn(&mut self) -> bool {
-        let opened = self.core.open_turn(Self::HAL_NOW);
+        let opened = self.state.core.open_turn(EngineState::<P>::HAL_NOW);
         // §scxml-6.4: a host-owned clock is a value, so the sessions this one
         // invoked hold the reading of the moment they started; they are moved
         // to this turn's before anything in it reaches them. Only by the call
         // that opened the turn: a nested one finds them moved already.
-        if opened && matches!(self.core.clock, SceClock::Manual(_)) {
-            self.policy.follow_clock_in_children(self.core.clock);
+        if opened && matches!(self.state.core.clock, SceClock::Manual(_)) {
+            self.policy.follow_clock_in_children(self.state.core.clock);
         }
         opened
     }
 
-    /// Close a turn opened by [`begin_turn`](Self::begin_turn) — see
+    // ════════════════════════════════════════
+    // The inbox (docs/adr/0084, ARCHITECTURE.md "Engine Threading")
+    // ════════════════════════════════════════
+
+    /// This engine's inbox: the handle a thread that does not own the engine
+    /// posts external events and host-run invocations' endings through.
+    ///
+    /// Thread-safe, as is every clone of it; everything else of the engine
+    /// that changes it is an owner-thread operation. What is posted is applied
+    /// by the owner at its next macrostep boundary, before the external queue
+    /// is consulted, or sooner, when the owner puts an event of its own on
+    /// that queue first: the posts go ahead of that event, as they arrived
+    /// ahead of it. Each is applied in the order the inbox took it, by the
+    /// owner-thread operation of the same name. Unbounded, so `post` is
+    /// refused only once this engine is gone, or when the input names a
+    /// session the tree does not hold. A post taken before the first run is
+    /// applied at that run's first boundary at the latest.
+    ///
+    /// An ending that names a child session of the tree is posted straight to
+    /// that child's inbox, and the child applies it (ARCHITECTURE.md "Engine
+    /// Threading", item 3).
+    #[cfg(feature = "std")]
+    pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
+        crate::inbox::EngineInbox::of(self.owned_inbox())
+    }
+
+    /// This session's own inbox, made in the tree it is in now if it has none
+    /// yet.
+    #[cfg(feature = "std")]
+    fn owned_inbox(&self) -> &crate::inbox::OwnedInbox {
+        self.state.inbox.get_or_init(|| {
+            crate::inbox::OwnedInbox::new(
+                self.policy.own_session_id(),
+                self.state.tree_inboxes.clone(),
+            )
+        })
+    }
+
+    /// Be in `tree`, the tree's inboxes, and hand it on to every child this
+    /// session holds now: a child a restore resumed holds children of its own,
+    /// resumed with it before its parent could hand it anything.
+    #[cfg(feature = "std")]
+    pub fn adopt_tree_inboxes(&mut self, tree: &crate::inbox::TreeInboxes) {
+        self.state.tree_inboxes = tree.clone();
+        self.owned_inbox().join(tree);
+        self.policy.adopt_tree_inboxes_in_children(tree);
+    }
+
+    /// The child session this machine was to be has had its start refused
+    /// (docs/adr/0096), so it never ran: what its parent gave it before the
+    /// start is withdrawn. Its Mesh router is told the session ended and its
+    /// inbox leaves the tree's directory, with nothing applied, since a session
+    /// that never started takes no input.
+    #[cfg(feature = "std")]
+    pub(crate) fn withdraw_unstarted_child(&mut self) {
+        self.state.detach_mesh();
+        self.state.tree_inboxes.remove(self.policy.own_session_id());
+    }
+
+    /// The child session this machine is has ended, by reaching a top-level
+    /// `<final>` or because its parent stopped it: its inbox leaves the tree's
+    /// directory, so a post naming it is refused from then on, and what the
+    /// inbox still holds is applied now, as at the end of a run. An ending
+    /// finds its invocation over and is refused by the token check
+    /// (ARCHITECTURE.md "Engine Threading", item 3). The generated parent
+    /// calls it where it tells the child's Mesh router the session ended.
+    #[cfg(feature = "std")]
+    pub fn leave_tree_inboxes(&mut self) {
+        self.state.tree_inboxes.remove(self.policy.own_session_id());
+        let opened = self.begin_turn();
+        self.run_main_event_loop();
+        self.state.end_turn(opened);
+    }
+
+    /// Drain `inbox`, which the deployment declared in a `static`, at each
+    /// macrostep boundary of this engine and before an event of its own joins
+    /// its external queue, after the engine's own inbox: the
+    /// bare-metal profile's inbox, whose capacity the deployment names
+    /// (`BoundedInbox`). Replaces one attached before; what that one still
+    /// holds stays in it.
+    ///
+    /// In the `std` profile the inbox records this engine's session id here,
+    /// so a post resolves an ending's address against it when it is posted
+    /// (ARCHITECTURE.md "Engine Threading", item 3). An engine's id is fixed
+    /// from its construction (a restore binds the saved one before it builds
+    /// the engine), so attaching is the one moment it can change for the
+    /// inbox: attached to another engine, it answers for that one.
+    ///
+    /// Only with the crate's `bounded-inbox` feature, which `std` asks for.
+    #[cfg(all(
+        feature = "bounded-inbox",
+        target_has_atomic = "8",
+        target_has_atomic = "ptr"
+    ))]
+    pub fn attach_inbox<W: Hal + 'static, const N: usize>(
+        &mut self,
+        inbox: &'static crate::inbox::BoundedInbox<P, N, W>,
+    ) where
+        crate::inbox::InboxInputOf<P>: Send,
+    {
+        #[cfg(feature = "std")]
+        inbox.attached_to(self.policy.own_session_id());
+        let source: crate::inbox::AttachedInbox<P> = inbox;
+        self.state.attached_inbox = Some(source);
+    }
+
+    // ════════════════════════════════════════
+    // The policy's hooks, handed the state apart from the policy
+    // ════════════════════════════════════════
+
+    /// Run `f` with the policy and the state borrowed apart: the one route by
+    /// which this engine calls a policy method that takes the state.
+    ///
+    /// The two are fields of the engine, so the borrows are disjoint by
+    /// construction and the compiler checks them. A hook holds `&mut P` and
+    /// `&mut EngineState<P>`, and nothing it reaches through the state leads
+    /// back to the policy, `policy()` included, which is `Engine`'s
+    /// (docs/adr/0131).
+    fn with_policy<R>(&mut self, f: impl FnOnce(&mut P, &mut EngineState<P>) -> R) -> R {
+        f(&mut self.policy, &mut self.state)
+    }
+
+    /// docs/adr/0045: resume each of `children`, the running children a saved
+    /// tree of sessions holds, in the order given, each restored where it stood
+    /// ([`StatePolicy::resume_child`]). Nothing starts and nothing is sent; the
+    /// first refusal stops the restore, and names the child by its path.
+    #[cfg(feature = "std")]
+    pub(crate) fn resume_children(
+        &mut self,
+        children: &[crate::saved_state::SavedChild],
+        wall_now_ms: u64,
+    ) -> Result<(), crate::saved_state::StateRefusal> {
+        self.with_policy(|policy, engine| {
+            children.iter().enumerate().try_for_each(|(i, child)| {
+                policy
+                    .resume_child(child, engine, wall_now_ms)
+                    .map_err(|refusal| refusal.within(&format!("invokes[{i}].session")))
+            })
+        })
+    }
+
+    /// §scxml-6.4: start the child session of each `<invoke>` in `ids` again,
+    /// in the order given — what a restore does for the invocations a saved
+    /// state lists, since a child is not saved and the process that ran it is
+    /// gone.
+    ///
+    /// Started as entering the invoking state starts them: each is deferred,
+    /// then [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
+    /// runs them together, so a child that ends as it starts raises
+    /// `done.invoke` the way it would have. `std` only, as the saved state is.
+    #[cfg(feature = "std")]
+    pub(crate) fn restart_invokes(&mut self, ids: &[&str]) {
+        if ids.is_empty() {
+            return;
+        }
+        self.with_policy(|policy, engine| {
+            for id in ids {
+                policy.restart_invoke(id, engine);
+            }
+            policy.execute_pending_invokes(engine);
+        });
+    }
+
+    /// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
+    /// state still in the configuration, innermost first, each as exitStates
+    /// exits one — its `<onexit>`, then its invocations cancelled, then it
+    /// leaves the configuration — and stop running.
+    ///
+    /// Reached two ways, the two the procedure names: the main event loop
+    /// ends because the run entered a top-level `<final>`, or the host stops
+    /// a run that has not ended. Runs once per run.
+    pub(crate) fn exit_interpreter(&mut self) {
+        // Called outside a turn, where no event is being processed: the exits
+        // are handed no data (docs/adr/0124).
+        exit_interpreter(&mut EngineHost::new(self, None));
+    }
+
+    /// Execute the policy's `initialize_data_model`, which establishes the
+    /// script session and fails when it cannot (docs/adr/0096).
+    pub(crate) fn initialize_data_model_dispatch(&mut self) -> Result<(), P::StartFailure> {
+        self.with_policy(|policy, engine| policy.initialize_data_model(engine))
+    }
+
+    // ════════════════════════════════════════
+    // Lifecycle (matches C++ public API)
+    // ════════════════════════════════════════
+
+    /// Whether a host that runs this machine as a ROOT — started by the host,
+    /// not by an `<invoke>` — should refuse to start it, and why.
+    ///
+    /// §scxml-6.2.4: `#_parent` names the session that invoked this one, and
+    /// a root has none. The document is still valid and
+    /// [`initialize`](Self::initialize) still runs it — each such send then
+    /// raises `error.communication`, which is the default. This answers for a
+    /// host that would rather not start it at all; it reads
+    /// [`StatePolicy::NEEDS_PARENT`], the manifest's `needs_parent`.
+    pub fn root_start_refusal() -> Option<RootStartRefusal> {
+        P::NEEDS_PARENT.then_some(RootStartRefusal::NeedsParent)
+    }
+
+    /// [`initialize`](Self::initialize), for a host that refuses to start a
+    /// machine needing a parent as a root ([`Self::root_start_refusal`]).
+    ///
+    /// It refuses for either of two reasons: a machine that needs a parent,
+    /// before anything is established, and a machine whose script session
+    /// cannot be established ([`RootStartRefusal::ScriptSession`],
+    /// docs/adr/0096). A refusal starts nothing: no state is entered and no
+    /// executable content runs, so the engine is as [`new`](Self::new) left it.
+    pub fn initialize_as_root(&mut self) -> Result<(), RootStartRefusal> {
+        if let Some(refusal) = Self::root_start_refusal() {
+            return Err(refusal);
+        }
+        self.initialize()
+            .map_err(|failure| RootStartRefusal::ScriptSession(failure.into()))
+    }
+
+    /// Enter the initial configuration and run the macrostep loop until stable.
+    ///
+    /// Matches C++ `StaticExecutionEngine::initialize()`. §scxml-5.3
+    /// guarantees datamodel initialization happens before any state entry.
+    ///
+    /// # Errors
+    ///
+    /// A machine with a script engine establishes its script session first,
+    /// and one whose session cannot be established is not started
+    /// (docs/adr/0096): the error names the step that failed, no state is
+    /// entered, no executable content runs, no event is taken and the engine is
+    /// not running. A machine without a script engine has
+    /// [`core::convert::Infallible`] as its
+    /// [`StartFailure`](StatePolicy::StartFailure), so its start cannot fail
+    /// and a host writes `engine.initialize().unwrap_or_else(|never| match never {})`
+    /// (`let Ok(()) = …` says the same from Rust 1.82; this crate claims 1.75).
+    #[must_use = "a start refused for its script session entered nothing, and the machine is not running"]
+    pub fn initialize(&mut self) -> Result<(), P::StartFailure> {
+        // §scxml-3.13: entering the initial configuration is one turn, and the
+        // `<onentry>` handlers it runs arm their `<send delay>`s against one
+        // instant — see `begin_turn` for what reading the clock per `<send>`
+        // did to two of them.
+        let opened = self.begin_turn();
+        let started = self.initialize_in_turn();
+        self.state.end_turn(opened);
+        started
+    }
+
+    fn initialize_in_turn(&mut self) -> Result<(), P::StartFailure> {
+        // §scxml-5.3: Initialize datamodel before any state entry. It
+        // establishes the script session first, and a session that cannot be
+        // established refuses the start here, before the run is marked
+        // running, so nothing below is reached (docs/adr/0096).
+        if concepts::has_data_model_init::<P>() {
+            self.initialize_data_model_dispatch()?;
+        }
+
+        self.state.core.main_loop.is_running = true;
+        self.state.core.main_loop.terminal_state = None;
+        self.state.core.interpreter_exited = false;
+        #[cfg(feature = "std")]
+        self.state.late_bound_states.clear();
+
+        // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
+        // document's own initial transition, whose source is the `<scxml>`
+        // element, entered by the same procedure every microstep enters by.
+        // It may name several states and a `<history>`, so it is a target
+        // list, not a leaf to walk down to.
+        debug_assert_eq!(
+            P::TABLES.check(),
+            Ok(()),
+            "the generated tables break a rule Appendix D's procedures assume"
+        );
+        // The entry and the main event loop after it are one turn of the loop,
+        // over one workspace (`Turn::enter_initial_configuration`).
+        sce_log_debug!("Engine::initialize: entering the initial configuration");
+        self.run_turn(true, None);
+        sce_log_debug!("Engine::initialize: main event loop settled");
+
+        // §scxml-6.4: Fire completion callback if we reached a final state during init.
+        // The main event loop has already run exitInterpreter, so the child's
+        // `<onexit>` sends are queued ahead of the done.invoke this raises.
+        // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
+        // to `!no_std` (see field declaration above).
+        #[cfg(feature = "std")]
+        if self.state.is_in_final_state() {
+            if let Some(cb) = self.state.completion_callback.as_mut() {
+                sce_log_debug!(
+                    "Engine::initialize: reached final state during init, invoking completion callback"
+                );
+                cb();
+            }
+        }
+        Ok(())
+    }
+
+    /// Enter a configuration this machine was already in, WITHOUT running
+    /// `<onentry>`.
+    ///
+    /// [`initialize`](Self::initialize) is the other door and the contrast is
+    /// the whole point: it enters the document's initial configuration and runs
+    /// the entry actions of every state on the way in. This one enters a
+    /// configuration the caller names and runs none of them. A host that has
+    /// persisted where a machine was, and is bringing it back in a new process,
+    /// wants the second: §scxml-3.8 entry actions are "executed when the state
+    /// is entered", and re-executing them is a replay of what the earlier run
+    /// already did — an `<onentry><send>` would post its event a second time,
+    /// to a peer that already received it.
+    ///
+    /// # What it takes, and why two arguments
+    ///
+    /// Exactly what the two readers on this engine publish:
+    /// [`get_active_states`](EngineState::get_active_states) and
+    /// [`get_current_state`](EngineState::get_current_state). Handing back both is not
+    /// redundancy — for a machine with `<parallel>` states the configuration
+    /// does not determine the current state. `current_state` is the atomic
+    /// state under the first target of the last transition taken, so which
+    /// region it sits in is a fact about the transition history rather than
+    /// about the configuration, and a chain alone cannot recover it. For a
+    /// machine without parallel states `current` is the chain's leaf and the
+    /// check below simply confirms the caller agrees.
+    ///
+    /// # What it refuses
+    ///
+    /// Every chain that is not a configuration of THIS document — see
+    /// [`configuration::validate`](crate::helpers::configuration::validate) for
+    /// the rules and [`ConfigurationRejection`] for what each refusal says. Validation runs before any mutation, so a
+    /// refused call leaves the engine exactly as it was; entering "near" the
+    /// requested configuration is the one outcome this door must never produce,
+    /// because a host has no way to detect it afterwards.
+    ///
+    /// It also refuses a machine whose script session cannot be established,
+    /// with [`ConfigurationRejection::ScriptSessionUnavailable`] naming the step
+    /// that failed (docs/adr/0096): the session is established before anything
+    /// of the engine is touched, so that refusal too leaves the engine as it was.
+    ///
+    /// # What it does not do
+    ///
+    /// - No `<onentry>`, and no `<onexit>`: no state is entered or left.
+    /// - No macrostep. [`initialize`](Self::initialize) settles the machine
+    ///   before returning; this does not, because the configuration handed in
+    ///   was already a settled one — running the loop here could take an
+    ///   eventless transition the earlier run had no reason to take, and fire
+    ///   the `<send>`s on the way. The host drives the machine on from here
+    ///   with [`step`](Self::step) or [`tick`](Self::tick) as it otherwise
+    ///   would.
+    /// - No datamodel restore. §scxml-5.3 declaration still runs, so the
+    ///   variables exist with their document defaults and a host can then put
+    ///   its saved values back through `IScriptEngine` — the engine does not
+    ///   persist datamodel state and does not pretend to. (Plain code span, not
+    ///   an intra-doc link: `scripting` is gated out of the no_std docs profile,
+    ///   where a link to it cannot resolve.)
+    pub fn enter_at(
+        &mut self,
+        configuration: &[P::State],
+        current: P::State,
+    ) -> Result<(), ConfigurationRejection<P::State>> {
+        // Before anything is touched: a rejection must not half-enter.
+        crate::helpers::configuration::validate::<P>(configuration, current)?;
+
+        // §scxml-5.3: the datamodel is declared before anything can read it.
+        // This is not a state entry action — `<datamodel>` holds `<data>`, not
+        // executable content — so it runs here for the same reason it runs in
+        // `initialize`: a `cond` or an `assign` evaluated after this call would
+        // otherwise reference variables that were never declared. It
+        // establishes the script session first, and a session that cannot be
+        // established refuses the entry before anything of the engine is
+        // touched, as a configuration of another document is (docs/adr/0096).
+        if concepts::has_data_model_init::<P>() {
+            self.initialize_data_model_dispatch().map_err(|failure| {
+                ConfigurationRejection::ScriptSessionUnavailable(failure.into())
+            })?;
+        }
+
+        self.state.core.current_state = P::state_id(current);
+        self.state.core.interpreter_exited = false;
+        // The restored states were entered by the run being resumed, so their
+        // late-bound `<data>` is that run's — the host restores it, and a later
+        // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
+        #[cfg(feature = "std")]
+        {
+            self.state.late_bound_states = configuration.iter().copied().collect();
+        }
+        // A configuration restored AT a top-level `<final>` is a run that has
+        // already ended there; any other is still running.
+        self.state.core.main_loop.terminal_state =
+            if P::is_final_state(current) && P::get_parent(current).is_none() {
+                Some(P::state_id(current))
+            } else {
+                None
+            };
+
+        // §scxml-3.4: the configuration is the engine's, kept as numbers.
+        self.state
+            .run_store
+            .view_mut()
+            .set_configuration(configuration.iter().map(|&state| P::state_id(state)));
+
+        self.state.core.main_loop.is_running = true;
+        Ok(())
+    }
+
+    /// Process one macrostep: drain queues and run eventless transitions.
+    ///
+    /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
+    /// explicitly drive children after sending them events (§scxml-6.4).
+    ///
+    /// # Which of `step` and [`tick`](Self::tick) to call
+    ///
+    /// Do not guess, and do not read it off the document: the generator
+    /// decided while compiling and says so in two places, both derived
+    /// from the same answer.
+    ///
+    /// - `StatePolicy::NEEDS_EVENT_SCHEDULER` on the generated policy —
+    ///   `false` means this method is enough, `true` means [`tick`](Self::tick).
+    /// - `needs_event_scheduler` on the `sce-codegen` stdout manifest,
+    ///   for a build system deciding without compiling the machine first.
+    ///
+    /// Both queues are drained here, delayed sends are not: `step` never
+    /// consults the scheduler and never ticks an invoked child. A machine
+    /// that needs either and is driven by `step` alone loses those events
+    /// — so this method logs an error the first time it is called on one,
+    /// rather than letting the loss be silent.
+    ///
+    /// An *undelayed* `<send>`, whatever its target, is an ordinary
+    /// external event and arrives here. Written out because the reverse
+    /// was reported in 2026-08 by a consumer whose real problem was an
+    /// aborted `<onentry>` block: an error in executable content abandons
+    /// the actions after it (§scxml-4.9), so a `<send>` written below a
+    /// failing one never runs, and no amount of `tick` recovers it.
+    pub fn step(&mut self) {
+        // §scxml-3.13: one host call, one reading. The macrostep below can
+        // enter a state whose `<onentry>` arms several `<send delay>`s, and
+        // they are one instant's worth of executable content however long the
+        // host takes to run them — see `begin_turn`.
+        let opened = self.begin_turn();
+        self.step_in_turn(None);
+        self.state.end_turn(opened);
+    }
+
+    /// The macrostep `step` runs, lending `lend` when
+    /// [`process_event_with`](Self::process_event_with) is the caller
+    /// (docs/adr/0124).
+    fn step_in_turn(&mut self, lend: Option<Lend<'_, P>>) {
+        // A machine with delayed sends hands `step` a queue it cannot reach:
+        // `run_main_event_loop` never consults the scheduler, so the event is
+        // neither delivered nor refused. Say it once — the host is driving with
+        // the wrong call, and every later macrostep would repeat the same word.
+        // Whether the machine has delayed sends is the generator's answer, a
+        // constant; the count and the word are the core's.
+        if concepts::needs_event_scheduler::<P>() {
+            self.state.core.note_unattended_step();
+        }
+
+        self.run_turn(false, lend);
+
+        #[cfg(feature = "std")]
+        if self.state.is_in_final_state() && self.state.completion_callback.is_some() {
+            sce_log_debug!("Engine::step: invoking completion callback");
+            if let Some(cb) = self.state.completion_callback.as_mut() {
+                cb();
+            }
+        }
+    }
+
+    /// Poll the scheduler for ready delayed events, then run a macrostep.
+    ///
+    /// Matches C++ `StaticExecutionEngine::tick()`. Called periodically by
+    /// callers that have delayed `<send>` operations.
+    ///
+    /// A superset of [`step`](Self::step): it drains the delayed-send
+    /// scheduler and ticks invoked child sessions, then runs the same
+    /// macrostep. Calling it on a machine that needs neither is correct
+    /// and merely does two lookups that find nothing — which is why the
+    /// generated `NEEDS_EVENT_SCHEDULER` constant is worth reading rather
+    /// than defaulting either way. See [`step`](Self::step) for where the
+    /// answer is published.
+    pub fn tick(&mut self) {
+        // §scxml-3.13: one turn, one reading. Everything below judges due
+        // against the instant this tick began, and everything the macrosteps
+        // below arm is measured from it — so a tick dispatches what was due
+        // when the host called it, and cannot be extended by how long it takes
+        // to run (see `begin_turn`).
+        let opened = self.begin_turn();
+        self.tick_in_turn();
+        self.state.end_turn(opened);
+    }
+
+    fn tick_in_turn(&mut self) {
+        // Recorded before the running check: a host that calls `tick` owns a
+        // clock whatever the engine's lifecycle says, and the count exists to
+        // find hosts that never call it at all.
+        self.state.core.tick_has_run = true;
+        if !self.state.core.main_loop.is_running {
+            return;
+        }
+        if self.state.is_in_final_state() {
+            #[cfg(feature = "std")]
+            if let Some(cb) = self.state.completion_callback.as_mut() {
+                sce_log_debug!(
+                    "Engine::tick: final state already reached, invoking completion callback"
+                );
+                cb();
+            }
+            return;
+        }
+
+        // §scxml-6.2: dispatch the ready scheduled events, earliest deadline
+        // first and one macrostep apart. "Due" is judged against the instant
+        // this tick began, not against a clock re-read on every pass — a tick
+        // that chased its own slowness would dispatch entries the host had not
+        // yet reached, in a loop the host cannot get between (see
+        // `begin_turn`). `PullScheduler` stays clock-source-agnostic either
+        // way: it is handed the reading rather than taking one.
+        //
+        // One at a time, not all at once. `<cancel>` drops an event that has
+        // not been dispatched yet, and a host that woke late holds several past
+        // their deadlines: promoting them together makes every later one
+        // undroppable before the earlier one's transitions have had a chance to
+        // run. That is how a settle timer — arm a long `<send delay>`, cancel
+        // it when the short signal arrives first — delivers the event it was
+        // told to cancel. Measured 2026-08-19 across the Rust, Go and Python
+        // backends alike, the Python one on a virtual clock where the host's
+        // step size alone decided it.
+        //
+        // A scheduler that can deliver an entry due at the instant it is popping
+        // is a drain that refills itself: an entry a handler re-arms at that
+        // same reading (a `delayexpr` that evaluates to zero, which has no
+        // static value to be read as undelayed) is due now, so this loop pops it
+        // in the same call, and each pass takes ONE event, so the budget on the
+        // external drain never trips. The pops of entries due AT one clock
+        // reading are bounded by the same budget, reset when the reading
+        // advances (ARCHITECTURE.md "External-Event Budget", rule 5).
+        //
+        // Entries due AT the reading, not every entry popped at it: the reading
+        // is latched for the whole tick, so a host that jumps the clock a long
+        // way pops every entry that came due on the way at ONE reading, and those
+        // are due at earlier instants. A handler arms relative to the latched
+        // reading, so what it arms is due at the reading itself or after it, and
+        // only the first kind can be popped by this tick. A clock the host moved
+        // is bounded by how far it moved and is not cut; a heartbeat across a long
+        // jump arms its next beat after the reading and is not popped here at all.
+        //
+        // The loop stays in each machine's `tick`. The scheduler it drives is
+        // machine-free and shared (docs/adr/0069); moving the loop itself into
+        // shared code behind the machine's hooks measured larger per machine
+        // than the loop it replaced.
+        let mut reading: Option<SchedTimePoint> = None;
+        let mut popped_due_at_reading: u32 = 0;
+        loop {
+            let now = self.state.sched_now();
+            if reading != Some(now) {
+                reading = Some(now);
+                popped_due_at_reading = 0;
+            }
+            if let Some((due, head)) = self.state.scheduler.next_ready_at_with_event(now) {
+                if due == now {
+                    if popped_due_at_reading
+                        >= self.state.core.main_loop.max_external_events_per_call
+                    {
+                        self.state.core.record_truncated_event_chain(head);
+                        break;
+                    }
+                    popped_due_at_reading += 1;
+                }
+            }
+            #[cfg(feature = "std")]
+            {
+                let Some(act) = self.state.scheduler.pop_ready_act_at(now) else {
+                    break;
+                };
+                match act {
+                    ScheduledAct::Raise {
+                        event,
+                        event_data,
+                        send_id,
+                        sender,
+                        name,
+                    } => {
+                        // §scxml-5.10.1 + §scxml-C-1: the metadata the
+                        // immediate send stamps, restored when the wait ends,
+                        // and §scxml-5.10: the name it was sent under.
+                        let mut meta = EventWithMetadata::new(P::event_of(event));
+                        meta.metadata = EventMetadata::sent_by_session(&send_id, &sender);
+                        meta.metadata.name = name;
+                        meta.set_event_data(&event_data);
+                        self.state.raise_external_with_meta(meta);
+                    }
+                    // §scxml-6.2: to the target the send named when it was made.
+                    ScheduledAct::Routed {
+                        event,
+                        event_data,
+                        send_id,
+                        sender,
+                        name,
+                        route,
+                    } => {
+                        self.deliver_routed(
+                            event.map(P::event_of),
+                            &event_data,
+                            send_id,
+                            sender,
+                            name,
+                            route,
+                        );
+                    }
+                    // §scxml-6.2.4: the wait is over, so now the act happens.
+                    // Everything the immediate send site does happens here
+                    // instead — including reporting an act nobody performed,
+                    // which that site cannot do for a deferred send because it
+                    // returned long before the deadline.
+                    ScheduledAct::HostSend(request) => {
+                        self.state.perform_deferred_host_send(*request);
+                    }
+                    ScheduledAct::HostInvokeDeadline {
+                        processor_type,
+                        invoke_id,
+                        token,
+                    } => {
+                        self.state
+                            .expire_host_invoke(&processor_type, &invoke_id, token);
+                    }
+                }
+            }
+            // no_std: the data string is elided in the scheduler, and
+            // `raise_external` discards it under no_std anyway.
+            #[cfg(not(feature = "std"))]
+            {
+                let Some(popped) = self.state.scheduler.pop_ready_event_at(now) else {
+                    break;
+                };
+                self.state.raise_external(P::event_of(popped), "");
+            }
+
+            // The macrostep this event drives may `<cancel>` a later one, so
+            // the queue is re-consulted after it rather than before.
+            self.run_main_event_loop();
+            if !self.state.core.main_loop.is_running || self.state.is_in_final_state() {
+                break;
+            }
+        }
+
+        // §scxml-6.4: Tick child state machines
+        if concepts::has_child_tick::<P>() {
+            self.with_policy(|policy, engine| policy.tick_children(engine));
+        }
+
+        // Delegate to step() for the main event loop + completion callback.
+        // §scxml-6.4's invokes are part of that loop and run there, ahead of
+        // the external dequeue rather than after it.
+        self.step();
+    }
+
+    /// Stop the engine. Subsequent `tick`/`process_event` calls become no-ops.
+    ///
+    /// §scxml-D-exitInterpreter: a run the host stops is exited as one that
+    /// ended — every active state's `<onexit>` runs, innermost first, and the
+    /// configuration ends empty. A run that already ended has been exited.
+    pub fn stop(&mut self) {
+        if self.state.core.main_loop.is_running {
+            self.exit_interpreter();
+        }
+        self.state.core.main_loop.is_running = false;
+    }
+
+    /// Access the inner policy (read-only).
+    ///
+    /// Used by parent engine to drain child's parent_external_queue.
+    pub fn policy(&self) -> &P {
+        &self.policy
+    }
+
+    // ════════════════════════════════════════
+    // Event submission (matches C++ raise / raiseExternal overloads)
+    // ════════════════════════════════════════
+
+    /// §scxml-6.2.4 + §scxml-6.4: deliver a `<send>` addressed to this
+    /// invoked session by name, and take it now — as the C++ and Kotlin cores
+    /// do.
+    ///
+    /// Enqueued alone, the event waits for the parent's next `tick_children`,
+    /// and a tick dispatches its due sends before it ticks children. So a
+    /// delayed send coming due in a late tick reached a child that had not yet
+    /// taken an earlier immediate one — a `stop` sent at once and a delayed
+    /// `lost` found the child still running, `lost` joined its queue behind
+    /// `stop` and vanished with the child, neither delivered nor reported
+    /// (§scxml-C-1). Measured 2026-09-29 on the Go core under load; this core
+    /// shared the shape.
+    ///
+    /// Not [`step`](Self::step): that is the host's door, and its note about a
+    /// host that never ticks would fire for a parent's delivery. What the child
+    /// sends its parent here waits on its own buffer only until the delivery
+    /// returns: the generated parent drains it, and raises the child's
+    /// `done.invoke` if it ended, right after this call (docs/adr/0045), so no
+    /// event is between the two sessions when the parent's macrostep ends.
+    ///
+    /// `sender` is the id of the session that sent the event, the parent: the
+    /// SCXML processor writes the location it publishes as the event's origin
+    /// and keeps the id beside it (§scxml-C-1, docs/adr/0090), so a reply to
+    /// `_event.origin` reaches the parent.
+    #[cfg(feature = "std")]
+    pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str, sender: &str) {
+        let mut metadata = EventMetadata::sent_by_session("", sender);
+        metadata.data = crate::sce_string_from_str(event_data);
+        self.state
+            .raise_external_by_name_with_meta(event_name, &metadata);
+        let opened = self.begin_turn();
+        self.run_main_event_loop();
+        self.state.end_turn(opened);
+    }
+
+    /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
+    ///
+    /// Matches C++ `processEvent(Event)`.
+    pub fn process_event(&mut self, event: P::Event) {
+        if !self.state.core.main_loop.is_running {
+            // Refused rather than queued, so the drain in `Turn::end_run`
+            // never sees it — which is why the count is taken here as well as
+            // there. See
+            // [`unseen_external_events`](EngineState::unseen_external_events).
+            self.state.core.note_unseen_event(P::event_id(event));
+            return;
+        }
+        self.state.raise_external(event, "");
+        self.step();
+    }
+
+    /// Process the external event `event` as
+    /// [`process_event`](Self::process_event) does, with `event_data`, its data,
+    /// lent rather than queued (docs/adr/0124).
+    ///
+    /// `event_data` is the event's data as the host holds it, such as a view
+    /// over the bytes it received, read through the schema's read interface.
+    /// Every guard, `<sce:arg>` and transition content that reads `_event.data`
+    /// while `event` is `_event` reads it in place, as it reads the payload of
+    /// a queued event: nothing is copied into the engine, and nothing it keeps
+    /// can hold the borrow past this call.
+    ///
+    /// It is lent from the moment the engine takes `event` off the external
+    /// queue to the moment it takes the next event, internal or external. An
+    /// external event queued ahead of `event` (what other threads posted
+    /// joins the queue ahead of it, as [`raise_external`](EngineState::raise_external)
+    /// puts it), an internal event raised while `event` is processed and the
+    /// entry into a configuration are lent nothing. An `event` refused where
+    /// it is taken opens nothing. When the call's budget of external events
+    /// ends the turn before `event` is taken, it stays queued, and the turn
+    /// that takes it takes it as a delivery that carries no data.
+    ///
+    /// A generated machine pairs each event with its data in one call
+    /// (`process_<event>_with`), so an event cannot be lent another's data.
+    pub fn process_event_with(&mut self, event: P::Event, event_data: P::EventData<'_>) {
+        self.lend_event(event, event_data, "");
+    }
+
+    /// [`process_event_with`](Self::process_event_with) for a machine whose
+    /// document also reads `_event.data` from the wire, a script engine or an
+    /// autoforwarded child, which keep their own copy: `wire` is that data's
+    /// JSON, which the generated `process_<event>_with` writes from the lent
+    /// data as the inject seam writes it from a payload (docs/adr/0124).
+    #[cfg(feature = "std")]
+    pub fn process_event_with_wire(
+        &mut self,
+        event: P::Event,
+        event_data: P::EventData<'_>,
+        wire: &str,
+    ) {
+        self.lend_event(event, event_data, wire);
+    }
+
+    /// The one body of [`process_event_with`](Self::process_event_with) and
+    /// its wire twin.
+    fn lend_event(&mut self, event: P::Event, event_data: P::EventData<'_>, wire: &str) {
+        if !self.state.core.main_loop.is_running {
+            // Refused as `process_event` refuses it, and counted the same way.
+            self.state.core.note_unseen_event(P::event_id(event));
+            return;
+        }
+        // What other threads posted joins the queue ahead of `event`, as
+        // `raise_external` puts it there. Applied first, so the events counted
+        // here are the external events the turn takes before `event`.
+        #[cfg(any(feature = "std", feature = "bounded-inbox"))]
+        self.state.drain_inbox();
+        let ahead = self.state.external_queue.queued().count();
+        // Queued behind them with no drain of its own: a post applied between
+        // the count and the push would stand ahead of `event` uncounted.
+        EngineState::<P>::enqueue(
+            &mut self.state.external_queue,
+            EngineState::<P>::external_arrived_as(event, wire, ""),
+        );
+        let opened = self.begin_turn();
+        self.step_in_turn(Some(Lend {
+            data: event_data,
+            ahead,
+        }));
+        self.state.end_turn(opened);
+    }
+
+    /// §scxml-5.10: Process an external event with metadata.
+    ///
+    /// Matches C++ `processEvent(Event, const EventMetadata&)`.
+    pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
+        if !self.state.core.main_loop.is_running {
+            // Same refusal as `process_event`, same reason it is counted here.
+            self.state.core.note_unseen_event(P::event_id(event));
+            return;
+        }
+        let meta = EventWithMetadata {
+            event,
+            payload: P::Payload::default(),
+            metadata,
+            #[cfg(feature = "std")]
+            target: SceString::new(),
+        };
+        self.state.enqueue_external(meta);
+        self.step();
+    }
+
+    // ════════════════════════════════════════
+    // Scheduler passthrough
+    // ════════════════════════════════════════
+
+    /// §scxml-6.2.4 + §scxml-C-1: send to a target value read at run time.
+    ///
+    /// A `targetexpr` is a target: whatever value it yields is routed as the
+    /// same value written in `target` is —
+    /// [`classify_target`](crate::helpers::send::classify_target) reads it,
+    /// the table `SendHelper::classifyTarget` holds for C++ — sent at once or,
+    /// with a delay, from the scheduler through the engine's one routed
+    /// delivery (`deliver_routed`) when it comes due. An invocation or a session the value names that is
+    /// not running now is reported now; one that ends while a delayed send
+    /// waits is reported when it comes due.
+    ///
+    /// An associated function, not a method: the send site is a policy method
+    /// holding the policy while the engine lends its state out, so the two are
+    /// handed over apart (docs/adr/0131). `event` is this machine's spelling of the event, for
+    /// its own queues; a child or a parent resolves `event_name`.
+    #[cfg(feature = "std")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_to_target(
+        policy: &mut P,
+        engine: &mut EngineState<P>,
+        event: Option<P::Event>,
+        event_name: &str,
+        target: &str,
+        own_session_id: &str,
+        delay: Option<Duration>,
+        send_id: &str,
+        event_data: &str,
+        sender: &str,
+    ) -> TargetSendOutcome {
+        use crate::helpers::send::{classify_target, SendTarget};
+        // §scxml-5.10: `event` is the member the sender's name resolved to in
+        // THIS machine's document, so its own queues are told the name it was
+        // sent under when the member is not called that; a child or a parent
+        // resolves `event_name` itself.
+        let arrival = event.map_or("", |event| {
+            EngineState::<P>::arrival_name_of(event, event_name)
+        });
+        let route = match classify_target(target, own_session_id) {
+            SendTarget::Unsupported | SendTarget::Mesh => return TargetSendOutcome::Unsupported,
+            SendTarget::Unreachable => return TargetSendOutcome::Unreachable,
+            SendTarget::SelfExternal => {
+                if let Some(event) = event {
+                    match delay {
+                        Some(delay) => {
+                            let ready_at = engine.sched_now_plus(delay);
+                            engine.scheduler.schedule_event_named_at(
+                                P::event_id(event),
+                                ready_at,
+                                send_id,
+                                event_data,
+                                sender,
+                                arrival,
+                            );
+                        }
+                        None => {
+                            let mut meta = EventWithMetadata::new(event);
+                            meta.metadata = EventMetadata::sent_by_session(send_id, sender);
+                            meta.metadata.name = crate::sce_string_from_str(arrival);
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
+                        }
+                    }
+                }
+                return TargetSendOutcome::Sent;
+            }
+            SendTarget::Internal => ScheduledRoute::InternalQueue,
+            SendTarget::Parent => {
+                // §scxml-C-1: a session nothing invoked has no parent to
+                // address, delayed or not.
+                if !policy.has_parent_session() {
+                    return TargetSendOutcome::Unreachable;
+                }
+                ScheduledRoute::Parent {
+                    event_name: event_name.to_string(),
+                }
+            }
+            SendTarget::Invocation(invoke_id) => {
+                if !policy.is_invocation_running(&invoke_id) {
+                    return TargetSendOutcome::Unreachable;
+                }
+                ScheduledRoute::Invocation {
+                    invoke_id,
+                    event_name: event_name.to_string(),
+                }
+            }
+            SendTarget::Session(session_id) => {
+                // §scxml-C-1: the location the session that invoked this one
+                // publishes is a target, as `#_parent` is — the address a reply
+                // to an event the parent sent goes to (docs/adr/0090).
+                if policy.is_parent_session(&session_id) {
+                    ScheduledRoute::Parent {
+                        event_name: event_name.to_string(),
+                    }
+                } else if policy.is_child_session_running(&session_id) {
+                    ScheduledRoute::Session {
+                        session_id,
+                        event_name: event_name.to_string(),
+                    }
+                } else {
+                    return TargetSendOutcome::Unreachable;
+                }
+            }
+        };
+        if let Some(delay) = delay {
+            let ready_at = engine.sched_now_plus(delay);
+            engine.scheduler.schedule_routed_named_at(
+                event.map(P::event_id),
+                ready_at,
+                send_id,
+                event_data,
+                sender,
+                route,
+                arrival,
+            );
+            return TargetSendOutcome::Sent;
+        }
+        let delivered = match &route {
+            ScheduledRoute::InternalQueue => {
+                // An event on the internal queue is an internal event, whose
+                // origin the processor leaves blank (docs/adr/0090, section
+                // 2): no pair, and no sender.
+                if let Some(event) = event {
+                    let mut meta = EventWithMetadata::new(event);
+                    meta.metadata.send_id = crate::sce_string_from_str(send_id);
+                    meta.metadata.name = crate::sce_string_from_str(arrival);
+                    meta.set_event_data(event_data);
+                    engine.raise(meta);
+                }
+                true
+            }
+            ScheduledRoute::Parent { event_name } => {
+                policy.deliver_to_parent(event_name, event_data)
+            }
+            ScheduledRoute::Invocation {
+                invoke_id,
+                event_name,
+            } => policy.deliver_to_invocation(invoke_id, event_name, event_data, sender, engine),
+            ScheduledRoute::Session {
+                session_id,
+                event_name,
+            } => {
+                policy.deliver_to_child_session(session_id, event_name, event_data, sender, engine)
+            }
+        };
+        if delivered {
+            TargetSendOutcome::Sent
+        } else {
+            TargetSendOutcome::Unreachable
+        }
+    }
+
+    /// Deliver a delayed send whose wait is over to the target it named.
+    ///
+    /// §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
+    /// target, it MUST place the error error.communication on the internal
+    /// event queue of the session that attempted to send the event." For a
+    /// delayed send the dispatch is this delivery, so an invocation that has
+    /// ended in the meantime is reported here, not when the send was made.
+    #[cfg(feature = "std")]
+    fn deliver_routed(
+        &mut self,
+        event: Option<P::Event>,
+        event_data: &str,
+        send_id: SceString,
+        sender: SceString,
+        name: SceString,
+        route: ScheduledRoute,
+    ) {
+        let delivered = match &route {
+            ScheduledRoute::InternalQueue => {
+                // The send site names this machine's event for this route; an
+                // entry without one reaches nobody, which is what it reports.
+                // An internal event carries no origin and no sender
+                // (docs/adr/0090, section 2).
+                let Some(event) = event else {
+                    return;
+                };
+                let mut meta = EventWithMetadata::new(event);
+                meta.metadata.send_id = send_id;
+                meta.metadata.name = name;
+                meta.set_event_data(event_data);
+                self.state.raise(meta);
+                return;
+            }
+            ScheduledRoute::Invocation {
+                invoke_id,
+                event_name,
+            } => self.with_policy(|policy, engine| {
+                policy.deliver_to_invocation(invoke_id, event_name, event_data, &sender, engine)
+            }),
+            ScheduledRoute::Parent { event_name } => {
+                self.policy.deliver_to_parent(event_name, event_data)
+            }
+            ScheduledRoute::Session {
+                session_id,
+                event_name,
+            } => self.with_policy(|policy, engine| {
+                policy.deliver_to_child_session(session_id, event_name, event_data, &sender, engine)
+            }),
+        };
+        if delivered {
+            return;
+        }
+        if let Some(communication_error) = P::get_event_from_name("error.communication") {
+            let mut err_meta = EventWithMetadata::platform_error(
+                communication_error,
+                crate::ErrorReason::TargetUnreachable,
+                "<send> named a target that was no longer there when its delay elapsed",
+            );
+            err_meta.metadata.send_id = send_id;
+            self.state.raise(err_meta);
+        }
+    }
+
+    /// The door of the event just taken off a queue (docs/adr/0086, section
+    /// 4.2): bind its typed `_event.data` view from the data it carries, and
+    /// answer what is taken in its place when that data does not fit its type.
+    ///
+    /// A typed `payload` is filled by ONE producer, the generated `raise_<event>` inject seam; every
+    /// other producer fills `metadata.data`, so the fields are lifted out of
+    /// that instead when no payload rode with the event. A delivery that does
+    /// not fit is refused whole: it is never offered to the configuration, and
+    /// an `error.execution` carrying the refusal takes its place in the queue.
+    /// The verdict lives here rather than in each generated policy so every
+    /// machine answers a payload it cannot read the same way.
+    ///
+    /// `read` is the lift's reading of the wire, or, for data a host lent with
+    /// the event, the policy's holding of it to the same contract
+    /// (docs/adr/0124, D2): the one verdict below answers both.
+    #[cfg(feature = "std")]
+    fn bind_lifted_payload(
+        event: P::Event,
+        read: Result<(), crate::event_payload::PayloadRefusal>,
+    ) -> Admission<P::Event> {
+        let Err(refusal) = read else {
+            return Admission::Admitted;
+        };
+        // §scxml-3.12.2 leaves a document that declares no `error.execution`
+        // transition nothing to answer with: the delivery is refused all the
+        // same, and nothing is taken in its place.
+        match P::get_event_from_name("error.execution") {
+            Some(error) => Admission::Replaced {
+                error,
+                refusal: format!("`{}` payload: {refusal}", P::get_event_name(event)),
+            },
+            None => Admission::Refused,
+        }
+    }
+
+    /// Bind `error`, the `error.execution` a door put in a refused delivery's
+    /// place, as `_event`, carrying `refusal` and no typed payload: it is the
+    /// engine's own error, so no `<finalize>` or autoforward runs for it. The
+    /// payload answered is the one it carries, which the turn holds as its
+    /// data (docs/adr/0124).
+    #[cfg(feature = "std")]
+    fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> (Bound, P::Payload) {
+        let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(
+            error,
+            crate::ErrorReason::PayloadRefused,
+            refusal,
+        );
+        self.policy.populate_event_metadata(&replacement.metadata);
+        (Bound::InPlace(P::event_id(error)), replacement.payload)
+    }
+
+    /// How long until this machine next needs [`tick`](Self::tick), in
+    /// milliseconds. `Some(0)` means something is due now; `None` means the
+    /// scheduler is empty and no clock-driven wake-up is owed.
+    ///
+    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) tells a
+    /// host *which* entry point to drive the machine with. This tells it
+    /// *when*, and a host that cannot ask has only one move left: pick a
+    /// polling interval. That guess is not free in either direction — measured
+    /// on a document whose `<send delay="200ms">` is cancelled by a 100 ms
+    /// signal, a 1 ms interval spends 180 wasted ticks to be on time, a 500 ms
+    /// one fires 300 ms late, and a 250 ms one steps over both deadlines at
+    /// once and reaches a state the document forbids. An interval cannot
+    /// straddle two deadlines it was never told about.
+    ///
+    /// The answer feeds a host loop directly: `std::thread::sleep`, a tokio
+    /// `sleep`, or an embassy `Timer::after` on the no_std profile, where the
+    /// alternative is a poll that never lets the core idle.
+    ///
+    /// §scxml-6.4: the session's OWN scheduler is not the whole answer. This
+    /// machine's tick advances every running child, so a child's deadline is a
+    /// deadline of this machine's clock, and the answer is the nearest of the
+    /// two. Counting only the parent's own made a host that walked time by it
+    /// step over a timer its child had armed — or, for a parent that arms
+    /// nothing itself, be told there was nothing to wait for at all.
+    ///
+    /// A restore that re-armed a host-run invocation owes the machine a tick
+    /// before any clock does: the invocation is started at the top of the first
+    /// macrostep, and the deadline it keeps is armed there, so until that tick
+    /// the scheduler holds nothing to wait for and a host asleep on the answer
+    /// would never drive the machine at all. That is "now", `Some(0)`.
+    pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
+        #[cfg(feature = "std")]
+        if !self.state.restored_host_invokes.is_empty() {
+            return Some(0);
+        }
+        let own = self
+            .state
+            .scheduler
+            .next_ready_at()
+            .map(|next| next.saturating_sub(self.state.sched_now()));
+        let child = if concepts::has_child_tick::<P>() {
+            self.policy.next_child_deadline_ms()
+        } else {
+            None
+        };
+        match (own, child) {
+            (Some(own), Some(child)) => Some(own.min(child)),
+            (own, None) => own,
+            (None, child) => child,
+        }
+    }
+
+    // ════════════════════════════════════════
+    // Clock (§scxml-6.2.2)
+    // ════════════════════════════════════════
+
+    /// Move this engine's clock forward by `ms` and run whatever that made due
+    /// (§scxml-6.2).
+    ///
+    /// The host-owned twin of [`tick`](Self::tick): `tick` asks a clock that
+    /// moves on its own what time it is, this one *sets* what time it is and
+    /// then ticks. A machine driven exclusively through here has no dependency
+    /// on the load of the machine it runs on — the same sequence of calls
+    /// produces the same configuration every time, which is what a simulation,
+    /// a replay and a deterministic test each need.
+    ///
+    /// # Panics
+    ///
+    /// If [`clock`](EngineState::clock) is not [`SceClock::Manual`]. That is not a
+    /// no-op but a programming error: the caller believes it owns time and it
+    /// does not, so the events it is waiting for would arrive on a schedule it
+    /// did not choose. Refusing loudly is the same call the Kotlin and Python
+    /// channels make on the same contract.
+    pub fn advance_time_ms(&mut self, ms: u64) {
+        let SceClock::Manual(now) = self.state.core.clock else {
+            panic!(
+                "Engine::advance_time_ms needs SceClock::Manual; this engine has a \
+                 clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \
+                 before initialize(), or drive this machine with tick() and \
+                 time_until_next_scheduled_ms()"
+            );
+        };
+        self.state.core.clock = SceClock::Manual(now.saturating_add(ms));
+        self.tick();
+    }
+
+    // ════════════════════════════════════════
+    // Callbacks
+    // ════════════════════════════════════════
+
+    /// Register the factory of the routers of this machine's children
+    /// (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
+    ///
+    /// A child session started by `<invoke type="scxml">` is given none of
+    /// this machine's registrations: its peer sends would leave under this
+    /// machine's name. The generated parent asks `factory` instead, each time
+    /// an invocation starts a child (on entry, on a restore, and for the
+    /// candidate a hybrid `<invoke>` chose), with the invoke's id and the stem
+    /// of the child's document, and installs the answer on the child before
+    /// the child initializes ([`EngineState::start_child_mesh`]). A factory that
+    /// answers `None`, or none registered, leaves the child with no router:
+    /// its peer send raises `error.execution` in the child, and nothing falls
+    /// back to this machine's router.
+    ///
+    /// A restore builds the machine, and resumes the children its saved state
+    /// holds, before the host can register anything on it (docs/adr/0045). So
+    /// the restore asks no factory, and each resumed child that is still
+    /// running is asked for here, as the factory is registered, before the
+    /// host drives the machine: a resumed child does nothing until its parent
+    /// drives it, which is what "before the child initializes" asks of a
+    /// start. Each of the child's own resumed children is asked of the router
+    /// the child is given, in turn.
+    #[cfg(feature = "std")]
+    pub fn register_child_mesh_routers<F>(&mut self, factory: F)
+    where
+        F: FnMut(&str, &str) -> Option<Box<dyn crate::host_processor::ChildMeshRouter>>
+            + Send
+            + 'static,
+    {
+        self.state.child_mesh_routers = Some(Box::new(factory));
+        self.start_owed_child_meshes();
+    }
+
+    /// Ask for the router of each resumed child this machine holds that is
+    /// owed one, now that a factory of them is there.
+    #[cfg(feature = "std")]
+    fn start_owed_child_meshes(&mut self) {
+        self.with_policy(|policy, engine| policy.start_owed_child_meshes(engine));
+    }
+
+    /// Install `router` as this machine's Mesh router, its request invoker
+    /// and the factory of its children's routers — the three a host installs
+    /// on a machine it starts, served here by the one router the parent was
+    /// given for this session.
+    #[cfg(feature = "std")]
+    fn install_child_mesh_router(
+        &mut self,
+        router: Box<dyn crate::host_processor::ChildMeshRouter>,
+    ) {
+        let shared: crate::host_processor::SharedChildMeshRouter =
+            std::sync::Arc::new(std::sync::Mutex::new(router));
+        let sender = std::sync::Arc::clone(&shared);
+        self.state.register_mesh_router(move |request| {
+            sender.lock().expect(CHILD_MESH_ROUTER_HELD).send(request)
+        });
+        let invoker = std::sync::Arc::clone(&shared);
+        self.state.register_mesh_rpc_invoker(move |event| {
+            invoker.lock().expect(CHILD_MESH_ROUTER_HELD).invoke(event)
+        });
+        let parent = std::sync::Arc::clone(&shared);
+        self.state.child_mesh_routers = Some(Box::new(move |invoke_id: &str, document: &str| {
+            parent
+                .lock()
+                .expect(CHILD_MESH_ROUTER_HELD)
+                .child_router(invoke_id, document)
+        }));
+        self.state.installed_mesh = Some(shared);
+        // A child resumed by a restore holds children of its own resumed with
+        // it, whose routers are asked of the router it is given now.
+        self.start_owed_child_meshes();
+    }
+
+    /// Be served by `invokers`, the tree's, and hand them on to every child
+    /// this machine holds now: a child a restore resumed holds children of its
+    /// own, resumed with it before its parent could hand it anything.
+    #[cfg(feature = "std")]
+    pub fn adopt_host_invokers(&mut self, invokers: &crate::host_processor::TreeInvokers) {
+        self.state.host_processors.adopt_tree_invokers(invokers);
+        self.policy.adopt_host_invokers_in_children(invokers);
+    }
+
+    /// §scxml-6.4: start a host-run invocation, and raise
+    /// `done.invoke.<invoke_id>` if the host completed it synchronously.
+    ///
+    /// Returns `false` when no invoker is registered, which the generated
+    /// site turns into `error.execution` — the same event an undeclared
+    /// type produces, because the document asked for a process to be run
+    /// and none was.
+    ///
+    /// Called from the generated invoke site, which is why it is public. An
+    /// associated function and not a method, for the reason
+    /// [`send_to_target`](Self::send_to_target) is one: the site is a policy
+    /// method holding the policy while the engine lends its state out, so the
+    /// two are handed over apart, and the engine names the session that starts
+    /// the invocation by asking `policy` (docs/adr/0045, docs/adr/0131).
+    ///
+    /// A `_sce_deadline_ms` param is the engine's, not the host's: it is taken
+    /// out of the request and armed after the start. A value that is not a
+    /// whole number of milliseconds raises `error.execution` and starts
+    /// nothing — an argument of the element that cannot be evaluated
+    /// (§scxml-6.4.1) — and the call answers `true` because the report has
+    /// been made; `false` is kept for "no invoker ran it", which is asked
+    /// first because it is the prior fact: with nobody to run the invocation,
+    /// what its deadline says is moot.
+    #[cfg(feature = "std")]
+    pub fn perform_host_invoke(
+        policy: &P,
+        engine: &mut EngineState<P>,
+        mut request: crate::host_processor::HostInvokeRequest,
+    ) -> bool {
+        let processor_type = request.processor_type.clone();
+        let invoke_id = request.invoke_id.clone();
+        if !engine.has_invoker(&processor_type) {
+            return false;
+        }
+        let deadline = match take_host_invoke_deadline(&mut request) {
+            Ok(deadline) => deadline,
+            Err(written) => {
+                if let Some(evt) = P::get_event_from_name("error.execution") {
+                    engine.raise(EventWithMetadata::platform_error(
+                        evt,
+                        crate::ErrorReason::ParamUnfit,
+                        &format!(
+                            "<invoke type='{processor_type}' id='{invoke_id}'>: {}={written:?} is not a whole number of milliseconds",
+                            crate::host_processor::HOST_INVOKE_DEADLINE_PARAM
+                        ),
+                    ));
+                }
+                return true;
+            }
+        };
+        let deadline_at = deadline.map(|ms| engine.sched_now_plus(Duration::from_millis(ms)));
+        engine.start_host_invoke(request, deadline_at, policy.own_session_id())
+    }
+
+    /// End the host-run invocation of session `session_id` of this machine's
+    /// tree (docs/adr/0045): this machine's own, or a child session's at any
+    /// depth, reached by its id as a send to a child session is
+    /// ([`StatePolicy::route_host_invoke_end_to_child`]). The session's queue
+    /// takes `done.invoke` or `error.invoke` as
+    /// [`complete_host_invoke`](EngineState::complete_host_invoke) and
+    /// [`fail_host_invoke`](EngineState::fail_host_invoke) raise them; a child takes it
+    /// when its parent next drives it.
+    ///
+    /// # Errors
+    ///
+    /// No session of that id runs in the tree, or that session is not running
+    /// that start of the invocation (cancelled, ended, or started again since).
+    /// Nothing is raised, and the refusal says which.
+    #[cfg(feature = "std")]
+    pub fn end_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.route_host_invoke_end(session_id, ending)
+            .unwrap_or_else(|| {
+                Err(crate::host_processor::HostInvokeEndRefusal::unknown_session(session_id))
+            })
+    }
+
+    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a completion:
+    /// `done.invoke.<invoke_id>` with `done_data` as `_event.data`, in the
+    /// session `session_id` names. What a host that serves the whole tree
+    /// calls with the session id and token the request carried.
+    ///
+    /// # Errors
+    ///
+    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
+    #[cfg(feature = "std")]
+    pub fn complete_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        done_data: &str,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.end_host_invoke_in(
+            session_id,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: true,
+                data: done_data,
+                origin: None,
+            },
+        )
+    }
+
+    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a failure:
+    /// `error.invoke.<invoke_id>` with `error_data` as `_event.data`.
+    ///
+    /// # Errors
+    ///
+    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
+    #[cfg(feature = "std")]
+    pub fn fail_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        error_data: &str,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.end_host_invoke_in(
+            session_id,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: false,
+                data: error_data,
+                origin: None,
+            },
+        )
+    }
+
+    /// The ending `ending` for session `session_id`, if that session is this
+    /// machine or one in the tree below it: `None` when it is neither, so the
+    /// generated parent that asked can try another child. Public because a
+    /// generated parent calls it on its children.
+    #[cfg(feature = "std")]
+    pub fn route_host_invoke_end(
+        &mut self,
+        session_id: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
+        if session_id == self.policy.own_session_id() {
+            let ended = self.state.end_host_invoke(ending);
+            return Some(if ended {
+                Ok(())
+            } else {
+                Err(crate::host_processor::HostInvokeEndRefusal::not_running(
+                    session_id, &ending,
+                ))
+            });
+        }
+        self.policy
+            .route_host_invoke_end_to_child(session_id, ending)
+    }
+
+    // ════════════════════════════════════════
+    // Convenience: runUntilCompletion
+    // ════════════════════════════════════════
+
+    /// Run the state machine to completion or timeout (§scxml-6.2).
+    ///
+    /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Calls `tick()`
+    /// in a loop until either the final state is reached or `timeout` elapses.
+    /// Returns `true` on completion, `false` on timeout.
+    ///
+    /// `poll_interval` is a ceiling on how long this waits between ticks, not
+    /// the interval it actually sleeps: when the scheduler knows a nearer
+    /// deadline
+    /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)),
+    /// the sleep is shortened to land on it. A caller that passes an interval
+    /// coarser than the document's delays therefore no longer steps over them.
+    ///
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because the polling loop
+    /// uses `std::thread::sleep` for cooperative blocking and `Instant::elapsed`
+    /// for the timeout — both host-thread-coupled. no_std consumers drive their
+    /// own executor loop, calling [`tick`](Self::tick) under their HAL waker
+    /// (e.g. embassy `Timer::after` on the same
+    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
+    /// this uses).
+    ///
+    /// Absent on `wasm32-unknown-unknown` for the same reason and one more: that
+    /// target has neither a clock for the timeout nor a way to block the thread,
+    /// and a browser must not be blocked. A host there is already the caller of
+    /// [`tick`](Self::tick) — from its own timer, or a worker's message loop —
+    /// so it calls that. The function is left out of the build rather than left
+    /// in to stop the module the first time it is called.
+    // The one place the engine reads the OS clock and blocks on an OS timer, and
+    // it is absent from a build for a target that has neither (clippy.toml).
+    #[allow(clippy::disallowed_methods)]
+    #[cfg(all(
+        feature = "std",
+        not(all(target_arch = "wasm32", target_os = "unknown"))
+    ))]
+    pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
+        // W3C SCXML: if already stopped but reached final state during initialize(), return true
+        if !self.state.core.main_loop.is_running {
+            return self.state.is_in_final_state();
+        }
+
+        let start = Instant::now();
+        while !self.state.is_in_final_state() {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            // The scheduler's own answer wins whenever it is nearer: sleeping
+            // past a deadline is what turns a coarse interval into a document
+            // that behaves differently, and waking on it costs nothing extra.
+            let wait = match self.time_until_next_scheduled_ms() {
+                Some(ms) => poll_interval.min(Duration::from_millis(ms)),
+                None => poll_interval,
+            };
+            std::thread::sleep(wait);
+            self.tick();
+        }
+        true
+    }
+
+    // ════════════════════════════════════════
+    // Internal: microstep + macrostep implementation
+    // ════════════════════════════════════════
+
+    /// §scxml-D-mainEventLoop: the outer loop, and the only place the three
+    /// public entry points express macrostep semantics.
+    ///
+    /// Appendix D names the external queue exactly once per iteration and it
+    /// is *after* `invoke(inv)`:
+    ///
+    /// ```text
+    /// while running:
+    ///     while running and not macrostepDone:      # eventless + internal only
+    ///         ... selectEventlessTransitions() / internalQueue.dequeue() ...
+    ///     for state in statesToInvoke.sort(entryOrder):
+    ///         for inv in state.invoke.sort(documentOrder):
+    ///             invoke(inv)
+    ///     statesToInvoke.clear()
+    ///     if not internalQueue.isEmpty(): continue
+    ///     externalEvent = externalQueue.dequeue()
+    /// ```
+    ///
+    /// Folding the external drain into the macrostep-completion loop instead
+    /// is a different algorithm, not a shorter one. The invoked children do
+    /// not exist yet while that drain runs, so everything `<onentry>` queued
+    /// for this session on the way in is consumed with no `autoforward` child
+    /// to receive it — and there is no later point at which it is delivered.
+    /// One external event per iteration for the same reason: a state entered
+    /// by event N's transition must have its invokes started before N+1 comes
+    /// off the queue.
+    pub(crate) fn run_main_event_loop(&mut self) {
+        self.run_turn(false, None);
+    }
+
+    /// One turn of the loop over this machine: lend it the workspace, sized by
+    /// the document, and run the code that is the same for every machine — the
+    /// entry into the initial configuration first when `initial`, then the main
+    /// event loop.
+    ///
+    /// One workspace for the whole turn: every microstep borrows it in turn,
+    /// and it is gone when the call returns (docs/adr/0056 §4). The only part of
+    /// it that is this machine's own is the workspace's size (docs/adr/0068).
+    ///
+    /// Every buffer of the workspace is the size the generator read from the
+    /// document's tree, in both profiles, and a push past one stops the program
+    /// with the generator's name on it: the conformance corpus is the evidence
+    /// that each bound is an upper bound and not an estimate.
+    ///
+    /// The workspace starts as the empty one, a constant ([`Buffers::EMPTY`]):
+    /// its buffers other than the sets' zeroed words are uninitialised until a
+    /// microstep writes them. So the turn writes only those words, with no loop
+    /// that fills a buffer and no filled copy beside the workspace in this
+    /// frame (docs/adr/0071).
+    ///
+    /// Out of line, so the workspace is in this frame and no other: inlined,
+    /// it would sit in the frame of whatever calls `initialize` or `step` for
+    /// as long as that frame lives, rather than for the turn. A consumer
+    /// reported its task setup's frame about 4 KB larger at ADR 0064, where two
+    /// workspaces were built in functions that inline (2026-10-30).
+    ///
+    /// `lend` is the data [`process_event_with`](Self::process_event_with)
+    /// lends with its event, `None` from every other caller. The turn holds
+    /// the data of the event being processed beside the engine, never in it
+    /// (docs/adr/0124).
+    #[inline(never)]
+    fn run_turn(&mut self, initial: bool, lend: Option<Lend<'_, P>>) {
+        let mut workspace = <P::Workspace as Buffers>::EMPTY;
+        let (enabled, scratch) = workspace.split();
+        Turn {
+            host: &mut EngineHost::new(self, lend),
+            tables: P::TABLES,
+            enabled,
+            scratch,
+        }
+        .run(initial);
+    }
+
+    /// Bind the event `queued`, just taken off the internal queue or (when
+    /// `external`) the external one, as `_event`: what only this machine's
+    /// policy can do with it, the typed payload queued with it among them.
+    ///
+    /// The door comes first (docs/adr/0086, section 4.2): a delivery whose data
+    /// does not fit its type is refused whole, and the `error.execution` that
+    /// says why is bound in its place and answered, with no `<finalize>` or
+    /// autoforward step, since it is the engine's own error. `Bound::Refused`
+    /// is a delivery refused in a document that declares no `error.execution`:
+    /// nothing is taken in its place. For an admitted external event, the
+    /// preliminary `<finalize>` and autoforward step of §scxml-D-mainEventLoop
+    /// runs before it is bound.
+    ///
+    /// The payload the event carried is answered beside what was bound, and
+    /// the turn holds it while the event is `_event`: the policy is handed it
+    /// by every hook, and keeps none of it (docs/adr/0124). An event its host
+    /// `lent` data with ([`process_event_with`](Self::process_event_with))
+    /// carries it in the lend and not on the wire, so its door holds the lent
+    /// data, to the same contract and with the same verdict (docs/adr/0124,
+    /// D2).
+    fn bind_queued(
+        &mut self,
+        queued: QueuedEvent,
+        external: bool,
+        lent: Option<P::EventData<'_>>,
+    ) -> (Bound, P::Payload) {
+        // The two queues are of two types (docs/adr/0076), so each is asked
+        // for its own payload rather than one chosen by reference.
+        let mut payload = if core::mem::size_of::<P::Payload>() != 0 {
+            if external {
+                self.state.external_queue.pop_payload()
+            } else {
+                self.state.internal_queue.pop_payload()
+            }
+            .unwrap_or_default()
+        } else {
+            P::Payload::default()
+        };
+        // The event is a number from here on, and becomes this machine's own
+        // value only where a step below reads it as one: the door, `<finalize>`
+        // and autoforward. A machine with none of them converts nothing
+        // (docs/adr/0123).
+        let delivered = queued.event;
+        let mut metadata = queued.metadata;
+        // EventSchema native lowering: when no typed payload rode with this
+        // event, read it out of the `data` every other producer fills, at the
+        // door. Data a host lent is held there to the same contract, and
+        // answered by the same verdict (docs/adr/0124, D2).
+        #[cfg(feature = "std")]
+        {
+            let read = match lent {
+                Some(event_data) => {
+                    P::admit_event_data(event_data).map_err(crate::event_payload::lent_refusal)
+                }
+                None => P::lift_event_payload(P::event_of(delivered), &metadata.data, &mut payload),
+            };
+            match Self::bind_lifted_payload(P::event_of(delivered), read) {
+                Admission::Admitted => {}
+                Admission::Replaced { error, refusal } => {
+                    return self.bind_in_place(error, &refusal);
+                }
+                Admission::Refused => return (Bound::Refused, payload),
+            }
+        }
+        // A `no_std` build has no wire and no refusal: its host side holds lent
+        // data (`EngineHost::bind_queued`).
+        #[cfg(not(feature = "std"))]
+        let _ = lent;
+        if external {
+            // §scxml-6.5: Execute finalize before parent's own transition matching
+            if concepts::has_finalize::<P>() {
+                let event_with_meta = EventWithMetadata {
+                    event: P::event_of(delivered),
+                    payload,
+                    metadata,
+                    #[cfg(feature = "std")]
+                    target: queued.target,
+                };
+                self.with_policy(|policy, engine| {
+                    policy.execute_finalize_for_child_event(&event_with_meta, engine)
+                });
+                metadata = event_with_meta.metadata;
+                payload = event_with_meta.payload;
+            }
+            // §scxml-D-mainEventLoop: autoforward belongs to the same
+            // preliminary step as `<finalize>` above — both run against the
+            // event this drain has just popped off the external queue, and
+            // both run before transition selection. §scxml-6.4.2 fixes the
+            // position in prose as well: the parent forwards "at the point at
+            // which it removes it from the external event queue".
+            //
+            // Forwarding where the event is *enqueued* instead is a different
+            // algorithm, not an earlier one. `raise_external_with_meta` runs
+            // inside whatever executable content produced the event, so a
+            // transition body that queues two events hands the child both of
+            // them before the parent has processed either — the child runs a
+            // whole event ahead and the two sessions stop agreeing on what has
+            // happened. Run-to-completion is a property of this loop's shape,
+            // so the forward has to live in the loop.
+            //
+            // §scxml-6.4 requires an exact copy, so the metadata rides along
+            // with the name. `get_event_name` already returns `&'static str`;
+            // pass it directly without an alloc-coupled `to_string()`
+            // round-trip, which keeps this compiling under no_std. `target` is
+            // deliberately not forwarded: it is a routing decision owned by
+            // the `<send>` that produced the original event, and inheriting it
+            // would re-route the child's copy instead of delivering it.
+            if concepts::has_autoforward::<P>() {
+                // §scxml-5.10: under the name the event arrived under, which is
+                // the member's own unless a door cut a longer one back to it.
+                #[cfg(feature = "std")]
+                let name = if metadata.name.is_empty() {
+                    P::get_event_name(P::event_of(delivered))
+                } else {
+                    metadata.name.as_str()
+                };
+                #[cfg(not(feature = "std"))]
+                let name = P::get_event_name(P::event_of(delivered));
+                self.with_policy(|policy, engine| {
+                    policy.forward_to_autoforward_children(name, &metadata, engine)
+                });
+            }
+        }
+        // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+        self.policy.populate_event_metadata(&metadata);
+        (Bound::Delivered(delivered), payload)
+    }
+}
+
+impl<P: StatePolicy> EngineState<P> {
+    // ════════════════════════════════════════
+    // Scheduler clock readers (per-build cfg-branched, HAL-routed under no_std)
+    // ════════════════════════════════════════
+
+    /// The one part of reading the [`clock`](Self::clock) that is this
+    /// machine's: what its HAL answers for [`SceClock::Hal`]. Handed to the
+    /// clock code in [`EngineCore`], which is one copy for every machine.
+    const HAL_NOW: fn() -> SchedTimePoint = <P::Hal as Hal>::now_ticks_ms;
+
+    /// §scxml-3.13: what time it is, for everything this turn arms or judges.
+    ///
+    /// The clause executes a microstep's executable content as one unit and a
+    /// macrostep as a chain of those, so "now" is a property of the turn the
+    /// engine is in rather than of the statement asking for it. Between turns
+    /// there is no turn for it to be a property of, and the host's queries
+    /// ([`time_until_next_scheduled_ms`](Engine::time_until_next_scheduled_ms),
+    /// [`now_ms`](Self::now_ms)) read the clock live.
+    ///
+    /// The latch and the reading are [`EngineCore::sched_now`], one copy for
+    /// every machine; this hands it the machine's HAL.
+    #[inline]
+    fn sched_now(&self) -> SchedTimePoint {
+        self.core.sched_now(Self::HAL_NOW)
+    }
+
+    /// Close a turn opened by [`begin_turn`](Engine::begin_turn) — see
     /// [`EngineCore::close_turn`].
     #[inline]
     fn end_turn(&mut self, opened: bool) {
@@ -1453,37 +3183,6 @@ impl<P: StatePolicy> Engine<P> {
     // The inbox (docs/adr/0084, ARCHITECTURE.md "Engine Threading")
     // ════════════════════════════════════════
 
-    /// This engine's inbox: the handle a thread that does not own the engine
-    /// posts external events and host-run invocations' endings through.
-    ///
-    /// Thread-safe, as is every clone of it; everything else of the engine
-    /// that changes it is an owner-thread operation. What is posted is applied
-    /// by the owner at its next macrostep boundary, before the external queue
-    /// is consulted, or sooner, when the owner puts an event of its own on
-    /// that queue first: the posts go ahead of that event, as they arrived
-    /// ahead of it. Each is applied in the order the inbox took it, by the
-    /// owner-thread operation of the same name. Unbounded, so `post` is
-    /// refused only once this engine is gone, or when the input names a
-    /// session the tree does not hold. A post taken before the first run is
-    /// applied at that run's first boundary at the latest.
-    ///
-    /// An ending that names a child session of the tree is posted straight to
-    /// that child's inbox, and the child applies it (ARCHITECTURE.md "Engine
-    /// Threading", item 3).
-    #[cfg(feature = "std")]
-    pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
-        crate::inbox::EngineInbox::of(self.owned_inbox())
-    }
-
-    /// This session's own inbox, made in the tree it is in now if it has none
-    /// yet.
-    #[cfg(feature = "std")]
-    fn owned_inbox(&self) -> &crate::inbox::OwnedInbox {
-        self.inbox.get_or_init(|| {
-            crate::inbox::OwnedInbox::new(self.policy.own_session_id(), self.tree_inboxes.clone())
-        })
-    }
-
     /// Hand the inboxes of this session's tree to `child`, a session it is
     /// starting or resuming, before the child's first macrostep: the child's
     /// inbox enters the tree's directory under its session id, so an input a
@@ -1494,74 +3193,6 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(feature = "std")]
     pub fn share_tree_inboxes_with<Q: StatePolicy>(&self, child: &mut Engine<Q>) {
         child.adopt_tree_inboxes(&self.tree_inboxes);
-    }
-
-    /// Be in `tree`, the tree's inboxes, and hand it on to every child this
-    /// session holds now: a child a restore resumed holds children of its own,
-    /// resumed with it before its parent could hand it anything.
-    #[cfg(feature = "std")]
-    pub fn adopt_tree_inboxes(&mut self, tree: &crate::inbox::TreeInboxes) {
-        self.tree_inboxes = tree.clone();
-        self.owned_inbox().join(tree);
-        self.policy.adopt_tree_inboxes_in_children(tree);
-    }
-
-    /// The child session this machine was to be has had its start refused
-    /// (docs/adr/0096), so it never ran: what its parent gave it before the
-    /// start is withdrawn. Its Mesh router is told the session ended and its
-    /// inbox leaves the tree's directory, with nothing applied, since a session
-    /// that never started takes no input.
-    #[cfg(feature = "std")]
-    pub(crate) fn withdraw_unstarted_child(&mut self) {
-        self.detach_mesh();
-        self.tree_inboxes.remove(self.policy.own_session_id());
-    }
-
-    /// The child session this machine is has ended, by reaching a top-level
-    /// `<final>` or because its parent stopped it: its inbox leaves the tree's
-    /// directory, so a post naming it is refused from then on, and what the
-    /// inbox still holds is applied now, as at the end of a run. An ending
-    /// finds its invocation over and is refused by the token check
-    /// (ARCHITECTURE.md "Engine Threading", item 3). The generated parent
-    /// calls it where it tells the child's Mesh router the session ended.
-    #[cfg(feature = "std")]
-    pub fn leave_tree_inboxes(&mut self) {
-        self.tree_inboxes.remove(self.policy.own_session_id());
-        let opened = self.begin_turn();
-        self.run_main_event_loop();
-        self.end_turn(opened);
-    }
-
-    /// Drain `inbox`, which the deployment declared in a `static`, at each
-    /// macrostep boundary of this engine and before an event of its own joins
-    /// its external queue, after the engine's own inbox: the
-    /// bare-metal profile's inbox, whose capacity the deployment names
-    /// (`BoundedInbox`). Replaces one attached before; what that one still
-    /// holds stays in it.
-    ///
-    /// In the `std` profile the inbox records this engine's session id here,
-    /// so a post resolves an ending's address against it when it is posted
-    /// (ARCHITECTURE.md "Engine Threading", item 3). An engine's id is fixed
-    /// from its construction (a restore binds the saved one before it builds
-    /// the engine), so attaching is the one moment it can change for the
-    /// inbox: attached to another engine, it answers for that one.
-    ///
-    /// Only with the crate's `bounded-inbox` feature, which `std` asks for.
-    #[cfg(all(
-        feature = "bounded-inbox",
-        target_has_atomic = "8",
-        target_has_atomic = "ptr"
-    ))]
-    pub fn attach_inbox<W: Hal + 'static, const N: usize>(
-        &mut self,
-        inbox: &'static crate::inbox::BoundedInbox<P, N, W>,
-    ) where
-        crate::inbox::InboxInputOf<P>: Send,
-    {
-        #[cfg(feature = "std")]
-        inbox.attached_to(self.policy.own_session_id());
-        let source: crate::inbox::AttachedInbox<P> = inbox;
-        self.attached_inbox = Some(source);
     }
 
     /// Apply, on the owner, what other threads posted, oldest first, each by
@@ -1751,574 +3382,8 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     // ════════════════════════════════════════
-    // Internal split-borrow helper
-    //
-    // The generated `Policy::execute_entry_actions(state, engine, ..)` and
-    // every other hook need mutable access to the policy AND mutable access to
-    // the engine at the same time. Rust's borrow checker cannot verify this is
-    // safe because both handles point into `self`. One helper splits the
-    // borrows, so the argument for it is made in one place.
-    //
-    // This pattern is equivalent to C++ `policy_.executeEntryActions(state, *this)`
-    // where the compiler has no aliasing restriction at all.
-    // ════════════════════════════════════════
-
-    /// Run `f` with the policy and the engine borrowed apart — the one route
-    /// by which this engine calls a policy method that takes the engine.
-    ///
-    /// # Safety
-    ///
-    /// This dereferences a raw pointer to `self.policy` while simultaneously
-    /// passing `&mut self` to `f`. This is sound because:
-    /// 1. A policy method only mutates fields within the policy struct via its
-    ///    `&mut self` receiver.
-    /// 2. The engine fields it reaches through the `engine: &mut Engine<P>`
-    ///    parameter do NOT overlap with the policy field (`self.policy` is a
-    ///    distinct struct field with its own memory), and the engine exposes no
-    ///    public route back to `policy` for generated code to take.
-    /// 3. The pointer is not held beyond the scope of the single call.
-    fn with_policy<R>(&mut self, f: impl FnOnce(&mut P, &mut Self) -> R) -> R {
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: see the doc comment above — the policy field and the rest of
-        // the engine's fields are disjoint, and the split borrow lasts only for
-        // the duration of `f`.
-        unsafe { f(&mut *policy_ptr, self) }
-    }
-
-    /// docs/adr/0045: resume each of `children`, the running children a saved
-    /// tree of sessions holds, in the order given, each restored where it stood
-    /// ([`StatePolicy::resume_child`]). Nothing starts and nothing is sent; the
-    /// first refusal stops the restore, and names the child by its path.
-    #[cfg(feature = "std")]
-    pub(crate) fn resume_children(
-        &mut self,
-        children: &[crate::saved_state::SavedChild],
-        wall_now_ms: u64,
-    ) -> Result<(), crate::saved_state::StateRefusal> {
-        self.with_policy(|policy, engine| {
-            children.iter().enumerate().try_for_each(|(i, child)| {
-                policy
-                    .resume_child(child, engine, wall_now_ms)
-                    .map_err(|refusal| refusal.within(&format!("invokes[{i}].session")))
-            })
-        })
-    }
-
-    /// §scxml-6.4: start the child session of each `<invoke>` in `ids` again,
-    /// in the order given — what a restore does for the invocations a saved
-    /// state lists, since a child is not saved and the process that ran it is
-    /// gone.
-    ///
-    /// Started as entering the invoking state starts them: each is deferred,
-    /// then [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
-    /// runs them together, so a child that ends as it starts raises
-    /// `done.invoke` the way it would have. `std` only, as the saved state is.
-    #[cfg(feature = "std")]
-    pub(crate) fn restart_invokes(&mut self, ids: &[&str]) {
-        if ids.is_empty() {
-            return;
-        }
-        self.with_policy(|policy, engine| {
-            for id in ids {
-                policy.restart_invoke(id, engine);
-            }
-            policy.execute_pending_invokes(engine);
-        });
-    }
-
-    /// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
-    /// state still in the configuration, innermost first, each as exitStates
-    /// exits one — its `<onexit>`, then its invocations cancelled, then it
-    /// leaves the configuration — and stop running.
-    ///
-    /// Reached two ways, the two the procedure names: the main event loop
-    /// ends because the run entered a top-level `<final>`, or the host stops
-    /// a run that has not ended. Runs once per run.
-    pub(crate) fn exit_interpreter(&mut self) {
-        // Called outside a turn, where no event is being processed: the exits
-        // are handed no data (docs/adr/0124).
-        exit_interpreter(&mut EngineHost::new(self, None));
-    }
-
-    /// Execute the policy's `initialize_data_model`, which establishes the
-    /// script session and fails when it cannot (docs/adr/0096).
-    pub(crate) fn initialize_data_model_dispatch(&mut self) -> Result<(), P::StartFailure> {
-        self.with_policy(|policy, engine| policy.initialize_data_model(engine))
-    }
-
-    // ════════════════════════════════════════
     // Lifecycle (matches C++ public API)
     // ════════════════════════════════════════
-
-    /// Whether a host that runs this machine as a ROOT — started by the host,
-    /// not by an `<invoke>` — should refuse to start it, and why.
-    ///
-    /// §scxml-6.2.4: `#_parent` names the session that invoked this one, and
-    /// a root has none. The document is still valid and
-    /// [`initialize`](Self::initialize) still runs it — each such send then
-    /// raises `error.communication`, which is the default. This answers for a
-    /// host that would rather not start it at all; it reads
-    /// [`StatePolicy::NEEDS_PARENT`], the manifest's `needs_parent`.
-    pub fn root_start_refusal() -> Option<RootStartRefusal> {
-        P::NEEDS_PARENT.then_some(RootStartRefusal::NeedsParent)
-    }
-
-    /// [`initialize`](Self::initialize), for a host that refuses to start a
-    /// machine needing a parent as a root ([`Self::root_start_refusal`]).
-    ///
-    /// It refuses for either of two reasons: a machine that needs a parent,
-    /// before anything is established, and a machine whose script session
-    /// cannot be established ([`RootStartRefusal::ScriptSession`],
-    /// docs/adr/0096). A refusal starts nothing: no state is entered and no
-    /// executable content runs, so the engine is as [`new`](Self::new) left it.
-    pub fn initialize_as_root(&mut self) -> Result<(), RootStartRefusal> {
-        if let Some(refusal) = Self::root_start_refusal() {
-            return Err(refusal);
-        }
-        self.initialize()
-            .map_err(|failure| RootStartRefusal::ScriptSession(failure.into()))
-    }
-
-    /// Enter the initial configuration and run the macrostep loop until stable.
-    ///
-    /// Matches C++ `StaticExecutionEngine::initialize()`. §scxml-5.3
-    /// guarantees datamodel initialization happens before any state entry.
-    ///
-    /// # Errors
-    ///
-    /// A machine with a script engine establishes its script session first,
-    /// and one whose session cannot be established is not started
-    /// (docs/adr/0096): the error names the step that failed, no state is
-    /// entered, no executable content runs, no event is taken and the engine is
-    /// not running. A machine without a script engine has
-    /// [`core::convert::Infallible`] as its
-    /// [`StartFailure`](StatePolicy::StartFailure), so its start cannot fail
-    /// and a host writes `engine.initialize().unwrap_or_else(|never| match never {})`
-    /// (`let Ok(()) = …` says the same from Rust 1.82; this crate claims 1.75).
-    #[must_use = "a start refused for its script session entered nothing, and the machine is not running"]
-    pub fn initialize(&mut self) -> Result<(), P::StartFailure> {
-        // §scxml-3.13: entering the initial configuration is one turn, and the
-        // `<onentry>` handlers it runs arm their `<send delay>`s against one
-        // instant — see `begin_turn` for what reading the clock per `<send>`
-        // did to two of them.
-        let opened = self.begin_turn();
-        let started = self.initialize_in_turn();
-        self.end_turn(opened);
-        started
-    }
-
-    fn initialize_in_turn(&mut self) -> Result<(), P::StartFailure> {
-        // §scxml-5.3: Initialize datamodel before any state entry. It
-        // establishes the script session first, and a session that cannot be
-        // established refuses the start here, before the run is marked
-        // running, so nothing below is reached (docs/adr/0096).
-        if concepts::has_data_model_init::<P>() {
-            self.initialize_data_model_dispatch()?;
-        }
-
-        self.core.main_loop.is_running = true;
-        self.core.main_loop.terminal_state = None;
-        self.core.interpreter_exited = false;
-        #[cfg(feature = "std")]
-        self.late_bound_states.clear();
-
-        // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
-        // document's own initial transition, whose source is the `<scxml>`
-        // element, entered by the same procedure every microstep enters by.
-        // It may name several states and a `<history>`, so it is a target
-        // list, not a leaf to walk down to.
-        debug_assert_eq!(
-            P::TABLES.check(),
-            Ok(()),
-            "the generated tables break a rule Appendix D's procedures assume"
-        );
-        // The entry and the main event loop after it are one turn of the loop,
-        // over one workspace (`Turn::enter_initial_configuration`).
-        sce_log_debug!("Engine::initialize: entering the initial configuration");
-        self.run_turn(true, None);
-        sce_log_debug!("Engine::initialize: main event loop settled");
-
-        // §scxml-6.4: Fire completion callback if we reached a final state during init.
-        // The main event loop has already run exitInterpreter, so the child's
-        // `<onexit>` sends are queued ahead of the done.invoke this raises.
-        // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
-        // to `!no_std` (see field declaration above).
-        #[cfg(feature = "std")]
-        if self.is_in_final_state() {
-            if let Some(cb) = self.completion_callback.as_mut() {
-                sce_log_debug!(
-                    "Engine::initialize: reached final state during init, invoking completion callback"
-                );
-                cb();
-            }
-        }
-        Ok(())
-    }
-
-    /// Enter a configuration this machine was already in, WITHOUT running
-    /// `<onentry>`.
-    ///
-    /// [`initialize`](Self::initialize) is the other door and the contrast is
-    /// the whole point: it enters the document's initial configuration and runs
-    /// the entry actions of every state on the way in. This one enters a
-    /// configuration the caller names and runs none of them. A host that has
-    /// persisted where a machine was, and is bringing it back in a new process,
-    /// wants the second: §scxml-3.8 entry actions are "executed when the state
-    /// is entered", and re-executing them is a replay of what the earlier run
-    /// already did — an `<onentry><send>` would post its event a second time,
-    /// to a peer that already received it.
-    ///
-    /// # What it takes, and why two arguments
-    ///
-    /// Exactly what the two readers on this engine publish:
-    /// [`get_active_states`](Self::get_active_states) and
-    /// [`get_current_state`](Self::get_current_state). Handing back both is not
-    /// redundancy — for a machine with `<parallel>` states the configuration
-    /// does not determine the current state. `current_state` is the atomic
-    /// state under the first target of the last transition taken, so which
-    /// region it sits in is a fact about the transition history rather than
-    /// about the configuration, and a chain alone cannot recover it. For a
-    /// machine without parallel states `current` is the chain's leaf and the
-    /// check below simply confirms the caller agrees.
-    ///
-    /// # What it refuses
-    ///
-    /// Every chain that is not a configuration of THIS document — see
-    /// [`configuration::validate`](crate::helpers::configuration::validate) for
-    /// the rules and [`ConfigurationRejection`] for what each refusal says. Validation runs before any mutation, so a
-    /// refused call leaves the engine exactly as it was; entering "near" the
-    /// requested configuration is the one outcome this door must never produce,
-    /// because a host has no way to detect it afterwards.
-    ///
-    /// It also refuses a machine whose script session cannot be established,
-    /// with [`ConfigurationRejection::ScriptSessionUnavailable`] naming the step
-    /// that failed (docs/adr/0096): the session is established before anything
-    /// of the engine is touched, so that refusal too leaves the engine as it was.
-    ///
-    /// # What it does not do
-    ///
-    /// - No `<onentry>`, and no `<onexit>`: no state is entered or left.
-    /// - No macrostep. [`initialize`](Self::initialize) settles the machine
-    ///   before returning; this does not, because the configuration handed in
-    ///   was already a settled one — running the loop here could take an
-    ///   eventless transition the earlier run had no reason to take, and fire
-    ///   the `<send>`s on the way. The host drives the machine on from here
-    ///   with [`step`](Self::step) or [`tick`](Self::tick) as it otherwise
-    ///   would.
-    /// - No datamodel restore. §scxml-5.3 declaration still runs, so the
-    ///   variables exist with their document defaults and a host can then put
-    ///   its saved values back through `IScriptEngine` — the engine does not
-    ///   persist datamodel state and does not pretend to. (Plain code span, not
-    ///   an intra-doc link: `scripting` is gated out of the no_std docs profile,
-    ///   where a link to it cannot resolve.)
-    pub fn enter_at(
-        &mut self,
-        configuration: &[P::State],
-        current: P::State,
-    ) -> Result<(), ConfigurationRejection<P::State>> {
-        // Before anything is touched: a rejection must not half-enter.
-        crate::helpers::configuration::validate::<P>(configuration, current)?;
-
-        // §scxml-5.3: the datamodel is declared before anything can read it.
-        // This is not a state entry action — `<datamodel>` holds `<data>`, not
-        // executable content — so it runs here for the same reason it runs in
-        // `initialize`: a `cond` or an `assign` evaluated after this call would
-        // otherwise reference variables that were never declared. It
-        // establishes the script session first, and a session that cannot be
-        // established refuses the entry before anything of the engine is
-        // touched, as a configuration of another document is (docs/adr/0096).
-        if concepts::has_data_model_init::<P>() {
-            self.initialize_data_model_dispatch().map_err(|failure| {
-                ConfigurationRejection::ScriptSessionUnavailable(failure.into())
-            })?;
-        }
-
-        self.core.current_state = P::state_id(current);
-        self.core.interpreter_exited = false;
-        // The restored states were entered by the run being resumed, so their
-        // late-bound `<data>` is that run's — the host restores it, and a later
-        // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
-        #[cfg(feature = "std")]
-        {
-            self.late_bound_states = configuration.iter().copied().collect();
-        }
-        // A configuration restored AT a top-level `<final>` is a run that has
-        // already ended there; any other is still running.
-        self.core.main_loop.terminal_state =
-            if P::is_final_state(current) && P::get_parent(current).is_none() {
-                Some(P::state_id(current))
-            } else {
-                None
-            };
-
-        // §scxml-3.4: the configuration is the engine's, kept as numbers.
-        self.run_store
-            .view_mut()
-            .set_configuration(configuration.iter().map(|&state| P::state_id(state)));
-
-        self.core.main_loop.is_running = true;
-        Ok(())
-    }
-
-    /// Process one macrostep: drain queues and run eventless transitions.
-    ///
-    /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
-    /// explicitly drive children after sending them events (§scxml-6.4).
-    ///
-    /// # Which of `step` and [`tick`](Self::tick) to call
-    ///
-    /// Do not guess, and do not read it off the document: the generator
-    /// decided while compiling and says so in two places, both derived
-    /// from the same answer.
-    ///
-    /// - `StatePolicy::NEEDS_EVENT_SCHEDULER` on the generated policy —
-    ///   `false` means this method is enough, `true` means [`tick`](Self::tick).
-    /// - `needs_event_scheduler` on the `sce-codegen` stdout manifest,
-    ///   for a build system deciding without compiling the machine first.
-    ///
-    /// Both queues are drained here, delayed sends are not: `step` never
-    /// consults the scheduler and never ticks an invoked child. A machine
-    /// that needs either and is driven by `step` alone loses those events
-    /// — so this method logs an error the first time it is called on one,
-    /// rather than letting the loss be silent.
-    ///
-    /// An *undelayed* `<send>`, whatever its target, is an ordinary
-    /// external event and arrives here. Written out because the reverse
-    /// was reported in 2026-08 by a consumer whose real problem was an
-    /// aborted `<onentry>` block: an error in executable content abandons
-    /// the actions after it (§scxml-4.9), so a `<send>` written below a
-    /// failing one never runs, and no amount of `tick` recovers it.
-    pub fn step(&mut self) {
-        // §scxml-3.13: one host call, one reading. The macrostep below can
-        // enter a state whose `<onentry>` arms several `<send delay>`s, and
-        // they are one instant's worth of executable content however long the
-        // host takes to run them — see `begin_turn`.
-        let opened = self.begin_turn();
-        self.step_in_turn(None);
-        self.end_turn(opened);
-    }
-
-    /// The macrostep `step` runs, lending `lend` when
-    /// [`process_event_with`](Self::process_event_with) is the caller
-    /// (docs/adr/0124).
-    fn step_in_turn(&mut self, lend: Option<Lend<'_, P>>) {
-        // A machine with delayed sends hands `step` a queue it cannot reach:
-        // `run_main_event_loop` never consults the scheduler, so the event is
-        // neither delivered nor refused. Say it once — the host is driving with
-        // the wrong call, and every later macrostep would repeat the same word.
-        // Whether the machine has delayed sends is the generator's answer, a
-        // constant; the count and the word are the core's.
-        if concepts::needs_event_scheduler::<P>() {
-            self.core.note_unattended_step();
-        }
-
-        self.run_turn(false, lend);
-
-        #[cfg(feature = "std")]
-        if self.is_in_final_state() && self.completion_callback.is_some() {
-            sce_log_debug!("Engine::step: invoking completion callback");
-            if let Some(cb) = self.completion_callback.as_mut() {
-                cb();
-            }
-        }
-    }
-
-    /// Poll the scheduler for ready delayed events, then run a macrostep.
-    ///
-    /// Matches C++ `StaticExecutionEngine::tick()`. Called periodically by
-    /// callers that have delayed `<send>` operations.
-    ///
-    /// A superset of [`step`](Self::step): it drains the delayed-send
-    /// scheduler and ticks invoked child sessions, then runs the same
-    /// macrostep. Calling it on a machine that needs neither is correct
-    /// and merely does two lookups that find nothing — which is why the
-    /// generated `NEEDS_EVENT_SCHEDULER` constant is worth reading rather
-    /// than defaulting either way. See [`step`](Self::step) for where the
-    /// answer is published.
-    pub fn tick(&mut self) {
-        // §scxml-3.13: one turn, one reading. Everything below judges due
-        // against the instant this tick began, and everything the macrosteps
-        // below arm is measured from it — so a tick dispatches what was due
-        // when the host called it, and cannot be extended by how long it takes
-        // to run (see `begin_turn`).
-        let opened = self.begin_turn();
-        self.tick_in_turn();
-        self.end_turn(opened);
-    }
-
-    fn tick_in_turn(&mut self) {
-        // Recorded before the running check: a host that calls `tick` owns a
-        // clock whatever the engine's lifecycle says, and the count exists to
-        // find hosts that never call it at all.
-        self.core.tick_has_run = true;
-        if !self.core.main_loop.is_running {
-            return;
-        }
-        if self.is_in_final_state() {
-            #[cfg(feature = "std")]
-            if let Some(cb) = self.completion_callback.as_mut() {
-                sce_log_debug!(
-                    "Engine::tick: final state already reached, invoking completion callback"
-                );
-                cb();
-            }
-            return;
-        }
-
-        // §scxml-6.2: dispatch the ready scheduled events, earliest deadline
-        // first and one macrostep apart. "Due" is judged against the instant
-        // this tick began, not against a clock re-read on every pass — a tick
-        // that chased its own slowness would dispatch entries the host had not
-        // yet reached, in a loop the host cannot get between (see
-        // `begin_turn`). `PullScheduler` stays clock-source-agnostic either
-        // way: it is handed the reading rather than taking one.
-        //
-        // One at a time, not all at once. `<cancel>` drops an event that has
-        // not been dispatched yet, and a host that woke late holds several past
-        // their deadlines: promoting them together makes every later one
-        // undroppable before the earlier one's transitions have had a chance to
-        // run. That is how a settle timer — arm a long `<send delay>`, cancel
-        // it when the short signal arrives first — delivers the event it was
-        // told to cancel. Measured 2026-08-19 across the Rust, Go and Python
-        // backends alike, the Python one on a virtual clock where the host's
-        // step size alone decided it.
-        //
-        // A scheduler that can deliver an entry due at the instant it is popping
-        // is a drain that refills itself: an entry a handler re-arms at that
-        // same reading (a `delayexpr` that evaluates to zero, which has no
-        // static value to be read as undelayed) is due now, so this loop pops it
-        // in the same call, and each pass takes ONE event, so the budget on the
-        // external drain never trips. The pops of entries due AT one clock
-        // reading are bounded by the same budget, reset when the reading
-        // advances (ARCHITECTURE.md "External-Event Budget", rule 5).
-        //
-        // Entries due AT the reading, not every entry popped at it: the reading
-        // is latched for the whole tick, so a host that jumps the clock a long
-        // way pops every entry that came due on the way at ONE reading, and those
-        // are due at earlier instants. A handler arms relative to the latched
-        // reading, so what it arms is due at the reading itself or after it, and
-        // only the first kind can be popped by this tick. A clock the host moved
-        // is bounded by how far it moved and is not cut; a heartbeat across a long
-        // jump arms its next beat after the reading and is not popped here at all.
-        //
-        // The loop stays in each machine's `tick`. The scheduler it drives is
-        // machine-free and shared (docs/adr/0069); moving the loop itself into
-        // shared code behind the machine's hooks measured larger per machine
-        // than the loop it replaced.
-        let mut reading: Option<SchedTimePoint> = None;
-        let mut popped_due_at_reading: u32 = 0;
-        loop {
-            let now = self.sched_now();
-            if reading != Some(now) {
-                reading = Some(now);
-                popped_due_at_reading = 0;
-            }
-            if let Some((due, head)) = self.scheduler.next_ready_at_with_event(now) {
-                if due == now {
-                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call {
-                        self.core.record_truncated_event_chain(head);
-                        break;
-                    }
-                    popped_due_at_reading += 1;
-                }
-            }
-            #[cfg(feature = "std")]
-            {
-                let Some(act) = self.scheduler.pop_ready_act_at(now) else {
-                    break;
-                };
-                match act {
-                    ScheduledAct::Raise {
-                        event,
-                        event_data,
-                        send_id,
-                        sender,
-                        name,
-                    } => {
-                        // §scxml-5.10.1 + §scxml-C-1: the metadata the
-                        // immediate send stamps, restored when the wait ends,
-                        // and §scxml-5.10: the name it was sent under.
-                        let mut meta = EventWithMetadata::new(Self::event_of(event));
-                        meta.metadata = EventMetadata::sent_by_session(&send_id, &sender);
-                        meta.metadata.name = name;
-                        meta.set_event_data(&event_data);
-                        self.raise_external_with_meta(meta);
-                    }
-                    // §scxml-6.2: to the target the send named when it was made.
-                    ScheduledAct::Routed {
-                        event,
-                        event_data,
-                        send_id,
-                        sender,
-                        name,
-                        route,
-                    } => {
-                        self.deliver_routed(
-                            event.map(Self::event_of),
-                            &event_data,
-                            send_id,
-                            sender,
-                            name,
-                            route,
-                        );
-                    }
-                    // §scxml-6.2.4: the wait is over, so now the act happens.
-                    // Everything the immediate send site does happens here
-                    // instead — including reporting an act nobody performed,
-                    // which that site cannot do for a deferred send because it
-                    // returned long before the deadline.
-                    ScheduledAct::HostSend(request) => {
-                        self.perform_deferred_host_send(*request);
-                    }
-                    ScheduledAct::HostInvokeDeadline {
-                        processor_type,
-                        invoke_id,
-                        token,
-                    } => {
-                        self.expire_host_invoke(&processor_type, &invoke_id, token);
-                    }
-                }
-            }
-            // no_std: the data string is elided in the scheduler, and
-            // `raise_external` discards it under no_std anyway.
-            #[cfg(not(feature = "std"))]
-            {
-                let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
-                    break;
-                };
-                self.raise_external(Self::event_of(popped), "");
-            }
-
-            // The macrostep this event drives may `<cancel>` a later one, so
-            // the queue is re-consulted after it rather than before.
-            self.run_main_event_loop();
-            if !self.core.main_loop.is_running || self.is_in_final_state() {
-                break;
-            }
-        }
-
-        // §scxml-6.4: Tick child state machines
-        if concepts::has_child_tick::<P>() {
-            self.with_policy(|policy, engine| policy.tick_children(engine));
-        }
-
-        // Delegate to step() for the main event loop + completion callback.
-        // §scxml-6.4's invokes are part of that loop and run there, ahead of
-        // the external dequeue rather than after it.
-        self.step();
-    }
-
-    /// Stop the engine. Subsequent `tick`/`process_event` calls become no-ops.
-    ///
-    /// §scxml-D-exitInterpreter: a run the host stops is exited as one that
-    /// ended — every active state's `<onexit>` runs, innermost first, and the
-    /// configuration ends empty. A run that already ended has been exited.
-    pub fn stop(&mut self) {
-        if self.core.main_loop.is_running {
-            self.exit_interpreter();
-        }
-        self.core.main_loop.is_running = false;
-    }
 
     /// Whether the engine is running (not stopped or awaiting completion).
     pub fn is_running(&self) -> bool {
@@ -2326,9 +3391,9 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// How many macrosteps ran on a scheduler-driven machine before any
-    /// [`tick`](Self::tick).
+    /// [`tick`](Engine::tick).
     ///
-    /// Non-zero means the host is driving with [`step`](Self::step) a machine
+    /// Non-zero means the host is driving with [`step`](Engine::step) a machine
     /// whose policy sets
     /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER): the
     /// delayed events sitting in the scheduler have had no opportunity to fire.
@@ -2645,7 +3710,7 @@ impl<P: StatePolicy> Engine<P> {
     /// where it was; what the host learns is that this call did not reach quiet.
     ///
     /// A cut of the same-instant bound on the scheduler counts here too (see
-    /// [`tick`](Self::tick)).
+    /// [`tick`](Engine::tick)).
     ///
     /// Present with the `macrostep-diagnostics` feature only, for the reason
     /// `truncated_macrosteps` is: the BOUND is in every build, and only this
@@ -2833,13 +3898,6 @@ impl<P: StatePolicy> Engine<P> {
     /// for a machine whose document has none, which keeps no slot.
     pub fn donedata_at_final(&self) -> &str {
         self.donedata_at_final.read()
-    }
-
-    /// Access the inner policy (read-only).
-    ///
-    /// Used by parent engine to drain child's parent_external_queue.
-    pub fn policy(&self) -> &P {
-        &self.policy
     }
 
     /// §scxml-6.4: Get shared handle to external queue for child→parent event passing.
@@ -3154,40 +4212,6 @@ impl<P: StatePolicy> Engine<P> {
         self.raise_external_by_name_with_meta(event_name, &metadata);
     }
 
-    /// §scxml-6.2.4 + §scxml-6.4: deliver a `<send>` addressed to this
-    /// invoked session by name, and take it now — as the C++ and Kotlin cores
-    /// do.
-    ///
-    /// Enqueued alone, the event waits for the parent's next `tick_children`,
-    /// and a tick dispatches its due sends before it ticks children. So a
-    /// delayed send coming due in a late tick reached a child that had not yet
-    /// taken an earlier immediate one — a `stop` sent at once and a delayed
-    /// `lost` found the child still running, `lost` joined its queue behind
-    /// `stop` and vanished with the child, neither delivered nor reported
-    /// (§scxml-C-1). Measured 2026-09-29 on the Go core under load; this core
-    /// shared the shape.
-    ///
-    /// Not [`step`](Self::step): that is the host's door, and its note about a
-    /// host that never ticks would fire for a parent's delivery. What the child
-    /// sends its parent here waits on its own buffer only until the delivery
-    /// returns: the generated parent drains it, and raises the child's
-    /// `done.invoke` if it ended, right after this call (docs/adr/0045), so no
-    /// event is between the two sessions when the parent's macrostep ends.
-    ///
-    /// `sender` is the id of the session that sent the event, the parent: the
-    /// SCXML processor writes the location it publishes as the event's origin
-    /// and keeps the id beside it (§scxml-C-1, docs/adr/0090), so a reply to
-    /// `_event.origin` reaches the parent.
-    #[cfg(feature = "std")]
-    pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str, sender: &str) {
-        let mut metadata = EventMetadata::sent_by_session("", sender);
-        metadata.data = crate::sce_string_from_str(event_data);
-        self.raise_external_by_name_with_meta(event_name, &metadata);
-        let opened = self.begin_turn();
-        self.run_main_event_loop();
-        self.end_turn(opened);
-    }
-
     /// §scxml-6.4: Raise an autoforwarded external event, name-addressed but
     /// carrying the source event's `_event` fields.
     ///
@@ -3232,112 +4256,6 @@ impl<P: StatePolicy> Engine<P> {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
         self.enqueue_external(event);
-    }
-
-    /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
-    ///
-    /// Matches C++ `processEvent(Event)`.
-    pub fn process_event(&mut self, event: P::Event) {
-        if !self.core.main_loop.is_running {
-            // Refused rather than queued, so the drain in `Turn::end_run`
-            // never sees it — which is why the count is taken here as well as
-            // there. See
-            // [`unseen_external_events`](Self::unseen_external_events).
-            self.core.note_unseen_event(P::event_id(event));
-            return;
-        }
-        self.raise_external(event, "");
-        self.step();
-    }
-
-    /// Process the external event `event` as
-    /// [`process_event`](Self::process_event) does, with `event_data`, its data,
-    /// lent rather than queued (docs/adr/0124).
-    ///
-    /// `event_data` is the event's data as the host holds it, such as a view
-    /// over the bytes it received, read through the schema's read interface.
-    /// Every guard, `<sce:arg>` and transition content that reads `_event.data`
-    /// while `event` is `_event` reads it in place, as it reads the payload of
-    /// a queued event: nothing is copied into the engine, and nothing it keeps
-    /// can hold the borrow past this call.
-    ///
-    /// It is lent from the moment the engine takes `event` off the external
-    /// queue to the moment it takes the next event, internal or external. An
-    /// external event queued ahead of `event` (what other threads posted
-    /// joins the queue ahead of it, as [`raise_external`](Self::raise_external)
-    /// puts it), an internal event raised while `event` is processed and the
-    /// entry into a configuration are lent nothing. An `event` refused where
-    /// it is taken opens nothing. When the call's budget of external events
-    /// ends the turn before `event` is taken, it stays queued, and the turn
-    /// that takes it takes it as a delivery that carries no data.
-    ///
-    /// A generated machine pairs each event with its data in one call
-    /// (`process_<event>_with`), so an event cannot be lent another's data.
-    pub fn process_event_with(&mut self, event: P::Event, event_data: P::EventData<'_>) {
-        self.lend_event(event, event_data, "");
-    }
-
-    /// [`process_event_with`](Self::process_event_with) for a machine whose
-    /// document also reads `_event.data` from the wire, a script engine or an
-    /// autoforwarded child, which keep their own copy: `wire` is that data's
-    /// JSON, which the generated `process_<event>_with` writes from the lent
-    /// data as the inject seam writes it from a payload (docs/adr/0124).
-    #[cfg(feature = "std")]
-    pub fn process_event_with_wire(
-        &mut self,
-        event: P::Event,
-        event_data: P::EventData<'_>,
-        wire: &str,
-    ) {
-        self.lend_event(event, event_data, wire);
-    }
-
-    /// The one body of [`process_event_with`](Self::process_event_with) and
-    /// its wire twin.
-    fn lend_event(&mut self, event: P::Event, event_data: P::EventData<'_>, wire: &str) {
-        if !self.core.main_loop.is_running {
-            // Refused as `process_event` refuses it, and counted the same way.
-            self.core.note_unseen_event(P::event_id(event));
-            return;
-        }
-        // What other threads posted joins the queue ahead of `event`, as
-        // `raise_external` puts it there. Applied first, so the events counted
-        // here are the external events the turn takes before `event`.
-        #[cfg(any(feature = "std", feature = "bounded-inbox"))]
-        self.drain_inbox();
-        let ahead = self.external_queue.queued().count();
-        // Queued behind them with no drain of its own: a post applied between
-        // the count and the push would stand ahead of `event` uncounted.
-        Self::enqueue(
-            &mut self.external_queue,
-            Self::external_arrived_as(event, wire, ""),
-        );
-        let opened = self.begin_turn();
-        self.step_in_turn(Some(Lend {
-            data: event_data,
-            ahead,
-        }));
-        self.end_turn(opened);
-    }
-
-    /// §scxml-5.10: Process an external event with metadata.
-    ///
-    /// Matches C++ `processEvent(Event, const EventMetadata&)`.
-    pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
-        if !self.core.main_loop.is_running {
-            // Same refusal as `process_event`, same reason it is counted here.
-            self.core.note_unseen_event(P::event_id(event));
-            return;
-        }
-        let meta = EventWithMetadata {
-            event,
-            payload: P::Payload::default(),
-            metadata,
-            #[cfg(feature = "std")]
-            target: SceString::new(),
-        };
-        self.enqueue_external(meta);
-        self.step();
     }
 
     // ════════════════════════════════════════
@@ -3500,218 +4418,6 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// §scxml-6.2.4 + §scxml-C-1: send to a target value read at run time.
-    ///
-    /// A `targetexpr` is a target: whatever value it yields is routed as the
-    /// same value written in `target` is —
-    /// [`classify_target`](crate::helpers::send::classify_target) reads it,
-    /// the table `SendHelper::classifyTarget` holds for C++ — sent at once or,
-    /// with a delay, from the scheduler through the engine's one routed
-    /// delivery (`deliver_routed`) when it comes due. An invocation or a session the value names that is
-    /// not running now is reported now; one that ends while a delayed send
-    /// waits is reported when it comes due.
-    ///
-    /// An associated function, not a method: the send site is a policy method
-    /// holding the policy while the engine lends itself out, so the two are
-    /// handed over apart. `event` is this machine's spelling of the event, for
-    /// its own queues; a child or a parent resolves `event_name`.
-    #[cfg(feature = "std")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn send_to_target(
-        policy: &mut P,
-        engine: &mut Self,
-        event: Option<P::Event>,
-        event_name: &str,
-        target: &str,
-        own_session_id: &str,
-        delay: Option<Duration>,
-        send_id: &str,
-        event_data: &str,
-        sender: &str,
-    ) -> TargetSendOutcome {
-        use crate::helpers::send::{classify_target, SendTarget};
-        // §scxml-5.10: `event` is the member the sender's name resolved to in
-        // THIS machine's document, so its own queues are told the name it was
-        // sent under when the member is not called that; a child or a parent
-        // resolves `event_name` itself.
-        let arrival = event.map_or("", |event| Self::arrival_name_of(event, event_name));
-        let route = match classify_target(target, own_session_id) {
-            SendTarget::Unsupported | SendTarget::Mesh => return TargetSendOutcome::Unsupported,
-            SendTarget::Unreachable => return TargetSendOutcome::Unreachable,
-            SendTarget::SelfExternal => {
-                if let Some(event) = event {
-                    match delay {
-                        Some(delay) => {
-                            let ready_at = engine.sched_now_plus(delay);
-                            engine.scheduler.schedule_event_named_at(
-                                P::event_id(event),
-                                ready_at,
-                                send_id,
-                                event_data,
-                                sender,
-                                arrival,
-                            );
-                        }
-                        None => {
-                            let mut meta = EventWithMetadata::new(event);
-                            meta.metadata = EventMetadata::sent_by_session(send_id, sender);
-                            meta.metadata.name = crate::sce_string_from_str(arrival);
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
-                        }
-                    }
-                }
-                return TargetSendOutcome::Sent;
-            }
-            SendTarget::Internal => ScheduledRoute::InternalQueue,
-            SendTarget::Parent => {
-                // §scxml-C-1: a session nothing invoked has no parent to
-                // address, delayed or not.
-                if !policy.has_parent_session() {
-                    return TargetSendOutcome::Unreachable;
-                }
-                ScheduledRoute::Parent {
-                    event_name: event_name.to_string(),
-                }
-            }
-            SendTarget::Invocation(invoke_id) => {
-                if !policy.is_invocation_running(&invoke_id) {
-                    return TargetSendOutcome::Unreachable;
-                }
-                ScheduledRoute::Invocation {
-                    invoke_id,
-                    event_name: event_name.to_string(),
-                }
-            }
-            SendTarget::Session(session_id) => {
-                // §scxml-C-1: the location the session that invoked this one
-                // publishes is a target, as `#_parent` is — the address a reply
-                // to an event the parent sent goes to (docs/adr/0090).
-                if policy.is_parent_session(&session_id) {
-                    ScheduledRoute::Parent {
-                        event_name: event_name.to_string(),
-                    }
-                } else if policy.is_child_session_running(&session_id) {
-                    ScheduledRoute::Session {
-                        session_id,
-                        event_name: event_name.to_string(),
-                    }
-                } else {
-                    return TargetSendOutcome::Unreachable;
-                }
-            }
-        };
-        if let Some(delay) = delay {
-            let ready_at = engine.sched_now_plus(delay);
-            engine.scheduler.schedule_routed_named_at(
-                event.map(P::event_id),
-                ready_at,
-                send_id,
-                event_data,
-                sender,
-                route,
-                arrival,
-            );
-            return TargetSendOutcome::Sent;
-        }
-        let delivered = match &route {
-            ScheduledRoute::InternalQueue => {
-                // An event on the internal queue is an internal event, whose
-                // origin the processor leaves blank (docs/adr/0090, section
-                // 2): no pair, and no sender.
-                if let Some(event) = event {
-                    let mut meta = EventWithMetadata::new(event);
-                    meta.metadata.send_id = crate::sce_string_from_str(send_id);
-                    meta.metadata.name = crate::sce_string_from_str(arrival);
-                    meta.set_event_data(event_data);
-                    engine.raise(meta);
-                }
-                true
-            }
-            ScheduledRoute::Parent { event_name } => {
-                policy.deliver_to_parent(event_name, event_data)
-            }
-            ScheduledRoute::Invocation {
-                invoke_id,
-                event_name,
-            } => policy.deliver_to_invocation(invoke_id, event_name, event_data, sender, engine),
-            ScheduledRoute::Session {
-                session_id,
-                event_name,
-            } => {
-                policy.deliver_to_child_session(session_id, event_name, event_data, sender, engine)
-            }
-        };
-        if delivered {
-            TargetSendOutcome::Sent
-        } else {
-            TargetSendOutcome::Unreachable
-        }
-    }
-
-    /// Deliver a delayed send whose wait is over to the target it named.
-    ///
-    /// §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
-    /// target, it MUST place the error error.communication on the internal
-    /// event queue of the session that attempted to send the event." For a
-    /// delayed send the dispatch is this delivery, so an invocation that has
-    /// ended in the meantime is reported here, not when the send was made.
-    #[cfg(feature = "std")]
-    fn deliver_routed(
-        &mut self,
-        event: Option<P::Event>,
-        event_data: &str,
-        send_id: SceString,
-        sender: SceString,
-        name: SceString,
-        route: ScheduledRoute,
-    ) {
-        let delivered = match &route {
-            ScheduledRoute::InternalQueue => {
-                // The send site names this machine's event for this route; an
-                // entry without one reaches nobody, which is what it reports.
-                // An internal event carries no origin and no sender
-                // (docs/adr/0090, section 2).
-                let Some(event) = event else {
-                    return;
-                };
-                let mut meta = EventWithMetadata::new(event);
-                meta.metadata.send_id = send_id;
-                meta.metadata.name = name;
-                meta.set_event_data(event_data);
-                self.raise(meta);
-                return;
-            }
-            ScheduledRoute::Invocation {
-                invoke_id,
-                event_name,
-            } => self.with_policy(|policy, engine| {
-                policy.deliver_to_invocation(invoke_id, event_name, event_data, &sender, engine)
-            }),
-            ScheduledRoute::Parent { event_name } => {
-                self.policy.deliver_to_parent(event_name, event_data)
-            }
-            ScheduledRoute::Session {
-                session_id,
-                event_name,
-            } => self.with_policy(|policy, engine| {
-                policy.deliver_to_child_session(session_id, event_name, event_data, &sender, engine)
-            }),
-        };
-        if delivered {
-            return;
-        }
-        if let Some(communication_error) = P::get_event_from_name("error.communication") {
-            let mut err_meta = EventWithMetadata::platform_error(
-                communication_error,
-                crate::ErrorReason::TargetUnreachable,
-                "<send> named a target that was no longer there when its delay elapsed",
-            );
-            err_meta.metadata.send_id = send_id;
-            self.raise(err_meta);
-        }
-    }
-
     /// §scxml-6.2.4 + §scxml-6.2.5: arm a `<send delay>` addressed to a
     /// host-served processor, to be performed when the delay elapses.
     ///
@@ -3720,11 +4426,11 @@ impl<P: StatePolicy> Engine<P> {
     /// a `delay`. §scxml-6.2.4 makes the wait a property of the send and not of
     /// the processor, so the two differ in when the act happens and in nothing
     /// else — including the report owed when nobody performs it, which
-    /// [`tick`](Self::tick) makes at the deadline.
+    /// [`tick`](Engine::tick) makes at the deadline.
     ///
     /// The act goes in the same queue as [`schedule_event`](Self::schedule_event),
     /// so [`cancel_event`](Self::cancel_event) drops it (§scxml-6.3) and
-    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
+    /// [`time_until_next_scheduled_ms`](Engine::time_until_next_scheduled_ms)
     /// counts it. Returns the id used, generated when `send_id` is empty.
     #[cfg(feature = "std")]
     pub fn schedule_host_send(
@@ -3797,57 +4503,6 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// The door of the event just taken off a queue (docs/adr/0086, section
-    /// 4.2): bind its typed `_event.data` view from the data it carries, and
-    /// answer what is taken in its place when that data does not fit its type.
-    ///
-    /// A typed `payload` is filled by ONE producer, the generated `raise_<event>` inject seam; every
-    /// other producer fills `metadata.data`, so the fields are lifted out of
-    /// that instead when no payload rode with the event. A delivery that does
-    /// not fit is refused whole: it is never offered to the configuration, and
-    /// an `error.execution` carrying the refusal takes its place in the queue.
-    /// The verdict lives here rather than in each generated policy so every
-    /// machine answers a payload it cannot read the same way.
-    ///
-    /// `read` is the lift's reading of the wire, or, for data a host lent with
-    /// the event, the policy's holding of it to the same contract
-    /// (docs/adr/0124, D2): the one verdict below answers both.
-    #[cfg(feature = "std")]
-    fn bind_lifted_payload(
-        event: P::Event,
-        read: Result<(), crate::event_payload::PayloadRefusal>,
-    ) -> Admission<P::Event> {
-        let Err(refusal) = read else {
-            return Admission::Admitted;
-        };
-        // §scxml-3.12.2 leaves a document that declares no `error.execution`
-        // transition nothing to answer with: the delivery is refused all the
-        // same, and nothing is taken in its place.
-        match P::get_event_from_name("error.execution") {
-            Some(error) => Admission::Replaced {
-                error,
-                refusal: format!("`{}` payload: {refusal}", P::get_event_name(event)),
-            },
-            None => Admission::Refused,
-        }
-    }
-
-    /// Bind `error`, the `error.execution` a door put in a refused delivery's
-    /// place, as `_event`, carrying `refusal` and no typed payload: it is the
-    /// engine's own error, so no `<finalize>` or autoforward runs for it. The
-    /// payload answered is the one it carries, which the turn holds as its
-    /// data (docs/adr/0124).
-    #[cfg(feature = "std")]
-    fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> (Bound, P::Payload) {
-        let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(
-            error,
-            crate::ErrorReason::PayloadRefused,
-            refusal,
-        );
-        self.policy.populate_event_metadata(&replacement.metadata);
-        (Bound::InPlace(P::event_id(error)), replacement.payload)
-    }
-
     /// Cancel a previously scheduled event by send ID.
     pub fn cancel_event(&mut self, send_id: &str) -> bool {
         self.scheduler.cancel_event(send_id)
@@ -3856,57 +4511,6 @@ impl<P: StatePolicy> Engine<P> {
     /// Whether the scheduler has events ready to fire.
     pub fn has_ready_events(&self) -> bool {
         self.scheduler.has_ready_events_at(self.sched_now())
-    }
-
-    /// How long until this machine next needs [`tick`](Self::tick), in
-    /// milliseconds. `Some(0)` means something is due now; `None` means the
-    /// scheduler is empty and no clock-driven wake-up is owed.
-    ///
-    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) tells a
-    /// host *which* entry point to drive the machine with. This tells it
-    /// *when*, and a host that cannot ask has only one move left: pick a
-    /// polling interval. That guess is not free in either direction — measured
-    /// on a document whose `<send delay="200ms">` is cancelled by a 100 ms
-    /// signal, a 1 ms interval spends 180 wasted ticks to be on time, a 500 ms
-    /// one fires 300 ms late, and a 250 ms one steps over both deadlines at
-    /// once and reaches a state the document forbids. An interval cannot
-    /// straddle two deadlines it was never told about.
-    ///
-    /// The answer feeds a host loop directly: `std::thread::sleep`, a tokio
-    /// `sleep`, or an embassy `Timer::after` on the no_std profile, where the
-    /// alternative is a poll that never lets the core idle.
-    ///
-    /// §scxml-6.4: the session's OWN scheduler is not the whole answer. This
-    /// machine's tick advances every running child, so a child's deadline is a
-    /// deadline of this machine's clock, and the answer is the nearest of the
-    /// two. Counting only the parent's own made a host that walked time by it
-    /// step over a timer its child had armed — or, for a parent that arms
-    /// nothing itself, be told there was nothing to wait for at all.
-    ///
-    /// A restore that re-armed a host-run invocation owes the machine a tick
-    /// before any clock does: the invocation is started at the top of the first
-    /// macrostep, and the deadline it keeps is armed there, so until that tick
-    /// the scheduler holds nothing to wait for and a host asleep on the answer
-    /// would never drive the machine at all. That is "now", `Some(0)`.
-    pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
-        #[cfg(feature = "std")]
-        if !self.restored_host_invokes.is_empty() {
-            return Some(0);
-        }
-        let own = self
-            .scheduler
-            .next_ready_at()
-            .map(|next| next.saturating_sub(self.sched_now()));
-        let child = if concepts::has_child_tick::<P>() {
-            self.policy.next_child_deadline_ms()
-        } else {
-            None
-        };
-        match (own, child) {
-            (Some(own), Some(child)) => Some(own.min(child)),
-            (own, None) => own,
-            (None, child) => child,
-        }
     }
 
     // ════════════════════════════════════════
@@ -3921,7 +4525,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Install the [`SceClock`] this engine measures its `<send delay>`
     /// deadlines against.
     ///
-    /// Must be called before [`initialize`](Self::initialize): the entry
+    /// Must be called before [`initialize`](Engine::initialize): the entry
     /// configuration's `<onentry>` can arm delayed sends, and swapping the
     /// clock under deadlines already computed from another one would leave the
     /// queue holding two incomparable time bases. That is a programming error
@@ -3954,7 +4558,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the engine it holds, never the ones that engine invoked. So a child's
     /// `<send delay>` on a host-owned clock never came due. Measured
     /// 2026-09-29: the delayed-send fixture's child reply stayed parked when
-    /// its parent was driven through [`advance_time_ms`](Self::advance_time_ms).
+    /// its parent was driven through [`advance_time_ms`](Engine::advance_time_ms).
     ///
     /// Only ever forward: a parent's reading is never behind its child's, and
     /// a clock is required to be non-decreasing.
@@ -3964,41 +4568,11 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// Move this engine's clock forward by `ms` and run whatever that made due
-    /// (§scxml-6.2).
-    ///
-    /// The host-owned twin of [`tick`](Self::tick): `tick` asks a clock that
-    /// moves on its own what time it is, this one *sets* what time it is and
-    /// then ticks. A machine driven exclusively through here has no dependency
-    /// on the load of the machine it runs on — the same sequence of calls
-    /// produces the same configuration every time, which is what a simulation,
-    /// a replay and a deterministic test each need.
-    ///
-    /// # Panics
-    ///
-    /// If [`clock`](Self::clock) is not [`SceClock::Manual`]. That is not a
-    /// no-op but a programming error: the caller believes it owns time and it
-    /// does not, so the events it is waiting for would arrive on a schedule it
-    /// did not choose. Refusing loudly is the same call the Kotlin and Python
-    /// channels make on the same contract.
-    pub fn advance_time_ms(&mut self, ms: u64) {
-        let SceClock::Manual(now) = self.core.clock else {
-            panic!(
-                "Engine::advance_time_ms needs SceClock::Manual; this engine has a \
-                 clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \
-                 before initialize(), or drive this machine with tick() and \
-                 time_until_next_scheduled_ms()"
-            );
-        };
-        self.core.clock = SceClock::Manual(now.saturating_add(ms));
-        self.tick();
-    }
-
     /// This engine's current reading of [`clock`](Self::clock), in
     /// milliseconds since that clock's origin.
     ///
     /// The absolute counterpart of
-    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)'s
+    /// [`time_until_next_scheduled_ms`](Engine::time_until_next_scheduled_ms)'s
     /// relative answer. A host owning time through [`SceClock::Manual`] uses it
     /// to say where in the run it is; a host on the wall clock uses it to
     /// correlate an engine's deadlines with its own log.
@@ -4038,7 +4612,7 @@ impl<P: StatePolicy> Engine<P> {
     /// transitions as one without. It runs on the thread that drives the
     /// engine, inside the macrostep; being `'static`, it cannot hold the engine
     /// it observes, and a panic in it unwinds out of the call that drove the
-    /// engine. Set it before [`initialize`](Self::initialize) to be told the
+    /// engine. Set it before [`initialize`](Engine::initialize) to be told the
     /// transitions the first macrostep takes.
     ///
     /// The bare-metal profile takes a `fn` pointer of the same signature, which
@@ -4059,7 +4633,7 @@ impl<P: StatePolicy> Engine<P> {
     /// first exit, each transition of the optimal enabled set once and in
     /// selection order. The bare-metal profile has no allocator to box a
     /// closure in, so it is a `fn` pointer; what it keeps across calls it keeps
-    /// in storage of its own. Set it before [`initialize`](Self::initialize) to
+    /// in storage of its own. Set it before [`initialize`](Engine::initialize) to
     /// be told the transitions the first macrostep takes.
     #[cfg(all(feature = "transition-observer", not(feature = "std")))]
     pub fn set_transition_observer(
@@ -4231,7 +4805,7 @@ impl<P: StatePolicy> Engine<P> {
     /// A delay is a property of the send and not of the processor it named, so a
     /// delayed BasicHTTP send waits in the queue every delayed send does: one
     /// deadline order, one `<cancel sendid>` path (§scxml-6.3), one answer from
-    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms). Its
+    /// [`time_until_next_scheduled_ms`](Engine::time_until_next_scheduled_ms). Its
     /// entry is the host-served shape carrying the BasicHTTP type, and the
     /// deadline performs the POST through
     /// [`perform_http_send`](Self::perform_http_send).
@@ -4298,7 +4872,7 @@ impl<P: StatePolicy> Engine<P> {
     /// [`crate::host_processor::RESERVED_TYPE_PREFIX`]: those types are SCE's
     /// own, and a handler registered under one would replace SCE's processor
     /// with nothing saying so. The Mesh router has its own door,
-    /// [`Engine::register_mesh_router`]. A panic rather than a `Result`
+    /// [`EngineState::register_mesh_router`]. A panic rather than a `Result`
     /// because this is wiring the host writes once, like a route table, and a
     /// refusal a caller could ignore would bring back the silent replacement
     /// it exists to prevent.
@@ -4322,7 +4896,7 @@ impl<P: StatePolicy> Engine<P> {
     /// manifest when the machine has one.
     ///
     /// The one way to serve [`crate::host_processor::MESH_PROCESSOR_TYPE`]:
-    /// [`Engine::register_event_processor`] refuses the reserved prefix, so a
+    /// [`EngineState::register_event_processor`] refuses the reserved prefix, so a
     /// router is only ever installed by a call that names itself one.
     /// Unregistered, a Mesh send raises `error.execution` as any host
     /// processor without a handler does; a registered router that cannot
@@ -4347,12 +4921,12 @@ impl<P: StatePolicy> Engine<P> {
     /// event in the reserved `_mesh_event` param and its deadline, when the
     /// document gave one, in `_mesh_deadline_ms`.
     ///
-    /// The invoke half of [`Engine::register_mesh_router`], and for the same
-    /// reason the one way to serve the type: [`Engine::register_invoker`]
+    /// The invoke half of [`EngineState::register_mesh_router`], and for the same
+    /// reason the one way to serve the type: [`EngineState::register_invoker`]
     /// refuses the reserved prefix. Unregistered, a Mesh request raises
     /// `error.execution` as any host-run invoke without an invoker does; the
-    /// router answers with [`Engine::complete_host_invoke_from`] or
-    /// [`Engine::fail_host_invoke`], naming the peer that answered.
+    /// router answers with [`EngineState::complete_host_invoke_from`] or
+    /// [`EngineState::fail_host_invoke`], naming the peer that answered.
     #[cfg(feature = "std")]
     pub fn register_mesh_rpc_invoker<F>(&mut self, router: F)
     where
@@ -4368,43 +4942,10 @@ impl<P: StatePolicy> Engine<P> {
         );
     }
 
-    /// Register the factory of the routers of this machine's children
-    /// (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
-    ///
-    /// A child session started by `<invoke type="scxml">` is given none of
-    /// this machine's registrations: its peer sends would leave under this
-    /// machine's name. The generated parent asks `factory` instead, each time
-    /// an invocation starts a child (on entry, on a restore, and for the
-    /// candidate a hybrid `<invoke>` chose), with the invoke's id and the stem
-    /// of the child's document, and installs the answer on the child before
-    /// the child initializes ([`Engine::start_child_mesh`]). A factory that
-    /// answers `None`, or none registered, leaves the child with no router:
-    /// its peer send raises `error.execution` in the child, and nothing falls
-    /// back to this machine's router.
-    ///
-    /// A restore builds the machine, and resumes the children its saved state
-    /// holds, before the host can register anything on it (docs/adr/0045). So
-    /// the restore asks no factory, and each resumed child that is still
-    /// running is asked for here, as the factory is registered, before the
-    /// host drives the machine: a resumed child does nothing until its parent
-    /// drives it, which is what "before the child initializes" asks of a
-    /// start. Each of the child's own resumed children is asked of the router
-    /// the child is given, in turn.
-    #[cfg(feature = "std")]
-    pub fn register_child_mesh_routers<F>(&mut self, factory: F)
-    where
-        F: FnMut(&str, &str) -> Option<Box<dyn crate::host_processor::ChildMeshRouter>>
-            + Send
-            + 'static,
-    {
-        self.child_mesh_routers = Some(Box::new(factory));
-        self.start_owed_child_meshes();
-    }
-
     /// Mark this machine as a child a restore resumed, whose router its
     /// parent's factory has not been asked for yet (docs/adr/0045). Called by
     /// the generated parent as it resumes the child, in place of
-    /// [`Engine::start_child_mesh`].
+    /// [`EngineState::start_child_mesh`].
     #[cfg(feature = "std")]
     pub fn owe_child_mesh(&mut self) {
         self.child_mesh_owed = true;
@@ -4412,7 +4953,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Ask this machine's factory for the router of `child` if `child` is a
     /// resumed child whose router has not been asked for yet
-    /// ([`Engine::owe_child_mesh`]), as [`Engine::start_child_mesh`] asks for
+    /// ([`EngineState::owe_child_mesh`]), as [`EngineState::start_child_mesh`] asks for
     /// a child that starts; leave it as it is otherwise. With no factory
     /// registered the child stays owed, so the factory registered later is
     /// asked for it.
@@ -4423,18 +4964,11 @@ impl<P: StatePolicy> Engine<P> {
         invoke_id: &str,
         document: &str,
     ) {
-        if !child.child_mesh_owed || self.child_mesh_routers.is_none() {
+        if !child.state.child_mesh_owed || self.child_mesh_routers.is_none() {
             return;
         }
-        child.child_mesh_owed = false;
+        child.state.child_mesh_owed = false;
         self.start_child_mesh(child, invoke_id, document);
-    }
-
-    /// Ask for the router of each resumed child this machine holds that is
-    /// owed one, now that a factory of them is there.
-    #[cfg(feature = "std")]
-    fn start_owed_child_meshes(&mut self) {
-        self.with_policy(|policy, engine| policy.start_owed_child_meshes(engine));
     }
 
     /// Ask this machine's factory of children's routers for the router of
@@ -4461,40 +4995,8 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// Install `router` as this machine's Mesh router, its request invoker
-    /// and the factory of its children's routers — the three a host installs
-    /// on a machine it starts, served here by the one router the parent was
-    /// given for this session.
-    #[cfg(feature = "std")]
-    fn install_child_mesh_router(
-        &mut self,
-        router: Box<dyn crate::host_processor::ChildMeshRouter>,
-    ) {
-        let shared: crate::host_processor::SharedChildMeshRouter =
-            std::sync::Arc::new(std::sync::Mutex::new(router));
-        let sender = std::sync::Arc::clone(&shared);
-        self.register_mesh_router(move |request| {
-            sender.lock().expect(CHILD_MESH_ROUTER_HELD).send(request)
-        });
-        let invoker = std::sync::Arc::clone(&shared);
-        self.register_mesh_rpc_invoker(move |event| {
-            invoker.lock().expect(CHILD_MESH_ROUTER_HELD).invoke(event)
-        });
-        let parent = std::sync::Arc::clone(&shared);
-        self.child_mesh_routers = Some(Box::new(move |invoke_id: &str, document: &str| {
-            parent
-                .lock()
-                .expect(CHILD_MESH_ROUTER_HELD)
-                .child_router(invoke_id, document)
-        }));
-        self.installed_mesh = Some(shared);
-        // A child resumed by a restore holds children of its own resumed with
-        // it, whose routers are asked of the router it is given now.
-        self.start_owed_child_meshes();
-    }
-
     /// Apply what arrived for this machine on the router its parent gave it,
-    /// in the order the router released it ([`Engine::apply_mesh_call`]).
+    /// in the order the router released it ([`EngineState::apply_mesh_call`]).
     ///
     /// The generated parent calls it each time it drives this child, before
     /// the child's macrostep, where it already drains the child's events to
@@ -4593,7 +5095,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// When `processor_type` is under
     /// [`crate::host_processor::RESERVED_TYPE_PREFIX`], for the reason
-    /// [`Engine::register_event_processor`] gives.
+    /// [`EngineState::register_event_processor`] gives.
     #[cfg(feature = "std")]
     pub fn register_invoker<F>(&mut self, processor_type: &str, handler: F)
     where
@@ -4616,7 +5118,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Hand this machine's invokers to `child`, a session it is starting or
     /// resuming, before the child runs (docs/adr/0045): the types a host
-    /// registers through [`Engine::register_invoker`] serve every session of
+    /// registers through [`EngineState::register_invoker`] serve every session of
     /// the tree, as the set of invocable types is the processor's
     /// (§scxml-6.4.1), and each request names the session that made it
     /// ([`crate::host_processor::HostInvokeRequest::session_id`]). An invoker
@@ -4628,63 +5130,6 @@ impl<P: StatePolicy> Engine<P> {
         child.adopt_host_invokers(self.host_processors.tree_invokers());
     }
 
-    /// Be served by `invokers`, the tree's, and hand them on to every child
-    /// this machine holds now: a child a restore resumed holds children of its
-    /// own, resumed with it before its parent could hand it anything.
-    #[cfg(feature = "std")]
-    pub fn adopt_host_invokers(&mut self, invokers: &crate::host_processor::TreeInvokers) {
-        self.host_processors.adopt_tree_invokers(invokers);
-        self.policy.adopt_host_invokers_in_children(invokers);
-    }
-
-    /// §scxml-6.4: start a host-run invocation, and raise
-    /// `done.invoke.<invoke_id>` if the host completed it synchronously.
-    ///
-    /// Returns `false` when no invoker is registered, which the generated
-    /// site turns into `error.execution` — the same event an undeclared
-    /// type produces, because the document asked for a process to be run
-    /// and none was.
-    ///
-    /// Called from the generated invoke site, which is why it is public.
-    ///
-    /// A `_sce_deadline_ms` param is the engine's, not the host's: it is taken
-    /// out of the request and armed after the start. A value that is not a
-    /// whole number of milliseconds raises `error.execution` and starts
-    /// nothing — an argument of the element that cannot be evaluated
-    /// (§scxml-6.4.1) — and the call answers `true` because the report has
-    /// been made; `false` is kept for "no invoker ran it", which is asked
-    /// first because it is the prior fact: with nobody to run the invocation,
-    /// what its deadline says is moot.
-    #[cfg(feature = "std")]
-    pub fn perform_host_invoke(
-        &mut self,
-        mut request: crate::host_processor::HostInvokeRequest,
-    ) -> bool {
-        let processor_type = request.processor_type.clone();
-        let invoke_id = request.invoke_id.clone();
-        if !self.has_invoker(&processor_type) {
-            return false;
-        }
-        let deadline = match take_host_invoke_deadline(&mut request) {
-            Ok(deadline) => deadline,
-            Err(written) => {
-                if let Some(evt) = P::get_event_from_name("error.execution") {
-                    self.raise(EventWithMetadata::platform_error(
-                        evt,
-                        crate::ErrorReason::ParamUnfit,
-                        &format!(
-                            "<invoke type='{processor_type}' id='{invoke_id}'>: {}={written:?} is not a whole number of milliseconds",
-                            crate::host_processor::HOST_INVOKE_DEADLINE_PARAM
-                        ),
-                    ));
-                }
-                return true;
-            }
-        };
-        let deadline_at = deadline.map(|ms| self.sched_now_plus(Duration::from_millis(ms)));
-        self.start_host_invoke(request, deadline_at)
-    }
-
     /// The start itself, which an invocation the document begins and one a
     /// restore begins again both go through: record the request, hand it to the
     /// host, arm the deadline at `deadline_at` (a moment of the engine's clock),
@@ -4694,18 +5139,23 @@ impl<P: StatePolicy> Engine<P> {
     /// hands no `<invoke>` to a host ([`StatePolicy::HAS_HOST_INVOKES`]),
     /// which runs none: the code that would start, end or expire one is left
     /// out of it.
+    ///
+    /// `session_id` is the session that starts it, as its policy names itself
+    /// ([`StatePolicy::own_session_id`]): the state holds no id of its own, so
+    /// the caller that holds the policy hands it over (docs/adr/0131).
     #[cfg(feature = "std")]
     fn start_host_invoke(
         &mut self,
         mut request: crate::host_processor::HostInvokeRequest,
         deadline_at: Option<SchedTimePoint>,
+        session_id: &str,
     ) -> bool {
         if !P::HAS_HOST_INVOKES {
             return false;
         }
         // docs/adr/0045: the session that starts it, which the host may serve
         // or refuse it by, and names again to end it.
-        request.session_id = self.policy.own_session_id().to_string();
+        request.session_id = session_id.to_string();
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
@@ -4770,8 +5220,11 @@ impl<P: StatePolicy> Engine<P> {
     /// stop at once, and the document receives the `error.invoke` the deadline
     /// raises. An invoker that is not registered by now is the same error a
     /// document's own start gets.
+    ///
+    /// `session_id` is this session's, which each start names
+    /// ([`start_host_invoke`](Self::start_host_invoke)).
     #[cfg(feature = "std")]
-    pub(crate) fn start_restored_host_invokes(&mut self) {
+    pub(crate) fn start_restored_host_invokes(&mut self, session_id: &str) {
         // A restore re-arms only what the document hands to a host
         // (`StatePolicy::host_invoke_owner`), so a machine with no such
         // `<invoke>` has nothing here, and leaves the code out.
@@ -4795,7 +5248,7 @@ impl<P: StatePolicy> Engine<P> {
                         RestoredDeadline::At(at) => Some(at),
                         _ => None,
                     };
-                    if !self.start_host_invoke(restored.request, deadline_at) {
+                    if !self.start_host_invoke(restored.request, deadline_at, session_id) {
                         if let Some(evt) = P::get_event_from_name("error.execution") {
                             self.raise(EventWithMetadata::platform_error(
                                 evt,
@@ -5004,114 +5457,6 @@ impl<P: StatePolicy> Engine<P> {
         })
     }
 
-    /// End the host-run invocation of session `session_id` of this machine's
-    /// tree (docs/adr/0045): this machine's own, or a child session's at any
-    /// depth, reached by its id as a send to a child session is
-    /// ([`StatePolicy::route_host_invoke_end_to_child`]). The session's queue
-    /// takes `done.invoke` or `error.invoke` as
-    /// [`complete_host_invoke`](Self::complete_host_invoke) and
-    /// [`fail_host_invoke`](Self::fail_host_invoke) raise them; a child takes it
-    /// when its parent next drives it.
-    ///
-    /// # Errors
-    ///
-    /// No session of that id runs in the tree, or that session is not running
-    /// that start of the invocation (cancelled, ended, or started again since).
-    /// Nothing is raised, and the refusal says which.
-    #[cfg(feature = "std")]
-    pub fn end_host_invoke_in(
-        &mut self,
-        session_id: &str,
-        ending: crate::host_processor::HostInvokeEnding<'_>,
-    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
-        self.route_host_invoke_end(session_id, ending)
-            .unwrap_or_else(|| {
-                Err(crate::host_processor::HostInvokeEndRefusal::unknown_session(session_id))
-            })
-    }
-
-    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a completion:
-    /// `done.invoke.<invoke_id>` with `done_data` as `_event.data`, in the
-    /// session `session_id` names. What a host that serves the whole tree
-    /// calls with the session id and token the request carried.
-    ///
-    /// # Errors
-    ///
-    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
-    #[cfg(feature = "std")]
-    pub fn complete_host_invoke_in(
-        &mut self,
-        session_id: &str,
-        processor_type: &str,
-        invoke_id: &str,
-        token: u64,
-        done_data: &str,
-    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
-        self.end_host_invoke_in(
-            session_id,
-            crate::host_processor::HostInvokeEnding {
-                processor_type,
-                invoke_id,
-                token,
-                done: true,
-                data: done_data,
-                origin: None,
-            },
-        )
-    }
-
-    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a failure:
-    /// `error.invoke.<invoke_id>` with `error_data` as `_event.data`.
-    ///
-    /// # Errors
-    ///
-    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
-    #[cfg(feature = "std")]
-    pub fn fail_host_invoke_in(
-        &mut self,
-        session_id: &str,
-        processor_type: &str,
-        invoke_id: &str,
-        token: u64,
-        error_data: &str,
-    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
-        self.end_host_invoke_in(
-            session_id,
-            crate::host_processor::HostInvokeEnding {
-                processor_type,
-                invoke_id,
-                token,
-                done: false,
-                data: error_data,
-                origin: None,
-            },
-        )
-    }
-
-    /// The ending `ending` for session `session_id`, if that session is this
-    /// machine or one in the tree below it: `None` when it is neither, so the
-    /// generated parent that asked can try another child. Public because a
-    /// generated parent calls it on its children.
-    #[cfg(feature = "std")]
-    pub fn route_host_invoke_end(
-        &mut self,
-        session_id: &str,
-        ending: crate::host_processor::HostInvokeEnding<'_>,
-    ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
-        if session_id == self.policy.own_session_id() {
-            let ended = self.end_host_invoke(ending);
-            return Some(if ended {
-                Ok(())
-            } else {
-                Err(crate::host_processor::HostInvokeEndRefusal::not_running(
-                    session_id, &ending,
-                ))
-            });
-        }
-        self.policy
-            .route_host_invoke_end_to_child(session_id, ending)
-    }
-
     /// The one body behind a host-run invocation's completion and failure:
     /// the token check and the event, which are the same for every machine
     /// (`HostProcessorRegistry::end_started`), then the deadline drop and the
@@ -5272,97 +5617,9 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     // ════════════════════════════════════════
-    // Convenience: runUntilCompletion
-    // ════════════════════════════════════════
-
-    /// Run the state machine to completion or timeout (§scxml-6.2).
-    ///
-    /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Calls `tick()`
-    /// in a loop until either the final state is reached or `timeout` elapses.
-    /// Returns `true` on completion, `false` on timeout.
-    ///
-    /// `poll_interval` is a ceiling on how long this waits between ticks, not
-    /// the interval it actually sleeps: when the scheduler knows a nearer
-    /// deadline
-    /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)),
-    /// the sleep is shortened to land on it. A caller that passes an interval
-    /// coarser than the document's delays therefore no longer steps over them.
-    ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because the polling loop
-    /// uses `std::thread::sleep` for cooperative blocking and `Instant::elapsed`
-    /// for the timeout — both host-thread-coupled. no_std consumers drive their
-    /// own executor loop, calling [`tick`](Self::tick) under their HAL waker
-    /// (e.g. embassy `Timer::after` on the same
-    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
-    /// this uses).
-    ///
-    /// Absent on `wasm32-unknown-unknown` for the same reason and one more: that
-    /// target has neither a clock for the timeout nor a way to block the thread,
-    /// and a browser must not be blocked. A host there is already the caller of
-    /// [`tick`](Self::tick) — from its own timer, or a worker's message loop —
-    /// so it calls that. The function is left out of the build rather than left
-    /// in to stop the module the first time it is called.
-    // The one place the engine reads the OS clock and blocks on an OS timer, and
-    // it is absent from a build for a target that has neither (clippy.toml).
-    #[allow(clippy::disallowed_methods)]
-    #[cfg(all(
-        feature = "std",
-        not(all(target_arch = "wasm32", target_os = "unknown"))
-    ))]
-    pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
-        // W3C SCXML: if already stopped but reached final state during initialize(), return true
-        if !self.core.main_loop.is_running {
-            return self.is_in_final_state();
-        }
-
-        let start = Instant::now();
-        while !self.is_in_final_state() {
-            if start.elapsed() > timeout {
-                return false;
-            }
-            // The scheduler's own answer wins whenever it is nearer: sleeping
-            // past a deadline is what turns a coarse interval into a document
-            // that behaves differently, and waking on it costs nothing extra.
-            let wait = match self.time_until_next_scheduled_ms() {
-                Some(ms) => poll_interval.min(Duration::from_millis(ms)),
-                None => poll_interval,
-            };
-            std::thread::sleep(wait);
-            self.tick();
-        }
-        true
-    }
-
-    // ════════════════════════════════════════
     // Internal: microstep + macrostep implementation
     // ════════════════════════════════════════
 
-    /// §scxml-D-mainEventLoop: the outer loop, and the only place the three
-    /// public entry points express macrostep semantics.
-    ///
-    /// Appendix D names the external queue exactly once per iteration and it
-    /// is *after* `invoke(inv)`:
-    ///
-    /// ```text
-    /// while running:
-    ///     while running and not macrostepDone:      # eventless + internal only
-    ///         ... selectEventlessTransitions() / internalQueue.dequeue() ...
-    ///     for state in statesToInvoke.sort(entryOrder):
-    ///         for inv in state.invoke.sort(documentOrder):
-    ///             invoke(inv)
-    ///     statesToInvoke.clear()
-    ///     if not internalQueue.isEmpty(): continue
-    ///     externalEvent = externalQueue.dequeue()
-    /// ```
-    ///
-    /// Folding the external drain into the macrostep-completion loop instead
-    /// is a different algorithm, not a shorter one. The invoked children do
-    /// not exist yet while that drain runs, so everything `<onentry>` queued
-    /// for this session on the way in is consumed with no `autoforward` child
-    /// to receive it — and there is no later point at which it is delivered.
-    /// One external event per iteration for the same reason: a state entered
-    /// by event N's transition must have its invokes started before N+1 comes
-    /// off the queue.
     /// Put `event` on `queue`: its number and metadata, as the engine's code
     /// that is the same for every machine drives the queue, and its typed
     /// payload beside it when this machine's events carry one (docs/adr/0068).
@@ -5409,53 +5666,6 @@ impl<P: StatePolicy> Engine<P> {
         P::event_of(event)
     }
 
-    pub(crate) fn run_main_event_loop(&mut self) {
-        self.run_turn(false, None);
-    }
-
-    /// One turn of the loop over this machine: lend it the workspace, sized by
-    /// the document, and run the code that is the same for every machine — the
-    /// entry into the initial configuration first when `initial`, then the main
-    /// event loop.
-    ///
-    /// One workspace for the whole turn: every microstep borrows it in turn,
-    /// and it is gone when the call returns (docs/adr/0056 §4). The only part of
-    /// it that is this machine's own is the workspace's size (docs/adr/0068).
-    ///
-    /// Every buffer of the workspace is the size the generator read from the
-    /// document's tree, in both profiles, and a push past one stops the program
-    /// with the generator's name on it: the conformance corpus is the evidence
-    /// that each bound is an upper bound and not an estimate.
-    ///
-    /// The workspace starts as the empty one, a constant ([`Buffers::EMPTY`]):
-    /// its buffers other than the sets' zeroed words are uninitialised until a
-    /// microstep writes them. So the turn writes only those words, with no loop
-    /// that fills a buffer and no filled copy beside the workspace in this
-    /// frame (docs/adr/0071).
-    ///
-    /// Out of line, so the workspace is in this frame and no other: inlined,
-    /// it would sit in the frame of whatever calls `initialize` or `step` for
-    /// as long as that frame lives, rather than for the turn. A consumer
-    /// reported its task setup's frame about 4 KB larger at ADR 0064, where two
-    /// workspaces were built in functions that inline (2026-10-30).
-    ///
-    /// `lend` is the data [`process_event_with`](Self::process_event_with)
-    /// lends with its event, `None` from every other caller. The turn holds
-    /// the data of the event being processed beside the engine, never in it
-    /// (docs/adr/0124).
-    #[inline(never)]
-    fn run_turn(&mut self, initial: bool, lend: Option<Lend<'_, P>>) {
-        let mut workspace = <P::Workspace as Buffers>::EMPTY;
-        let (enabled, scratch) = workspace.split();
-        Turn {
-            host: &mut EngineHost::new(self, lend),
-            tables: P::TABLES,
-            enabled,
-            scratch,
-        }
-        .run(initial);
-    }
-
     /// §scxml-6.4: whether the external event `queued` is one the machine
     /// takes. A host-run invocation's `done.invoke` counts only when
     /// `complete_host_invoke` confirmed the invocation was still running and
@@ -5481,135 +5691,23 @@ impl<P: StatePolicy> Engine<P> {
         }
         !refused
     }
+}
 
-    /// Bind the event `queued`, just taken off the internal queue or (when
-    /// `external`) the external one, as `_event`: what only this machine's
-    /// policy can do with it, the typed payload queued with it among them.
-    ///
-    /// The door comes first (docs/adr/0086, section 4.2): a delivery whose data
-    /// does not fit its type is refused whole, and the `error.execution` that
-    /// says why is bound in its place and answered, with no `<finalize>` or
-    /// autoforward step, since it is the engine's own error. `Bound::Refused`
-    /// is a delivery refused in a document that declares no `error.execution`:
-    /// nothing is taken in its place. For an admitted external event, the
-    /// preliminary `<finalize>` and autoforward step of §scxml-D-mainEventLoop
-    /// runs before it is bound.
-    ///
-    /// The payload the event carried is answered beside what was bound, and
-    /// the turn holds it while the event is `_event`: the policy is handed it
-    /// by every hook, and keeps none of it (docs/adr/0124). An event its host
-    /// `lent` data with ([`process_event_with`](Self::process_event_with))
-    /// carries it in the lend and not on the wire, so its door holds the lent
-    /// data, to the same contract and with the same verdict (docs/adr/0124,
-    /// D2).
-    fn bind_queued(
-        &mut self,
-        queued: QueuedEvent,
-        external: bool,
-        lent: Option<P::EventData<'_>>,
-    ) -> (Bound, P::Payload) {
-        // The two queues are of two types (docs/adr/0076), so each is asked
-        // for its own payload rather than one chosen by reference.
-        let mut payload = if core::mem::size_of::<P::Payload>() != 0 {
-            if external {
-                self.external_queue.pop_payload()
-            } else {
-                self.internal_queue.pop_payload()
-            }
-            .unwrap_or_default()
-        } else {
-            P::Payload::default()
-        };
-        // The event is a number from here on, and becomes this machine's own
-        // value only where a step below reads it as one: the door, `<finalize>`
-        // and autoforward. A machine with none of them converts nothing
-        // (docs/adr/0123).
-        let delivered = queued.event;
-        let mut metadata = queued.metadata;
-        // EventSchema native lowering: when no typed payload rode with this
-        // event, read it out of the `data` every other producer fills, at the
-        // door. Data a host lent is held there to the same contract, and
-        // answered by the same verdict (docs/adr/0124, D2).
-        #[cfg(feature = "std")]
-        {
-            let read = match lent {
-                Some(event_data) => {
-                    P::admit_event_data(event_data).map_err(crate::event_payload::lent_refusal)
-                }
-                None => {
-                    P::lift_event_payload(Self::event_of(delivered), &metadata.data, &mut payload)
-                }
-            };
-            match Self::bind_lifted_payload(Self::event_of(delivered), read) {
-                Admission::Admitted => {}
-                Admission::Replaced { error, refusal } => {
-                    return self.bind_in_place(error, &refusal);
-                }
-                Admission::Refused => return (Bound::Refused, payload),
-            }
-        }
-        // A `no_std` build has no wire and no refusal: its host side holds lent
-        // data (`EngineHost::bind_queued`).
-        #[cfg(not(feature = "std"))]
-        let _ = lent;
-        if external {
-            // §scxml-6.5: Execute finalize before parent's own transition matching
-            if concepts::has_finalize::<P>() {
-                let event_with_meta = EventWithMetadata {
-                    event: Self::event_of(delivered),
-                    payload,
-                    metadata,
-                    #[cfg(feature = "std")]
-                    target: queued.target,
-                };
-                self.with_policy(|policy, engine| {
-                    policy.execute_finalize_for_child_event(&event_with_meta, engine)
-                });
-                metadata = event_with_meta.metadata;
-                payload = event_with_meta.payload;
-            }
-            // §scxml-D-mainEventLoop: autoforward belongs to the same
-            // preliminary step as `<finalize>` above — both run against the
-            // event this drain has just popped off the external queue, and
-            // both run before transition selection. §scxml-6.4.2 fixes the
-            // position in prose as well: the parent forwards "at the point at
-            // which it removes it from the external event queue".
-            //
-            // Forwarding where the event is *enqueued* instead is a different
-            // algorithm, not an earlier one. `raise_external_with_meta` runs
-            // inside whatever executable content produced the event, so a
-            // transition body that queues two events hands the child both of
-            // them before the parent has processed either — the child runs a
-            // whole event ahead and the two sessions stop agreeing on what has
-            // happened. Run-to-completion is a property of this loop's shape,
-            // so the forward has to live in the loop.
-            //
-            // §scxml-6.4 requires an exact copy, so the metadata rides along
-            // with the name. `get_event_name` already returns `&'static str`;
-            // pass it directly without an alloc-coupled `to_string()`
-            // round-trip, which keeps this compiling under no_std. `target` is
-            // deliberately not forwarded: it is a routing decision owned by
-            // the `<send>` that produced the original event, and inheriting it
-            // would re-route the child's copy instead of delivering it.
-            if concepts::has_autoforward::<P>() {
-                // §scxml-5.10: under the name the event arrived under, which is
-                // the member's own unless a door cut a longer one back to it.
-                #[cfg(feature = "std")]
-                let name = if metadata.name.is_empty() {
-                    P::get_event_name(Self::event_of(delivered))
-                } else {
-                    metadata.name.as_str()
-                };
-                #[cfg(not(feature = "std"))]
-                let name = P::get_event_name(Self::event_of(delivered));
-                self.with_policy(|policy, engine| {
-                    policy.forward_to_autoforward_children(name, &metadata, engine)
-                });
-            }
-        }
-        // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-        self.policy.populate_event_metadata(&metadata);
-        (Bound::Delivered(delivered), payload)
+/// An engine reads and writes through its state as a `Vec<T>` does through
+/// `[T]`: the owner adds the policy, and a host that holds `&mut Engine<P>`
+/// calls every method of [`EngineState`] on it, none of which reaches the
+/// policy (docs/adr/0131).
+impl<P: StatePolicy> core::ops::Deref for Engine<P> {
+    type Target = EngineState<P>;
+
+    fn deref(&self) -> &EngineState<P> {
+        &self.state
+    }
+}
+
+impl<P: StatePolicy> core::ops::DerefMut for Engine<P> {
+    fn deref_mut(&mut self) -> &mut EngineState<P> {
+        &mut self.state
     }
 }
 
@@ -5657,7 +5755,7 @@ enum Admission<E> {
 /// What each hook of [`Behaviour`] and [`MainLoop`] still is for every
 /// machine, and why (docs/adr/0123, decision 3): `store`, `queue` and `core`
 /// hand out views of storage sized by the machine's document, and the hooks
-/// that run the machine's executable content borrow the whole engine
+/// that run the machine's executable content borrow the engine's state
 /// mutably — an In() reads the configuration, a `<raise>` or a `<send>`
 /// writes a queue, a raise reads and counts the error chain in the core — so
 /// no view can be held across them for the length of a turn; `behaviour` is
@@ -5665,8 +5763,8 @@ enum Admission<E> {
 /// replace and the crate's MSRV does not have.
 ///
 /// The data of the event being processed is held here, beside the engine and
-/// not in it (docs/adr/0124): a hook is handed `&mut Engine<P>`, so data held
-/// in the engine could not be lent to the same call. `current` is moved in
+/// not in it (docs/adr/0124): a hook is handed `&mut EngineState<P>`, so data
+/// held in the state could not be lent to the same call. `current` is moved in
 /// when an event is taken and stays until the next one is taken, and
 /// `lend` is what [`Engine::process_event_with`] lends until its event is
 /// taken.
@@ -5716,7 +5814,7 @@ impl<'e, 'd, P: StatePolicy> EngineHost<'e, 'd, P> {
 
 impl<P: StatePolicy> Behaviour for EngineHost<'_, '_, P> {
     fn store(&mut self) -> RunStoreMut<'_> {
-        self.engine.run_store.view_mut()
+        self.engine.state.run_store.view_mut()
     }
 
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
@@ -5791,7 +5889,7 @@ pub(crate) struct LoopState {
     /// The top-level `<final>` the run ended in, as Appendix D's enterStates
     /// ends a run — set from the entry set that entered it
     /// ([`EngineCore::settle`]), cleared when a run starts. See
-    /// [`Engine::terminal_state`].
+    /// [`EngineState::terminal_state`].
     pub(crate) terminal_state: Option<StateId>,
     /// Microsteps taken by the macrostep now in progress, against
     /// [`MAX_MACROSTEP_MICROSTEPS`].
@@ -5812,10 +5910,10 @@ pub(crate) struct LoopState {
     /// a macrostep, which is the external dequeue.
     pub(crate) macrostep_truncated: bool,
     /// How many links the current error chain has, reset the moment the drain
-    /// does anything else — see [`Engine::error_cascade_events`].
+    /// does anything else — see [`EngineState::error_cascade_events`].
     pub(crate) error_cascade_depth: u32,
     /// External events one invocation of the main event loop may take — see
-    /// [`Engine::max_external_events_per_call`].
+    /// [`EngineState::max_external_events_per_call`].
     ///
     /// Present on every profile: it is the BOUND, not the report, so it does
     /// not wait for the `macrostep-diagnostics` feature.
@@ -5854,11 +5952,11 @@ pub(crate) struct EngineCore {
     pub(crate) main_loop: LoopState,
     /// The atomic state under the first target of the last transition that
     /// entered one, or the tables' default state before any did — see
-    /// [`Engine::get_current_state`].
+    /// [`EngineState::get_current_state`].
     pub(crate) current_state: StateId,
     /// §scxml-D-exitInterpreter has run for this run: the configuration is
     /// empty. `current_state` still names the state the run was last in (it
-    /// has no "none"), so [`Engine::get_active_states`] answers from this
+    /// has no "none"), so [`EngineState::get_active_states`] answers from this
     /// flag rather than from it.
     pub(crate) interpreter_exited: bool,
     /// §scxml-5.10.1: whether the event being processed was taken off the
@@ -5871,53 +5969,53 @@ pub(crate) struct EngineCore {
     /// a chain* rather than a first failure.
     ///
     /// This is the whole discriminator behind
-    /// [`Engine::error_cascade_events`]: a document that answers five hundred
+    /// [`EngineState::error_cascade_events`]: a document that answers five hundred
     /// separate failures cleanly never sets it twice in a row, and one whose
     /// error handler fails sets it on every link.
     pub(crate) handling_error_event: bool,
     /// Events taken off the external queue that no transition matched — see
-    /// [`Engine::discarded_external_events`].
+    /// [`EngineState::discarded_external_events`].
     pub(crate) discarded_external_events: u32,
     /// The most recent event this engine discarded — see
-    /// [`Engine::last_discarded_event`].
+    /// [`EngineState::last_discarded_event`].
     pub(crate) last_discarded_event: Option<EventId>,
     /// External events this machine never dequeued because it had stopped —
-    /// see [`Engine::unseen_external_events`].
+    /// see [`EngineState::unseen_external_events`].
     pub(crate) unseen_external_events: u32,
     /// The most recent event this machine never looked at — see
-    /// [`Engine::last_unseen_event`].
+    /// [`EngineState::last_unseen_event`].
     pub(crate) last_unseen_event: Option<EventId>,
     /// `error.*` events this engine raised that no transition matched — see
-    /// [`Engine::unhandled_error_events`].
+    /// [`EngineState::unhandled_error_events`].
     pub(crate) unhandled_error_events: u32,
     /// The most recent `error.*` event that went unhandled — see
-    /// [`Engine::last_unhandled_error`].
+    /// [`EngineState::last_unhandled_error`].
     pub(crate) last_unhandled_error: Option<EventId>,
     /// `error.*` events refused because the chain that raised them had reached
-    /// [`MAX_ERROR_CASCADE_DEPTH`] — see [`Engine::error_cascade_events`].
+    /// [`MAX_ERROR_CASCADE_DEPTH`] — see [`EngineState::error_cascade_events`].
     pub(crate) error_cascade_events: u32,
     /// The most recent `error.*` event refused that way — see
-    /// [`Engine::last_error_cascade_event`].
+    /// [`EngineState::last_error_cascade_event`].
     pub(crate) last_error_cascade_event: Option<EventId>,
     /// Events delivered with a payload the datamodel could not read as
-    /// structure — see [`Engine::undecodable_payloads`].
+    /// structure — see [`EngineState::undecodable_payloads`].
     pub(crate) undecodable_payloads: u32,
     /// The most recent event whose payload could not be read — see
-    /// [`Engine::last_undecodable_payload`].
+    /// [`EngineState::last_undecodable_payload`].
     pub(crate) last_undecodable_payload: Option<EventId>,
     /// Invocations of the main event loop this engine handed back with an
-    /// external event still queued — see `Engine::truncated_event_chains`.
+    /// external event still queued — see `EngineState::truncated_event_chains`.
     ///
     /// Present with the `macrostep-diagnostics` feature only, with its sibling
     /// below: per-ENGINE RAM, whether or not anything reads it.
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) truncated_event_chains: u32,
     /// The event at the head of the queue the last time a call was handed back
-    /// that way — see `Engine::last_truncated_event`.
+    /// that way — see `EngineState::last_truncated_event`.
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_event: Option<EventId>,
     /// Macrosteps this engine stopped at [`MAX_MACROSTEP_MICROSTEPS`] with the
-    /// chain still going — see `Engine::truncated_macrosteps`.
+    /// chain still going — see `EngineState::truncated_macrosteps`.
     ///
     /// Present with the `macrostep-diagnostics` feature only, and the RAM is
     /// the point of leaving it out: this and its sibling below are per-ENGINE,
@@ -5926,11 +6024,11 @@ pub(crate) struct EngineCore {
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) truncated_macrosteps: u32,
     /// The state the drain was in when it last stopped that way — see
-    /// `Engine::last_truncated_macrostep_state`.
+    /// `EngineState::last_truncated_macrostep_state`.
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_macrostep_state: Option<StateId>,
     /// Where this engine reads "now" from — see [`SceClock`] and
-    /// [`Engine::clock`].
+    /// [`EngineState::clock`].
     pub(crate) clock: SceClock,
     /// The reading [`clock`](Self::clock) gave when the current turn began, or
     /// `None` between turns. See [`open_turn`](Self::open_turn).
@@ -5945,7 +6043,7 @@ pub(crate) struct EngineCore {
     /// calls are its own business, so the count below stops.
     pub(crate) tick_has_run: bool,
     /// Macrosteps taken on a scheduler-driven machine before any
-    /// [`Engine::tick`] — see [`Engine::unattended_scheduler_steps`].
+    /// [`Engine::tick`] — see [`EngineState::unattended_scheduler_steps`].
     pub(crate) unattended_scheduler_steps: u32,
 }
 
@@ -6003,7 +6101,7 @@ impl EngineCore {
 
     /// What time it is for the turn the engine is in: the latched reading
     /// inside one, a live reading between them. Why "now" belongs to the turn
-    /// is on `Engine::sched_now`, which every machine reaches this through.
+    /// is on `EngineState::sched_now`, which every machine reaches this through.
     #[inline(never)]
     pub(crate) fn sched_now(&self, hal_now: fn() -> SchedTimePoint) -> SchedTimePoint {
         match self.turn_now {
@@ -6042,7 +6140,7 @@ impl EngineCore {
     /// Count one macrostep [`Engine::step`] took on a machine whose delayed
     /// events only [`Engine::tick`] delivers, until a tick has run, and say so
     /// the first time. The caller asks only for a machine that has delayed
-    /// sends — see [`Engine::unattended_scheduler_steps`].
+    /// sends — see [`EngineState::unattended_scheduler_steps`].
     #[inline(never)]
     pub(crate) fn note_unattended_step(&mut self) {
         if self.tick_has_run {
@@ -6234,14 +6332,14 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
     }
 
     fn core(&mut self) -> &mut EngineCore {
-        &mut self.engine.core
+        &mut self.engine.state.core
     }
 
     fn queue(&mut self, external: bool) -> EventQueueMut<'_> {
         if external {
-            self.engine.external_queue.events()
+            self.engine.state.external_queue.events()
         } else {
-            self.engine.internal_queue.events()
+            self.engine.state.internal_queue.events()
         }
     }
 
@@ -6275,7 +6373,7 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
 
     #[cfg(feature = "std")]
     fn admit_external(&mut self, queued: &QueuedEvent) -> bool {
-        let admitted = self.engine.admit_external(queued);
+        let admitted = self.engine.state.admit_external(queued);
         if !admitted {
             // Taken off the queue and never bound: a late reply refused here is
             // an event the turn has taken, and `_event` stays what it was. Were
@@ -6291,7 +6389,7 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
 
     fn drop_external_payloads(&mut self) {
         if core::mem::size_of::<P::Payload>() != 0 {
-            while self.engine.external_queue.pop_payload().is_some() {}
+            while self.engine.state.external_queue.pop_payload().is_some() {}
         }
     }
 
@@ -6304,17 +6402,22 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
         // an invocation the document entered would have started, before the
         // external queue is touched (SCE Accepted Subset §2.15).
         #[cfg(feature = "std")]
-        self.engine.start_restored_host_invokes();
+        {
+            let engine = &mut *self.engine;
+            engine
+                .state
+                .start_restored_host_invokes(engine.policy.own_session_id());
+        }
     }
 
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn drain_inbox(&mut self) {
-        self.engine.drain_inbox();
+        self.engine.state.drain_inbox();
     }
 
     #[cfg(feature = "transition-observer")]
     fn observe_transitions(&mut self, enabled: &[TransitionId]) {
-        let Some(observer) = self.engine.transition_observer.as_mut() else {
+        let Some(observer) = self.engine.state.transition_observer.as_mut() else {
             return;
         };
         for &transition in enabled {
