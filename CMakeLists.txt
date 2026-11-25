@@ -95,21 +95,31 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # =============================================================================
-# ccache Configuration - Cache compilation results
+# Compiler cache - Cache compilation results
 # =============================================================================
 # ccache dramatically speeds up rebuilds by caching compilation results
 # Benchmark results (full rebuild after clean):
 #   - Without ccache: ~120 seconds (clean build)
 #   - With ccache:    ~15 seconds (90% faster)
+#
+# A launcher the configure is handed is kept: CMAKE_<LANG>_COMPILER_LAUNCHER on
+# the command line, or the environment variable of that name, which CMake reads
+# into the cache when project() enables the language. The CI lanes compile
+# through sccache that way (.github/actions/compile-cache), and a variable set
+# here would hide it behind a ccache the image happens to carry. A language
+# handed none compiles through ccache when it is installed.
 
 find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    message(STATUS "Using ccache for faster rebuilds")
-else()
-    message(STATUS "ccache not found, consider installing: sudo apt install ccache")
-endif()
+foreach(lang C CXX)
+    if(CMAKE_${lang}_COMPILER_LAUNCHER)
+        message(STATUS "${lang} compiles through ${CMAKE_${lang}_COMPILER_LAUNCHER}")
+    elseif(CCACHE_PROGRAM)
+        set(CMAKE_${lang}_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+        message(STATUS "${lang} compiles through ccache for faster rebuilds")
+    else()
+        message(STATUS "ccache not found for ${lang}, consider installing: sudo apt install ccache")
+    endif()
+endforeach()
 
 # =============================================================================
 # Linker Configuration - Use lld for faster linking
