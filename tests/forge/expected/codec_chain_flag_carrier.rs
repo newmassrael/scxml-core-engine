@@ -81,6 +81,31 @@ impl<S: CodecChainFlagCarrierStorage> Default for CodecChainFlagCarrierIn<S> {
     }
 }
 
+/// How the chain `entries` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecChainFlagCarrierEntriesChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecChainFlagCarrierEntriesChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Flag;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f> ::sce_forge_runtime::codec::ChainRule<'f, CodecChainFlagEntry, 1> for CodecChainFlagCarrierEntriesChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 1]) -> CodecChainFlagEntry {
+        CodecChainFlagEntry::read(_r, _a[0])
+    }
+
+    fn follows(_e: &CodecChainFlagEntry) -> bool {
+        _e.z()
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierIn<S> {
     /// Construct an instance with every field at its own type's
@@ -149,14 +174,7 @@ impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierIn<S> {
             raw[0]
         };
         cursor.hold_with(|cursor| _out.entries.refill_from((head & 0x1) != 0, |_vec| {
-            ::sce_forge_runtime::codec::read_chain_into::<CodecChainFlagEntry, _, 1>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                read: |_r, _a| CodecChainFlagEntry::read(_r, _a[0]),
-                args: [head & 0x1],
-                depth: Some(4),
-                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
-                carry: None,
-                kinds: &[],
-            }, &mut [])
+            ::sce_forge_runtime::codec::read_chain_into::<CodecChainFlagCarrierEntriesChain, _, 1>(cursor, _vec, [head & 0x1], &mut [])
         }));
         _out.head = head;
 

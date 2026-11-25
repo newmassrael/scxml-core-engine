@@ -84,6 +84,35 @@ impl<S: CodecChainPrevGatedStorage> Default for CodecChainPrevGatedIn<S> {
     }
 }
 
+/// How the chain `entries` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecChainPrevGatedEntriesChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecChainPrevGatedEntriesChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Flag;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f> ::sce_forge_runtime::codec::ChainRule<'f, CodecChainPrevEntry, 2> for CodecChainPrevGatedEntriesChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 2]) -> CodecChainPrevEntry {
+        CodecChainPrevEntry::read(_r, _a[0], _a[1])
+    }
+
+    fn follows(_e: &CodecChainPrevEntry) -> bool {
+        _e.z()
+    }
+
+    fn carry(_e: &CodecChainPrevEntry, _a: &mut [u8; 2]) {
+        _a[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64);
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
     /// Construct an instance with every field at its own type's
@@ -153,14 +182,7 @@ impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
         };
         if (head & 0x02u8) != 0 {
             cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill_from(((head & 0x1) != 0, (),), |_vec| {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecChainPrevEntry, _, 2>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecChainPrevEntry::read(_r, _a[0], _a[1]),
-                    args: [0, head & 0x1],
-                    depth: Some(4),
-                    end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
-                    carry: Some(|_e, _a| { _a[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64); }),
-                    kinds: &[],
-                }, &mut [])
+                ::sce_forge_runtime::codec::read_chain_into::<CodecChainPrevGatedEntriesChain, _, 2>(cursor, _vec, [0, head & 0x1], &mut [])
             }));
         } else {
             _out.entries = None;
@@ -465,6 +487,12 @@ impl ::sce_forge_runtime::codec::ListWalk<2> for CodecChainPrevGatedEntriesWalk 
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 2]) { _s[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64); }
 }
 
+impl ::sce_forge_runtime::codec::ChainScanRule<super::codec_chain_prev_entry::CodecChainPrevEntryView> for CodecChainPrevGatedEntriesChain {
+    fn follows(_e: &super::codec_chain_prev_entry::CodecChainPrevEntryView) -> bool {
+        _e.z()
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevGatedView<'a> {
@@ -533,11 +561,9 @@ impl<'a> CodecChainPrevGatedView<'a> {
         let entries: Option<::sce_forge_runtime::codec::Lawful<Bounded<ListView<'a, CodecChainPrevGatedEntriesWalk, 2>, 4, 1>, CodecChainPrevGatedEntriesLaw>>;
         if (head & 0x02u8) != 0 {
             let _rest = cursor.rest();
-            let _count = ::sce_forge_runtime::codec::walk_chain::<CodecChainPrevGatedEntriesWalk, _, 2>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
+            let _count = ::sce_forge_runtime::codec::walk_chain::<CodecChainPrevGatedEntriesWalk, CodecChainPrevGatedEntriesChain, _, 2>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
                 site: ::sce_forge_runtime::codec::ChainSite { codec: "codec_chain_prev_gated", field: "entries" },
                 args: [0, head & 0x1],
-                depth: Some(4),
-                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
             });
             entries = cursor.settle(Bounded::new(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::TooManyElements).and_then(|_l| ::sce_forge_runtime::codec::Lawful::new(((head & 0x1) != 0, (),), _l).ok_or(CodecError::PresentIfMismatch)).map(Some));
         } else {

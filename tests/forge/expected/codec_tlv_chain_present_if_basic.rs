@@ -80,6 +80,27 @@ impl<S: CodecTlvChainPresentIfBasicStorage> Default for CodecTlvChainPresentIfBa
     }
 }
 
+/// How the chain `entries` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecTlvChainPresentIfBasicEntriesChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecTlvChainPresentIfBasicEntriesChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Frame;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f, S: CodecTlvChainPresentIfBasicFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecTlvEntryOwned<S>, 0> for CodecTlvChainPresentIfBasicEntriesChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecTlvEntryOwned<S> {
+        CodecTlvEntryOwned::<S>::read(_r)
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecTlvChainPresentIfBasicStorage> CodecTlvChainPresentIfBasicIn<S> {
     /// Construct an instance with every field at its own type's
@@ -149,14 +170,7 @@ impl<S: CodecTlvChainPresentIfBasicStorage> CodecTlvChainPresentIfBasicIn<S> {
         };
         if (carrier & 0x01u8) != 0 {
             cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill(|_vec| {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecTlvEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecTlvEntryOwned::<S>::read(_r),
-                    args: [],
-                    depth: Some(4),
-                    end: ::sce_forge_runtime::codec::ChainEnd::Frame,
-                    carry: None,
-                    kinds: &[],
-                }, &mut [])
+                ::sce_forge_runtime::codec::read_chain_into::<CodecTlvChainPresentIfBasicEntriesChain, _, 0>(cursor, _vec, [], &mut [])
             }));
         } else {
             _out.entries = None;

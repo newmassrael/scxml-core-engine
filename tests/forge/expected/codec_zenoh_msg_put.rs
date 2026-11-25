@@ -106,6 +106,31 @@ impl<S: CodecZenohMsgPutStorage> Default for CodecZenohMsgPutIn<S> {
     }
 }
 
+/// How the chain `extensions` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecZenohMsgPutExtensionsChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecZenohMsgPutExtensionsChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Flag;
+    const DEPTH: Option<u32> = None;
+}
+
+impl<'f, S: CodecZenohMsgPutFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecZenohExtEntryOwned<S>, 0> for CodecZenohMsgPutExtensionsChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecZenohExtEntryOwned<S> {
+        CodecZenohExtEntryOwned::<S>::read(_r)
+    }
+
+    fn follows(_e: &CodecZenohExtEntryOwned<S>) -> bool {
+        _e.z()
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecZenohMsgPutStorage> CodecZenohMsgPutIn<S> {
     /// Construct an instance with every field at its own type's
@@ -185,14 +210,7 @@ impl<S: CodecZenohMsgPutStorage> CodecZenohMsgPutIn<S> {
         }
         if (header & 0x80u8) != 0 {
             cursor.hold_with(|cursor| _out.extensions.get_or_insert_with(Default::default).refill(|_vec| {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecZenohExtEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecZenohExtEntryOwned::<S>::read(_r),
-                    args: [],
-                    depth: None,
-                    end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
-                    carry: None,
-                    kinds: &[],
-                }, &mut [])
+                ::sce_forge_runtime::codec::read_chain_into::<CodecZenohMsgPutExtensionsChain, _, 0>(cursor, _vec, [], &mut [])
             }));
         } else {
             _out.extensions = None;
@@ -525,6 +543,12 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohMsgPutWalk {
 #[allow(dead_code)]
 pub type CodecZenohMsgPutExtensionsWalk = super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk;
 
+impl<'b> ::sce_forge_runtime::codec::ChainScanRule<super::codec_zenoh_ext_entry::CodecZenohExtEntryView<'b>> for CodecZenohMsgPutExtensionsChain {
+    fn follows(_e: &super::codec_zenoh_ext_entry::CodecZenohExtEntryView<'b>) -> bool {
+        _e.z()
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohMsgPutView<'a> {
@@ -624,11 +648,9 @@ impl<'a> CodecZenohMsgPutView<'a> {
         let extensions: Option<Bounded<ListView<'a, super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>>;
         if (header & 0x80u8) != 0 {
             let _rest = cursor.rest();
-            let _count = ::sce_forge_runtime::codec::walk_chain::<super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, _, 0>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
+            let _count = ::sce_forge_runtime::codec::walk_chain::<super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, CodecZenohMsgPutExtensionsChain, _, 0>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
                 site: ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_msg_put", field: "extensions" },
                 args: [],
-                depth: None,
-                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
             });
             extensions = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {

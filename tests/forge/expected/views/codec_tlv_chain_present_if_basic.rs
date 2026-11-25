@@ -82,6 +82,27 @@ impl<S: CodecTlvChainPresentIfBasicStorage> Default for CodecTlvChainPresentIfBa
     }
 }
 
+/// How the chain `entries` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecTlvChainPresentIfBasicEntriesChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecTlvChainPresentIfBasicEntriesChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Frame;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f, S: CodecTlvChainPresentIfBasicFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecTlvEntryOwned<S>, 0> for CodecTlvChainPresentIfBasicEntriesChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecTlvEntryOwned<S> {
+        CodecTlvEntryOwned::<S>::read(_r)
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecTlvChainPresentIfBasicStorage> CodecTlvChainPresentIfBasicIn<S> {
     /// Construct an instance with every field at its own type's
@@ -151,14 +172,7 @@ impl<S: CodecTlvChainPresentIfBasicStorage> CodecTlvChainPresentIfBasicIn<S> {
         };
         if (carrier & 0x01u8) != 0 {
             cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill(|_vec| {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecTlvEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecTlvEntryOwned::<S>::read(_r),
-                    args: [],
-                    depth: Some(4),
-                    end: ::sce_forge_runtime::codec::ChainEnd::Frame,
-                    carry: None,
-                    kinds: &[],
-                }, &mut [])
+                ::sce_forge_runtime::codec::read_chain_into::<CodecTlvChainPresentIfBasicEntriesChain, _, 0>(cursor, _vec, [], &mut [])
             }));
         } else {
             _out.entries = None;
@@ -391,6 +405,8 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecTlvChainPresentIfBasicWalk
 #[allow(dead_code)]
 pub type CodecTlvChainPresentIfBasicEntriesWalk = super::codec_tlv_entry::CodecTlvEntryWalk;
 
+impl<'b> ::sce_forge_runtime::codec::ChainScanRule<super::codec_tlv_entry::CodecTlvEntryView<'b>> for CodecTlvChainPresentIfBasicEntriesChain {}
+
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecTlvChainPresentIfBasicView<'a> {
@@ -459,11 +475,9 @@ impl<'a> CodecTlvChainPresentIfBasicView<'a> {
         let entries: Option<Bounded<ListView<'a, super::codec_tlv_entry::CodecTlvEntryWalk, 0>, 4>>;
         if (carrier & 0x01u8) != 0 {
             let _rest = cursor.rest();
-            let _count = ::sce_forge_runtime::codec::walk_chain::<super::codec_tlv_entry::CodecTlvEntryWalk, _, 0>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
+            let _count = ::sce_forge_runtime::codec::walk_chain::<super::codec_tlv_entry::CodecTlvEntryWalk, CodecTlvChainPresentIfBasicEntriesChain, _, 0>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
                 site: ::sce_forge_runtime::codec::ChainSite { codec: "codec_tlv_chain_present_if_basic", field: "entries" },
                 args: [],
-                depth: Some(4),
-                end: ::sce_forge_runtime::codec::ChainEnd::Frame,
             });
             entries = cursor.settle(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements).map(Some));
         } else {

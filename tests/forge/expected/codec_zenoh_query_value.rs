@@ -84,6 +84,35 @@ impl<S: CodecZenohQueryValueStorage> Default for CodecZenohQueryValueIn<S> {
     }
 }
 
+/// How the chain `exts` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecZenohQueryValueExtsChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecZenohQueryValueExtsChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Flag;
+    const DEPTH: Option<u32> = None;
+}
+
+impl<'f, S: CodecZenohQueryValueFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecZenohValueEntryOwned<S>, 1> for CodecZenohQueryValueExtsChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 1]) -> CodecZenohValueEntryOwned<S> {
+        CodecZenohValueEntryOwned::<S>::read(_r, _a[0])
+    }
+
+    fn follows(_e: &CodecZenohValueEntryOwned<S>) -> bool {
+        _e.z()
+    }
+
+    fn carry(_e: &CodecZenohValueEntryOwned<S>, _a: &mut [u8; 1]) {
+        _a[0] = u8::from(u64::from(_e.ext_id()) == 4u64);
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecZenohQueryValueStorage> CodecZenohQueryValueIn<S> {
     /// Construct an instance with every field at its own type's
@@ -148,14 +177,7 @@ impl<S: CodecZenohQueryValueStorage> CodecZenohQueryValueIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         cursor.hold_with(|cursor| _out.exts.refill_from((), |_vec| {
-            ::sce_forge_runtime::codec::read_chain_into::<CodecZenohValueEntryOwned<S>, _, 1>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                read: |_r, _a| CodecZenohValueEntryOwned::<S>::read(_r, _a[0]),
-                args: [0],
-                depth: None,
-                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
-                carry: Some(|_e, _a| { _a[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }),
-                kinds: &[],
-            }, &mut [])
+            ::sce_forge_runtime::codec::read_chain_into::<CodecZenohQueryValueExtsChain, _, 1>(cursor, _vec, [0], &mut [])
         }));
 
     }
@@ -383,6 +405,12 @@ impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohQueryValueExtsWalk {
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) { _s[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }
 }
 
+impl<'b> ::sce_forge_runtime::codec::ChainScanRule<super::codec_zenoh_value_entry::CodecZenohValueEntryView<'b>> for CodecZenohQueryValueExtsChain {
+    fn follows(_e: &super::codec_zenoh_value_entry::CodecZenohValueEntryView<'b>) -> bool {
+        _e.z()
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohQueryValueView<'a> {
@@ -446,11 +474,9 @@ impl<'a> CodecZenohQueryValueView<'a> {
         let exts: ::sce_forge_runtime::codec::Lawful<Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecZenohQueryValueExtsWalk, 1>, { usize::MAX }, 1>, CodecZenohQueryValueExtsLaw>;
         {
             let _rest = cursor.rest();
-            let _count = ::sce_forge_runtime::codec::walk_chain::<CodecZenohQueryValueExtsWalk, _, 1>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
+            let _count = ::sce_forge_runtime::codec::walk_chain::<CodecZenohQueryValueExtsWalk, CodecZenohQueryValueExtsChain, _, 1>(cursor, _hook, ::sce_forge_runtime::codec::ChainScan {
                 site: ::sce_forge_runtime::codec::ChainSite { codec: "codec_zenoh_query_value", field: "exts" },
                 args: [0],
-                depth: None,
-                end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
             });
             exts = cursor.settle(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [0])).ok_or(CodecError::NeedMoreBytes).and_then(|_l| Bounded::new(_l).ok_or(CodecError::TooManyElements)).and_then(|_l| ::sce_forge_runtime::codec::Lawful::new((), _l).ok_or(CodecError::PresentIfMismatch)));
         }

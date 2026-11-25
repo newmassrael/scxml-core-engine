@@ -165,7 +165,7 @@ impl<S: CodecRepeatPresentIfBasicStorage> CodecRepeatPresentIfBasicIn<S> {
                 for _ in 0.._n {
                     if cursor.failed() { break; }
                     let _entry = CodecRepeatElem::read(cursor);
-                    ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
+                    ::sce_forge_runtime::codec::push_keeping::<_, ::sce_forge_runtime::codec::NoKinds>(_vec, _entry, &mut _full);
                 }
                 if _full {
                     return Err(CodecError::CapacityExceeded);

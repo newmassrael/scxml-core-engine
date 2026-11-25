@@ -108,6 +108,42 @@ impl<S: CodecChainHasEnvelopeStorage> Default for CodecChainHasEnvelopeIn<S> {
     }
 }
 
+/// How the chain `extensions` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecChainHasEnvelopeExtensionsChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecChainHasEnvelopeExtensionsChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Flag;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f, S: CodecChainHasEnvelopeFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecZenohExtEntryOwned<S>, 0> for CodecChainHasEnvelopeExtensionsChain {
+    type Kinds = Self;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecZenohExtEntryOwned<S> {
+        CodecZenohExtEntryOwned::<S>::read(_r)
+    }
+
+    fn follows(_e: &CodecZenohExtEntryOwned<S>) -> bool {
+        _e.z()
+    }
+}
+
+impl<S: CodecChainHasEnvelopeStorage> ::sce_forge_runtime::codec::EntryKinds<CodecZenohExtEntryOwned<S>> for CodecChainHasEnvelopeExtensionsChain {
+    const COUNT: usize = 1;
+
+    fn is(_e: &CodecZenohExtEntryOwned<S>, kind: usize) -> bool {
+        match kind {
+            0 => u64::from(_e.ext_id()) == 2u64,
+            _ => false,
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
     /// Construct an instance with every field at its own type's
@@ -186,14 +222,7 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
         loop {
             let mut _found_extensions = [false; 1];
             let mut _extensions_fill = |_vec: &mut <S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>| -> Result<(), CodecError> {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecZenohExtEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecZenohExtEntryOwned::<S>::read(_r),
-                    args: [],
-                    depth: Some(4),
-                    end: ::sce_forge_runtime::codec::ChainEnd::Flag(|_e| _e.z()),
-                    carry: None,
-                    kinds: &[|_e| u64::from(_e.ext_id()) == 2u64],
-                }, &mut _found_extensions)
+                ::sce_forge_runtime::codec::read_chain_into::<CodecChainHasEnvelopeExtensionsChain, _, 0>(cursor, _vec, [], &mut _found_extensions)
             };
             let (_extensions_settled, _extensions_full) = if (header & 0x80u8) != 0 {
                 if _has_extensions_2 { { let _read = ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, slices: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, .. } => Some(_c), _ => None }, &mut _extensions_fill); cursor.settle(_read) } } else { { let _read = ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), payload: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), .. } => Some(_c), _ => None }, &mut _extensions_fill); cursor.settle(_read) } }
@@ -255,7 +284,7 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
                 for _ in 0.._n {
                     if cursor.failed() { break; }
                     let _entry = CodecChainHasSliceOwned::<S>::read(cursor);
-                    ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
+                    ::sce_forge_runtime::codec::push_keeping::<_, ::sce_forge_runtime::codec::NoKinds>(_vec, _entry, &mut _full);
                 }
                 if _full {
                     return Err(CodecError::CapacityExceeded);

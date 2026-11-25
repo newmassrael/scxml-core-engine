@@ -81,6 +81,31 @@ impl<S: CodecChainPrevTailGatedStorage> Default for CodecChainPrevTailGatedIn<S>
     }
 }
 
+/// How the chain `entries` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecChainPrevTailGatedEntriesChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecChainPrevTailGatedEntriesChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Frame;
+    const DEPTH: Option<u32> = Some(4);
+}
+
+impl<'f> ::sce_forge_runtime::codec::ChainRule<'f, CodecChainPrevEntry, 2> for CodecChainPrevTailGatedEntriesChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 2]) -> CodecChainPrevEntry {
+        CodecChainPrevEntry::read(_r, _a[0], _a[1])
+    }
+
+    fn carry(_e: &CodecChainPrevEntry, _a: &mut [u8; 2]) {
+        _a[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64);
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecChainPrevTailGatedStorage> CodecChainPrevTailGatedIn<S> {
     /// Construct an instance with every field at its own type's
@@ -150,14 +175,7 @@ impl<S: CodecChainPrevTailGatedStorage> CodecChainPrevTailGatedIn<S> {
         };
         if (head & 0x02u8) != 0 {
             cursor.hold_with(|cursor| _out.entries.get_or_insert_with(Default::default).refill_from(((head & 0x1) != 0, (),), |_vec| {
-                ::sce_forge_runtime::codec::read_chain_into::<CodecChainPrevEntry, _, 2>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                    read: |_r, _a| CodecChainPrevEntry::read(_r, _a[0], _a[1]),
-                    args: [0, head & 0x1],
-                    depth: Some(4),
-                    end: ::sce_forge_runtime::codec::ChainEnd::Frame,
-                    carry: Some(|_e, _a| { _a[0] = u8::from((u64::from(_e.header) & 127u64) == 4u64); }),
-                    kinds: &[],
-                }, &mut [])
+                ::sce_forge_runtime::codec::read_chain_into::<CodecChainPrevTailGatedEntriesChain, _, 2>(cursor, _vec, [0, head & 0x1], &mut [])
             }));
         } else {
             _out.entries = None;

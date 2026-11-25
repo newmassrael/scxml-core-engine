@@ -80,6 +80,27 @@ impl<S: CodecTlvChainBasicStorage> Default for CodecTlvChainBasicIn<S> {
     }
 }
 
+/// How the chain `extensions` is read (docs/adr/0136): where it ends, and
+/// how each entry is read, what it carries to the next and the kinds the
+/// gates ask of it, each a part of this type, so the runtime's read of the
+/// chain calls each by name.
+#[allow(dead_code)]
+pub struct CodecTlvChainBasicExtensionsChain;
+
+impl ::sce_forge_runtime::codec::ChainEnds for CodecTlvChainBasicExtensionsChain {
+    const END: ::sce_forge_runtime::codec::ChainEnd = ::sce_forge_runtime::codec::ChainEnd::Frame;
+    const DEPTH: Option<u32> = Some(8);
+}
+
+impl<'f, S: CodecTlvChainBasicFrom<'f>> ::sce_forge_runtime::codec::ChainRule<'f, CodecTlvEntryOwned<S>, 0> for CodecTlvChainBasicExtensionsChain {
+    type Kinds = ::sce_forge_runtime::codec::NoKinds;
+
+    #[inline]
+    fn read(_r: &mut SceReader<'f>, _a: &[u8; 0]) -> CodecTlvEntryOwned<S> {
+        CodecTlvEntryOwned::<S>::read(_r)
+    }
+}
+
 #[allow(dead_code)]
 impl<S: CodecTlvChainBasicStorage> CodecTlvChainBasicIn<S> {
     /// Construct an instance with every field at its own type's
@@ -148,14 +169,7 @@ impl<S: CodecTlvChainBasicStorage> CodecTlvChainBasicIn<S> {
             raw[0]
         };
         cursor.hold_with(|cursor| _out.extensions.refill(|_vec| {
-            ::sce_forge_runtime::codec::read_chain_into::<CodecTlvEntryOwned<S>, _, 0>(cursor, _vec, ::sce_forge_runtime::codec::ChainRead {
-                read: |_r, _a| CodecTlvEntryOwned::<S>::read(_r),
-                args: [],
-                depth: Some(8),
-                end: ::sce_forge_runtime::codec::ChainEnd::Frame,
-                carry: None,
-                kinds: &[],
-            }, &mut [])
+            ::sce_forge_runtime::codec::read_chain_into::<CodecTlvChainBasicExtensionsChain, _, 0>(cursor, _vec, [], &mut [])
         }));
         _out.header_flags = header_flags;
 
