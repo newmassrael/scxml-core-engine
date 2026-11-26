@@ -1504,6 +1504,38 @@ sce_gate_require_jdk() {
     sce_gate_step "Gradle will run on JDK $now (floor $floor from ${pin_file##*/})"
 }
 
+# ── Gradle, with nothing of it left running when it returns ─────────
+#
+# Every gate that drives Gradle once per run passes these, so that the build's JVMs
+# end with the build. `gradle.properties` asks for a daemon
+# (`org.gradle.daemon=true`), which a developer's repeated builds reuse, and a
+# Kotlin compile starts a compile daemon of its own. A gate is one run: neither
+# is reused by it, and both outlive it.
+#
+# ⚠ What outlives a gate is not harmless. bx runs a unit whose reads it records
+# under `strace -f` (docs/rfc/0084 in the bx repository), and `strace -f`
+# ends only when every process it follows has ended, a daemon included. Measured
+# 2026-11-26 on land item 437: `ecma262-lowered-kotlin` printed
+# "gate: 2 gate(s) passed." and its unit then ran on for 30 minutes, `strace`
+# waiting on the Gradle daemon the gate had left (its threads "Daemon health
+# stats", "Daemon periodic"), until the unit's idle limit ended it and the
+# landing was returned as not measured. The same build under `strace -f` on a
+# build machine did not end in 30 minutes either.
+#
+# So the build runs without a daemon to come back to: `--no-daemon` runs it in
+# a JVM that ends when the build does (a single-use one where the declared
+# `org.gradle.jvmargs` need it), and the Kotlin compile runs inside that JVM
+# (`kotlin.compiler.execution.strategy=in-process`) rather than in a compile
+# daemon. `w3c-kotlin` does not use this: its rows share one Gradle daemon and
+# one compile daemon on purpose, and it measures both heaps
+# (`scripts/gates/w3c-kotlin.sh` says why).
+#
+# An array, expanded right after `./gradlew`, rather than a function around it:
+# a call keeps `./gradlew` as the word that starts it, which is how
+# `scripts/lib/repro.py` knows the runner and `hook_ci_parity` reads its tasks,
+# and a call through `env` still runs it.
+SCE_GATE_GRADLE_ONE_RUN=(--no-daemon -Pkotlin.compiler.execution.strategy=in-process)
+
 # ── The Swift toolchain the Swift packages will ACTUALLY be built with ──
 #
 # The Swift gate needs the same guarantee the JDK one makes, and for the same

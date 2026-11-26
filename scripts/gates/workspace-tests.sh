@@ -55,11 +55,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 sce_gate_require_jdk "$SCE_REPO_ROOT/backends/kotlin/runtime/build.gradle.kts"
 sce_gate_step "building the Kotlin runtime jars and the JVM programs the suites run"
 # One task list per line, so `hook_ci_parity` reads each task as the gate's.
-sce_gate_tested -- ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar \
+sce_gate_tested -- ./gradlew "${SCE_GATE_GRADLE_ONE_RUN[@]}" --console=plain :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar \
     || sce_gate_fail "the Kotlin runtime jars did not build"
-sce_gate_tested -- ./gradlew --console=plain :sce-kotlin-world:installDist \
+sce_gate_tested -- ./gradlew "${SCE_GATE_GRADLE_ONE_RUN[@]}" --console=plain :sce-kotlin-world:installDist \
     || sce_gate_fail "the Kotlin step server did not build"
-sce_gate_tested -- ./gradlew --console=plain :sce-kotlin-mls-replay:installDist :sce-kotlin-peer-replay:installDist \
+sce_gate_tested -- ./gradlew "${SCE_GATE_GRADLE_ONE_RUN[@]}" --console=plain :sce-kotlin-mls-replay:installDist :sce-kotlin-peer-replay:installDist \
     || sce_gate_fail "the Kotlin replays of the group key agreement and the peer core did not build"
 
 sce_gate_python
