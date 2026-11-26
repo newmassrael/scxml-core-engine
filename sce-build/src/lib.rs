@@ -4585,20 +4585,25 @@ pub struct ForgeCompileOptions {
     /// - [`forge::body_reads::InlineDecode::Codecs`] names the codecs on the
     ///   build's hot path. Hotness is a property of a read's site: the body of
     ///   each codec named is hot, and so is every read a hot body makes,
-    ///   transitively. A hot body is printed once, in forms held in place where
+    ///   transitively. Every body is printed in its entry points, which every
+    ///   cold site calls, which keep the rule of the sites that call them and
+    ///   which read what the body holds by their entry points; a hot body is
+    ///   printed a second time from the same text, in forms held in place where
     ///   they are called (`read_into_inline`, `read_inline`,
-    ///   `read_with_inline`), which each hot site calls and which read their
-    ///   ZInts held in place; its entry points are calls of them, which every
-    ///   other site calls and which keep the rule of the sites that call them,
-    ///   so no cold body holds a hot one's code (docs/adr/0140). What a build's
+    ///   `read_with_inline`), which each hot site calls and which read what it
+    ///   holds, its ZInts among them, held in place. No entry point calls a
+    ///   form held in place, so no cold read expands a hot body
+    ///   (docs/adr/0140). What a build's
     ///   hot path reads is the build's to say and no document's. The names are
     ///   of codecs of the set, checked by
     ///   [`forge::body_reads::BodyReadSites::hot_codecs`] on the same count
     ///   handed as [`Self::body_reads`], so like it this is a property of a
     ///   SET: every document of the set is generated with the same value.
     ///
-    /// The runtime's read of a chain stays out of line either way; the rule a
-    /// hot body's chain is read by calls the entry's form held in place.
+    /// The runtime's read of a chain stays out of line either way; the form
+    /// held in place of a hot body reads its chain by a rule held in place,
+    /// which calls the entry's form held in place, where its entry point reads
+    /// it by the chain's rule, which calls the entry's entry point.
     pub inline_decode: forge::body_reads::InlineDecode,
     /// Rust only: the sites of the generated set that read each codec's body
     /// (docs/adr/0137), counted from the set's import graph by
@@ -7682,10 +7687,6 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut view_visited,
                 );
-                // docs/adr/0140: whether the import's body is read on the
-                // build's hot path, which says how its walk reads an entry and
-                // so which walk a cold scan of a chain of it reads by.
-                ctx.codec_body_hot = options.inline_decode.is_hot(&cm.name);
                 // docs/adr/0081 step 4: whether the C++ backend prints the
                 // import from its plan, so a parent, a procedure or a
                 // validator reads its elements through accessors, reads a

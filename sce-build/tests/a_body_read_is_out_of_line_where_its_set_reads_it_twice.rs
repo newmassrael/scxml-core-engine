@@ -11,11 +11,14 @@
 //! a codec of the set by its stem or an import alias (docs/adr/0139).
 //!
 //! Hotness is a property of a site (docs/adr/0140): the body of a codec named
-//! is hot, and so is every read a hot body makes, transitively. A hot body is
-//! printed once in forms held in place (`read_into_inline`, `read_inline`,
-//! `read_with_inline`), which every hot site calls and which read their ZInts
-//! held in place; its entry points are calls of them, which the cold sites call
-//! and which keep the rule of those sites alone.
+//! is hot, and so is every read a hot body makes, transitively. Every body is
+//! printed in its entry points, which the cold sites call, which keep the rule
+//! of those sites alone and which read what the body holds by their entry
+//! points; a hot body is printed a second time from the same text, in forms
+//! held in place (`read_into_inline`, `read_inline`, `read_with_inline`), which
+//! every hot site calls and which read what it holds, its ZInts among them, held
+//! in place. No entry point calls a form held in place, and the walk of a list
+//! reads by the entry point whatever body holds the list.
 //!
 //! A decode is a thin call: a view's decode answers the view its read builds,
 //! with no default of it made first, and an eager codec built as a value does
@@ -158,31 +161,13 @@ fn held_view_body_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
         .unwrap_or_else(|| panic!("{name} has a view body read held in place:\n{code}"))
 }
 
-/// The line before the eager entry point of the hot codec `name`, the read
-/// whose one statement calls the eager form held in place, and its body.
-fn eager_entry_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
-    reads(code)
-        .into_iter()
-        .find(|(_, body)| {
-            !is_view_read(body)
-                && statements(body).len() == 1
-                && (body.contains("Self::read_into_inline(cursor, _out")
-                    || body.contains("Self::read_inline(cursor"))
-        })
-        .unwrap_or_else(|| panic!("{name} has an eager entry point:\n{code}"))
-}
-
-/// The line before the view's entry point of the hot codec `name`, the read
-/// whose one statement calls the view's form held in place, and its body.
-fn view_entry_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
-    reads(code)
-        .into_iter()
-        .find(|(_, body)| {
-            is_view_read(body)
-                && statements(body).len() == 1
-                && body.contains("Self::read_with_inline(cursor")
-        })
-        .unwrap_or_else(|| panic!("{name} has a view entry point:\n{code}"))
+/// The lines of `body` that call a form held in place: a read whose name ends
+/// `_inline`, a body's or a ZInt's.
+fn held_calls(body: &str) -> Vec<&str> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| line.contains("_inline("))
+        .collect()
 }
 
 /// The lines of `code` that call a body read of another codec: a path, not
@@ -378,10 +363,12 @@ fn inline_decode_inlines_every_body_read_whatever_its_sites() {
     }
 }
 
-/// A hot body is printed once, in the forms held in place, `#[inline(always)]`,
-/// the eager read and the view's; its entry points are calls of them, which keep
-/// ADR 0137's rule over the cold sites alone: the sites of hot bodies call the
-/// forms held in place and are not counted (docs/adr/0140).
+/// A hot body is printed in the forms held in place, `#[inline(always)]`, the
+/// eager read and the view's, and in its entry points, which keep ADR 0137's
+/// rule over the cold sites alone: the sites of hot bodies call the forms held
+/// in place and are not counted. An entry point is the body itself, read by the
+/// entry points of what it holds, and calls no form held in place
+/// (docs/adr/0140).
 #[test]
 fn a_hot_body_is_held_in_place_and_its_entry_points_keep_the_rule_of_its_cold_sites() {
     let sites = sites_of(&["codec_zenoh_oam.scxml"], true);
@@ -413,17 +400,25 @@ fn a_hot_body_is_held_in_place_and_its_entry_points_keep_the_rule_of_its_cold_si
         before, "#[inline(always)]",
         "codec_zenoh_ext_entry is hot and its view's body is not held in place:\n{body}"
     );
-    let (before, body) = eager_entry_read("codec_zenoh_ext_entry", &code);
+    let (before, body) = eager_body_read("codec_zenoh_ext_entry", &code);
     assert!(
         !before.starts_with("#[inline"),
         "codec_zenoh_ext_entry's eager entry point, called from one cold site, carries \
          `{before}`:\n{body}"
     );
-    let (before, body) = view_entry_read("codec_zenoh_ext_entry", &code);
+    assert!(
+        held_calls(body).is_empty(),
+        "codec_zenoh_ext_entry's eager entry point calls a form held in place:\n{body}"
+    );
+    let (before, body) = view_body_read("codec_zenoh_ext_entry", &code);
     assert_eq!(
         before, "#[inline(never)]",
         "codec_zenoh_ext_entry's view entry point, called from two cold sites, is not out \
          of line:\n{body}"
+    );
+    assert!(
+        held_calls(body).is_empty(),
+        "codec_zenoh_ext_entry's view entry point calls a form held in place:\n{body}"
     );
 
     // The arm codec is read from four sites of the cold frame and four of the
@@ -434,11 +429,15 @@ fn a_hot_body_is_held_in_place_and_its_entry_points_keep_the_rule_of_its_cold_si
         before, "#[inline(always)]",
         "codec_zenoh_ext_unit is hot and its body is not held in place:\n{body}"
     );
-    let (before, body) = eager_entry_read("codec_zenoh_ext_unit", &code);
+    let (before, body) = eager_body_read("codec_zenoh_ext_unit", &code);
     assert_eq!(
         before, "#[inline(never)]",
         "codec_zenoh_ext_unit's entry point, called from four cold sites, is not out of \
          line:\n{body}"
+    );
+    assert!(
+        held_calls(body).is_empty(),
+        "codec_zenoh_ext_unit's entry point calls a form held in place:\n{body}"
     );
 }
 
@@ -485,16 +484,19 @@ fn a_codec_no_hot_body_reads_keeps_the_rule_of_its_sites() {
 }
 
 /// A codec read from a hot body and from a cold one is printed in both forms
-/// from its one body, and each parent calls its own: the hot parent the form
-/// held in place, through an embedded body and a chain's rule alike, and the
-/// cold parent the entry point, so the cold parent holds no line of the hot
-/// child's body (docs/adr/0140).
+/// from its one body, and each parent calls its own: the hot parent's form held
+/// in place calls the child's form held in place, through an embedded body and
+/// a chain's rule alike, and every entry point, the hot parent's and the cold
+/// parent's, calls the child's entry point, so no cold read holds a line of the
+/// hot child's body (docs/adr/0140).
 #[test]
 fn a_child_of_a_hot_and_a_cold_parent_prints_both_forms_and_each_parent_calls_its_own() {
     let sites = sites_of(&["codec_zenoh_request.scxml"], false);
     let options = hot_options(&sites, &["codec_zenoh_msg_put"], false);
 
-    // The timestamp is embedded by the hot put and the cold delete.
+    // The timestamp is embedded by the hot put and the cold delete: its body is
+    // printed twice, its ZInts held in place in the form held in place and
+    // called in the entry point.
     let code = rust_with("codec_zenoh_timestamp", &options);
     for form in ["read_inline", "read_into_inline"] {
         assert!(
@@ -503,31 +505,71 @@ fn a_child_of_a_hot_and_a_cold_parent_prints_both_forms_and_each_parent_calls_it
         );
     }
     let (_, held) = held_eager_body_read("codec_zenoh_timestamp", &code);
-    let (_, entry) = eager_entry_read("codec_zenoh_timestamp", &code);
+    let (_, entry) = eager_body_read("codec_zenoh_timestamp", &code);
     assert!(
-        !entry.contains("read_vle"),
-        "codec_zenoh_timestamp's entry point holds a read of its own, not one call of its \
-         body:\n{entry}"
+        held.contains("cursor.read_vle_u64_inline()") && !held.contains("cursor.read_vle_u64()"),
+        "codec_zenoh_timestamp's form held in place does not read its ZInt held in \
+         place:\n{held}"
+    );
+    assert!(
+        entry.contains("cursor.read_vle_u64()") && held_calls(entry).is_empty(),
+        "codec_zenoh_timestamp's entry point is not its body read by the calls:\n{entry}"
     );
     assert_eq!(
         code.matches("read_vle_u64").count(),
-        held.matches("read_vle_u64").count(),
-        "codec_zenoh_timestamp prints its body more than once:\n{code}"
+        held.matches("read_vle_u64").count() + entry.matches("read_vle_u64").count(),
+        "codec_zenoh_timestamp prints its body other than once in each form:\n{code}"
     );
 
+    // The hot put: its form held in place reads the timestamp and its chain by
+    // their forms held in place, the chain by the rule held in place; its entry
+    // point reads both by their entry points, the chain by the chain's rule.
     let put = rust_with("codec_zenoh_msg_put", &options);
-    let put_reads = child_reads(&put);
+    let (_, held) = held_eager_body_read("codec_zenoh_msg_put", &put);
+    let held_reads = child_reads(held);
     assert!(
-        put_reads.iter().any(|line| line.contains("timestamp"))
-            && put_reads.iter().any(|line| line.contains("(_r")),
-        "codec_zenoh_msg_put reads no timestamp or no chain entry: {put_reads:#?}"
+        held_reads.iter().any(|line| line.contains("timestamp")),
+        "codec_zenoh_msg_put's form held in place reads no timestamp: {held_reads:#?}"
     );
-    for line in &put_reads {
+    for line in &held_reads {
         assert!(
             line.contains("_inline("),
-            "the hot codec_zenoh_msg_put calls an entry point: {line}"
+            "the form held in place of codec_zenoh_msg_put calls an entry point: {line}"
         );
     }
+    assert!(
+        held.contains("read_chain_into::<CodecZenohMsgPutExtensionsHeldChain, "),
+        "the form held in place of codec_zenoh_msg_put does not read its chain by the rule \
+         held in place:\n{held}"
+    );
+    let (_, entry) = eager_body_read("codec_zenoh_msg_put", &put);
+    let entry_reads = child_reads(entry);
+    assert!(
+        entry_reads.iter().any(|line| line.contains("timestamp")),
+        "codec_zenoh_msg_put's entry point reads no timestamp: {entry_reads:#?}"
+    );
+    assert!(
+        held_calls(entry).is_empty()
+            && entry.contains("read_chain_into::<CodecZenohMsgPutExtensionsChain, "),
+        "the entry point of the hot codec_zenoh_msg_put calls a form held in place, or does \
+         not read its chain by the chain's rule:\n{entry}"
+    );
+    let rule = chain_rule_read(&put, "CodecZenohMsgPutExtensionsChain");
+    assert!(
+        rule.contains("::read(_r") && !rule.contains("_inline"),
+        "the chain's rule of codec_zenoh_msg_put does not read an entry by its entry \
+         point:\n{rule}"
+    );
+    let rule = chain_rule_read(&put, "CodecZenohMsgPutExtensionsHeldChain");
+    assert!(
+        rule.contains("::read_inline(_r"),
+        "the rule held in place of codec_zenoh_msg_put does not read an entry by its form \
+         held in place:\n{rule}"
+    );
+    assert!(
+        put.contains("\nstruct CodecZenohMsgPutExtensionsHeldChain;"),
+        "the rule held in place of codec_zenoh_msg_put is not private to its module:\n{put}"
+    );
 
     let del = rust_with("codec_zenoh_msg_del", &options);
     let del_reads = child_reads(&del);
@@ -540,6 +582,23 @@ fn a_child_of_a_hot_and_a_cold_parent_prints_both_forms_and_each_parent_calls_it
         !del.contains("_inline"),
         "the cold codec_zenoh_msg_del calls or holds a form held in place:\n{del}"
     );
+}
+
+/// The body of the `ChainRule` impl of the chain rule `rule` the code declares.
+fn chain_rule_read<'c>(code: &'c str, rule: &str) -> &'c str {
+    let head = format!("> for {rule} {{");
+    let at = code
+        .match_indices(&head)
+        .map(|(at, _)| at)
+        .find(|at| {
+            code[..*at]
+                .lines()
+                .last()
+                .is_some_and(|line| line.contains("::ChainRule<'f, "))
+        })
+        .unwrap_or_else(|| panic!("no chain rule {rule} is declared:\n{code}"));
+    let body = &code[at..];
+    &body[..body.find("\n}\n").unwrap_or(body.len())]
 }
 
 /// The hot closure is transitive: the body of each codec a hot body reads is
@@ -585,11 +644,13 @@ fn the_hot_closure_is_transitive_and_a_hot_site_calls_no_entry_point() {
         sites.of("codec_zenoh_ext_unit")
     );
 
-    // Two levels below the codec named, the entry reads its arms by their
-    // forms held in place.
+    // Two levels below the codec named, the entry's form held in place reads
+    // its arms by their forms held in place, and its entry point by their entry
+    // points.
     let options = hot_options(&sites, &["codec_zenoh_msg_put"], false);
     let entry = rust_with("codec_zenoh_ext_entry", &options);
-    let arms = child_reads(&entry);
+    let (_, held) = held_eager_body_read("codec_zenoh_ext_entry", &entry);
+    let arms = child_reads(held);
     assert!(
         !arms.is_empty()
             && arms
@@ -597,10 +658,20 @@ fn the_hot_closure_is_transitive_and_a_hot_site_calls_no_entry_point() {
                 .all(|line| line.contains("::read_into_inline(cursor, _b")),
         "the hot codec_zenoh_ext_entry does not read each arm held in place: {arms:#?}"
     );
+    let (_, body) = eager_body_read("codec_zenoh_ext_entry", &entry);
+    let arms = child_reads(body);
+    assert!(
+        !arms.is_empty()
+            && arms
+                .iter()
+                .all(|line| line.contains("::read_into(cursor, _b")),
+        "the entry point of codec_zenoh_ext_entry does not read each arm by its entry \
+         point: {arms:#?}"
+    );
     // The unit body is read from its two hot sites alone, so its entry point,
     // out of line with no codec named, carries no attribute.
     let unit = rust_with("codec_zenoh_ext_unit", &options);
-    let (before, body) = eager_entry_read("codec_zenoh_ext_unit", &unit);
+    let (before, body) = eager_body_read("codec_zenoh_ext_unit", &unit);
     assert!(
         !before.starts_with("#[inline"),
         "codec_zenoh_ext_unit is called from no cold site and its entry point carries \
@@ -619,8 +690,9 @@ fn the_hot_closure_is_transitive_and_a_hot_site_calls_no_entry_point() {
     );
 }
 
-/// A hot body reads its ZInts by the frame reader's reads held in place, and
-/// any other body by the reader's one read out of line (docs/adr/0140).
+/// A hot body's form held in place reads its ZInts by the frame reader's reads
+/// held in place, and its entry point, as any other body, by the reader's one
+/// read out of line (docs/adr/0140).
 #[test]
 fn a_hot_body_reads_its_zints_held_in_place() {
     let sites = sites_of(&["codec_zenoh_oam.scxml"], false);
@@ -633,12 +705,14 @@ fn a_hot_body_reads_its_zints_held_in_place() {
     let code = rust_with("codec_zenoh_ext_zint", &hot);
     let (_, held) = held_eager_body_read("codec_zenoh_ext_zint", &code);
     assert!(
-        held.contains("cursor.read_vle_u64_inline()"),
+        held.contains("cursor.read_vle_u64_inline()") && !held.contains("cursor.read_vle_u64()"),
         "the hot codec_zenoh_ext_zint does not read its ZInt held in place:\n{held}"
     );
+    // Its entry point, the read every cold site calls, reads it by the call.
+    let (_, entry) = eager_body_read("codec_zenoh_ext_zint", &code);
     assert!(
-        !code.contains("cursor.read_vle_u64()"),
-        "the hot codec_zenoh_ext_zint calls the reader's ZInt read:\n{code}"
+        entry.contains("cursor.read_vle_u64()") && held_calls(entry).is_empty(),
+        "the entry point of the hot codec_zenoh_ext_zint holds its ZInt read in place:\n{entry}"
     );
 
     let code = rust_with("codec_zenoh_ext_zint", &cold);
@@ -658,38 +732,58 @@ fn a_hot_body_reads_its_zints_held_in_place() {
 /// A body a length says the size of is read held in place where a hot body
 /// reads it, the eager read and the view's alike, and the view the length
 /// hands its bytes is read by its form held in place with the parent's chain
-/// hook (docs/adr/0130, docs/adr/0140). A view is read with a hook at every
-/// site, so it has no hookless form held in place: the one `read_inline` of
-/// the body is its eager read's.
+/// hook (docs/adr/0130, docs/adr/0140); the entry points of the same hot body
+/// read it by its entry points. A view is read with a hook at every site, so it
+/// has no hookless form held in place: the one `read_inline` of the body is its
+/// eager read's.
 #[test]
 fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
     let sites = sites_of(&["codec_zenoh_decl_ext_keyexpr.scxml"], true);
     let options = hot_options(&sites, &["codec_zenoh_decl_ext_keyexpr"], true);
     let code = rust_with("codec_zenoh_decl_ext_keyexpr", &options);
-    let within: Vec<&str> = code
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.contains("cursor.within("))
+    let within = |body: &str| -> Vec<String> {
+        body.lines()
+            .map(str::trim)
+            .filter(|line| line.contains("cursor.within("))
+            .map(str::to_string)
+            .collect()
+    };
+    let (_, held_eager) = held_eager_body_read("codec_zenoh_decl_ext_keyexpr", &code);
+    let (_, held_view) = held_view_body_read("codec_zenoh_decl_ext_keyexpr", &code);
+    let held: Vec<String> = within(held_eager)
+        .into_iter()
+        .chain(within(held_view))
         .collect();
     assert_eq!(
-        within.len(),
+        held.len(),
         2,
-        "codec_zenoh_decl_ext_keyexpr reads its inner body within a length once eager and \
-         once as a view: {within:#?}"
+        "the forms held in place of codec_zenoh_decl_ext_keyexpr read its inner body within \
+         a length once eager and once as a view: {held:#?}"
     );
-    for line in &within {
+    for line in &held {
         assert!(
             line.contains("_inline"),
-            "the hot codec_zenoh_decl_ext_keyexpr reads its inner body by an entry point: {line}"
+            "a form held in place of codec_zenoh_decl_ext_keyexpr reads its inner body by an \
+             entry point: {line}"
         );
     }
     assert!(
-        within.contains(
-            &"inner = cursor.within(total_length as usize, |_inner| \
-              CodecZenohDeclExtKeyexprInnerView::read_with_inline(_inner, _hook));"
-        ),
+        held.iter().any(|line| line
+            == "inner = cursor.within(total_length as usize, |_inner| \
+                CodecZenohDeclExtKeyexprInnerView::read_with_inline(_inner, _hook));"),
         "the hot view of codec_zenoh_decl_ext_keyexpr reads its inner body without its \
-         hook: {within:#?}"
+         hook: {held:#?}"
+    );
+    let (_, entry_eager) = eager_body_read("codec_zenoh_decl_ext_keyexpr", &code);
+    let (_, entry_view) = view_body_read("codec_zenoh_decl_ext_keyexpr", &code);
+    let entry: Vec<String> = within(entry_eager)
+        .into_iter()
+        .chain(within(entry_view))
+        .collect();
+    assert!(
+        entry.len() == 2 && entry.iter().all(|line| !line.contains("_inline")),
+        "the entry points of codec_zenoh_decl_ext_keyexpr read its inner body otherwise than \
+         by its entry points, once eager and once as a view: {entry:#?}"
     );
     let inner = rust_with("codec_zenoh_decl_ext_keyexpr_inner", &options);
     assert_eq!(
@@ -706,34 +800,46 @@ fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
 }
 
 /// A codec outside the hot closure prints exactly what it prints with no codec
-/// named: the forms held in place are printed for hot bodies alone, and no
-/// golden of a build that names none moves (docs/adr/0140).
+/// named, with its view and without: the forms held in place are printed for
+/// hot bodies alone, a cold scan of a hot entry's chain reads by the list's one
+/// walk, and no golden of a build that names none moves (docs/adr/0140).
 #[test]
 fn a_codec_outside_the_hot_closure_prints_what_it_printed() {
-    let sites = sites_of(&["codec_zenoh_request.scxml"], false);
-    let hot = hot_options(&sites, &["codec_zenoh_msg_put"], false);
-    let cold = ForgeCompileOptions {
-        body_reads: sites,
-        ..ForgeCompileOptions::default()
-    };
-    for name in [
-        "codec_zenoh_request",
-        "codec_zenoh_msg_del",
-        "codec_zenoh_query",
-        "codec_zenoh_wireexpr",
-    ] {
-        assert_eq!(
-            rust_with(name, &hot),
-            rust_with(name, &cold),
-            "{name}, outside the hot closure, prints otherwise than with no codec named"
-        );
+    for views in [false, true] {
+        let sites = sites_of(&["codec_zenoh_request.scxml"], views);
+        let hot = hot_options(&sites, &["codec_zenoh_msg_put"], views);
+        let cold = ForgeCompileOptions {
+            views,
+            body_reads: sites,
+            ..ForgeCompileOptions::default()
+        };
+        for name in [
+            "codec_zenoh_request",
+            "codec_zenoh_msg_del",
+            "codec_zenoh_query",
+            "codec_zenoh_wireexpr",
+        ] {
+            assert_eq!(
+                rust_with(name, &hot),
+                rust_with(name, &cold),
+                "{name}, outside the hot closure, prints otherwise than with no codec named \
+                 (views: {views})"
+            );
+        }
     }
 }
 
 /// The body of the `ListWalk` impl of the walk `walk` the code declares, its
 /// entry read with no flag input.
 fn walk_impl<'c>(code: &'c str, walk: &str) -> &'c str {
-    let head = format!("::ListWalk<0> for {walk} {{");
+    walk_impl_of(code, "ListWalk<0> for ", walk)
+}
+
+/// The body of the `ListWalk` impl of the walk `walk` the code declares, its
+/// head `inputs`, the trait with the count of its entry's flag inputs, then
+/// `for `.
+fn walk_impl_of<'c>(code: &'c str, inputs: &str, walk: &str) -> &'c str {
+    let head = format!("::{inputs}{walk} {{");
     let at = code
         .find(&head)
         .unwrap_or_else(|| panic!("no walk {walk} is declared:\n{code}"));
@@ -742,41 +848,58 @@ fn walk_impl<'c>(code: &'c str, walk: &str) -> &'c str {
 }
 
 /// A list names its entry's one walk at every site, a hot view's as a cold
-/// view's, and the walk reads an entry as its entry codec is read: held in place
-/// where the codec is hot. The scan of a chain reads as its site does: a hot
-/// body's through that walk, a cold body's through the walk a hot codec writes
-/// for it, which calls the entry point and which no list names (docs/adr/0140).
+/// view's, and the walk reads each entry by its entry point whatever the body
+/// that holds the list: a walk is a read a consumer makes after the frame is
+/// read. A hot entry's module writes beside it the walk held in place, which no
+/// list names and which only the scan of a chain in a hot body's form held in
+/// place reads by; every entry point scans by the list's one walk
+/// (docs/adr/0140).
 #[test]
-fn a_list_names_its_entrys_one_walk_and_a_cold_scan_of_a_hot_entry_calls_its_entry_point() {
+fn a_list_names_its_entrys_one_walk_which_reads_by_the_entry_point_at_every_site() {
     let sites = sites_of(&["codec_zenoh_request.scxml"], true);
     let options = hot_options(&sites, &["codec_zenoh_msg_put"], true);
     let walk = "super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk";
-    let cold_scan = "super::codec_zenoh_ext_entry::CodecZenohExtEntryColdScanWalk";
+    let held_walk = "super::codec_zenoh_ext_entry::CodecZenohExtEntryHeldWalk";
 
-    // The entry is hot: its one walk reads it held in place, and the walk a cold
-    // scan reads by calls its entry point and is no type of the public face.
+    // The put's eager read of its chain and its view's scan are hot sites of the
+    // entry; the walk of its list is not, and is counted with the cold sites
+    // that place the entry point.
+    let hot = sites
+        .hot_codecs(["codec_zenoh_msg_put"])
+        .unwrap_or_else(|e| panic!("codec_zenoh_msg_put is a codec of the set: {e}"));
+    assert_eq!(
+        hot.sites_of("codec_zenoh_ext_entry"),
+        BodyReads { eager: 1, view: 1 },
+        "the hot put's sites of codec_zenoh_ext_entry are not its chain's read and scan alone"
+    );
+
+    // The entry is hot: its one walk reads it by its entry point, and the walk
+    // held in place reads it by its form held in place, carries by the one
+    // walk's `advance` and is no type of the public face.
     let entry = rust_with("codec_zenoh_ext_entry", &options);
     assert!(
-        !entry.contains("InlineWalk"),
-        "codec_zenoh_ext_entry writes a walk of the hot path:\n{entry}"
+        !entry.contains("InlineWalk") && !entry.contains("ColdScanWalk"),
+        "codec_zenoh_ext_entry writes a walk of a site:\n{entry}"
     );
     let read = walk_impl(&entry, "CodecZenohExtEntryWalk");
     assert!(
-        read.contains("CodecZenohExtEntryView::read_with_inline(_r, _h)"),
-        "the walk of the hot codec_zenoh_ext_entry does not read it held in place:\n{read}"
+        read.contains("CodecZenohExtEntryView::read_with(_r, _h)") && !read.contains("_inline"),
+        "the walk of the hot codec_zenoh_ext_entry does not read it by its entry point:\n{read}"
     );
     assert!(
-        entry.contains("pub(super) struct CodecZenohExtEntryColdScanWalk;"),
-        "the hot codec_zenoh_ext_entry writes no walk for a cold scan, or makes it public:\n{entry}"
+        entry.contains("pub(super) struct CodecZenohExtEntryHeldWalk;"),
+        "the hot codec_zenoh_ext_entry writes no walk held in place, or makes it public:\n{entry}"
     );
-    let read = walk_impl(&entry, "CodecZenohExtEntryColdScanWalk");
+    let read = walk_impl(&entry, "CodecZenohExtEntryHeldWalk");
     assert!(
-        read.contains("CodecZenohExtEntryView::read_with(_r, _h)"),
-        "the cold scan's walk of codec_zenoh_ext_entry does not call its entry point:\n{read}"
+        read.contains("CodecZenohExtEntryView::read_with_inline(_r, _h)")
+            && read.contains("<CodecZenohExtEntryWalk as ")
+            && read.contains("::advance(_e, _s)"),
+        "the walk held in place of codec_zenoh_ext_entry does not read it held in place by \
+         the one walk's advance:\n{read}"
     );
 
-    // The hot put and the cold delete name the one walk in their lists' type;
-    // the put scans by it, the delete by the walk that calls the entry point.
+    // The hot put and the cold delete name the one walk in their lists' type.
     let field =
         format!("pub extensions: Option<Bounded<ListView<'a, {walk}, 0>, {{ usize::MAX }}, 1>>,");
     let put = rust_with("codec_zenoh_msg_put", &options);
@@ -787,17 +910,28 @@ fn a_list_names_its_entrys_one_walk_and_a_cold_scan_of_a_hot_entry_calls_its_ent
             "{name}'s view does not name the entry's one walk in its list:\n{code}"
         );
     }
+    // The put's form held in place scans by the walk held in place, its entry
+    // point by the one walk; the delete by the one walk, holding no form held
+    // in place.
+    let (_, held) = held_view_body_read("codec_zenoh_msg_put", &put);
     assert!(
-        put.contains(&format!("walk_chain::<{walk}, ")),
-        "the hot codec_zenoh_msg_put does not scan its chain by the entry's walk:\n{put}"
+        held.contains(&format!("walk_chain::<{held_walk}, ")),
+        "the form held in place of codec_zenoh_msg_put does not scan its chain by the walk \
+         held in place:\n{held}"
+    );
+    let (_, body) = view_body_read("codec_zenoh_msg_put", &put);
+    assert!(
+        body.contains(&format!("walk_chain::<{walk}, ")) && held_calls(body).is_empty(),
+        "the view entry point of codec_zenoh_msg_put does not scan its chain by the one \
+         walk:\n{body}"
     );
     assert!(
-        del.contains(&format!("walk_chain::<{cold_scan}, ")) && !del.contains("_inline"),
+        del.contains(&format!("walk_chain::<{walk}, ")) && !del.contains("_inline"),
         "the cold codec_zenoh_msg_del scans its chain by a read held in place:\n{del}"
     );
 
-    // With no codec named, the one walk reads by the entry point, no walk for a
-    // cold scan is written, and the delete scans by the one walk.
+    // With no codec named, the one walk reads by the entry point and no walk
+    // held in place is written.
     let none = ForgeCompileOptions {
         views: true,
         body_reads: sites,
@@ -806,13 +940,78 @@ fn a_list_names_its_entrys_one_walk_and_a_cold_scan_of_a_hot_entry_calls_its_ent
     let entry = rust_with("codec_zenoh_ext_entry", &none);
     let read = walk_impl(&entry, "CodecZenohExtEntryWalk");
     assert!(
-        read.contains("CodecZenohExtEntryView::read_with(_r, _h)") && !entry.contains("ColdScanWalk"),
+        read.contains("CodecZenohExtEntryView::read_with(_r, _h)") && !entry.contains("HeldWalk"),
         "codec_zenoh_ext_entry with no codec named reads otherwise than by its entry point:\n{entry}"
     );
-    let del = rust_with("codec_zenoh_msg_del", &none);
+}
+
+/// A chain that carries a value from one entry to the next has a walk of its
+/// own, and the form held in place of a hot body that holds it scans it by a
+/// walk held in place its own module writes beside that walk: private, reading
+/// each entry by its form held in place and carrying by that walk's own
+/// `advance`. The chain's rule held in place carries and ends by the chain's
+/// rule. The list's own walk reads by the entry point (docs/adr/0140).
+#[test]
+fn a_hot_scan_of_a_chain_with_a_walk_of_its_own_reads_by_its_walk_held_in_place() {
+    let sites = sites_of(&["codec_chain_prev_carrier.scxml"], true);
+    let options = hot_options(&sites, &["codec_chain_prev_carrier"], true);
+    let code = rust_with("codec_chain_prev_carrier", &options);
+    let own = "CodecChainPrevCarrierEntriesWalk";
+    let held = "CodecChainPrevCarrierEntriesHeldWalk";
+    let inputs = "ListWalk<2> for ";
+
+    let read = walk_impl_of(&code, inputs, own);
     assert!(
-        del.contains(&format!("walk_chain::<{walk}, ")),
-        "codec_zenoh_msg_del with no codec named does not scan by the entry's walk:\n{del}"
+        read.contains("CodecChainPrevEntryView::read_with(_r, _a[0], _a[1], _h)")
+            && !read.contains("_inline"),
+        "the walk of codec_chain_prev_carrier's chain does not read by the entry point:\n{read}"
+    );
+    assert!(
+        code.contains(&format!("\nstruct {held};")),
+        "codec_chain_prev_carrier writes no private walk held in place:\n{code}"
+    );
+    let read = walk_impl_of(&code, inputs, held);
+    assert!(
+        read.contains("CodecChainPrevEntryView::read_with_inline(_r, _a[0], _a[1], _h)")
+            && read.contains(&format!("<{own} as "))
+            && read.contains("::advance(_e, _s)"),
+        "the walk held in place of codec_chain_prev_carrier does not read held in place by \
+         its walk's advance:\n{read}"
+    );
+    let (_, body) = held_view_body_read("codec_chain_prev_carrier", &code);
+    assert!(
+        body.contains(&format!("walk_chain::<{held}, ")),
+        "the form held in place of codec_chain_prev_carrier does not scan by the walk held \
+         in place:\n{body}"
+    );
+    let (_, body) = view_body_read("codec_chain_prev_carrier", &code);
+    assert!(
+        body.contains(&format!("walk_chain::<{own}, ")) && held_calls(body).is_empty(),
+        "the view entry point of codec_chain_prev_carrier does not scan by the list's walk:\n{body}"
+    );
+    let rule = chain_rule_read(&code, "CodecChainPrevCarrierEntriesHeldChain");
+    for said in [
+        "::read_inline(_r, _a[0], _a[1])",
+        "<CodecChainPrevCarrierEntriesChain as ",
+        "::follows(_e)",
+        "::carry(_e, _a)",
+    ] {
+        assert!(
+            rule.contains(said),
+            "the rule held in place of codec_chain_prev_carrier does not say `{said}`:\n{rule}"
+        );
+    }
+
+    // With no codec named, no walk or rule held in place is written.
+    let none = ForgeCompileOptions {
+        views: true,
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+    let code = rust_with("codec_chain_prev_carrier", &none);
+    assert!(
+        !code.contains("HeldWalk") && !code.contains("HeldChain") && !code.contains("_inline"),
+        "codec_chain_prev_carrier with no codec named writes a read held in place:\n{code}"
     );
 }
 

@@ -373,6 +373,16 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
 {{ field.chain_rule_item }}
 {% endif %}
 {% endfor %}
+{# The rule each chain is read by in the form held in place of a hot body: the
+   chain's rule but for the read of an entry, its form held in place
+   (docs/adr/0140). #}
+{% if hot_body %}
+{% for field in held_wire_fields %}
+{% if field.held_chain_rule_item is defined %}
+{{ field.held_chain_rule_item }}
+{% endif %}
+{% endfor %}
+{% endif %}
 #[allow(dead_code)]
 {% if emit_owned %}
 impl{{ owned_generics_impl }} {{ struct_name }}In{{ owned_generics_args }} {
@@ -427,13 +437,24 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     pub fn decode_into{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError>{{ decode_where }} {
         cursor.read_frame(|cursor| Self::read_into(cursor, _out{{ decode_forward_args_with_comma }}))
     }
-{# docs/adr/0140: a body read on the build's hot path (`hot_body`) is printed
-    once, in the forms held in place where they are called (`held_suffix`),
-    which each hot site calls; the entry points are calls of them, which every
-    other site calls. Any other body is printed in its entry points alone. #}
+{# docs/adr/0140: every body is printed in its entry points, whose reads of
+    the bodies it holds are cold sites and call their entry points
+    (`site_suffix` empty). A body read on the build's hot path (`hot_body`) is
+    printed a second time from the same text, in the forms held in place where
+    they are called (`held_suffix`), which each hot site calls and whose reads
+    are hot sites, calling the forms held in place of what it holds
+    (`held_fields`, `held_wire_fields`). The entry points never call the
+    forms held in place, so a cold read of a hot body expands no hot body. #}
 {% set read_forms = ["", held_suffix] if hot_body else [""] %}
 {% if decode_in_place %}
+{% for form in read_forms %}
 
+{% if form %}
+    /// [`Self::read_into`] held in place where it is called: the same body,
+    /// which each site on the build's hot path holds, reading each body it
+    /// holds by its form held in place (docs/adr/0140).
+    #[inline(always)]
+{% else %}
     /// Read the frame through `cursor`, the frame's reader, into `_out`: every
     /// read total, each refusal recorded in the reader and the first of them
     /// the frame's verdict, which the reader says once the frame is read
@@ -442,26 +463,20 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// one function, out of line where the set reads it from two sites or more
     /// so that no site holds a copy (docs/adr/0136, docs/adr/0137).
 {% if hot_body %}
-    /// Its body is [`Self::read_into{{ held_suffix }}`], which a body on the
-    /// build's hot path reads held in place (docs/adr/0140).
+    /// A body on the build's hot path reads the same body by
+    /// [`Self::read_into{{ held_suffix }}`], held in place (docs/adr/0140).
 {% endif %}
 {% if body_read_attr %}
     {{ body_read_attr }}
 {% endif %}
-    pub fn read_into{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}){{ decode_where }} {
-{% if hot_body %}
-        Self::read_into{{ held_suffix }}(cursor, _out{{ decode_forward_args_with_comma }});
-    }
-
-    /// [`Self::read_into`] held in place where it is called: the one text of
-    /// this codec's body, which each site on the build's hot path holds and
-    /// [`Self::read_into`] holds for every other site (docs/adr/0140).
-    #[inline(always)]
-    pub fn read_into{{ held_suffix }}{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}){{ decode_where }} {
 {% endif %}
+    pub fn read_into{{ form }}{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}){{ decode_where }} {
 {% set view_decode = false %}
+{% with fields = (held_fields if form else fields), wire_fields = (held_wire_fields if form else wire_fields), site_suffix = form %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
+{% endwith %}
     }
+{% endfor %}
 {% for form in read_forms %}
 
     /// [`Self::read_into{{ form }}`] of a value of its own: a list's entry, which the
@@ -476,7 +491,14 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     }
 {% endfor %}
 {% else %}
+{% for form in read_forms %}
 
+{% if form %}
+    /// [`Self::read`] held in place where it is called: the same body, which
+    /// each site on the build's hot path holds, reading each body it holds by
+    /// its form held in place (docs/adr/0140).
+    #[inline(always)]
+{% else %}
     /// Read the frame through `cursor`, the frame's reader, as a value built
     /// once from its fields: every read total, each refusal recorded in the
     /// reader and the first of them the frame's verdict, which the reader says
@@ -485,26 +507,20 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// where the set reads it from two sites or more so that no site holds a
     /// copy (docs/adr/0136, docs/adr/0137).
 {% if hot_body %}
-    /// Its body is [`Self::read{{ held_suffix }}`], which a body on the
-    /// build's hot path reads held in place (docs/adr/0140).
+    /// A body on the build's hot path reads the same body by
+    /// [`Self::read{{ held_suffix }}`], held in place (docs/adr/0140).
 {% endif %}
 {% if body_read_attr %}
     {{ body_read_attr }}
 {% endif %}
-    pub fn read{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self{{ decode_where }} {
-{% if hot_body %}
-        Self::read{{ held_suffix }}(cursor{{ decode_forward_args_with_comma }})
-    }
-
-    /// [`Self::read`] held in place where it is called: the one text of this
-    /// codec's body, which each site on the build's hot path holds and
-    /// [`Self::read`] holds for every other site (docs/adr/0140).
-    #[inline(always)]
-    pub fn read{{ held_suffix }}{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self{{ decode_where }} {
 {% endif %}
+    pub fn read{{ form }}{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self{{ decode_where }} {
 {% set view_decode = false %}
+{% with fields = (held_fields if form else fields), wire_fields = (held_wire_fields if form else wire_fields), site_suffix = form %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
+{% endwith %}
     }
+{% endfor %}
 {% for form in read_forms %}
 
     /// [`Self::read{{ form }}`] into a destination the caller owns, so a codec that
@@ -749,6 +765,16 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 {{ field.view_chain_rule_item }}
 {% endif %}
 {% endfor %}
+{# The walk the form held in place of a hot body scans a chain with a walk of
+   its own by: that walk, each entry read by its form held in place
+   (docs/adr/0140). No list names it. #}
+{% if hot_body %}
+{% for field in held_wire_fields %}
+{% if field.view_held_walk_item is defined %}
+{{ field.view_held_walk_item }}
+{% endif %}
+{% endfor %}
+{% endif %}
 {% for field in fields %}
 {% if field.view_rs_alias is defined %}
 {{ field.view_rs_alias }}
@@ -818,6 +844,13 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
         Self::read_with(cursor{{ decode_forward_args_with_comma }}, &mut ())
     }
 
+{% for form in read_forms %}
+{% if form %}
+    /// [`Self::read_with`] held in place where it is called: the same body,
+    /// which each site on the build's hot path holds, reading each body it
+    /// holds by its form held in place (docs/adr/0140).
+    #[inline(always)]
+{% else %}
     /// [`Self::read`], each entry of every chain the frame holds, this view's
     /// and those of every body it reads, shown to `_hook` right after the entry
     /// is read (docs/adr/0130). What the hook refuses is the frame's refusal.
@@ -826,27 +859,21 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// one function, out of line where the set reads it from two sites or more
     /// so that no site holds a copy (docs/adr/0136, docs/adr/0137).
 {% if hot_body %}
-    /// Its body is [`Self::read_with{{ held_suffix }}`], which a body on the
-    /// build's hot path reads held in place (docs/adr/0140).
+    /// A body on the build's hot path reads the same body by
+    /// [`Self::read_with{{ held_suffix }}`], held in place (docs/adr/0140).
 {% endif %}
 {% if view_read_attr %}
     {{ view_read_attr }}
 {% endif %}
-    pub fn read_with<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self {
-{% if hot_body %}
-        Self::read_with{{ held_suffix }}(cursor{{ decode_forward_args_with_comma }}, _hook)
-    }
-
-    /// [`Self::read_with`] held in place where it is called: the one text of
-    /// this view's body, which each site on the build's hot path holds and
-    /// [`Self::read_with`] holds for every other site (docs/adr/0140).
-    #[inline(always)]
-    pub fn read_with{{ held_suffix }}<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self {
 {% endif %}
+    pub fn read_with{{ form }}<H: {{ runtime_codec }}::ChainHook>(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}, _hook: &mut H) -> Self {
 {% set view_decode = true %}
+{% with fields = (held_fields if form else fields), wire_fields = (held_wire_fields if form else wire_fields), site_suffix = form %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
+{% endwith %}
     }
 
+{% endfor %}
     /// [`Self::decode_into`] with each chain entry shown to `hook`
     /// ([`Self::read_with`]); the frame's verdict is the first refusal, the
     /// hook's among them.
@@ -1001,7 +1028,7 @@ impl {{ runtime_codec }}::RecordRead for {{ struct_name }}{{ arm.variant_name }}
 
     #[inline]
     fn read_with<'f, H: {{ runtime_codec }}::ChainHook>(reader: &mut SceReader<'f>, hook: &mut H) -> Self::View<'f> {
-        {{ arm.view_body_type }}::read_with{{ site_suffix }}(reader, hook)
+        {{ arm.view_body_type }}::read_with(reader, hook)
     }
 }
 {% endfor %}

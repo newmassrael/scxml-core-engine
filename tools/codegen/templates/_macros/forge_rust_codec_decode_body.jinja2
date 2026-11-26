@@ -18,9 +18,11 @@
     total and records a refusal in it, so no statement here returns early and
     the frame's verdict is said once, by the caller that made the reader.
 
-    `site_suffix` names the form each body this one holds is read by: the
-    entry point, or the form held in place where this body is read on the
-    build's hot path (docs/adr/0140). -#}
+    `site_suffix` names the form each body this one holds is read by, which
+    the read that includes this sets: empty in an entry point, which calls the
+    entry points of what it holds, and the suffix of the forms held in place in
+    the form held in place of a body on the build's hot path, which calls
+    theirs (docs/adr/0140). `fields` and `wire_fields` are that read's too. -#}
 {#- One field of the positional prefix, bound to its own local. An
     enum-typed field travels on the wire as the enum's carrier, so
     `decode_expr` reads that carrier and the enum's own conversion

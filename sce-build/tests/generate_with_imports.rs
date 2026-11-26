@@ -918,10 +918,11 @@ fn around_the_read(out: &Path, name: &str) -> (String, String) {
 }
 
 /// `--inline-decode-for` names a codec of the set, by its document's stem: its
-/// body is printed once, in the form held in place, `#[inline(always)]`, and
-/// its entry point is a call of it, placed by the sites that call it, none
-/// here; a run that names none prints the body in the entry point, left to the
-/// compiler, and no form held in place (docs/adr/0137, docs/adr/0140).
+/// body is printed in the form held in place, `#[inline(always)]`, and in its
+/// entry point, which is the body itself and no call of the form held in place,
+/// placed by the sites that call it, none here; a run that names none prints
+/// the body in the entry point, left to the compiler, and no form held in place
+/// (docs/adr/0137, docs/adr/0140).
 #[test]
 fn a_codec_named_hot_is_printed_in_its_form_held_in_place() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -930,7 +931,7 @@ fn a_codec_named_hot_is_printed_in_its_form_held_in_place() {
     let plain = tmp.path().join("plain");
     let run = generate_documents(std::slice::from_ref(&codec), &plain, "rust", &[]);
     succeeded(&run, "the run that names no codec");
-    let (before, _) = around_the_read(&plain, "read");
+    let (before, plain_first) = around_the_read(&plain, "read");
     assert!(
         !before.starts_with("#[inline"),
         "the read of a body no site reads carries `{before}` with no codec named"
@@ -950,10 +951,14 @@ fn a_codec_named_hot_is_printed_in_its_form_held_in_place() {
         &["--inline-decode-for", "simple_frame"],
     );
     succeeded(&run, "the run that names simple_frame");
-    let (before, _) = around_the_read(&hot, "read_inline");
+    let (before, held_first) = around_the_read(&hot, "read_inline");
     assert_eq!(
         before, "#[inline(always)]",
         "the body of the codec named is not held in place"
+    );
+    assert_eq!(
+        held_first, plain_first,
+        "the form held in place of the codec named does not begin as its body does"
     );
     let (before, after) = around_the_read(&hot, "read");
     assert!(
@@ -961,8 +966,9 @@ fn a_codec_named_hot_is_printed_in_its_form_held_in_place() {
         "the entry point of a body no site reads carries `{before}`"
     );
     assert_eq!(
-        after, "Self::read_inline(cursor)",
-        "the entry point of the codec named is not a call of its form held in place"
+        after, plain_first,
+        "the entry point of the codec named is not its body, as the run that names none \
+         prints it"
     );
 }
 

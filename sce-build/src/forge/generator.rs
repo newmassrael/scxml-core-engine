@@ -661,16 +661,6 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_view_is_borrowed: bool,
 
-    /// docs/adr/0140: `true` when the imported codec's body is read on the
-    /// build's hot path ([`crate::forge::body_reads::InlineDecode::is_hot`]), so
-    /// its module writes its walk, `{Codec}Walk`, reading each entry by its form
-    /// held in place, and beside it the walk a scan at a cold site reads a chain
-    /// of it by, which calls its entry point. A parent reads it where its view
-    /// scans a chain of the codec. `false` for non-codec imports and for a
-    /// build that names no codec hot.
-    #[serde(skip)]
-    pub codec_body_hot: bool,
-
     /// ADR 0058: `true` when the imported codec has a source interface
     /// (`{Codec}Source`), which a parent that embeds or lists it reads its
     /// body through. A fact about the imported model and its own imports, so it
@@ -1782,7 +1772,6 @@ fn resolve_single_import(
         c11_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
-        codec_body_hot: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
         codec_says_inputs: Vec::new(),
@@ -12571,6 +12560,10 @@ fn rust_owned_field_keys(
     }
 }
 
+/// What a codec's fields say to the template: the fields as each form holds
+/// them, and the fields as the wire reads them ([`rust_group_storage`]).
+type FieldsAndWire = (Vec<serde_json::Value>, Vec<serde_json::Value>);
+
 /// A Rust codec's fields as each form holds them, and as the wire reads them
 /// (docs/adr/0065 §6 R4b). The elements of a group, which one gate decides, are
 /// held as one entry of the group's type, where the first of them stood; the
@@ -12590,7 +12583,7 @@ fn rust_group_storage(
     l: &LangCtx,
     mut wire: Vec<serde_json::Value>,
     emit_views: bool,
-) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
+) -> Result<FieldsAndWire, ForgeError> {
     use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
         aligned_name, chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
@@ -14351,12 +14344,15 @@ struct CodecForms {
     body_read: crate::forge::body_reads::BodyReadForms,
 }
 
-/// Where a Rust body reads what it holds (docs/adr/0140): the bodies of the
-/// codecs it holds and its ZInts. A body read on the build's hot path is a hot
-/// site of each of its reads, and calls the forms held in place where they are
-/// called (`read_into_inline`, `read_vle_u16_inline`, ...); every other body
-/// is a cold site of its reads and calls the entry points (`read_into`,
-/// `read_vle_u16`, ...), each one function where the set shares it.
+/// Where a printed Rust body reads what it holds (docs/adr/0140): the bodies
+/// of the codecs it holds and its ZInts. Every body is printed in its entry
+/// points (`read_into`, `read`, `read_with`), a cold site of each of its
+/// reads, which calls the entry points (`read_into`, `read_vle_u16`, ...), each
+/// one function where the set shares it. A body read on the build's hot path is
+/// printed again, from the same text, in its forms held in place, a hot site of
+/// each of its reads, which calls the forms held in place where they are called
+/// (`read_into_inline`, `read_vle_u16_inline`, ...). So a cold read of a hot
+/// body expands no hot body, and a hot read calls nothing out of line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReadSite {
     Cold,
@@ -14364,15 +14360,6 @@ enum ReadSite {
 }
 
 impl ReadSite {
-    /// The site of each read the body of a codec printed as `forms` makes.
-    fn of(forms: crate::forge::body_reads::BodyReadForms) -> Self {
-        if forms.hot {
-            Self::Hot
-        } else {
-            Self::Cold
-        }
-    }
-
     /// The suffix of the name of each read a body at this site calls: none,
     /// the entry point, at a cold site, and `_inline`, the form held in
     /// place, at a hot one. The forms a hot body is printed in are named by
@@ -14447,8 +14434,6 @@ fn render_codec(
         inline_encode,
         body_read,
     } = forms;
-    // The site of every read this codec's body makes (docs/adr/0140).
-    let site = ReadSite::of(body_read);
     if matches!(lang, crate::generator::Language::C11) {
         c11_refuse_a_field_it_cannot_hold(m)?;
     }
@@ -14832,536 +14817,547 @@ fn render_codec(
         std::collections::HashMap::new()
     };
 
-    let fields: Vec<serde_json::Value> = m
-        .fields
-        .iter()
-        .map(|f| -> Result<serde_json::Value, ForgeError> {
-            let mut obj = serde_json::Map::new();
-            obj.insert("id".into(), l.codec_field_id(&f.id).into());
-            // What a decode binds the value read to. The field's own name in
-            // every language but Python, whose decoder shares one scope with
-            // the builtins it calls (`python_field_local`).
-            obj.insert("local".into(), l.codec_field_decode_local(&f.id).into());
-            // Borrowed zero-copy codec round (Rust only): a scalar
-            // `Bytes` / `String` codec field decodes as a zero-copy view
-            // over the cursor buffer (`&'a [u8]` / `&'a str`) per the
-            // `SceCursor::peek_slice -> &'a [u8]` borrow contract, rather
-            // than an owned `Vec<u8>` / `String`. Any codec holding such
-            // a field is borrowed (`codec_self_borrowed`), so the struct
-            // carries the `<'a>` this `&'a` refers to. The other five
-            // backends own their codec fields, so they fall through to
-            // the shared `type_name`. Repeat / tlv / embed override this
-            // slot below with their list / body shapes; present-if wraps
-            // it in `Option<…>` (both routes share `codec_scalar_type`).
-            obj.insert(type_key.into(), codec_scalar_type(&l, f, &m.fields).into());
-            if let Some(rebind) = rust_bounded_rebind(&l, f, &m.fields) {
-                obj.insert("bounded_rebind".into(), rebind.into());
-            }
-            if let Some(store) = rust_store_rebind(&l, f, m) {
-                obj.insert("store_rebind".into(), store.into());
-            }
-            obj.insert(
-                "decode_expr".into(),
-                generate_decode_expr(
-                    f,
-                    m.default_endian,
-                    lang,
-                    &m.fields,
-                    l.codec_int_carrier(&f.sce_type),
-                )
-                .into(),
-            );
-            // An enum-typed field is carried on the wire as the enum's
-            // carrier, so `decode_expr` reads that carrier and the template
-            // turns it into a value of the type. Which is a per-language
-            // shape — a closed enum's conversion can fail, and each backend
-            // fails its own way — so the template gets the conversion's
-            // NAME and writes the call itself.
-            if let SceType::Enum(r) = &f.sce_type {
-                obj.insert("is_enum".into(), serde_json::Value::Bool(true));
-                obj.insert(
-                    "enum_from_underlying".into(),
-                    l.enum_from_underlying(&r.alias).into(),
-                );
-                obj.insert(
-                    "enum_is_open".into(),
-                    serde_json::Value::Bool(l.enum_import(&r.alias).is_open),
-                );
-            } else {
-                obj.insert("is_enum".into(), serde_json::Value::Bool(false));
-            }
-            obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
-            obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
-            // RFC §synth-5-B string fields — C11 codec.h.jinja2 switches the
-            // member storage shape from `uint8_t[N] + size_t len`
-            // (Bytes) to `char[N] + size_t len` (String) when this
-            // flag is set. The cpp/rust/kotlin/go/python codec
-            // templates use host-language string types directly and
-            // therefore do not inspect this flag.
-            obj.insert("is_string".into(), serde_json::Value::Bool(f.is_string()));
-            // C11 Bytes / String / Repeat / TLV-chain emit pairs the
-            // payload member with an implicit `<id>_len` byte/entry
-            // count. Suppress that emit when a sibling field already
-            // owns the same identifier (e.g. wire codecs whose VLE
-            // length prefix is named `<payload>_len` to mirror the
-            // peer header layout). Decode then writes the resolved
-            // length back to the sibling directly — semantically the
-            // sibling and the implicit count carry the same value, so
-            // collapsing them is loss-free. Without this suppression
-            // C11 surfaces a duplicate-member compile error that
-            // byte-only golden comparison cannot detect (per
-            // feedback_byte_goldens_not_compile.md).
-            // A sibling the encode derives is no member of a value printed from
-            // its plan (docs/adr/0081 §3), so the array's length is a member
-            // of its own there.
-            let sibling_owns_len = m.fields.iter().any(|other| {
-                !std::ptr::eq(other, f)
-                    && other.id == format!("{}_len", f.id)
-                    && !c11_derived(&other.id)
-            });
-            obj.insert(
-                "c_emit_len_member".into(),
-                serde_json::Value::Bool(!sibling_owns_len),
-            );
-            // A number a C11 encode printed from its plan derives and the value
-            // never states: no member of the value, and a local of the decode.
-            obj.insert(
-                "c_derived".into(),
-                c11_printed
-                    .as_ref()
-                    .is_some_and(|(plan, _)| c11_source::derived_field(plan, &f.id))
-                    .into(),
-            );
-            // The opening of a group whose members the C11 decode reads in
-            // place, before the first of them (docs/adr/0065 §6 R4).
-            if let Some(opened) = c11_printed
-                .as_ref()
-                .and_then(|(_, printed)| printed.before_decode.get(&f.id))
-            {
-                obj.insert("c11_before_decode".into(), opened.clone().into());
-            }
-            obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
-            obj.insert(
-                "is_tlv_chain".into(),
-                serde_json::Value::Bool(f.is_tlv_chain()),
-            );
-            obj.insert("is_embed".into(), serde_json::Value::Bool(f.is_embed()));
-            // RFC §synth-5-B B3 DMA alignment: surface burst_align so the
-            // template can emit a per-field language-level alignment
-            // assertion (Rust `const _: () = assert!`, C11
-            // `_Static_assert`) on the literal byte offset. Build-time
-            // validation already guarantees `byte_offset % burst_align
-            // == 0` and that all preceding fields are Fixed; the
-            // assertion is structural drift detection (catches manual
-            // edits to byte_offset that break the invariant).
-            if let Some(n) = f.dma_burst_align {
-                obj.insert("dma_burst_align".into(), n.into());
-            }
-            obj.insert("byte_off".into(), f.byte_offset.into());
-            // C11 holds a byte string, a text, a list and a TLV chain in an
-            // array of the declared bound beside a length the caller sets, so
-            // its encode asks that the length is within the bound before the
-            // first byte is written. The condition is rendered once here and
-            // the template emits it for every encode shape.
-            if matches!(lang, crate::generator::Language::C11) {
-                if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f, &m.fields) {
-                    obj.insert("c_over_bound_cond".into(), cond.into());
-                    // The error a decode of that frame gives (docs/adr/0058
-                    // law 3, docs/adr/0077 §4), named once for every backend.
-                    use crate::forge::codec_failure::{BoundKind, CodecFailure};
-                    let c11 = crate::generator::Language::C11;
-                    let status = BoundKind::of(f)
-                        .map(|kind| CodecFailure::over_bound(kind).symbol(c11))
-                        .expect("a field held in an array has a bound");
-                    obj.insert("c_over_bound_status".into(), status.into());
+    // What each field says to the template, as a body printed at `site` reads
+    // it (docs/adr/0140): the entry points read what the body holds at cold
+    // sites, and the forms held in place of a hot body at hot ones. Everything
+    // else a field says is the same at either.
+    let fields_read_at = |site: ReadSite| -> Result<Vec<serde_json::Value>, ForgeError> {
+        m.fields
+            .iter()
+            .map(|f| -> Result<serde_json::Value, ForgeError> {
+                let mut obj = serde_json::Map::new();
+                obj.insert("id".into(), l.codec_field_id(&f.id).into());
+                // What a decode binds the value read to. The field's own name in
+                // every language but Python, whose decoder shares one scope with
+                // the builtins it calls (`python_field_local`).
+                obj.insert("local".into(), l.codec_field_decode_local(&f.id).into());
+                // Borrowed zero-copy codec round (Rust only): a scalar
+                // `Bytes` / `String` codec field decodes as a zero-copy view
+                // over the cursor buffer (`&'a [u8]` / `&'a str`) per the
+                // `SceCursor::peek_slice -> &'a [u8]` borrow contract, rather
+                // than an owned `Vec<u8>` / `String`. Any codec holding such
+                // a field is borrowed (`codec_self_borrowed`), so the struct
+                // carries the `<'a>` this `&'a` refers to. The other five
+                // backends own their codec fields, so they fall through to
+                // the shared `type_name`. Repeat / tlv / embed override this
+                // slot below with their list / body shapes; present-if wraps
+                // it in `Option<…>` (both routes share `codec_scalar_type`).
+                obj.insert(type_key.into(), codec_scalar_type(&l, f, &m.fields).into());
+                if let Some(rebind) = rust_bounded_rebind(&l, f, &m.fields) {
+                    obj.insert("bounded_rebind".into(), rebind.into());
                 }
-            }
-            if f.is_variable_length() {
-                if let BitSize::Vle { width_bits } = &f.bit_size {
-                    obj.insert("vle_width_bits".into(), (*width_bits).into());
-                    // The minimal ZInt an encode writes for a W-bit value
-                    // is at most ceil((W-1)/7) bytes — the final byte
-                    // carries a full 8 data bits (no continuation flag),
-                    // so a u64 never spills into a 10th byte (RFC
-                    // §synth-5-B App. B). An encode bound: a decode reads
-                    // up to 9 bytes at every width.
-                    obj.insert("vle_max_bytes".into(), vle_cap_bytes(*width_bits).into());
-                    obj.insert("bit_size_kind".into(), "vle".into());
-                    obj.insert(
-                        "vle_decode_stmt".into(),
-                        vle_decode_stmt(
-                            &l.codec_field_decode_local(&f.id),
-                            *width_bits,
-                            lang,
-                            site,
-                        )
-                        .into(),
-                    );
-                    // A VLE's encode is the field's own encode block
-                    // (`present_if_encode_vle`), which no template reads apart.
-                } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
-                    // RFC §synth-5-B B2 repeat primitive — populate the per-
-                    // field decode/encode pre-rendered statements plus
-                    // the host-language list type override (Vec<T> /
-                    // std::vector<T>) wrapping the imported codec body.
-                    obj.insert("bit_size_kind".into(), "repeat".into());
-                    let alias = f
-                        .repeat_body_alias
-                        .as_deref()
-                        .expect("parser sets repeat_body_alias for every BitSize::Repeat");
-                    let body_type = resolve_repeat_body_type(
-                        &m.name, alias, imports, lang,
-                    )?;
-                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
-                    // Borrowed zero-copy: when the repeat element codec is
-                    // itself borrowed, the element type carries the
-                    // parent's `<'a>` (`Vec<Body<'a>>`). The `Vec` stays
-                    // alloc-gated until the no-alloc list round; only the
-                    // element's lifetime threads here. Rust-only — other
-                    // backends own their elements. Applied at type
-                    // positions only (`::decode` calls stay bare).
-                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
-                    let max_count = f.storage_entries(&m.fields);
-                    obj.insert("max_count".into(), max_count.into());
-                    obj.insert("repeat_body_type".into(), body_type.clone().into());
-                    obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
-                    obj.insert("repeat_body_encoder".into(), body_encoder.clone().into());
-                    // RFC §synth-5-B — repeat-with-present-if wrap.
-                    // When the repeat carries `sce:present-if`, the
-                    // host-language list type wraps in the same shape
-                    // item B2 established for tail/length-ref present-if:
-                    // Option<Vec<T>> / std::optional<vector> / MutableList?
-                    // / Optional[List] / optional.Of[[]T] (Go); C11
-                    // keeps the carrier-bit-as-truth model (the elems
-                    // array stays plain — wire presence is the gate, not
-                    // the C-side `_len`). Predicate=None codecs keep the
-                    // bare list type for back-compat with item B2 goldens.
-                    let bare = match lang {
-                        crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                        // RFC §synth-5-B B2: no-alloc bounded inline list — Rust
-                        // mirrors the C11 `T elems[MAX]; len` shape via
-                        // `heapless::Vec<T, MAX_COUNT>` (re-exported as
-                        // `HeaplessVec`). Heap-free, so list-bearing codecs
-                        // reach the pure no_std no-alloc MCU tier. Element
-                        // payload stays borrowed (`Body<'a>`) — only the
-                        // thin view structs live inline.
-                        crate::generator::Language::Rust => {
-                            rust_lent_list(&roles, m, f, &format!("{body_type}{body_lt}"))
-                        }
-                        crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
-                        // Kotlin: `MutableList<T>` mirrors the codec's
-                        // existing `mutableListOf<Byte>()` encode buffer
-                        // shape; decode pushes elements via `.add(...)`.
-                        // The data class field stays `var` so the
-                        // generated procedure_l2 can re-assign on a
-                        // fresh frame without wrapping in `.toList()`.
-                        crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
-                        // Go: `[]T` slice of value type (not `[]*T`) —
-                        // each element is plain data, no shared mutable
-                        // state, and `make([]T, 0, max_count)` zero-
-                        // allocates the body up to the cap. Encode
-                        // iterates by value with `for _, _e := range`.
-                        crate::generator::Language::Go => format!("[]{body_type}"),
-                        // C11: fixed buffer + length pair. The struct
-                        // member is rendered directly by the C11 codec
-                        // template (`T elems[MAX]; size_t elems_len;`)
-                        // because the two-field layout would not fit in
-                        // the single `c_type` slot. The `c_type` value
-                        // here ends up unused by the template's
-                        // is_repeat branch — set to `body_type` for
-                        // shape symmetry / debugging visibility.
-                        crate::generator::Language::C11 => body_type.clone(),
-                        // Python: `List[T]` from typing — broader-compat
-                        // than PEP 585's `list[T]` (matches the existing
-                        // `Optional[T]` import the codec template already
-                        // pulls in). `field(default_factory=list)` set
-                        // below for the dataclass default since `List[T]`
-                        // is mutable and shared defaults would alias
-                        // across instances.
-                        crate::generator::Language::Python => format!("List[{body_type}]"),
-                    };
-                    let wrapped = if f.present_if.is_some() {
-                        match lang {
-                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                            // The one spelling of the backend's optional type
-                            // (docs/adr/0055, section 5).
-                            crate::generator::Language::Rust
-                            | crate::generator::Language::Cpp
-                            | crate::generator::Language::Kotlin
-                            | crate::generator::Language::Go
-                            | crate::generator::Language::Python => l
-                                .optional_of(&bare)
-                                .expect("these backends wrap the present type"),
-                            // C11: the optional value of the list, whose
-                            // presence is its own and not the length's: a
-                            // list that was on the wire and empty is a value.
-                            crate::generator::Language::C11 => {
-                                obj.insert("c_gated_optional".into(), true.into());
-                                c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
-                            }
-                        }
-                    } else {
-                        bare.clone()
-                    };
-                    obj.insert(type_key.into(), wrapped.into());
-                    // The element codec's `<sce:flag-input>`s are bound at the
-                    // import and handed to every element, the way an embed's are.
-                    let repeat_thread = embed_flag_bind_thread_args(
-                        imports.iter().find(|i| i.alias == alias),
-                        m,
+                if let Some(store) = rust_store_rebind(&l, f, m) {
+                    obj.insert("store_rebind".into(), store.into());
+                }
+                obj.insert(
+                    "decode_expr".into(),
+                    generate_decode_expr(
+                        f,
+                        m.default_endian,
                         lang,
-                    );
-                    let law_start = matches!(lang, crate::generator::Language::Rust)
-                        .then(|| rust_law_start(&roles, f, &repeat_thread.inputs))
-                        .flatten();
+                        &m.fields,
+                        l.codec_int_carrier(&f.sce_type),
+                    )
+                    .into(),
+                );
+                // An enum-typed field is carried on the wire as the enum's
+                // carrier, so `decode_expr` reads that carrier and the template
+                // turns it into a value of the type. Which is a per-language
+                // shape — a closed enum's conversion can fail, and each backend
+                // fails its own way — so the template gets the conversion's
+                // NAME and writes the call itself.
+                if let SceType::Enum(r) = &f.sce_type {
+                    obj.insert("is_enum".into(), serde_json::Value::Bool(true));
                     obj.insert(
-                        "repeat_decode_stmt".into(),
-                        repeat_streaming_decode_stmt(RepeatDecode {
-                            field: f,
-                            fields: &m.fields,
-                            body_type: &stored_body(lang, imports, alias, &body_type),
-                            body_decoder: &body_decoder,
-                            decode_arg: &repeat_thread.decode_arg,
-                            law_start: law_start.as_deref(),
-                            c11_over,
-                            derived: &c11_derived_numbers,
-                            site,
-                            lang,
-                        })
-                        .into(),
+                        "enum_from_underlying".into(),
+                        l.enum_from_underlying(&r.alias).into(),
                     );
-                    if emit_views {
-                        // ADR 0049: the list is held as the frame it was read
-                        // from; the scan reads each entry once to check it.
-                        let law = rust_source::law_type(
-                            &roles,
-                            &filters::to_pascal_case(m.name.clone()),
-                            &f.id,
-                        );
+                    obj.insert(
+                        "enum_is_open".into(),
+                        serde_json::Value::Bool(l.enum_import(&r.alias).is_open),
+                    );
+                } else {
+                    obj.insert("is_enum".into(), serde_json::Value::Bool(false));
+                }
+                obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
+                obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
+                // RFC §synth-5-B string fields — C11 codec.h.jinja2 switches the
+                // member storage shape from `uint8_t[N] + size_t len`
+                // (Bytes) to `char[N] + size_t len` (String) when this
+                // flag is set. The cpp/rust/kotlin/go/python codec
+                // templates use host-language string types directly and
+                // therefore do not inspect this flag.
+                obj.insert("is_string".into(), serde_json::Value::Bool(f.is_string()));
+                // C11 Bytes / String / Repeat / TLV-chain emit pairs the
+                // payload member with an implicit `<id>_len` byte/entry
+                // count. Suppress that emit when a sibling field already
+                // owns the same identifier (e.g. wire codecs whose VLE
+                // length prefix is named `<payload>_len` to mirror the
+                // peer header layout). Decode then writes the resolved
+                // length back to the sibling directly — semantically the
+                // sibling and the implicit count carry the same value, so
+                // collapsing them is loss-free. Without this suppression
+                // C11 surfaces a duplicate-member compile error that
+                // byte-only golden comparison cannot detect (per
+                // feedback_byte_goldens_not_compile.md).
+                // A sibling the encode derives is no member of a value printed from
+                // its plan (docs/adr/0081 §3), so the array's length is a member
+                // of its own there.
+                let sibling_owns_len = m.fields.iter().any(|other| {
+                    !std::ptr::eq(other, f)
+                        && other.id == format!("{}_len", f.id)
+                        && !c11_derived(&other.id)
+                });
+                obj.insert(
+                    "c_emit_len_member".into(),
+                    serde_json::Value::Bool(!sibling_owns_len),
+                );
+                // A number a C11 encode printed from its plan derives and the value
+                // never states: no member of the value, and a local of the decode.
+                obj.insert(
+                    "c_derived".into(),
+                    c11_printed
+                        .as_ref()
+                        .is_some_and(|(plan, _)| c11_source::derived_field(plan, &f.id))
+                        .into(),
+                );
+                // The opening of a group whose members the C11 decode reads in
+                // place, before the first of them (docs/adr/0065 §6 R4).
+                if let Some(opened) = c11_printed
+                    .as_ref()
+                    .and_then(|(_, printed)| printed.before_decode.get(&f.id))
+                {
+                    obj.insert("c11_before_decode".into(), opened.clone().into());
+                }
+                obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
+                obj.insert(
+                    "is_tlv_chain".into(),
+                    serde_json::Value::Bool(f.is_tlv_chain()),
+                );
+                obj.insert("is_embed".into(), serde_json::Value::Bool(f.is_embed()));
+                // RFC §synth-5-B B3 DMA alignment: surface burst_align so the
+                // template can emit a per-field language-level alignment
+                // assertion (Rust `const _: () = assert!`, C11
+                // `_Static_assert`) on the literal byte offset. Build-time
+                // validation already guarantees `byte_offset % burst_align
+                // == 0` and that all preceding fields are Fixed; the
+                // assertion is structural drift detection (catches manual
+                // edits to byte_offset that break the invariant).
+                if let Some(n) = f.dma_burst_align {
+                    obj.insert("dma_burst_align".into(), n.into());
+                }
+                obj.insert("byte_off".into(), f.byte_offset.into());
+                // C11 holds a byte string, a text, a list and a TLV chain in an
+                // array of the declared bound beside a length the caller sets, so
+                // its encode asks that the length is within the bound before the
+                // first byte is written. The condition is rendered once here and
+                // the template emits it for every encode shape.
+                if matches!(lang, crate::generator::Language::C11) {
+                    if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f, &m.fields) {
+                        obj.insert("c_over_bound_cond".into(), cond.into());
+                        // The error a decode of that frame gives (docs/adr/0058
+                        // law 3, docs/adr/0077 §4), named once for every backend.
+                        use crate::forge::codec_failure::{BoundKind, CodecFailure};
+                        let c11 = crate::generator::Language::C11;
+                        let status = BoundKind::of(f)
+                            .map(|kind| CodecFailure::over_bound(kind).symbol(c11))
+                            .expect("a field held in an array has a bound");
+                        obj.insert("c_over_bound_status".into(), status.into());
+                    }
+                }
+                if f.is_variable_length() {
+                    if let BitSize::Vle { width_bits } = &f.bit_size {
+                        obj.insert("vle_width_bits".into(), (*width_bits).into());
+                        // The minimal ZInt an encode writes for a W-bit value
+                        // is at most ceil((W-1)/7) bytes — the final byte
+                        // carries a full 8 data bits (no continuation flag),
+                        // so a u64 never spills into a 10th byte (RFC
+                        // §synth-5-B App. B). An encode bound: a decode reads
+                        // up to 9 bytes at every width.
+                        obj.insert("vle_max_bytes".into(), vle_cap_bytes(*width_bits).into());
+                        obj.insert("bit_size_kind".into(), "vle".into());
                         obj.insert(
-                            "view_into_builder_stmt".into(),
-                            rust_view::into_builder_list(
-                                &codec_field_decode_local(&f.id, lang),
-                                f.present_if.is_some(),
-                                law.is_some(),
+                            "vle_decode_stmt".into(),
+                            vle_decode_stmt(
+                                &l.codec_field_decode_local(&f.id),
+                                *width_bits,
+                                lang,
+                                site,
                             )
                             .into(),
                         );
-                        let entry = format!("{body_type}View");
-                        // How the list reads an entry: a marker type, so the list
-                        // holds no function over the bytes' lifetime. A repeat
-                        // carries nothing from one entry to the next, so it reads
-                        // by the walk its entry's module writes.
-                        let walk = rust_view::list_walk(&rust_view::WalkedList {
-                            codec: &m.name,
-                            field: &f.id,
-                            entry: &entry,
-                            entry_ty: &rust_view::view_type(imports, alias, &body_type)
-                                .replace("<'a>", "<'b>"),
-                            shared: rust_view::shared_entry_walk(f, m, imports),
-                            inputs: repeat_thread.inputs.len(),
-                            advance: &[],
-                            site,
-                        });
-                        obj.insert("view_walk_item".into(), walk.item.into());
-                        obj.insert(
-                            "view_rs_type".into(),
-                            rust_view::list_type(
-                                &walk.ty,
-                                repeat_thread.inputs.len(),
-                                f,
-                                &m.fields,
-                                law.as_deref(),
-                            )
-                            .into(),
+                        // A VLE's encode is the field's own encode block
+                        // (`present_if_encode_vle`), which no template reads apart.
+                    } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
+                        // RFC §synth-5-B B2 repeat primitive — populate the per-
+                        // field decode/encode pre-rendered statements plus
+                        // the host-language list type override (Vec<T> /
+                        // std::vector<T>) wrapping the imported codec body.
+                        obj.insert("bit_size_kind".into(), "repeat".into());
+                        let alias = f
+                            .repeat_body_alias
+                            .as_deref()
+                            .expect("parser sets repeat_body_alias for every BitSize::Repeat");
+                        let body_type = resolve_repeat_body_type(
+                            &m.name, alias, imports, lang,
+                        )?;
+                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        // Borrowed zero-copy: when the repeat element codec is
+                        // itself borrowed, the element type carries the
+                        // parent's `<'a>` (`Vec<Body<'a>>`). The `Vec` stays
+                        // alloc-gated until the no-alloc list round; only the
+                        // element's lifetime threads here. Rust-only — other
+                        // backends own their elements. Applied at type
+                        // positions only (`::decode` calls stay bare).
+                        let body_lt = rust_codec_body_lifetime(lang, imports, alias);
+                        let max_count = f.storage_entries(&m.fields);
+                        obj.insert("max_count".into(), max_count.into());
+                        obj.insert("repeat_body_type".into(), body_type.clone().into());
+                        obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
+                        obj.insert("repeat_body_encoder".into(), body_encoder.clone().into());
+                        // RFC §synth-5-B — repeat-with-present-if wrap.
+                        // When the repeat carries `sce:present-if`, the
+                        // host-language list type wraps in the same shape
+                        // item B2 established for tail/length-ref present-if:
+                        // Option<Vec<T>> / std::optional<vector> / MutableList?
+                        // / Optional[List] / optional.Of[[]T] (Go); C11
+                        // keeps the carrier-bit-as-truth model (the elems
+                        // array stays plain — wire presence is the gate, not
+                        // the C-side `_len`). Predicate=None codecs keep the
+                        // bare list type for back-compat with item B2 goldens.
+                        let bare = match lang {
+                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
+                            // RFC §synth-5-B B2: no-alloc bounded inline list — Rust
+                            // mirrors the C11 `T elems[MAX]; len` shape via
+                            // `heapless::Vec<T, MAX_COUNT>` (re-exported as
+                            // `HeaplessVec`). Heap-free, so list-bearing codecs
+                            // reach the pure no_std no-alloc MCU tier. Element
+                            // payload stays borrowed (`Body<'a>`) — only the
+                            // thin view structs live inline.
+                            crate::generator::Language::Rust => {
+                                rust_lent_list(&roles, m, f, &format!("{body_type}{body_lt}"))
+                            }
+                            crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
+                            // Kotlin: `MutableList<T>` mirrors the codec's
+                            // existing `mutableListOf<Byte>()` encode buffer
+                            // shape; decode pushes elements via `.add(...)`.
+                            // The data class field stays `var` so the
+                            // generated procedure_l2 can re-assign on a
+                            // fresh frame without wrapping in `.toList()`.
+                            crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
+                            // Go: `[]T` slice of value type (not `[]*T`) —
+                            // each element is plain data, no shared mutable
+                            // state, and `make([]T, 0, max_count)` zero-
+                            // allocates the body up to the cap. Encode
+                            // iterates by value with `for _, _e := range`.
+                            crate::generator::Language::Go => format!("[]{body_type}"),
+                            // C11: fixed buffer + length pair. The struct
+                            // member is rendered directly by the C11 codec
+                            // template (`T elems[MAX]; size_t elems_len;`)
+                            // because the two-field layout would not fit in
+                            // the single `c_type` slot. The `c_type` value
+                            // here ends up unused by the template's
+                            // is_repeat branch — set to `body_type` for
+                            // shape symmetry / debugging visibility.
+                            crate::generator::Language::C11 => body_type.clone(),
+                            // Python: `List[T]` from typing — broader-compat
+                            // than PEP 585's `list[T]` (matches the existing
+                            // `Optional[T]` import the codec template already
+                            // pulls in). `field(default_factory=list)` set
+                            // below for the dataclass default since `List[T]`
+                            // is mutable and shared defaults would alias
+                            // across instances.
+                            crate::generator::Language::Python => format!("List[{body_type}]"),
+                        };
+                        let wrapped = if f.present_if.is_some() {
+                            match lang {
+                                crate::generator::Language::Swift => no_swift_emitter("render_codec"),
+                                // The one spelling of the backend's optional type
+                                // (docs/adr/0055, section 5).
+                                crate::generator::Language::Rust
+                                | crate::generator::Language::Cpp
+                                | crate::generator::Language::Kotlin
+                                | crate::generator::Language::Go
+                                | crate::generator::Language::Python => l
+                                    .optional_of(&bare)
+                                    .expect("these backends wrap the present type"),
+                                // C11: the optional value of the list, whose
+                                // presence is its own and not the length's: a
+                                // list that was on the wire and empty is a value.
+                                crate::generator::Language::C11 => {
+                                    obj.insert("c_gated_optional".into(), true.into());
+                                    c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
+                                }
+                            }
+                        } else {
+                            bare.clone()
+                        };
+                        obj.insert(type_key.into(), wrapped.into());
+                        // The element codec's `<sce:flag-input>`s are bound at the
+                        // import and handed to every element, the way an embed's are.
+                        let repeat_thread = embed_flag_bind_thread_args(
+                            imports.iter().find(|i| i.alias == alias),
+                            m,
+                            lang,
                         );
+                        let law_start = matches!(lang, crate::generator::Language::Rust)
+                            .then(|| rust_law_start(&roles, f, &repeat_thread.inputs))
+                            .flatten();
                         obj.insert(
-                            "view_repeat_decode_stmt".into(),
-                            rust_view::repeat_decode_stmt(&rust_view::ViewList {
+                            "repeat_decode_stmt".into(),
+                            repeat_streaming_decode_stmt(RepeatDecode {
                                 field: f,
                                 fields: &m.fields,
-                                entry: &entry,
-                                inputs: &repeat_thread.inputs,
+                                body_type: &stored_body(lang, imports, alias, &body_type),
+                                body_decoder: &body_decoder,
                                 decode_arg: &repeat_thread.decode_arg,
                                 law_start: law_start.as_deref(),
+                                c11_over,
+                                derived: &c11_derived_numbers,
                                 site,
+                                lang,
                             })
                             .into(),
                         );
-                    }
-                    if field_encode_blocks {
-                        obj.insert(
-                            "repeat_encode_block".into(),
-                            repeat_streaming_encode_block(
-                                f,
-                                &body_encoder,
-                                &repeat_thread.encode_arg,
-                                lang,
-                            )
-                            .into(),
-                        );
-                    }
-                    // Kotlin's data-class primary constructor needs a
-                    // default value for every property; the trunk's
-                    // `0.toUByte()` family default would miscompile
-                    // against `MutableList<T>`. `mutableListOf()` is
-                    // type-inferred from the field type. RFC §synth-5-B gated repeat:
-                    // gated repeat wraps to `MutableList<T>?` so
-                    // the data-class default flips to `null`. Python's
-                    // dataclass default flips from
-                    // `field(default_factory=list)` to `None` for the
-                    // same reason — that branch lives in the centralised
-                    // Python `default_value` block below (single
-                    // ownership of the dataclass default literal).
-                    if matches!(lang, crate::generator::Language::Kotlin) {
-                        let kt_default = if f.present_if.is_some() {
-                            "null"
-                        } else {
-                            "mutableListOf()"
+                        if emit_views {
+                            // ADR 0049: the list is held as the frame it was read
+                            // from; the scan reads each entry once to check it.
+                            let law = rust_source::law_type(
+                                &roles,
+                                &filters::to_pascal_case(m.name.clone()),
+                                &f.id,
+                            );
+                            obj.insert(
+                                "view_into_builder_stmt".into(),
+                                rust_view::into_builder_list(
+                                    &codec_field_decode_local(&f.id, lang),
+                                    f.present_if.is_some(),
+                                    law.is_some(),
+                                )
+                                .into(),
+                            );
+                            let entry = format!("{body_type}View");
+                            // How the list reads an entry: a marker type, so the list
+                            // holds no function over the bytes' lifetime. A repeat
+                            // carries nothing from one entry to the next, so it reads
+                            // by the walk its entry's module writes.
+                            let walk = rust_view::list_walk(&rust_view::WalkedList {
+                                codec: &m.name,
+                                field: &f.id,
+                                entry: &entry,
+                                entry_ty: &rust_view::view_type(imports, alias, &body_type)
+                                    .replace("<'a>", "<'b>"),
+                                shared: rust_view::shared_entry_walk(f, m, imports),
+                                inputs: repeat_thread.inputs.len(),
+                                advance: &[],
+                            });
+                            obj.insert("view_walk_item".into(), walk.item.into());
+                            obj.insert(
+                                "view_rs_type".into(),
+                                rust_view::list_type(
+                                    &walk.ty,
+                                    repeat_thread.inputs.len(),
+                                    f,
+                                    &m.fields,
+                                    law.as_deref(),
+                                )
+                                .into(),
+                            );
+                            obj.insert(
+                                "view_repeat_decode_stmt".into(),
+                                rust_view::repeat_decode_stmt(&rust_view::ViewList {
+                                    field: f,
+                                    fields: &m.fields,
+                                    entry: &entry,
+                                    inputs: &repeat_thread.inputs,
+                                    decode_arg: &repeat_thread.decode_arg,
+                                    law_start: law_start.as_deref(),
+                                    site,
+                                })
+                                .into(),
+                            );
+                        }
+                        if field_encode_blocks {
+                            obj.insert(
+                                "repeat_encode_block".into(),
+                                repeat_streaming_encode_block(
+                                    f,
+                                    &body_encoder,
+                                    &repeat_thread.encode_arg,
+                                    lang,
+                                )
+                                .into(),
+                            );
+                        }
+                        // Kotlin's data-class primary constructor needs a
+                        // default value for every property; the trunk's
+                        // `0.toUByte()` family default would miscompile
+                        // against `MutableList<T>`. `mutableListOf()` is
+                        // type-inferred from the field type. RFC §synth-5-B gated repeat:
+                        // gated repeat wraps to `MutableList<T>?` so
+                        // the data-class default flips to `null`. Python's
+                        // dataclass default flips from
+                        // `field(default_factory=list)` to `None` for the
+                        // same reason — that branch lives in the centralised
+                        // Python `default_value` block below (single
+                        // ownership of the dataclass default literal).
+                        if matches!(lang, crate::generator::Language::Kotlin) {
+                            let kt_default = if f.present_if.is_some() {
+                                "null"
+                            } else {
+                                "mutableListOf()"
+                            };
+                            obj.insert("kt_default".into(), kt_default.into());
+                        }
+                    } else if let BitSize::TlvChain { max_depth, terminate_on, .. } = &f.bit_size {
+                        // RFC §synth-5-B B3 TLV chain primitive — populate the
+                        // per-field decode/encode statements + host-language
+                        // list type. Reuses the repeat machinery for body
+                        // type / decoder / encoder resolution (entry codec
+                        // is an imported alias same as repeat). The TLV
+                        // chain helpers add the bounded-iteration loop + the
+                        // check after it.
+                        //
+                        // MCU-class — render_codec rejects this codec on
+                        // cpp/kotlin/go/python at the top of the function,
+                        // so we only need the Rust + C11 emitter shapes
+                        // here. Non-MCU language hitting this branch is a
+                        // bug (gate not reached).
+                        obj.insert("bit_size_kind".into(), "tlv-chain".into());
+                        // What a form that stores the chain holds, which the walk
+                        // of the frame does not read (docs/adr/0077 §7).
+                        let held = f.storage_entries(&m.fields);
+                        obj.insert("max_depth".into(), held.into());
+                        let alias = f
+                            .tlv_chain_body_alias
+                            .as_deref()
+                            .expect("parser sets tlv_chain_body_alias for every BitSize::TlvChain");
+                        let body_type = resolve_repeat_body_type(
+                            &m.name, alias, imports, lang,
+                        )?;
+                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        // Borrowed zero-copy: a borrowed TLV entry codec
+                        // carries the parent's `<'a>` in the element type
+                        // (`Vec<Entry<'a>>`). Rust-only, type positions only.
+                        let body_lt = rust_codec_body_lifetime(lang, imports, alias);
+                        obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
+                        obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
+                        obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
+                        // RFC §synth-5-B gated tlv-chain — `<sce:tlv-chain
+                        // sce:present-if>` host-type wrap. Mirrors the
+                        // repeat-with-present-if wrap pattern:
+                        // when the chain is gated, the host-language list
+                        // type wraps in a per-language optional. C11 keeps
+                        // the bare fixed-buffer + len pair (carrier-bit-
+                        // as-truth — `_len = 0` signals absent).
+                        let gated = f.present_if.is_some();
+                        // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
+                        // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
+                        // `HeaplessVec`), the Rust mirror of the C11 fixed-buffer
+                        // + len shape. The chain bound is `max_depth` (the
+                        // declared entry cap). A chain closed by an entry flag is
+                        // one entry or more, so its list says so where the value
+                        // is made (docs/adr/0065 §6 R7).
+                        let rust_list = rust_lent_list(&roles, m, f, &format!("{body_type}{body_lt}"));
+                        let wrapped = match (lang, gated) {
+                            (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
+                            (crate::generator::Language::Rust, false) => rust_list,
+                            (crate::generator::Language::Rust, true) => format!("Option<{rust_list}>"),
+                            // RFC §synth-5-B all-backend closures: cpp/kotlin/go/python emit
+                            // TLV chain via the host-language list shape — Zenoh
+                            // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
+                            // kotlin server peers too, not just zenoh-pico MCU,
+                            // so the original "MCU-only" gate (now retracted)
+                            // wasn't a hardware constraint, just a v1 scope.
+                            (crate::generator::Language::Cpp, false) => format!("std::vector<{body_type}>"),
+                            (crate::generator::Language::Cpp, true) => format!("std::optional<std::vector<{body_type}>>"),
+                            (crate::generator::Language::Kotlin, false) => format!("MutableList<{body_type}>"),
+                            (crate::generator::Language::Kotlin, true) => format!("MutableList<{body_type}>?"),
+                            // Go: a gated chain is the one optional type over the
+                            // slice (docs/adr/0055, section 5), so an empty chain
+                            // that was on the wire and a chain that was not stay
+                            // two values.
+                            (crate::generator::Language::Go, false) => format!("[]{body_type}"),
+                            (crate::generator::Language::Go, true) => l
+                                .optional_of(&format!("[]{body_type}"))
+                                .expect("Go wraps the present type"),
+                            (crate::generator::Language::Python, false) => format!("List[{body_type}]"),
+                            (crate::generator::Language::Python, true) => format!("Optional[List[{body_type}]]"),
+                            // C11 emits a fixed-buffer + length pair via the
+                            // codec template (mirrors repeat shape); the
+                            // single c_type slot holds the body_type for
+                            // shape symmetry. A gated chain is the optional
+                            // value of that list (as a gated repeat is), so an
+                            // empty chain that was on the wire and a chain that
+                            // was not stay two values.
+                            (crate::generator::Language::C11, false) => body_type.clone(),
+                            (crate::generator::Language::C11, true) => {
+                                obj.insert("c_gated_optional".into(), true.into());
+                                c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
+                            }
                         };
-                        obj.insert("kt_default".into(), kt_default.into());
-                    }
-                } else if let BitSize::TlvChain { max_depth, terminate_on, .. } = &f.bit_size {
-                    // RFC §synth-5-B B3 TLV chain primitive — populate the
-                    // per-field decode/encode statements + host-language
-                    // list type. Reuses the repeat machinery for body
-                    // type / decoder / encoder resolution (entry codec
-                    // is an imported alias same as repeat). The TLV
-                    // chain helpers add the bounded-iteration loop + the
-                    // check after it.
-                    //
-                    // MCU-class — render_codec rejects this codec on
-                    // cpp/kotlin/go/python at the top of the function,
-                    // so we only need the Rust + C11 emitter shapes
-                    // here. Non-MCU language hitting this branch is a
-                    // bug (gate not reached).
-                    obj.insert("bit_size_kind".into(), "tlv-chain".into());
-                    // What a form that stores the chain holds, which the walk
-                    // of the frame does not read (docs/adr/0077 §7).
-                    let held = f.storage_entries(&m.fields);
-                    obj.insert("max_depth".into(), held.into());
-                    let alias = f
-                        .tlv_chain_body_alias
-                        .as_deref()
-                        .expect("parser sets tlv_chain_body_alias for every BitSize::TlvChain");
-                    let body_type = resolve_repeat_body_type(
-                        &m.name, alias, imports, lang,
-                    )?;
-                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
-                    // Borrowed zero-copy: a borrowed TLV entry codec
-                    // carries the parent's `<'a>` in the element type
-                    // (`Vec<Entry<'a>>`). Rust-only, type positions only.
-                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
-                    obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
-                    obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
-                    obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
-                    // RFC §synth-5-B gated tlv-chain — `<sce:tlv-chain
-                    // sce:present-if>` host-type wrap. Mirrors the
-                    // repeat-with-present-if wrap pattern:
-                    // when the chain is gated, the host-language list
-                    // type wraps in a per-language optional. C11 keeps
-                    // the bare fixed-buffer + len pair (carrier-bit-
-                    // as-truth — `_len = 0` signals absent).
-                    let gated = f.present_if.is_some();
-                    // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
-                    // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
-                    // `HeaplessVec`), the Rust mirror of the C11 fixed-buffer
-                    // + len shape. The chain bound is `max_depth` (the
-                    // declared entry cap). A chain closed by an entry flag is
-                    // one entry or more, so its list says so where the value
-                    // is made (docs/adr/0065 §6 R7).
-                    let rust_list = rust_lent_list(&roles, m, f, &format!("{body_type}{body_lt}"));
-                    let wrapped = match (lang, gated) {
-                        (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
-                        (crate::generator::Language::Rust, false) => rust_list,
-                        (crate::generator::Language::Rust, true) => format!("Option<{rust_list}>"),
-                        // RFC §synth-5-B all-backend closures: cpp/kotlin/go/python emit
-                        // TLV chain via the host-language list shape — Zenoh
-                        // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
-                        // kotlin server peers too, not just zenoh-pico MCU,
-                        // so the original "MCU-only" gate (now retracted)
-                        // wasn't a hardware constraint, just a v1 scope.
-                        (crate::generator::Language::Cpp, false) => format!("std::vector<{body_type}>"),
-                        (crate::generator::Language::Cpp, true) => format!("std::optional<std::vector<{body_type}>>"),
-                        (crate::generator::Language::Kotlin, false) => format!("MutableList<{body_type}>"),
-                        (crate::generator::Language::Kotlin, true) => format!("MutableList<{body_type}>?"),
-                        // Go: a gated chain is the one optional type over the
-                        // slice (docs/adr/0055, section 5), so an empty chain
-                        // that was on the wire and a chain that was not stay
-                        // two values.
-                        (crate::generator::Language::Go, false) => format!("[]{body_type}"),
-                        (crate::generator::Language::Go, true) => l
-                            .optional_of(&format!("[]{body_type}"))
-                            .expect("Go wraps the present type"),
-                        (crate::generator::Language::Python, false) => format!("List[{body_type}]"),
-                        (crate::generator::Language::Python, true) => format!("Optional[List[{body_type}]]"),
-                        // C11 emits a fixed-buffer + length pair via the
-                        // codec template (mirrors repeat shape); the
-                        // single c_type slot holds the body_type for
-                        // shape symmetry. A gated chain is the optional
-                        // value of that list (as a gated repeat is), so an
-                        // empty chain that was on the wire and a chain that
-                        // was not stay two values.
-                        (crate::generator::Language::C11, false) => body_type.clone(),
-                        (crate::generator::Language::C11, true) => {
-                            obj.insert("c_gated_optional".into(), true.into());
-                            c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
-                        }
-                    };
-                    obj.insert(type_key.into(), wrapped.into());
-                    // The entry codec's `<sce:flag-input>`s are bound where the
-                    // chain imports it, and every entry it decodes or encodes is
-                    // handed the same values: a parent's carrier flag or its own
-                    // flag-input, neither of which changes from entry to entry.
-                    // The ones the chain names in an `<sce:entry-flag-bind>`
-                    // are the exception — each entry gets the value its loop
-                    // holds for it, in the local the loop declares.
-                    let entry_binds = ChainEntryBinds::of(f, &chain_masks);
-                    let entry_thread = list_entry_thread_args(
-                        f,
-                        imports.iter().find(|i| i.alias == alias),
-                        m,
-                        lang,
-                    );
-                    let law_start = matches!(lang, crate::generator::Language::Rust)
-                        .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
-                        .flatten();
-                    let is_rust = matches!(lang, crate::generator::Language::Rust);
-                    let is_c11 = matches!(lang, crate::generator::Language::C11);
-                    // A Rust or C11 decode, which reads past what it holds,
-                    // notes the kinds the gates ask for of every entry it
-                    // reads, held or not (docs/adr/0077 §7).
-                    let kinds = if is_rust {
-                        rust_chain_kinds(f, &m.fields, &chain_masks)
-                    } else {
-                        Vec::new()
-                    };
-                    let c11_kinds = if is_c11 {
-                        c11_chain_kinds(f, &m.fields, &chain_masks)
-                    } else {
-                        Vec::new()
-                    };
-                    // How a Rust chain is read: a type of its own, the rule the
-                    // runtime's read and a view's scan of the chain are
-                    // instantiated at, so each part of the rule is a call by name
-                    // and no part is a pointer (docs/adr/0136).
-                    let chain_rule = if is_rust {
-                        rust_chain_rule_name(&m.name, &f.id)
-                    } else {
-                        String::new()
-                    };
-                    let rust_flag_acc = match terminate_on {
-                        crate::forge::model::TlvTerminateStrategy::ExhaustOrDepth => None,
-                        crate::forge::model::TlvTerminateStrategy::EntryFlag { flag_name } => {
-                            Some(flag_getter_name(flag_name, crate::generator::Language::Rust))
-                        }
-                    };
-                    if is_rust {
-                        obj.insert(
-                            "chain_rule_item".into(),
-                            rust_chain_rule_item(&RustChainRule {
+                        obj.insert(type_key.into(), wrapped.into());
+                        // The entry codec's `<sce:flag-input>`s are bound where the
+                        // chain imports it, and every entry it decodes or encodes is
+                        // handed the same values: a parent's carrier flag or its own
+                        // flag-input, neither of which changes from entry to entry.
+                        // The ones the chain names in an `<sce:entry-flag-bind>`
+                        // are the exception — each entry gets the value its loop
+                        // holds for it, in the local the loop declares.
+                        let entry_binds = ChainEntryBinds::of(f, &chain_masks);
+                        let entry_thread = list_entry_thread_args(
+                            f,
+                            imports.iter().find(|i| i.alias == alias),
+                            m,
+                            lang,
+                        );
+                        let law_start = matches!(lang, crate::generator::Language::Rust)
+                            .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
+                            .flatten();
+                        let is_rust = matches!(lang, crate::generator::Language::Rust);
+                        let is_c11 = matches!(lang, crate::generator::Language::C11);
+                        // A Rust or C11 decode, which reads past what it holds,
+                        // notes the kinds the gates ask for of every entry it
+                        // reads, held or not (docs/adr/0077 §7).
+                        let kinds = if is_rust {
+                            rust_chain_kinds(f, &m.fields, &chain_masks)
+                        } else {
+                            Vec::new()
+                        };
+                        let c11_kinds = if is_c11 {
+                            c11_chain_kinds(f, &m.fields, &chain_masks)
+                        } else {
+                            Vec::new()
+                        };
+                        // How a Rust chain is read: a type of its own, the rule the
+                        // runtime's read and a view's scan of the chain are
+                        // instantiated at, so each part of the rule is a call by name
+                        // and no part is a pointer (docs/adr/0136).
+                        let chain_rule = if is_rust {
+                            rust_chain_rule_name(&m.name, &f.id)
+                        } else {
+                            String::new()
+                        };
+                        // The rule the body read at `site` reads the chain by
+                        // (docs/adr/0140): the chain's rule, whose read is the
+                        // entry's entry point, at a cold site, and at a hot one the
+                        // rule held in place, whose read is the entry's form held in
+                        // place.
+                        let read_rule = if is_rust && site == ReadSite::Hot {
+                            rust_held_chain_rule_name(&m.name, &f.id)
+                        } else {
+                            chain_rule.clone()
+                        };
+                        let rust_flag_acc = match terminate_on {
+                            crate::forge::model::TlvTerminateStrategy::ExhaustOrDepth => None,
+                            crate::forge::model::TlvTerminateStrategy::EntryFlag { flag_name } => {
+                                Some(flag_getter_name(flag_name, crate::generator::Language::Rust))
+                            }
+                        };
+                        if is_rust {
+                            let rule = RustChainRule {
                                 rule: &chain_rule,
                                 codec: &m.name,
                                 field: f,
@@ -15373,946 +15369,968 @@ fn render_codec(
                                 max_depth: *max_depth,
                                 entry_flag_acc: rust_flag_acc.as_deref(),
                                 kinds: &kinds,
-                                site,
-                            })
-                            .into(),
-                        );
-                    }
-                    let decode_stmt = if f.present_if.is_some() {
-                        tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
-                            field: f,
-                            fields: &m.fields,
-                            body_type: &stored_body(lang, imports, alias, &body_type),
-                            body_decoder: &body_decoder,
-                            decode_arg: &entry_thread.decode_arg,
-                            inputs: &entry_thread.inputs,
-                            chain_rule: &chain_rule,
-                            entry_binds: &entry_binds,
-                            max_depth: *max_depth,
-                            terminate_on,
-                            law_start: law_start.as_deref(),
-                            c11_over,
-                            kinds: &kinds,
-                            c11_kinds: &c11_kinds,
-                            lang,
-                        })
-                    } else {
-                        tlv_chain_streaming_decode_stmt(TlvChainDecode {
-                            field: f,
-                            body_type: &stored_body(lang, imports, alias, &body_type),
-                            body_decoder: &body_decoder,
-                            decode_arg: &entry_thread.decode_arg,
-                            inputs: &entry_thread.inputs,
-                            chain_rule: &chain_rule,
-                            entry_binds: &entry_binds,
-                            max_depth: *max_depth,
-                            terminate_on,
-                            law_start: law_start.as_deref(),
-                            c11_over,
-                            kinds: &kinds,
-                            c11_kinds: &c11_kinds,
-                            lang,
-                        })
-                    };
-                    // A later field gated on `<chain>.has(…)` reads a boolean
-                    // local that follows the chain: on Rust and C11, the kind
-                    // noted of every entry read, held or not; elsewhere, where
-                    // every entry read is held (`with_chain_has_decls`), the
-                    // entries held. Nothing is added when no predicate asks.
-                    let decode_stmt = if is_rust {
-                        rust_with_chain_kinds(decode_stmt, &f.id, &kinds)
-                    } else if is_c11 {
-                        c11_with_chain_kinds(decode_stmt, &c11_kinds)
-                    } else {
-                        with_chain_has_decls(
-                            decode_stmt,
-                            f,
-                            &m.fields,
-                            &chain_masks,
-                            lang,
-                            Some(&rust_held_entry(imports, alias, &body_type)),
-                        )
-                    };
-                    obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
-                    if emit_views {
-                        let law = rust_source::law_type(
-                            &roles,
-                            &filters::to_pascal_case(m.name.clone()),
-                            &f.id,
-                        );
-                        obj.insert(
-                            "view_into_builder_stmt".into(),
-                            rust_view::into_builder_list(
-                                &codec_field_decode_local(&f.id, lang),
-                                gated,
-                                law.is_some(),
-                            )
-                            .into(),
-                        );
-                        let entry = format!("{body_type}View");
-                        let view_list = rust_view::ViewList {
-                            field: f,
-                            fields: &m.fields,
-                            entry: &entry,
-                            inputs: &entry_thread.inputs,
-                            decode_arg: &entry_thread.decode_arg,
-                            law_start: law_start.as_deref(),
-                            site,
-                        };
-                        // How the list reads an entry, and what it carries from
-                        // one to the next: a marker type, so the list holds no
-                        // function over the bytes' lifetime. A chain that carries
-                        // nothing reads by the walk its entry's module writes.
-                        let walk = rust_view::list_walk(&rust_view::WalkedList {
-                            codec: &m.name,
-                            field: &f.id,
-                            entry: &entry,
-                            entry_ty: &rust_view::view_type(imports, alias, &body_type)
-                                .replace("<'a>", "<'b>"),
-                            shared: rust_view::shared_entry_walk(f, m, imports),
-                            inputs: entry_thread.inputs.len(),
-                            advance: &rust_view::chain_advance(&view_list, &entry_binds),
-                            site,
-                        });
-                        obj.insert("view_walk_item".into(), walk.item.into());
-                        // The scan reads where the chain ends off the chain's
-                        // rule, of the entry as the walk reads it: its view.
-                        let entry_import = imports
-                            .iter()
-                            .find(|i| i.alias == alias)
-                            .expect("a chain imports its entry codec");
-                        obj.insert(
-                            "view_chain_rule_item".into(),
-                            rust_view::chain_scan_rule_item(
-                                &chain_rule,
-                                &format!(
-                                    "super::{}::{}View",
-                                    entry_import.namespace, entry_import.type_name
-                                ),
-                                import_codec_view_borrowed(imports, alias),
-                                rust_flag_acc.as_deref(),
-                            )
-                            .into(),
-                        );
-                        obj.insert(
-                            "view_rs_type".into(),
-                            rust_view::list_type(
-                                &walk.ty,
-                                entry_thread.inputs.len(),
-                                f,
-                                &m.fields,
-                                law.as_deref(),
-                            )
-                            .into(),
-                        );
-                        let view_stmt = rust_view::tlv_chain_decode_stmt(
-                            &view_list,
-                            &rust_view::ViewChain {
-                                codec: &m.name,
-                                walk: &walk.scan,
-                                rule: &chain_rule,
-                            },
-                        );
-                        obj.insert(
-                            "view_tlv_chain_decode_stmt".into(),
-                            with_chain_has_decls(view_stmt, f, &m.fields, &chain_masks, lang, None)
-                                .into(),
-                        );
-                    }
-                    if field_encode_blocks {
-                        let block = if f.present_if.is_some() {
-                            tlv_chain_streaming_encode_block_gated(
-                                f,
-                                &body_encoder,
-                                &entry_thread.encode_arg,
-                                &entry_binds,
-                                lang,
-                            )
-                        } else {
-                            tlv_chain_streaming_encode_block(
-                                f,
-                                &body_encoder,
-                                &entry_thread.encode_arg,
-                                &entry_binds,
-                                lang,
-                            )
-                        };
-                        obj.insert("tlv_chain_encode_block".into(), block.into());
-                    }
-                    // Kotlin's data-class primary constructor needs a
-                    // default value for every property. Plain chains
-                    // default to `mutableListOf()`; gated chains
-                    // default to `null` (mirrors the gated repeat).
-                    if matches!(lang, crate::generator::Language::Kotlin) {
-                        let kt_default = if gated { "null" } else { "mutableListOf()" };
-                        obj.insert("kt_default".into(), kt_default.into());
-                    }
-                } else if matches!(f.bit_size, BitSize::Embed) {
-                    // RFC §synth-5-B — single-codec embed primitive.
-                    // The host-language type is the imported codec's
-                    // struct directly (no list wrapping); the
-                    // streaming codec calls `<body>::decode(cursor)` /
-                    // `self.<id>.encode()` for one-shot consumption.
-                    // Parent-flag threading: when the embedded codec
-                    // declares `<sce:requires-parent-flags carrier="K">`,
-                    // the parent codec MUST satisfy K via either a
-                    // local `<sce:flags id="K">` (Case A — thread the
-                    // local carrier value) or its own
-                    // `<sce:requires-parent-flags carrier="K">`
-                    // (Case B — pass the codec's `parent_flags` arg
-                    // through). Validation lives in
-                    // `validate_cross_codec_embed_parent_flags`;
-                    // codegen here trusts that contract.
-                    obj.insert("bit_size_kind".into(), "embed".into());
-                    let alias = f
-                        .embed_body_alias
-                        .as_deref()
-                        .expect("parser sets embed_body_alias for every BitSize::Embed");
-                    let body_type = resolve_repeat_body_type(
-                        &m.name, alias, imports, lang,
-                    )?;
-                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
-                    obj.insert("embed_body_alias".into(), alias.into());
-                    obj.insert("embed_body_type".into(), body_type.clone().into());
-                    obj.insert("embed_body_decoder".into(), body_decoder.clone().into());
-                    obj.insert("embed_body_encoder".into(), body_encoder.clone().into());
-                    // Override the per-language host type slot with
-                    // the embedded codec's struct type. plain
-                    // embed emits the bare type; the gated embed
-                    // (sce:present-if) wraps in a per-language
-                    // optional (Option<T> / std::optional<T> / T? /
-                    // optional.Of[T] / Optional[T]). C11 keeps the bare struct
-                    // member with carrier-bit-as-truth (no nullable
-                    // wrapper — see embed_streaming_decode_stmt /
-                    // embed_streaming_encode_block C11 arms). The
-                    // bounded shape (sce:length-from) does not
-                    // affect host type; the wire-shape change is
-                    // confined to decode/encode blocks. The
-                    // `c_type` / equivalent slot was set earlier
-                    // from the SceType::Bytes sentinel, so we
-                    // replace it here.
-                    // Borrowed zero-copy: a borrowed embed body carries
-                    // the parent's `<'a>` in the field type (`Body<'a>` /
-                    // `Option<Body<'a>>`). Rust-only; `body_type_ty` is
-                    // the type-position spelling (the embed decode helper
-                    // calls `Body::decode` bare and needs no suffix).
-                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
-                    let body_type_ty = format!("{body_type}{body_lt}");
-                    let host_type = if f.present_if.is_some() {
-                        match lang {
-                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                            // The one spelling of the backend's optional type
-                            // (docs/adr/0055, section 5), over the type a
-                            // field of the body is written as.
-                            crate::generator::Language::Rust => l
-                                .optional_of(&body_type_ty)
-                                .expect("Rust wraps the present type"),
-                            crate::generator::Language::Cpp
-                            | crate::generator::Language::Kotlin
-                            | crate::generator::Language::Go
-                            | crate::generator::Language::Python => l
-                                .optional_of(&body_type)
-                                .expect("these backends wrap the present type"),
-                            // C11: the optional value of the body.
-                            crate::generator::Language::C11 => {
-                                obj.insert("c_gated_optional".into(), true.into());
-                                c11_gated_body_member(&body_type)
+                            };
+                            obj.insert("chain_rule_item".into(), rust_chain_rule_item(&rule).into());
+                            if site == ReadSite::Hot {
+                                obj.insert(
+                                    "held_chain_rule_item".into(),
+                                    rust_held_chain_rule_item(&rule, &read_rule).into(),
+                                );
                             }
                         }
-                    } else {
-                        body_type_ty.clone()
-                    };
-                    obj.insert(type_key.into(), host_type.clone().into());
-                    let embed_thread = embed_parent_flags_thread_args(
-                        f, alias, imports, m, lang,
-                    );
-                    obj.insert(
-                        "embed_decode_stmt".into(),
-                        embed_streaming_decode_stmt(EmbedDecode {
-                            field: f,
-                            body_type: &stored_body(lang, imports, alias, &body_type),
-                            body_decoder: &body_decoder,
-                            thread_arg: &embed_thread.decode_arg,
-                            fields: &m.fields,
-                            into: EmbedDecodeInto::Value { c11_over },
-                            derived: &c11_derived_numbers,
-                            site,
-                            lang,
-                        })
-                        .into(),
-                    );
-                    if emit_views {
-                        // The body is decoded where it sits as its own view.
-                        obj.insert(
-                            "view_into_builder_stmt".into(),
-                            rust_view::into_builder_embed(
-                                &codec_field_decode_local(&f.id, lang),
-                                f.present_if.is_some(),
+                        let decode_stmt = if f.present_if.is_some() {
+                            tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
+                                field: f,
+                                fields: &m.fields,
+                                body_type: &stored_body(lang, imports, alias, &body_type),
+                                body_decoder: &body_decoder,
+                                decode_arg: &entry_thread.decode_arg,
+                                inputs: &entry_thread.inputs,
+                                chain_rule: &read_rule,
+                                entry_binds: &entry_binds,
+                                max_depth: *max_depth,
+                                terminate_on,
+                                law_start: law_start.as_deref(),
+                                c11_over,
+                                kinds: &kinds,
+                                c11_kinds: &c11_kinds,
+                                lang,
+                            })
+                        } else {
+                            tlv_chain_streaming_decode_stmt(TlvChainDecode {
+                                field: f,
+                                body_type: &stored_body(lang, imports, alias, &body_type),
+                                body_decoder: &body_decoder,
+                                decode_arg: &entry_thread.decode_arg,
+                                inputs: &entry_thread.inputs,
+                                chain_rule: &read_rule,
+                                entry_binds: &entry_binds,
+                                max_depth: *max_depth,
+                                terminate_on,
+                                law_start: law_start.as_deref(),
+                                c11_over,
+                                kinds: &kinds,
+                                c11_kinds: &c11_kinds,
+                                lang,
+                            })
+                        };
+                        // A later field gated on `<chain>.has(…)` reads a boolean
+                        // local that follows the chain: on Rust and C11, the kind
+                        // noted of every entry read, held or not; elsewhere, where
+                        // every entry read is held (`with_chain_has_decls`), the
+                        // entries held. Nothing is added when no predicate asks.
+                        let decode_stmt = if is_rust {
+                            rust_with_chain_kinds(decode_stmt, &f.id, &kinds)
+                        } else if is_c11 {
+                            c11_with_chain_kinds(decode_stmt, &c11_kinds)
+                        } else {
+                            with_chain_has_decls(
+                                decode_stmt,
+                                f,
+                                &m.fields,
+                                &chain_masks,
+                                lang,
+                                Some(&rust_held_entry(imports, alias, &body_type)),
                             )
-                            .into(),
-                        );
-                        let view_ty = rust_view::view_type(imports, alias, &body_type);
-                        obj.insert(
-                            "view_rs_type".into(),
-                            if f.present_if.is_some() {
-                                l.optional_of(&view_ty)
-                                    .expect("Rust wraps the present type")
-                            } else {
-                                view_ty
+                        };
+                        obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
+                        if emit_views {
+                            let law = rust_source::law_type(
+                                &roles,
+                                &filters::to_pascal_case(m.name.clone()),
+                                &f.id,
+                            );
+                            obj.insert(
+                                "view_into_builder_stmt".into(),
+                                rust_view::into_builder_list(
+                                    &codec_field_decode_local(&f.id, lang),
+                                    gated,
+                                    law.is_some(),
+                                )
+                                .into(),
+                            );
+                            let entry = format!("{body_type}View");
+                            let view_list = rust_view::ViewList {
+                                field: f,
+                                fields: &m.fields,
+                                entry: &entry,
+                                inputs: &entry_thread.inputs,
+                                decode_arg: &entry_thread.decode_arg,
+                                law_start: law_start.as_deref(),
+                                site,
+                            };
+                            // How the list reads an entry, and what it carries from
+                            // one to the next: a marker type, so the list holds no
+                            // function over the bytes' lifetime. A chain that carries
+                            // nothing reads by the walk its entry's module writes.
+                            let entry_ty = rust_view::view_type(imports, alias, &body_type)
+                                .replace("<'a>", "<'b>");
+                            let advance = rust_view::chain_advance(&view_list, &entry_binds);
+                            let walked = rust_view::WalkedList {
+                                codec: &m.name,
+                                field: &f.id,
+                                entry: &entry,
+                                entry_ty: &entry_ty,
+                                shared: rust_view::shared_entry_walk(f, m, imports),
+                                inputs: entry_thread.inputs.len(),
+                                advance: &advance,
+                            };
+                            let walk = rust_view::list_walk(&walked);
+                            obj.insert("view_walk_item".into(), walk.item.into());
+                            // The walk the body read at `site` scans the chain by
+                            // (docs/adr/0140), and its definition where this module
+                            // writes it for the form held in place.
+                            let scan = rust_view::scan_walk(&walked, site);
+                            if let Some(item) = scan.item {
+                                obj.insert("view_held_walk_item".into(), item.into());
                             }
-                            .into(),
+                            // The scan reads where the chain ends off the chain's
+                            // rule, of the entry as the walk reads it: its view.
+                            let entry_import = imports
+                                .iter()
+                                .find(|i| i.alias == alias)
+                                .expect("a chain imports its entry codec");
+                            obj.insert(
+                                "view_chain_rule_item".into(),
+                                rust_view::chain_scan_rule_item(
+                                    &chain_rule,
+                                    &format!(
+                                        "super::{}::{}View",
+                                        entry_import.namespace, entry_import.type_name
+                                    ),
+                                    import_codec_view_borrowed(imports, alias),
+                                    rust_flag_acc.as_deref(),
+                                )
+                                .into(),
+                            );
+                            obj.insert(
+                                "view_rs_type".into(),
+                                rust_view::list_type(
+                                    &walk.ty,
+                                    entry_thread.inputs.len(),
+                                    f,
+                                    &m.fields,
+                                    law.as_deref(),
+                                )
+                                .into(),
+                            );
+                            let view_stmt = rust_view::tlv_chain_decode_stmt(
+                                &view_list,
+                                &rust_view::ViewChain {
+                                    codec: &m.name,
+                                    walk: &scan.name,
+                                    rule: &chain_rule,
+                                },
+                            );
+                            obj.insert(
+                                "view_tlv_chain_decode_stmt".into(),
+                                with_chain_has_decls(view_stmt, f, &m.fields, &chain_masks, lang, None)
+                                    .into(),
+                            );
+                        }
+                        if field_encode_blocks {
+                            let block = if f.present_if.is_some() {
+                                tlv_chain_streaming_encode_block_gated(
+                                    f,
+                                    &body_encoder,
+                                    &entry_thread.encode_arg,
+                                    &entry_binds,
+                                    lang,
+                                )
+                            } else {
+                                tlv_chain_streaming_encode_block(
+                                    f,
+                                    &body_encoder,
+                                    &entry_thread.encode_arg,
+                                    &entry_binds,
+                                    lang,
+                                )
+                            };
+                            obj.insert("tlv_chain_encode_block".into(), block.into());
+                        }
+                        // Kotlin's data-class primary constructor needs a
+                        // default value for every property. Plain chains
+                        // default to `mutableListOf()`; gated chains
+                        // default to `null` (mirrors the gated repeat).
+                        if matches!(lang, crate::generator::Language::Kotlin) {
+                            let kt_default = if gated { "null" } else { "mutableListOf()" };
+                            obj.insert("kt_default".into(), kt_default.into());
+                        }
+                    } else if matches!(f.bit_size, BitSize::Embed) {
+                        // RFC §synth-5-B — single-codec embed primitive.
+                        // The host-language type is the imported codec's
+                        // struct directly (no list wrapping); the
+                        // streaming codec calls `<body>::decode(cursor)` /
+                        // `self.<id>.encode()` for one-shot consumption.
+                        // Parent-flag threading: when the embedded codec
+                        // declares `<sce:requires-parent-flags carrier="K">`,
+                        // the parent codec MUST satisfy K via either a
+                        // local `<sce:flags id="K">` (Case A — thread the
+                        // local carrier value) or its own
+                        // `<sce:requires-parent-flags carrier="K">`
+                        // (Case B — pass the codec's `parent_flags` arg
+                        // through). Validation lives in
+                        // `validate_cross_codec_embed_parent_flags`;
+                        // codegen here trusts that contract.
+                        obj.insert("bit_size_kind".into(), "embed".into());
+                        let alias = f
+                            .embed_body_alias
+                            .as_deref()
+                            .expect("parser sets embed_body_alias for every BitSize::Embed");
+                        let body_type = resolve_repeat_body_type(
+                            &m.name, alias, imports, lang,
+                        )?;
+                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        obj.insert("embed_body_alias".into(), alias.into());
+                        obj.insert("embed_body_type".into(), body_type.clone().into());
+                        obj.insert("embed_body_decoder".into(), body_decoder.clone().into());
+                        obj.insert("embed_body_encoder".into(), body_encoder.clone().into());
+                        // Override the per-language host type slot with
+                        // the embedded codec's struct type. plain
+                        // embed emits the bare type; the gated embed
+                        // (sce:present-if) wraps in a per-language
+                        // optional (Option<T> / std::optional<T> / T? /
+                        // optional.Of[T] / Optional[T]). C11 keeps the bare struct
+                        // member with carrier-bit-as-truth (no nullable
+                        // wrapper — see embed_streaming_decode_stmt /
+                        // embed_streaming_encode_block C11 arms). The
+                        // bounded shape (sce:length-from) does not
+                        // affect host type; the wire-shape change is
+                        // confined to decode/encode blocks. The
+                        // `c_type` / equivalent slot was set earlier
+                        // from the SceType::Bytes sentinel, so we
+                        // replace it here.
+                        // Borrowed zero-copy: a borrowed embed body carries
+                        // the parent's `<'a>` in the field type (`Body<'a>` /
+                        // `Option<Body<'a>>`). Rust-only; `body_type_ty` is
+                        // the type-position spelling (the embed decode helper
+                        // calls `Body::decode` bare and needs no suffix).
+                        let body_lt = rust_codec_body_lifetime(lang, imports, alias);
+                        let body_type_ty = format!("{body_type}{body_lt}");
+                        let host_type = if f.present_if.is_some() {
+                            match lang {
+                                crate::generator::Language::Swift => no_swift_emitter("render_codec"),
+                                // The one spelling of the backend's optional type
+                                // (docs/adr/0055, section 5), over the type a
+                                // field of the body is written as.
+                                crate::generator::Language::Rust => l
+                                    .optional_of(&body_type_ty)
+                                    .expect("Rust wraps the present type"),
+                                crate::generator::Language::Cpp
+                                | crate::generator::Language::Kotlin
+                                | crate::generator::Language::Go
+                                | crate::generator::Language::Python => l
+                                    .optional_of(&body_type)
+                                    .expect("these backends wrap the present type"),
+                                // C11: the optional value of the body.
+                                crate::generator::Language::C11 => {
+                                    obj.insert("c_gated_optional".into(), true.into());
+                                    c11_gated_body_member(&body_type)
+                                }
+                            }
+                        } else {
+                            body_type_ty.clone()
+                        };
+                        obj.insert(type_key.into(), host_type.clone().into());
+                        let embed_thread = embed_parent_flags_thread_args(
+                            f, alias, imports, m, lang,
                         );
                         obj.insert(
-                            "view_embed_decode_stmt".into(),
+                            "embed_decode_stmt".into(),
                             embed_streaming_decode_stmt(EmbedDecode {
                                 field: f,
-                                body_type: &format!("{body_type}View"),
+                                body_type: &stored_body(lang, imports, alias, &body_type),
                                 body_decoder: &body_decoder,
                                 thread_arg: &embed_thread.decode_arg,
                                 fields: &m.fields,
-                                into: EmbedDecodeInto::View,
+                                into: EmbedDecodeInto::Value { c11_over },
                                 derived: &c11_derived_numbers,
                                 site,
                                 lang,
                             })
                             .into(),
                         );
-                    }
-                    if field_encode_blocks {
-                        obj.insert(
-                            "embed_encode_block".into(),
-                            embed_streaming_encode_block(
-                                f,
-                                &body_type,
-                                &body_encoder,
-                                &embed_thread,
-                                lang,
-                            )
-                            .into(),
-                        );
-                    }
-                    // Kotlin data-class primary-constructor default.
-                    // Plain embed: emits `<Type>()` (bare struct
-                    // member; every generated Kotlin codec class
-                    // has a no-arg constructor). Gated
-                    // shape: the field is `T?`, default `null` so
-                    // absent-on-wire round-trips correctly.
-                    if matches!(lang, crate::generator::Language::Kotlin) {
-                        let kt_default = if f.present_if.is_some() {
-                            "null".to_string()
-                        } else {
-                            format!("{body_type}()")
-                        };
-                        obj.insert("kt_default".into(), kt_default.into());
-                    }
-                } else {
-                    let resolved = f.storage_bytes(&m.fields);
-                    obj.insert("max_size".into(), resolved.into());
-                    let kind = match &f.bit_size {
-                        BitSize::Tail => "tail",
-                        BitSize::LengthRef => "length-ref",
-                        BitSize::Fixed { .. }
-                        | BitSize::Vle { .. }
-                        | BitSize::Repeat { .. }
-                        | BitSize::TlvChain { .. }
-                        | BitSize::Embed =>
-                            unreachable!("variable + non-vle + non-repeat + non-tlv-chain + non-embed path covers Tail/LengthRef only"),
-                    };
-                    obj.insert("bit_size_kind".into(), kind.into());
-                    // The positional decode's check of the field's length
-                    // against its bound, before the slice is cut
-                    // (docs/adr/0077 §2), at the indentation of the
-                    // template's `decode_field`. C11 reads the length off the
-                    // struct it decodes into, in its own block.
-                    {
-                        use crate::generator::Language;
-                        let (frame_len, indent) = match lang {
-                            Language::Kotlin => ("frameLen", "            "),
-                            Language::Go => ("frameLen", "\t"),
-                            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
-                                ("_frame_len", "        ")
-                            }
-                            Language::Swift => no_swift_emitter("render_codec"),
-                        };
-                        let guard = if matches!(lang, Language::C11) {
-                            c11_positional_bound_guard(f, &m.fields, indent, &c11_derived_numbers)
-                        } else {
-                            positional_bound_guard(f, &m.fields, lang, frame_len, indent)
-                        };
-                        if !guard.is_empty() {
-                            obj.insert("bound_guard".into(), guard.into());
-                        }
-                        // A field whose array is a capacity below what a frame
-                        // can say is held as a store after a parse
-                        // (docs/adr/0077 §7); one whose bound is its array's
-                        // is copied as the template writes it.
-                        if matches!(lang, Language::C11) && !c11_bytes_fit(f, &m.fields) {
-                            let id = obj
-                                .get("id")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or_default()
-                                .to_string();
-                            let off = f.byte_offset;
+                        if emit_views {
+                            // The body is decoded where it sits as its own view.
                             obj.insert(
-                                "c_hold".into(),
-                                c11_hold_bytes(
+                                "view_into_builder_stmt".into(),
+                                rust_view::into_builder_embed(
+                                    &codec_field_decode_local(&f.id, lang),
+                                    f.present_if.is_some(),
+                                )
+                                .into(),
+                            );
+                            let view_ty = rust_view::view_type(imports, alias, &body_type);
+                            obj.insert(
+                                "view_rs_type".into(),
+                                if f.present_if.is_some() {
+                                    l.optional_of(&view_ty)
+                                        .expect("Rust wraps the present type")
+                                } else {
+                                    view_ty
+                                }
+                                .into(),
+                            );
+                            obj.insert(
+                                "view_embed_decode_stmt".into(),
+                                embed_streaming_decode_stmt(EmbedDecode {
+                                    field: f,
+                                    body_type: &format!("{body_type}View"),
+                                    body_decoder: &body_decoder,
+                                    thread_arg: &embed_thread.decode_arg,
+                                    fields: &m.fields,
+                                    into: EmbedDecodeInto::View,
+                                    derived: &c11_derived_numbers,
+                                    site,
+                                    lang,
+                                })
+                                .into(),
+                            );
+                        }
+                        if field_encode_blocks {
+                            obj.insert(
+                                "embed_encode_block".into(),
+                                embed_streaming_encode_block(
                                     f,
-                                    &m.fields,
-                                    &format!("out->{id}"),
-                                    &format!("out->{id}_len"),
-                                    &format!("raw + {off}"),
-                                    indent,
+                                    &body_type,
+                                    &body_encoder,
+                                    &embed_thread,
+                                    lang,
                                 )
                                 .into(),
                             );
                         }
-                    }
-                    if matches!(f.bit_size, BitSize::LengthRef) {
-                        // Where the field ends in the frame: the positional
-                        // decode checks the frame is that long before it
-                        // slices (see `length_ref_end`).
-                        obj.insert(
-                            "length_ref_end".into(),
-                            length_ref_end(f, &m.fields, lang).into(),
-                        );
-                        if let Some(lf) = &f.length_field {
-                            obj.insert("length_field".into(), l.codec_field_id(lf).into());
-                            // RFC §synth-5-B `sce:length-arith` + dotted-path `sce:length-field`:
-                            // positional-decode `_n` expression honoring
-                            // `length-arith` and dotted-path subfield
-                            // extracts. C11 template reads this verbatim
-                            // into the `(size_t)...` slot. Plain bare-id
-                            // form keeps the historical
-                            // `(size_t)out->{len_id}` shape (no diff on
-                            // pre-dotted-path goldens). Dotted form
-                            // (`<carrier>.<flag>`) emits the shifted +
-                            // masked extract from the carrier byte.
-                            let arith = f.length_arith.unwrap_or(0);
-                            // The decode reads the length off the member that
-                            // holds it, or off its own local where the encode
-                            // derives it (docs/adr/0081 §3).
-                            let decode_len = if c11_derived(lf) {
-                                c11_source::derived_local(lf)
+                        // Kotlin data-class primary-constructor default.
+                        // Plain embed: emits `<Type>()` (bare struct
+                        // member; every generated Kotlin codec class
+                        // has a no-arg constructor). Gated
+                        // shape: the field is `T?`, default `null` so
+                        // absent-on-wire round-trips correctly.
+                        if matches!(lang, crate::generator::Language::Kotlin) {
+                            let kt_default = if f.present_if.is_some() {
+                                "null".to_string()
                             } else {
-                                format!("out->{}", l.codec_field_id(lf))
+                                format!("{body_type}()")
                             };
-                            let (base_decode, base_encode) =
-                                if let Some((c, fl)) = dotted_length_field(lf) {
-                                    let (shift, mask) = dotted_length_resolve(c, fl, &m.fields);
-                                    let c_id = l.codec_field_id(c);
-                                    (
-                                        format!(
-                                            "(size_t)((out->{c_id} >> {shift}) & 0x{mask:X})"
-                                        ),
-                                        format!(
-                                            "(size_t)((self->{c_id} >> {shift}) & 0x{mask:X})"
-                                        ),
+                            obj.insert("kt_default".into(), kt_default.into());
+                        }
+                    } else {
+                        let resolved = f.storage_bytes(&m.fields);
+                        obj.insert("max_size".into(), resolved.into());
+                        let kind = match &f.bit_size {
+                            BitSize::Tail => "tail",
+                            BitSize::LengthRef => "length-ref",
+                            BitSize::Fixed { .. }
+                            | BitSize::Vle { .. }
+                            | BitSize::Repeat { .. }
+                            | BitSize::TlvChain { .. }
+                            | BitSize::Embed =>
+                                unreachable!("variable + non-vle + non-repeat + non-tlv-chain + non-embed path covers Tail/LengthRef only"),
+                        };
+                        obj.insert("bit_size_kind".into(), kind.into());
+                        // The positional decode's check of the field's length
+                        // against its bound, before the slice is cut
+                        // (docs/adr/0077 §2), at the indentation of the
+                        // template's `decode_field`. C11 reads the length off the
+                        // struct it decodes into, in its own block.
+                        {
+                            use crate::generator::Language;
+                            let (frame_len, indent) = match lang {
+                                Language::Kotlin => ("frameLen", "            "),
+                                Language::Go => ("frameLen", "\t"),
+                                Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                                    ("_frame_len", "        ")
+                                }
+                                Language::Swift => no_swift_emitter("render_codec"),
+                            };
+                            let guard = if matches!(lang, Language::C11) {
+                                c11_positional_bound_guard(f, &m.fields, indent, &c11_derived_numbers)
+                            } else {
+                                positional_bound_guard(f, &m.fields, lang, frame_len, indent)
+                            };
+                            if !guard.is_empty() {
+                                obj.insert("bound_guard".into(), guard.into());
+                            }
+                            // A field whose array is a capacity below what a frame
+                            // can say is held as a store after a parse
+                            // (docs/adr/0077 §7); one whose bound is its array's
+                            // is copied as the template writes it.
+                            if matches!(lang, Language::C11) && !c11_bytes_fit(f, &m.fields) {
+                                let id = obj
+                                    .get("id")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string();
+                                let off = f.byte_offset;
+                                obj.insert(
+                                    "c_hold".into(),
+                                    c11_hold_bytes(
+                                        f,
+                                        &m.fields,
+                                        &format!("out->{id}"),
+                                        &format!("out->{id}_len"),
+                                        &format!("raw + {off}"),
+                                        indent,
                                     )
+                                    .into(),
+                                );
+                            }
+                        }
+                        if matches!(f.bit_size, BitSize::LengthRef) {
+                            // Where the field ends in the frame: the positional
+                            // decode checks the frame is that long before it
+                            // slices (see `length_ref_end`).
+                            obj.insert(
+                                "length_ref_end".into(),
+                                length_ref_end(f, &m.fields, lang).into(),
+                            );
+                            if let Some(lf) = &f.length_field {
+                                obj.insert("length_field".into(), l.codec_field_id(lf).into());
+                                // RFC §synth-5-B `sce:length-arith` + dotted-path `sce:length-field`:
+                                // positional-decode `_n` expression honoring
+                                // `length-arith` and dotted-path subfield
+                                // extracts. C11 template reads this verbatim
+                                // into the `(size_t)...` slot. Plain bare-id
+                                // form keeps the historical
+                                // `(size_t)out->{len_id}` shape (no diff on
+                                // pre-dotted-path goldens). Dotted form
+                                // (`<carrier>.<flag>`) emits the shifted +
+                                // masked extract from the carrier byte.
+                                let arith = f.length_arith.unwrap_or(0);
+                                // The decode reads the length off the member that
+                                // holds it, or off its own local where the encode
+                                // derives it (docs/adr/0081 §3).
+                                let decode_len = if c11_derived(lf) {
+                                    c11_source::derived_local(lf)
                                 } else {
-                                    (
-                                        format!("(size_t){decode_len}"),
-                                        format!("self->{}", l.codec_field_id(lf)),
-                                    )
+                                    format!("out->{}", l.codec_field_id(lf))
                                 };
-                            let n_expr = if arith == 0 {
-                                base_decode.clone()
-                            } else if arith > 0 {
-                                // Dotted form already carries the (size_t)
-                                // cast; adding `+ N` would type-error
-                                // without a fresh int64_t cast. Plain
-                                // form's int64_t fold stays the same.
-                                if dotted_length_field(lf).is_some() {
-                                    format!("(size_t)((int64_t){base_decode} + {arith})")
+                                let (base_decode, base_encode) =
+                                    if let Some((c, fl)) = dotted_length_field(lf) {
+                                        let (shift, mask) = dotted_length_resolve(c, fl, &m.fields);
+                                        let c_id = l.codec_field_id(c);
+                                        (
+                                            format!(
+                                                "(size_t)((out->{c_id} >> {shift}) & 0x{mask:X})"
+                                            ),
+                                            format!(
+                                                "(size_t)((self->{c_id} >> {shift}) & 0x{mask:X})"
+                                            ),
+                                        )
+                                    } else {
+                                        (
+                                            format!("(size_t){decode_len}"),
+                                            format!("self->{}", l.codec_field_id(lf)),
+                                        )
+                                    };
+                                let n_expr = if arith == 0 {
+                                    base_decode.clone()
+                                } else if arith > 0 {
+                                    // Dotted form already carries the (size_t)
+                                    // cast; adding `+ N` would type-error
+                                    // without a fresh int64_t cast. Plain
+                                    // form's int64_t fold stays the same.
+                                    if dotted_length_field(lf).is_some() {
+                                        format!("(size_t)((int64_t){base_decode} + {arith})")
+                                    } else {
+                                        format!("(size_t)((int64_t){decode_len} + {arith})")
+                                    }
                                 } else {
-                                    format!("(size_t)((int64_t){decode_len} + {arith})")
-                                }
-                            } else {
-                                if dotted_length_field(lf).is_some() {
-                                    format!("(size_t)((int64_t){base_decode} - {})", -arith)
+                                    if dotted_length_field(lf).is_some() {
+                                        format!("(size_t)((int64_t){base_decode} - {})", -arith)
+                                    } else {
+                                        format!("(size_t)((int64_t){decode_len} - {})", -arith)
+                                    }
+                                };
+                                obj.insert("length_n_expr".into(), n_expr.into());
+                                // Encode-side mirror — symmetric upper bound
+                                // for the C11 byte-copy loop. Stays
+                                // byte-stable when arith == 0 by emitting
+                                // bare `self->...` for plain form (matches
+                                // the historical template form documented in
+                                // `compute_n_c11_encode`); dotted form
+                                // always uses the explicit (size_t) cast.
+                                let n_expr_encode = if arith == 0 {
+                                    base_encode.clone()
+                                } else if arith > 0 {
+                                    if dotted_length_field(lf).is_some() {
+                                        format!("(size_t)((int64_t){base_encode} + {arith})")
+                                    } else {
+                                        format!("(size_t)((int64_t)self->{} + {arith})", l.codec_field_id(lf))
+                                    }
                                 } else {
-                                    format!("(size_t)((int64_t){decode_len} - {})", -arith)
-                                }
-                            };
-                            obj.insert("length_n_expr".into(), n_expr.into());
-                            // Encode-side mirror — symmetric upper bound
-                            // for the C11 byte-copy loop. Stays
-                            // byte-stable when arith == 0 by emitting
-                            // bare `self->...` for plain form (matches
-                            // the historical template form documented in
-                            // `compute_n_c11_encode`); dotted form
-                            // always uses the explicit (size_t) cast.
-                            let n_expr_encode = if arith == 0 {
-                                base_encode.clone()
-                            } else if arith > 0 {
-                                if dotted_length_field(lf).is_some() {
-                                    format!("(size_t)((int64_t){base_encode} + {arith})")
-                                } else {
-                                    format!("(size_t)((int64_t)self->{} + {arith})", l.codec_field_id(lf))
-                                }
-                            } else {
-                                if dotted_length_field(lf).is_some() {
-                                    format!("(size_t)((int64_t){base_encode} - {})", -arith)
-                                } else {
-                                    format!("(size_t)((int64_t)self->{} - {})", l.codec_field_id(lf), -arith)
-                                }
-                            };
-                            obj.insert("length_n_expr_encode".into(), n_expr_encode.into());
+                                    if dotted_length_field(lf).is_some() {
+                                        format!("(size_t)((int64_t){base_encode} - {})", -arith)
+                                    } else {
+                                        format!("(size_t)((int64_t)self->{} - {})", l.codec_field_id(lf), -arith)
+                                    }
+                                };
+                                obj.insert("length_n_expr_encode".into(), n_expr_encode.into());
+                            }
                         }
                     }
                 }
-            }
-            if matches!(lang, crate::generator::Language::Kotlin) {
-                // Repeat / TLV chain fields already set kt_default =
-                // "mutableListOf()" above; the carrier-typed default
-                // would miscompile against MutableList<T>. Embed
-                // fields (plain / gated / bounded /
-                // gated+bounded) already set kt_default to either
-                // `<EmbedType>()` (value) or `null` (gated) above;
-                // overwriting would ship a `byteArrayOf()` default
-                // (from the field's vestigial `sce_type=Bytes`) against
-                // the embed's struct host type, which doesn't typecheck.
-                let skip_default_overwrite =
-                    f.is_repeat() || f.is_tlv_chain() || f.is_embed();
-                if !skip_default_overwrite {
-                    obj.insert("kt_default".into(), l.default_expr(&f.sce_type).into());
-                }
-                // RFC §synth-5-B flags primitive on Kotlin: bitwise ops on
-                // UByte/UShort/UInt/ULong are awkward (no UByte literal,
-                // mask must round-trip through a wider signed type). The
-                // template widens via `.toInt()` (UByte/UShort) or
-                // `.toLong()` (UInt/ULong), runs the bitwise op against
-                // the Int/Long mask, then narrows back via the carrier's
-                // own `toU*` constructor.
-                let (view, back) = match &f.sce_type {
-                    SceType::Uint8 => ("toInt", "toUByte"),
-                    SceType::Uint16 => ("toInt", "toUShort"),
-                    SceType::Uint32 => ("toLong", "toUInt"),
-                    SceType::Uint64 => ("toLong", "toULong"),
-                    _ => ("toInt", "toUByte"),
-                };
-                // The bool-flag accessor compares `(carrier_view and mask) != 0`.
-                // Kotlin treats `0` as `Int`; comparing `Long != Int` is rejected
-                // even though the LHS auto-widened the mask literal. Emit `0L`
-                // when the carrier widens through `.toLong()`.
-                let zero_suffix = if view == "toLong" { "L" } else { "" };
-                obj.insert("kt_int_view".into(), view.into());
-                obj.insert("kt_carrier_back".into(), back.into());
-                obj.insert("kt_zero_suffix".into(), zero_suffix.into());
-            }
-            if matches!(lang, crate::generator::Language::Python) {
-                // Repeat / TLV chain fields default to `field(default_
-                // factory=list)` — a bare `[]` shared across instances
-                // would alias mutably through the dataclass primary
-                // constructor. Plain (non-list) fields keep the
-                // carrier-typed default. RFC §synth-5-B: a gated repeat
-                // field's `Optional[List[T]]` storage flips to `None`
-                // default (the field is None when the gate fires off).
-                let py_default = if (f.is_repeat() || f.is_tlv_chain()) && f.present_if.is_none() {
-                    "field(default_factory=list)".to_string()
-                } else if f.is_repeat() && f.present_if.is_some() {
-                    "None".to_string()
-                } else if f.is_embed() && f.present_if.is_some() {
-                    // Gated embed: `Optional[<EmbedType>]`
-                    // dataclass field defaults to None so the absent-
-                    // on-wire decode round-trips correctly.
-                    "None".to_string()
-                } else {
-                    // An enum's first variant is made where it is called, so
-                    // the class body names the enum's module nowhere a field
-                    // declared before it could stand in for it.
-                    python_source::class_body_default(&l, &f.sce_type)
-                };
-                obj.insert("default_value".into(), py_default.into());
-                // RFC §synth-5-B flags primitive on Python: ints are
-                // unbounded, so `& ~mask` would yield a negative value.
-                // The carrier's natural width gives a hex saturation
-                // mask (`0xFF` / `0xFFFF` / ...) the setter ANDs into the
-                // result of the clear path so the carrier stays inside
-                // the unsigned domain.
-                let py_carrier_max = match f.sce_type.int_bit_width() {
-                    Some(8) => "0xFF",
-                    Some(16) => "0xFFFF",
-                    Some(32) => "0xFFFFFFFF",
-                    Some(64) => "0xFFFFFFFFFFFFFFFF",
-                    _ => "0xFF",
-                };
-                obj.insert("py_carrier_max".into(), py_carrier_max.into());
-            }
-            // The name the value holds the field under: its own where the
-            // field is a public member, the private one a C++ value printed
-            // from its plan holds behind its accessor (docs/adr/0081 step 4),
-            // or the unexported one a Go value printed from its plan holds
-            // behind its method.
-            let member = if cpp_printed.is_some() {
-                cpp_source::member(&l.codec_field_id(&f.id))
-            } else if go_printed.is_some() {
-                go_source::member(&f.id)
-            } else {
-                l.codec_field_id(&f.id)
-            };
-            obj.insert("member".into(), member.clone().into());
-            // RFC §synth-5-B flags primitive: pre-render per-flag accessor
-            // context. Each flag carries a language-specific accessor name,
-            // setter name, and the precomputed bitmask literal.
-            obj.insert("has_flags".into(), (!f.flags.is_empty()).into());
-            obj.insert(
-                "flags".into(),
-                serde_json::json!(build_flag_ctx(&f.id, &f.flags, &f.sce_type, lang)),
-            );
-            // RFC variant-default-uniformity: precompute the
-            // carrier's Default-time initializer from any `<sce:flag
-            // value="N"/>` declarations. Each declared value contributes
-            // `(N & ((1 << width) - 1)) << bit` ORed into the carrier;
-            // undeclared flags contribute 0 (preserving derive(Default)
-            // semantics for codecs that don't opt in). `None` ⇒ no
-            // declared values on this field; emitter falls back to
-            // `Default::default()` for back-compat with pre-uniformity
-            // goldens. Carrier-typed literal includes the language-
-            // specific suffix (`0x01u8`, `0x05u16`, etc.) so the Rust
-            // template can drop it verbatim into the manual impl.
-            let any_declared_value = f.flags.iter().any(|fl| fl.value.is_some());
-            if any_declared_value {
-                let acc: u64 = flag_default_carrier_value(f);
-                // Rust derives `Default` (the all-zero value) for free, so a
-                // manual `impl Default` is only warranted when the OR-
-                // accumulated carrier default is non-zero. An all-zero manual
-                // impl would duplicate the derive verbatim (clippy::
-                // derivable_impl), so the Rust literal is skipped and the
-                // struct keeps `#[derive(Default)]` (see the Rust derive-attr
-                // decision, keyed on the same `flag_default_carrier_value`
-                // SSOT). The other backends express their zero-init
-                // differently (C++ member-init, etc.) and still emit below.
-                if acc != 0 {
-                    let (suffix_rust, hex_digits) = match f.sce_type.int_bit_width() {
-                        Some(8)  => ("u8",  2usize),
-                        Some(16) => ("u16", 4),
-                        Some(32) => ("u32", 8),
-                        Some(64) => ("u64", 16),
-                        // Non-unsigned carriers are rejected at parse time
-                        // (`<sce:flags>` requires uint8/16/32/64). Defensive
-                        // fallback keeps the literal type-checkable rather
-                        // than panicking inside a template render.
-                        _ => ("u8", 2),
+                if matches!(lang, crate::generator::Language::Kotlin) {
+                    // Repeat / TLV chain fields already set kt_default =
+                    // "mutableListOf()" above; the carrier-typed default
+                    // would miscompile against MutableList<T>. Embed
+                    // fields (plain / gated / bounded /
+                    // gated+bounded) already set kt_default to either
+                    // `<EmbedType>()` (value) or `null` (gated) above;
+                    // overwriting would ship a `byteArrayOf()` default
+                    // (from the field's vestigial `sce_type=Bytes`) against
+                    // the embed's struct host type, which doesn't typecheck.
+                    let skip_default_overwrite =
+                        f.is_repeat() || f.is_tlv_chain() || f.is_embed();
+                    if !skip_default_overwrite {
+                        obj.insert("kt_default".into(), l.default_expr(&f.sce_type).into());
+                    }
+                    // RFC §synth-5-B flags primitive on Kotlin: bitwise ops on
+                    // UByte/UShort/UInt/ULong are awkward (no UByte literal,
+                    // mask must round-trip through a wider signed type). The
+                    // template widens via `.toInt()` (UByte/UShort) or
+                    // `.toLong()` (UInt/ULong), runs the bitwise op against
+                    // the Int/Long mask, then narrows back via the carrier's
+                    // own `toU*` constructor.
+                    let (view, back) = match &f.sce_type {
+                        SceType::Uint8 => ("toInt", "toUByte"),
+                        SceType::Uint16 => ("toInt", "toUShort"),
+                        SceType::Uint32 => ("toLong", "toUInt"),
+                        SceType::Uint64 => ("toLong", "toULong"),
+                        _ => ("toInt", "toUByte"),
                     };
-                    let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
-                    obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+                    // The bool-flag accessor compares `(carrier_view and mask) != 0`.
+                    // Kotlin treats `0` as `Int`; comparing `Long != Int` is rejected
+                    // even though the LHS auto-widened the mask literal. Emit `0L`
+                    // when the carrier widens through `.toLong()`.
+                    let zero_suffix = if view == "toLong" { "L" } else { "" };
+                    obj.insert("kt_int_view".into(), view.into());
+                    obj.insert("kt_carrier_back".into(), back.into());
+                    obj.insert("kt_zero_suffix".into(), zero_suffix.into());
                 }
-                // The C++ value is printed from its plan, which initializes
-                // the carrier's private member itself (`cpp_flag_default_init`).
-                // Kotlin default-value expression: emitted as the right-
-                // hand side of the data class primary constructor's
-                // `var id: UByte = …` default. UByte / UShort have no
-                // direct hex literal (Kotlin's `u`/`uL` suffixes produce
-                // UInt / ULong respectively), so the carrier-typed
-                // literal narrows from Int via `.toU{Byte,Short}()`.
-                // Pattern mirrors `kotlin_default()` (`0.toUByte()` etc.)
-                // so the emitted RHS reads as a natural extension of the
-                // existing zero default.
-                let kt_literal = match f.sce_type.int_bit_width() {
-                    Some(8)  => format!("0x{:02x}.toUByte()",  acc),
-                    Some(16) => format!("0x{:04x}.toUShort()", acc),
-                    Some(32) => format!("0x{:08x}u",           acc),
-                    Some(64) => format!("0x{:016x}uL",         acc),
-                    _        => format!("0x{:02x}.toUByte()",  acc),
-                };
-                obj.insert("kt_flag_default_literal".into(), kt_literal.into());
-                // Python integer literal: Python's `int` is unbounded so
-                // no carrier-width suffix is needed. Hex digit count
-                // matches the Rust / Cpp / Kotlin emit for visual
-                // alignment when grepping across backend outputs.
-                let py_literal = match f.sce_type.int_bit_width() {
-                    Some(8)  => format!("0x{:02x}",  acc),
-                    Some(16) => format!("0x{:04x}",  acc),
-                    Some(32) => format!("0x{:08x}",  acc),
-                    Some(64) => format!("0x{:016x}", acc),
-                    _        => format!("0x{:02x}",  acc),
-                };
-                obj.insert("py_flag_default_literal".into(), py_literal.into());
-                // Go literal: Go has no Default trait — the equivalent
-                // is a package-level `NewT()` constructor that returns
-                // a struct literal with the wire-MID baked field
-                // values. Typed-conversion form `uint8(0x02)` keeps
-                // the literal unambiguous when the field type is an
-                // unsigned-integer alias.
-                let go_literal = match f.sce_type.int_bit_width() {
-                    Some(8)  => format!("uint8(0x{:02x})",   acc),
-                    Some(16) => format!("uint16(0x{:04x})",  acc),
-                    Some(32) => format!("uint32(0x{:08x})",  acc),
-                    Some(64) => format!("uint64(0x{:016x})", acc),
-                    _        => format!("uint8(0x{:02x})",   acc),
-                };
-                obj.insert("go_flag_default_literal".into(), go_literal.into());
-                // C11 designated-initializer value for the carrier
-                // field. C has no Default trait — the equivalent is a
-                // `<UPPER>_DEFAULT_INIT` macro that expands to a
-                // designated-initializer literal (`{ .header = 0x02u }`)
-                // and is callable from the outer codec's own
-                // `_DEFAULT_INIT` macro for composition. Each carrier
-                // width uses the stdint-typedef-friendly suffix.
-                let c_literal = match f.sce_type.int_bit_width() {
-                    Some(8)  => format!("0x{:02x}u",    acc),
-                    Some(16) => format!("0x{:04x}u",    acc),
-                    Some(32) => format!("0x{:08x}uL",   acc),
-                    Some(64) => format!("0x{:016x}uLL", acc),
-                    _        => format!("0x{:02x}u",    acc),
-                };
-                obj.insert("c_flag_default_literal".into(), c_literal.into());
-            }
-
-            // RFC §synth-5-B present-if primitive: when the codec has
-            // any gated field every field renders via the streaming
-            // path so cursor advances are sequential. Per-field we
-            // carry both the streaming decode statement and the
-            // encode block; plain non-gated fields still emit
-            // unconditional reads/writes — the streaming path is
-            // uniform. Type override wraps gated fields in
-            // `Option<T>` / `std::optional<T>` so the struct field
-            // can carry the absent state.
-            //
-            // RFC §synth-5-B B2 repeat primitive shares the same per-field
-            // streaming infrastructure: when `has_repeat_fields` the
-            // template iterates per-field and dispatches via
-            // `is_repeat` to the repeat-specific stmt vs. the
-            // present-if-style fixed-field stmt. Reusing the helper
-            // for non-repeat fields means a Repeat-only codec still
-            // gets correct streaming reads on its plain prefix
-            // fields without a second helper duplicating the work.
-            obj.insert(
-                "has_present_if".into(),
-                f.present_if.is_some().into(),
-            );
-            if needs_streaming_path {
-                obj.insert(
-                    "present_if_decode_stmt".into(),
-                    present_if_streaming_decode_stmt(
-                        &l,
-                        f,
-                        &m.fields,
-                        m.default_endian,
-                        &c11_derived_numbers,
-                        site,
-                    )
-                    .into(),
-                );
-                if field_encode_blocks {
-                    let mut encode_block =
-                        present_if_streaming_encode_block(&l, f, &m.fields, m.default_endian);
-                    // RFC §synth-5-B parent-tag carriers — write the single-byte
-                    // carrier with its filled flags cleared and the derived
-                    // bits added, so the bits the bodies derive land in the
-                    // outgoing stream. Carrier is uint8 per v1 rpf lock-in
-                    // (single-byte field), so the substitution targets the
-                    // n==1 shape of each backend's encode helper.
-                    if let Some(carrier) = parent_tag_carriers.get(&f.id) {
-                        encode_block =
-                            inject_parent_tag_carrier_suffix(&encode_block, &f.id, carrier, lang);
-                    }
-                    obj.insert("present_if_encode_block".into(), encode_block.into());
-                }
-                // RFC §synth-5-B — Repeat-with-present-if fields wrap
-                // their imported-codec list type in the dedicated
-                // `is_repeat` branch above (Option<Vec<T>> /
-                // std::optional<vector> / etc.). The generic per-field
-                // wrap below assumes `f.sce_type` IS the host type
-                // (Fixed/Tail/LengthRef/Vle), but Repeat's
-                // `f.sce_type` is the `SceType::Bytes` sentinel — so
-                // applying this wrap would yield the wrong shape
-                // (`Option<Vec<u8>>` instead of `Option<Vec<Imported>>`).
-                // Skip Repeat fields here; the is_repeat branch
-                // already populated `<lang>_type` correctly. The
-                // gated embed has the same sentinel shape — its
-                // dedicated branch above (`f.is_embed()`) already
-                // emits `Option<EmbeddedCodec>` / per-language
-                // equivalent; skipping here avoids overwriting with
-                // `Option<Vec<u8>>`.
-                if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() && !f.is_tlv_chain() {
-                    // Borrowed zero-copy: a gated `Bytes` / `String`
-                    // field's inner type is the `&'a` view (Rust), so the
-                    // wrap becomes `Option<&'a [u8]>` / `Option<&'a str>`.
-                    let inner = codec_scalar_type(&l, f, &m.fields);
-                    let wrapped = match lang {
-                        crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                        // The one spelling of the backend's optional type
-                        // (docs/adr/0055, section 5).
-                        crate::generator::Language::Rust
-                        | crate::generator::Language::Cpp
-                        | crate::generator::Language::Kotlin
-                        | crate::generator::Language::Go
-                        | crate::generator::Language::Python => l
-                            .optional_of(&inner)
-                            .expect("these backends wrap the present type"),
-                        // C11 holds a gated field in the struct
-                        // `sce/forge/optional.h` declares for its element,
-                        // which a statechart's variable of the same type is
-                        // held in too (docs/adr/0055, step 14): a number or
-                        // an enum in its own, a byte string or a text in the
-                        // one over the bytes and their length.
-                        crate::generator::Language::C11 => {
-                            let held = match &f.sce_type {
-                                SceType::Bytes | SceType::String => {
-                                    c11_gated_bytes_optional(f, &m.fields)
-                                }
-                                scalar => l.c11_codec_optional(scalar, None),
-                            };
-                            obj.insert("c_gated_optional".into(), true.into());
-                            obj.insert("c_optional_decl".into(), held.declaration.clone().into());
-                            held.type_name
-                        }
+                if matches!(lang, crate::generator::Language::Python) {
+                    // Repeat / TLV chain fields default to `field(default_
+                    // factory=list)` — a bare `[]` shared across instances
+                    // would alias mutably through the dataclass primary
+                    // constructor. Plain (non-list) fields keep the
+                    // carrier-typed default. RFC §synth-5-B: a gated repeat
+                    // field's `Optional[List[T]]` storage flips to `None`
+                    // default (the field is None when the gate fires off).
+                    let py_default = if (f.is_repeat() || f.is_tlv_chain()) && f.present_if.is_none() {
+                        "field(default_factory=list)".to_string()
+                    } else if f.is_repeat() && f.present_if.is_some() {
+                        "None".to_string()
+                    } else if f.is_embed() && f.present_if.is_some() {
+                        // Gated embed: `Optional[<EmbedType>]`
+                        // dataclass field defaults to None so the absent-
+                        // on-wire decode round-trips correctly.
+                        "None".to_string()
+                    } else {
+                        // An enum's first variant is made where it is called, so
+                        // the class body names the enum's module nowhere a field
+                        // declared before it could stand in for it.
+                        python_source::class_body_default(&l, &f.sce_type)
                     };
-                    obj.insert(type_key.into(), wrapped.into());
-                    // Default for the gated optional in languages that
-                    // emit an explicit default in the struct/data class
-                    // constructor. Kotlin/Python data class would
-                    // otherwise call `0.toUByte()` / `0` against the
-                    // nullable carrier and fail to type-check — `null`
-                    // / `None` is the only sane default for the
-                    // wrapped type. Go's `optional.Of[T]` is absent at
-                    // its zero value and needs no explicit initializer;
-                    // C11 keeps the zero-value default.
-                    if matches!(lang, crate::generator::Language::Kotlin) {
-                        obj.insert("kt_default".into(), "null".into());
-                    }
-                    if matches!(lang, crate::generator::Language::Python) {
-                        obj.insert("default_value".into(), "None".into());
-                    }
+                    obj.insert("default_value".into(), py_default.into());
+                    // RFC §synth-5-B flags primitive on Python: ints are
+                    // unbounded, so `& ~mask` would yield a negative value.
+                    // The carrier's natural width gives a hex saturation
+                    // mask (`0xFF` / `0xFFFF` / ...) the setter ANDs into the
+                    // result of the clear path so the carrier stays inside
+                    // the unsigned domain.
+                    let py_carrier_max = match f.sce_type.int_bit_width() {
+                        Some(8) => "0xFF",
+                        Some(16) => "0xFFFF",
+                        Some(32) => "0xFFFFFFFF",
+                        Some(64) => "0xFFFFFFFFFFFFFFFF",
+                        _ => "0xFF",
+                    };
+                    obj.insert("py_carrier_max".into(), py_carrier_max.into());
                 }
-            }
-            // docs/adr/0058 §1: a number a C11 value printed from its plan
-            // states while the content it measures is absent is held in the
-            // optional value of its type, present where the value states it;
-            // the decode sets it from the local it read the number into
-            // (`c11_source::C11Source::decoded`).
-            if c11_printed.as_ref().is_some_and(|(plan, _)| {
-                plan.presence(f) == crate::forge::encode_plan::Presence::Stated
-            }) {
-                obj.insert("c_gated_optional".into(), true.into());
-                obj.insert(
-                    type_key.into(),
-                    c11_number_optional(f).type_name.into(),
-                );
-            }
-            // Physical-quantity accessor
-            // pair. Only scalar fields (plain `<sce:field>` shape, not
-            // Repeat/TLV/Embed) carrying `sce:quantity=…` populate the
-            // payload; the template renders the accessor block guarded
-            // on `{% if field.quantity_accessor %}`. Absent annotation
-            // preserves the legacy byte-identical codec emission.
-            if let Some(q) = f.quantity {
-                // The accessors read and write the raw value where the value
-                // holds it: a C++ value printed from its plan holds it in its
-                // private member, as its flag accessors do, and a Go value
-                // printed from its plan in its unexported field.
-                let raw_ref = if cpp_printed.is_some() {
-                    member.clone()
+                // The name the value holds the field under: its own where the
+                // field is a public member, the private one a C++ value printed
+                // from its plan holds behind its accessor (docs/adr/0081 step 4),
+                // or the unexported one a Go value printed from its plan holds
+                // behind its method.
+                let member = if cpp_printed.is_some() {
+                    cpp_source::member(&l.codec_field_id(&f.id))
                 } else if go_printed.is_some() {
-                    l.codec_field_ref(&member)
+                    go_source::member(&f.id)
                 } else {
-                    l.codec_field_ref(&l.codec_field_id(&f.id))
+                    l.codec_field_id(&f.id)
                 };
-                let payload = crate::forge::quantity_codegen::build_accessor_payload(
-                    q,
-                    &f.sce_type,
-                    &raw_ref,
-                    &raw_ref,
-                    &f.id,
-                    lang,
-                );
-                obj.insert("quantity_accessor".into(), payload);
-            }
-            // Consumer-requested owned projection (Rust only): per-field
-            // owned-mirror type + the `into_owned(self)` deep-copy expr.
-            // Only consumed by the codec.rs template's `{Codec}Owned`
-            // block, which itself emits solely for borrowed codecs
-            // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
-            if matches!(lang, crate::generator::Language::Rust) {
-                let (rs_owned_type, rs_into_owned_expr) =
-                    rust_owned_field_keys(f, m, &roles, imports, &l, false, None)?;
-                obj.insert("rs_owned_type".into(), rs_owned_type.into());
-                obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
-                // The same field's projection through what the profile
-                // answers for its tag (`OriginBytes`, `OriginStr`), rendered
-                // only into the opt-in
-                // `try_into_owned_in_origin` block (`owned_origin`).
-                let (_, rs_into_owned_origin_expr) =
-                    rust_owned_field_keys(f, m, &roles, imports, &l, true, None)?;
+                obj.insert("member".into(), member.clone().into());
+                // RFC §synth-5-B flags primitive: pre-render per-flag accessor
+                // context. Each flag carries a language-specific accessor name,
+                // setter name, and the precomputed bitmask literal.
+                obj.insert("has_flags".into(), (!f.flags.is_empty()).into());
                 obj.insert(
-                    "rs_into_owned_origin_expr".into(),
-                    rs_into_owned_origin_expr.into(),
+                    "flags".into(),
+                    serde_json::json!(build_flag_ctx(&f.id, &f.flags, &f.sce_type, lang)),
                 );
-                // Inverse projection (`{Codec}Owned::as_borrowed`): the
-                // per-field expr that re-borrows `self.<id>` back into the
-                // borrowed view. Consumed by the same owned-projection
-                // template block.
-                let rs_as_borrowed_into_stmt =
-                    rust_as_borrowed_field_into_stmt(f, &roles, imports, &l, None)?;
+                // RFC variant-default-uniformity: precompute the
+                // carrier's Default-time initializer from any `<sce:flag
+                // value="N"/>` declarations. Each declared value contributes
+                // `(N & ((1 << width) - 1)) << bit` ORed into the carrier;
+                // undeclared flags contribute 0 (preserving derive(Default)
+                // semantics for codecs that don't opt in). `None` ⇒ no
+                // declared values on this field; emitter falls back to
+                // `Default::default()` for back-compat with pre-uniformity
+                // goldens. Carrier-typed literal includes the language-
+                // specific suffix (`0x01u8`, `0x05u16`, etc.) so the Rust
+                // template can drop it verbatim into the manual impl.
+                let any_declared_value = f.flags.iter().any(|fl| fl.value.is_some());
+                if any_declared_value {
+                    let acc: u64 = flag_default_carrier_value(f);
+                    // Rust derives `Default` (the all-zero value) for free, so a
+                    // manual `impl Default` is only warranted when the OR-
+                    // accumulated carrier default is non-zero. An all-zero manual
+                    // impl would duplicate the derive verbatim (clippy::
+                    // derivable_impl), so the Rust literal is skipped and the
+                    // struct keeps `#[derive(Default)]` (see the Rust derive-attr
+                    // decision, keyed on the same `flag_default_carrier_value`
+                    // SSOT). The other backends express their zero-init
+                    // differently (C++ member-init, etc.) and still emit below.
+                    if acc != 0 {
+                        let (suffix_rust, hex_digits) = match f.sce_type.int_bit_width() {
+                            Some(8)  => ("u8",  2usize),
+                            Some(16) => ("u16", 4),
+                            Some(32) => ("u32", 8),
+                            Some(64) => ("u64", 16),
+                            // Non-unsigned carriers are rejected at parse time
+                            // (`<sce:flags>` requires uint8/16/32/64). Defensive
+                            // fallback keeps the literal type-checkable rather
+                            // than panicking inside a template render.
+                            _ => ("u8", 2),
+                        };
+                        let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
+                        obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+                    }
+                    // The C++ value is printed from its plan, which initializes
+                    // the carrier's private member itself (`cpp_flag_default_init`).
+                    // Kotlin default-value expression: emitted as the right-
+                    // hand side of the data class primary constructor's
+                    // `var id: UByte = …` default. UByte / UShort have no
+                    // direct hex literal (Kotlin's `u`/`uL` suffixes produce
+                    // UInt / ULong respectively), so the carrier-typed
+                    // literal narrows from Int via `.toU{Byte,Short}()`.
+                    // Pattern mirrors `kotlin_default()` (`0.toUByte()` etc.)
+                    // so the emitted RHS reads as a natural extension of the
+                    // existing zero default.
+                    let kt_literal = match f.sce_type.int_bit_width() {
+                        Some(8)  => format!("0x{:02x}.toUByte()",  acc),
+                        Some(16) => format!("0x{:04x}.toUShort()", acc),
+                        Some(32) => format!("0x{:08x}u",           acc),
+                        Some(64) => format!("0x{:016x}uL",         acc),
+                        _        => format!("0x{:02x}.toUByte()",  acc),
+                    };
+                    obj.insert("kt_flag_default_literal".into(), kt_literal.into());
+                    // Python integer literal: Python's `int` is unbounded so
+                    // no carrier-width suffix is needed. Hex digit count
+                    // matches the Rust / Cpp / Kotlin emit for visual
+                    // alignment when grepping across backend outputs.
+                    let py_literal = match f.sce_type.int_bit_width() {
+                        Some(8)  => format!("0x{:02x}",  acc),
+                        Some(16) => format!("0x{:04x}",  acc),
+                        Some(32) => format!("0x{:08x}",  acc),
+                        Some(64) => format!("0x{:016x}", acc),
+                        _        => format!("0x{:02x}",  acc),
+                    };
+                    obj.insert("py_flag_default_literal".into(), py_literal.into());
+                    // Go literal: Go has no Default trait — the equivalent
+                    // is a package-level `NewT()` constructor that returns
+                    // a struct literal with the wire-MID baked field
+                    // values. Typed-conversion form `uint8(0x02)` keeps
+                    // the literal unambiguous when the field type is an
+                    // unsigned-integer alias.
+                    let go_literal = match f.sce_type.int_bit_width() {
+                        Some(8)  => format!("uint8(0x{:02x})",   acc),
+                        Some(16) => format!("uint16(0x{:04x})",  acc),
+                        Some(32) => format!("uint32(0x{:08x})",  acc),
+                        Some(64) => format!("uint64(0x{:016x})", acc),
+                        _        => format!("uint8(0x{:02x})",   acc),
+                    };
+                    obj.insert("go_flag_default_literal".into(), go_literal.into());
+                    // C11 designated-initializer value for the carrier
+                    // field. C has no Default trait — the equivalent is a
+                    // `<UPPER>_DEFAULT_INIT` macro that expands to a
+                    // designated-initializer literal (`{ .header = 0x02u }`)
+                    // and is callable from the outer codec's own
+                    // `_DEFAULT_INIT` macro for composition. Each carrier
+                    // width uses the stdint-typedef-friendly suffix.
+                    let c_literal = match f.sce_type.int_bit_width() {
+                        Some(8)  => format!("0x{:02x}u",    acc),
+                        Some(16) => format!("0x{:04x}u",    acc),
+                        Some(32) => format!("0x{:08x}uL",   acc),
+                        Some(64) => format!("0x{:016x}uLL", acc),
+                        _        => format!("0x{:02x}u",    acc),
+                    };
+                    obj.insert("c_flag_default_literal".into(), c_literal.into());
+                }
+
+                // RFC §synth-5-B present-if primitive: when the codec has
+                // any gated field every field renders via the streaming
+                // path so cursor advances are sequential. Per-field we
+                // carry both the streaming decode statement and the
+                // encode block; plain non-gated fields still emit
+                // unconditional reads/writes — the streaming path is
+                // uniform. Type override wraps gated fields in
+                // `Option<T>` / `std::optional<T>` so the struct field
+                // can carry the absent state.
+                //
+                // RFC §synth-5-B B2 repeat primitive shares the same per-field
+                // streaming infrastructure: when `has_repeat_fields` the
+                // template iterates per-field and dispatches via
+                // `is_repeat` to the repeat-specific stmt vs. the
+                // present-if-style fixed-field stmt. Reusing the helper
+                // for non-repeat fields means a Repeat-only codec still
+                // gets correct streaming reads on its plain prefix
+                // fields without a second helper duplicating the work.
                 obj.insert(
-                    "rs_as_borrowed_into_stmt".into(),
-                    rs_as_borrowed_into_stmt.into(),
+                    "has_present_if".into(),
+                    f.present_if.is_some().into(),
                 );
-            }
-            // ADR 0049: every field that is not a list or a body is held by a
-            // view as the eager struct holds it.
-            if emit_views && !obj.contains_key("view_rs_type") {
-                let eager = obj
-                    .get(type_key)
-                    .cloned()
-                    .expect("every field has its Rust type before the view reads it");
-                obj.insert("view_rs_type".into(), eager);
-                obj.insert(
-                    "view_into_builder_stmt".into(),
-                    rust_view::into_builder_plain(&codec_field_decode_local(&f.id, lang)).into(),
-                );
-            }
-            // docs/adr/0081 §3: a Python value printed from its plan holds no
-            // element the encode derives, holds each byte string and text in
-            // the class of its bound, made within it by default, and makes a
-            // body by default by its codec's class.
-            if let Some((plan, printed)) = &python_printed {
-                obj.insert(
-                    "derived".into(),
-                    python_source::derived_field(plan, &f.id).into(),
-                );
-                if let Some((class, default)) = printed.declared.get(&f.id) {
-                    obj.insert(type_key.into(), class.clone().into());
-                    obj.insert("default_value".into(), default.clone().into());
+                if needs_streaming_path {
+                    obj.insert(
+                        "present_if_decode_stmt".into(),
+                        present_if_streaming_decode_stmt(
+                            &l,
+                            f,
+                            &m.fields,
+                            m.default_endian,
+                            &c11_derived_numbers,
+                            site,
+                        )
+                        .into(),
+                    );
+                    if field_encode_blocks {
+                        let mut encode_block =
+                            present_if_streaming_encode_block(&l, f, &m.fields, m.default_endian);
+                        // RFC §synth-5-B parent-tag carriers — write the single-byte
+                        // carrier with its filled flags cleared and the derived
+                        // bits added, so the bits the bodies derive land in the
+                        // outgoing stream. Carrier is uint8 per v1 rpf lock-in
+                        // (single-byte field), so the substitution targets the
+                        // n==1 shape of each backend's encode helper.
+                        if let Some(carrier) = parent_tag_carriers.get(&f.id) {
+                            encode_block =
+                                inject_parent_tag_carrier_suffix(&encode_block, &f.id, carrier, lang);
+                        }
+                        obj.insert("present_if_encode_block".into(), encode_block.into());
+                    }
+                    // RFC §synth-5-B — Repeat-with-present-if fields wrap
+                    // their imported-codec list type in the dedicated
+                    // `is_repeat` branch above (Option<Vec<T>> /
+                    // std::optional<vector> / etc.). The generic per-field
+                    // wrap below assumes `f.sce_type` IS the host type
+                    // (Fixed/Tail/LengthRef/Vle), but Repeat's
+                    // `f.sce_type` is the `SceType::Bytes` sentinel — so
+                    // applying this wrap would yield the wrong shape
+                    // (`Option<Vec<u8>>` instead of `Option<Vec<Imported>>`).
+                    // Skip Repeat fields here; the is_repeat branch
+                    // already populated `<lang>_type` correctly. The
+                    // gated embed has the same sentinel shape — its
+                    // dedicated branch above (`f.is_embed()`) already
+                    // emits `Option<EmbeddedCodec>` / per-language
+                    // equivalent; skipping here avoids overwriting with
+                    // `Option<Vec<u8>>`.
+                    if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() && !f.is_tlv_chain() {
+                        // Borrowed zero-copy: a gated `Bytes` / `String`
+                        // field's inner type is the `&'a` view (Rust), so the
+                        // wrap becomes `Option<&'a [u8]>` / `Option<&'a str>`.
+                        let inner = codec_scalar_type(&l, f, &m.fields);
+                        let wrapped = match lang {
+                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
+                            // The one spelling of the backend's optional type
+                            // (docs/adr/0055, section 5).
+                            crate::generator::Language::Rust
+                            | crate::generator::Language::Cpp
+                            | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Go
+                            | crate::generator::Language::Python => l
+                                .optional_of(&inner)
+                                .expect("these backends wrap the present type"),
+                            // C11 holds a gated field in the struct
+                            // `sce/forge/optional.h` declares for its element,
+                            // which a statechart's variable of the same type is
+                            // held in too (docs/adr/0055, step 14): a number or
+                            // an enum in its own, a byte string or a text in the
+                            // one over the bytes and their length.
+                            crate::generator::Language::C11 => {
+                                let held = match &f.sce_type {
+                                    SceType::Bytes | SceType::String => {
+                                        c11_gated_bytes_optional(f, &m.fields)
+                                    }
+                                    scalar => l.c11_codec_optional(scalar, None),
+                                };
+                                obj.insert("c_gated_optional".into(), true.into());
+                                obj.insert("c_optional_decl".into(), held.declaration.clone().into());
+                                held.type_name
+                            }
+                        };
+                        obj.insert(type_key.into(), wrapped.into());
+                        // Default for the gated optional in languages that
+                        // emit an explicit default in the struct/data class
+                        // constructor. Kotlin/Python data class would
+                        // otherwise call `0.toUByte()` / `0` against the
+                        // nullable carrier and fail to type-check — `null`
+                        // / `None` is the only sane default for the
+                        // wrapped type. Go's `optional.Of[T]` is absent at
+                        // its zero value and needs no explicit initializer;
+                        // C11 keeps the zero-value default.
+                        if matches!(lang, crate::generator::Language::Kotlin) {
+                            obj.insert("kt_default".into(), "null".into());
+                        }
+                        if matches!(lang, crate::generator::Language::Python) {
+                            obj.insert("default_value".into(), "None".into());
+                        }
+                    }
                 }
-                if let Some(made) = printed.decoded.get(&f.id) {
-                    obj.insert("py_decoded".into(), made.clone().into());
+                // docs/adr/0058 §1: a number a C11 value printed from its plan
+                // states while the content it measures is absent is held in the
+                // optional value of its type, present where the value states it;
+                // the decode sets it from the local it read the number into
+                // (`c11_source::C11Source::decoded`).
+                if c11_printed.as_ref().is_some_and(|(plan, _)| {
+                    plan.presence(f) == crate::forge::encode_plan::Presence::Stated
+                }) {
+                    obj.insert("c_gated_optional".into(), true.into());
+                    obj.insert(
+                        type_key.into(),
+                        c11_number_optional(f).type_name.into(),
+                    );
                 }
-            }
-            // docs/adr/0081 §3: a Kotlin value printed from its plan holds no
-            // element the encode derives, and holds each byte string in the
-            // value class of its bound, made within it by default and made by
-            // its checked factory of what the decode read.
-            if let Some((plan, printed)) = &kotlin_printed {
-                obj.insert(
-                    "derived".into(),
-                    kotlin_source::derived_field(plan, &f.id).into(),
-                );
-                if let Some(held) = printed.held.get(&f.id) {
-                    obj.insert(type_key.into(), held.ty.clone().into());
-                    obj.insert("kt_default".into(), held.default.clone().into());
-                    obj.insert("kt_made".into(), held.made.clone().into());
+                // Physical-quantity accessor
+                // pair. Only scalar fields (plain `<sce:field>` shape, not
+                // Repeat/TLV/Embed) carrying `sce:quantity=…` populate the
+                // payload; the template renders the accessor block guarded
+                // on `{% if field.quantity_accessor %}`. Absent annotation
+                // preserves the legacy byte-identical codec emission.
+                if let Some(q) = f.quantity {
+                    // The accessors read and write the raw value where the value
+                    // holds it: a C++ value printed from its plan holds it in its
+                    // private member, as its flag accessors do, and a Go value
+                    // printed from its plan in its unexported field.
+                    let raw_ref = if cpp_printed.is_some() {
+                        member.clone()
+                    } else if go_printed.is_some() {
+                        l.codec_field_ref(&member)
+                    } else {
+                        l.codec_field_ref(&l.codec_field_id(&f.id))
+                    };
+                    let payload = crate::forge::quantity_codegen::build_accessor_payload(
+                        q,
+                        &f.sce_type,
+                        &raw_ref,
+                        &raw_ref,
+                        &f.id,
+                        lang,
+                    );
+                    obj.insert("quantity_accessor".into(), payload);
                 }
-            }
-            // docs/adr/0081 §3: a Go value printed from its plan holds no
-            // element the encode derives, and holds each byte string and text
-            // in the runtime's bounded type of its bound, which its decode
-            // makes in a local of its own before the value's literal.
-            if let Some((plan, printed)) = &go_printed {
-                obj.insert("derived".into(), go_source::derived_field(plan, &f.id).into());
-                obj.insert("grouped".into(), go_source::grouped_field(plan, &f.id).into());
-                if let Some(held) = printed.held.get(&f.id) {
-                    obj.insert(type_key.into(), held.clone().into());
+                // Consumer-requested owned projection (Rust only): per-field
+                // owned-mirror type + the `into_owned(self)` deep-copy expr.
+                // Only consumed by the codec.rs template's `{Codec}Owned`
+                // block, which itself emits solely for borrowed codecs
+                // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
+                if matches!(lang, crate::generator::Language::Rust) {
+                    let (rs_owned_type, rs_into_owned_expr) =
+                        rust_owned_field_keys(f, m, &roles, imports, &l, false, None)?;
+                    obj.insert("rs_owned_type".into(), rs_owned_type.into());
+                    obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
+                    // The same field's projection through what the profile
+                    // answers for its tag (`OriginBytes`, `OriginStr`), rendered
+                    // only into the opt-in
+                    // `try_into_owned_in_origin` block (`owned_origin`).
+                    let (_, rs_into_owned_origin_expr) =
+                        rust_owned_field_keys(f, m, &roles, imports, &l, true, None)?;
+                    obj.insert(
+                        "rs_into_owned_origin_expr".into(),
+                        rs_into_owned_origin_expr.into(),
+                    );
+                    // Inverse projection (`{Codec}Owned::as_borrowed`): the
+                    // per-field expr that re-borrows `self.<id>` back into the
+                    // borrowed view. Consumed by the same owned-projection
+                    // template block.
+                    let rs_as_borrowed_into_stmt =
+                        rust_as_borrowed_field_into_stmt(f, &roles, imports, &l, None)?;
+                    obj.insert(
+                        "rs_as_borrowed_into_stmt".into(),
+                        rs_as_borrowed_into_stmt.into(),
+                    );
                 }
-                if let Some(local) = printed.made.get(&f.id) {
-                    obj.insert("made".into(), local.clone().into());
+                // ADR 0049: every field that is not a list or a body is held by a
+                // view as the eager struct holds it.
+                if emit_views && !obj.contains_key("view_rs_type") {
+                    let eager = obj
+                        .get(type_key)
+                        .cloned()
+                        .expect("every field has its Rust type before the view reads it");
+                    obj.insert("view_rs_type".into(), eager);
+                    obj.insert(
+                        "view_into_builder_stmt".into(),
+                        rust_view::into_builder_plain(&codec_field_decode_local(&f.id, lang)).into(),
+                    );
                 }
-            }
-            Ok(serde_json::Value::Object(obj))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                // docs/adr/0081 §3: a Python value printed from its plan holds no
+                // element the encode derives, holds each byte string and text in
+                // the class of its bound, made within it by default, and makes a
+                // body by default by its codec's class.
+                if let Some((plan, printed)) = &python_printed {
+                    obj.insert(
+                        "derived".into(),
+                        python_source::derived_field(plan, &f.id).into(),
+                    );
+                    if let Some((class, default)) = printed.declared.get(&f.id) {
+                        obj.insert(type_key.into(), class.clone().into());
+                        obj.insert("default_value".into(), default.clone().into());
+                    }
+                    if let Some(made) = printed.decoded.get(&f.id) {
+                        obj.insert("py_decoded".into(), made.clone().into());
+                    }
+                }
+                // docs/adr/0081 §3: a Kotlin value printed from its plan holds no
+                // element the encode derives, and holds each byte string in the
+                // value class of its bound, made within it by default and made by
+                // its checked factory of what the decode read.
+                if let Some((plan, printed)) = &kotlin_printed {
+                    obj.insert(
+                        "derived".into(),
+                        kotlin_source::derived_field(plan, &f.id).into(),
+                    );
+                    if let Some(held) = printed.held.get(&f.id) {
+                        obj.insert(type_key.into(), held.ty.clone().into());
+                        obj.insert("kt_default".into(), held.default.clone().into());
+                        obj.insert("kt_made".into(), held.made.clone().into());
+                    }
+                }
+                // docs/adr/0081 §3: a Go value printed from its plan holds no
+                // element the encode derives, and holds each byte string and text
+                // in the runtime's bounded type of its bound, which its decode
+                // makes in a local of its own before the value's literal.
+                if let Some((plan, printed)) = &go_printed {
+                    obj.insert("derived".into(), go_source::derived_field(plan, &f.id).into());
+                    obj.insert("grouped".into(), go_source::grouped_field(plan, &f.id).into());
+                    if let Some(held) = printed.held.get(&f.id) {
+                        obj.insert(type_key.into(), held.clone().into());
+                    }
+                    if let Some(local) = printed.made.get(&f.id) {
+                        obj.insert("made".into(), local.clone().into());
+                    }
+                }
+                Ok(serde_json::Value::Object(obj))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let fields = fields_read_at(ReadSite::Cold)?;
+    // A body read on the build's hot path is printed a second time, in its
+    // forms held in place, from the same fields read at hot sites.
+    let held_fields = if body_read.hot {
+        Some(fields_read_at(ReadSite::Hot)?)
+    } else {
+        None
+    };
 
     let encode_exprs = if field_encode_blocks {
         generate_encode_exprs(&m.fields, m.default_endian, &l)
@@ -16419,21 +16437,32 @@ fn render_codec(
     // The fields each form holds and the fields the wire reads: on Rust a group
     // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
     // and every other backend holds the wire's fields as they are.
-    let (stored, mut wire) = if matches!(lang, crate::generator::Language::Rust)
-        && m.encoding == CodecEncoding::Positional
-    {
-        rust_group_storage(m, imports, &l, fields, emit_views)?
-    } else {
-        (fields.clone(), fields)
+    let stored_and_wire = |fields: Vec<serde_json::Value>| -> Result<FieldsAndWire, ForgeError> {
+        let (stored, mut wire) = if matches!(lang, crate::generator::Language::Rust)
+            && m.encoding == CodecEncoding::Positional
+        {
+            rust_group_storage(m, imports, &l, fields, emit_views)?
+        } else {
+            (fields.clone(), fields)
+        };
+        if emit_views
+            && matches!(lang, crate::generator::Language::Rust)
+            && m.encoding == CodecEncoding::Positional
+        {
+            rust_view_locals(m, imports, &l, &mut wire);
+        }
+        Ok((stored, wire))
     };
-    if emit_views
-        && matches!(lang, crate::generator::Language::Rust)
-        && m.encoding == CodecEncoding::Positional
-    {
-        rust_view_locals(m, imports, &l, &mut wire);
-    }
+    let (stored, wire) = stored_and_wire(fields)?;
     ctx.insert("fields".into(), serde_json::json!(stored));
     ctx.insert("wire_fields".into(), serde_json::json!(wire));
+    // docs/adr/0140: the same fields as the forms held in place of a hot body
+    // read them, which the template prints that body's second text from.
+    if let Some(held) = held_fields {
+        let (stored, wire) = stored_and_wire(held)?;
+        ctx.insert("held_fields".into(), serde_json::json!(stored));
+        ctx.insert("held_wire_fields".into(), serde_json::json!(wire));
+    }
     // RFC §synth-5-B flags primitive: codec-level rollup so the template
     // can short-circuit the accessor block when no field has flags. The
     // snake-cased struct name doubles as the C11 accessor prefix
@@ -17903,13 +17932,15 @@ fn render_codec(
             "view_read_attr".into(),
             body_read_attribute(body_read.every, body_read.entry.view).into(),
         );
-        // docs/adr/0140: a body read on the build's hot path is printed once, in
-        // the forms held in place where they are called (`held_suffix`), which
-        // the hot sites call, and the entry points above are calls of them; it
-        // reads what it holds by their forms held in place too (`site_suffix`).
+        // docs/adr/0140: every body is printed in its entry points above, which
+        // read what it holds by their entry points; a body read on the build's
+        // hot path is printed again, from the same text, in the forms held in
+        // place where they are called (`held_suffix`), which the hot sites call
+        // and which read what it holds by their forms held in place
+        // (`held_fields`, `held_wire_fields`). The entry points never call
+        // them.
         ctx.insert("hot_body".into(), body_read.hot.into());
         ctx.insert("held_suffix".into(), ReadSite::Hot.suffix().into());
-        ctx.insert("site_suffix".into(), site.suffix().into());
         if emit_views {
             let view_borrowed = codec_self_view_borrowed(m, imports);
             ctx.insert("view_is_alias".into(), (!m.has_own_view()).into());
@@ -17933,8 +17964,8 @@ fn render_codec(
             );
             // The one walk every list of this codec that carries nothing from
             // one entry to the next reads it by, whichever codec holds the list
-            // (`rust_view::list_walk`), and for a hot body the walk a cold scan
-            // of a chain of it reads by (docs/adr/0140). A codec whose variant
+            // (`rust_view::list_walk`), and for a hot body the walk a hot body's
+            // scan of a chain of it reads by (docs/adr/0140). A codec whose variant
             // takes its tag from its caller is decoded with that tag, which no
             // list hands it.
             let caller_tag = m.variant.as_ref().is_some_and(|v| v.tag_field.is_none());
@@ -22141,9 +22172,6 @@ struct RustChainRule<'a> {
     /// The accessor of the flag that ends the chain, when an entry flag does.
     entry_flag_acc: Option<&'a str>,
     kinds: &'a [RustChainKind],
-    /// Where the body that holds the chain reads each entry: the rule's read
-    /// calls the entry's form held in place at a hot site (docs/adr/0140).
-    site: ReadSite,
 }
 
 /// The rule of a Rust chain, as the runtime's read of it is instantiated at
@@ -22177,10 +22205,8 @@ fn rust_chain_rule_item(ctx: &RustChainRule<'_>) -> String {
         max_depth,
         entry_flag_acc,
         kinds,
-        site,
     } = *ctx;
     let holder = filters::to_pascal_case(codec.to_string());
-    let held = site.suffix();
     let width = inputs.len();
     let call_args: String = (0..width).map(|i| format!(", _a[{i}]")).collect();
     let depth = max_depth.map_or_else(|| "None".to_string(), |depth| format!("Some({depth})"));
@@ -22268,9 +22294,100 @@ fn rust_chain_rule_item(ctx: &RustChainRule<'_>) -> String {
          \n    \
              #[inline]\n    \
              fn read(_r: &mut SceReader<'f>, _a: &[u8; {width}]) -> {entry_type} {{\n        \
-                 {body_type}::read{held}(_r{call_args})\n    \
+                 {body_type}::read(_r{call_args})\n    \
              }}{follows}{carry}\n\
          }}{kinds_item}\n",
+        field_id = field.id,
+    )
+}
+
+/// The name of the rule held in place of the chain field `field` of codec
+/// `codec` ([`rust_held_chain_rule_item`]): `{Codec}{Field}HeldChain`, both in
+/// Pascal case.
+fn rust_held_chain_rule_name(codec: &str, field: &str) -> String {
+    format!(
+        "{}{}HeldChain",
+        filters::to_pascal_case(codec.to_string()),
+        filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The rule held in place of a Rust chain (docs/adr/0140), named `held`
+/// ([`rust_held_chain_rule_name`]): the rule a hot body's form held in place
+/// reads the chain by. It is the chain's rule ([`rust_chain_rule_item`]) but
+/// for the read of an entry, which is the entry's form held in place where the
+/// chain's rule calls its entry point; where the chain ends, its depth, the
+/// flag that ends it, what it carries and the kinds asked of it are the chain's
+/// rule's, each read off it, so the two rules of one chain say them by one
+/// text. It is private to the codec's module: no type of the public face names
+/// it, and only the form held in place reads by it.
+fn rust_held_chain_rule_item(ctx: &RustChainRule<'_>, held: &str) -> String {
+    let RustChainRule {
+        rule,
+        codec,
+        field,
+        entry_type,
+        body_type,
+        entry_borrowed,
+        inputs,
+        entry_binds,
+        entry_flag_acc,
+        kinds,
+        ..
+    } = *ctx;
+    let holder = filters::to_pascal_case(codec.to_string());
+    let held_form = ReadSite::Hot.suffix();
+    let width = inputs.len();
+    let call_args: String = (0..width).map(|i| format!(", _a[{i}]")).collect();
+    let of_rule = format!("<{rule} as {RUNTIME_CODEC}::ChainRule<'f, {entry_type}, {width}>>");
+    let follows = if entry_flag_acc.is_some() {
+        format!(
+            "\n\n    fn follows(_e: &{entry_type}) -> bool {{\n        \
+                 {of_rule}::follows(_e)\n    \
+             }}"
+        )
+    } else {
+        String::new()
+    };
+    let carry = if entry_binds.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n    fn carry(_e: &{entry_type}, _a: &mut [u8; {width}]) {{\n        \
+                 {of_rule}::carry(_e, _a)\n    \
+             }}"
+        )
+    };
+    let read_generics = if entry_borrowed {
+        format!("<'f, {STORAGE_PARAM}: {holder}From<'f>>")
+    } else {
+        "<'f>".to_string()
+    };
+    let asked = if kinds.is_empty() {
+        format!("{RUNTIME_CODEC}::NoKinds")
+    } else {
+        rule.to_string()
+    };
+    format!(
+        "/// How the chain `{field_id}` is read by the form held in place of this\n\
+         /// codec's body (docs/adr/0140): as [`{rule}`] reads it, each entry read\n\
+         /// by its form held in place.\n\
+         #[allow(dead_code)]\n\
+         struct {held};\n\
+         \n\
+         impl {RUNTIME_CODEC}::ChainEnds for {held} {{\n    \
+             const END: {RUNTIME_CODEC}::ChainEnd = <{rule} as {RUNTIME_CODEC}::ChainEnds>::END;\n    \
+             const DEPTH: Option<u32> = <{rule} as {RUNTIME_CODEC}::ChainEnds>::DEPTH;\n\
+         }}\n\
+         \n\
+         impl{read_generics} {RUNTIME_CODEC}::ChainRule<'f, {entry_type}, {width}> for {held} {{\n    \
+             type Kinds = {asked};\n\
+         \n    \
+             #[inline]\n    \
+             fn read(_r: &mut SceReader<'f>, _a: &[u8; {width}]) -> {entry_type} {{\n        \
+                 {body_type}::read{held_form}(_r{call_args})\n    \
+             }}{follows}{carry}\n\
+         }}\n",
         field_id = field.id,
     )
 }
@@ -53277,7 +53394,6 @@ mod tests {
             c11_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
-            codec_body_hot: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
             codec_says_inputs: Vec::new(),
@@ -54216,7 +54332,6 @@ mod tests {
                 c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
-                codec_body_hot: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),
@@ -54298,7 +54413,6 @@ mod tests {
                 c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
-                codec_body_hot: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),

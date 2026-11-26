@@ -4051,8 +4051,11 @@ struct HotSet {
 /// family the put is named, so the timestamp and the chain's entry are read from the
 /// hot put and from the cold delete, query and request; in the key expression's set
 /// the body a length bounds is read held in place by the hot key expression, eager
-/// and as a view.
-const HOT_SETS: [HotSet; 3] = [
+/// and as a view; in the set of a chain that tells its entries what came before
+/// them the carrier is named, so its chain, which carries a value from one entry to
+/// the next and so has a walk of its own, is scanned by a walk held in place, and
+/// read by a rule held in place that ends and carries by the chain's rule.
+const HOT_SETS: [HotSet; 4] = [
     HotSet {
         set: CHAIN_HAS_SET,
         named: "codec_chain_has_envelope",
@@ -4076,6 +4079,14 @@ const HOT_SETS: [HotSet; 3] = [
         cold: "codec_zenoh_undecl_subscriber",
         views: true,
         test_id: "hot_sites_keyexpr_views_rust",
+    },
+    HotSet {
+        set: PREV_ENTRY_FLAG_SET,
+        named: "codec_chain_prev_carrier",
+        child: "codec_chain_prev_entry",
+        cold: "codec_chain_prev_gated",
+        views: true,
+        test_id: "hot_sites_prev_entry_views_rust",
     },
 ];
 
@@ -4114,11 +4125,12 @@ fn generate_hot_set(case: &HotSet, named: &[&str]) -> Vec<(String, String)> {
 }
 
 /// A set generated with codecs named hot (docs/adr/0140) still compiles as a
-/// program, without views and with them: each hot body is printed in its forms
-/// held in place, which every site of a hot body calls through an arm, an
-/// embedded body, a chain's rule, a view's scan and the walks of its lists, and
-/// the cold codecs that read the same bodies call their entry points
-/// ([`HOT_SETS`]).
+/// program, without views and with them: each hot body is printed in its entry
+/// points and in its forms held in place, which every site of a hot body's form
+/// held in place calls through an arm, an embedded body, a chain's rule held in
+/// place and a view's scan by a walk held in place, and every entry point, of a
+/// hot codec or a cold one, reads what it holds by the entry points, as the walks
+/// of the lists do ([`HOT_SETS`]).
 #[test]
 fn a_set_with_hot_codecs_compiles_with_and_without_views() {
     for case in &HOT_SETS {
@@ -4175,8 +4187,9 @@ fn declares_a_pub_field(line: &str) -> bool {
 /// named hot declares, file by file and in the same order, every `pub` struct,
 /// enum, union, trait, type alias and field the set generated with none named
 /// declares, in the same text. A list of a hot view names its entry's one walk
-/// as the same list of a cold view does, and the walk a cold scan of a hot
-/// entry's chain reads by is visible to the modules of the set alone.
+/// as the same list of a cold view does, and the walks and the chain rules held
+/// in place a hot body's form held in place reads by are visible to the modules
+/// of the set alone, or to their own module.
 #[test]
 fn a_set_with_hot_codecs_declares_the_public_types_of_the_set_with_none() {
     // A set without lists (the key expression's) still compares its types; the
@@ -4749,6 +4762,16 @@ const PREV_ENTRY_SET: &[&str] = &[
     "codec_chain_prev_gated.scxml",
     "codec_chain_prev_tail.scxml",
     "codec_chain_prev_tail_gated.scxml",
+];
+
+/// The entry codec and the parents of [`PREV_ENTRY_SET`] whose chains end on an
+/// entry flag, each generated with its view as the goldens of `expected/views/`
+/// are: the set a hot carrier's rule held in place ends and carries by the
+/// chain's rule in ([`HOT_SETS`]).
+const PREV_ENTRY_FLAG_SET: &[&str] = &[
+    "codec_chain_prev_entry.scxml",
+    "codec_chain_prev_carrier.scxml",
+    "codec_chain_prev_gated.scxml",
 ];
 
 /// A flag-input only the chain can know — 1 for an entry whose immediately

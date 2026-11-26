@@ -93,28 +93,45 @@ pub(super) fn entry_walk_name(type_name: &str) -> String {
 }
 
 /// The name of the walk the module of a codec whose body is on the build's hot path writes
-/// beside [`entry_walk_name`]: `{Codec}ColdScanWalk`, which reads each entry by its entry
-/// point, the walk the scan of a chain of the codec in a body off the hot path reads by. No list
-/// names it as its type, and it is visible to the modules of the set alone (docs/adr/0140).
-pub(super) fn cold_scan_walk_name(type_name: &str) -> String {
-    format!("{type_name}ColdScanWalk")
+/// beside [`entry_walk_name`]: `{Codec}HeldWalk`, which reads each entry by its form held in
+/// place, the walk the scan of a chain of the codec in a hot body reads by. No list names it as
+/// its type, and it is visible to the modules of the set alone (docs/adr/0140).
+pub(super) fn entry_held_walk_name(type_name: &str) -> String {
+    format!("{type_name}HeldWalk")
 }
 
-/// How one list of a view reads its entries: the marker type its field names, the walk the
-/// scan of a chain reads it by, and the item that stands for it in the parent's module.
+/// The name of the walk the scan of list field `field` of codec `codec` reads by in the form
+/// held in place of a hot body, where the list has a walk of its own ([`walk_name`]):
+/// `{Codec}{Field}HeldWalk`, both in Pascal case. No list names it as its type, and it is
+/// private to the codec's module (docs/adr/0140).
+pub(super) fn held_walk_name(codec: &str, field: &str) -> String {
+    format!(
+        "{}{}HeldWalk",
+        filters::to_pascal_case(codec.to_string()),
+        filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// How one list of a view reads its entries: the marker type its field names, and the item
+/// that stands for it in the parent's module.
 pub(super) struct ListWalkOf {
     /// The type the list's field names as its `W` ([`list_type`]): the same whatever the
     /// site that holds the list (docs/adr/0140).
     pub ty: String,
-    /// The walk the scan of a chain reads its entries by (`walk_chain`, docs/adr/0136): the
-    /// list's own walk, [`Self::ty`], but where a body off the build's hot path holds a list
-    /// that shares the walk of a hot entry, which reads each entry by its form held in place;
-    /// that scan reads by the entry's [`cold_scan_walk_name`], which calls its entry point, so
-    /// no cold body holds the hot body's code (docs/adr/0140).
-    pub scan: String,
     /// The definition of the list's own marker type, or the alias that keeps its name for the
     /// walk it shares.
     pub item: String,
+}
+
+/// The walk a body's scan of a chain reads its entries by (`walk_chain`, docs/adr/0136), and
+/// the item that defines it where the parent's module writes it ([`scan_walk`]).
+pub(super) struct ScanWalk {
+    /// The walk, as a path the scan names.
+    pub name: String,
+    /// The definition of the walk, where the parent's module writes it: a walk held in place
+    /// of a list with a walk of its own. `None` where the walk is the list's own, or the
+    /// one its entry's module writes.
+    pub item: Option<String>,
 }
 
 /// The import whose module's walk list field `f` of codec `m` reads its entries by
@@ -194,12 +211,6 @@ pub(super) struct WalkedList<'a> {
     /// How the values the list carries are rewritten from the entry just read, as
     /// [`walk_item`] takes them.
     pub advance: &'a [String],
-    /// Where the body that holds the list reads its entries (docs/adr/0140). A walk of its own
-    /// serves this one list, so it reads each entry as this site does, by the form held in
-    /// place at a hot one and by the entry point at a cold one. A walk the list shares is its
-    /// entry's, whose read is decided once for the entry; the site then says only which walk
-    /// the scan of a chain reads by ([`ListWalkOf::scan`]). It decides no type.
-    pub site: ReadSite,
 }
 
 /// How `list` reads its entries.
@@ -208,7 +219,9 @@ pub(super) struct WalkedList<'a> {
 /// ([`entry_walk_item`]), so a program that walks lists of one entry from several codecs holds
 /// one walk and not one per list. Its own name, `{Codec}{Field}Walk`, stays as an alias of
 /// that walk, so a consumer that named it names the same type. Any other list has a walk of
-/// its own.
+/// its own. Either reads each entry by its entry point, whatever the body that holds the list
+/// (docs/adr/0140): a walk is a read a consumer makes of the list after the frame is read, and
+/// no read of the body it is made of.
 pub(super) fn list_walk(list: &WalkedList<'_>) -> ListWalkOf {
     let WalkedList {
         codec,
@@ -218,21 +231,15 @@ pub(super) fn list_walk(list: &WalkedList<'_>) -> ListWalkOf {
         shared,
         inputs,
         advance,
-        site,
     } = *list;
     let own = walk_name(codec, field);
     match shared {
         Some(imp) => {
-            let path = |walk: String| format!("super::{}::{walk}", imp.namespace);
-            let ty = path(entry_walk_name(&imp.type_name));
-            // A hot body's every read is hot (docs/adr/0140), so the entry of a list at a hot
-            // site is hot and its walk reads it held in place, as the scan there asks; at a
-            // cold site of a hot entry the scan reads by the walk that calls the entry point.
-            let scan = if site == ReadSite::Cold && imp.codec_body_hot {
-                path(cold_scan_walk_name(&imp.type_name))
-            } else {
-                ty.clone()
-            };
+            let ty = format!(
+                "super::{}::{}",
+                imp.namespace,
+                entry_walk_name(&imp.type_name)
+            );
             ListWalkOf {
                 item: format!(
                     "/// How `{field}` reads its entries: the walk of every list of `{entry}` that\n\
@@ -241,14 +248,61 @@ pub(super) fn list_walk(list: &WalkedList<'_>) -> ListWalkOf {
                      pub type {own} = {ty};\n"
                 ),
                 ty,
-                scan,
             }
         }
         None => ListWalkOf {
-            item: walk_item(&own, entry, entry_ty, inputs, advance, site, "pub"),
-            scan: own.clone(),
+            item: walk_item(&own, entry, entry_ty, inputs, advance),
             ty: own,
         },
+    }
+}
+
+/// The walk the scan of the chain `list` reads its entries by in a body read at `site`
+/// (docs/adr/0140). At a cold site it is the list's walk ([`list_walk`]), which reads each
+/// entry by its entry point. At a hot one it reads each entry by its form held in place, as
+/// every read of a hot body does: the walk held in place the entry's module writes
+/// ([`entry_held_walk_name`]) where the list shares its entry's walk, the entry of a hot body
+/// being hot; and where the list has a walk of its own, one the parent's module writes beside
+/// it ([`held_walk_name`]), which carries from one entry to the next what the list's walk
+/// carries, by that walk's own `advance`.
+pub(super) fn scan_walk(list: &WalkedList<'_>, site: ReadSite) -> ScanWalk {
+    let WalkedList {
+        codec,
+        field,
+        entry,
+        entry_ty,
+        shared,
+        inputs,
+        ..
+    } = *list;
+    match (site, shared) {
+        (ReadSite::Cold, _) => ScanWalk {
+            name: list_walk(list).ty,
+            item: None,
+        },
+        (ReadSite::Hot, Some(imp)) => ScanWalk {
+            name: format!(
+                "super::{}::{}",
+                imp.namespace,
+                entry_held_walk_name(&imp.type_name)
+            ),
+            item: None,
+        },
+        (ReadSite::Hot, None) => {
+            let held = held_walk_name(codec, field);
+            let item = held_walk_item(&HeldWalk {
+                held: &held,
+                walk: &walk_name(codec, field),
+                entry,
+                entry_ty,
+                inputs,
+                vis: "",
+            });
+            ScanWalk {
+                name: held,
+                item: Some(item),
+            }
+        }
     }
 }
 
@@ -257,15 +311,13 @@ pub(super) fn list_walk(list: &WalkedList<'_>) -> ListWalkOf {
 /// the codec's view, read with the `inputs` flag inputs the codec declares. `struct_name` is
 /// the codec's type name and `view_borrowed` whether its view carries a lifetime.
 ///
-/// Every such list names this one walk, whatever the body that holds it: whether a read is on
-/// the build's hot path says where the read is held in place, never what a type is
-/// (docs/adr/0140). How the walk reads an entry is a property of the codec, decided once: a
-/// codec whose body is read on the hot path (`hot`) reads each by its form held in place, as a
-/// walk of a list on the hot path asks, and any other by its entry point. A hot codec writes
-/// beside it `{Codec}ColdScanWalk` ([`cold_scan_walk_name`]), which reads each entry by its
-/// entry point: the walk the scan of a chain of the codec in a body off the hot path reads by,
-/// so no cold body holds the hot body's code. No list names it, so it is visible to the modules
-/// of the set alone.
+/// Every such list names this one walk, whatever the body that holds it, and it reads each
+/// entry by its entry point: a walk is a read a consumer makes of a list after the frame is
+/// read, and no read of a hot body (docs/adr/0140). A codec whose body is read on the build's
+/// hot path (`hot`) writes beside it `{Codec}HeldWalk` ([`entry_held_walk_name`]), which
+/// reads each entry by its form held in place: the walk the scan of a chain of the codec in a
+/// hot body reads by ([`scan_walk`]). No list names it, so it is visible to the modules of the
+/// set alone.
 pub(super) fn entry_walk_item(
     struct_name: &str,
     view_borrowed: bool,
@@ -278,30 +330,30 @@ pub(super) fn entry_walk_item(
     } else {
         entry.clone()
     };
-    let walk = |name: &str, site: ReadSite, vis: &str| {
-        walk_item(name, &entry, &entry_ty, inputs, &[], site, vis)
-    };
-    let read = if hot { ReadSite::Hot } else { ReadSite::Cold };
+    let walk = entry_walk_name(struct_name);
     let shared = format!(
         "/// How a list of `{struct_name}` reads its entries when it carries nothing from one\n\
          /// entry to the next: one walk for every such list of every codec.\n\
          {}",
-        walk(&entry_walk_name(struct_name), read, "pub")
+        walk_item(&walk, &entry, &entry_ty, inputs, &[])
     );
     if !hot {
         return shared;
     }
     format!(
         "{shared}\n\
-         /// How the scan of a chain of `{struct_name}` in a body off the build's hot path\n\
-         /// reads its entries: each by its entry point, where the walk of its lists reads each\n\
-         /// by its form held in place (docs/adr/0140). No list names it as its type.\n\
+         /// How the scan of a chain of `{struct_name}` in a body on the build's hot path reads\n\
+         /// its entries: each by its form held in place, where the walk of its lists reads each\n\
+         /// by its entry point (docs/adr/0140). No list names it as its type.\n\
          {}",
-        walk(
-            &cold_scan_walk_name(struct_name),
-            ReadSite::Cold,
-            "pub(super)"
-        )
+        held_walk_item(&HeldWalk {
+            held: &entry_held_walk_name(struct_name),
+            walk: &walk,
+            entry: &entry,
+            entry_ty: &entry_ty,
+            inputs,
+            vis: "pub(super) ",
+        })
     )
 }
 
@@ -321,34 +373,82 @@ pub(super) fn entry_walk_item(
 /// `entry` is the entry's view as a path for a call (`{Entry}View`), `entry_ty` as a type with the
 /// lifetime `'b` where it carries one, and `inputs` how many flag inputs its decode takes, each
 /// handed over from `args` by position. `advance` rewrites the carried values from `_e`, the entry
-/// just read, into `_s`. `site` is the read the walk calls: the entry's form held in place
-/// at `ReadSite::Hot`, its entry point at `ReadSite::Cold` (docs/adr/0140). `vis` is the
-/// walk's visibility: `pub` for a walk a list names, `pub(super)` for one no list names.
+/// just read, into `_s`. The walk calls the entry's entry point, whatever the body that holds
+/// the list (docs/adr/0140).
 pub(super) fn walk_item(
     walk: &str,
     entry: &str,
     entry_ty: &str,
     inputs: usize,
     advance: &[String],
-    site: ReadSite,
-    vis: &str,
 ) -> String {
     let call_args: String = (0..inputs).map(|i| format!(", _a[{i}]")).collect();
-    let held = site.suffix();
     let advance = advance.join(" ");
     format!(
         "#[allow(dead_code)]\n\
-         {vis} struct {walk};\n\
+         pub struct {walk};\n\
          \n\
          impl {RUNTIME_CODEC}::ListWalk<{inputs}> for {walk} {{\n    \
              type Entry<'b> = {entry_ty};\n\
          \n    \
              #[inline(always)]\n    \
              fn read_with<'b, H: {RUNTIME_CODEC}::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}], _h: &mut H) -> Self::Entry<'b> {{\n        \
-                 {entry}::read_with{held}(_r{call_args}, _h)\n    \
+                 {entry}::read_with(_r{call_args}, _h)\n    \
              }}\n\
          \n    \
              fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{ {advance} }}\n\
+         }}\n"
+    )
+}
+
+/// A walk held in place, as [`held_walk_item`] prints it.
+struct HeldWalk<'a> {
+    /// The walk's name.
+    held: &'a str,
+    /// The walk it holds in place, whose `advance` it carries by.
+    walk: &'a str,
+    /// The entry's view as a path for a call, as [`walk_item`] takes it.
+    entry: &'a str,
+    /// The entry's view as a type, as [`walk_item`] takes it.
+    entry_ty: &'a str,
+    /// How many flag inputs the entry's decode takes.
+    inputs: usize,
+    /// The walk's visibility with the space after it: `pub(super) ` for the walk an entry's
+    /// module writes for the modules of the set, nothing for one its own module alone reads.
+    vis: &'a str,
+}
+
+/// The walk `of.walk` held in place (docs/adr/0140): the same entry, read by its form held in
+/// place, `read_with_inline`, and carried from one entry to the next by that walk's own
+/// `advance`, so the two walks of one list carry by one text. The walk a hot body's scan of a
+/// chain reads by ([`scan_walk`]); no list names it.
+fn held_walk_item(of: &HeldWalk<'_>) -> String {
+    let HeldWalk {
+        held,
+        walk,
+        entry,
+        entry_ty,
+        inputs,
+        vis,
+    } = *of;
+    let held_form = ReadSite::Hot.suffix();
+    let call_args: String = (0..inputs).map(|i| format!(", _a[{i}]")).collect();
+    format!(
+        "#[allow(dead_code)]\n\
+         {vis}struct {held};\n\
+         \n\
+         impl {RUNTIME_CODEC}::ListWalk<{inputs}> for {held} {{\n    \
+             type Entry<'b> = {entry_ty};\n\
+         \n    \
+             #[inline(always)]\n    \
+             fn read_with<'b, H: {RUNTIME_CODEC}::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}], _h: &mut H) -> Self::Entry<'b> {{\n        \
+                 {entry}::read_with{held_form}(_r{call_args}, _h)\n    \
+             }}\n\
+         \n    \
+             #[inline(always)]\n    \
+             fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{\n        \
+                 <{walk} as {RUNTIME_CODEC}::ListWalk<{inputs}>>::advance(_e, _s)\n    \
+             }}\n\
          }}\n"
     )
 }
@@ -579,10 +679,10 @@ pub(super) struct ViewChain<'a> {
     /// The document name of the codec that declares the chain, which the
     /// chain hook is told with each entry (docs/adr/0130).
     pub codec: &'a str,
-    /// The walk the scan reads an entry by ([`ListWalkOf::scan`]): the list's walk, or
-    /// the entry's cold scan walk where a body off the build's hot path holds a list
-    /// that shares a hot entry's walk (docs/adr/0140). Either carries from one entry
-    /// to the next what a walk of the list carries.
+    /// The walk the scan reads an entry by ([`scan_walk`]): the list's walk in the
+    /// entry point, and the walk held in place in the form held in place of a hot
+    /// body (docs/adr/0140). Either carries from one entry to the next what a walk of
+    /// the list carries.
     pub walk: &'a str,
     /// The chain's rule (`rust_chain_rule_item`): where the chain ends, its
     /// depth, and the flag that ends it read off the entry the walk reads

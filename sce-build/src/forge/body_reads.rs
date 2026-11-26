@@ -32,12 +32,16 @@
 //! Hotness is a property of a site, the read of one codec's body inside
 //! another's, not of a codec (docs/adr/0140): the body of a codec the build
 //! names is hot, and so is every read a hot body makes, through the codecs it
-//! reads, transitively ([`HotCodecs`]). A hot body is printed once, as forms
-//! held in place where they are called, which every hot site calls; the
-//! codec's entry points are calls of them, which the cold sites call and which
-//! keep the rule of the sites that call them ([`BodyReadForms`]). A body read
-//! from a hot and from a cold site so has its code once in each hot site and
-//! once in its entry point, and no cold body receives it.
+//! reads, transitively ([`HotCodecs`]). Every body is printed in its entry
+//! points, whose reads are cold sites and call the entry points of what it
+//! holds, and which keep the rule of the cold sites that call them
+//! ([`BodyReadForms`]); a hot body is printed a second time, from the same
+//! text, as forms held in place where they are called, which every hot site
+//! calls and whose reads call the forms held in place of what it holds. A body
+//! read from a hot and from a cold site so has its code once in each hot site
+//! and once in its entry point, and a cold read of it expands no hot body. The
+//! walk of a list is a cold site whatever the body that holds the list: a read
+//! a consumer makes after the frame is read.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -101,7 +105,8 @@ pub struct BodyReadSites {
     reads: BTreeMap<String, BodyReads>,
     /// The sites of each codec's body that read each codec it holds, by the
     /// holder's name and then the held codec's: the edges the hot closure is
-    /// walked along (docs/adr/0140). A codec that reads no body has no entry.
+    /// walked along (docs/adr/0140). The walk of a list is no site of the body
+    /// that holds the list. A codec that reads no body has no entry.
     children: BTreeMap<String, BTreeMap<String, BodyReads>>,
     /// The name of every codec of the set, read by a site of it or not.
     codecs: BTreeSet<String>,
@@ -216,7 +221,10 @@ impl BodyReadSites {
     ///
     /// The sites are kept by the body that holds them too, which the hot
     /// closure is walked along, and each import alias by the codecs it names,
-    /// which a build may name a codec by ([`Self::hot_codecs`]).
+    /// which a build may name a codec by ([`Self::hot_codecs`]). A body holds
+    /// every site but the walk of a list: a walk is a read a consumer makes of
+    /// the list after the frame is read, by the entry's entry point, and no read
+    /// the body makes, so a hot body makes it no hot site (docs/adr/0140).
     pub fn count(set: &[SetCodec<'_>]) -> Self {
         let codecs: BTreeSet<String> = set.iter().map(|member| member.codec.name.clone()).collect();
         let own_view: BTreeMap<&str, bool> = set
@@ -238,44 +246,51 @@ impl BodyReadSites {
                         .insert(name.clone());
                 }
             }
-            // (alias, sites of the parent's view that read it)
+            // (alias, sites of the parent's view that read it, those of them
+            // its body holds): a list's walk is no site of the body.
             let arms = codec
                 .variant
                 .iter()
                 .flat_map(|v| v.arms.iter().chain(v.default_arm.iter()))
-                .map(|arm| (arm.body_alias.as_str(), 1u32));
+                .map(|arm| (arm.body_alias.as_str(), 1u32, 1u32));
             let fields = codec.fields.iter().filter_map(|f| {
                 if let Some(alias) = f.embed_body_alias.as_deref() {
-                    return Some((alias, 1u32));
+                    return Some((alias, 1u32, 1u32));
                 }
                 f.repeat_body_alias
                     .as_deref()
                     .or(f.tlv_chain_body_alias.as_deref())
-                    .map(|alias| (alias, 2u32))
+                    .map(|alias| (alias, 2u32, 1u32))
             });
-            for (alias, view_sites) in arms.chain(fields) {
+            for (alias, view_sites, body_view_sites) in arms.chain(fields) {
                 let Some(name) = parent.imports.get(alias) else {
                     continue;
                 };
                 let Some(&has_own_view) = own_view.get(name.as_str()) else {
                     continue;
                 };
-                let mut reads = BodyReads { eager: 1, view: 0 };
-                if parent.views {
-                    if has_own_view {
-                        reads.view += view_sites;
-                    } else {
-                        reads.eager += view_sites;
+                // The sites that read the body, and those the parent's body
+                // holds: a codec that is its own view is read by a parent's
+                // view through its eager read.
+                let read_at = |view: u32| {
+                    let mut reads = BodyReads { eager: 1, view: 0 };
+                    if parent.views {
+                        if has_own_view {
+                            reads.view += view;
+                        } else {
+                            reads.eager += view;
+                        }
                     }
-                }
+                    reads
+                };
                 let total = sites.entry(name.clone()).or_default();
-                *total = total.and(reads);
+                *total = total.and(read_at(view_sites));
                 let held = children
                     .entry(codec.name.clone())
                     .or_default()
                     .entry(name.clone())
                     .or_default();
-                *held = held.and(reads);
+                *held = held.and(read_at(body_view_sites));
             }
         }
         Self {
@@ -418,17 +433,20 @@ impl HotCodecs {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BodyReadForms {
     /// Whether the body is read on the build's hot path ([`HotCodecs::is_hot`]).
-    /// Its code is printed once, in the forms held in place where they are
-    /// called (`read_into_inline`, `read_inline`, `read_with_inline`), which
-    /// read the codecs it holds and its ZInts by their forms held in place;
-    /// its entry points (`read_into`, `read`, `read_with`) are calls of them.
+    /// Its code is printed twice from its one text: in its entry points
+    /// (`read_into`, `read`, `read_with`), which read the codecs it holds and
+    /// its ZInts by their entry points, and in the forms held in place where
+    /// they are called (`read_into_inline`, `read_inline`, `read_with_inline`),
+    /// which read them by their forms held in place. No entry point calls a
+    /// form held in place.
     pub hot: bool,
     /// Whether every entry point is asked inlined (`--inline-decode`,
     /// [`InlineDecode::Every`]).
     pub every: bool,
     /// The sites of the set that call the entry points, which place them by
-    /// ADR 0137's rule: every site that reads the body but those of hot bodies,
-    /// which call the forms held in place.
+    /// ADR 0137's rule: every site that reads the body but those hot bodies
+    /// hold, which call the forms held in place; the walks of lists among
+    /// them, whatever the body that holds the list.
     pub entry: BodyReads,
 }
 

@@ -4163,3 +4163,19 @@ names no codec generates what it did.
   path makes no call per entry. A build measures its image again where it walks lists of hot entries off its hot path.
 - **A hot codec's module writes `{Codec}ColdScanWalk`**, `pub(super)`, the walk a cold view scans a chain of it by;
   no list names it, and a consumer does not.
+
+## A cold read of a hot Rust body expands no hot body (ADR 0140, amended again)
+
+Landing: the commits that add this section. No golden and no committed tree of generated code changes; a build that
+names no codec generates what it did.
+
+- **The entry points of a hot codec are its body, read cold**: `read_into`, `read` and `read_with` of a codec in the
+  hot closure read what it holds by their entry points and its ZInts by the reader's out-of-line read, where they were
+  one call of the form held in place. A consumer that called an entry point of a hot codec on its hot path, rather than
+  decoding through a hot parent, calls the cold form: it measures again, or names that codec's parent hot.
+- **The walk of a list reads by the entry point at every site**: `{Codec}Walk` reads each entry by `read_with`, the
+  entry codec hot or not, where the previous amendment read a hot entry held in place. A consumer's walk of a list of a
+  hot entry makes one call per entry; a build that walked such lists on its hot path measures again.
+- **`{Codec}ColdScanWalk` is gone**; a hot codec's module writes `{Codec}HeldWalk`, `pub(super)`, the walk a hot body's
+  form held in place scans a chain of it by. A hot body's module writes private `{Codec}{Field}HeldWalk` and
+  `{Codec}{Field}HeldChain` for its own chains. No list names any of them, and a consumer does not.
