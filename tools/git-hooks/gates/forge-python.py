@@ -6,7 +6,14 @@
 {
     "workflows": ["forge-conformance.yml"],
     "runner_workflow": True,
-    "extra": ["backends/python/**"],
+    "extra": ["backends/python/**", "tools/ci-images/host/**"],
+    # The host image (ADR 0145, family `host`): the toolchains of the arm and
+    # the packages the generator links against, the same wherever the gate
+    # runs. The runner pulls the image its Containerfile's digest names and
+    # runs `scripts/gate forge-python` inside it, the generator build among its
+    # deps ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "deps": ["codegen-build"],
     "ci_only": "107s. forge-conformance.yml verifies every language arm "
                "in parallel jobs, which is where this belongs — the arms "

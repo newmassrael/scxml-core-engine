@@ -6,7 +6,14 @@
 {
     "workflows": ["forge-conformance.yml"],
     "runner_workflow": True,
-    "extra": ["backends/rust/**"],
+    "extra": ["backends/rust/**", "tools/ci-images/host/**"],
+    # The host image (ADR 0145, family `host`): the toolchains of the arm and
+    # the packages the generator links against, the same wherever the gate
+    # runs. The runner pulls the image its Containerfile's digest names and
+    # runs `scripts/gate forge-rust` inside it, the generator build among its
+    # deps ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "deps": ["codegen-build"],
     # Warm reads as 0; the release profile it needs is a separate build
     # tree from every other gate, so a cold run pays that once.

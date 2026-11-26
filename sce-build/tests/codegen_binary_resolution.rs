@@ -188,79 +188,14 @@ fn nothing_outside_the_locators_reaches_into_a_profile_directory() {
     );
 }
 
-/// The conformance workflow must download the generator into the
-/// directory the next step makes executable.
-///
-/// Upload names a file, download names a directory, and chmod names a
-/// file again — three independent spellings of one path, none of which
-/// the YAML checks against the others. When the build moved to debug,
-/// upload and chmod moved and download did not: the artifact landed in
-/// `target/release/` and `chmod +x target/debug/sce-codegen` failed
-/// with "No such file or directory" in all four consumer jobs.
-#[test]
-fn the_conformance_workflow_downloads_the_generator_where_it_chmods_it() {
-    let root = repo_root();
-    let workflow = std::fs::read_to_string(root.join(".github/workflows/forge-conformance.yml"))
-        .expect("read forge-conformance.yml");
-
-    let upload: Vec<&str> = workflow
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("path: target/") && l.ends_with("/sce-codegen"))
-        .collect();
-    assert_eq!(
-        upload.len(),
-        1,
-        "expected exactly one upload path naming the binary; found {upload:?}. \
-         This test reads the workflow's shape, so a shape change needs \
-         re-aiming rather than a silent pass",
-    );
-    let uploaded = upload[0].trim_start_matches("path: ").to_string();
-
-    let download_dirs: Vec<String> = workflow
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("path: target/") && !l.ends_with("/sce-codegen"))
-        .map(|l| l.trim_start_matches("path: ").to_string())
-        .collect();
-    let chmod_paths: Vec<String> = workflow
-        .lines()
-        .map(str::trim)
-        .filter_map(|l| l.strip_prefix("run: chmod +x "))
-        .map(str::to_string)
-        .collect();
-
-    assert!(
-        !download_dirs.is_empty() && download_dirs.len() == chmod_paths.len(),
-        "every job that downloads the generator must also make it \
-         executable; found {} download path(s) and {} chmod step(s)",
-        download_dirs.len(),
-        chmod_paths.len(),
-    );
-
-    let mut violations: Vec<String> = Vec::new();
-    for (dir, chmod) in download_dirs.iter().zip(chmod_paths.iter()) {
-        let landed = format!("{dir}/sce-codegen");
-        if &landed != chmod {
-            violations.push(format!(
-                "download `path: {dir}` lands the artifact at {landed}, but \
-                 the job chmods {chmod}"
-            ));
-        }
-        if landed != uploaded {
-            violations.push(format!(
-                "download `path: {dir}` lands the artifact at {landed}, but \
-                 the build job uploaded {uploaded}"
-            ));
-        }
-    }
-    assert!(
-        violations.is_empty(),
-        "the generator artifact is downloaded somewhere other than where it \
-         is used:\n{}",
-        violations.join("\n"),
-    );
-}
+// `the_conformance_workflow_downloads_the_generator_where_it_chmods_it` used to
+// sit here: forge-conformance.yml built the generator in one job and handed it
+// to five arms as an artifact, and the upload, the download and the chmod named
+// one path three ways, which drifted once. Since ADR 0145 every arm runs its
+// gate in the host image and builds the generator there through the gate's
+// `codegen-build` dependency, since a binary linked on the runner is not one to
+// run against the image's libc; with no hand-over there is no path to keep
+// three spellings of.
 
 // The conformance lanes' `| tee` steps used to be pinned here by a test
 // scoped to `forge-conformance.yml` alone, which recorded in its own doc

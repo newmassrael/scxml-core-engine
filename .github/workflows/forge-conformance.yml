@@ -2,13 +2,15 @@ name: SCE Forge Numerical Conformance
 
 # Cross-language numerical conformance harness (15 fixtures x 6 languages).
 #
-# Architecture: build-codegen compiles sce-codegen once and publishes it as
-# an artifact; the 5 subprocess-language jobs (Python/Go/Kotlin/C++/C11)
-# depend on it and download the binary instead of recompiling. Rust stays
-# independent because cargo resolves `sce-build` as a build-dependency of
-# sce-forge-conformance, the Rust harness crate, and cannot consume a
-# pre-built binary. See SCE_FORGE.md and memory
-# conformance_harness_architecture.md for the design.
+# Architecture: every arm is one job that runs its gate in the host image
+# (`tools/ci-images/host/Containerfile`, ADR 0145), which `scripts/gate`
+# pulls by its Containerfile's digest: no step installs a package or a
+# toolchain. Each arm builds the generator in the image, through its gate's
+# `codegen-build` dependency and the shared compile cache. Until 2026-11-26 a
+# job of its own built it once on the runner and handed the binary to five
+# arms as an artifact; a binary linked against the runner's libc is not one
+# to run in the image, and the image's build directory is its own, so the
+# hand-over is gone. See SCE_FORGE.md for the design of the harness.
 #
 # ⚠ The C11 arm joined on 2026-09-17 and was the last to. Its suite —
 # harness template, ten per-kind fragments and a standalone CMake project —
@@ -77,6 +79,10 @@ on:
       - 'settings.gradle.kts'
       - 'gradle.properties'
       - 'gradlew'
+      # The image every arm runs in, and the action that signs the job in to
+      # the registry it is pulled from.
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -137,6 +143,10 @@ on:
       - 'settings.gradle.kts'
       - 'gradle.properties'
       - 'gradlew'
+      # The image every arm runs in, and the action that signs the job in to
+      # the registry it is pulled from.
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 # Re-measured 2026-09-02 over this lane's own last 25 runs: a 25.5 min median
@@ -190,60 +200,7 @@ defaults:
 
 jobs:
   # ============================================================
-  # Build sce-codegen once, publish as artifact for fan-out
-  # ============================================================
-  build-codegen:
-    name: Build sce-codegen
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-    - name: Install Dependencies
-      # libxml2-dev is a build-time requirement for the `libxml` crate used
-      # by sce-build's forge::xsd_validator (wraps libxml2 for XSD schema
-      # checks). The runtime library itself is pre-installed on
-      # ubuntu-latest, but the dev headers must be added for `pkg-config
-      # --libs libxml-2.0` to succeed during the cargo build below.
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxml2-dev pkg-config
-
-    - name: Install Rust Toolchain
-      uses: ./.github/actions/install-rust
-
-    - name: Compile through the shared compile cache
-      id: compile-cache
-      uses: ./.github/actions/compile-cache
-
-    - name: Build sce-codegen
-      run: |
-        # This step builds the debug profile alone, so a release binary
-        # another build left in `target` is not a product of this
-        # commit. The locator knows which path that is; naming it here
-        # would put a build-layout detail back into every workflow.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
-
-    - name: Upload sce-codegen Binary
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: sce-codegen-binary
-        path: target/debug/sce-codegen
-        retention-days: 1
-        if-no-files-found: error
-
-    # What the compile cache answered of this job, and what it could not
-    # (.github/actions/compile-cache).
-    - name: Report what the compile cache answered
-      if: always() && steps.compile-cache.outcome == 'success'
-      run: sccache --show-stats
-
-  # ============================================================
-  # Rust — in-process codegen via build.rs (independent of artifact)
+  # Rust — in-process codegen via build.rs
   # ============================================================
   conformance-rust:
     name: Rust Forge Conformance
@@ -264,35 +221,49 @@ jobs:
     # the ceiling, the share the mutation lane schedules into for the same
     # reason (`scripts/lib/mutation_rounds_cost.sh`).
     timeout-minutes: 30
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    - name: Install Dependencies
-      # libxml2-dev needed because sce-forge-conformance's build.rs pulls in
-      # sce-build as a build-dependency, which transitively requires the
-      # `libxml` crate for XSD validation in forge::xsd_validator. The
-      # runtime crate itself no longer needs it: it has no build script.
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxml2-dev pkg-config
-
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
+      with:
+        registry: false
 
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/sce-gate-containers/forge-rust/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-rust/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-rust/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
+
+    # `--features alloc` is REQUIRED: the numerical_conformance target is
+    # gated `required-features = ["alloc"]` (its fixtures use encode_to_vec
+    # / the owned projection), so without the flag cargo skips or errors on
+    # the target and the harness never executes. The gate passes it, and with
+    # it the harness runs the full cross-language oracle, and the codec
+    # round-trip targets beside it run too.
     - name: Run Rust Conformance Harness
       run: |
-        # `--features alloc` is REQUIRED: the numerical_conformance target is
-        # gated `required-features = ["alloc"]` (its fixtures use encode_to_vec
-        # / the owned projection), so without the flag cargo skips or errors on
-        # the target and the harness never executes. With it the harness runs
-        # the full cross-language oracle, and the codec round-trip targets
-        # beside it run too.
         scripts/gate forge-rust 2>&1 | tee rust_conformance.log
 
     - name: Summarize
@@ -318,40 +289,48 @@ jobs:
       run: sccache --show-stats
 
   # ============================================================
-  # Python — conftest.py bootstrap uses downloaded sce-codegen
+  # Python — conftest.py bootstrap uses the generator built in the image
   # ============================================================
   conformance-python:
     name: Python Forge Conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    needs: build-codegen
+    # 20, from 10: the arm builds the generator in the image now, which the
+    # build job's 10 minutes used to pay for it.
+    timeout-minutes: 20
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    - name: Install libxml2 runtime
-      # The downloaded sce-codegen binary dynamically links libxml2 for
-      # XSD validation. ubuntu-latest pre-installs it, but list it
-      # explicitly so a base-image drift surfaces as a clear install
-      # failure rather than a mysterious "symbol not found" at runtime.
-      run: sudo apt-get install -y libxml2
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download sce-codegen Binary
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        name: sce-codegen-binary
-        # The build job produced it under target/debug; the harness
-        # resolves it from there via _sce_codegen.py.
-        path: target/debug
+        registry: false
 
-    - name: Make sce-codegen Executable
-      run: chmod +x target/debug/sce-codegen
-
-    - name: Setup Python
-      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
-        python-version: '3.11'
+        path: |
+          ~/.cache/sce-gate-containers/forge-python/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-python/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-python/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
     - name: Run Python Conformance Harness
       run: |
@@ -373,42 +352,52 @@ jobs:
         path: python_conformance.log
         retention-days: 14
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # Go — go generate + go test, with gitignore drift guard
   # ============================================================
   conformance-go:
     name: Go Forge Conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: build-codegen
+    # 25, from 15: the arm builds the generator in the image now, which the
+    # build job's 10 minutes used to pay for it.
+    timeout-minutes: 25
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    - name: Install libxml2 runtime
-      # See conformance-python for rationale.
-      run: sudo apt-get install -y libxml2
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download sce-codegen Binary
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        name: sce-codegen-binary
-        # The build job produced it under target/debug; generate.sh
-        # resolves it from there via scripts/lib/sce_codegen.sh.
-        path: target/debug
+        registry: false
 
-    - name: Make sce-codegen Executable
-      run: chmod +x target/debug/sce-codegen
-
-    # The release the build machines run, read from where bx.toml's
-    # `[platform.linux.tools.go]` reads it: the `go` line of that go.mod.
-    - name: Setup Go
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
-        go-version-file: backends/go/forge-runtime/go.mod
-        cache-dependency-path: |
-          backends/go/forge-runtime/go.sum
+        path: |
+          ~/.cache/sce-gate-containers/forge-go/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-go/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-go/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
 
     - name: Drift Guard — generated Go files must stay gitignored
       # The conformance harness and fixture modules are regenerated on every
@@ -422,11 +411,14 @@ jobs:
         git check-ignore -q generated/any.go \
           || { echo "Drift: generated/ directory is no longer gitignored"; exit 1; }
 
-    # Both Go suites in one call. `go generate ./conformance/...` runs
-    # `./generate.sh` (the `//go:generate` directive in
-    # conformance/doc.go), which is what the gate invokes directly, so
-    # the delegation regenerates the same artifacts before the same two
-    # `go test` runs.
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
+
+    # Both Go suites in one call, on the Go release the image pins. `go
+    # generate ./conformance/...` runs `./generate.sh` (the `//go:generate`
+    # directive in conformance/doc.go), which is what the gate invokes
+    # directly, so the delegation regenerates the same artifacts before the
+    # same two `go test` runs.
     #
     # The round-trip half covers a different tree from the conformance
     # half: `./round_trip/generated/` is committed and guarded by §6.2.6
@@ -455,56 +447,73 @@ jobs:
         path: go_conformance.log
         retention-days: 14
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # Kotlin — Gradle GenerateForgeFixtures task + jvmTest
   # ============================================================
   conformance-kotlin:
     name: Kotlin Forge Conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: build-codegen
+    # 25, from 15: the arm builds the generator in the image now, which the
+    # build job's 10 minutes used to pay for it.
+    timeout-minutes: 25
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    - name: Install libxml2 runtime
-      # See conformance-python for rationale.
-      run: sudo apt-get install -y libxml2
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download sce-codegen Binary
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        name: sce-codegen-binary
-        # The build job produced it under target/debug; the Gradle build
-        # resolves it from there via gradle/sce-codegen.gradle.kts.
-        path: target/debug
+        registry: false
 
-    - name: Make sce-codegen Executable
-      run: chmod +x target/debug/sce-codegen
-
-    - name: Setup JDK 17
-      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
-        distribution: 'temurin'
-        java-version: '17'
+        path: |
+          ~/.cache/sce-gate-containers/forge-kotlin/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-kotlin/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-kotlin/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
 
+    # The image's Gradle home, which the gate's Gradle run fills.
     - name: Cache Gradle
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
+          ~/.cache/sce-gate-containers/forge-kotlin/home/.gradle/caches
+          ~/.cache/sce-gate-containers/forge-kotlin/home/.gradle/wrapper
         key: ${{ runner.os }}-gradle-forge-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-forge-
           ${{ runner.os }}-gradle-
 
-    # Through the gate, like the other five arms. Calling `./gradlew` here
-    # directly is what let the local mirror go missing for this arm alone and
-    # nobody notice: two spellings of the same lane cannot be checked against
-    # each other, and `delegation` in tools/git-hooks/gate_registry.py now
-    # refuses the pair drifting apart.
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
+
+    # Through the gate, like the other five arms, on the JDK the image pins.
+    # Calling `./gradlew` here directly is what let the local mirror go
+    # missing for this arm alone and nobody notice: two spellings of the same
+    # lane cannot be checked against each other, and `delegation` in
+    # tools/git-hooks/gate_registry.py now refuses the pair drifting apart.
     - name: Run Kotlin Conformance Harness
       run: scripts/gate forge-kotlin 2>&1 | tee kotlin_conformance.log
 
@@ -535,14 +544,26 @@ jobs:
         path: backends/kotlin/forge-runtime/build/reports/tests/
         retention-days: 14
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   # ============================================================
   # C++ — standalone CMake project under backends/cpp/forge-runtime/tests
   # ============================================================
   conformance-cpp:
     name: C++ Forge Conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: build-codegen
+    # 25, from 15: the arm builds the generator in the image now, which the
+    # build job's 10 minutes used to pay for it.
+    timeout-minutes: 25
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
@@ -550,34 +571,38 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Dependencies
-      # libxml2 (runtime) is required because the downloaded sce-codegen
-      # binary dynamically links libxml2 for XSD validation via the
-      # `libxml` crate. Ubuntu runners pre-install it, but listing it
-      # explicitly guards against drift if the base image changes.
-      # clang-format-19 because the binary formats the C++ it generates
-      # with clang-format pinned to major 19, and refuses without it
-      # (docs/SCE_CODEGEN_DETERMINISM.md §9).
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2 clang-format-19
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download sce-codegen Binary
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        name: sce-codegen-binary
-        # The build job produced it under target/debug; the harness
-        # resolves it from there via cmake/SCEFindCodegen.cmake.
-        path: target/debug
+        registry: false
 
-    - name: Make sce-codegen Executable
-      run: chmod +x target/debug/sce-codegen
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/sce-gate-containers/forge-cpp/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-cpp/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-cpp/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
     # Delegates to the gate runner rather than restating configure, build
     # and ctest. The gate carries this job's build type (RelWithDebInfo)
-    # and uses Ninja when it is installed, which it is here — the reason
-    # this lane kept its own copy was that the gate built something else,
-    # so a local pass said nothing about this job.
+    # and uses Ninja, which the image holds, as it holds the clang-format of
+    # major 19 the generator formats the C++ it writes with
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The reason this lane kept its own
+    # copy was that the gate built something else, so a local pass said
+    # nothing about this job.
     #
     # `tee` keeps the log the summary and the artifact upload below read.
     - name: Run C++ Conformance Harness
@@ -601,11 +626,23 @@ jobs:
         path: cpp_conformance.log
         retention-days: 14
 
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
+
   conformance-c:
     name: C11 Forge Conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: build-codegen
+    # 25, from 15: the arm builds the generator in the image now, which the
+    # build job's 10 minutes used to pay for it.
+    timeout-minutes: 25
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
@@ -613,22 +650,30 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Dependencies
-      # Same set as the C++ lane: the downloaded sce-codegen links libxml2
-      # for XSD validation, and the harness is a CMake project built with
-      # Ninja.
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2
+    # The pinned release, mounted read-only into the image (`gate_in_container`
+    # in scripts/gate): the image carries no Rust of its own.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download sce-codegen Binary
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
       with:
-        name: sce-codegen-binary
-        path: target/debug
+        registry: false
 
-    - name: Make sce-codegen Executable
-      run: chmod +x target/debug/sce-codegen
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/sce-gate-containers/forge-c11/cargo/registry/index
+          ~/.cache/sce-gate-containers/forge-c11/cargo/registry/cache
+          ~/.cache/sce-gate-containers/forge-c11/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
     # Delegates to the same gate the push runs, for the reason the C++ lane
     # states: a job that builds something other than the gate makes a local
@@ -659,3 +704,9 @@ jobs:
         name: forge-conformance-c
         path: c_conformance.log
         retention-days: 14
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats

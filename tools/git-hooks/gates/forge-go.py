@@ -14,7 +14,14 @@
 {
     "workflows": ["forge-conformance.yml"],
     "runner_workflow": True,
-    "extra": ["backends/go/**"],
+    "extra": ["backends/go/**", "tools/ci-images/host/**"],
+    # The host image (ADR 0145, family `host`): the toolchains of the arm and
+    # the packages the generator links against, the same wherever the gate
+    # runs. The runner pulls the image its Containerfile's digest names and
+    # runs `scripts/gate forge-go` inside it, the generator build among its
+    # deps ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "deps": ["codegen-build"],
     # 15s, timed on a warm tree on 2026-09-02 and no longer a normalised
     # figure. Seven observations that day — five `--measure` runs reading
