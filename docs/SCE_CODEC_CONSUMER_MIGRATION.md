@@ -4179,3 +4179,16 @@ names no codec generates what it did.
 - **`{Codec}ColdScanWalk` is gone**; a hot codec's module writes `{Codec}HeldWalk`, `pub(super)`, the walk a hot body's
   form held in place scans a chain of it by. A hot body's module writes private `{Codec}{Field}HeldWalk` and
   `{Codec}{Field}HeldChain` for its own chains. No list names any of them, and a consumer does not.
+
+## A Rust body bounded by a length takes the length in its field's own type (ADR 0128, amended)
+
+Landing: the commits that add this section. The Rust goldens of the codecs that bound a body by a length change by
+the one argument below; nothing else a consumer compiles against does.
+
+- **`SceReader::within` takes `impl WireLength`**, where it took `usize`: the length as its field holds it, an
+  unsigned or signed integer of any width. Generated code passes the field as it is (`cursor.within(total_length, ..)`,
+  where it wrote `total_length as usize`). A consumer that calls `within` by hand with a `usize` passes a `u64`
+  (`u64::try_from(n)`, or the field it read the length from); an integer literal still compiles.
+- **A length the target cannot hold is refused**: a negative length of a signed field, or one past a 32-bit
+  `usize`, is `CodecError::LengthOutOfRange`, where it was cut to its low bits and the frame read another body. On a
+  64-bit target an unsigned length decodes as it did.
