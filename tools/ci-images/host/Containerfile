@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The image the Linux gates run in, the family `host` (docs/adr/0145, D4),
+# wherever they run: a hosted lane, a build machine judging an update to main,
+# a workstation. A gate names this file in `container` (its entry under
+# tools/git-hooks/gates/), and `scripts/gate` runs the gate inside the image,
+# which it pulls as ghcr.io/newmassrael/sce-gate-host:<digest>, the digest
+# being that of this directory, and builds only when the registry has none
+# ("Gates that run in an image" in tools/git-hooks/gate_registry.py). No lane
+# installs a package at job time (D1): what a gate needs of a machine beyond
+# Rust is named here, and a change to it is a commit the gates that use it
+# judge.
+#
+# ## What makes a rebuild the same image (D3)
+#
+# The base is named by its digest, the x86_64 image of ubuntu:24.04 that Docker
+# Hub served on 2026-11-26: the runners and the build machines are x86_64
+# (`arch` of bx.toml's platform), and the first step refuses any other. The
+# package archive is a dated snapshot of the Ubuntu archive, its release,
+# update and security pockets alike, so a rebuild resolves every package to
+# the version it resolved to on that date. Every toolchain downloaded beside
+# the packages is named by its release and the SHA-256 its publisher gives, and
+# the archive is refused before it is unpacked when the two differ.
+#
+# The snapshot service is served over HTTPS only, and the base image carries no
+# certificate authority to check it with. The first step fetches the package
+# index and `ca-certificates` without checking the server's certificate, which
+# leaves what is installed checked as the archive always checks it: the index
+# is signed with the Ubuntu archive key the base image carries, and each
+# package is held to the hash the signed index gives. Every fetch after it
+# checks the certificate.
+#
+# Moving a version is an edit of this directory: a new digest, a new image, and
+# a change every gate that runs here judges.
+#
+# ## What is not here, and why
+#
+# Rust: the runner mounts the release it selected, read-only, and the gate
+# builds with that one and no other (`gate_in_container` in scripts/gate);
+# `a-gate-image-builds-on-the-selected-rust` in the registry's self-test
+# refuses an image that installs one. The compile cache's sccache and the
+# rev-pinned Mnemosyne build are handed in the same way: their pins are the
+# tree's (.github/actions/compile-cache, spec-citations.yml) and the runner
+# provisions them.
+#
+# GenMC, the mesh transport SDKs (vsomeip3, zenohcxx, CycloneDDS), Chrome for
+# Testing, wasm-bindgen, wasm-pack and Bazel are built or fetched by install
+# scripts of their own (scripts/install_genmc.sh, install_mesh_transports.sh,
+# install_chrome.sh) into a home this image does not see. A gate that needs one
+# of them does not run here until its install is a step of this file.
+#
+# ## The pins, and where each one is the tree's
+#
+# A release a script or bx.toml already pins is written here again, because the
+# build context is this directory and nothing outside it reaches the build.
+# `an-image-installs-the-releases-the-tree-pins` in the registry's self-test
+# holds every such copy to its source: Go to backends/go/forge-runtime/go.mod
+# and scripts/install_go.sh, the Arm toolchain to
+# scripts/install_arm_gnu_toolchain.sh, emsdk to scripts/install_emsdk.sh, the
+# JDK's major to the `java-version` of forge-conformance.yml, Node's major to
+# the `node-version` of wasm32-scenarios.yml, and the Python packages to
+# scripts/install_sce_python.sh and backends/python/runtime/pyproject.toml.
+FROM ubuntu:24.04@sha256:9a04f13b3f80ef056361e30868593b1cfd2279fe19e4081cb93a90bf56819d6a
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG UBUNTU_SNAPSHOT=20261126T000000Z
+
+RUN [[ "$(dpkg --print-architecture)" == amd64 ]] \
+    || { echo "the image pins the x86_64 archives only" >&2; exit 1; }
+
+# The snapshot as the one package source, and the certificate authorities.
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list \
+    && printf '%s\n' \
+        'Types: deb' \
+        "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}" \
+        'Suites: noble noble-updates noble-security' \
+        'Components: main universe restricted multiverse' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+        >/etc/apt/sources.list.d/snapshot.sources \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false \
+        install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# The system packages, one line per group, and the gates that need each:
+#
+#   1. The tools every gate's run reaches: the runner and the gate library
+#      (bash, git, python3, curl, xz, unzip), and `lsof` and `fuser` (psmisc),
+#      which the HTTP fixture of the suites reads its port with.
+#   2. The C and C++ toolchain and the build tools: a Rust build links with
+#      `cc`, so every gate that builds the generator; the CMake trees of
+#      cpp-suite, w3c-cpp, w3c-c11, ecma262-lowered-cpp, install-consumer,
+#      the embed gates, forge-cpp and forge-c11; `g++` for the library targets
+#      builds; meson for the subprojects the CMake tree configures; lld, which
+#      the tree links with; `g++-14`, the C++20 compiler GenMC is built with.
+#   3. Clang and LLVM: clang-format-19, which `sce-codegen` formats every C++
+#      tree it writes with and refuses to run without
+#      (docs/SCE_CODEGEN_DETERMINISM.md, section 9), so every gate that
+#      generates C++ and the clang-format gate; clang-19, which emits
+#      embed/MANIFEST.json (regen-reproduces, the embed-manifest gates);
+#      `clang`, the typestate attributes of the workspace suite; llvm-19-dev,
+#      GenMC's build; libclang-dev, which the `libxml` crate's bindgen loads
+#      to build the generator's XSD validator.
+#   4. The libraries the generator and the CMake trees link: libxml2 (the
+#      generator's XSD validator, in every gate that builds it); TLS, zlib and
+#      brotli (cpp-httplib's client, which the installed package config asks
+#      for again in install-consumer); GLib (the dispatcher); spdlog, fmt and
+#      Boost (the engine, and vsomeip3 among the mesh SDKs); libsodium (the C++
+#      COSE host); SQLite (the Rust session store); libffi and libedit
+#      (GenMC).
+#   5. What the Swift toolchain links against, as swift.org lists it for
+#      Ubuntu 24.04 and bx.toml lists it for the build machines: the Swift
+#      rounds of mutation-rounds build the Swift backend.
+#   6. Python: the runner and the registry run on python3, the bindings of
+#      w3c-python-bindings build against its headers (`python3-config`), and
+#      the environment below is a venv of it.
+#   7. Emulation and cross compiling: qemu-system-arm runs c11-mcu's images;
+#      gcc-arm-none-eabi is the freestanding cross compiler the workspace
+#      suite compiles the emitted C11 with (the Arm build below comes first on
+#      PATH, so c11-mcu weighs its images with the compiler its budget names).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash ca-certificates curl git xz-utils unzip zstd file lsof psmisc procps tzdata \
+        build-essential g++ g++-14 cmake ninja-build meson lld pkg-config binutils \
+        clang clang-19 clang-format-19 llvm-19-dev libclang-dev \
+        libxml2 libxml2-dev libssl-dev zlib1g-dev libbrotli-dev libglib2.0-dev libspdlog-dev libfmt-dev libboost-dev libboost-system-dev libboost-thread-dev libboost-filesystem-dev libsodium-dev libsqlite3-dev libsqlite3-0 libffi-dev libedit-dev \
+        libc6-dev libcurl4-openssl-dev libedit2 libncurses-dev libpython3-dev libz3-dev \
+        python3 python3-dev python3-venv python3-pip \
+        qemu-system-arm gcc-arm-none-eabi \
+    && rm -rf /var/lib/apt/lists/*
+
+# Go, the release every backends/go/*/go.mod declares (`go 1.23.0`), with the
+# SHA-256 go.dev publishes, which scripts/install_go.sh pins. forge-go, w3c-go,
+# workspace-tests, mutation-rounds' Go rounds and regen-reproduces run it.
+# GOTOOLCHAIN=local below: a module asking for another release fails here
+# rather than fetching one at run time.
+ARG GO_RELEASE=1.23.0
+ARG GO_SHA256=905a297f19ead44780548933e0ff1a1b86e8327bb459e92f9c0012569f76f5e3
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_RELEASE}.linux-amd64.tar.gz" \
+    && echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum --check --strict - \
+    && tar -xzf /tmp/go.tar.gz -C /usr/local \
+    && rm /tmp/go.tar.gz \
+    && [[ "$(GOTOOLCHAIN=local /usr/local/go/bin/go version)" == "go version go${GO_RELEASE} "* ]]
+
+# The JDK the Kotlin lanes run Gradle on: Eclipse Temurin 17, the distribution
+# and the major their `setup-java` names, at the release Adoptium published as
+# the newest 17 on 2026-11-26, with its SHA-256. w3c-kotlin,
+# ecma262-lowered-kotlin, forge-kotlin, formal-models and workspace-tests (the
+# Kotlin jars its suites start) run it; `sce_gate_require_jdk` in
+# scripts/gates/lib.sh takes JAVA_HOME below.
+ARG JDK_RELEASE=17.0.21.1+2
+ARG JDK_ARCHIVE=OpenJDK17U-jdk_x64_linux_hotspot_17.0.21.1_2.tar.gz
+ARG JDK_SHA256=0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/jdk.tar.gz \
+        "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-${JDK_RELEASE/+/%2B}/${JDK_ARCHIVE}" \
+    && echo "${JDK_SHA256}  /tmp/jdk.tar.gz" | sha256sum --check --strict - \
+    && mkdir -p /opt/jdk-17 \
+    && tar -xzf /tmp/jdk.tar.gz -C /opt/jdk-17 --strip-components=1 \
+    && rm /tmp/jdk.tar.gz \
+    && /opt/jdk-17/bin/javac -version
+
+# Node, the major wasm32-scenarios' `setup-node` names (22), at the release
+# nodejs.org published as the newest 22 on 2026-11-26, with the SHA-256 of its
+# SHASUMS256.txt. wasm32-scenarios runs the wasm32 machines on it, and the
+# suites' BasicHTTP fixtures post to the echo server it runs.
+ARG NODE_RELEASE=22.23.5
+ARG NODE_SHA256=cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/node.tar.xz \
+        "https://nodejs.org/dist/v${NODE_RELEASE}/node-v${NODE_RELEASE}-linux-x64.tar.xz" \
+    && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum --check --strict - \
+    && mkdir -p /opt/node \
+    && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && [[ "$(/opt/node/bin/node --version)" == "v${NODE_RELEASE}" ]]
+
+# The Arm cross compiler c11-mcu builds its images with: Arm's own build of
+# the release its footprint budget is measured with, and the SHA-256 Arm
+# publishes, both of which scripts/install_arm_gnu_toolchain.sh pins
+# (docs/adr/0110, D4). The gate refuses a compiler that is not Arm's build.
+ARG ARM_GNU_TOOLCHAIN_REV=13.2.rel1
+ARG ARM_GNU_TOOLCHAIN_SHA256=6cd1bbc1d9ae57312bcd169ae283153a9572bd6a8e4eeae2fedfbc33b115fdbb
+RUN archive="arm-gnu-toolchain-${ARM_GNU_TOOLCHAIN_REV}-x86_64-arm-none-eabi.tar.xz" \
+    && curl -fsSL --retry 3 --retry-all-errors -o "/tmp/${archive}" \
+        "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_GNU_TOOLCHAIN_REV}/binrel/${archive}" \
+    && echo "${ARM_GNU_TOOLCHAIN_SHA256}  /tmp/${archive}" | sha256sum --check --strict - \
+    && mkdir -p /opt/arm-gnu-toolchain \
+    && tar -xJf "/tmp/${archive}" -C /opt/arm-gnu-toolchain --strip-components=1 \
+    && rm "/tmp/${archive}" \
+    && /opt/arm-gnu-toolchain/bin/arm-none-eabi-gcc --version | grep -F "Arm GNU Toolchain ${ARM_GNU_TOOLCHAIN_REV}" >/dev/null
+
+# The Emscripten SDK at the release scripts/install_emsdk.sh pins, from the
+# emsdk repository at the commit its tag of that release names: w3c-wasm,
+# cpp-suite-wasm, visualizer-wasm and visualizer-layout build with it. As that
+# script does, the cache is frozen and a program is linked from it, so an SDK
+# that would build its system libraries at the first link fails here. The gate
+# library finds it through EMSDK below (`sce_gate_activate_emsdk`) and moves
+# its cache where the gate's account can write (`sce_gate_writable_em_cache`).
+ARG EMSDK_RELEASE=6.0.13
+ARG EMSDK_COMMIT=35659964bc2762fffec0d257997fb61475f765b7
+RUN git clone --quiet https://github.com/emscripten-core/emsdk.git /opt/emsdk \
+    && git -C /opt/emsdk checkout --quiet "${EMSDK_COMMIT}" \
+    && /opt/emsdk/emsdk install "${EMSDK_RELEASE}" \
+    && /opt/emsdk/emsdk activate "${EMSDK_RELEASE}" \
+    && printf '\nFROZEN_CACHE = True\n' >>/opt/emsdk/.emscripten \
+    && rm -rf /opt/emsdk/.git /opt/emsdk/downloads \
+    && /opt/emsdk/upstream/emscripten/emcc --version | grep -F " ${EMSDK_RELEASE} " >/dev/null \
+    && printf '#include <pthread.h>\nint main(void) { return 0; }\n' >/tmp/probe.c \
+    && EM_CONFIG=/opt/emsdk/.emscripten /opt/emsdk/upstream/emscripten/emcc /tmp/probe.c -o /tmp/probe.js \
+    && rm -f /tmp/probe.c /tmp/probe.js /tmp/probe.wasm
+
+# The Python environment the Python suites run in: what
+# scripts/install_sce_python.sh puts in the repository's environment (the
+# runtime's `lupa`, pytest, PyYAML, jsonschema, pypdfium2), every distribution
+# at one version with the SHA-256 of its wheel, and nothing resolved at build
+# time that the file does not name (`--require-hashes`). authoring-core,
+# targets, w3c-python and workspace-tests run on it: it is first on PATH, so it
+# is the `python3` of `sce_gate_python` here.
+COPY python-requirements.txt /tmp/python-requirements.txt
+RUN python3 -m venv /opt/sce-python \
+    && /opt/sce-python/bin/python -m pip install --no-cache-dir --disable-pip-version-check \
+        --require-hashes --only-binary :all: -r /tmp/python-requirements.txt \
+    && /opt/sce-python/bin/python -m pip check \
+    && /opt/sce-python/bin/python -c 'import lupa.lua54, pytest, yaml, jsonschema, pypdfium2' \
+    && rm /tmp/python-requirements.txt
+
+ENV PATH=/opt/sce-python/bin:/opt/arm-gnu-toolchain/bin:/opt/node/bin:/opt/jdk-17/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    JAVA_HOME=/opt/jdk-17 \
+    EMSDK=/opt/emsdk \
+    GOTOOLCHAIN=local \
+    LANG=C.UTF-8

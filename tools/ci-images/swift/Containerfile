@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The image the Swift gates run in, the family `swift` (docs/adr/0145, D4):
+# swift-backend, w3c-swift, ecma262-lowered-swift and forge-swift build and run
+# the Swift packages with the toolchain bx.toml pins, and that toolchain and the
+# packages it links against are this image. `scripts/gate` pulls it as
+# ghcr.io/newmassrael/sce-gate-swift:<digest>, the digest being that of this
+# directory, and builds it only when the registry has none ("Gates that run in
+# an image" in tools/git-hooks/gate_registry.py).
+#
+# A family of its own rather than a part of `host`: the toolchain is
+# gigabytes of compiler and runtime that no other gate runs, and the gates
+# whose environment it is pull it and nothing they do not run.
+#
+# What makes a rebuild the same image is what tools/ci-images/host/Containerfile
+# says for its own: the base by digest, the package archive from a dated
+# snapshot (fetched first without checking the server's certificate, to install
+# the certificate authorities; the signed index checks what is installed), and
+# the toolchain by its release and SHA-256. Rust, sccache and the rev-pinned
+# Mnemosyne build are handed in by the runner, as they are to every image.
+#
+# The release and the digest of its tarball are bx.toml's
+# `[platform.linux.tools.swift]` (the Ubuntu 24.04 one), written here again
+# because nothing outside this directory reaches the build;
+# `an-image-installs-the-releases-the-tree-pins` in the registry's self-test
+# holds the copy to that table.
+FROM ubuntu:24.04@sha256:9a04f13b3f80ef056361e30868593b1cfd2279fe19e4081cb93a90bf56819d6a
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG UBUNTU_SNAPSHOT=20261126T000000Z
+
+RUN [[ "$(dpkg --print-architecture)" == amd64 ]] \
+    || { echo "the image pins the x86_64 archives only" >&2; exit 1; }
+
+# The snapshot as the one package source, and the certificate authorities.
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list \
+    && printf '%s\n' \
+        'Types: deb' \
+        "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}" \
+        'Suites: noble noble-updates noble-security' \
+        'Components: main universe restricted multiverse' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+        >/etc/apt/sources.list.d/snapshot.sources \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false \
+        install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Three groups:
+#
+#   1. What swift.org lists for the toolchain on Ubuntu 24.04, which
+#      swift-backend.yml installed and bx.toml lists for the build machines,
+#      less gnupg2 (the tarball's signature, which the pinned SHA-256 checks
+#      instead): without them the tarball unpacks and `swift --version`
+#      answers, and a compile or a link dies later.
+#   2. What a gate's run reaches beside it: the runner (bash, git, python3,
+#      curl, xz), and the C toolchain a Rust build links with, since every
+#      Swift gate runs on the generator it builds first (`codegen-build`).
+#   3. What the generator's build needs: libxml2 and pkg-config for its XSD
+#      validator, and libclang-dev, which the `libxml` crate's bindgen loads.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        binutils git libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev libncurses-dev libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libz3-dev pkg-config tzdata unzip zlib1g-dev \
+        bash ca-certificates curl xz-utils python3 build-essential \
+        libxml2 libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# The Swift toolchain: swift.org's tarball of the release bx.toml pins for
+# Ubuntu 24.04, refused before it is unpacked unless its SHA-256 is the one
+# bx.toml carries. The gates find it on PATH (`sce_gate_require_swift` in
+# scripts/gates/lib.sh takes the `swift` on PATH when it prints the pinned
+# tag).
+ARG SWIFT_RELEASE=6.4.0
+ARG SWIFT_SHA256=69f7b2b4dbce6090b6c92194b71149a057e16269093b5a9dded38afc4a05094e
+RUN archive="swift-${SWIFT_RELEASE}-RELEASE-ubuntu24.04.tar.gz" \
+    && curl -fsSL --retry 3 --retry-all-errors -o "/tmp/${archive}" \
+        "https://download.swift.org/swift-${SWIFT_RELEASE}-release/ubuntu2404/swift-${SWIFT_RELEASE}-RELEASE/${archive}" \
+    && echo "${SWIFT_SHA256}  /tmp/${archive}" | sha256sum --check --strict - \
+    && mkdir -p /opt/swift \
+    && tar -xzf "/tmp/${archive}" -C /opt/swift --strip-components=1 \
+    && rm "/tmp/${archive}" \
+    && /opt/swift/usr/bin/swift --version
+
+ENV PATH=/opt/swift/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LANG=C.UTF-8
