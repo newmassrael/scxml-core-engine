@@ -4183,6 +4183,23 @@ enum Commands {
         files: Vec<String>,
     },
 
+    /// The formal judges of every level (docs/adr/0115), run on a manifest
+    /// it is given (docs/adr/0146): the TLA+ models a models manifest
+    /// declares, the Verus proofs a proofs manifest declares, the tools they
+    /// run, and the installation of those tools.
+    ///
+    /// A judge prints one line per run and per problem of the declaration,
+    /// and leaves through the exit statuses of `SCE_ERROR_CONTRACT.md` §6:
+    /// 1 with `formal/declaration` (the manifest is not as the tree is) or
+    /// `formal/verdict` (a run answered otherwise than declared), 15 with
+    /// `formal/tool-unavailable` (a pinned tool or its runtime is missing, or
+    /// is not the one pinned). A judge never fetches a tool;
+    /// `formal install` does.
+    Formal {
+        #[command(subcommand)]
+        judge: FormalCommand,
+    },
+
     /// Judge recorded broadcast-log histories for linearizability (ADR 0062
     /// section 5).
     ///
@@ -4949,6 +4966,7 @@ pub fn main() {
             header_dir,
         } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
+        Commands::Formal { judge } => cmd_formal(judge),
         Commands::CheckBroadcastHistory { files, method } => {
             cmd_check_broadcast_history(&files, method)
         }
@@ -5211,6 +5229,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
         | Commands::CheckQueueHistory { .. }
+        | Commands::Formal { .. }
         | Commands::CheckBroadcastHistory { .. }
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
@@ -16402,6 +16421,160 @@ fn cmd_check_aot_briefs(manifest_path: &str, header_dir: &str) {
         "{} AOT test header brief(s) read; none states a spec section",
         registry.fixtures().len()
     );
+}
+
+// ── Subcommand: formal ─────────────────────────────────────────
+//
+// The judges of ADR 0115's levels, as one command (docs/adr/0146). The
+// library is `crate::formal`; this is its command line and its exit.
+
+/// The judges of `sce-codegen formal`.
+#[derive(Subcommand, Debug)]
+enum FormalCommand {
+    /// Check every TLA+ model a models manifest declares, with the pinned TLC
+    /// (docs/adr/0115, D5 and D9).
+    ///
+    /// The modules and configurations are the ones beside the manifest. A run
+    /// that holds must explore exactly the distinct states it records; a run
+    /// that takes a part out must find the violation it names; a promise, a
+    /// progress and what must stay possible are each judged with a run that
+    /// shows they can fail.
+    Models {
+        /// The models manifest (`schemas/sce-formal-models.v1.schema.json`).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// Check one module's runs.
+        #[arg(long)]
+        only: Option<String>,
+        /// `k/N`: check the k-th of N parts of the runs, spread by their
+        /// recorded weight (ADR 0120, D3).
+        #[arg(long, value_parser = crate::formal::models::shard_spec)]
+        shard: Option<(usize, usize)>,
+        /// TLC's `-workers`.
+        #[arg(long, default_value = "auto")]
+        workers: String,
+        /// Write the counts of distinct states TLC found into the manifest,
+        /// after a change that moves a count on purpose; read the diff.
+        #[arg(long)]
+        record: bool,
+    },
+    /// Verify every Rust file a proofs manifest declares, with the pinned Verus
+    /// (docs/adr/0115, D10 and D13).
+    ///
+    /// Each file must verify whole, with the number of functions it records
+    /// and nothing taken on trust; each mutant, a change that breaks what a
+    /// user relies on, must be refused. Paths are read from the root of the
+    /// Git work tree that holds the manifest, and every file of it that
+    /// carries a contract must be declared.
+    Proofs {
+        /// The proofs manifest (`schemas/sce-formal-proofs.v1.schema.json`).
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    /// Print the tools the judges run, as `sce-build/src/formal/toolchain.json`
+    /// pins them (`schemas/sce-formal-toolchain.v1.schema.json`).
+    Toolchain,
+    /// Fetch each pinned tool, admit it by its digest and put it where the
+    /// judges look, unless the one pinned is there.
+    Install {
+        /// Which tool.
+        #[arg(long, value_enum, default_value = "all")]
+        tool: FormalTool,
+        /// Where Verus is unpacked: `~/.local/verus/<version>` unless a build
+        /// machine's declaration names another.
+        #[arg(long)]
+        verus_place: Option<PathBuf>,
+    },
+}
+
+/// A tool `formal install` fetches.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum FormalTool {
+    All,
+    Tlc,
+    Verus,
+}
+
+/// Run one judge of `sce-codegen formal`. See `Commands::Formal`.
+fn cmd_formal(judge: FormalCommand) {
+    use crate::formal::{models, toolchain, FormalError};
+
+    fn leave(err: FormalError) -> ! {
+        current_error_format().emit_and_exit(&err, "")
+    }
+
+    match judge {
+        FormalCommand::Models {
+            manifest,
+            only,
+            shard,
+            workers,
+            record,
+        } => {
+            if shard.is_some() && (only.is_some() || record) {
+                cli_exit(CliError::Usage {
+                    detail:
+                        "formal models: --shard checks a part of every module's runs; it takes no \
+                             --only or --record"
+                            .to_string(),
+                });
+            }
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            let options = models::Options {
+                only: only.as_deref(),
+                shard,
+                workers: &workers,
+                record,
+            };
+            if let Err(err) = models::check(&manifest, &options, &mut report) {
+                leave(err);
+            }
+        }
+        FormalCommand::Proofs { manifest } => {
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            if let Err(err) = crate::formal::proofs::check(&manifest, &mut report) {
+                leave(err);
+            }
+        }
+        FormalCommand::Toolchain => out_line(toolchain::TOOLCHAIN_JSON.trim_end()),
+        FormalCommand::Install { tool, verus_place } => {
+            let pins = toolchain::pinned();
+            let said = |what: &str, installed: toolchain::Installed| match installed {
+                toolchain::Installed::Present(at) => {
+                    out_line(&format!("{what} is at {}", at.display()))
+                }
+                toolchain::Installed::Fetched(at) => {
+                    out_line(&format!("{what} fetched, admitted, at {}", at.display()))
+                }
+            };
+            if matches!(tool, FormalTool::All | FormalTool::Tlc) {
+                match toolchain::install_tlc(&pins.tlc) {
+                    Ok(installed) => said(&format!("TLC {}", pins.tlc.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
+            if matches!(tool, FormalTool::All | FormalTool::Verus) {
+                let place = match verus_place {
+                    Some(place) => place,
+                    None => toolchain::verus_place(&pins.verus).unwrap_or_else(|err| leave(err)),
+                };
+                match toolchain::install_verus(&pins.verus, &place) {
+                    Ok(installed) => said(&format!("Verus {}", pins.verus.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
+        }
+    }
 }
 
 /// Judge recorded queue histories. See `Commands::CheckQueueHistory`.

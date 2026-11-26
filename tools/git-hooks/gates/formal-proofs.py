@@ -12,7 +12,15 @@
 {
     "workflows": ["formal-proofs.yml"],
     "runner_workflow": True,
-    "extra": ["docs/formal/proofs.json", "scripts/formal/proofs.py", "backends/rust/mesh/src/https/**"],
+    # The judge is `target/debug/sce-codegen formal` (docs/adr/0146).
+    "deps": ["codegen-build"],
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145): the JDK TLC
+    # runs on, libxml2 the generator builds with, and curl and unzip, which
+    # `sce-codegen formal install` fetches and unpacks the pinned tool with.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    "extra": ["docs/formal/proofs.json", "sce-build/src/formal/**",
+              "backends/rust/mesh/src/https/**"],
     "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the push set runs "
                "on a developer's machine, which need not carry it or the Rust release it "
                "runs on. formal-proofs.yml runs it on every change to a proved file or its "

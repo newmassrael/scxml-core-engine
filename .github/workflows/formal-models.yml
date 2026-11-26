@@ -1,14 +1,18 @@
 name: Formal Models
 
-# The TLA+ models of docs/formal under TLC (docs/adr/0115, D5). Until this lane,
-# nothing ran them: `scripts/formal/check.sh` was a script a person called, so a
-# model could go stale, or lose a configuration, with no verdict.
+# The TLA+ models of docs/formal under TLC (docs/adr/0115, D5), judged by
+# `sce-codegen formal models` (docs/adr/0146), the command a consumer runs on its
+# own manifest; the consumer-shaped fixture under
+# sce-build/tests/fixtures/formal_consumer is judged by the same command.
 #
 # ## Why a lane of its own
 #
-# It needs Java and the pinned TLC and no other lane does. The jar is small (4 MB)
-# and checked against the digest `docs/formal/models.json` pins, so it is cached
-# under a key made of that file.
+# It needs Java and the pinned TLC and no other lane does. The gate runs in the
+# host image (tools/ci-images/host, docs/adr/0145), which carries the JDK and
+# what the generator builds with; the gate fetches the pinned TLC there with
+# `sce-codegen formal install` and admits it by the digest
+# sce-build/src/formal/toolchain.json pins, into the image's home, which is
+# cached under a key made of that file.
 #
 # ## Why `ci_only` in the registry
 #
@@ -20,9 +24,10 @@ on:
     branches: [ main, develop ]
     paths:
       - 'docs/formal/**'
-      - 'scripts/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'sce-build/tests/fixtures/formal_consumer/**'
       - 'tools/git-hooks/spec_isolation.py'
-      - 'scripts/lib/ctest_shards.py'
+      - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -31,9 +36,10 @@ on:
     branches: [ main ]
     paths:
       - 'docs/formal/**'
-      - 'scripts/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'sce-build/tests/fixtures/formal_consumer/**'
       - 'tools/git-hooks/spec_isolation.py'
-      - 'scripts/lib/ctest_shards.py'
+      - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -46,14 +52,20 @@ concurrency:
 
 jobs:
   # The runs in three parts, one job each, spread by the states each run
-  # records (`shard_runs` in scripts/formal/models.py, whose self-test the gate
-  # runs first holds the parts to every run once). Whole, the runs took 1042 s
+  # records (`shard_runs` in sce-build/src/formal/models.rs, whose unit test
+  # holds the parts to every run once). Whole, the runs took 1042 s
   # (job 138489726305, 2026-11-24), the largest 248 s, so three parts are
-  # about six minutes each beside a minute of Java and TLC every job pays.
+  # about six minutes each beside the generator's build every job pays.
   formal-models:
     name: Formal Models (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -64,19 +76,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Set up Java
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
 
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
+
+      # The registry's credentials, so the runner pulls the gate's image by the
+      # digest of its build context and a run on main pushes one it built
+      # (.github/actions/gate-image).
+      - name: Pull the gate's image
+        uses: ./.github/actions/gate-image
+
+      # The image's home (`gate_in_container` in scripts/gate), where the gate's
+      # `sce-codegen formal install` keeps the TLC it admitted.
       - name: Restore TLC
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: ~/.cache/sce-formal
-          key: tlc-${{ hashFiles('docs/formal/models.json') }}
+          path: ~/.cache/sce-gate-containers/formal-models/home/.cache/sce-formal
+          key: tlc-${{ hashFiles('sce-build/src/formal/toolchain.json') }}
 
       - name: Formal models gate
         env:
           SCE_FORMAL_MODELS_SHARD: ${{ matrix.shard }}/3
         run: scripts/gate formal-models
+
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

@@ -5804,10 +5804,6 @@
           "kind": "references"
         },
         {
-          "file": "scripts/formal/check.sh",
-          "kind": "references"
-        },
-        {
           "file": "backends/c/forge-runtime/tests/conformance/broadcast_log_generated_test.c",
           "kind": "references"
         },
@@ -7909,6 +7905,12 @@
       "target_kind": "section",
       "target_id": "synth-6.2.6",
       "reason": "2b02438ff75 dropped the only citation in sce-build/build.rs: producers are named by a source digest, not the generator hash 6.2.6 covers"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "The judge moved into sce-codegen formal (docs/adr/0144, D2) and scripts/formal/check.sh is deleted; the judge is generic and cites no kind's section"
     }
   ],
   "frames": {},

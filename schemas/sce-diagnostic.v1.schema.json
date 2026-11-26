@@ -412,6 +412,9 @@
         "cli/diagram-unavailable",
         "cli/diagram-does-not-fit",
         "cli/profile-unusable",
+        "formal/declaration",
+        "formal/verdict",
+        "formal/tool-unavailable",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",
@@ -624,7 +627,8 @@
         "mesh-deploy",
         "mesh-external",
         "mesh-topology",
-        "mesh-codegen"
+        "mesh-codegen",
+        "formal"
       ]
     },
     "spec": {

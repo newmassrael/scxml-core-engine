@@ -155,4 +155,4 @@ look for. It is the reason a reviewer's time can go to what they did not.
 
 Running it: `cargo test -p sce-rust-trust -p sce-rust-relay -p sce-rust-mls -p sce-mls-capi
 -p sce-rust-assurance` (the C ABI's replay needs `cc`, `python3` and `go`, or `SCE_REQUIRE_TOOLS` unset);
-the model: `scripts/formal/check.sh`; a longer fuzz: `SCE_FUZZ_FACTOR=50 cargo test -p sce-rust-assurance`.
+the model: `sce-codegen formal models --manifest docs/formal/models.json --only SharedListConvergence`; a longer fuzz: `SCE_FUZZ_FACTOR=50 cargo test -p sce-rust-assurance`.
