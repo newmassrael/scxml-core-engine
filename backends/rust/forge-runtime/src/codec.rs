@@ -606,15 +606,22 @@ impl<'a> SceCursor<'a> {
     /// too (docs/adr/0130). A field is a call of it; no field reads a ZInt of
     /// one byte in place (docs/adr/0138).
     ///
-    /// A ZInt of one byte is this function's first branch: one call answers
-    /// it, and only a longer one goes on to [`read_zint`] (docs/adr/0138,
-    /// amendment of 2026-11-26).
+    /// A ZInt of one or two bytes is answered by this function's first two
+    /// branches: one call answers it, and only a longer one goes on to
+    /// [`read_zint`] (docs/adr/0138, amendments of 2026-11-26).
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        if let Some(&byte) = self.buf.get(self.pos) {
-            if byte & 0x80 == 0 {
+        if let Some(&first) = self.buf.get(self.pos) {
+            if first & 0x80 == 0 {
                 self.pos += 1;
-                return Ok(u64::from(byte));
+                return Ok(u64::from(first));
+            }
+            // Two bytes hold fourteen bits, which every width holds.
+            if let Some(&second) = self.buf.get(self.pos + 1) {
+                if second & 0x80 == 0 {
+                    self.pos += 2;
+                    return Ok(u64::from(first & 0x7F) | (u64::from(second) << 7));
+                }
             }
         }
         let (value, at) = read_zint(self.buf, self.pos, max_bits);

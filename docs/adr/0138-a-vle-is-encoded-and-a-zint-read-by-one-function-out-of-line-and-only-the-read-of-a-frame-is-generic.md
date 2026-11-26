@@ -191,3 +191,15 @@ Each reader's one out-of-line ZInt read now answers a byte below 0x80 in its fir
 only for a longer ZInt. A one-byte field is one call, as the baseline's out-of-line cursor read was; the shared body
 stays one copy, and no read site holds the test in place, so the size this ADR recovered is kept. The two readers'
 reads each hold the same four-instruction test, which is the price of one call where there were two.
+
+## Amendment, 2026-11-26 (second): a ZInt of two bytes is the read's second branch
+
+Measured at 540f688ea2e with the same harness: the whole image still smaller (-571 B over the consumer's areas, the
+codec area +1,353 B), the receive path of an 8-byte put at 4,887.5 instructions a message against the baseline's
+4,856 (+31), with `codec::read_zint` at 65 of its own a message where the baseline's out-of-line cursor read took
+57. The ZInts that still reached the shared body were the two-byte ones, a sequence number past 127 first among
+them.
+
+Each reader's ZInt read answers two bytes in its second branch as well, with no width test: fourteen bits are below
+every width a field is read at (`vle_u16` the narrowest). Only a ZInt of three bytes or more calls `read_zint`. The
+size cost is a few instructions in each of the two reads; no read site holds anything in place.

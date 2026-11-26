@@ -299,16 +299,24 @@ impl<'a> SceReader<'a> {
     /// call that answers the value; no field reads a ZInt of one byte in place,
     /// and none holds the body's answer or its record (docs/adr/0138).
     ///
-    /// A ZInt of one byte, the most a field holds (an id, a length, a count), is
-    /// this function's first branch: one call answers it, and only a longer one
-    /// goes on to the shared body (docs/adr/0138, amendment of 2026-11-26). A
-    /// byte below 0x80 is a value every width holds.
+    /// A ZInt of one or two bytes, what nearly every field holds (an id, a
+    /// length, a count, a sequence number), is answered by this function's first
+    /// two branches: one call answers it, and only a longer one goes on to the
+    /// shared body (docs/adr/0138, amendments of 2026-11-26). Two bytes hold
+    /// fourteen bits, below every width's limit, so neither branch tests it.
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        if let Some(&byte) = self.buf.get(self.pos) {
-            if byte & 0x80 == 0 {
+        if let Some(&first) = self.buf.get(self.pos) {
+            if first & 0x80 == 0 {
                 self.pos += 1;
-                return u64::from(byte);
+                return u64::from(first);
+            }
+            // Two bytes hold fourteen bits, which every width holds.
+            if let Some(&second) = self.buf.get(self.pos + 1) {
+                if second & 0x80 == 0 {
+                    self.pos += 2;
+                    return u64::from(first & 0x7F) | (u64::from(second) << 7);
+                }
             }
         }
         let (value, at) = read_zint(self.buf, self.pos, max_bits);
