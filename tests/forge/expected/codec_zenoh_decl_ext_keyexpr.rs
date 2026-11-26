@@ -506,7 +506,7 @@ impl<'a> CodecZenohDeclExtKeyexprView<'a> {
         let total_length = cursor.read_vle_u64();
         #[allow(clippy::needless_late_init)]
         let inner: CodecZenohDeclExtKeyexprInnerView<'a>;
-        inner = cursor.within(total_length as usize, CodecZenohDeclExtKeyexprInnerView::read);
+        inner = cursor.within(total_length as usize, |_inner| CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook));
         Self {
             outer_header,
             total_length,
