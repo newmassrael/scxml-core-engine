@@ -284,6 +284,17 @@ fn main() {
         &options,
     );
 
+    // Step 7b': a chain inside a body a length bounds (docs/adr/0130). The body
+    // is the catalog's `codec_tlv_chain_basic` (Step 2), whose chain is read
+    // while bytes remain; `forge_chain_within_length.rs` reads the view with a
+    // chain hook and holds the hook to every entry of that chain.
+    generate_stripped_fixtures(
+        &["codec_chain_within_length"],
+        &source_fixtures,
+        &out_dir,
+        &options,
+    );
+
     // Step 7c: a CBOR map whose entries hold a bounded list of records
     // (docs/adr/0085, Landing order step 3a). The codec and the event schema of its
     // record are `sce-build`'s fixtures, which no generated tree hashes. The codec

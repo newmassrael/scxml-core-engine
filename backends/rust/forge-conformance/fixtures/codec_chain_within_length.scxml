@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0130): a chain inside a body a length
+     bounds. The body is codec_tlv_chain_basic, whose chain of
+     codec_tlv_entry is read while bytes remain, so its end is the end of the
+     bytes the length gives it. A view of this codec read with a chain hook
+     shows the hook every entry of that chain, in its one read. Read by
+     tests/forge_chain_within_length.rs.
+
+     Wire shape:
+       byte 0+ : total_length, the length of the body (VLE).
+       then    : inner, `total_length` bytes: header_flags, then the entries
+                 of its chain, each a type, a length and that many bytes.
+       then    : trailer, one byte after the body.
+
+     Wire oracle:
+       total_length 9, inner 0x01 (0x10 "ABC") (0x20 "X"), trailer 0x7e
+       = 0x09 0x01 0x10 0x03 0x41 0x42 0x43 0x20 0x01 0x58 0x7e
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_within_length">
+  <sce:import src="../../../../tests/forge/resources/codec_tlv_chain_basic.scxml" kind="codec"
+              as="codec_tlv_chain_basic"/>
+  <datamodel>
+    <sce:field id="total_length" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="inner" type="codec_tlv_chain_basic" sce:byte="1"
+               sce:length-from="total_length"/>
+    <sce:field id="trailer" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>
