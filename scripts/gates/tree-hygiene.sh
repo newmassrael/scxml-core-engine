@@ -331,6 +331,7 @@ hygiene_part cargo test -p sce-build --features cli,ffi \
     --test a_documents_tables_are_its_tree_in_document_order \
     --test a_workflow_names_the_image_it_runs_on \
     --test a_pipeline_has_no_reader_that_leaves_early \
+    --test no_workflow_installs_a_package_at_job_time \
     || sce_gate_fail "tree-wide hygiene gates"
 
 # What this part ran, for the lane's last job to hold beside the other parts'

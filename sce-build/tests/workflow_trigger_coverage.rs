@@ -406,6 +406,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // wherever it is written, so a filter over today's fixtures names the
     // documents already known to agree.
     "the_class_walker_runs_as_the_general_interpreter_does",
+    // Reads every file under `.github/` and refuses a package installed at
+    // job time (docs/adr/0145). The workflow that installs the next one is any
+    // workflow, and the lanes' filters name their own files, not one another's.
+    "no_workflow_installs_a_package_at_job_time",
     "workflow_trigger_coverage",
 ];
 
