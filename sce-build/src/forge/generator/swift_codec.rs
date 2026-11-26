@@ -666,14 +666,9 @@ fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
                     "a length held in `{name}`, which is not an unsigned integer"
                 ));
             }
-            if m.fields
-                .iter()
-                .any(|g| g.id == name && g.present_if.is_some() && g.present_if != f.present_if)
-            {
-                return what(&format!(
-                    "a length held in `{name}`, which is on the wire only on a condition the field is not"
-                ));
-            }
+            // A length gated otherwise than the field it measures is refused for
+            // every backend by validation (the co-gating contract of
+            // `forge::parser`), before a generator sees the document.
         }
     }
     None

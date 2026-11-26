@@ -581,8 +581,10 @@ fn a_length_that_is_on_the_wire_under_another_gate_than_its_field_is_refused() {
            <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
     )
     .expect_err("a length gated otherwise than its field is not written");
+    // Validation refuses it for every backend (the co-gating contract), before
+    // the Swift generator sees the document.
     assert!(
-        refusal.contains("on the wire only on a condition the field is not"),
+        refusal.contains("co-gating contract") && refusal.contains("length source 'n'"),
         "{refusal}"
     );
 }
