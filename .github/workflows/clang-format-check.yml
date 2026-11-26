@@ -8,7 +8,11 @@ name: clang-format check
 #
 # File enumeration and the generated-source skip policy live in
 # scripts/check_clang_format.sh, shared with the pre-commit hook
-# (tools/git-hooks/pre-commit Stage 1) so local and CI gating agree.
+# (tools/git-hooks/pre-commit Stage 1) so local and CI gating agree. The lane
+# runs it through the `clang-format` gate, in the host image that carries
+# clang-format-19 (tools/ci-images/host, docs/adr/0145), so the formatter is
+# the same patch release on every run instead of whatever the archive held
+# the day the job installed it.
 # Vendored subtrees (third_party/, examples/doom_wasm/doomgeneric/)
 # are excluded by their own .clang-format DisableFormat markers.
 #
@@ -29,6 +33,14 @@ on:
       - '**/.clang-format'
       - 'scripts/check_clang_format.sh'
       - '.github/workflows/clang-format-check.yml'
+      # The gate the lane runs, and the image it runs in.
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/clang-format.sh'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -40,6 +52,14 @@ on:
       - '**/.clang-format'
       - 'scripts/check_clang_format.sh'
       - '.github/workflows/clang-format-check.yml'
+      # The gate the lane runs, and the image it runs in.
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/clang-format.sh'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -51,15 +71,28 @@ jobs:
     name: clang-format --dry-run --Werror
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    - name: Install clang-format-19
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-format-19
+    # The runner hands the image the Rust release it selected, whatever the
+    # gate runs (`gate_in_container` in scripts/gate); this one compiles
+    # nothing with it.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
+
+    # The registry's credentials, so the runner pulls the gate's image by the
+    # digest of its build context and a run on main pushes one it built
+    # (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
 
     - name: clang-format conformance check
-      run: CLANG_FORMAT=clang-format-19 scripts/check_clang_format.sh
+      run: scripts/gate clang-format

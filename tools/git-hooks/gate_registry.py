@@ -460,7 +460,12 @@ COST_MEASURED: dict[str, str] = {
 # 32 -> 33 on 2026-11-20, the same direction: `c11-mcu` arrived written where
 # no ARM compiler could run, so its cost is an estimate its entry derives. Its
 # first run reads it.
-UNMEASURED_COST_CEILING = 33
+#
+# 33 -> 35 on 2026-11-26, the same direction: `clang-format` and
+# `generated-diff` arrived as the gate forms of two lanes that ran their
+# scripts inline, so that the lanes could run them in the host image
+# (docs/adr/0145). Each entry derives its estimate; its first run reads it.
+UNMEASURED_COST_CEILING = 35
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1149,17 +1154,16 @@ GATES: dict[str, dict] = gate_table.load_table()
 # reproduce. A `commit-hook:<command>` reason is checked rather than
 # believed — the named command must appear in the commit hook.
 UNMIRRORED_WORKFLOWS: dict[str, str] = {
-    # Both run at commit time instead of push time, which is earlier than a
-    # gate would catch them: a formatting fix-up never becomes its own
-    # commit. The hook's stage comments named `rust-ci.yml` for years — a
-    # workflow this repository does not have — which is exactly the drift
+    # It runs at commit time instead of push time, which is earlier than a
+    # gate would catch it: a formatting fix-up never becomes its own commit.
+    # The hook's stage comments named `rust-ci.yml` for years — a workflow
+    # this repository does not have — which is exactly the drift
     # `rustdoc-links` had and the reason these claims are now checked.
+    # `clang-format-check.yml` stood beside it until its check needed the
+    # host image's clang-format-19, which a lane reaches through a gate
+    # (`clang-format`, docs/adr/0145); the commit hook still runs it on the
+    # staged files.
     "fmt-check.yml": "commit-hook: cargo fmt --all -- --check",
-    "clang-format-check.yml": "commit-hook: scripts/check_clang_format.sh",
-    # A publication, not a verification: it renders what a change does to the
-    # generated code (ADR 0097, section 6) and judges nothing a push could
-    # reproduce. The same diff is one `scripts/generated_diff.sh` away.
-    "generated-diff.yml": "publication: scripts/generated_diff.sh renders it",
     # A publication too: on a release tag it packs the consumer packages with
     # their generated trees and provenance and pushes the release commit's
     # tags (ADR 0097, section 7). Its declaration is read by

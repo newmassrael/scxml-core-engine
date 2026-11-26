@@ -12,8 +12,10 @@ name: Generated Diff
 #
 # It renders; it reaches no verdict about the change. It fails only when the
 # head cannot materialize a tree it declares, which the reviewer must see
-# rather than read as "no difference". `scripts/generated_diff.sh` renders the
-# same diff on a workstation.
+# rather than read as "no difference". The lane runs the `generated-diff` gate,
+# which runs `scripts/generated_diff.sh` in the host image
+# (tools/ci-images/host, docs/adr/0145); `scripts/gate generated-diff` renders
+# the same diff on a workstation.
 #
 # The summary is the run's and not a comment on the change: a comment needs
 # write access to the change, which a run for a fork is not given, and the
@@ -40,10 +42,13 @@ jobs:
     timeout-minutes: 60
 
     # `actions: read` lists this workflow's earlier runs to find the last one
-    # that published; `contents: read` is what checkout needs.
+    # that published; `contents: read` is what checkout needs; `packages:
+    # write` is for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why it cannot follow the event).
     permissions:
       contents: read
       actions: read
+      packages: write
 
     steps:
     # Full history: the base is a commit the lane checks out a worktree of.
@@ -51,14 +56,6 @@ jobs:
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 0
-
-    # libxml2 backs the default `xsd` feature the generator builds with, and
-    # clang-format-19 is the formatter the generator runs on the C++ trees and
-    # refuses without (docs/SCE_CODEGEN_DETERMINISM.md section 9).
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
 
     # The release rust-toolchain.toml pins, which lists rustfmt: the Rust
     # trees are formatted with it.
@@ -68,6 +65,12 @@ jobs:
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
+
+    # The gate runs in the host image, which holds libxml2 for the generator's
+    # build, clang-format-19 for its C++ trees and Go for gofmt; this gives the
+    # runner the registry's credentials to pull it (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
 
     # A pull request carries its base, and the head checked out is the merge
     # of the change onto it. A push starts where the last run that PUBLISHED
@@ -104,18 +107,23 @@ jobs:
           echo "base=" >> "$GITHUB_OUTPUT"
         fi
 
-    # Into the runner's temporary directory, not the checkout: an untracked
-    # directory in the checkout would make the head a side that needs a
-    # worktree and a second build of the generator.
+    # Into `target/generated-diff/`, which git ignores, so the head stays a
+    # side the checkout holds as committed. In the image `target/` is the
+    # image's own build directory in its cache (`gate_in_container` in
+    # scripts/gate), which the two steps after read.
     - name: Render the generated diff
       if: steps.base.outputs.base != ''
-      run: scripts/generated_diff.sh --out "${{ runner.temp }}/generated-diff" "${{ steps.base.outputs.base }}" "${{ github.sha }}"
+      env:
+        SCE_GENERATED_DIFF_BASE: ${{ steps.base.outputs.base }}
+        SCE_GENERATED_DIFF_HEAD: ${{ github.sha }}
+      run: scripts/gate generated-diff
 
     - name: Publish the summary
       if: always() && steps.base.outputs.base != ''
       run: |
-        if [ -f "${{ runner.temp }}/generated-diff/summary.md" ]; then
-          cat "${{ runner.temp }}/generated-diff/summary.md" >> "$GITHUB_STEP_SUMMARY"
+        summary=~/.cache/sce-gate-containers/generated-diff/target/generated-diff/summary.md
+        if [ -f "$summary" ]; then
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Upload the patches
@@ -123,7 +131,7 @@ jobs:
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: generated-diff
-        path: ${{ runner.temp }}/generated-diff/
+        path: ~/.cache/sce-gate-containers/generated-diff/target/generated-diff/
         if-no-files-found: ignore
 
     # What the compile cache answered of this job, and what it could not
