@@ -70,12 +70,13 @@ refs/heads/main $A refs/heads/main $B"
 # ── The whole hook, on a repository made here ────────────────────────────────────────────────────
 #
 # The hook files are copied in, since the hook sources its neighbours by its own path, and
-# scripts/gate is a stand-in. Commits are made under the first identity ident-gate.sh accepts, and
+# scripts/gate is a stand-in. The copy is of the directory, since the gate table reads its
+# entries from `gates/` beside it. Commits are made under the first identity ident-gate.sh accepts, and
 # the restricted-term list is one term no fixture holds, so the checks ahead of the gates pass.
 REPO="$WORK/repo"
 LOG="$WORK/asked"
 mkdir -p "$REPO/tools/git-hooks" "$REPO/scripts" "$WORK/bin"
-cp "$HERE"/* "$REPO/tools/git-hooks/"
+cp -R "$HERE"/. "$REPO/tools/git-hooks/"
 cat >"$REPO/scripts/gate" <<'STUB'
 #!/usr/bin/env bash
 printf 'runner %s\n' "$*" >>"$PREPUSH_TEST_LOG"
