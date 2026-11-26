@@ -34,7 +34,7 @@
 //! that starts where the cursor stands and moves the cursor past the frame
 //! only when the frame was read whole.
 
-use crate::codec::{read_vle_at, read_zint_short, CodecError, SceCursor};
+use crate::codec::{read_zint_short, CodecError, SceCursor};
 
 /// `N` zero bytes that live for the whole program: what a read of a fixed
 /// count of bytes returns once the frame has failed, so that its length is
@@ -54,8 +54,10 @@ const fn zeros<const N: usize>() -> &'static [u8; N] {
 /// ([`SceReader::rewind`]), and keeps what it recorded.
 #[derive(Debug, Clone)]
 pub struct SceReader<'a> {
-    buf: &'a [u8],
-    pos: usize,
+    /// The reader's place in its input: a cursor, so that a read the cursor
+    /// and the reader share is one function that takes the place alone
+    /// (`SceCursor::read_vle_inner`, docs/adr/0138 fifth amendment).
+    place: SceCursor<'a>,
     fault: Option<CodecError>,
     over: bool,
 }
@@ -64,8 +66,7 @@ impl<'a> SceReader<'a> {
     /// A reader at the start of `buf`, with nothing recorded.
     pub const fn new(buf: &'a [u8]) -> Self {
         Self {
-            buf,
-            pos: 0,
+            place: SceCursor::new(buf),
             fault: None,
             over: false,
         }
@@ -74,12 +75,12 @@ impl<'a> SceReader<'a> {
     /// The bytes from where the reader stands to the end of its input: zero
     /// once the frame has failed, so a loop to the end of the frame stops.
     pub const fn remaining(&self) -> usize {
-        self.buf.len() - self.pos
+        self.place.buf.len() - self.place.pos
     }
 
     /// How many bytes of its input the reader has consumed.
     pub const fn position(&self) -> usize {
-        self.pos
+        self.place.pos
     }
 
     /// Whether a refusal is recorded: the frame does not decode, and every read
@@ -122,7 +123,7 @@ impl<'a> SceReader<'a> {
         if self.fault.is_none() {
             self.fault = Some(refusal);
         }
-        self.pos = self.buf.len();
+        self.place.pos = self.place.buf.len();
     }
 
     /// Note that a value of the frame was past what its profile holds; the
@@ -202,10 +203,10 @@ impl<'a> SceReader<'a> {
     /// zeros alike.
     #[inline]
     pub fn take_array<const N: usize>(&mut self) -> &'a [u8; N] {
-        let buf = self.buf;
-        match buf.get(self.pos..).and_then(<[u8]>::first_chunk::<N>) {
+        let buf = self.place.buf;
+        match buf.get(self.place.pos..).and_then(<[u8]>::first_chunk::<N>) {
             Some(bytes) => {
-                self.pos += N;
+                self.place.pos += N;
                 bytes
             }
             None => {
@@ -219,10 +220,10 @@ impl<'a> SceReader<'a> {
     /// where fewer remain.
     #[inline]
     pub fn take_slice(&mut self, n: usize) -> &'a [u8] {
-        let buf = self.buf;
-        match buf.get(self.pos..).and_then(|rest| rest.get(..n)) {
+        let buf = self.place.buf;
+        match buf.get(self.place.pos..).and_then(|rest| rest.get(..n)) {
             Some(bytes) => {
-                self.pos += n;
+                self.place.pos += n;
                 bytes
             }
             None => {
@@ -237,7 +238,7 @@ impl<'a> SceReader<'a> {
     #[inline]
     pub fn take_rest(&mut self) -> &'a [u8] {
         let rest = self.rest();
-        self.pos = self.buf.len();
+        self.place.pos = self.place.buf.len();
         rest
     }
 
@@ -245,8 +246,8 @@ impl<'a> SceReader<'a> {
     /// failed.
     #[inline]
     pub fn rest(&self) -> &'a [u8] {
-        let buf = self.buf;
-        buf.get(self.pos..).unwrap_or(&[])
+        let buf = self.place.buf;
+        buf.get(self.place.pos..).unwrap_or(&[])
     }
 
     /// Every byte that remains, not consumed, where at least `N` do; `N` zero
@@ -268,7 +269,7 @@ impl<'a> SceReader<'a> {
     /// it as its own header.
     #[inline]
     pub fn peek_u8(&mut self) -> u8 {
-        match self.buf.get(self.pos) {
+        match self.place.buf.get(self.place.pos) {
             Some(&byte) => byte,
             None => {
                 self.fail(CodecError::NeedMoreBytes);
@@ -283,7 +284,7 @@ impl<'a> SceReader<'a> {
         if self.remaining() < n {
             self.fail(CodecError::NeedMoreBytes);
         } else {
-            self.pos += n;
+            self.place.pos += n;
         }
     }
 
@@ -296,16 +297,17 @@ impl<'a> SceReader<'a> {
     /// The reader's one read of a ZInt, out of line, for every width and every
     /// length. A ZInt of one or two bytes, what nearly every field holds, is
     /// answered here by `codec::read_zint_short`; a longer one is a call of
-    /// `codec::read_vle_at`, the program's one copy of the decode, which the
-    /// cursor's read calls too, so the two readers of a ZInt run one decode
-    /// (docs/adr/0130, docs/adr/0138 fifth amendment). A field is a call that
-    /// answers the value, and none holds the body's answer or its record.
+    /// the cursor's one ZInt read over the reader's place in its input
+    /// ([`SceCursor::read_vle_inner`]), the program's one copy of the decode,
+    /// so the two readers of a ZInt run one decode (docs/adr/0130, docs/adr/0138
+    /// fifth amendment). A field is a call that answers the value, and none
+    /// holds the body's answer or its record.
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        if let Some(value) = read_zint_short(self.buf, &mut self.pos) {
+        if let Some(value) = read_zint_short(self.place.buf, &mut self.place.pos) {
             return value;
         }
-        match read_vle_at(self.buf, &mut self.pos, max_bits) {
+        match self.place.read_vle_inner(max_bits) {
             Ok(value) => value,
             Err(refused) => {
                 self.fail(refused);
@@ -321,7 +323,7 @@ impl<'a> SceReader<'a> {
     /// its refusal.
     #[inline(always)]
     fn read_vle_held(&mut self, max_bits: u32) -> u64 {
-        match read_zint_short(self.buf, &mut self.pos) {
+        match read_zint_short(self.place.buf, &mut self.place.pos) {
             Some(value) => value,
             None => self.read_vle_inner(max_bits),
         }
@@ -368,7 +370,7 @@ impl<'a> SceReader<'a> {
     /// Where the reader stands, to come back to with [`Self::rewind`]: how a
     /// decode reads a span again.
     pub const fn mark(&self) -> usize {
-        self.pos
+        self.place.pos
     }
 
     /// The bytes consumed since `at`, a [`Self::mark`] of this reader: what one
@@ -378,15 +380,15 @@ impl<'a> SceReader<'a> {
         if self.fault.is_some() {
             return &[];
         }
-        let buf = self.buf;
-        buf.get(at..self.pos).unwrap_or(&[])
+        let buf = self.place.buf;
+        buf.get(at..self.place.pos).unwrap_or(&[])
     }
 
     /// Go back to `at`, a [`Self::mark`] of this reader. What the reader
     /// recorded stays: a failed frame stays failed, and its input ended.
     pub fn rewind(&mut self, at: usize) {
-        if self.fault.is_none() && at <= self.buf.len() {
-            self.pos = at;
+        if self.fault.is_none() && at <= self.place.buf.len() {
+            self.place.pos = at;
         }
     }
 
@@ -418,13 +420,12 @@ impl<'a> SceReader<'a> {
     fn begin_within(&mut self, n: usize) -> SceReader<'a> {
         let bytes = self.take_slice(n);
         let mut inner = SceReader {
-            buf: bytes,
-            pos: 0,
+            place: SceCursor::new(bytes),
             fault: self.fault,
             over: false,
         };
         if inner.fault.is_some() {
-            inner.pos = inner.buf.len();
+            inner.place.pos = inner.place.buf.len();
         }
         inner
     }
@@ -485,7 +486,7 @@ impl<'a> SceCursor<'a> {
     #[inline(never)]
     fn end_frame(&mut self, reader: &SceReader<'a>) -> Result<(), CodecError> {
         match reader.fault {
-            None => self.advance(reader.pos).and(reader.verdict()),
+            None => self.advance(reader.place.pos).and(reader.verdict()),
             Some(refused) => Err(refused),
         }
     }

@@ -239,11 +239,18 @@ bytes against its baseline, with the decode held twice, `SceCursor::read_vle_inn
 `SceReader::read_vle_inner` (454 bytes); the receive path did not change when the hot set's reads were held in
 place or not.
 
-The decode is held in one function, `codec::read_vle_at`, out of line: the two short branches
-(`codec::read_zint_short`) and then `read_zint`, held there. The cursor's read of a ZInt is a call of it, so the
-frame's sequence number, the ZInt of four or five bytes the cursor reads in every frame, stays one call with its
-answer in registers (`Result<u64, CodecError>`, `pos` written through the cursor's own field), which is what the
-fourth amendment kept. The frame reader keeps its own out-of-line read: it answers a ZInt of one or two bytes in
-`read_zint_short` and calls `read_vle_at` for a longer one, which is a second call only for a ZInt of three bytes or
-more read by a generated body. The `_inline` reads hold only the two short branches and call the reader's read for
-the rest. The program holds one copy of the decode.
+The frame reader's place in its input is a cursor (`SceReader::place`), and the cursor's one out-of-line ZInt read,
+`SceCursor::read_vle_inner`, is the program's one copy of the decode: the two short branches
+(`codec::read_zint_short`) and then `read_zint`, held there. The cursor's reads call it as before, so the frame's
+sequence number, the ZInt of four or five bytes the cursor reads in every frame, is one call and its body is
+unchanged. The frame reader keeps its own out-of-line read: it answers a ZInt of one or two bytes in
+`read_zint_short` and calls the cursor's read over its place for a longer one, which is a second call only for a
+ZInt of three bytes or more read by a generated body. The `_inline` reads hold only the two short branches and call
+the reader's read for the rest.
+
+Measured on a reproduction of the consumer's `pico-client-coop-nostd` library (fat LTO, one codegen unit,
+`opt-level = 3`, x86-64) at its pin's tree: `.text` 320 bytes smaller, all of it
+`SceReader::read_vle_inner` (463 to 143 bytes); no other body changed. A first form, a free function both readers
+called with `(buf, &mut pos)`, also took the bytes off the reader but put a six-instruction tail call in front of
+every cursor read and, with the cursor's read inlined as that call, moved 224 bytes of inlining into the receive
+dispatch; it did not land.
