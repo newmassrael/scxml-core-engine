@@ -8,8 +8,8 @@ this file says what is here and how to read it.
 
 | Level (ADR 0115) | Here | Built |
 |---|---|---|
-| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`: what a user may rely on, no mechanism | yes, for four protocols |
-| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla` and `BrowserNode.tla` | yes, for four protocols |
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`: what a user may rely on, no mechanism | yes, for five protocols |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla` and `EngineInbox.tla` | yes, for five protocols |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | | no |
@@ -28,6 +28,7 @@ this file says what is here and how to read it.
 | `Principals` | ADR 0116, a person bound to an incarnation: the proof, the end, the write's condition |
 | `BrowserNode` | ADR 0117, the pages of one browser as one node: the lock, the store, a cleared store, a change of person |
 | `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
+| `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted |
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.

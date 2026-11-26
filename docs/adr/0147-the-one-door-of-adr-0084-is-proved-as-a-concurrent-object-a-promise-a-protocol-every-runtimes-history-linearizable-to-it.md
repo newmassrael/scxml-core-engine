@@ -56,7 +56,9 @@ What a host may rely on, with no mechanism. A tree of sessions, posters on any n
 - **At most once, and never lost.** A post the inbox takes is applied exactly once, by the session it names, by the
   owner-thread operation of the same name. A post it refuses is handed back and is never applied. A post that names
   a session the tree does not hold is refused when it is posted.
-- **Run to completion.** No posted input is applied inside a macrostep (ADR 0084, D1).
+- **Run to completion.** A posted input reaches a session only through that session's external queue, which the
+  running macrostep does not read (ADR 0084, D1). The drain before an event of the owner's own runs inside a
+  macrostep, and what it applies enters the queue and waits for the boundary.
 - **Arrival order.** Each session's external queue takes the posts to that session in the order they linearized,
   against that session's own enqueues: an event of the owner's own enters behind every post taken before it (D2 as
   amended at steps 9 and 10).
@@ -106,7 +108,7 @@ itself, as `sce-build/tests/fixtures/queue_histories/` holds the queue's.
 The decisions of the Rust drain are taken out of `Engine` and `inbox.rs` into a value with a transition function,
 as ADR 0115 D13 asks of the state a lock guards. The core holds what is held per session, whether a drain is under
 way, the directory and whether the run ended. Verus proves that its steps refine D2's owner-side actions: an input
-applied once and in order, none inside a macrostep, none left at the end. `EngineInbox` and `BoundedInbox` keep the
+applied once and in order, only to the external queue, none left at the end. `EngineInbox` and `BoundedInbox` keep the
 channel and the ring. The core decides, and the shell moves inputs.
 
 ### D5. The atomics are judged by GenMC
