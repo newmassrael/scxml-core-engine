@@ -458,7 +458,7 @@ fn every_backend_spells_an_optional_parameter_and_return_in_its_optional_type() 
                 "std::optional<int64_t> day",
                 "AlgorithmResult<std::optional<int64_t>>",
                 "!day.has_value()",
-                "(*day)",
+                ", *day,",
             ],
             "go" => &[
                 "\"github.com/newmassrael/sce-forge-runtime/optional\"",
