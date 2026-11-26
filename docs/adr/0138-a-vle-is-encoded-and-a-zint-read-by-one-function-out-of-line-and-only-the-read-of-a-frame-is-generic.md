@@ -215,3 +215,16 @@ byte's flag a branch out with the value so far, every index a constant below the
 of the input's end, as a varint is read where the buffer is known to hold it. The loop that tests each byte reads
 only a tail shorter than nine bytes, the end of a frame. Still one copy in a program, out of line, called only for a
 ZInt of three bytes or more.
+
+## Amendment, 2026-11-26 (fourth): the decode is held inside each reader's read
+
+Measured at b206975b22a on the consumer's main: the receive path at 4,375.2 instructions a message against 4,332.3
+(+43), all of it in the frame step: the frame's sequence number read by the cursor's `read_vle_inner` (26 of its own)
+calling `read_zint` (44 of its own), about 83 instructions a message with the call, where the baseline's one read
+took 57 in one body. The shared body answered `(Result<u64, CodecError>, usize)` through memory and cost a second
+call.
+
+`read_zint` is now `#[inline(always)]`: the decode is written once in the source and held inside each reader's one
+out-of-line ZInt read (the cursor's and the frame reader's), so a ZInt of any length is one call and its answer stays
+in registers. The program holds two copies of the decode, one per reader, where the baseline held one larger read in
+the cursor; no read site holds anything in place.

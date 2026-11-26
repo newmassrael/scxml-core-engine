@@ -534,12 +534,12 @@ fn decode_zint_whole(b: &[u8; ZINT_MAX_BYTES]) -> (u64, usize) {
 /// number, a ZInt of four or five bytes in every frame, cost 65 instructions
 /// through the loop).
 ///
-/// The one body of every ZInt, of every length and width, for the cursor's and
-/// the frame reader's reads alike (docs/adr/0130): each reader calls it from
-/// its one ZInt read, and no field holds a read of its own, not even of a
-/// ZInt of one byte (docs/adr/0138). Not cold, since every ZInt of every frame
-/// runs it; not generic, so it is compiled once in a program.
-#[inline(never)]
+/// The one decode of every ZInt, of every length and width, for the cursor's
+/// and the frame reader's reads alike (docs/adr/0130), written once and held
+/// inside each reader's one out-of-line ZInt read: a ZInt is one call, and
+/// the answer is not handed back through memory (docs/adr/0138, fourth
+/// amendment). No field holds a read of its own.
+#[inline(always)]
 pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
     let tail = buf.get(pos..).unwrap_or_default();
     // Where nine bytes remain, the longest a ZInt is, it is read straight from
@@ -2077,12 +2077,13 @@ mod tests {
     fn every_zint_is_read_by_one_call_of_its_readers_one_read() {
         let codec = built(include_str!("codec.rs"));
         let reader = built(include_str!("reader.rs"));
-        // The one body of every ZInt: out of line, and not cold, since every
-        // ZInt of every frame runs it.
+        // The one decode of every ZInt is written once and held inside each
+        // reader's one read, so a ZInt is one call and no tuple is answered
+        // through memory (docs/adr/0138, fourth amendment).
         let (attrs, _) = function(codec, "read_zint");
         assert!(
-            attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
-            "read_zint is out of line and not cold: {attrs}"
+            attrs.contains("#[inline(always)]") && !attrs.contains("#[cold]"),
+            "read_zint is held inside each reader's read: {attrs}"
         );
         // Each reader reads a ZInt by one function of its own, out of line, that
         // runs the body; a field of either width is a call of it and holds no
