@@ -2706,6 +2706,41 @@ fn a_failing_build_reaches_the_gate_log_through_the_helper() {
 /// The script a CI job runs to put the rev-pinned validator on the runner.
 const MNEMOSYNE_INSTALLER: &str = "scripts/install_mnemosyne_cli.sh";
 
+/// The function of `scripts/gates/lib.sh` a gate in an image calls to put the
+/// rev-pinned validator in the image's home, which no step of the job reaches.
+const MNEMOSYNE_PROVIDER: &str = "sce_gate_provide_mnemosyne_pin";
+
+/// Whether gate `slug` runs in an image (`container` in its registry entry).
+fn runs_in_an_image(root: &Path, slug: &str) -> bool {
+    std::fs::read_to_string(root.join(format!("tools/git-hooks/gates/{slug}.py"))).is_ok_and(
+        |entry| {
+            entry
+                .lines()
+                .any(|l| l.trim_start().starts_with("\"container\":"))
+        },
+    )
+}
+
+/// Whether a job's commands put the rev-pinned validator where the suites it
+/// runs look for it: the job runs the installer itself, or it runs a gate in an
+/// image whose script provides it there (ADR 0145). A gate on the runner
+/// provides nothing that way, since the provider installs only into an image's
+/// home.
+fn provisions_the_pinned_validator(job: &str, root: &Path) -> bool {
+    if job.contains(MNEMOSYNE_INSTALLER) {
+        return true;
+    }
+    let commands = joined_commands(job);
+    code_lines(&commands).any(|line| {
+        gate_slugs_invoked(line).into_iter().any(|slug| {
+            let script = root.join("scripts/gates").join(format!("{slug}.sh"));
+            runs_in_an_image(root, &slug)
+                && std::fs::read_to_string(&script)
+                    .is_ok_and(|body| code_lines(&body).any(|l| l.starts_with(MNEMOSYNE_PROVIDER)))
+        })
+    })
+}
+
 /// The lines of `text` that are code, with whole-line comments dropped.
 ///
 /// Both alphabets this file scans — Rust test sources and shell gate scripts
@@ -2936,6 +2971,23 @@ fn every_job_that_runs_the_pinned_validator_installs_it() {
          binary. The signature is broken: {needing:?}"
     );
 
+    // The provider a gate in an image calls is the installer, run where the
+    // image's home is. Read off lib.sh rather than assumed, so a provider that
+    // stopped installing would not stand in for an install here.
+    let lib = std::fs::read_to_string(root.join("scripts/gates/lib.sh"))
+        .expect("read scripts/gates/lib.sh");
+    let provider: Vec<&str> = code_lines(&lib)
+        .skip_while(|l| !l.starts_with(&format!("{MNEMOSYNE_PROVIDER}() {{")))
+        .take_while(|l| *l != "}")
+        .collect();
+    assert!(
+        provider.iter().any(|l| l.contains(MNEMOSYNE_INSTALLER)),
+        "`{MNEMOSYNE_PROVIDER}` in scripts/gates/lib.sh no longer runs \
+         {MNEMOSYNE_INSTALLER}, so a gate in an image that calls it provides \
+         nothing:\n{}",
+        provider.join("\n")
+    );
+
     let mut carriers: Vec<String> = Vec::new();
     let mut unprovisioned: Vec<String> = Vec::new();
     for (file, text) in workflow_texts(&root) {
@@ -2952,9 +3004,10 @@ fn every_job_that_runs_the_pinned_validator_installs_it() {
                 continue;
             }
             carriers.push(format!("{file}:{}", job.id));
-            if !body.contains(MNEMOSYNE_INSTALLER) {
+            if !provisions_the_pinned_validator(&body, &root) {
                 unprovisioned.push(format!(
-                    "  {file}: job `{}` runs {} but never runs {MNEMOSYNE_INSTALLER}",
+                    "  {file}: job `{}` runs {} but never runs {MNEMOSYNE_INSTALLER}, \
+                     nor a gate in an image that calls {MNEMOSYNE_PROVIDER}",
                     job.id,
                     runs.join(", ")
                 ));
@@ -2977,9 +3030,9 @@ fn every_job_that_runs_the_pinned_validator_installs_it() {
          a runner that never installs it:\n{}\n\
          Such a job cannot fail for a reason about the tree — the citation \
          gate exits 3, \"the gate could not run\", and every verdict built on \
-         it is void. Add the cache and install steps that \
-         `rust-workspace-tests.yml` carries to the job itself; an install in a \
-         neighbouring job runs on a different machine.",
+         it is void. Run the gate in an image whose script calls \
+         `{MNEMOSYNE_PROVIDER}`, or the installer in the job itself; an install \
+         in a neighbouring job runs on a different machine.",
         unprovisioned.join("\n")
     );
 }

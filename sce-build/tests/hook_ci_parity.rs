@@ -451,15 +451,13 @@ const CI_ONLY: &[(&str, &str)] = &[
     // built the three transport SDKs on its runner, which a push-time hook must
     // not do. The lane runs its gate in the host image now, which holds them
     // (ADR 0145), so no mirrored workflow runs the script.
-    (
-        "scripts/install_mnemosyne_cli.sh",
-        "provisions the runner rather than verifying the tree: it is a \
-         `cargo install` from the network, which a push-time hook must not \
-         perform — a developer installs the pinned binary once, and the \
-         citation gate's own refusal prints the command that does it. The \
-         verification it enables is `ledger-citations`, which the hook does \
-         run.",
-    ),
+    // `scripts/install_mnemosyne_cli.sh` used to sit here, as a provisioning of
+    // the runner that a push-time hook must not perform. A gate that runs in an
+    // image installs the pin in the image's home itself
+    // (`sce_gate_provide_mnemosyne_pin` in scripts/gates/lib.sh), since a
+    // machine's own install is not in that home, so the hook surface runs it and
+    // the entry described nothing. It runs only inside an image, and the gates
+    // that call it are `ci_only`: a push still installs nothing.
     (
         "check_spec_drift.py --mode upstream",
         "fetches the upstream spec over the network. A push-time gate must \
@@ -870,8 +868,58 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
 
 // ── The requiring lane must supply every tool the harness can ask for ──
 
-/// Every apt-sourced tool must be installed by the lane that requires
-/// tools.
+/// The Containerfile of the image a gate runs in (`container` in its registry
+/// entry, ADR 0145), or `None` for a gate that runs where the runner is. Read
+/// from the registry as `--mapping` publishes it, so this cannot drift from
+/// what `scripts/gate` places.
+fn gate_image(slug: &str) -> Option<String> {
+    let registry = repo_root().join("tools/git-hooks/gate_registry.py");
+    let out = std::process::Command::new("python3")
+        .arg(&registry)
+        .arg("--mapping")
+        .arg("--repo-root")
+        .arg(repo_root())
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", registry.display()));
+    assert!(
+        out.status.success(),
+        "gate_registry.py --mapping failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mapping: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("gate_registry.py --mapping prints JSON");
+    mapping
+        .get(slug)
+        .unwrap_or_else(|| panic!("the registry has no gate `{slug}`"))
+        .get("container")
+        .and_then(|c| c.as_str())
+        .map(str::to_string)
+}
+
+/// The words a Containerfile's commands name, with line continuations folded
+/// and comment lines dropped: a package in a comment is not installed.
+fn containerfile_words(text: &str) -> BTreeSet<String> {
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace("\\\n", " ")
+        .split_whitespace()
+        .map(|w| {
+            w.trim_matches(|c: char| matches!(c, '\\' | '"' | '\'' | ',' | ';' | '[' | ']'))
+                .to_string()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Every apt-sourced tool must be supplied to the lane that requires tools.
+///
+/// The lane runs its gate in an image (ADR 0145), so what supplies a tool is
+/// that image's Containerfile and not a step of the job: a package installed
+/// on the runner is not in the image the suite runs in. The image names each
+/// tool by its package, or by the tool itself where it installs a pinned
+/// release of it by path (`/opt/<toolchain>/bin/arm-none-eabi-gcc`).
 #[test]
 fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
     use sce_build::toolchain::{ToolSource, HARNESS_TOOLS};
@@ -882,14 +930,23 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
          failure; that lane no longer sets SCE_REQUIRE_TOOLS, so the pairing \
          has moved and this check needs re-aiming",
     );
-    let installs: String = workflow
-        .lines()
-        .filter(|l| l.contains("apt-get install"))
-        .collect::<Vec<_>>()
-        .join(" ");
     assert!(
-        !installs.is_empty(),
-        "no `apt-get install` step found in the requiring lane",
+        workflow
+            .lines()
+            .any(|l| l.trim() == "run: scripts/gate workspace-tests"),
+        "the requiring lane no longer runs `scripts/gate workspace-tests`, so the \
+         image this check reads is not the one its suite runs in",
+    );
+    let containerfile = gate_image("workspace-tests").expect(
+        "the workspace-tests gate names no `container`: its suite would run on \
+         whatever the machine carries, and this check would have no image to read",
+    );
+    let words = containerfile_words(&read(&containerfile));
+    assert!(
+        words.len() > 10,
+        "{containerfile} names {} word(s) in its commands; the reader lost them, \
+         and every tool below would read as missing or the check as vacuous",
+        words.len()
     );
 
     let mut checked = 0usize;
@@ -899,7 +956,10 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
             continue;
         };
         checked += 1;
-        if !installs.split_whitespace().any(|w| w == *pkg) {
+        let names_it = words
+            .iter()
+            .any(|w| w.as_str() == *pkg || w.as_str() == *tool || w.ends_with(&format!("/{tool}")));
+        if !names_it {
             missing.push(format!("{tool} needs package `{pkg}`"));
         }
     }
@@ -910,8 +970,8 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
     );
     assert!(
         missing.is_empty(),
-        "the lane sets SCE_REQUIRE_TOOLS but does not install what the \
-         harness asks for ({} tool(s)):\n  {}\napt line(s):\n  {installs}",
+        "the lane sets SCE_REQUIRE_TOOLS but the image its gate runs in \
+         ({containerfile}) does not name what the harness asks for ({} tool(s)):\n  {}",
         missing.len(),
         missing.join("\n  "),
     );

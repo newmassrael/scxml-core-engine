@@ -15,6 +15,19 @@
 # doc, the wire schemas, and the forge-AST export schema.
 {
     "workflows": ["rust-workspace-tests.yml"],
+    # The host image (ADR 0145, family `host`): the C, C++, JVM, Go and
+    # Python toolchains the suite's harness asks for, the same wherever the
+    # gate runs. The runner pulls the image its Containerfile's digest names
+    # and runs `scripts/gate workspace-tests` inside it ("Gates that run in an
+    # image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # What the lane sets for the run inside: every harness tool required
+    # rather than skipped, and the test artifacts without DWARF, which kept
+    # the lane inside the runner's disk.
+    "container_env": ["SCE_REQUIRE_TOOLS", "CARGO_PROFILE_DEV_DEBUG",
+                      "CARGO_PROFILE_TEST_DEBUG", "CARGO_PROFILE_DEV_STRIP",
+                      "CARGO_PROFILE_TEST_STRIP", "CARGO_INCREMENTAL"],
     # Run whole it is the longest unit of a landing after cpp-suite-wasm
     # (1363 s), and its script already runs one shard of itself when
     # SCE_WORKSPACE_SHARD names `k/N`, as the lane's four jobs do. A plan
@@ -45,6 +58,12 @@
     # and sce-build's unit tests read at run time — every engine is held to
     # them — so an edit to a table alone has to start the suite that reads it.
     "extra": [
+        # The image the suite runs in: an edit of it is a change the suite
+        # judges.
+        "tools/ci-images/host/**",
+        # The installer of the rev-pinned validator, which the gate runs in
+        # the image (`sce_gate_provide_mnemosyne_pin`).
+        "scripts/install_mnemosyne_cli.sh",
         # What spreads the suite over the lane's shards
         # (`SCE_WORKSPACE_SHARD`), which the gate script runs.
         "scripts/lib/workspace_shards.py",

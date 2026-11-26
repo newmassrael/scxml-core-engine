@@ -3003,6 +3003,14 @@ def rust_cache_failures(repo_root: Path) -> list[str]:
 GRADLE_CACHE_PATH = re.compile(r"^~/(?:\.cache/sce-gate-containers/[\w.-]+/home/)?\.gradle/caches$")
 
 
+def is_gradle_cache(path: str) -> bool:
+    """Whether a cache step's `path` entry is a Gradle home's caches: the
+    runner's (`~/.gradle/caches`), or the home of an image a gate runs in
+    (`~/.cache/sce-gate-containers/<slug>/home/.gradle/caches`, ADR 0145),
+    which a lane keeps across runs the same way."""
+    return GRADLE_CACHE_PATH.match(path) is not None
+
+
 def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
     """Gradle cache keys two workflows share, and how many Gradle caches there were.
 
@@ -3018,8 +3026,7 @@ def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str]
     found = 0
     for rel, lines in sorted(workflows.items()):
         for number, _action, step in workflow_steps(lines, CACHE_STEP):
-            if not any(GRADLE_CACHE_PATH.match(path)
-                       for path in step_values(step, "path")):
+            if not any(is_gradle_cache(p) for p in step_values(step, "path")):
                 continue
             found += 1
             for key in step_values(step, "key"):
@@ -6929,12 +6936,12 @@ def self_test(repo_root: Path) -> int:
     # cache under one key (`shared_gradle_cache_keys`). The fixture holds the
     # reader to a shared key it refuses and a shared restore prefix it leaves.
     cases += 1
-    gradle_step = lambda key: [
+    gradle_step = lambda key, home="~": [
         "    - name: Cache Gradle",
         "      uses: actions/cache@" + "e" * 40,
         "      with:",
         "        path: |",
-        "          ~/.gradle/caches",
+        f"          {home}/.gradle/caches",
         f"        key: {key}",
         "        restore-keys: |",
         "          Linux-gradle-",
@@ -6949,6 +6956,16 @@ def self_test(repo_root: Path) -> int:
     if apart:
         failures.append(f"every-lane-keys-its-own-gradle-cache: two lanes with keys "
                         f"of their own were refused: {apart!r}")
+    # The Gradle home of an image a gate runs in is read as one too: a lane
+    # that keeps it under another lane's key is the same sharing.
+    image_home = "~/.cache/sce-gate-containers/x/home"
+    imaged, imaged_seen = shared_gradle_cache_keys({
+        "a.yml": gradle_step("Linux-gradle-h", image_home),
+        "b.yml": gradle_step("Linux-gradle-h")})
+    if imaged_seen != 2 or len(imaged) != 1:
+        failures.append(f"every-lane-keys-its-own-gradle-cache: an image's Gradle "
+                        f"home under another lane's key gave {imaged!r} from "
+                        f"{imaged_seen} step(s)")
     failures.extend(f"every-lane-keys-its-own-gradle-cache: {f}"
                     for f in gradle_cache_failures(repo_root))
 

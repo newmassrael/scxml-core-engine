@@ -41,7 +41,9 @@
 # starts per Kotlin actor, and the two JVM programs that replay the group key
 # agreement and the peer core over their C ABIs. And the Python the suites
 # start is the repository's environment where there is one, as the lane's is
-# a Python with the runtime's Lua binding.
+# a Python with the runtime's Lua binding. In an image, the rev-pinned
+# validator the citation suites drive is put in the image's home too
+# (`sce_gate_provide_mnemosyne_pin` in lib.sh).
 #
 # A case that would still skip, for a tool the machine lacks, skips outside a
 # landing as it always has; in a landing `sce_gate_run_suite` runs the suites
@@ -68,6 +70,8 @@ if [ "$SCE_GATE_PYTHON" != python3 ]; then
 fi
 
 sce_gate_http_fixture_server
+
+sce_gate_provide_mnemosyne_pin
 
 # The generator, built as a target of its own before the suite, as the CI
 # lane's "Build sce-codegen" step builds it. Cargo writes

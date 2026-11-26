@@ -1559,6 +1559,27 @@ sce_gate_require_swift() {
     sce_gate_step "Swift $tag (pinned by bx.toml)"
 }
 
+# ── The rev-pinned validator, in an image ──
+#
+# Suites that drive the staged citation stage (`gate_registry_contract` among
+# them) need the rev-pinned `mnemosyne-cli`, which the stage resolves under
+# `$HOME/.local/share/mnemosyne-rev/<rev>` and refuses without (exit 3, "the gate
+# could not run"). A machine's home has it from bx.toml
+# (`[platform.linux.tools.mnemosyne-cli]`). A gate in an image runs with the
+# image's own home, kept across runs and empty on the first (`gate_in_container`
+# in scripts/gate), so there the gate installs it, with the installer that is the
+# one spelling of the revision and its root. A binary built on the machine is not
+# handed in: it links against the machine's libc and not the image's.
+#
+# Idempotent: a home that carries the revision is left alone, so a lane that
+# keeps the image's home across runs pays the build once per revision.
+sce_gate_provide_mnemosyne_pin() {
+    [[ -n "${SCE_GATE_CONTAINER:-}" ]] || return 0
+    sce_gate_step "the rev-pinned mnemosyne-cli in the image's home"
+    bash scripts/install_mnemosyne_cli.sh >&2 \
+        || sce_gate_cannot_run "scripts/install_mnemosyne_cli.sh could not put the rev-pinned mnemosyne-cli in the image's home, and the citation suites refuse without it"
+}
+
 # ── The Python the Python suites run in ──
 #
 # The AOT runtime imports `lupa.lua54`, which lupa ships from 2.0 on, and a

@@ -87,6 +87,12 @@ on:
       - '.github/workflows/rust-workspace-tests.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the suite runs in, the action that signs the job in to the
+      # registry it is pulled from, and the installer of the rev-pinned
+      # validator the gate runs there.
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
+      - 'scripts/install_mnemosyne_cli.sh'
       # What says which shard runs which part of the suite.
       - 'scripts/lib/workspace_shards.py'
       # What `a_red_gate_names_the_smallest_rerun` runs and reads: the reader
@@ -283,6 +289,12 @@ on:
       - '.github/workflows/rust-workspace-tests.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the suite runs in, the action that signs the job in to the
+      # registry it is pulled from, and the installer of the rev-pinned
+      # validator the gate runs there.
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
+      - 'scripts/install_mnemosyne_cli.sh'
       # What says which shard runs which part of the suite.
       - 'scripts/lib/workspace_shards.py'
       # What `a_red_gate_names_the_smallest_rerun` runs and reads: the reader
@@ -500,6 +512,11 @@ jobs:
     name: cargo test --workspace --features cli,sce-rust-mesh/wss (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
     timeout-minutes: 170
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -528,137 +545,78 @@ jobs:
         fetch-depth: 0
         submodules: recursive
 
-    # libxml2 backs the default `xsd` feature; without it the workspace
-    # build fails at link time rather than running the suite.
+    # The suite runs in the host image (`tools/ci-images/host/Containerfile`,
+    # ADR 0145), which `scripts/gate` pulls by its Containerfile's digest and
+    # runs the gate in: no step of this job installs a package or a toolchain.
+    # What the harness asks for is the image's, each a hard requirement under
+    # `SCE_REQUIRE_TOOLS` below: libxml2 behind the default `xsd` feature;
+    # clang, for the typestate axis
+    # (`sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives`) that
+    # needs Clang's `consumable` / `callable_when` family, which GCC does not
+    # implement; `arm-none-eabi-gcc`, which
+    # `statechart_native_lowering_c11_compiles_freestanding` builds the emitted
+    # C11 for a freestanding target with; clang-format of major 19, which
+    # `sce-codegen generate -l cpp` refuses to run without
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9); ninja, whose build graph
+    # `a_mutation_round_rebuilds_only_what_its_tests_run` reads; the JDK the
+    # Kotlin builds and the world tests run on; and a Python with the runtime's
+    # Lua binding, which the generated Python machines import.
+    # `every_apt_sourced_tool_is_installed_by_the_requiring_lane` holds the
+    # image to the harness's table of tools.
     #
-    # clang is installed explicitly rather than relied on from the runner
-    # image, because `SCE_REQUIRE_TOOLS` below turns its absence from a
-    # skip into a failure. The typestate axis it gates
-    # (`sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives`)
-    # needs Clang's `consumable` / `callable_when` attribute family, which
-    # GCC does not implement — with GCC alone the check cannot run at all.
-    #
-    # gcc-arm-none-eabi is installed for the same reason. It provides
-    # `arm-none-eabi-gcc`, the cross-compiler
-    # `statechart_native_lowering_c11_compiles_freestanding` uses to prove
-    # the emitted C11 builds for a freestanding target — the one profile
-    # where a hosted libc cannot paper over a missing declaration. The
-    # runner image does not carry it, so before this line the check was
-    # the single `SCE_REQUIRE_TOOLS` casualty in the lane.
-    #
-    # clang-format-19 because `sce-codegen generate -l cpp` formats by default
-    # with clang-format pinned to major 19 and refuses to run without it
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The runner image carries other
-    # majors, which the generator rejects; the suite's CLI tests generate C++.
-    #
-    # ninja-build because `scripts/mutate` names a ctest round's build closure
-    # by asking ninja, and builds the whole tree under any other generator;
-    # `a_mutation_round_rebuilds_only_what_its_tests_run` drives that path.
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi clang-format-19 ninja-build
+    # The gate builds what the suites run besides the workspace inside the
+    # image (scripts/gates/workspace-tests.sh): the generator, the Kotlin
+    # runtime jars, the step server and the two JVM replays, and the
+    # rev-pinned `mnemosyne-cli` the citation suites drive.
 
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-      with:
-        python-version: '3.x'
-
-    - name: Install the Python runtime's Lua binding
-      # A suite test imports the Python the generator writes (the emitted transition table is
-      # compared with the export by running it), and every generated machine imports
-      # `sce_runtime`, whose scripting module needs `lupa` (backends/python/runtime/pyproject.toml
-      # declares it). Without it that test failed on the import (2026-10-16), the way
-      # authoring-core.yml and targets.yml install it too.
-      run: python3 -m pip install lupa
-
-    # The release rust-toolchain.toml pins. `clippy-driver` lints a generated
+    # The release rust-toolchain.toml pins, mounted read-only into the image
+    # (`gate_in_container` in scripts/gate). `clippy-driver` lints a generated
     # file alone (toolchain::HARNESS_TOOLS); the profile is minimal and
     # installs no component that file does not list
     # (`every_rustup_component_tool_is_installed_by_the_requiring_lane`).
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores.
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
+      with:
+        registry: false
 
-    # The generator is built by the gate this lane delegates to
-    # (`scripts/gates/workspace-tests.sh`), before the suite, and by the
-    # Gradle builds below for the Kotlin steps that run it: one spelling of
-    # the build, in the gate, rather than a second one here.
-
-    # `gate_registry_contract` drives the *staged* citation stage as a
-    # subprocess, and that stage refuses — exit 3, "the gate could not run,
-    # its own tooling is missing" — without the rev-pinned binary. This job
-    # never had it, so the workspace suite failed on every push for the two
-    # tests that need it, while saying nothing about the tree. The revision
-    # is read from `spec-citations.yml`, the one place it lives.
-    - name: Cache mnemosyne-cli (rev-pinned)
+    - name: Cache the image's cargo registry download
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
-        path: ~/.local/share/mnemosyne-rev
-        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+        path: |
+          ~/.cache/sce-gate-containers/workspace-tests/cargo/registry/index
+          ~/.cache/sce-gate-containers/workspace-tests/cargo/registry/cache
+          ~/.cache/sce-gate-containers/workspace-tests/cargo/git/db
+        key: host-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
 
-    - name: Install the rev-pinned mnemosyne-cli
-      run: scripts/install_mnemosyne_cli.sh
-
-    # Every Kotlin forge gate puts this jar on `kotlinc -cp` and degrades to
-    # skip-with-warn when it is absent, and this job built it nowhere: SEVEN
-    # Kotlin compile gates had never run here. That is the condition
-    # `SCE_REQUIRE_TOOLS` below exists to make impossible, and it did not,
-    # because the variable did not reach `require_all_or_warn` until
-    # 2026-09-11 — the jar was missing and the suite said nothing, which is
-    # the same shape as the `mnemosyne-cli` and `clang` steps above. It is
-    # supplied here for the same reason those are: a prerequisite this lane
-    # provides rather than hopes the image carries.
-    #
-    # `./gradlew` fetches its own distribution, so the runner needs a JDK and
-    # nothing more.
-    #
-    # The JDK is pinned rather than taken from the image: Gradle runs on it, the world
-    # tests start the step server with the `java` it puts on PATH, and an image that
-    # moved its default would move all three at once. The same pin as the other
-    # Kotlin lanes (`ecma262-lowered-kotlin.yml`).
-    - name: Setup JDK 17
-      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+    # The rev-pinned validator the gate installs in the image's home, kept
+    # across runs. The revision is read from `spec-citations.yml`, the one
+    # place it lives.
+    - name: Cache the image's mnemosyne-cli (rev-pinned)
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
-        distribution: 'temurin'
-        java-version: '17'
+        path: ~/.cache/sce-gate-containers/workspace-tests/home/.local/share/mnemosyne-rev
+        key: host-image-mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
 
+    # The image's Gradle home, which the gate's Kotlin builds fill.
     - name: Cache Gradle
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
+          ~/.cache/sce-gate-containers/workspace-tests/home/.gradle/caches
+          ~/.cache/sce-gate-containers/workspace-tests/home/.gradle/wrapper
         key: ${{ runner.os }}-gradle-workspace-tests-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-workspace-tests-
           ${{ runner.os }}-gradle-
 
-    # Statechart smoke tests also compile against the core runtime jar.
-    - name: Build the Kotlin runtime jars
-      run: ./gradlew :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar --console=plain
-
-    # The step server the world tests host a generated Kotlin copy of the to-do list
-    # with (`backends/rust/world/tests/a_kotlin_copy_shares_the_todo_list_with_rust_copies.rs`):
-    # one JVM per Kotlin actor, driven over stdin and stdout. Without this build those
-    # tests find no distribution and, with `SCE_REQUIRE_TOOLS` set below, fail.
-    - name: Build the Kotlin step server
-      run: ./gradlew :sce-kotlin-world:installDist --console=plain
-
-    # The Kotlin replay of the group key agreement's C ABI
-    # (`backends/rust/mls-capi/tests/a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario.rs`):
-    # a JVM program that loads the Rust library through JNA. Without this build the Kotlin
-    # lane finds no distribution and, with `SCE_REQUIRE_TOOLS` set below, fails.
-    - name: Build the Kotlin replay of the group key agreement
-      run: ./gradlew :sce-kotlin-mls-replay:installDist --console=plain
-
-    # The Kotlin replay of the peer core's C ABI
-    # (`backends/rust/peer-capi/tests/a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario.rs`),
-    # for the same reason as the one above.
-    - name: Build the Kotlin replay of the peer core
-      run: ./gradlew :sce-kotlin-peer-replay:installDist --console=plain
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
@@ -682,11 +640,15 @@ jobs:
         SCE_WORKSPACE_SHARD: ${{ matrix.shard }}/4
       run: scripts/gate workspace-tests
 
+    # The image's build directory and cargo home, kept beside the checkout
+    # (`gate_in_container` in scripts/gate).
     - name: Report build disk usage
       if: always()
       run: |
         df -h .
-        du -sh target ~/.cargo/registry ~/.cargo/git 2>/dev/null || true
+        du -sh ~/.cache/sce-gate-containers/workspace-tests/target \
+          ~/.cache/sce-gate-containers/workspace-tests/cargo/registry \
+          ~/.cache/sce-gate-containers/workspace-tests/cargo/git 2>/dev/null || true
 
     # What the compile cache answered of this job, and what it could not
     # (.github/actions/compile-cache).
