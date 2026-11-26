@@ -963,7 +963,7 @@ fn rust_spells_the_optional_record_scenario_machine() {
         // The write of a field in place, a text held to its bound.
         "sce_forge_runtime::optional::proven_mut(&mut self.pick).count = ",
         "sce_forge_runtime::optional::proven_mut(&mut self.pick).title = \
-         ::sce_rust_runtime::portable::SceString::<16>::from_text(&\"bumped\")?;",
+         ::sce_rust_runtime::portable::SceString::<16>::within::<6>(&\"bumped\");",
         // The call of the algorithm that answers an optional record.
         "self.found = call_FirstAtLeast__v(&self.items, 5);",
         "fn call_FirstAtLeast__v(p0: &[StaticOptionalRecordItemRecord], p1: i32) -> \
