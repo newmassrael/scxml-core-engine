@@ -254,3 +254,17 @@ Measured on a reproduction of the consumer's `pico-client-coop-nostd` library (f
 called with `(buf, &mut pos)`, also took the bytes off the reader but put a six-instruction tail call in front of
 every cursor read and, with the cursor's read inlined as that call, moved 224 bytes of inlining into the receive
 dispatch; it did not land.
+
+## Amendment, 2026-11-26 (sixth): the cursor's ZInt read answers in two registers
+
+The fourth amendment held the decode inside each reader's read so that "its answer stays in registers". The
+cursor's read still answered `Result<u64, CodecError>`, which the calling convention of x86-64 hands back through
+memory: the read stored the tag and the value through a hidden pointer and every caller loaded them back, and the
+read saved and restored a register even on its one-byte branch. The frame's sequence number, read by the cursor
+in every frame, paid that on the consumer's receive path.
+
+`SceCursor::read_vle_inner` answers `(u64, Option<CodecError>)`: `CodecError` has no fields, so the option is one
+byte and the pair comes back in two registers. `codec::vle_answer`, held where it is called, makes the pair the
+`Result` the cursor's public reads answer; the frame reader matches the pair. No public declaration changes.
+Measured on the reproduction of the consumer's library: the read's one-byte branch is eight instructions with no
+stack traffic, each caller tests the refusal in its register, and `.text` is 292 bytes smaller.

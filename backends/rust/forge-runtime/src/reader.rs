@@ -304,8 +304,8 @@ impl<'a> SceReader<'a> {
             return value;
         }
         match self.place.read_vle_inner(max_bits) {
-            Ok(value) => value,
-            Err(refused) => {
+            (value, None) => value,
+            (_, Some(refused)) => {
                 self.fail(refused);
                 0
             }

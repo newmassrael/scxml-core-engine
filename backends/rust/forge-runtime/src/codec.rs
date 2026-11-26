@@ -602,6 +602,17 @@ pub(crate) fn read_zint_short(rest: &mut &[u8]) -> Option<u64> {
     None
 }
 
+/// The cursor's ZInt read's answer as a `Result`: its value, or its refusal
+/// (see [`SceCursor::read_vle_inner`]). Held where it is called, so the pair
+/// stays in the registers it came back in.
+#[inline(always)]
+pub(crate) fn vle_answer((value, refused): (u64, Option<CodecError>)) -> Result<u64, CodecError> {
+    match refused {
+        None => Ok(value),
+        Some(refused) => Err(refused),
+    }
+}
+
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_array` to bounds-check + read fixed-offset bytes positionally
 /// (`peek_slice` where the count is known only at run time), then `advance`
@@ -710,35 +721,44 @@ impl<'a> SceCursor<'a> {
     /// one by [`read_zint`], held here, so the program holds one copy of the
     /// decode and the frame's sequence number, the ZInt of four or five bytes
     /// the cursor reads in every frame, is one call.
+    ///
+    /// The answer is the value and the refusal as a pair, which the calling
+    /// convention hands back in two registers; a `Result<u64, CodecError>` is
+    /// handed back through memory, a store of each part in the read and a load
+    /// of each in its caller (docs/adr/0138, sixth amendment). [`vle_answer`]
+    /// makes the pair a `Result` where it is called.
     #[inline(never)]
-    pub(crate) fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
+    pub(crate) fn read_vle_inner(&mut self, max_bits: u32) -> (u64, Option<CodecError>) {
         if let Some(value) = read_zint_short(&mut self.rest) {
-            return Ok(value);
+            return (value, None);
         }
         let (value, read) = read_zint(self.rest, 0, max_bits);
         self.rest = self.rest.get(read..).unwrap_or_default();
-        value
+        match value {
+            Ok(value) => (value, None),
+            Err(refused) => (0, Some(refused)),
+        }
     }
 
     /// Read a `vle_u16` field: a ZInt of 1-9 wire bytes whose value is at
     /// most `u16::MAX`, by the cursor's one ZInt read.
     #[inline]
     pub fn read_vle_u16(&mut self) -> Result<u16, CodecError> {
-        self.read_vle_inner(16).map(|v| v as u16)
+        vle_answer(self.read_vle_inner(16)).map(|v| v as u16)
     }
 
     /// Read a `vle_u32` field: a ZInt of 1-9 wire bytes whose value is at
     /// most `u32::MAX`, by the cursor's one ZInt read.
     #[inline]
     pub fn read_vle_u32(&mut self) -> Result<u32, CodecError> {
-        self.read_vle_inner(32).map(|v| v as u32)
+        vle_answer(self.read_vle_inner(32)).map(|v| v as u32)
     }
 
     /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes, by the cursor's one
     /// ZInt read.
     #[inline]
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
-        self.read_vle_inner(64)
+        vle_answer(self.read_vle_inner(64))
     }
 }
 
@@ -1922,7 +1942,7 @@ mod tests {
             );
             let mut shared = SceCursor::new(input);
             shared.advance(offset).unwrap();
-            let got = shared.read_vle_inner(bits);
+            let got = vle_answer(shared.read_vle_inner(bits));
             assert_eq!(
                 (got, shared.remaining()),
                 want,
