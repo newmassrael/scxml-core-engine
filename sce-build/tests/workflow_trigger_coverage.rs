@@ -395,6 +395,17 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // that writes the next one is any script, in any directory, and most of
     // them sit where no lane's filter looks.
     "a_pipeline_has_no_reader_that_leaves_early",
+    // Asks `git ls-files` for every tracked `*.scxml` and holds each
+    // generatable document's selection rows to the events its descriptors
+    // match. The document whose rows would enable the wrong event is one an
+    // author adds next, in any directory no lane's filter names.
+    "a_transitions_enabling_events_are_the_rows_its_event_enum_numbers",
+    // Runs every generatable document of the static class in the corpus on
+    // the class walker and on the general one, with seeded random events, and
+    // holds the two to one journal. A document enters the class by its shape,
+    // wherever it is written, so a filter over today's fixtures names the
+    // documents already known to agree.
+    "the_class_walker_runs_as_the_general_interpreter_does",
     "workflow_trigger_coverage",
 ];
 

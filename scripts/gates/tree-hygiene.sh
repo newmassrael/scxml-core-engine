@@ -286,6 +286,8 @@ hygiene_part cargo test -p sce-build --features cli,ffi \
     --test scope_terminology \
     --test spec_surface_registration \
     --test workflow_trigger_coverage \
+    --test a_transitions_enabling_events_are_the_rows_its_event_enum_numbers \
+    --test the_class_walker_runs_as_the_general_interpreter_does \
     --test hook_ci_parity \
     --test the_restricted_term_gate_runs_each_pattern_once \
     --test build_jobs_has_one_owner \
