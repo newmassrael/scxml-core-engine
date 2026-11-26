@@ -14,8 +14,11 @@ name: Release
 # repository's path), which a Go or SwiftPM consumer resolves by its tag. This
 # lane pushes those tags and publishes the archives as the tag's release.
 #
-# It publishes and reaches no verdict about a change, so no gate mirrors it;
-# `scripts/release.py --check` reads its declaration on a workstation.
+# The work runs in the host image (ADR 0145) as the `release` gate
+# (scripts/gates/release.sh): the generator is built and every tree
+# materialized with the image's packages, and this file installs none. The
+# gate reads the declaration on any commit and makes the release on one a
+# release tag names; the steps after it push the tags and publish what it made.
 
 on:
   push:
@@ -31,9 +34,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
-    # `contents: write` pushes the release tags and creates the release.
+    # `contents: write` pushes the release tags and creates the release;
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image).
     permissions:
       contents: write
+      packages: write
 
     steps:
     # Full history: the release is refused unless the tagged commit is on
@@ -52,40 +58,27 @@ jobs:
           exit 1
         fi
 
-    # libxml2 backs the default `xsd` feature the generator builds with, and
-    # clang-format-19 is the formatter the generator runs on the C++ trees and
-    # refuses without (docs/SCE_CODEGEN_DETERMINISM.md section 9).
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
-
-    # The release rust-toolchain.toml pins, which lists rustfmt: the Rust
-    # trees are formatted with it.
+    # The release rust-toolchain.toml pins, mounted read-only into the image
+    # (`gate_in_container` in scripts/gate); it lists rustfmt, which the Rust
+    # trees are formatted with.
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    - name: Build the generator of the commit
-      # Only the debug binary is built, so a release binary a cache restored
-      # would be found first: drop it, as every workflow that builds this way does.
-      run: |
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
-    - name: Read the declaration
-      run: python3 scripts/release.py --check --tag "$GITHUB_REF_NAME"
-
-    # The pipeline's own commit and tags: an identity of its own, and no
-    # local hook (the release commit holds generated trees and is no change
-    # of the repository's history; it is never merged back).
+    # The declaration, the tag against the workspace's version, and the
+    # release made into build/release: the pipeline's own commit and tags,
+    # with an identity of its own and no local hook (the release commit holds
+    # generated trees and is no change of the repository's history; it is
+    # never merged back).
     - name: Make the release
-      run: python3 scripts/release.py --tag "$GITHUB_REF_NAME" --out "${{ runner.temp }}/release"
+      run: scripts/gate release
 
     - name: Push the release tags
       run: |
         set -euo pipefail
-        mapfile -t tags < <(python3 -c 'import json, sys; [print(t) for t in json.load(open(sys.argv[1]))["tags"]]' "${{ runner.temp }}/release/release.json")
+        mapfile -t tags < <(python3 -c 'import json, sys; [print(t) for t in json.load(open(sys.argv[1]))["tags"]]' build/release/release.json)
         refs=()
         for tag in "${tags[@]}"; do refs+=("refs/tags/$tag"); done
         git push origin "${refs[@]}"
@@ -95,7 +88,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        release="${{ runner.temp }}/release"
+        release=build/release
         commit=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["release_commit"])' "$release/release.json")
         {
           echo "Packages of $GITHUB_REF_NAME, each with its generated trees and their generated-provenance.json."

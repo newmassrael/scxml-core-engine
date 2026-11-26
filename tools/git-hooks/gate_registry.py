@@ -468,7 +468,10 @@ COST_MEASURED: dict[str, str] = {
 # 35 -> 36 on 2026-11-27, the same direction: `mutation-swift` arrived when the
 # Swift rounds left `mutation-rounds` for an image of their own (ADR 0145), and
 # declares that gate's figure until a run of its own is timed.
-UNMEASURED_COST_CEILING = 36
+# 36 -> 37 the same day, the same direction: `release` arrived when the release
+# pipeline's work moved into a gate in the host image, and declares its
+# workflow's median until a run of the gate is timed.
+UNMEASURED_COST_CEILING = 37
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1167,11 +1170,10 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
     # (`clang-format`, docs/adr/0145); the commit hook still runs it on the
     # staged files.
     "fmt-check.yml": "commit-hook: cargo fmt --all -- --check",
-    # A publication too: on a release tag it packs the consumer packages with
-    # their generated trees and provenance and pushes the release commit's
-    # tags (ADR 0097, section 7). Its declaration is read by
-    # `scripts/release.py --check`, which the workspace suite runs.
-    "release.yml": "publication: scripts/release.py makes the release",
+    # `release.yml` was one too, a publication with no verdict to reproduce,
+    # until its work moved into the `release` gate, which runs it in the host
+    # image (ADR 0145): a workflow installs no package, so what it runs with an
+    # image's packages is a gate's.
 }
 
 # Lines that report rather than run. A hook's `log_step "Stage 0/4 — cargo fmt
