@@ -6,6 +6,11 @@
   name the codecs whose reads it wants inlined, and `ForgeCompileOptions::inline_decode` is a choice of three, not a
   flag. ADR 0137 (section 1, a body read is out of line where its set reads it from two sites or more): a body read
   of a codec the build names is `#[inline(always)]` whatever its sites; every other read keeps the rule.
+- Amended by ADR 0140 (2026-11-26): hotness is a property of a read's site, not of a codec. The body of a codec named
+  is hot and so is every read a hot body makes, transitively; a hot body is printed once in forms held in place that
+  the hot sites call, its entry points calls of them that keep ADR 0137's rule over the cold sites; a hot body reads
+  its ZInts held in place (section 4); a codec is named by its document's stem or by an import alias, not the `name`
+  of its `<scxml>` (section 1), and a name of two codecs is refused.
 - Related: ADR 0061 (`generate --inline-encode`), ADR 0138 (a ZInt read by one function out of line), ADR 0077 §7
   (what a deployment's storing forms hold, the build's and not the document's).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.
@@ -34,6 +39,10 @@ is the build.
 ## Decision
 
 ### 1. The build names the codecs whose reads are on its hot path
+
+Amended by ADR 0140: the hot path is made of sites, not codecs. The codecs named are the roots of the hot closure,
+whose bodies are printed once in forms held in place that every hot site calls, while the cold sites call the entry
+points; a codec is named by its document's stem, the name the count keeps it by, or by an alias an import gives it.
 
 `ForgeCompileOptions::inline_decode` is `forge::body_reads::InlineDecode`, a choice of three:
 
@@ -76,6 +85,10 @@ give. It is keyed by the name alone, so a set that gains a codec keeps the recor
   InlineDecode::Codecs(hot), body_reads: sites, .. }` on each generation.
 
 ### 4. What a named read is, and what stays out of line
+
+Amended by ADR 0140: a hot body reads its ZInts by the frame reader's reads held in place; every other body calls the
+reader's read out of line. The runtime's routines of a chain stay out of line; the rule a hot body's chain is read by
+calls the entry's form held in place.
 
 The reads named are those ADR 0137 places by their sites: the eager `read_into` of a codec that reads into its
 destination, `read` of one built as a value, and the view's `read_with`. The wrappers around them keep no

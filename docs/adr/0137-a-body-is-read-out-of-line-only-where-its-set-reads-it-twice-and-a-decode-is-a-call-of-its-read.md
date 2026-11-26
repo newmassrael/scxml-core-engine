@@ -14,6 +14,8 @@
 - Amended by ADR 0139 (2026-11-26): a body read of a codec the build names as on its hot path
   (`--inline-decode-for`, `InlineDecode::Codecs`) is `#[inline(always)]` whatever its sites; every other read keeps
   the rule of section 1, and a name that is no codec of the set is refused.
+- Amended by ADR 0140 (2026-11-26): the sites that place a body's entry point are the cold ones; a site of a body on
+  the build's hot path calls the body's form held in place and is not counted.
 - Related: ADR 0049 (a decoded Rust codec is a view over its wire bytes), ADR 0061 (`generate --inline-encode`),
   ADR 0077 §7 (a value past a capacity).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.

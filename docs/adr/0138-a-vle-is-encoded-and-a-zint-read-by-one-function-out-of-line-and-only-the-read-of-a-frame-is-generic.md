@@ -9,6 +9,9 @@
   is made by one function out of line, not assembled in each sink and at each call site. ADR 0137 (section 3, the
   one-byte read kept at the field; section 4, the reader's start inlined at each decode): both are withdrawn, and the
   start of a frame is one function of the runtime, as its verdict is.
+- Amended by ADR 0140 (2026-11-26): a body on the build's hot path reads a ZInt by the frame reader's read held in
+  place (`read_vle_u16_inline` and its widths), the same decode; `read_vle_inner` is one call of that held decode, and
+  every other body keeps the call (section 2).
 - Related: ADR 0061 (a sink's VLE of one or two bytes stored in line, and `CountSink`'s length), ADR 0128 (a frame's
   reads are total and its verdict is read once), ADR 0136 (a chain is read by one routine, dispatched statically).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.
