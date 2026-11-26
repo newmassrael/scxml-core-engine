@@ -8,7 +8,8 @@
 # (SCE Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
 # memory model allows, where a stress run samples the few a machine gives. The
 # harnesses named broadcast_log_* are the bounded broadcast log's (ADR 0062
-# section 6), read by the same loops and mutants.
+# section 6), and the ones named inbox_* and engine_inbox_* are the C11 and C++
+# inboxes of ADR 0084 (ADR 0147, D5), read by the same loops and mutants.
 #
 # TWO CLAIMS, and the second is what makes the first worth reading:
 #
@@ -97,8 +98,13 @@ sce_gate_on_exit genmc_cleanup
 # change of default is not a change of what is checked.
 GENMC_OPTIONS=(--rc11 "--unroll=$UNROLL" --disable-estimation --print-exec-graphs)
 # The C runtime's own include directory holds `sce/text.h`, which declares the
-# memory functions the queue copies with (docs/adr/0110, D1).
-INCLUDES=(-I backends/c/forge-runtime/include -I backends/c/runtime/include -I "$GENMC_ROOT/include/genmc/runtime")
+# memory functions the queue copies with (docs/adr/0110, D1), and the inbox the
+# inbox harnesses judge (`sce/inbox.h`, with `sce/types.h` and
+# `sce/portability.h`) and the token check they apply endings by
+# (`sce/host_processor.h`). The harness directory itself holds `inbox_tree.h`, which the inbox harnesses
+# share. It is found through the include path and not beside the harness because a
+# mutant's copy of a harness is compiled from `$WORK`.
+INCLUDES=(-I backends/c/forge-runtime/include -I backends/c/runtime/include -I "$HARNESS_DIR" -I "$GENMC_ROOT/include/genmc/runtime")
 # C++17, and not the C++20 the runtime is built with. The two queue headers
 # compile under both and write the same `std::memory_order_*` under both, and
 # GenMC reads only what they write. Under C++20 <memory> pulls in <ostream> and so

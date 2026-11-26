@@ -28,6 +28,12 @@ on:
     paths:
       - 'backends/c/forge-runtime/include/**'
       - 'backends/c/runtime/include/sce/text.h'
+      # The C11 inbox and what it includes, and the token check, which the inbox
+      # harnesses read (ADR 0147, D5).
+      - 'backends/c/runtime/include/sce/inbox.h'
+      - 'backends/c/runtime/include/sce/types.h'
+      - 'backends/c/runtime/include/sce/portability.h'
+      - 'backends/c/runtime/include/sce/host_processor.h'
       - 'backends/c/forge-runtime/tests/genmc/**'
       - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
       - 'backends/cpp/forge-runtime/include/sce/forge/queue.h'
@@ -48,6 +54,12 @@ on:
     paths:
       - 'backends/c/forge-runtime/include/**'
       - 'backends/c/runtime/include/sce/text.h'
+      # The C11 inbox and what it includes, and the token check, which the inbox
+      # harnesses read (ADR 0147, D5).
+      - 'backends/c/runtime/include/sce/inbox.h'
+      - 'backends/c/runtime/include/sce/types.h'
+      - 'backends/c/runtime/include/sce/portability.h'
+      - 'backends/c/runtime/include/sce/host_processor.h'
       - 'backends/c/forge-runtime/tests/genmc/**'
       - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
       - 'backends/cpp/forge-runtime/include/sce/forge/queue.h'
