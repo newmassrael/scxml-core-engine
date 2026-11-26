@@ -53,6 +53,13 @@
                "unit. w3c-tests.yml declares no `paths:` filter, so CI "
                "runs this arm on every push.",
     "summary": "W3C conformance, Rust AOT",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "cache": True,
     "inputs": None,
     "commits": [],

@@ -447,15 +447,10 @@ fn verification_invocations_depth(text: &str, depth: usize) -> BTreeSet<String> 
 /// maintained. Until then the test below pins it in both directions, so
 /// an entry cannot go stale and a new skip cannot go undeclared.
 const CI_ONLY: &[(&str, &str)] = &[
-    (
-        "scripts/install_mesh_transports.sh",
-        "provisions the runner rather than verifying the tree: it builds \
-         vsomeip3, zenohcxx and CycloneDDS from source, which a push-time \
-         hook must not do. A workstation carries them already — that is why \
-         it registers 178 cases where a bare runner registers 130 — and \
-         `cpp-suite`, which the hook does run, refuses rather than report on \
-         the smaller set.",
-    ),
+    // `scripts/install_mesh_transports.sh` used to sit here: cpp-suite.yml
+    // built the three transport SDKs on its runner, which a push-time hook must
+    // not do. The lane runs its gate in the host image now, which holds them
+    // (ADR 0145), so no mirrored workflow runs the script.
     (
         "scripts/install_mnemosyne_cli.sh",
         "provisions the runner rather than verifying the tree: it is a \

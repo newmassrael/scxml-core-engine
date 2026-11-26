@@ -18,6 +18,13 @@
     "runner_workflow": True,
     "cost_s": 0,
     "summary": "embed manifest emitted from the inputs it is committed with",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     # Reads HEAD's objects (`check --rev HEAD`, `git show`) and the
     # commit each submodule is at, so the unit carries HEAD's id
     # (`commits`). The plan also keeps no verdict for a tree that differs

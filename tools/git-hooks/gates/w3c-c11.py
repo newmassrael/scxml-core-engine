@@ -83,6 +83,13 @@
                "push and nothing narrows what CI sees.",
     "cost_s": 258,
     "summary": "W3C conformance, C11 MCU backend",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "cache": True,
     "inputs": None,
     "commits": [],

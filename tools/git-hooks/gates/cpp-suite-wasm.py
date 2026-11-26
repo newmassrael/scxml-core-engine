@@ -44,13 +44,22 @@
                "(cpp-suite.yml run 41956988917, 2026-11-05) configured "
                "and built the tree cold in 3328s and stopped at seven "
                "links, so the figure is that build alone and the ctest "
-               "half has no reading yet. It needs emsdk, which a push "
-               "host is not required to carry. cpp-suite.yml runs it in "
+               "half has no reading yet. It runs in the host image, which "
+               "holds emsdk and which a push host is not required to "
+               "start. cpp-suite.yml runs it in "
                "six shards beside the native suite "
                "(SCE_CPP_SUITE_WASM_SHARD).",
     "cost_s": 3328,
     "summary": "C++ ctest suite built with emscripten, every case under Node",
-    # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # The SDK and the Node it ships are the image's, at the release
+    # scripts/install_emsdk.sh pins.
     "cache": True,
     "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                             "emsdk (`[platform.linux.tools.emsdk]`)",

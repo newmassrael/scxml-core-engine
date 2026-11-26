@@ -16,17 +16,24 @@
     "runner_workflow": True,
     "cost_s": 0,
     "summary": "emit_embed_manifest fail-fast case",
-    # Kept only from a landing unit, where the skip below cannot pass, and
-    # a landing's unit goes only to a machine with clang-19 installed.
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # Kept only from a landing unit, where the skip below cannot pass; the
+    # image the gate runs in holds clang-19.
     "cache": True,
     "kept_only_from_a_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
                             "skips and exits 0 on a machine without "
                             "clang++-19",
-    "packages": ["clang-19"],
     # Read by `check learn` (2026-11-24, bx 340e9f9e): the fail-fast case,
     # the emitter it drives and the two Python modules the emitter runs.
     # The run lists `scripts/`. The case writes its header tree under a
-    # temporary directory, so nothing of `sce/include` is read.
+    # temporary directory, so nothing of `sce/include` is read. The image's
+    # build context is in the unit's key through `unit_inputs`.
     "inputs": [
         "scripts/",
         "scripts/_embed_manifest_filter.py",

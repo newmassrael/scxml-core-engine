@@ -224,10 +224,13 @@ jobs:
   cpp-suite:
     name: C++ ctest Suite (engine + mesh, shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
-    # actions: write deletes the lane's older plans (keep-one-cache).
+    # actions: write deletes the lane's older plans (keep-one-cache); packages:
+    # write pulls the gate's image, and pushes it when this run built it
+    # (.github/actions/gate-image).
     permissions:
       contents: read
       actions: write
+      packages: write
     timeout-minutes: 140
     strategy:
       fail-fast: false
@@ -241,75 +244,24 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          g++ \
-          meson \
-          ninja-build \
-          lld \
-          pkg-config \
-          libxml2-dev \
-          libspdlog-dev \
-          libfmt-dev \
-          libboost-dev \
-          libboost-system-dev \
-          libboost-thread-dev \
-          libboost-filesystem-dev \
-          clang-format-19
-    # clang-format-19: the tree generates its C++ state machines through
-    # `sce-codegen`, which formats them with clang-format pinned to major 19
-    # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9).
-
     # `tests/CMakeLists.txt` registers its transport suites behind
-    # `find_package(vsomeip3|zenohcxx|CycloneDDS QUIET)`, so a runner without
+    # `find_package(vsomeip3|zenohcxx|CycloneDDS QUIET)`, so a machine without
     # them registers a smaller suite than this job's name claims — 130 non-c11
-    # cases against a floor of 140. The gate refused rather than report green
-    # over the remainder, which made this lane red on every push while
-    # claiming nothing about the tree. The versions live in the script, one
-    # place, checked against upstream tags.
-    # A prefix of its own rather than /usr/local: the runner image keeps its
-    # preinstalled toolchains there (the Android SDK alone is gigabytes), and
-    # a cache of that is neither restorable nor honest about what it holds.
-    # `CMAKE_PREFIX_PATH` and `LD_LIBRARY_PATH` below are what make a private
-    # prefix visible to `find_package` and to the tests that then link it.
-    #
-    # Restored and saved as two steps, and saved as soon as the SDKs are built:
-    # `actions/cache` saves in the job's post step only after a job that
-    # succeeded, and from 2026-11-21 no job of this lane succeeded, so every run
-    # built the three SDKs again (7 minutes in job 138540727626, its cache "not
-    # found" for a key unchanged since the run before).
-    - name: Restore the mesh transport SDKs
-      id: transports
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.local/sce-mesh-transports
-        key: mesh-transports-${{ runner.os }}-${{ hashFiles('scripts/install_mesh_transports.sh') }}
-
-    - name: Build and install the mesh transport SDKs
-      if: steps.transports.outputs.cache-hit != 'true'
-      run: scripts/install_mesh_transports.sh "$HOME/.local/sce-mesh-transports"
-
-    - name: Save the mesh transport SDKs
-      if: steps.transports.outputs.cache-hit != 'true'
-      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.local/sce-mesh-transports
-        key: ${{ steps.transports.outputs.cache-primary-key }}
-
-    - name: Put the transport prefix on the CMake and loader paths
-      run: |
-        echo "CMAKE_PREFIX_PATH=$HOME/.local/sce-mesh-transports" >> "$GITHUB_ENV"
-        echo "LD_LIBRARY_PATH=$HOME/.local/sce-mesh-transports/lib" >> "$GITHUB_ENV"
-
+    # cases against a floor of 140, and the gate refuses rather than report
+    # green over the remainder. The gate runs in the host image (`container`
+    # of its registry entry), which holds the three SDKs at the versions
+    # scripts/install_mesh_transports.sh names, beside the compilers, CMake and
+    # Ninja, the libraries the tree links and clang-format 19, which
+    # `sce-codegen` formats the generated C++ with
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). Nothing is installed on this
+    # runner.
     - name: Setup Problem Matchers
       run: |
         echo "::add-matcher::.github/problem-matchers/gcc.json"
         echo "::add-matcher::.github/problem-matchers/cmake.json"
 
+    # The pinned release, which the runner hands the image read-only: the
+    # image carries no Rust of its own (`gate_in_container` in scripts/gate).
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
@@ -322,17 +274,12 @@ jobs:
       with:
         cmake: true
 
-    - name: Build sce-codegen
-      run: |
-        # This step builds the debug profile alone, so a release binary another
-        # build left in `target` is not a product of this commit.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
-
     # No emscripten here: this job builds the native tree, and nothing it
-    # configures or runs reads emsdk (the WebAssembly job below installs it).
+    # configures or runs reads emsdk.
 
+    # The configure's cache records the compilers it found, which are the
+    # image's, so its key names the image's build context: a configure of one
+    # image is never restored into a run of another.
     - name: Cache CMake Build
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
@@ -340,9 +287,9 @@ jobs:
           build/CMakeCache.txt
           build/CMakeFiles
           build/_deps
-        key: ${{ runner.os }}-cmake-${{ github.repository }}-${{ hashFiles('**/CMakeLists.txt') }}
+        key: ${{ runner.os }}-cmake-host-image-${{ hashFiles('tools/ci-images/host/**') }}-${{ github.repository }}-${{ hashFiles('**/CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-cmake-${{ github.repository }}-
+          ${{ runner.os }}-cmake-host-image-${{ hashFiles('tools/ci-images/host/**') }}-${{ github.repository }}-
 
     # The answers of the generator's configure-time plans
     # (cmake/SCECodegenPlan.cmake). After a checkout every restored answer is
@@ -364,10 +311,15 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-sce-codegen-plans-cpp-suite-
 
+    - name: Sign in to the gate images' registry
+      uses: ./.github/actions/gate-image
+
     # Configure, build and run are one gate, so the check has one spelling for
     # this lane and for the pre-push hook. The gate asserts that its half and
     # the C11 arm's half add up to every registered case, so a case that
-    # belongs to neither fails here rather than going unrun in silence.
+    # belongs to neither fails here rather than going unrun in silence. The
+    # runner inside the image builds `sce-codegen` first, through its
+    # `codegen-build` gate.
     - name: Run the C++ ctest suite
       env:
         SCE_CTEST_SHARD: ${{ matrix.shard }}/4
@@ -414,14 +366,11 @@ jobs:
         prefix: ${{ runner.os }}-sce-codegen-plans-cpp-suite-
         keep: ${{ steps.plans.outputs.cache-primary-key }}
 
-    - name: Debug Environment
+    # The cases that failed, from the run the gate made in the image; the gate
+    # itself names each failure and the command that reproduces it.
+    - name: Show the failed cases
       if: failure()
-      run: |
-        set -o pipefail
-        echo "=== Registered cases ==="
-        ctest --test-dir build -N -LE c11 | tail -5
-        echo "=== Last failures ==="
-        cat build/Testing/Temporary/LastTestsFailed.log || echo "no failure log"
+      run: cat build/Testing/Temporary/LastTestsFailed.log || echo "no failure log"
 
     # What the compile cache answered of this job, and what it could not
     # (.github/actions/compile-cache).
@@ -467,7 +416,7 @@ jobs:
   # Jobs of their own rather than steps after the native suite: the two trees
   # share no build, and either one red must not stop the other from reporting.
   # SCE_REQUIRE_TOOLS turns the gate's "emsdk missing, skipping" into a failure
-  # here, where emsdk is installed.
+  # here, where the gate's image holds emsdk.
   #
   # In six shards, one job each, and a last job that holds them together, as
   # the native suite is. Run whole, the tree built cold in 3328s before a case
@@ -485,6 +434,11 @@ jobs:
   cpp-suite-wasm:
     name: C++ ctest Suite (WASM, under Node, shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
+    permissions:
+      contents: read
+      packages: write
     # The whole suite's allowance until a sharded run is measured.
     timeout-minutes: 150
     strategy:
@@ -499,26 +453,13 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          ninja-build \
-          pkg-config \
-          clang-format-19
-    # clang-format-19: `sce-codegen` formats the C++ it generates with
-    # clang-format pinned to major 19 and refuses without it
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9). ninja-build: a shard reads what its
-    # tests need built from ninja's graph, and plans nothing in a tree of
-    # another generator.
-
     - name: Setup Problem Matchers
       run: |
         echo "::add-matcher::.github/problem-matchers/gcc.json"
         echo "::add-matcher::.github/problem-matchers/cmake.json"
 
+    # The pinned release, which the runner hands the image read-only: the
+    # image carries no Rust of its own (`gate_in_container` in scripts/gate).
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
@@ -530,41 +471,22 @@ jobs:
       with:
         emscripten: true
 
-    - name: Build sce-codegen
-      run: |
-        # This step builds the debug profile alone, so a release binary another
-        # build left in `target` is not a product of this commit.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
-
-    # The installed SDK, cached under the release scripts/install_emsdk.sh pins
-    # (the registry holds the release below to it): a lane that downloaded it on
-    # every run failed when the download did (run 45496827881, a name lookup), and
-    # the jobs that build with it share the one entry.
-    - name: Cache Emscripten (emsdk)
-      id: emsdk-cache
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: emsdk
-        key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
-
-    - name: Setup Emscripten (emsdk)
-      if: steps.emsdk-cache.outputs.cache-hit != 'true'
-      run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        # The release this lane was last green on; `latest` moved to 7.0.0.
-        ./emsdk install 6.0.13
-        ./emsdk activate 6.0.13
+    # The gate runs in the host image (`container` of its registry entry),
+    # which holds emsdk at the release scripts/install_emsdk.sh pins (the
+    # registry's self-test holds the two to one), CMake and Ninja (a shard
+    # reads what its tests need built from ninja's graph), and clang-format 19,
+    # which `sce-codegen` formats the C++ it generates with
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The gate finds the SDK itself
+    # (`sce_gate_activate_emsdk` in scripts/gates/lib.sh), and the runner inside
+    # the image builds `sce-codegen` first, through its `codegen-build` gate.
+    - name: Sign in to the gate images' registry
+      uses: ./.github/actions/gate-image
 
     - name: Run the C++ ctest suite under Node
       env:
         SCE_REQUIRE_TOOLS: 1
         SCE_CPP_SUITE_WASM_SHARD: ${{ matrix.shard }}/6
-      run: |
-        source emsdk/emsdk_env.sh
-        scripts/gate cpp-suite-wasm
+      run: scripts/gate cpp-suite-wasm
 
     # The plan and what this shard ran (`cpp-suite-wasm-verdict` reads them),
     # and the gate's two logs: the build's, which names every failed edge, and

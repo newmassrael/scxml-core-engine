@@ -30,6 +30,13 @@
                "because the scratch directories are the point.",
     "cost_s": 311,
     "summary": "embed manifest drift + payload lag + consumer smoke",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     # The Bazel consumer's versions are pinned in the tree
     # (`scripts/lib/bazel_pins.sh`), and a machine without bazel ends the
     # smoke "could not measure" (exit 3) rather than passing.

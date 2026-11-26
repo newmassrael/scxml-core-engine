@@ -57,8 +57,9 @@
                "of one tree rather than timed as a script, and about "
                "1200s cold. No other gate a push runs builds both "
                "emscripten trees, so the cold figure is the state a "
-               "trigger usually finds them in, and it needs emsdk, which "
-               "a push host is not required to carry. w3c-tests.yml "
+               "trigger usually finds them in, and it runs in the host "
+               "image, which holds emsdk and which a push host is not "
+               "required to start. w3c-tests.yml "
                "declares no `paths:` filter, so CI runs this arm on every "
                "push, in jobs of its own (`test-cpp-wasm-shard`, one per "
                "tree and shard).",
@@ -66,7 +67,15 @@
     "summary": "W3C conformance and the interactive suite, C++ "
                "Interpreter + AOT built with emscripten, under Node, on "
                "the threaded and the host-driven engine",
-    # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # The SDK and the Node it ships are the image's, at the release
+    # scripts/install_emsdk.sh pins.
     "cache": True,
     "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                             "emsdk (`[platform.linux.tools.emsdk]`)",
