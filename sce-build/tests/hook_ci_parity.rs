@@ -510,16 +510,10 @@ const CI_ONLY: &[(&str, &str)] = &[
          and the gate is `ci_only` in gate_registry.py, whose entry says why \
          the lane does not go through `scripts/gate` there.",
     ),
-    (
-        "scripts/gates/visualizer-layout.sh",
-        "measures the two modules deploy-visualizer.yml's build jobs made from \
-         the commit and handed to the job that runs it, so that job runs the \
-         gate's script itself: `scripts/gate` would build the dependency, \
-         visualizer-wasm, whole again first. A landing's unit and a local run \
-         go through the runner, the dependency first, and the gate's entry \
-         (tools/git-hooks/gates/visualizer-layout.py) says why the lane does \
-         not delegate.",
-    ),
+    // `scripts/gates/visualizer-layout.sh` used to sit here: deploy-visualizer.yml
+    // ran the gate's script itself on modules its build jobs handed over. A step
+    // outside the runner runs outside the gate's image, so the lane runs
+    // `scripts/gate visualizer-layout` now, dependency first, as the hook does.
     (
         "xml_to_html.py",
         "publication, not verification. The report job turns the C++ JUnit \

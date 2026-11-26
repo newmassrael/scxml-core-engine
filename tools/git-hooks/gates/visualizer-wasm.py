@@ -19,12 +19,20 @@
     # by another unit on another machine is not there to measure.
     "ci_only": "77s measured 2026-08-22 (declared 42) building three "
                "WASM artifacts. deploy-visualizer.yml runs it, and this "
-               "gate declares no trigger of its own, so the workflow's "
-               "filter IS the trigger — the two cannot disagree.",
+               "gate declares no trigger of its own beyond its image, so "
+               "the workflow's filter IS the trigger — the two cannot "
+               "disagree.",
     "cost_s": 77,
     "summary": "codegen + visualizer + DOOM WASM builds",
-    # The SDK is bx.toml's pinned emsdk tool, wasm-pack a need of the
-    # platform.
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # The SDK and wasm-pack are the image's, at the releases it pins, and the
+    # image is addressed by its tracked Containerfile.
     "cache": True,
     "kept_only_from_a_landing": "the emscripten half runs only where emsdk is "
                             "found, so a pass without it judged one "

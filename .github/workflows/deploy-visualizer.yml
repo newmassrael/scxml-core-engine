@@ -20,7 +20,7 @@ on:
       - 'examples/doom_wasm/**'
       - 'web/site/**'
       # The emsdk release the build machines install for this lane's gates
-      # (`[platform.linux.tools.emsdk]` in bx.toml); the step below names the
+      # (`[platform.linux.tools.emsdk]` in bx.toml); the gates' image names the
       # same release, and the gate registry's self-test holds the two to one.
       - 'scripts/install_emsdk.sh'
       # What the page's engine and the codegen WASM are built from beside
@@ -69,6 +69,10 @@ on:
       - '.github/workflows/deploy-visualizer.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the gates run in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 # This lane crossed the line, and it crossed it while carrying the note that
@@ -125,8 +129,11 @@ jobs:
     name: Visualizer WebAssembly (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
     permissions:
       contents: read
+      packages: write
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -139,26 +146,8 @@ jobs:
       with:
         submodules: recursive
 
-    # clang-format-19: the emscripten builds generate their state machines
-    # through `sce-codegen`, which formats C++ with clang-format pinned to major
-    # 19 and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9). The codegen
-    # WASM (part 1) builds `sce-build` without libxml2 and runs no generator.
-    - name: Install Dependencies
-      if: matrix.shard != 1
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          g++ \
-          ninja-build \
-          pkg-config \
-          libxml2-dev \
-          libspdlog-dev \
-          libfmt-dev \
-          libboost-dev \
-          clang-format-19
-
+    # The pinned release, which the runner hands the image read-only: the
+    # image carries no Rust of its own (`gate_in_container` in scripts/gate).
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
@@ -166,17 +155,14 @@ jobs:
       id: compile-cache
       uses: ./.github/actions/compile-cache
 
-    - name: Build sce-codegen
-      if: matrix.shard != 1
-      run: |
-        # This step builds the debug profile alone, so a release binary
-        # another build left in `target` is not a product of this
-        # commit. The locator knows which path that is; naming it here
-        # would put a build-layout detail back into every workflow.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
-
+    # The gate runs in the host image (`container` of its registry entry),
+    # which holds what each part builds with: wasm-pack, pinned (the note
+    # below says why), for the codegen WASM (part 1), and for the emscripten parts emsdk at the
+    # release scripts/install_emsdk.sh pins, CMake and Ninja, the libraries the
+    # tree links and clang-format 19, which `sce-codegen` formats the C++ it
+    # generates with (docs/SCE_CODEGEN_DETERMINISM.md §9). Each emscripten part
+    # builds the generator itself (`sce_gate_codegen` in scripts/gates/lib.sh).
+    #
     # The codegen WASM used to be a committed binary under
     # web/visualizer/wasm/ that nothing in the repository could rebuild:
     # `sce-build` had no cdylib crate-type, so wasm-pack refused it and
@@ -188,7 +174,8 @@ jobs:
     # function of the commit being deployed.
     #
     # ⚠ PINNED, not `latest`, and the reason is a silent fallback measured
-    # 2026-09-15. The action resolves `latest` with an unauthenticated call
+    # 2026-09-15, when this job installed wasm-pack with an action. The action
+    # resolved `latest` with an unauthenticated call
     # to the GitHub releases API and falls back without a warning when the
     # reply has no tag:
     #
@@ -200,50 +187,22 @@ jobs:
     # cannot parse `license.workspace = true` in `sce-build-wasm/Cargo.toml`
     # ("invalid type: map, expected a string for key `package.license`"),
     # which had been there since 2026-08-03 without incident. Nothing in the
-    # tree changed; the tool did. A pinned tag skips the lookup, so there is
-    # no reply to go missing. v0.15.0 is the version the last green run
-    # actually installed, so the pin changes nothing but the nondeterminism.
-    - name: Install wasm-pack
-      if: matrix.shard == 1
-      uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
-      with:
-        version: 'v0.15.0'
-
-    # The installed SDK, cached under the release scripts/install_emsdk.sh pins
-    # (the registry holds the release below to it): a lane that downloaded it on
-    # every run failed when the download did (run 45496827881, a name lookup), and
-    # the jobs that build with it share the one entry.
-    - name: Cache Emscripten (emsdk)
-      id: emsdk-cache
-      if: matrix.shard != 1
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: emsdk
-        key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
-
-    - name: Setup Emscripten (emsdk)
-      if: matrix.shard != 1 && steps.emsdk-cache.outputs.cache-hit != 'true'
-      run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        # The release this lane was last green on; `latest` moved to 7.0.0.
-        ./emsdk install 6.0.13
-        ./emsdk activate 6.0.13
+    # tree changed; the tool did. The image installs one release, v0.15.0,
+    # the version the last green run actually installed, by its version and
+    # checksum (ADR 0145, D3), so there is no lookup and no reply to go
+    # missing.
+    - name: Sign in to the gate images' registry
+      uses: ./.github/actions/gate-image
 
     # One part of the gate the pre-push hook runs whole. SCE_REQUIRE_TOOLS
     # turns the gate's "emscripten not installed, skipping" into a failure
     # here: a lane that claims to build the visualizer must not report green
-    # because emsdk went missing. The codegen WASM job has no SDK and needs
-    # none; its part never asks for one.
+    # because emsdk went missing. The codegen WASM part never asks for the SDK.
     - name: Build this part's WebAssembly
       env:
         SCE_REQUIRE_TOOLS: 1
         SCE_VISUALIZER_WASM_SHARD: ${{ matrix.shard }}/3
-      run: |
-        if [[ -f emsdk/emsdk_env.sh ]]; then
-          source emsdk/emsdk_env.sh
-        fi
-        scripts/gate visualizer-wasm
+      run: scripts/gate visualizer-wasm
 
     # Each part's output, for the layout measurement and the publish below.
     # The browser module is built in the tree without threads, and its build
@@ -293,22 +252,27 @@ jobs:
   # the call the page makes, and the engine is compared with it through
   # `visualizer.js`. Before the publish, because a drawing whose edges reach
   # nothing should not be published. It runs `visualizer.js` on the node the
-  # SDK ships (`em-config NODE_JS`), so the job restores the SDK the build
-  # saved; the gate refuses to run without one.
+  # SDK ships (`em-config NODE_JS`), the image's.
   #
-  # The gate's script, not `scripts/gate visualizer-layout`: the runner would
-  # build its dependency, visualizer-wasm, whole first, all three parts again
-  # (the 3.6 min the single job spent on a second wasm-opt, and the rest of
-  # the 15.2 with it here, where no part was built), and the parts this
-  # measures are the ones the jobs above built from this commit
-  # (tools/git-hooks/gates/visualizer-layout.py, "Not delegated").
+  # Through the runner, `scripts/gate visualizer-layout`, which builds its
+  # dependency, visualizer-wasm, whole first in the image and then measures
+  # what it built, as a landing's unit does: a step outside the runner would
+  # run outside the image too, on this runner's own tools. That build is the
+  # 15.2 min the three parts take one after another (job 139033453523), so the
+  # job no longer waits for the build jobs, and the publish waits for both.
+  # Until 2026-11-26 this job ran the gate's script on the modules the build
+  # jobs handed over (tools/git-hooks/gates/visualizer-layout.py says why that
+  # ended).
   layout:
     name: Verify diagram layout
-    needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The dependency's whole build and the measurement.
+    timeout-minutes: 45
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
     permissions:
       contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
@@ -316,29 +280,33 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Restore Emscripten (emsdk)
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: emsdk
-        key: emsdk-${{ runner.os }}-${{ hashFiles('scripts/install_emsdk.sh') }}
-        fail-on-cache-miss: true
+    # The pinned release, which the runner hands the image read-only: the
+    # image carries no Rust of its own (`gate_in_container` in scripts/gate).
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
 
-    - name: Download the codegen WASM
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-      with:
-        name: visualizer-codegen-wasm
-        path: web/visualizer/wasm
+    - name: Compile through the shared compile cache
+      id: compile-cache
+      uses: ./.github/actions/compile-cache
 
-    - name: Download the visualizer's engine
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-      with:
-        name: visualizer-engine
-        path: web/visualizer
+    # The gate and its dependency run in the host image (`container` of their
+    # registry entries), which holds emsdk, the node it ships and wasm-pack.
+    - name: Sign in to the gate images' registry
+      uses: ./.github/actions/gate-image
 
+    # SCE_REQUIRE_TOOLS for the reason the build jobs set it: the dependency
+    # this job builds first must not skip its emscripten parts and leave the
+    # measurement nothing to read.
     - name: Verify diagram layout
-      run: |
-        source emsdk/emsdk_env.sh
-        bash scripts/gates/visualizer-layout.sh
+      env:
+        SCE_REQUIRE_TOOLS: 1
+      run: scripts/gate visualizer-layout
+
+    # What the compile cache answered of this job, and what it could not
+    # (.github/actions/compile-cache).
+    - name: Report what the compile cache answered
+      if: always() && steps.compile-cache.outcome == 'success'
+      run: sccache --show-stats
 
   # The site, assembled from what the jobs above built and published once the
   # layout passed. The one job that writes to the repository (gh-pages).

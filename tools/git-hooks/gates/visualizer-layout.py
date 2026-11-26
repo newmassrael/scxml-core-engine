@@ -19,11 +19,15 @@
 # which a push does not build.
 {
     "workflows": ["deploy-visualizer.yml"],
-    # Not delegated: deploy-visualizer.yml runs this gate's script in a job of
-    # its own, on the two modules the lane's build jobs made from the commit
-    # (`visualizer-wasm`, one part a job) and handed over. `scripts/gate` would
-    # build its dependency first, all three parts again in that job: 15.2 min
-    # (job 139033453523) ahead of a measurement of seconds.
+    # deploy-visualizer.yml runs `scripts/gate visualizer-layout` in a job of
+    # its own, which builds its dependency whole in the image before it
+    # measures: the modules it measures are built from the commit in the
+    # environment every other machine judges it in, as a landing's unit
+    # builds them. Until 2026-11-26 the job ran the script outside the runner
+    # on the modules the build jobs handed over, to save the 15.2 min the
+    # dependency's build takes (job 139033453523); a step outside the runner
+    # runs outside the image too, on the hosted runner's own tools.
+    "runner_workflow": True,
     "ci_only": "needs the codegen and engine WASMs that visualizer-wasm "
                "builds in the same workflow; a push builds no WASM, so the "
                "measurement would have nothing to turn a document into a "
@@ -42,9 +46,8 @@
     # directories, so that gate runs first: a landing unit runs on a
     # build machine's checkout, where they are absent (the gate ends 3,
     # and the item would never land) or left by an older tree (a verdict
-    # about WASMs this change did not build). deploy-visualizer.yml builds
-    # them in the jobs before the one that measures, from the same commit,
-    # and runs this script there without the runner (the note above).
+    # about WASMs this change did not build). The lane's job runs it the same
+    # way (the note above).
     "deps": ["visualizer-wasm"],
     # 22s measured 2026-09-18, up from 6s: the lane gained a stress half
     # that replays 25 seeded gestures per fixture over all ten. The seed
@@ -56,6 +59,13 @@
     "cost_s": 22,
     "summary": "diagram layout invariants, drag/collapse/stress survival, "
                "and the shared scenarios on the browser's engine",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     # The WASMs it reads are built in the same unit (`deps`), and the
     # stress half's seed is pinned in the script, so the verdict is the
     # tree's. Kept only from a landing unit, through `visualizer-wasm`.

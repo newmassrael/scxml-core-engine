@@ -11,13 +11,15 @@ name: Rust engine on wasm32
 # machine could start in a browser, and nothing in the repository could have said
 # so.
 #
-# The check is `scripts/gate wasm32-scenarios`; this file only provides what that
-# gate needs and does not hold on a push: the target's standard library, Node,
-# and a `wasm-bindgen` command-line tool at exactly the version `Cargo.lock`
-# holds for the library (the glue and the module are only compatible at one).
-# Chrome is the pinned Chrome for Testing `scripts/install_chrome.sh` names, the
-# browser the build machines replay in when they judge an update to main, so the
-# two judge the module in one browser and not in the image's of the month.
+# The check is `scripts/gate wasm32-scenarios`, which runs in the host image
+# (ADR 0145). The image holds what the gate needs beyond the tree: Node, a
+# `wasm-bindgen` command-line tool at exactly the version `Cargo.lock` holds
+# for the library (the glue and the module are only compatible at one, and the
+# gate refuses another), and the pinned Chrome for Testing
+# `scripts/install_chrome.sh` names, the browser the build machines replay in
+# when they judge an update to main, so the two judge the module in one
+# browser. The target's standard library is the selected Rust's, which the
+# runner hands the image.
 #
 # The triggers are what the module is made of: the engine, the forge runtime it
 # checks integers with, the replay crate, and the machines it replays, which its
@@ -52,6 +54,10 @@ on:
       - '.github/workflows/wasm32-scenarios.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -78,6 +84,10 @@ on:
       - '.github/workflows/wasm32-scenarios.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 concurrency:
@@ -90,11 +100,15 @@ jobs:
   # scenario in it under Node and in Chrome. Whole, the job took 11 minutes (job
   # 139040902859, 2026-11-25), 253 s of it clippy and 250 s the build, each
   # compiling the generator crate its own way, before 69 s of replay; the parts
-  # share nothing, so each is a job of about five and six minutes. The tools only
-  # the replay needs are installed in its part alone.
+  # share nothing, so each is a job of about five and six minutes.
   wasm32-scenarios:
     name: Scenarios replayed in the wasm32 module (part ${{ matrix.shard }} of 2)
     runs-on: ubuntu-24.04
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -107,65 +121,21 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    # The replay crate's build script links sce-build, the generator of the
-    # machines it replays, whose default `xsd` feature binds libxml2 through
-    # pkg-config on the host the build script runs on.
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxml2-dev pkg-config
-
     # The release rust-toolchain.toml pins, which lists the wasm32 target
-    # and clippy.
+    # and clippy. The runner hands it to the image read-only: the image
+    # carries no Rust of its own (`gate_in_container` in scripts/gate).
     - name: Install Rust Toolchain (with the wasm32 standard library)
       uses: ./.github/actions/install-rust
-
-    - name: Setup Node
-      if: matrix.shard == 2
-      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-      with:
-        node-version: '22'
 
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
 
-    # The version is read from the lock and not written here, so the tool follows
-    # the library when `Cargo.lock` moves. The gate refuses a tool at any other
-    # version, which is why this step cannot be left to whatever is installed.
-    - name: Read the wasm-bindgen version Cargo.lock holds
-      if: matrix.shard == 2
-      id: bindgen
-      run: |
-        version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
-        test -n "$version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Cache wasm-bindgen
-      if: matrix.shard == 2
-      id: bindgen-cache
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.cargo/bin/wasm-bindgen
-        key: ${{ runner.os }}-wasm-bindgen-${{ steps.bindgen.outputs.version }}
-
-    - name: Install wasm-bindgen at that version
-      if: matrix.shard == 2 && steps.bindgen-cache.outputs.cache-hit != 'true'
-      run: cargo install wasm-bindgen-cli --version "${{ steps.bindgen.outputs.version }}" --locked
-
-    # The pinned browser, installed where the gate looks for it
-    # (~/.local/share/chrome-for-testing/<version>/). The hosted image carries
-    # the libraries it links against.
-    - name: Cache the pinned Chrome for Testing
-      if: matrix.shard == 2
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.local/share/chrome-for-testing
-        key: ${{ runner.os }}-chrome-for-testing-${{ hashFiles('scripts/install_chrome.sh') }}
-
-    - name: Install the pinned Chrome for Testing
-      if: matrix.shard == 2
-      run: scripts/install_chrome.sh
+    # The gate runs in the host image (`container` of its registry entry),
+    # which holds Node, the pinned Chrome and wasm-bindgen, and what the replay
+    # crate's build script links (sce-build's `xsd` feature binds libxml2).
+    - name: Sign in to the gate images' registry
+      uses: ./.github/actions/gate-image
 
     - name: Lint the module's crate, or build the module and replay every scenario in it
       env:

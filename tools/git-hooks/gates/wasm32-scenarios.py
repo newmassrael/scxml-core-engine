@@ -35,16 +35,24 @@
                "added, 620s in release). wasm32-scenarios.yml runs it, "
                "and needs the wasm32 standard library, Node, headless "
                "Chrome and a wasm-bindgen at the version Cargo.lock "
-               "holds. An update to main runs it where bx placed it, on "
-               "a machine carrying bx.toml's pinned Chrome and "
-               "wasm-bindgen tools.",
+               "holds. It runs in the host image, which holds Node and "
+               "the pinned Chrome and wasm-bindgen; the runner hands it "
+               "the selected Rust with its wasm32 standard library.",
     "cost_s": 107,
     "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
-    # The browser and the glue tool are pinned tools of bx.toml's platform
-    # (`chrome`, Chrome for Testing at the version scripts/install_chrome.sh
-    # names, and `wasm-bindgen` at Cargo.lock's), and the wasm32 standard
-    # library is a target of the release the plan names, declared with it
-    # in `[platform.linux.tools.rust]`. In a landing
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # The browser and the glue tool are the image's, pinned (Chrome for
+    # Testing at the version scripts/install_chrome.sh names, which the
+    # registry's self-test holds the image to, and `wasm-bindgen` at
+    # Cargo.lock's, which the gate checks), and the wasm32 standard library
+    # is a target of the release the plan names, declared with it in
+    # `[platform.linux.tools.rust]` and handed to the image by the runner. In a landing
     # only the pinned Chrome judges the module, so a pass kept from one is
     # that browser's; outside a landing the gate may replay in the Chrome on
     # the machine's PATH, which no key names.
