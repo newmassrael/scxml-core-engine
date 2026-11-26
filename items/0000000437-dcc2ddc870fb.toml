@@ -6,3 +6,9 @@ commit = "2855ae4e40975f8dc9154fc27b02f91a24f766da"
 base = "108be402cbfa4813215655236956152afc327c0a"
 machine = "mf977c53d872e"
 at = 1795694259
+
+[return]
+reason = "unmeasured"
+detail = "the judge ended with status 1; a unit was stopped at its progress limit, which a judgment again would meet again (docs/rfc/0025, 4.3a): ecma262-lowered-kotlin was stopped at its idle limit on pc2: no output and 13s of CPU for 30m; its last line: «gate: 2 gate(s) passed.»; where it waited is in its batch's log (BX_RUN_STALL)"
+report = "m6a944ec3ba29:0000000437-dcc2ddc870fb/attempt-1.log"
+at = 1795696578
