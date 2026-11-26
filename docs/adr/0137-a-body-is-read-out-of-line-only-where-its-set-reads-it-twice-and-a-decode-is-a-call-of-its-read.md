@@ -8,6 +8,9 @@
   ADR 0128 (a frame's reads are total and its verdict is read once): `SceCursor::read_frame` answers the value the read
   returns, and its verdict is one function of the runtime; a refusal is recorded by a call. ADR 0130 (a ZInt is read
   by one body): the longer read of a ZInt is one function of the reader, and `codec::zint_tail` one loop.
+- Amended by ADR 0138 (2026-11-26): the one-byte read of a ZInt at each field is withdrawn, the reader's longer read
+  becomes its one read of every ZInt (section 3), and the reader's start is one out-of-line function of the runtime,
+  `SceCursor::begin_frame`, as the verdict is (section 4).
 - Related: ADR 0049 (a decoded Rust codec is a view over its wire bytes), ADR 0061 (`generate --inline-encode`),
   ADR 0077 §7 (a value past a capacity).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.

@@ -9,6 +9,10 @@
 - Amended by ADR 0137 (2026-11-26): the reader runs the longer body through one out-of-line function of its own,
   `SceReader::read_vle_long`, so no field holds the body's answer and record, and `codec::zint_tail` reads the chain
   by one loop (section 5).
+- Amended by ADR 0138 (2026-11-26): a ZInt of one byte is no longer read in place at each field; every ZInt is one
+  call of its reader's one out-of-line read, which runs the one body, `codec::read_zint` (was `zint_tail`), no longer
+  cold (section 5). The provided VLE write takes its encoding from one out-of-line function, `codec::encode_vle`
+  (section 3).
 - Amends: ADR 0049 (a decoded Rust codec is a view over its wire bytes): a view's read takes a chain hook. ADR 0128 (a
   frame's reads are total and its verdict is read once): a sequence of frames is read through one reader, whose first
   refusal ends the sequence.
