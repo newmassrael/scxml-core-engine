@@ -55,6 +55,9 @@ pub mod chain;
 pub mod codec;
 pub mod content_line;
 pub mod filter;
+// The fixed-capacity list's push and removal, one body each for every entry type
+// and capacity, and its `SceList` impl around them (docs/adr/0141).
+mod fixed_list;
 pub mod interpolation;
 /// Lists whose entries say their inputs by a law (docs/adr/0065 §6 R8),
 /// re-exported from [`codec`].

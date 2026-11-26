@@ -136,6 +136,14 @@ sce_gate_tested -- env MIRIFLAGS="-Zmiri-many-seeds=0..8" \
 sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo miri test -p sce-rust-runtime \
     --test a_hook_borrows_the_policy_and_the_engine_state_apart \
     || sce_gate_fail "Rust engine hook dispatch under Miri"
+# The fixed-capacity list's push and removal (docs/adr/0141), one body each over
+# the list's raw parts for every entry type, under Miri with the same pinned
+# nightly: an entry moved as its bytes is dropped exactly once on every path, held
+# aligned, and keeps the provenance of what it borrows, or Miri reports the access.
+# `cargo test` sees a double drop only where a test counts drops, and a misaligned
+# or provenance-less read not at all.
+sce_gate_tested -- env PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib fixed_list:: \
+    || sce_gate_fail "Rust forge fixed-capacity list under Miri"
 # `-Zbuild-std` because ThreadSanitizer needs the standard library
 # instrumented too, or every use of a std lock or channel reads as a race. Its
 # own target directory, so the flag does not invalidate the ordinary build.

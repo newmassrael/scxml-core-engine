@@ -558,39 +558,9 @@ impl<T> HeldList for alloc::vec::Vec<T> {
     type Entry = T;
 }
 
-impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
-    fn empty() -> Self {
-        heapless::Vec::new()
-    }
-
-    fn try_push(&mut self, value: T) -> Result<(), CodecError> {
-        self.push(value).map_err(|_| CodecError::CapacityExceeded)
-    }
-
-    fn clear(&mut self) {
-        self.clear();
-    }
-
-    fn as_slice(&self) -> &[T] {
-        self.as_slice()
-    }
-
-    fn last_mut(&mut self) -> Option<&mut T> {
-        self.as_mut_slice().last_mut()
-    }
-
-    fn remove_at(&mut self, at: usize) {
-        self.remove(at);
-    }
-
-    fn is_full(&self) -> bool {
-        heapless::Vec::is_full(self)
-    }
-}
-
-impl<T, const N: usize> HeldList for heapless::Vec<T, N> {
-    type Entry = T;
-}
+// The fixed-capacity list, `heapless::Vec<T, N>`, is a `SceList` in
+// `crate::fixed_list`: its push and its removal are one body each for every
+// entry type and capacity, over the list's raw parts (docs/adr/0141).
 
 // ── text containers ──────────────────────────────────────────────
 

@@ -400,6 +400,25 @@ where
         return;
     }
     *full = true;
+    // Where no gate asks a kind there is nothing to keep, and no call: the
+    // entry is dropped here.
+    if Asked::COUNT > 0 {
+        keep_past_capacity::<L, Asked>(list, entry);
+    }
+}
+
+/// The rule of [`push_keeping`] past a full list's capacity, where the gates ask
+/// a kind: `entry` is held in place of an entry that can make room, or dropped.
+///
+/// Out of line, so that the push of each entry holds one call of it and not its
+/// search (docs/adr/0141); typed, since its tests of a kind are calls by name
+/// (docs/adr/0136).
+#[inline(never)]
+fn keep_past_capacity<L, Asked>(list: &mut L, entry: L::Entry)
+where
+    L: HeldList,
+    Asked: EntryKinds<L::Entry>,
+{
     let held = SceList::as_slice(list);
     let new_kind = (0..Asked::COUNT)
         .any(|kind| Asked::is(&entry, kind) && !held.iter().any(|h| Asked::is(h, kind)));
