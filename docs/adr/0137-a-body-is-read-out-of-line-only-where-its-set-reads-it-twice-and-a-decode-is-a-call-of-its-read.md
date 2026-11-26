@@ -11,6 +11,9 @@
 - Amended by ADR 0138 (2026-11-26): the one-byte read of a ZInt at each field is withdrawn, the reader's longer read
   becomes its one read of every ZInt (section 3), and the reader's start is one out-of-line function of the runtime,
   `SceCursor::begin_frame`, as the verdict is (section 4).
+- Amended by ADR 0139 (2026-11-26): a body read of a codec the build names as on its hot path
+  (`--inline-decode-for`, `InlineDecode::Codecs`) is `#[inline(always)]` whatever its sites; every other read keeps
+  the rule of section 1, and a name that is no codec of the set is refused.
 - Related: ADR 0049 (a decoded Rust codec is a view over its wire bytes), ADR 0061 (`generate --inline-encode`),
   ADR 0077 §7 (a value past a capacity).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.
