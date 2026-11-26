@@ -4564,20 +4564,32 @@ pub struct ForgeCompileOptions {
     /// property of one document: an attribute on a function needs nothing of
     /// the functions it calls.
     pub inline_encode: bool,
-    /// Rust only: always inline the function that reads each codec's body
-    /// (`generate --inline-decode`, docs/adr/0136, docs/adr/0137).
+    /// Rust only: the codecs whose body reads are always inlined
+    /// (`generate --inline-decode`, `generate --with-imports
+    /// --inline-decode-for`; docs/adr/0136, docs/adr/0137, docs/adr/0139).
     ///
     /// The function a parent reads a codec's body through, an arm of a
     /// dispatching variant, an embedded body or a list's entry, carries no
     /// attribute where its set reads it from one site, which the compiler
     /// inlines or not, and `#[inline(never)]` where the set reads it from two
     /// or more ([`Self::body_reads`]), so it is one function and not a copy at
-    /// each. With this on it carries `#[inline(always)]` either way, so a
-    /// frame's decode is one function, at the price of a copy of each body where
-    /// it is read, which a build measures before it keeps it. The runtime's read
-    /// of a chain stays out of line either way. Like [`Self::inline_encode`] it
-    /// is a property of one document.
-    pub inline_decode: bool,
+    /// each. A read this asks inlined carries `#[inline(always)]` either way,
+    /// at the price of a copy of its body where it is read, which a build
+    /// measures before it keeps it:
+    ///
+    /// - [`forge::body_reads::InlineDecode::None`], the default, asks none;
+    /// - [`forge::body_reads::InlineDecode::Every`] asks every one, so a
+    ///   frame's decode is one function. Like [`Self::inline_encode`] it is a
+    ///   property of one document;
+    /// - [`forge::body_reads::InlineDecode::Codecs`] asks those of the codecs
+    ///   the build names, the ones on its hot path, and leaves every other to
+    ///   the sites of its set. What a build's hot path reads is the build's to
+    ///   say and no document's. The names are of codecs of the set, checked by
+    ///   [`forge::body_reads::BodyReadSites::hot_codecs`] on the same count
+    ///   handed as [`Self::body_reads`], so like it this is a property of a SET.
+    ///
+    /// The runtime's read of a chain stays out of line either way.
+    pub inline_decode: forge::body_reads::InlineDecode,
     /// Rust only: the sites of the generated set that read each codec's body
     /// (docs/adr/0137), counted from the set's import graph by
     /// [`forge::body_reads::BodyReadSites::count`]: a body read from two sites
@@ -4589,7 +4601,7 @@ pub struct ForgeCompileOptions {
     /// counts it once with [`forge::body_reads::BodyReadSites::of_documents`] and
     /// hands the same answer to each generation. Empty (the default) is a set of
     /// one document, which reads no body of its own, so no body read carries an
-    /// attribute but the one `inline_decode` asks for.
+    /// attribute but the one [`Self::inline_decode`] asks for.
     pub body_reads: forge::body_reads::BodyReadSites,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the

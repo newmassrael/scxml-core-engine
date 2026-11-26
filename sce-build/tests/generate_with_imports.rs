@@ -36,6 +36,8 @@
 //   - machines written into one directory share one sourcemap naming them
 //     all;
 //   - the set's manifest names each document that was rejected;
+//   - a codec named by `--inline-decode-for` has its body read inlined, and a
+//     name that is no codec of the set is refused before anything is written;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -852,6 +854,129 @@ fn several_documents_without_the_flag_are_refused() {
         .expect("run sce-codegen");
     assert_eq!(run.status.code(), Some(20), "{}", stderr(&run));
     assert_eq!(record(&run)["code"], "cli/usage");
+}
+
+/// A codec document of one four-byte frame that imports nothing, named
+/// `simple_frame`.
+const SIMPLE_FRAME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="codec" sce:default-endian="big" name="simple_frame">
+  <datamodel>
+    <data id="msgId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="length" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <data id="payload" sce:type="uint16" sce:byte="2" sce:bit-size="16"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// `SIMPLE_FRAME` written into a source directory of `tmp`, and its path.
+fn simple_frame(tmp: &Path) -> PathBuf {
+    let src = tmp.join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    let document = src.join("simple_frame.scxml");
+    fs::write(&document, SIMPLE_FRAME).expect("write the codec");
+    document
+}
+
+/// The line before the body read of the Rust codec `simple_frame` written
+/// below `out`, trimmed: the codec is built as a value, so its body read is
+/// `read`, and the one generated function of that signature.
+fn before_the_body_read(out: &Path) -> String {
+    let befores: Vec<String> = tree(out)
+        .into_iter()
+        .filter(|(path, _)| path.ends_with(".rs"))
+        .flat_map(|(_, bytes)| {
+            let code = String::from_utf8_lossy(&bytes).into_owned();
+            let lines: Vec<String> = code.lines().map(str::to_string).collect();
+            lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| {
+                    line.trim_start()
+                        .starts_with("pub fn read(cursor: &mut SceReader<")
+                })
+                .map(|(at, _)| {
+                    at.checked_sub(1)
+                        .map(|before| lines[before].trim().to_string())
+                        .unwrap_or_default()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(
+        befores.len(),
+        1,
+        "the run wrote one body read of simple_frame: {befores:?}"
+    );
+    befores.into_iter().next().unwrap_or_default()
+}
+
+/// `--inline-decode-for` names a codec of the set, by its name, for its body
+/// read to be inlined whatever the sites of the set that read it; a run that
+/// names none leaves the read of a body no site reads to the compiler
+/// (docs/adr/0137, docs/adr/0139).
+#[test]
+fn a_codec_named_hot_has_its_body_read_inlined() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let codec = simple_frame(tmp.path());
+
+    let plain = tmp.path().join("plain");
+    let run = generate_documents(std::slice::from_ref(&codec), &plain, "rust", &[]);
+    succeeded(&run, "the run that names no codec");
+    let before = before_the_body_read(&plain);
+    assert!(
+        !before.starts_with("#[inline"),
+        "the read of a body no site reads carries `{before}` with no codec named"
+    );
+
+    let hot = tmp.path().join("hot");
+    let run = generate_documents(
+        std::slice::from_ref(&codec),
+        &hot,
+        "rust",
+        &["--inline-decode-for", "simple_frame"],
+    );
+    succeeded(&run, "the run that names simple_frame");
+    assert_eq!(
+        before_the_body_read(&hot),
+        "#[inline(always)]",
+        "the read of the codec named is not inlined"
+    );
+}
+
+/// A name that is no codec of the set is refused, by its own code and before
+/// any document of the set is written: a name misspelt would otherwise leave
+/// the hot read it meant out of line with no word said (docs/adr/0139).
+#[test]
+fn a_name_that_is_no_codec_of_the_set_is_refused_before_anything_is_written() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let codec = simple_frame(tmp.path());
+    let out = tmp.path().join("out");
+    let run = generate_documents(
+        std::slice::from_ref(&codec),
+        &out,
+        "rust",
+        &["--inline-decode-for", "simple_frame,simple_fram"],
+    );
+    assert!(
+        !run.status.success(),
+        "a run naming no codec of its set succeeded: {}",
+        stderr(&run)
+    );
+    let refusal = record(&run);
+    assert_eq!(
+        refusal["code"], "codegen/inline-decode-codec-not-in-set",
+        "{refusal}"
+    );
+    let message = refusal["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("'simple_fram'") && message.contains("its codecs are simple_frame"),
+        "the refusal names the name and the set's codecs: {refusal}"
+    );
+    assert!(
+        !out.exists() || tree(&out).is_empty(),
+        "the refused run wrote {:?}",
+        tree(&out).keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -6563,6 +6563,21 @@ fn bound_relation_message(
     )
 }
 
+/// The message of [`GenerateError::CodegenInlineDecodeCodecNotInSet`]: the
+/// name as given, and the codecs the set holds, which are the names a build can
+/// give.
+fn inline_decode_codec_message(codec: &str, set: &[String]) -> String {
+    let held = if set.is_empty() {
+        "it holds no codec".to_string()
+    } else {
+        format!("its codecs are {}", set.join(", "))
+    };
+    format!(
+        "the build names the codec '{codec}' for its body reads to be inlined \
+         (--inline-decode-for), and no codec of the set being generated is named so: {held}"
+    )
+}
+
 /// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes
 /// the element takes one of, and whether it carries none or one too many.
 fn atomic_width_contradiction_message(
@@ -6930,6 +6945,18 @@ pub enum GenerateError {
         object: u32,
         at: Option<SourceLocation>,
     },
+
+    /// A codec a build names for its body reads to be inlined
+    /// (`generate --inline-decode-for`, docs/adr/0139) that is no codec of the
+    /// set being generated. Producer:
+    /// [`crate::forge::body_reads::BodyReadSites::hot_codecs`], before any
+    /// document of the set is generated. Refused rather than ignored, since a
+    /// name misspelt would leave the hot read it meant out of line with no word
+    /// said. `codec` is the name as given; `set` the name of every codec of
+    /// the set, in order. No document holds the name, so the record carries no
+    /// location.
+    #[error("{}", inline_decode_codec_message(.codec, .set))]
+    CodegenInlineDecodeCodecNotInSet { codec: String, set: Vec<String> },
 
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge

@@ -257,6 +257,7 @@
         "codegen/feature-lifting-mismatch",
         "codegen/standard-host-type-not-served",
         "codegen/standard-host-bound-relation",
+        "codegen/inline-decode-codec-not-in-set",
         "queue/storage-not-exactly-one",
         "queue/allocator-progress-missing",
         "queue/progress-unreachable",

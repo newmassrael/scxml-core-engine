@@ -26,7 +26,7 @@ use crate::analyzer;
 use crate::cli_error::CliError;
 use crate::cli_language::LanguageRoute;
 use crate::filters;
-use crate::forge::body_reads::BodyReadSites;
+use crate::forge::body_reads::{BodyReadSites, HotCodecs, InlineDecode};
 use crate::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use crate::forge::error::{ForgeError, Located, RelatedRole};
 use crate::manifest::{
@@ -2162,6 +2162,23 @@ struct GenerateArgs {
     /// document, not of a set; ignored for other languages.
     #[arg(long)]
     inline_decode: bool,
+    /// Rust only, with `--with-imports`: always inline the function that reads
+    /// the body of each codec named, the codecs whose reads are on the build's
+    /// hot path, whatever the sites of the set that read it; every other body
+    /// read keeps the rule of the set's sites (docs/adr/0137, docs/adr/0139).
+    /// A codec is named by its name, the `name` of its document's `<scxml>`;
+    /// the flag takes a list separated by commas and may be given again. A
+    /// name that is no codec of the set is refused before anything is written
+    /// (`codegen/inline-decode-codec-not-in-set`). Not with `--inline-decode`,
+    /// which already names every codec; ignored for other languages.
+    #[arg(
+        long,
+        value_name = "CODEC",
+        value_delimiter = ',',
+        requires = "with_imports",
+        conflicts_with = "inline_decode"
+    )]
+    inline_decode_for: Vec<String>,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -7024,9 +7041,9 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     let depfile = args.write_deps.clone();
     let children_of = plans_children().then(|| args.clone());
     let generates_children = args.children.then(|| args.clone());
-    // One document is a set of one, which reads no body of its own
-    // (docs/adr/0137).
-    let mut report = cmd_generate(args, error_format, &BodyReadSites::default());
+    // One document is a set of one, which reads no body of its own and names
+    // no codec hot (docs/adr/0137, docs/adr/0139).
+    let mut report = cmd_generate(args, error_format, &SetBodyReads::default());
     let mut shares = std::mem::take(&mut report.sourcemaps);
     if generates_children.is_none() {
         write_sourcemaps(std::mem::take(&mut shares));
@@ -7186,7 +7203,7 @@ fn generate_child_generations(
         if kind == ChildGeneration::InItsParentsProcess {
             child_args.parent_stem = parent_stem.clone();
         }
-        let mut child_report = cmd_generate(child_args, error_format, &BodyReadSites::default());
+        let mut child_report = cmd_generate(child_args, error_format, &SetBodyReads::default());
         staged.extend(std::mem::take(&mut child_report.staged_children));
         read = joined_reads(read, child_report.depfile.take());
         shares.append(&mut child_report.sourcemaps);
@@ -7265,7 +7282,7 @@ fn plan_child_generations(
         }
         let child_args = kind.of(&child, args, &input_root);
         let mut child_report = crate::confine::with_documents(held.clone(), || {
-            cmd_generate(child_args, error_format, &BodyReadSites::default())
+            cmd_generate(child_args, error_format, &SetBodyReads::default())
         });
         read = joined_reads(read, child_report.depfile.take());
         write_sourcemaps(std::mem::take(&mut child_report.sourcemaps));
@@ -7342,9 +7359,20 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     });
 
     // What the set reads of each codec's body is the set's, counted once over
-    // every document it generates and handed to each (docs/adr/0137).
+    // every document it generates and handed to each (docs/adr/0137). The
+    // codecs the build names hot are codecs of that set, each, or the run is
+    // refused before any document of it is generated (docs/adr/0139).
     let documents: Vec<String> = units.iter().map(|unit| unit.document.clone()).collect();
-    let body_reads = BodyReadSites::of_documents(&documents, &include_dirs, |_| args.views);
+    let sites = BodyReadSites::of_documents(&documents, &include_dirs, |_| args.views);
+    let hot = if args.inline_decode_for.is_empty() {
+        None
+    } else {
+        match sites.hot_codecs(&args.inline_decode_for) {
+            Ok(hot) => Some(hot),
+            Err(refusal) => error_format.emit_and_exit(&refusal, "Forge codegen error: "),
+        }
+    };
+    let body_reads = SetBodyReads { sites, hot };
 
     let root = PathBuf::from(&args.output_dir);
     let mut set = GenerateReport {
@@ -7426,15 +7454,27 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     emit_generate_manifest(&set);
 }
 
+/// What the set a document is generated in says of the reads of its codecs'
+/// bodies: the sites of the set that read each body (docs/adr/0137), and the
+/// codecs whose reads the build names as on its hot path, each checked to be a
+/// codec of the set (`--inline-decode-for`, docs/adr/0139). The default is a
+/// document generated alone, a set of one: no body of it read by a site of the
+/// set, and no codec named.
+#[derive(Debug, Clone, Default)]
+struct SetBodyReads {
+    sites: BodyReadSites,
+    hot: Option<HotCodecs>,
+}
+
 /// Generate one document as `generate` does, and hand back what the run
 /// found for the manifest rather than printing it: `generate` prints it for
 /// its one document, and `--with-imports` merges the reports of every
-/// document it reaches into one. `body_reads` is what the set the document is
-/// generated in reads of each codec's body (docs/adr/0137).
+/// document it reaches into one. `set` is what the set the document is
+/// generated in says of the reads of its codecs' bodies.
 fn cmd_generate(
     args: GenerateArgs,
     error_format: ErrorFormat,
-    body_reads: &BodyReadSites,
+    set: &SetBodyReads,
 ) -> GenerateReport {
     // Unpack the CLI args struct into the internal borrowed names the
     // body uses. `args` owns the data for the whole function, so the
@@ -7475,7 +7515,19 @@ fn cmd_generate(
         // Decided by `run_generate`, which calls this once per document.
         with_imports: _,
         children: _,
+        // Checked against the set by `cmd_generate_with_imports`, and handed
+        // here as `set.hot` (docs/adr/0139).
+        inline_decode_for: _,
     } = args;
+    // `--inline-decode` asks every body read inlined; otherwise the set names
+    // the codecs whose reads are, if any (docs/adr/0136, docs/adr/0139).
+    let inline_decode = if inline_decode {
+        InlineDecode::Every
+    } else {
+        set.hot
+            .clone()
+            .map_or(InlineDecode::None, InlineDecode::Codecs)
+    };
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
     let profile = load_profile(profile_path.as_deref());
@@ -7584,7 +7636,7 @@ fn cmd_generate(
                 views,
                 inline_encode,
                 inline_decode,
-                body_reads: body_reads.clone(),
+                body_reads: set.sites.clone(),
                 // The digest every file of this run is headed by, which a schema
                 // unit's payload schema names (docs/adr/0087, section 1.1).
                 source_hash: Some(drift_ctx.header.source_hex()),

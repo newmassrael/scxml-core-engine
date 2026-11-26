@@ -21,10 +21,18 @@
 //! ([`BodyReadSites::count`]), and handed to the generation of each codec
 //! ([`crate::ForgeCompileOptions::body_reads`]). A document generated alone is a
 //! set of one, which reads no body of its own.
+//!
+//! Which codecs' reads are on a build's hot path is not a fact of the set but of
+//! the build's workload, which neither a document nor the generator knows: the
+//! build names them ([`InlineDecode::Codecs`], docs/adr/0139), and their body
+//! reads are inlined whatever their sites. The names are checked against the
+//! set they name codecs of ([`BodyReadSites::hot_codecs`]), so a name that is
+//! no codec of it is refused rather than left to keep a hot read out of line.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
+use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::model::{CodecModel, ForgeDocument, ForgeKind};
 use crate::forge::stdlib;
 use crate::DocumentLabel;
@@ -56,15 +64,57 @@ pub struct SetCodec<'a> {
 }
 
 /// The sites of a generated set that read each of its codecs' bodies, by the
-/// codec's name.
+/// codec's name, and the name of every codec of the set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BodyReadSites(BTreeMap<String, BodyReads>);
+pub struct BodyReadSites {
+    /// The sites that read each codec's body; a codec no site reads has no
+    /// entry.
+    reads: BTreeMap<String, BodyReads>,
+    /// The name of every codec of the set, read by a site of it or not.
+    codecs: BTreeSet<String>,
+}
 
 impl BodyReadSites {
     /// The sites that read the body of the codec named `codec`: none where the
     /// set reads it nowhere, or holds no codec of that name.
     pub fn of(&self, codec: &str) -> BodyReads {
-        self.0.get(codec).copied().unwrap_or_default()
+        self.reads.get(codec).copied().unwrap_or_default()
+    }
+
+    /// Whether the set holds a codec named `codec`.
+    pub fn holds(&self, codec: &str) -> bool {
+        self.codecs.contains(codec)
+    }
+
+    /// The codecs of the set named by `names`, whose body reads the build
+    /// asks inlined because they are on its hot path (docs/adr/0139): the one
+    /// way a [`HotCodecs`] is made, so a name reaches a generation only once
+    /// the set it names a codec of has been asked.
+    ///
+    /// A name that is no codec of the set is refused
+    /// (`codegen/inline-decode-codec-not-in-set`), the first such one as the
+    /// names are given: a name misspelt would otherwise leave the read it
+    /// meant out of line, and the build would measure the slower image with
+    /// no word said of why. A name given twice is one codec.
+    pub fn hot_codecs<I>(&self, names: I) -> Result<HotCodecs, ForgeError>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let mut hot = BTreeSet::new();
+        for name in names {
+            let name = name.as_ref();
+            if !self.holds(name) {
+                return Err(ForgeError::from(
+                    GenerateError::CodegenInlineDecodeCodecNotInSet {
+                        codec: name.to_string(),
+                        set: self.codecs.iter().cloned().collect(),
+                    },
+                ));
+            }
+            hot.insert(name.to_string());
+        }
+        Ok(HotCodecs(hot))
     }
 
     /// Count, for each codec `set` imports, the sites of the set that read its
@@ -78,6 +128,7 @@ impl BodyReadSites {
     /// through its eager body read, so those sites are counted as eager ones. An
     /// alias that names no codec of the set is no site of it.
     pub fn count(set: &[SetCodec<'_>]) -> Self {
+        let codecs: BTreeSet<String> = set.iter().map(|member| member.codec.name.clone()).collect();
         let own_view: BTreeMap<&str, bool> = set
             .iter()
             .map(|member| (member.codec.name.as_str(), member.codec.has_own_view()))
@@ -118,7 +169,10 @@ impl BodyReadSites {
                 }
             }
         }
-        Self(sites)
+        Self {
+            reads: sites,
+            codecs,
+        }
     }
 
     /// [`Self::count`] of the codecs `documents` hold and every codec they
@@ -207,5 +261,48 @@ impl BodyReadSites {
             })
             .collect();
         Self::count(&set)
+    }
+}
+
+/// The codecs of a generated set whose body reads a build names hot, each
+/// checked to be a codec of the set ([`BodyReadSites::hot_codecs`], the one
+/// way one is made; docs/adr/0139).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotCodecs(BTreeSet<String>);
+
+impl HotCodecs {
+    /// Whether the build names the codec named `codec`.
+    pub fn contains(&self, codec: &str) -> bool {
+        self.0.contains(codec)
+    }
+}
+
+/// Which codecs' body reads a build asks inlined, `#[inline(always)]` whatever
+/// the sites of its set that read them (docs/adr/0136 section 4,
+/// docs/adr/0139). Like `inline_encode` it is the build's declaration: what
+/// a build's hot path reads is a fact of its workload, and nothing in a
+/// document says it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum InlineDecode {
+    /// No read is asked inlined: each body read is placed by the sites of its
+    /// set that read it (docs/adr/0137). The default.
+    #[default]
+    None,
+    /// Every body read (`generate --inline-decode`, docs/adr/0136 section 4).
+    Every,
+    /// The body reads of the codecs named, the eager read and the view's alike
+    /// (`generate --with-imports --inline-decode-for`, docs/adr/0139); every
+    /// other read keeps the rule of [`Self::None`].
+    Codecs(HotCodecs),
+}
+
+impl InlineDecode {
+    /// Whether the body reads of the codec named `codec` are asked inlined.
+    pub fn inlines(&self, codec: &str) -> bool {
+        match self {
+            Self::None => false,
+            Self::Every => true,
+            Self::Codecs(hot) => hot.contains(codec),
+        }
     }
 }

@@ -6,7 +6,9 @@
 //! where the set reads it from one, which leaves it to the compiler
 //! (docs/adr/0137). The sites are counted once, from the set's import graph
 //! (`BodyReadSites::count`), and the eager read and the view's are two functions,
-//! each read from its own sites; `inline_decode` asks every body read inlined.
+//! each read from its own sites; `inline_decode` asks every body read inlined,
+//! or those of the codecs a build names as on its hot path, whatever their
+//! sites, a name checked to be a codec of the set (docs/adr/0139).
 //!
 //! A decode is a thin call: a view's decode answers the view its read builds,
 //! with no default of it made first, and an eager codec built as a value does
@@ -15,7 +17,8 @@
 
 use std::path::PathBuf;
 
-use sce_build::forge::body_reads::{BodyReadSites, BodyReads};
+use sce_build::forge::body_reads::{BodyReadSites, BodyReads, InlineDecode};
+use sce_build::forge::error::{ForgeError, GenerateError};
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -251,7 +254,7 @@ fn inline_decode_inlines_every_body_read_whatever_its_sites() {
     ] {
         let options = ForgeCompileOptions {
             views: true,
-            inline_decode: true,
+            inline_decode: InlineDecode::Every,
             body_reads: sites_of(&[set], true),
             ..ForgeCompileOptions::default()
         };
@@ -275,6 +278,134 @@ fn inline_decode_inlines_every_body_read_whatever_its_sites() {
             );
         }
     }
+}
+
+/// A codec a build names as on its hot path has its body reads inlined, the
+/// eager read and the view's, whatever the sites of its set that read them: one
+/// site, where the rule leaves the read to the compiler, or two and more, where
+/// it keeps the read out of line (docs/adr/0139).
+#[test]
+fn a_named_codecs_body_reads_are_inlined_whatever_their_sites() {
+    let sites = sites_of(&["codec_zenoh_oam.scxml"], true);
+    // The entry is read from one site of the eager decode and two of the view,
+    // the arm codec from eight, all eager: it is its own view.
+    assert_eq!(
+        sites.of("codec_zenoh_ext_entry"),
+        BodyReads { eager: 1, view: 2 }
+    );
+    assert_eq!(
+        sites.of("codec_zenoh_ext_unit"),
+        BodyReads { eager: 8, view: 0 }
+    );
+    let hot = sites
+        .hot_codecs(["codec_zenoh_ext_entry", "codec_zenoh_ext_unit"])
+        .unwrap_or_else(|e| panic!("both are codecs of the set: {e}"));
+    let options = ForgeCompileOptions {
+        views: true,
+        inline_decode: InlineDecode::Codecs(hot),
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+
+    let code = rust_with("codec_zenoh_ext_entry", &options);
+    let (before, body) = eager_body_read("codec_zenoh_ext_entry", &code);
+    assert_eq!(
+        before, "#[inline(always)]",
+        "codec_zenoh_ext_entry is named and its eager read of one site is not inlined:\n{body}"
+    );
+    let (before, body) = view_body_read("codec_zenoh_ext_entry", &code);
+    assert_eq!(
+        before, "#[inline(always)]",
+        "codec_zenoh_ext_entry is named and its view, read from two sites, is not inlined:\n{body}"
+    );
+
+    let code = rust_with("codec_zenoh_ext_unit", &options);
+    let (before, body) = eager_body_read("codec_zenoh_ext_unit", &code);
+    assert_eq!(
+        before, "#[inline(always)]",
+        "codec_zenoh_ext_unit is named and its read of eight sites is not inlined:\n{body}"
+    );
+}
+
+/// A codec the build does not name keeps the rule of its sites when others of
+/// its set are named: out of line where two sites or more read it, no
+/// attribute where one does (docs/adr/0137, docs/adr/0139).
+#[test]
+fn a_codec_not_named_keeps_the_rule_of_its_sites() {
+    let sites = sites_of(&["codec_zenoh_oam.scxml"], true);
+    let hot = sites
+        .hot_codecs(["codec_zenoh_ext_unit"])
+        .unwrap_or_else(|e| panic!("codec_zenoh_ext_unit is a codec of the set: {e}"));
+    let options = ForgeCompileOptions {
+        views: true,
+        inline_decode: InlineDecode::Codecs(hot),
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+
+    let code = rust_with("codec_zenoh_ext_entry", &options);
+    let (before, body) = eager_body_read("codec_zenoh_ext_entry", &code);
+    assert!(
+        !before.starts_with("#[inline"),
+        "codec_zenoh_ext_entry is not named and its eager read of one site carries \
+         `{before}`:\n{body}"
+    );
+    let (before, body) = view_body_read("codec_zenoh_ext_entry", &code);
+    assert_eq!(
+        before, "#[inline(never)]",
+        "codec_zenoh_ext_entry is not named and its view, read from two sites, is not \
+         out of line:\n{body}"
+    );
+
+    let code = rust_with("codec_zenoh_ext_zint", &options);
+    let (before, body) = eager_body_read("codec_zenoh_ext_zint", &code);
+    assert_eq!(
+        before, "#[inline(never)]",
+        "codec_zenoh_ext_zint is not named and its read of two sites is not out of line:\n{body}"
+    );
+}
+
+/// A name that is no codec of the set is refused, naming the set's codecs, so a
+/// name misspelt cannot leave a hot read out of line unnoticed; a codec of the
+/// set that no site reads is one a build can name (docs/adr/0139).
+#[test]
+fn a_name_that_is_no_codec_of_the_set_is_refused() {
+    let sites = sites_of(&["codec_zenoh_oam.scxml"], false);
+    let refusal = sites
+        .hot_codecs(["codec_zenoh_ext_unit", "codec_zenoh_ext_untit"])
+        .expect_err("a name of no codec of the set is refused");
+    let ForgeError::Generate(boxed) = &refusal else {
+        panic!("the refusal is not a generation error: {refusal:?}");
+    };
+    let GenerateError::CodegenInlineDecodeCodecNotInSet { codec, set } = boxed.as_ref() else {
+        panic!("the refusal is not codegen/inline-decode-codec-not-in-set: {refusal:?}");
+    };
+    assert_eq!(codec, "codec_zenoh_ext_untit");
+    for held in [
+        "codec_zenoh_oam",
+        "codec_zenoh_ext_entry",
+        "codec_zenoh_ext_unit",
+    ] {
+        assert!(
+            set.iter().any(|name| name == held),
+            "the refusal does not name {held} among the set's codecs: {set:?}"
+        );
+    }
+
+    // The frame is a codec of the set although no site of it reads its body.
+    assert_eq!(sites.of("codec_zenoh_oam"), BodyReads::default());
+    assert!(sites.holds("codec_zenoh_oam"));
+    assert!(sites.hot_codecs(["codec_zenoh_oam"]).is_ok());
+
+    // A document generated alone is a set of one that was not counted: it
+    // holds no codec a build could name, and the refusal says so.
+    let refusal = BodyReadSites::default()
+        .hot_codecs(["codec_zenoh_oam"])
+        .expect_err("a set that was not counted holds no codec");
+    assert!(
+        refusal.to_string().ends_with("it holds no codec"),
+        "the refusal does not say the set holds no codec: {refusal}"
+    );
 }
 
 /// A view's decode answers the view its read builds, as one read of the frame:

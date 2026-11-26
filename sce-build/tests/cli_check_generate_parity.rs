@@ -345,6 +345,29 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          does not, and it is ignored for other languages, so `check` needs no \
          counterpart",
     ),
+    // The probe names a codec of the set it generates, and that set holds one
+    // only where a codec document is named beside the probed statechart, which
+    // imports none: the flag is a set's (`--with-imports`), and a name of no
+    // codec of the set is refused by design (docs/adr/0139). The codec is
+    // generated as `--with-imports` generates it alone, so the verdict held
+    // still is the statechart's and the codec's together.
+    f(
+        "--inline-decode-for",
+        Reach::Emission,
+        Some(&[
+            "--with-imports",
+            "--inline-decode-for",
+            "simple_frame",
+            "tests/forge/resources/codec_simple_frame.scxml",
+        ]),
+        "rust",
+        "marks the functions that read the bodies of the Rust codecs a set names \
+         inline, whatever the sites of the set that read them (docs/adr/0139); \
+         what is written changes and what is accepted does not, and it is ignored \
+         for other languages, so `check` needs no counterpart. A name that is no \
+         codec of the set is refused before anything is written, which is a \
+         refusal of the build's argument, not of a document",
+    ),
     f(
         "--limit",
         Reach::Verdict,

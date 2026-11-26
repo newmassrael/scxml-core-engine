@@ -4098,3 +4098,19 @@ change; a consumer regenerates its Rust codecs. No frame decodes differently.
 - A build that measures its size or its stack reads them again after it moves its pin: the refusal of a read is a
   call of `SceReader::fail`, a ZInt longer than a byte a call of the reader's one longer read, and every decode's
   verdict one function of the runtime.
+
+## A Rust build names the codecs whose body reads are inlined (ADR 0139)
+
+Landing: the commits that add this section. No golden and no committed tree of generated code changes; a build that
+names no codec generates what it did.
+
+- **`ForgeCompileOptions::inline_decode` is `sce_build::forge::body_reads::InlineDecode`**, not a `bool`: `None`
+  (the default), `Every` (what `true` was, `generate --inline-decode`), or `Codecs(hot)`. A library build that set
+  `inline_decode: true` fails with `E0308` (mismatched types): set `InlineDecode::Every`.
+- **A build names the codecs on its hot path**, by the `name` of each codec's document: `generate --with-imports
+  --inline-decode-for <codec>[,<codec>...]`, or, through the library, `let hot = sites.hot_codecs(names)?` on the
+  count `BodyReadSites::of_documents` returned, and `InlineDecode::Codecs(hot)` with `body_reads: sites` on each
+  generation. The body reads of the codecs named, eager and view, are `#[inline(always)]` whatever their sites;
+  every other keeps the rule of ADR 0137. A name that is no codec of the set is refused
+  (`codegen/inline-decode-codec-not-in-set`) before anything is generated. A build measures its image and its hot
+  path after it names them.

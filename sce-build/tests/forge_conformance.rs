@@ -3968,7 +3968,7 @@ fn inline_decode_marks_the_body_reads_and_changes_nothing_else() {
     let off = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, off_opts.clone())
         .expect("generate with the option off");
     let mut on_opts = off_opts;
-    on_opts.inline_decode = true;
+    on_opts.inline_decode = sce_build::forge::body_reads::InlineDecode::Every;
     let on = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, on_opts)
         .expect("generate with the option on");
     assert_eq!(off.len(), on.len());

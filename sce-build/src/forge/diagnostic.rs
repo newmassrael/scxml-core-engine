@@ -1646,6 +1646,11 @@ pub enum DiagnosticCode {
     /// [`GenerateError::CodegenStandardHostBoundRelation`].
     #[serde(rename = "codegen/standard-host-bound-relation")]
     CodegenStandardHostBoundRelation,
+    /// A codec a build names for its body reads to be inlined that is no codec
+    /// of the set being generated (docs/adr/0139) — see
+    /// [`GenerateError::CodegenInlineDecodeCodecNotInSet`].
+    #[serde(rename = "codegen/inline-decode-codec-not-in-set")]
+    CodegenInlineDecodeCodecNotInSet,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -4328,6 +4333,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenStandardHostTypeNotServed,
         // ADR 0109, D17: a build whose record bounds break a relation
         CodegenStandardHostBoundRelation,
+        // ADR 0139: a codec named hot that is no codec of the set
+        CodegenInlineDecodeCodecNotInSet,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -4985,6 +4992,9 @@ impl DiagnosticCode {
 
             // ── A bare-metal delayed-send queue's capacity (docs/adr/0132) ──
             CodegenNoStdSchedulerUnbounded => Some("ADR 0132"),
+
+            // ── The codecs a build names hot (docs/adr/0139) ──
+            CodegenInlineDecodeCodecNotInSet => Some("ADR 0139"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -6127,6 +6137,7 @@ impl DiagnosticCode {
             | CodegenGenericKindBackendEmitMissing
             | CodegenStandardHostTypeNotServed
             | CodegenStandardHostBoundRelation
+            | CodegenInlineDecodeCodecNotInSet
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
@@ -6712,6 +6723,7 @@ impl DiagnosticCode {
             CodegenFeatureLiftingMismatch => "codegen/feature-lifting-mismatch",
             CodegenStandardHostTypeNotServed => "codegen/standard-host-type-not-served",
             CodegenStandardHostBoundRelation => "codegen/standard-host-bound-relation",
+            CodegenInlineDecodeCodecNotInSet => "codegen/inline-decode-codec-not-in-set",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -12742,6 +12754,19 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 relation.object.to_string(),
             ],
         },
+        // docs/adr/0139: the name is a build's argument, in no document, so it
+        // is no `actual` (SCE_ERROR_CONTRACT §3.1.1), and the repair is a
+        // change of that argument, which no `Fix` of a document spells. The
+        // name keys the record; the set's codecs do not, so a set that gains a
+        // codec keeps the id.
+        GenerateError::CodegenInlineDecodeCodecNotInSet { codec, set: _ } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenInlineDecodeCodecNotInSet,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![codec.clone()],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -17440,6 +17465,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:bfc046de4f21dc35","code":"codegen/standard-host-bound-relation","stage":"generate","spec":"ADR 0109 D17","message":"<invoke id=\"sign\"> runs the standard host type 'sce-host-cose-sign1', whose records hold 8192 bytes under `cose_payload` and 4352 under `cose_signed`: an object takes up to 256 bytes more than what it holds, so `cose_signed` is at least 8448; build with --limit cose_signed=8448 or more"}"#,
             ),
+            (
+                // A build names a codec of a set by a misspelt name
+                // (docs/adr/0139).
+                "codegen/inline-decode-codec-not-in-set",
+                GenerateError::CodegenInlineDecodeCodecNotInSet {
+                    codec: "push_bdy".into(),
+                    set: vec!["frame_header".into(), "push".into(), "push_body".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:09c8535d3075d277","code":"codegen/inline-decode-codec-not-in-set","stage":"generate","spec":"ADR 0139","message":"the build names the codec 'push_bdy' for its body reads to be inlined (--inline-decode-for), and no codec of the set being generated is named so: its codecs are frame_header, push, push_body"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -22051,6 +22087,10 @@ mod tests {
             // ADR 0109, D17: the repair is a number the build is given, which
             // the message states; no candidate set and no fix.
             | CodegenStandardHostBoundRelation
+            // ADR 0139: the repair is a build's argument, which no document
+            // holds, so no `Fix` of a document spells it; the message names the
+            // set's codecs.
+            | CodegenInlineDecodeCodecNotInSet
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -22936,6 +22976,7 @@ mod tests {
                 | CodegenFeatureLiftingMismatch
                 | CodegenStandardHostTypeNotServed
                 | CodegenStandardHostBoundRelation
+                | CodegenInlineDecodeCodecNotInSet
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -23272,9 +23313,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            568,
+            569,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 568 distinct variants to match the DiagnosticCode \
+             expected 569 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24068,6 +24109,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Located on the `<invoke>` the same way; no scenario builds a
             // machine with moved bounds.
             | CodegenStandardHostBoundRelation
+            // Raised over a set's build arguments before any document of it is
+            // generated, with no location; no scenario names a codec hot
+            // (docs/adr/0139).
+            | CodegenInlineDecodeCodecNotInSet
             // Raised by the Rust generator under `--no-std`, after the static
             // lowering, and located on the delayed `<send>` the proof cannot
             // bound through `locate_codegen_error`; the scenarios generate

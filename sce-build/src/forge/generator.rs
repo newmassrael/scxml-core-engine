@@ -14331,7 +14331,9 @@ struct CodecForms {
     views: bool,
     /// Always inline the functions that write (docs/adr/0061).
     inline_encode: bool,
-    /// Always inline the function that reads a codec's body (docs/adr/0136).
+    /// Always inline the function that reads this codec's body: the build asks
+    /// every body read inlined (docs/adr/0136) or names this codec as one on
+    /// its hot path (docs/adr/0139).
     inline_decode: bool,
     /// The sites of the generated set that read this codec's body, which keep
     /// its read out of line where they are two or more (docs/adr/0137).
@@ -14370,7 +14372,8 @@ pub(crate) fn reject_mcu_only_codec(
 
 /// The attribute of a function that reads a codec's body, read from `sites`
 /// sites of the generated set (docs/adr/0137): always inlined where the build
-/// asks every read inlined ([`CodecForms::inline_decode`], docs/adr/0136), out
+/// asks the read inlined, every read or the reads of the codecs it names
+/// ([`CodecForms::inline_decode`], docs/adr/0136, docs/adr/0139), out
 /// of line where the set reads the body from two sites or more, so the body is
 /// one function every site calls, and none where it is read from one site or
 /// none, which leaves the choice to the compiler: kept out of line, a body with
@@ -17829,9 +17832,10 @@ fn render_codec(
         // (an arm, an embedded body, a list's entry) is one function, out of
         // line, where the set reads it from two sites or more, so it is not
         // copied into each, and is the compiler's to place where it is read
-        // from one; `--inline-decode` asks it inlined (docs/adr/0136). The
-        // eager read and the view's are two functions, each read from its own
-        // sites.
+        // from one; `--inline-decode` asks it inlined (docs/adr/0136), and so
+        // does a build that names this codec as one on its hot path
+        // (docs/adr/0139), whatever the sites. The eager read and the view's
+        // are two functions, each read from its own sites.
         ctx.insert(
             "body_read_attr".into(),
             body_read_attribute(inline_decode, body_reads.eager).into(),
@@ -30083,7 +30087,7 @@ pub fn generate_rust_with_imports_and_externs(
                 // serves every deployment, so the deploy input does not make it.
                 views: options.views,
                 inline_encode: options.inline_encode,
-                inline_decode: options.inline_decode,
+                inline_decode: options.inline_decode.inlines(&m.name),
                 body_reads: options.body_reads.of(&m.name),
             },
         )?,
