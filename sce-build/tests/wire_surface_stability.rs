@@ -60,6 +60,9 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-test-log.v1.schema.json",
     "schemas/sce-test-trace.v1.schema.json",
     "schemas/sce-mesh-checkpoint.v1.schema.json",
+    "schemas/sce-formal-models.v1.schema.json",
+    "schemas/sce-formal-proofs.v1.schema.json",
+    "schemas/sce-formal-toolchain.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -316,6 +319,21 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_shared_checkpoint_is_a_checkpoint",
         "sce-build/tests/mesh_checkpoint_schema.rs",
     ),
+    (
+        "schemas/sce-formal-models.v1.schema.json",
+        "this_repositorys_formal_manifest_validates_against_the_wire_schema",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
+    (
+        "schemas/sce-formal-proofs.v1.schema.json",
+        "this_repositorys_proofs_manifest_validates_against_the_wire_schema",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
+    (
+        "schemas/sce-formal-toolchain.v1.schema.json",
+        "the_pinned_toolchain_validates_against_the_wire_schema",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -440,6 +458,21 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-mesh-checkpoint.v1.schema.json",
         "the_checkpoint_schema_rejects_what_the_core_does_not_write",
         "sce-build/tests/mesh_checkpoint_schema.rs",
+    ),
+    (
+        "schemas/sce-formal-models.v1.schema.json",
+        "the_models_schema_rejects_what_the_judge_refuses",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
+    (
+        "schemas/sce-formal-proofs.v1.schema.json",
+        "the_proofs_schema_rejects_what_the_judge_refuses",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
+    (
+        "schemas/sce-formal-toolchain.v1.schema.json",
+        "the_toolchain_schema_rejects_what_the_judge_refuses",
+        "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
     ),
 ];
 
@@ -615,6 +648,27 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          build of the writer is the host's to record. A stamp would \
          also make two checkpoints of the same state differ by build.",
         "Mesh checkpoint deliberately does",
+    ),
+    (
+        "schemas/sce-formal-models.v1.schema.json",
+        "written by hand by the repository that owns the models, never by a \
+         run of SCE, so there is no SCE run to stamp; the judge that reads it \
+         is named by the revision the repository pins.",
+        "formal models manifest deliberately does",
+    ),
+    (
+        "schemas/sce-formal-proofs.v1.schema.json",
+        "written by hand by the repository that owns the proofs, never by a \
+         run of SCE, so there is no SCE run to stamp; the judge that reads it \
+         is named by the revision the repository pins.",
+        "formal proofs manifest deliberately does",
+    ),
+    (
+        "schemas/sce-formal-toolchain.v1.schema.json",
+        "the file the build compiles in, printed as it is: the pins are the \
+         revision's, which a consumer already pins, and a stamp would move a \
+         cache key keyed on the output with every build of an unchanged pin.",
+        "formal toolchain deliberately does",
     ),
 ];
 

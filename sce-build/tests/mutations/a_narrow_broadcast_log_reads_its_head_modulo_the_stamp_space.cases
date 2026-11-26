@@ -31,7 +31,7 @@
 #   accepts, so removing it changes no run. Its oracle is the TLA+ configuration
 #   `docs/formal/BroadcastLogWrapped_non_divisor.cfg`, in which TLC finds the
 #   reader of a log whose slot count does not divide the stamp space reading the
-#   wrong slot after the wrap (`scripts/formal/check.sh`).
+#   wrong slot after the wrap (`sce-codegen formal models`).
 # - The slot index itself. For a slot count that divides the stamp space, the index
 #   of a reader's cursor, of the same cursor a lap on, and of the publisher's count
 #   are one number, so no change of the form "index from another lap" is a change

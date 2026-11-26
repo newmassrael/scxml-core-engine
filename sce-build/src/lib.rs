@@ -111,6 +111,7 @@ pub mod ffi;
 pub mod filters;
 pub mod forge;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod formal;
 pub mod formatter;
 pub mod generator;
 /// Content witness binding the `sce-codegen` binary to the sources it was

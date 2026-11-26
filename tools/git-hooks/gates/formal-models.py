@@ -8,20 +8,23 @@
 # them (docs/adr/0115, D5). Nothing ran them before this gate.
 #
 # `ci_only`: the largest configuration is explored whole, which is minutes, and
-# a push has five for everything. TLC is fetched by the runner that needs it and
-# checked against the manifest's digest; Java is what every runner here has, and
-# the gate answers "could not run" (exit 3) where it has not.
+# a push has five for everything. The judge is `sce-codegen formal models`
+# (docs/adr/0146); TLC is installed by `sce-codegen formal install` and admitted
+# by the digest the judge pins; the gate answers "could not run" where it has not.
 {
     "workflows": ["formal-models.yml"],
     "runner_workflow": True,
+    # The judge is `target/debug/sce-codegen formal` (docs/adr/0146).
+    "deps": ["codegen-build"],
     # Its runs are spread over the lane's three jobs when SCE_FORMAL_MODELS_SHARD
-    # names `k/N` (`shard_runs` in scripts/formal/models.py): whole, they took
+    # names `k/N` (`shard_runs` in sce-build/src/formal/models.rs): whole, they took
     # 1042 s on a hosted runner (job 138489726305). A plan makes one unit per
     # part (`shard_count`).
     "shard_env": "SCE_FORMAL_MODELS_SHARD",
-    # The spreading is `scripts/lib/ctest_shards.py`'s, which models.py imports.
-    "extra": ["docs/formal/**", "scripts/formal/**", "tools/git-hooks/spec_isolation.py",
-              "scripts/lib/ctest_shards.py"],
+    # The judge and its pins are sce-build's (docs/adr/0146), and the consumer
+    # fixture is judged with this repository's models.
+    "extra": ["docs/formal/**", "sce-build/src/formal/**",
+              "sce-build/tests/fixtures/formal_consumer/**", "tools/git-hooks/spec_isolation.py"],
     "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
                "states), which takes minutes of a push that has five for everything. "
                "formal-models.yml runs it on every change to a model or its judge.",

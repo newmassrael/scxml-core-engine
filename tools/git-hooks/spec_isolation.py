@@ -238,8 +238,6 @@ def models_changed(before: dict, after: dict) -> tuple[list[str], list[str]]:
                     spec.append(f"models.json: {config}: {key}")
             if run.get("states") != runs[config].get("states"):
                 judged.append(f"models.json: {config}: the states it must find")
-    if before.get("tlc") and before.get("tlc") != after.get("tlc"):
-        judged.append("models.json: TLC")
     return spec, judged
 
 
@@ -262,7 +260,7 @@ def proofs_changed(before: dict, after: dict) -> list[str]:
 
 
 def is_judge(path: str) -> bool:
-    return bool(re.match(r"(scripts/formal/|scripts/gates/formal-|\.github/workflows/formal-|tools/git-hooks/(spec_isolation|spec-isolation|pre-push))", path))
+    return bool(re.match(r"(sce-build/src/formal/|scripts/gates/formal-|\.github/workflows/formal-|tools/git-hooks/(spec_isolation|spec-isolation|pre-push))", path))
 
 
 def judged_commit(repository: Repository, commit: str) -> list[str]:
@@ -434,10 +432,10 @@ class SelfTest(unittest.TestCase):
 
     def test_a_property_changed_with_a_judge_is_refused(self) -> None:
         self.swap(FORMAL + "M.tla", "x < 3", "x < 9")
-        self.put("scripts/formal/models.py", "pass")
+        self.put("sce-build/src/formal/models.rs", "pass")
         self.commit("chore: judge")
         self.swap(FORMAL + "M.tla", "x < 9", "x < 11")
-        self.swap("scripts/formal/models.py", "pass", "pass  # all")
+        self.swap("sce-build/src/formal/models.rs", "pass", "pass  // all")
         self.assertIn("a judge", self.judged(self.REASONED))
 
     def test_a_property_taken_out_is_seen(self) -> None:

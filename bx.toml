@@ -417,25 +417,26 @@ packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi
 needed_by = ["genmc-queue"]
 
 # VERUS, the checker of the host core's proofs (`scripts/gates/formal-proofs.sh`), at the release
-# docs/formal/proofs.json pins by digest; scripts/formal/proofs.py stays the one place it is
-# installed from. `bin/verus` under the entry is the program run with no rustup, on the Rust release
-# of the next table; it answers `--version` by itself, so `check` asks nothing of that release.
+# sce-build/src/formal/toolchain.json pins by digest (docs/adr/0146, D3); `sce-codegen formal install` is
+# the one place it is installed from, admitting the archive by that digest. `bin/verus` under the entry
+# is the program run with no rustup, on the Rust release of the next table; it answers `--version` by
+# itself, so `check` asks nothing of that release.
 [platform.linux.tools.verus]
-version_file = "docs/formal/proofs.json"
-version_pattern = '^    "version": "([0-9a-f.]+)"'
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "verus": \{"version": "([0-9a-f.]+)"'
 path = "~/.local/verus/{version}/bin/verus"
 check = "verus {version}"
 prefix_link = "~/.local/verus/{version}"
-install = "python3 scripts/formal/proofs.py --install {prefix}"
-install_inputs = ["scripts/formal/proofs.py", "docs/formal/proofs.json"]
+install = "cargo run --quiet --bin sce-codegen --features cli -p sce-build -- formal install --tool verus --verus-place {prefix}"
+install_inputs = ["sce-build/src/formal/toolchain.json", "sce-build/src/formal/toolchain.rs"]
 needed_by = ["formal-proofs"]
 
 # THE RUST RELEASE VERUS RUNS ON, the one it was built with: no package's and not this tree's, read
-# from the same manifest, so a move of Verus moves it with it. Verus reads its compiler libraries and
+# from the same pins, so a move of Verus moves it with it. Verus reads its compiler libraries and
 # its standard library, and no component is added.
 [platform.linux.tools.rust-verus]
-version_file = "docs/formal/proofs.json"
-version_pattern = '^    "toolchain": "([0-9.]+)"'
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "verus": \{.*"toolchain": "([0-9.]+)"'
 path = "~/.local/rust/{version}/bin/cargo"
 check = "cargo {version}"
 prefix_link = "~/.local/rust/{version}"
