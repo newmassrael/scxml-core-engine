@@ -465,7 +465,7 @@ const ZINT_MAX_BYTES: usize = ZINT_FLAGGED_BYTES + 1;
 /// The ZInt at the start of `bytes` and the count of bytes it takes, or
 /// `None` when `bytes` ends inside its chain: the iterator tests each byte
 /// once against the end, and the chain may end with the input. The one decode
-/// of [`zint_tail`], inlined there once (docs/adr/0137).
+/// of [`read_zint`], inlined there once (docs/adr/0137).
 #[inline(always)]
 fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
     let mut value: u64 = 0;
@@ -482,15 +482,6 @@ fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
     ))
 }
 
-/// The byte at `pos` of `buf` when it is a whole ZInt by itself, its
-/// continuation flag clear; `None` at the end of `buf` or at a byte that
-/// begins a longer chain. The fast read of a ZInt, inlined at each field of
-/// the cursor's and the frame reader's reads alike (docs/adr/0130).
-#[inline(always)]
-pub(crate) fn zint_byte(buf: &[u8], pos: usize) -> Option<u8> {
-    buf.get(pos).copied().filter(|&b| (b & 0x80) == 0)
-}
-
 /// The ZInt at `pos` of `buf` held to `max_bits`, and where the read ends: past
 /// the ZInt when it is whole (a value past `2^max_bits - 1` refused with
 /// `VleWidthOverflow` there), and at the end of `buf` with `NeedMoreBytes`
@@ -500,13 +491,13 @@ pub(crate) fn zint_byte(buf: &[u8], pos: usize) -> Option<u8> {
 /// second copy of the loop for a tail of nine bytes or more would spare one
 /// test a byte at the price of the loop's size again (docs/adr/0137).
 ///
-/// The one body of every ZInt longer than a byte, for every width and for the
-/// cursor's and the frame reader's reads alike (docs/adr/0130): cold, so the
-/// one-byte read inlined at each field stays a test and a branch, and shared,
-/// so the longer decode is compiled once in a program.
-#[cold]
+/// The one body of every ZInt, of every length and width, for the cursor's and
+/// the frame reader's reads alike (docs/adr/0130): each reader calls it from
+/// its one ZInt read, and no field holds a read of its own, not even of a
+/// ZInt of one byte (docs/adr/0138). Not cold, since every ZInt of every frame
+/// runs it; not generic, so it is compiled once in a program.
 #[inline(never)]
-pub(crate) fn zint_tail(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
+pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
     let tail = buf.get(pos..).unwrap_or_default();
     match decode_zint(tail) {
         Some((value, len)) if max_bits < u64::BITS && value >> max_bits != 0 => {
@@ -610,59 +601,36 @@ impl<'a> SceCursor<'a> {
     /// more bytes have arrived reads again from a copy of the cursor taken
     /// before this read (`SceCursor` is `Copy`).
     ///
-    /// Entered when the next byte is not a ZInt by itself ([`zint_byte`]); the
-    /// read is [`zint_tail`], the one body the frame reader's ZInt reads run too
-    /// (docs/adr/0130).
-    #[inline(always)]
+    /// The cursor's one read of a ZInt, out of line, for every width and every
+    /// length: [`read_zint`], the one body the frame reader's ZInt read runs
+    /// too (docs/adr/0130). A field is a call of it; no field reads a ZInt of
+    /// one byte in place (docs/adr/0138).
+    #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        let (value, at) = zint_tail(self.buf, self.pos, max_bits);
+        let (value, at) = read_zint(self.buf, self.pos, max_bits);
         self.pos = at;
         value
     }
 
-    /// The next byte when it is a whole ZInt by itself, its continuation flag
-    /// clear, with the cursor moved past it; `None`, with the cursor where
-    /// it was, at the end of the input or at a byte that begins a longer
-    /// chain. A value below 128 is held by every width, so no width is
-    /// tested.
-    #[inline(always)]
-    fn read_zint_byte(&mut self) -> Option<u8> {
-        let b = zint_byte(self.buf, self.pos)?;
-        self.pos += 1;
-        Some(b)
-    }
-
     /// Read a `vle_u16` field: a ZInt of 1-9 wire bytes whose value is at
-    /// most `u16::MAX`. A one-byte ZInt is read where this is inlined;
-    /// every other goes to the shared `read_vle_inner`.
+    /// most `u16::MAX`, by the cursor's one ZInt read.
     #[inline]
     pub fn read_vle_u16(&mut self) -> Result<u16, CodecError> {
-        match self.read_zint_byte() {
-            Some(b) => Ok(u16::from(b)),
-            None => self.read_vle_inner(16).map(|v| v as u16),
-        }
+        self.read_vle_inner(16).map(|v| v as u16)
     }
 
     /// Read a `vle_u32` field: a ZInt of 1-9 wire bytes whose value is at
-    /// most `u32::MAX`. A one-byte ZInt is read where this is inlined;
-    /// every other goes to the shared `read_vle_inner`.
+    /// most `u32::MAX`, by the cursor's one ZInt read.
     #[inline]
     pub fn read_vle_u32(&mut self) -> Result<u32, CodecError> {
-        match self.read_zint_byte() {
-            Some(b) => Ok(u32::from(b)),
-            None => self.read_vle_inner(32).map(|v| v as u32),
-        }
+        self.read_vle_inner(32).map(|v| v as u32)
     }
 
-    /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes. A one-byte ZInt is
-    /// read where this is inlined; every other goes to the shared
-    /// `read_vle_inner`.
+    /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes, by the cursor's one
+    /// ZInt read.
     #[inline]
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
-        match self.read_zint_byte() {
-            Some(b) => Ok(u64::from(b)),
-            None => self.read_vle_inner(64),
-        }
+        self.read_vle_inner(64)
     }
 }
 
@@ -1786,10 +1754,11 @@ mod tests {
         ])
     }
 
-    /// Read `input` from `offset` at each width, through the public reader
-    /// (one-byte path inlined, the rest out of line) and through the shared
-    /// out-of-line body alone, and hold the result and the bytes left after
-    /// it to [`reference_read`].
+    /// Read `input` from `offset` at each width, through the cursor's public
+    /// reads, through its one out-of-line read, through the shared body alone
+    /// and through the frame reader, and hold the result and the bytes left
+    /// after it to [`reference_read`]: every reader of a ZInt is one call of
+    /// one body (docs/adr/0138), and each answers what the reference answers.
     fn assert_reads_as_reference(input: &[u8], offset: usize) {
         let tail = &input[offset..];
         for bits in [16u32, 32, 64] {
@@ -1812,7 +1781,31 @@ mod tests {
             assert_eq!(
                 (got, shared.remaining()),
                 want,
+                "cursor's {bits}-bit read on {tail:02x?}"
+            );
+            let (got, at) = read_zint(input, offset, bits);
+            assert_eq!(
+                (got, input.len() - at),
+                want,
                 "shared {bits}-bit body on {tail:02x?}"
+            );
+            // The frame reader answers zero for a refusal, records it, and
+            // ends its input; a value it reads is consumed as the cursor
+            // consumes it.
+            let mut reader = SceReader::new(tail);
+            let got = match bits {
+                16 => u64::from(reader.read_vle_u16()),
+                32 => u64::from(reader.read_vle_u32()),
+                _ => reader.read_vle_u64(),
+            };
+            let expected = match want.0 {
+                Ok(value) => (value, Ok(()), tail.len() - want.1),
+                Err(refused) => (0, Err(refused), tail.len()),
+            };
+            assert_eq!(
+                (got, reader.verdict(), reader.position()),
+                expected,
+                "reader's {bits}-bit read on {tail:02x?}"
             );
         }
     }
@@ -1921,6 +1914,100 @@ mod tests {
         let mut c = SceCursor::new(&long);
         assert_eq!(c.read_vle_u32(), Err(CodecError::VleWidthOverflow));
         assert_eq!(c.remaining(), 7);
+    }
+
+    // ── Where a ZInt is read and a VLE encoded (docs/adr/0138) ─────
+
+    /// The part of a source file of this crate the compiler builds into the
+    /// library: the text before its unit tests.
+    fn built(source: &str) -> &str {
+        source
+            .split("\n#[cfg(test)]\nmod tests {")
+            .next()
+            .unwrap_or(source)
+    }
+
+    /// The text of `source` from `start` to the first `end` after it.
+    fn region<'s>(source: &'s str, start: &str, end: &str) -> &'s str {
+        let from = source
+            .find(start)
+            .unwrap_or_else(|| panic!("`{start}` is in the source"));
+        let rest = &source[from..];
+        let to = rest
+            .find(end)
+            .unwrap_or_else(|| panic!("`{end}` follows `{start}`"));
+        &rest[..to]
+    }
+
+    /// The attributes and the text of the function `name` declared in
+    /// `text`: the `#[..]` lines among the comments above its signature, and
+    /// its lines from the signature to the brace that closes it at the
+    /// signature's indentation.
+    fn function(text: &str, name: &str) -> (String, String) {
+        let lines: Vec<&str> = text.lines().collect();
+        let plain = format!("fn {name}(");
+        let generic = format!("fn {name}<");
+        let at = lines
+            .iter()
+            .position(|l| l.contains(&plain) || l.contains(&generic))
+            .unwrap_or_else(|| panic!("`fn {name}` is declared"));
+        let attrs: Vec<&str> = lines[..at]
+            .iter()
+            .rev()
+            .copied()
+            .map(str::trim)
+            .take_while(|l| l.starts_with("#[") || l.starts_with("//"))
+            .filter(|l| l.starts_with("#["))
+            .collect();
+        let indent = lines[at].len() - lines[at].trim_start().len();
+        let close = format!("{}}}", " ".repeat(indent));
+        let end = lines[at..]
+            .iter()
+            .position(|l| *l == close)
+            .unwrap_or_else(|| panic!("`fn {name}` is closed"));
+        (attrs.join("\n"), lines[at..=at + end].join("\n"))
+    }
+
+    #[test]
+    fn every_zint_is_read_by_one_call_of_its_readers_one_read() {
+        let codec = built(include_str!("codec.rs"));
+        let reader = built(include_str!("reader.rs"));
+        // The one body of every ZInt: out of line, and not cold, since every
+        // ZInt of every frame runs it.
+        let (attrs, _) = function(codec, "read_zint");
+        assert!(
+            attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
+            "read_zint is out of line and not cold: {attrs}"
+        );
+        // Each reader reads a ZInt by one function of its own, out of line, that
+        // runs the body; a field of either width is a call of it and holds no
+        // read of a ZInt of one byte.
+        let cursor = region(codec, "impl<'a> SceCursor<'a> {", "\n}\n");
+        let frame = region(reader, "impl<'a> SceReader<'a> {", "\n}\n");
+        for (owner, methods) in [("cursor", cursor), ("reader", frame)] {
+            let (attrs, body) = function(methods, "read_vle_inner");
+            assert!(
+                attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
+                "the {owner}'s ZInt read is out of line and not cold: {attrs}"
+            );
+            assert!(
+                body.contains("read_zint(self.buf, self.pos, max_bits)"),
+                "the {owner}'s ZInt read runs the one body:\n{body}"
+            );
+            for width in ["read_vle_u16", "read_vle_u32", "read_vle_u64"] {
+                let (attrs, body) = function(methods, width);
+                assert!(
+                    !attrs.contains("inline(always)"),
+                    "the {owner}'s {width} asks for no copy at each field: {attrs}"
+                );
+                assert!(
+                    body.contains("self.read_vle_inner(")
+                        && !body.contains("match")
+                        && !body.contains("if "),
+                    "the {owner}'s {width} is a call of its one read:\n{body}"
+                );
+            }
+        }
     }
 
     // ── RFC §synth-5-B string primitive — InvalidUtf8 variant exists and is

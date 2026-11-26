@@ -34,7 +34,7 @@
 //! that starts where the cursor stands and moves the cursor past the frame
 //! only when the frame was read whole.
 
-use crate::codec::{zint_byte, zint_tail, CodecError, SceCursor};
+use crate::codec::{read_zint, CodecError, SceCursor};
 
 /// `N` zero bytes that live for the whole program: what a read of a fixed
 /// count of bytes returns once the frame has failed, so that its length is
@@ -287,31 +287,20 @@ impl<'a> SceReader<'a> {
         }
     }
 
-    /// One ZInt held to `max_bits`: a value past `2^max_bits - 1` records
-    /// `VleWidthOverflow` and reads as zero, a longer encoding of a value the
-    /// width holds is that value, and a chain the input ends inside records
-    /// `NeedMoreBytes` (see [`SceCursor::read_vle_u64`]). A ZInt of one byte is
-    /// read where this is inlined, a test and a branch; a longer one is a call
-    /// of [`Self::read_vle_long`], so no field holds the longer read's answer
-    /// and its record (docs/adr/0137).
-    #[inline(always)]
-    fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        if let Some(b) = zint_byte(self.buf, self.pos) {
-            self.pos += 1;
-            return u64::from(b);
-        }
-        self.read_vle_long(max_bits)
-    }
-
-    /// A ZInt longer than a byte, held to `max_bits`, consumed, and its refusal
-    /// recorded: the cursor's one cold body (`codec::zint_tail`) read through
-    /// this reader, so the two readers of a ZInt run one decode (docs/adr/0130).
-    /// One function, out of line, for every ZInt field of every codec
-    /// (docs/adr/0137).
-    #[cold]
+    /// One ZInt held to `max_bits`, consumed, and its refusal recorded: a value
+    /// past `2^max_bits - 1` records `VleWidthOverflow` and reads as zero, a
+    /// longer encoding of a value the width holds is that value, and a chain the
+    /// input ends inside records `NeedMoreBytes` (see
+    /// [`SceCursor::read_vle_u64`]).
+    ///
+    /// The reader's one read of a ZInt, out of line, for every width and every
+    /// length: the cursor's body (`codec::read_zint`) read through this reader,
+    /// so the two readers of a ZInt run one decode (docs/adr/0130). A field is a
+    /// call that answers the value; no field reads a ZInt of one byte in place,
+    /// and none holds the body's answer or its record (docs/adr/0138).
     #[inline(never)]
-    fn read_vle_long(&mut self, max_bits: u32) -> u64 {
-        let (value, at) = zint_tail(self.buf, self.pos, max_bits);
+    fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
+        let (value, at) = read_zint(self.buf, self.pos, max_bits);
         match value {
             Ok(value) => {
                 self.pos = at;
