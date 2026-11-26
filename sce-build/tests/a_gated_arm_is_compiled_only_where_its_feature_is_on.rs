@@ -110,9 +110,29 @@ fn heads_arm(line: &str, arm: &str) -> bool {
         || t.contains(&format!("::{arm}(_) =>"))
 }
 
-/// The arms of the decode's `match` on the peeked tag, by their value.
+/// The arms of the decode's `match` on the peeked tag, by their value: a
+/// block (`1u8 => {`) or an arm written on one line, as the view's decode
+/// writes each arm it reads.
 fn heads_tag(line: &str, value: u8) -> bool {
-    line.trim() == format!("{value}u8 => {{")
+    line.trim().starts_with(&format!("{value}u8 => "))
+}
+
+/// The tag of the arm at `lines[at]` when that arm refuses its tag in a build
+/// without the feature: `1u8 => cursor.fail(CodecError::VariantArmNotBuilt),`
+/// on one line, or the head `1u8 => {` whose body opens with that refusal.
+fn refusal_at(lines: &[&str], at: usize) -> Option<String> {
+    const REFUSAL: &str = "CodecError::VariantArmNotBuilt";
+    let line = lines[at].trim();
+    let (tag, body) = line.split_once(" => ")?;
+    if !tag.ends_with("u8") {
+        return None;
+    }
+    let refuses = if body == "{" {
+        lines.get(at + 1).is_some_and(|next| next.contains(REFUSAL))
+    } else {
+        body.contains(REFUSAL)
+    };
+    refuses.then(|| tag.to_string())
 }
 
 /// Every item of the Rust codec that names the put or the delete arm carries
@@ -132,11 +152,13 @@ fn every_rust_item_of_a_gated_arm_carries_its_cfg_and_no_other_does() {
     let lines: Vec<&str> = code.lines().collect();
     let mut gated_heads = 0usize;
     let mut query_heads = 0usize;
-    for pair in lines.windows(2) {
-        let (previous, line) = (pair[0].trim(), pair[1]);
+    for at in 1..lines.len() {
+        let (previous, line) = (lines[at - 1].trim(), lines[at]);
+        // The arm that refuses a gated tag belongs to the build without the
+        // feature; the next test holds it to `cfg(not(..))`.
+        let refusal = refusal_at(&lines, at).is_some();
         let gated = GATED.iter().any(|arm| heads_arm(line, arm))
-            || heads_tag(line, 0x01)
-            || heads_tag(line, 0x02);
+            || (!refusal && (heads_tag(line, 0x01) || heads_tag(line, 0x02)));
         if gated {
             gated_heads += 1;
             assert_eq!(
@@ -433,21 +455,28 @@ fn a_rust_build_without_the_feature_refuses_the_gated_arms_tag() {
     );
     let lines: Vec<&str> = code.lines().collect();
     let mut refusals: Vec<String> = Vec::new();
-    for pair in lines.windows(2) {
-        let next = pair[1].trim();
-        if next.contains("CodecError::VariantArmNotBuilt") {
+    for at in 1..lines.len() {
+        if let Some(tag) = refusal_at(&lines, at) {
             assert_eq!(
-                pair[0].trim(),
+                lines[at - 1].trim(),
                 CFG_OFF,
-                "a refusal of a gated arm's tag stands in every build:\n{next}"
+                "a refusal of a gated arm's tag stands in every build:\n{}",
+                lines[at].trim()
             );
-            refusals.push(next.to_string());
+            refusals.push(tag);
         }
     }
+    // Every refusal is an arm of a decode's `match`, so a refusal written
+    // anywhere else would escape the reader above: count them all.
+    assert_eq!(
+        code.matches("CodecError::VariantArmNotBuilt").count(),
+        refusals.len(),
+        "a refusal of a gated tag outside an arm the reader knows"
+    );
     // The builder's decode and the view's, each refusing tags 1 and 2.
     let expected: Vec<String> = ["1u8", "2u8", "1u8", "2u8"]
         .iter()
-        .map(|tag| format!("{tag} => return Err(CodecError::VariantArmNotBuilt),"))
+        .map(|tag| tag.to_string())
         .collect();
     assert_eq!(refusals, expected);
 }
