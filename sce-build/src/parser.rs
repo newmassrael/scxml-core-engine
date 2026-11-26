@@ -3557,22 +3557,29 @@ impl SCXMLParser {
         // written after it.
         self.authored_invoke_ids = authored_invoke_ids(&root);
 
+        // SCE Protocol-Synthesis RFC §synth-5-E — `<sce:on-sample>`
+        // placement (parent must be `<state>` or `<parallel>`) is a walk of
+        // the document alone, so it runs before the states pass: that pass
+        // refuses an SCE element where executable content stands that it
+        // does not take, and an `<sce:on-sample>` written inside an
+        // `<onentry>` is owed this refusal, which names where it belongs,
+        // rather than that one's list of executable content.
+        validate_on_sample_placement(&root, diag_label)?;
+
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
-        // SCE Protocol-Synthesis RFC §synth-5-E — `<sce:on-sample>`
-        // structural validators run immediately after the states pass
-        // so the diagnostic surfaces before any downstream derivation
-        // (feature detection, parallel-region computation, etc.) can
-        // mis-interpret a malformed extension. Three checks in fixed
-        // order:
-        //   1. placement (parent must be `<state>` or `<parallel>`),
-        //   2. per-state link uniqueness,
-        //   3. event-name vs W3C internal-event-prefix collision.
+        // The rest of the `<sce:on-sample>` structural validators run
+        // immediately after the states pass so the diagnostic surfaces
+        // before any downstream derivation (feature detection,
+        // parallel-region computation, etc.) can mis-interpret a
+        // malformed extension. Checks in fixed order:
+        //   1. per-state link uniqueness,
+        //   2. event-name vs W3C internal-event-prefix collision,
+        //   3. callback paths.
         // First failure short-circuits — the early author-facing
         // signal beats accumulating multiple structural diagnostics
         // for the same well-known authoring mistake.
-        validate_on_sample_placement(&root, diag_label)?;
         validate_on_sample_uniqueness(&model, diag_label)?;
         validate_on_sample_event_names(&model, diag_label)?;
         validate_on_sample_callback_paths(&model, diag_label)?;
@@ -5286,9 +5293,12 @@ impl SCXMLParser {
         // namespaces, and a name alone does not make an element SCXML's — a
         // `<raise>` another vocabulary defines is not `<raise>`. What is read
         // here is the SCXML namespace's executable content and SCE's own
-        // `<sce:action>` (§scxml-G-7); any other element is skipped, the
-        // behaviour §scxml-4.10 leaves to the platform. Until 2026-09-24
-        // every arm but `<sce:action>`'s matched the local name alone.
+        // actions (`<sce:action>`, §scxml-G-7, and the rest of
+        // [`SCE_EXECUTABLE_CONTENT`]); an element of any other namespace is
+        // skipped, the behaviour §scxml-4.10 leaves to the platform. An element
+        // of either namespace this reader does not take is refused, since both
+        // namespaces are ones the build defines. Until 2026-09-24 every arm but
+        // `<sce:action>`'s matched the local name alone.
         let scxml = is_scxml_ns(child);
         if !scxml && child.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
             return Ok(None);
@@ -5448,7 +5458,7 @@ impl SCXMLParser {
             (true, "if") => self.parse_if_action(child, &mut action, model, source_name)?,
             // §scxml-G-7: Custom Action Element. Only the SCE namespace
             // claims `<action>`; an `<action>` from any other vocabulary is
-            // skipped like every element this dispatcher does not read.
+            // skipped like every foreign element this dispatcher meets.
             (false, "action") => self.parse_native_action(child, &mut action, source_name)?,
             // SCE Accepted Subset §2.15: fill and empty a `sce-static`
             // `list<T>` variable. `target` names it, as E8's `<sce:append>`
@@ -5639,22 +5649,13 @@ impl SCXMLParser {
             // test component reads them: in any other statechart each is an element its
             // executable content does not take, refused rather than skipped, so a verdict the
             // author wrote is never dropped in silence.
-            (false, "setverdict" | "start-timer" | "stop-timer") => {
+            (false, name) if TEST_COMPONENT_STATEMENTS.contains(&name) => {
                 if model.test_component.is_none() {
-                    return Err(crate::forge::parser::located(
+                    return Err(not_executable_content(
                         child,
+                        format!("sce:{tag}"),
+                        model,
                         source_name,
-                        crate::forge::error::ValidationError::UnexpectedChildElement {
-                            parent: child
-                                .parent_element()
-                                .map(|parent| format!("<{}>", parent.tag_name().name()))
-                                .unwrap_or_else(|| "<scxml>".to_string()),
-                            child: format!("sce:{tag}"),
-                            allowed: EXECUTABLE_CONTENT_ELEMENTS
-                                .iter()
-                                .map(|name| (*name).to_string())
-                                .collect(),
-                        },
                     ));
                 }
                 let statement = crate::test_component::read_statement(child, source_name)?
@@ -5669,23 +5670,29 @@ impl SCXMLParser {
             // not run and nothing said so. The document is refused instead, naming the element
             // and the closed set it could have been.
             (true, _) => {
-                return Err(crate::forge::parser::located(
+                return Err(not_executable_content(
                     child,
+                    tag.clone(),
+                    model,
                     source_name,
-                    crate::forge::error::ValidationError::UnexpectedChildElement {
-                        parent: child
-                            .parent_element()
-                            .map(|parent| format!("<{}>", parent.tag_name().name()))
-                            .unwrap_or_else(|| "<scxml>".to_string()),
-                        child: tag.clone(),
-                        allowed: EXECUTABLE_CONTENT_ELEMENTS
-                            .iter()
-                            .map(|name| (*name).to_string())
-                            .collect(),
-                    },
-                ));
+                ))
             }
-            _ => return Ok(None),
+            // SCE Accepted Subset §2.10: an annotation in element form says something about
+            // the block it sits in, and `read_traceability` reads it there.
+            (false, _) if is_annotation_element(child) => return Ok(None),
+            // Any other SCE element is one this reader does not take, refused for the reason
+            // an SCXML one is. Until 2026-11-26 it was skipped as a foreign element: an
+            // `<sce:foreach item in>`, the algorithm kind's loop, written in a transition
+            // of a `sce-static` statechart built with exit 0, and the generated machine
+            // never ran the loop. A statechart's loop is the SCXML `<foreach array item>`.
+            (false, _) => {
+                return Err(not_executable_content(
+                    child,
+                    format!("sce:{tag}"),
+                    model,
+                    source_name,
+                ))
+            }
         }
         Ok(Some(action))
     }
@@ -7784,6 +7791,51 @@ fn document_positions(
 const SCE_EXECUTABLE_CONTENT: [&str; 8] = [
     "action", "append", "call", "clear", "lift", "put", "remove", "render",
 ];
+
+/// The statements of docs/SCE_TEST_PROFILE.md §4.4 a test component's
+/// executable content takes beside [`SCE_EXECUTABLE_CONTENT`], and no other
+/// statechart's does.
+const TEST_COMPONENT_STATEMENTS: [&str; 3] = ["setverdict", "start-timer", "stop-timer"];
+
+/// The refusal of `node`, an element where executable content stands that is
+/// none of it. `written` is its name as the document writes it, with the
+/// `sce:` prefix for an SCE element, and the candidates are the closed set
+/// `parse_executable_content_single` takes under `model`: the SCXML
+/// elements, SCE's actions, and a test component's statements where it is one.
+fn not_executable_content(
+    node: &roxmltree::Node,
+    written: String,
+    model: &SCXMLModel,
+    source_name: &str,
+) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+    let test_statements: &[&str] = if model.test_component.is_some() {
+        &TEST_COMPONENT_STATEMENTS
+    } else {
+        &[]
+    };
+    let allowed = EXECUTABLE_CONTENT_ELEMENTS
+        .iter()
+        .map(|name| (*name).to_string())
+        .chain(
+            SCE_EXECUTABLE_CONTENT
+                .iter()
+                .chain(test_statements)
+                .map(|name| format!("sce:{name}")),
+        )
+        .collect();
+    crate::forge::parser::located(
+        node,
+        source_name,
+        crate::forge::error::ValidationError::UnexpectedChildElement {
+            parent: node
+                .parent_element()
+                .map(|parent| format!("<{}>", parent.tag_name().name()))
+                .unwrap_or_else(|| "<scxml>".to_string()),
+            child: written,
+            allowed,
+        },
+    )
+}
 
 /// Whether `node` is one of the actions of the executable content it sits in:
 /// an element `parse_executable_content_single` reads into an action (or
@@ -10947,6 +10999,66 @@ mod tests {
         ] {
             assert_eq!("", refusal_of(body), "{body} was refused");
         }
+    }
+
+    /// An SCE element where executable content stands that the reader does not
+    /// take is refused and named, as an SCXML one is. It was skipped as a foreign
+    /// element: the algorithm kind's `<sce:foreach item in>` in a transition of a
+    /// `sce-static` statechart built with exit 0, and the generated machine ran
+    /// the transition without the loop (reported 2026-11-26). An annotation in
+    /// element form is still read as one, about the block it sits in.
+    #[test]
+    fn an_sce_element_that_is_not_executable_content_is_refused_and_named() {
+        let document = |body: &str| {
+            format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                          version="1.0" initial="s" datamodel="sce-static">
+                    <datamodel>
+                        <data id="xs" sce:type="list&lt;uint32&gt;[8]"/>
+                        <data id="ys" sce:type="list&lt;uint32&gt;[8]"/>
+                    </datamodel>
+                    <state id="s">{body}</state>
+                </scxml>"#
+            )
+        };
+        let refused = SCXMLParser::new()
+            .parse_string(
+                &document(
+                    r#"<transition event="e"><sce:foreach item="f" in="xs"><sce:append target="ys" expr="f"/></sce:foreach></transition>"#,
+                ),
+                "test",
+            )
+            .expect_err("an <sce:foreach> in a transition was taken");
+        let crate::forge::error::ForgeError::Validation(validation) = &refused.error else {
+            panic!("refused for another reason: {:?}", refused.error);
+        };
+        match validation.as_ref() {
+            crate::forge::error::ValidationError::UnexpectedChildElement {
+                parent,
+                child,
+                allowed,
+            } => {
+                assert_eq!(
+                    ("<transition>", "sce:foreach"),
+                    (parent.as_str(), child.as_str())
+                );
+                for candidate in ["foreach", "sce:append"] {
+                    assert!(
+                        allowed.iter().any(|name| name == candidate),
+                        "{candidate} is not among the candidates: {allowed:?}"
+                    );
+                }
+            }
+            other => panic!("refused for another reason: {other:?}"),
+        }
+        SCXMLParser::new()
+            .parse_string(
+                &document(
+                    r#"<onentry><sce:provenance doc-id="spec"/><sce:append target="ys" expr="1"/></onentry>"#,
+                ),
+                "test",
+            )
+            .expect("an annotation in element form was refused");
     }
 
     #[test]
