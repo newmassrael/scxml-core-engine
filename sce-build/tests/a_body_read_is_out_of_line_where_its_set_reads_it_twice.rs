@@ -657,7 +657,10 @@ fn a_hot_body_reads_its_zints_held_in_place() {
 
 /// A body a length says the size of is read held in place where a hot body
 /// reads it, the eager read and the view's alike, and the view the length
-/// hands its bytes is read by its form held in place (docs/adr/0140).
+/// hands its bytes is read by its form held in place with the parent's chain
+/// hook (docs/adr/0130, docs/adr/0140). A view is read with a hook at every
+/// site, so it has no hookless form held in place: the one `read_inline` of
+/// the body is its eager read's.
 #[test]
 fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
     let sites = sites_of(&["codec_zenoh_decl_ext_keyexpr.scxml"], true);
@@ -680,10 +683,25 @@ fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
             "the hot codec_zenoh_decl_ext_keyexpr reads its inner body by an entry point: {line}"
         );
     }
-    let inner = rust_with("codec_zenoh_decl_ext_keyexpr_inner", &options);
     assert!(
-        !methods(&inner, "read_inline").is_empty(),
-        "codec_zenoh_decl_ext_keyexpr_inner is read by a hot body and has no `read_inline`:\n{inner}"
+        within.contains(
+            &"inner = cursor.within(total_length as usize, |_inner| \
+              CodecZenohDeclExtKeyexprInnerView::read_with_inline(_inner, _hook));"
+        ),
+        "the hot view of codec_zenoh_decl_ext_keyexpr reads its inner body without its \
+         hook: {within:#?}"
+    );
+    let inner = rust_with("codec_zenoh_decl_ext_keyexpr_inner", &options);
+    assert_eq!(
+        methods(&inner, "read_inline").len(),
+        1,
+        "codec_zenoh_decl_ext_keyexpr_inner is read by a hot body and has not one \
+         `read_inline`, its eager read's:\n{inner}"
+    );
+    assert!(
+        !methods(&inner, "read_with_inline").is_empty(),
+        "codec_zenoh_decl_ext_keyexpr_inner's view is read by a hot body and has no \
+         `read_with_inline`:\n{inner}"
     );
 }
 

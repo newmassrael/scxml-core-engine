@@ -4133,3 +4133,18 @@ names no codec generates what it did, and `--inline-decode` prints what it print
   `InlineDecode::inlines` is replaced by `InlineDecode::forms(codec, &sites)`, which answers `BodyReadForms`. Every
   document of the set is generated with the same `InlineDecode::Codecs` and the same `body_reads`: a hot body calls
   the forms held in place of the codecs it reads, which their own generation prints only under the same names.
+
+## A Rust view hands its chain hook to a body a length bounds (ADR 0130)
+
+Landing: the commits that add this section. The Rust golden of `codec_zenoh_decl_ext_keyexpr` and every generated Rust
+view that embeds a body under `sce:length-from` change; a consumer regenerates its Rust codecs. A frame read without a
+hook decodes as before.
+
+- **A view reads a body a length bounds with its chain hook**: `cursor.within(n, |_inner| Body::read_with(_inner,
+  _hook))`, where it read `Body::read`, which showed the hook nothing. A consumer that reads a frame with `decode_with`
+  or `read_with` is now shown every entry of a chain inside such a body, as it is shown every other chain of the frame,
+  and an entry its hook refuses there is the frame's refusal (`CodecError::ChainEntryRefused`), where the frame decoded
+  before. A consumer that judged those entries by walking the body after the decode judges them in the one read.
+- **A hot view has no `read_inline`**: the form held in place without a hook that ADR 0140 printed for a view read
+  within a length is gone, since that site reads `read_with_inline` with the hook. A call written by hand fails with
+  `E0599` (no function `read_inline`): call `read_with_inline(cursor, &mut ())`.

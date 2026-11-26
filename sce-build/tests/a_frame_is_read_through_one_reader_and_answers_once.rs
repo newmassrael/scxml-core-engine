@@ -363,19 +363,28 @@ fn a_scan_counts_the_entries_it_read_whole() {
     }
 }
 
-/// A body a length bounds is read from those bytes by a function of the
-/// reader. A view's body that takes nothing else is that function, its own
-/// `read`, named: a closure that only passes the reader on is one Clippy
-/// refuses (`redundant_closure`), and every other closure adds something, the
-/// destination it fills, the `Some` of a gated body or the flags it hands on.
+/// A body a length bounds is read from those bytes, through the frame's
+/// reader, by the read every other site of it makes: a view's body with the
+/// view's chain hook (docs/adr/0130), the eager body into its destination. The
+/// read is a closure over the reader of those bytes that adds what the site
+/// hands the body, never one that only passes the reader on, which Clippy
+/// refuses (`redundant_closure`).
 #[test]
-fn a_body_a_length_bounds_is_read_by_its_own_read() {
+fn a_body_a_length_bounds_is_read_with_what_its_site_hands_it() {
     let code = rust_of("codec_zenoh_decl_ext_keyexpr");
     assert!(
         code.contains(
-            "cursor.within(total_length as usize, CodecZenohDeclExtKeyexprInnerView::read);"
+            "cursor.within(total_length as usize, |_inner| \
+             CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook));"
         ),
-        "the view does not read its bounded body by the body's own read:\n{code}"
+        "the view does not read its bounded body with its hook:\n{code}"
+    );
+    assert!(
+        code.contains(
+            "cursor.within(total_length as usize, |_inner| \
+             CodecZenohDeclExtKeyexprInnerOwned::<S>::read_into(_inner, &mut _out.inner));"
+        ),
+        "the eager decode does not read its bounded body into its destination:\n{code}"
     );
     for line in code.lines().filter(|line| line.contains("|_inner| ")) {
         let (_, body) = line

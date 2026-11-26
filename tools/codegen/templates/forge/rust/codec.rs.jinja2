@@ -817,16 +817,6 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     pub fn read(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self {
         Self::read_with(cursor{{ decode_forward_args_with_comma }}, &mut ())
     }
-{% if hot_body %}
-
-    /// [`Self::read`] held in place where it is called: the read a body on the
-    /// build's hot path calls where a length says how many bytes this view
-    /// occupies (docs/adr/0140).
-    #[inline(always)]
-    pub fn read{{ held_suffix }}(cursor: &mut SceReader<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Self {
-        Self::read_with{{ held_suffix }}(cursor{{ decode_forward_args_with_comma }}, &mut ())
-    }
-{% endif %}
 
     /// [`Self::read`], each entry of every chain the frame holds, this view's
     /// and those of every body it reads, shown to `_hook` right after the entry

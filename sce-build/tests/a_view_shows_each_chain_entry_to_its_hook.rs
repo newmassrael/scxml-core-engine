@@ -94,28 +94,38 @@ fn a_views_read_is_its_hooked_read_with_unit() {
     }
 }
 
-/// Every body a view reads is read with the view's hook: no `View::read(` is
-/// left in a `read_with`, so a chain nested in an arm, an embedded body or a
-/// list's entry is shown to the same hook.
+/// Every body a view reads is read with the view's hook: every read of a
+/// view in a `read_with` is its `read_with`, called or handed over, so a chain
+/// nested in an arm, an embedded body, a body a length bounds or a list's entry
+/// is shown to the same hook.
 #[test]
 fn a_view_hands_its_hook_to_every_body_it_reads() {
     for name in [
         "codec_zenoh_oam",
         "codec_zenoh_network_envelope",
         "codec_zenoh_push",
+        "codec_zenoh_decl_ext_keyexpr",
+        "codec_present_if_length_from",
     ] {
         let code = rust_of(name);
         for body in bodies(&code, "read_with") {
-            assert!(
-                !body.contains("View::read("),
-                "{name} reads a body without its hook:\n{body}"
-            );
+            for (at, read) in body.match_indices("View::read") {
+                assert!(
+                    body[at + read.len()..].starts_with("_with"),
+                    "{name} reads a body without its hook:\n{body}"
+                );
+            }
         }
     }
     let envelope = rust_of("codec_zenoh_network_envelope");
     assert!(
         envelope.contains("CodecZenohOamView::read_with(cursor, _hook)"),
         "the envelope's arm reads its body without the hook"
+    );
+    let bounded = rust_of("codec_zenoh_decl_ext_keyexpr");
+    assert!(
+        bounded.contains("|_inner| CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook)"),
+        "the body a length bounds is read without the hook:\n{bounded}"
     );
 }
 

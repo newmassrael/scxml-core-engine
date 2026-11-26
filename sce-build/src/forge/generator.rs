@@ -20330,7 +20330,13 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                 }
             };
             // A body a length says the size of is read from those bytes alone,
-            // as a frame of its own whose refusal is this one's.
+            // as a frame of its own whose refusal is this one's, by the read
+            // every other site of it makes: a view's body with the view's chain
+            // hook, so the hook is shown the chains of the bounded body as it is
+            // shown every other chain of the frame (docs/adr/0130). The read is a
+            // closure over the reader of those bytes, and never one that only
+            // passes the reader on (Clippy's `redundant_closure`): a view's adds
+            // the hook, a stored body's the destination it fills.
             let within = |sibling: &str, gated: bool| {
                 let body = into_field("_inner", gated);
                 let body = body.strip_suffix(';').unwrap_or(&body);
@@ -20338,18 +20344,7 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                     Some((assign, value)) if !stores => (format!("{assign} = "), value.to_string()),
                     _ => (String::new(), body.to_string()),
                 };
-                // A view's body that is always present and takes no flag input
-                // is its own `read` of the bytes, handed over as that function:
-                // a closure that only passes its reader on is one Clippy refuses
-                // (`redundant_closure`). Every other read holds what the closure
-                // adds, the destination it fills, the `Some` of a gated body or
-                // the flags it is handed.
-                let read = if !stores && !gated && thread_arg.is_empty() {
-                    format!("{body_type}::read{form}")
-                } else {
-                    format!("|_inner| {value}")
-                };
-                format!("{assign}cursor.within({sibling} as usize, {read});")
+                format!("{assign}cursor.within({sibling} as usize, |_inner| {value});")
             };
             match (&test_lit, len_expr(Language::Rust)) {
                 (None, None) => into_field("cursor", false),
