@@ -43,6 +43,41 @@ const fn zeros<const N: usize>() -> &'static [u8; N] {
     const { &[0; N] }
 }
 
+/// A length as a codec's field holds it, in the field's own integer type: the
+/// count of bytes it names, or `None` where it names none (a negative value).
+/// What [`SceReader::within`] takes, so a length reaches the reader whole
+/// whatever the field's width and sign, and the reader alone decides what the
+/// target can hold.
+pub trait WireLength: Copy {
+    /// The count of bytes this length names, or `None` for a negative one.
+    fn byte_count(self) -> Option<u64>;
+}
+
+macro_rules! wire_length_unsigned {
+    ($($t:ty),*) => {$(
+        impl WireLength for $t {
+            #[inline(always)]
+            fn byte_count(self) -> Option<u64> {
+                Some(u64::from(self))
+            }
+        }
+    )*};
+}
+
+macro_rules! wire_length_signed {
+    ($($t:ty),*) => {$(
+        impl WireLength for $t {
+            #[inline(always)]
+            fn byte_count(self) -> Option<u64> {
+                u64::try_from(self).ok()
+            }
+        }
+    )*};
+}
+
+wire_length_unsigned!(u8, u16, u32, u64);
+wire_length_signed!(i8, i16, i32, i64);
+
 /// The reader one frame is decoded through: the bytes the frame is read from,
 /// how far the decode has read, the first refusal it recorded and whether a
 /// value was past a capacity.
@@ -394,7 +429,11 @@ impl<'a> SceReader<'a> {
     /// consume them: the bytes a length says a body occupies. What `read`
     /// records is this frame's, the first refusal of the two counting first;
     /// where fewer than `n` bytes remain, `NeedMoreBytes` is recorded and
-    /// `read` reads nothing.
+    /// `read` reads nothing. `n` is the length as its field holds it, of the
+    /// field's own integer type ([`WireLength`]): a negative one, or one past
+    /// what the target's `usize` holds, names no bytes the input can hold and
+    /// is `LengthOutOfRange` ([`Self::begin_within`]), never cut to its low
+    /// bits.
     ///
     /// It is generic over the read, so each body read within a length has its
     /// own copy, and that copy is the call of the read alone: the start of the
@@ -402,8 +441,12 @@ impl<'a> SceReader<'a> {
     /// frame's by [`Self::end_within`], each one function for every codec of a
     /// program (docs/adr/0138).
     #[inline]
-    pub fn within<T>(&mut self, n: usize, read: impl FnOnce(&mut SceReader<'a>) -> T) -> T {
-        let mut inner = self.begin_within(n);
+    pub fn within<T>(
+        &mut self,
+        n: impl WireLength,
+        read: impl FnOnce(&mut SceReader<'a>) -> T,
+    ) -> T {
+        let mut inner = self.begin_within(n.byte_count());
         let value = read(&mut inner);
         self.end_within(&inner);
         value
@@ -414,9 +457,22 @@ impl<'a> SceReader<'a> {
     /// input ended, where this frame has failed or fewer than `n` bytes remain.
     /// Not generic over anything a decode reads, so it is one function, out of
     /// line, for every codec (docs/adr/0138).
+    ///
+    /// `n` is the count of bytes the length names, `None` where it names
+    /// none (a negative length). A count past what the target's `usize` holds
+    /// names more bytes than any input of the target holds; either is refused
+    /// as out of range rather than cut to its low bits, which would read a
+    /// different, shorter body. Where `usize` is 64 bits wide and the field
+    /// unsigned, the test is never true and is no code.
     #[inline(never)]
-    fn begin_within(&mut self, n: usize) -> SceReader<'a> {
-        let bytes = self.take_slice(n);
+    fn begin_within(&mut self, n: Option<u64>) -> SceReader<'a> {
+        let bytes = match n.and_then(|n| usize::try_from(n).ok()) {
+            Some(n) => self.take_slice(n),
+            None => {
+                self.fail(CodecError::LengthOutOfRange);
+                &[]
+            }
+        };
         let mut inner = SceReader {
             place: SceCursor::new(bytes),
             fault: self.fault,
@@ -809,5 +865,23 @@ mod tests {
         assert!(r.failed());
         assert_eq!(r.hold(Ok::<u8, CodecError>(3)), 3);
         assert_eq!(r.verdict(), Err(CodecError::InvalidUtf8));
+    }
+    #[test]
+    fn a_negative_length_is_out_of_range_and_reads_nothing() {
+        let bytes = [1u8, 2, 3];
+        let mut r = SceReader::new(&bytes);
+        let read = r.within(-1i8, |inner| inner.take_array::<1>()[0]);
+        assert_eq!(read, 0);
+        assert_eq!(r.verdict(), Err(CodecError::LengthOutOfRange));
+    }
+
+    #[test]
+    fn a_length_is_read_whole_whatever_its_type() {
+        let bytes = [7u8, 8, 9];
+        for n in [2u64.byte_count(), 2u8.byte_count(), 2i64.byte_count()] {
+            let mut r = SceReader::new(&bytes);
+            let head = r.within(n.unwrap(), |inner| inner.take_array::<2>()[1]);
+            assert_eq!((head, r.position(), r.verdict()), (8, 2, Ok(())));
+        }
     }
 }

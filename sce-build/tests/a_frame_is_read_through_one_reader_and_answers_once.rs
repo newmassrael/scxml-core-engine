@@ -374,14 +374,14 @@ fn a_body_a_length_bounds_is_read_with_what_its_site_hands_it() {
     let code = rust_of("codec_zenoh_decl_ext_keyexpr");
     assert!(
         code.contains(
-            "cursor.within(total_length as usize, |_inner| \
+            "cursor.within(total_length, |_inner| \
              CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook));"
         ),
         "the view does not read its bounded body with its hook:\n{code}"
     );
     assert!(
         code.contains(
-            "cursor.within(total_length as usize, |_inner| \
+            "cursor.within(total_length, |_inner| \
              CodecZenohDeclExtKeyexprInnerOwned::<S>::read_into(_inner, &mut _out.inner));"
         ),
         "the eager decode does not read its bounded body into its destination:\n{code}"

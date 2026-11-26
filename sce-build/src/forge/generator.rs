@@ -20388,7 +20388,10 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                     Some((assign, value)) if !stores => (format!("{assign} = "), value.to_string()),
                     _ => (String::new(), body.to_string()),
                 };
-                format!("{assign}cursor.within({sibling} as usize, |_inner| {value});")
+                // The length goes in as its field holds it (`WireLength`): the
+                // reader refuses one the target cannot hold rather than cutting
+                // it to a 32-bit `usize`.
+                format!("{assign}cursor.within({sibling}, |_inner| {value});")
             };
             match (&test_lit, len_expr(Language::Rust)) {
                 (None, None) => into_field("cursor", false),
