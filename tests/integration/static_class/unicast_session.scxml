@@ -22,6 +22,10 @@
     (hello.ack, closed.ack);
   - a top-level <final>, which ends the run.
 
+  A child of established ignores what its phase of the exchange does not
+  answer (an ack while not awaiting one, a drained while not draining), as the
+  consumer's session does; each child declares those events in sce:unhandled.
+
   Tabled twice, for the class walker and for the general interpreter, and the
   two held to each other with seeded random events by
   sce-build/tests/the_class_walker_runs_as_the_general_interpreter_does.rs.
@@ -87,28 +91,28 @@
     <transition event="keepalive">
       <sce:action name="note_keepalive" effect="notice"/>
     </transition>
-    <state id="idle">
+    <state id="idle" sce:unhandled="ack drained nack">
       <onentry>
         <sce:action name="on_idle" effect="notice"/>
       </onentry>
       <transition event="data" target="sending"/>
       <transition event="keepalive" target="idle"/>
     </state>
-    <state id="sending">
+    <state id="sending" sce:unhandled="ack data drained">
       <onentry>
         <sce:action name="on_sending" effect="notice"/>
       </onentry>
       <transition event="data.sent" target="awaiting_ack"/>
       <transition event="nack" target="idle"/>
     </state>
-    <state id="awaiting_ack">
+    <state id="awaiting_ack" sce:unhandled="drained">
       <transition event="ack" target="idle">
         <sce:action name="acknowledged" effect="notice"/>
       </transition>
       <transition event="nack" target="sending"/>
       <transition event="data"/>
     </state>
-    <state id="draining">
+    <state id="draining" sce:unhandled="ack nack">
       <transition event="drained" target="closing"/>
       <transition event="data">
         <sce:action name="drop_data" effect="notice"/>

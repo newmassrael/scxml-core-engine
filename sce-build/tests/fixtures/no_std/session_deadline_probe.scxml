@@ -24,8 +24,8 @@
     <data id="opening_ms" sce:type="uint32" expr="500"/>
     <data id="closing_ms" sce:type="uint32" expr="250"/>
     <data id="idle" sce:type="uint16" expr="3000"/>
-    <data id="unit" sce:type="string" sce:capacity="2" expr="'ms'"/>
-    <data id="grace" sce:type="string" sce:capacity="8" expr="'100ms'"/>
+    <data id="unit" sce:type="string[2]" expr="'ms'"/>
+    <data id="grace" sce:type="string[8]" expr="'100ms'"/>
     <data id="retries" sce:type="uint8" expr="0"/>
   </datamodel>
   <state id="session" initial="opening">
