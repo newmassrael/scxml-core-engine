@@ -600,6 +600,8 @@ pub enum Stage {
     MeshExternal,
     MeshTopology,
     MeshCodegen,
+    /// A formal judge (docs/adr/0144, D1).
+    Formal,
 }
 
 impl Stage {
@@ -620,6 +622,7 @@ impl Stage {
             Stage::MeshExternal => "mesh-external",
             Stage::MeshTopology => "mesh-topology",
             Stage::MeshCodegen => "mesh-codegen",
+            Stage::Formal => "formal",
         }
     }
 }
@@ -3084,6 +3087,20 @@ pub enum DiagnosticCode {
     /// was not (`crate::authoring_profile`).
     #[serde(rename = "cli/profile-unusable")]
     CliProfileUnusable,
+    /// A formal manifest that is not as the tree is: something it does not
+    /// declare, something it declares that is not there, a part no run takes
+    /// out, a property no run shows can fail, a key it does not know
+    /// (docs/adr/0144, D1).
+    #[serde(rename = "formal/declaration")]
+    FormalDeclaration,
+    /// A formal run, proof or mutant that answered otherwise than its
+    /// manifest declares (docs/adr/0144, D1).
+    #[serde(rename = "formal/verdict")]
+    FormalVerdict,
+    /// A formal judge that could not run: a pinned tool or its runtime is
+    /// missing, or is not the one pinned (docs/adr/0144, D1).
+    #[serde(rename = "formal/tool-unavailable")]
+    FormalToolUnavailable,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -4536,6 +4553,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliDiagramUnavailable,
         CliDiagramDoesNotFit,
         CliProfileUnusable,
+        FormalDeclaration,
+        FormalVerdict,
+        FormalToolUnavailable,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4891,6 +4911,9 @@ impl DiagnosticCode {
     pub fn spec_anchor(&self) -> Option<&'static str> {
         use DiagnosticCode::*;
         match self {
+            // ── Formal judges (docs/adr/0144) ───────────────────
+            FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0144 D1"),
+
             // ── Forge XSD ────────────────────────────────────────
             XmlSchemaValidation => Some("SCE Forge XSD"),
 
@@ -6296,6 +6319,9 @@ impl DiagnosticCode {
             | CliDiagramUnavailable
             | CliDiagramDoesNotFit
             | CliProfileUnusable
+            | FormalDeclaration
+            | FormalVerdict
+            | FormalToolUnavailable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -6923,6 +6949,9 @@ impl DiagnosticCode {
             CliDiagramUnavailable => "cli/diagram-unavailable",
             CliDiagramDoesNotFit => "cli/diagram-does-not-fit",
             CliProfileUnusable => "cli/profile-unusable",
+            FormalDeclaration => "formal/declaration",
+            FormalVerdict => "formal/verdict",
+            FormalToolUnavailable => "formal/tool-unavailable",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -20781,6 +20810,40 @@ mod tests {
     /// ([`diagnostic_goldens_are_byte_stable`],
     /// [`human_mode_matches_json_message`],
     /// [`every_code_has_a_golden`]).
+    /// One record of each `formal/*` code (docs/adr/0144, D1). The manifest's
+    /// path rides `actual` and not the key, so these ids hold on any checkout.
+    pub(super) fn formal_golden_entries(
+    ) -> Vec<(&'static str, crate::formal::FormalError, &'static str)> {
+        use crate::formal::FormalError;
+        vec![
+            (
+                "formal/declaration",
+                FormalError::Declaration {
+                    manifest: "docs/formal/models.json".into(),
+                    problems: vec!["M: no run takes out Part".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:fcddc97e4ccff2b9","code":"formal/declaration","stage":"formal","spec":"ADR 0144 D1","message":"docs/formal/models.json: the declaration is not as the tree is: M: no run takes out Part","actual":"docs/formal/models.json"}"#,
+            ),
+            (
+                "formal/verdict",
+                FormalError::Verdict {
+                    manifest: "docs/formal/models.json".into(),
+                    runs: 2,
+                    failures: vec!["M.cfg: 6 distinct states, and the manifest records 7".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:92602521c5854ebd","code":"formal/verdict","stage":"formal","spec":"ADR 0144 D1","message":"docs/formal/models.json: 1 of 2 run(s) are not as declared: M.cfg: 6 distinct states, and the manifest records 7","actual":"docs/formal/models.json"}"#,
+            ),
+            (
+                "formal/tool-unavailable",
+                FormalError::ToolUnavailable {
+                    tool: "TLC".into(),
+                    detail: "no TLC at /home/u/.cache/sce-formal/tla2tools-1.7.4.jar: sce-codegen formal install".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:96a37a5b0ddc36d5","code":"formal/tool-unavailable","stage":"formal","spec":"ADR 0144 D1","message":"TLC is not available: no TLC at /home/u/.cache/sce-formal/tla2tools-1.7.4.jar: sce-codegen formal install","actual":"no TLC at /home/u/.cache/sce-formal/tla2tools-1.7.4.jar: sce-codegen formal install"}"#,
+            ),
+        ]
+    }
+
     pub(super) fn cli_golden_entries(
     ) -> Vec<(&'static str, crate::cli_error::CliError, &'static str)> {
         use crate::cli_error::CliError;
@@ -21214,6 +21277,14 @@ mod tests {
                 ));
             }
         }
+        for (label, err, golden) in formal_golden_entries() {
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
         for (label, err, golden) in located_golden_entries() {
             let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
             if actual != golden {
@@ -21268,6 +21339,15 @@ mod tests {
             }
         }
         for (label, err, _golden) in mesh_golden_entries() {
+            let human = format!("{err}");
+            let json_message = single(&err).message;
+            if human != json_message {
+                mismatches.push(format!(
+                    "\n[{label}]\n  human: {human}\n   json: {json_message}"
+                ));
+            }
+        }
+        for (label, err, _golden) in formal_golden_entries() {
             let human = format!("{err}");
             let json_message = single(&err).message;
             if human != json_message {
@@ -22227,6 +22307,12 @@ mod tests {
             // The repair is an edit to the profile file, which no candidate
             // list can spell; the reader's own sentence names what is wrong.
             | CliProfileUnusable
+            // A verdict of a formal judge lists what it found, and the repair is an
+            // edit to a model, a manifest or the code it judges, or a tool installed:
+            // none is a choice among candidates the judge knows.
+            | FormalDeclaration
+            | FormalVerdict
+            | FormalToolUnavailable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -23140,6 +23226,7 @@ mod tests {
                 | CliAcceptanceLapsed | CliReservedHostType | CliRequirementClosureBroken
                 | CliPseudoUnavailable
                 | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
+                | FormalDeclaration | FormalVerdict | FormalToolUnavailable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployChildEntryShape | MeshDeployChildUnknownParent
@@ -23350,7 +23437,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            570,
+            573,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 570 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
@@ -24269,6 +24356,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // sat here until 2026-09-14 — nineteen permanent
             // exemptions claiming to await a resolver they can never
             // use.
+            // A formal judge reads a manifest and models, no statechart: no
+            // scenario of this harness raises its codes.
+            | FormalDeclaration
+            | FormalVerdict
+            | FormalToolUnavailable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -24554,8 +24646,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
 #[cfg(test)]
 mod anchor_contract_tests {
     use super::tests::{
-        cli_golden_entries, forge_golden_entries, mesh_golden_entries, non_overlap_class, single,
-        xsd_golden_entries, NonOverlapClass,
+        cli_golden_entries, forge_golden_entries, formal_golden_entries, mesh_golden_entries,
+        non_overlap_class, single, xsd_golden_entries, NonOverlapClass,
     };
     use super::*;
 
@@ -26450,6 +26542,11 @@ mod anchor_contract_tests {
             mesh_golden_entries().iter().map(|(_, e, _)| single(e)),
             &mut mesh,
         );
+        let mut formal = std::collections::BTreeMap::new();
+        catalog_rows(
+            formal_golden_entries().iter().map(|(_, e, _)| single(e)),
+            &mut formal,
+        );
         // A code produced by more than one pipeline is listed once, under
         // the first that claims it, so the row count below is the code
         // count and not a number larger than it.
@@ -26466,6 +26563,7 @@ mod anchor_contract_tests {
             ("5.1 Forge", &forge),
             ("5.2 CLI", &cli),
             ("5.3 Mesh", &mesh),
+            ("5.4 Formal", &formal),
         ] {
             out.push_str(&format!("### {title}\n\n"));
             out.push_str(&render_catalog_table(rows));
@@ -26791,6 +26889,9 @@ mod anchor_contract_tests {
         for (_label, err, _golden) in cli_golden_entries() {
             covered.insert(single(&err).code.as_str());
         }
+        for (_label, err, _golden) in formal_golden_entries() {
+            covered.insert(single(&err).code.as_str());
+        }
         let missing: Vec<&'static str> = ALL_DIAGNOSTIC_CODES
             .iter()
             .map(|c| c.as_str())
@@ -26892,6 +26993,7 @@ mod anchor_contract_tests {
             Stage::MeshExternal,
             Stage::MeshTopology,
             Stage::MeshCodegen,
+            Stage::Formal,
         ]
         .iter()
         .map(|s| s.as_str().to_string())
@@ -26966,6 +27068,9 @@ mod anchor_contract_tests {
             out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
         for (label, err, _golden) in cli_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
+        }
+        for (label, err, _golden) in formal_golden_entries() {
             out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
         for (label, err, _golden) in located_golden_entries() {

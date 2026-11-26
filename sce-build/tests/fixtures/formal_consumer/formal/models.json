@@ -1,0 +1,26 @@
+{
+  "v": 1,
+  "models": [
+    {
+      "module": "Counter",
+      "decision": "docs/adr/0144",
+      "parts": {
+        "Bounded": "TRUE"
+      },
+      "no_progress": "a counter that stops at its limit: nothing is promised to happen, only what may not",
+      "runs": [
+        {
+          "config": "Counter.cfg",
+          "expect": "holds",
+          "states": 4
+        },
+        {
+          "config": "Counter_without_bound.cfg",
+          "expect": "violates",
+          "invariant": "WithinLimit",
+          "without": "Bounded"
+        }
+      ]
+    }
+  ]
+}

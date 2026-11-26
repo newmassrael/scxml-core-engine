@@ -1,0 +1,4 @@
+{
+  "tlc": {"version": "1.7.4", "url": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar", "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"},
+  "verus": {"version": "0.2026.11.02.8bf68ee", "toolchain": "1.99.1", "url": "https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip", "sha256": "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c"}
+}

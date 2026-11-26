@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-toolchain.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal toolchain (wire schema v1)",
+  "description": "The tools the formal judges run, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0144, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": [
+    "tlc",
+    "verus"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tlc": {
+      "$ref": "#/definitions/pin"
+    },
+    "verus": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "required": [
+        "toolchain"
+      ],
+      "properties": {
+        "toolchain": {
+          "type": "string",
+          "description": "The Rust release Verus was built with and runs on."
+        }
+      }
+    }
+  },
+  "definitions": {
+    "pin": {
+      "type": "object",
+      "required": [
+        "version",
+        "url",
+        "sha256"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "toolchain": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

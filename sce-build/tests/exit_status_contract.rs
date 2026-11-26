@@ -107,6 +107,14 @@ const ROWS_NOT_PROBED_HERE: &[(&str, &str)] = &[
          exit 10) — the fixture has to come from the binding shape \
          `mesh_error_format_json` already stages, not from this file",
     ),
+    (
+        "15",
+        "`formal/tool-unavailable` needs a pinned tool absent, which an \
+         argument cannot make so on a machine that holds it: the probe names \
+         it absent through `TLA2TOOLS`, an environment this harness does not \
+         set per probe. `formal_judge.rs` runs that invocation and asserts \
+         `Some(15)` and the record's code",
+    ),
 ];
 
 fn sce_codegen_bin() -> PathBuf {
@@ -607,6 +615,18 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
     add(
         "test-profile/trace-does-not-fit",
         vec![s("check-trace"), runtime_suite.clone(), fx.path("bad.json")],
+        None,
+    );
+    // A formal judge read its manifest and the answer is no: a text that is
+    // no manifest is a declaration not as the tree is (docs/adr/0144, D1).
+    add(
+        "formal/declaration-not-a-manifest",
+        vec![
+            s("formal"),
+            s("models"),
+            s("--manifest"),
+            fx.path("bad.json"),
+        ],
         None,
     );
     add(

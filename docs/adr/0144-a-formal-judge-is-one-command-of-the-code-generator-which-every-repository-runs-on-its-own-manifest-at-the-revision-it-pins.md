@@ -106,9 +106,10 @@ the gates to the command. No revision has two judges that answer.
 
 ### D3. The judge pins the tools
 
-`sce-build/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on: version, URL and sha256 of
+`sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on: version, URL and sha256 of
 each. Apalache and Storm join it when ADR 0115 D3 and ADR 0119 bring them, each with the owner's approval. The file
-is compiled into the binary, so a binary of a revision knows its pins without a tree. `formal toolchain` prints
+is compiled into the binary, so a binary of a revision knows its pins without a tree; it sits among the module's
+sources, since it is one of them. `formal toolchain` prints
 them. `bx.toml`, the workflows and `gate_registry.py` read this file, not a manifest. A manifest that names a tool
 is refused as having an unknown key.
 
@@ -125,8 +126,10 @@ does ADR 0119's comparison of graphs. None of them runs TLC in another way.
 
 ### D5. The manifests are wire surfaces
 
-`schemas/sce-formal-models.v1.schema.json` and `schemas/sce-formal-proofs.v1.schema.json` are added, each with its
-status constant beside its reader in `sce-build/src/formal` and a row in `SCE_WIRE_CONTRACTS.md`, `pre-release`.
+`schemas/sce-formal-models.v1.schema.json`, `schemas/sce-formal-proofs.v1.schema.json` and
+`schemas/sce-formal-toolchain.v1.schema.json` (what `formal toolchain` prints) are added, each with its status constant
+beside its reader in `sce-build/src/formal` and a row in `SCE_WIRE_CONTRACTS.md`, `pre-release`. Each manifest carries
+`"v": 1`, so a reader refuses a version it does not know.
 The traces manifest and the trace format follow when D4 and D8 build them. The judge is the only reader, and it
 refuses an unknown key, as the Python judges do. Under the registry's policy, a field is added without a version
 bump, and a change of meaning is a `v2`.
@@ -173,7 +176,7 @@ consumer's pre-push runs them by the same command.
 
 Each step lands with a test that fails without it.
 
-1. This record. `sce-build/formal/toolchain.json` (the pins moved out of the two manifests), `formal toolchain` and
+1. This record. `sce-build/src/formal/toolchain.json` (the pins moved out of the two manifests), `formal toolchain` and
    `formal install`. `bx.toml`, the workflows and `gate_registry.py` read the pins from it.
 2. `formal models`: `models.py` and its self-test moved, its schema, status constant and registry row. The gate,
    the workflow and the README are switched, and `models.py` and `check.sh` are deleted.

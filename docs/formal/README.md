@@ -34,11 +34,16 @@ tool that judges that level; the model shows nothing of it.
 
 ## Running them
 
-`scripts/formal/check.sh` (or `python3 scripts/formal/models.py`, `--only <module>` for one) checks every model as
-`models.json` declares it, with the TLC that file pins by digest. `--self-test` judges the judge, with no Java. Exit 1 is
-a verdict about the models; exit 3 is "could not run".
+`sce-codegen formal models --manifest docs/formal/models.json` (`--only <module>` for one, `--shard k/N` for a part)
+checks every model as `models.json` declares it, with the TLC the judge pins by digest
+(`sce-build/src/formal/toolchain.json`, printed by `sce-codegen formal toolchain`). `sce-codegen formal install` fetches
+the pinned tools and admits each by its digest; a judge never fetches. Exit 1 (`formal/declaration`,
+`formal/verdict`) is a verdict about the models; exit 15 (`formal/tool-unavailable`) is "could not run". The judge is
+one command of the code generator (docs/adr/0144), which another repository runs on its own manifest at the revision it
+pins, as this one does; `sce-build/tests/fixtures/formal_consumer` is a manifest shaped like a consumer's, judged by the
+same gate. The judge's own checks are the unit tests of `sce-build/src/formal`.
 
-A configuration of its own is not enough: `models.json` must declare it, and the gate refuses
+A configuration of its own is not enough: `models.json` must declare it, and the judge refuses
 
 - a configuration or a module that is not declared, and a part of a model that no run takes out;
 - a property a holding run checks and no run shows to fail: one nothing can break says nothing, however true it is;
@@ -46,10 +51,11 @@ A configuration of its own is not enough: `models.json` must declare it, and the
 - a run that takes a part out and fails for another reason than it names;
 - a model that states no progress and gives no reason, and a progress no run shows to fail without what it stands on;
 - a temporal property beside a constraint, a symmetry or a view, under which it may hold for nothing;
-- what must stay possible (`AG EF`, decided over the whole graph) and no run that loses it.
+- what must stay possible (`AG EF`, decided over the whole graph) and no run that loses it;
+- a key it does not know, a tool named in the manifest (the judge pins its tools), and a manifest of another `v`.
 
-The proofs are `proofs.json`'s, judged by `python3 scripts/formal/proofs.py` (the gate is `formal-proofs`): each file verified
-whole, nothing taken on trust, and each change that breaks what it promises refused.
+The proofs are `proofs.json`'s, judged by `sce-codegen formal proofs --manifest docs/formal/proofs.json` (the gate is
+`formal-proofs`): each file verified whole, nothing taken on trust, and each change that breaks what it promises refused.
 
 What a check says (a promise, a property, a contract, what a run must answer) is changed by a commit of its own with its
 reason; `pre-push` refuses another (`tools/git-hooks/spec_isolation.py`, ADR 0115 D11).
@@ -58,7 +64,7 @@ After a change that moves a count on purpose, `--record` writes the counts TLC f
 
 ## What all of this stands on
 
-- **TLC**, the pinned release, and the Java that runs it.
+- **TLC**, the release the judge pins, and the Java that runs it.
 - **Verus**, the pinned release, its Z3 and the Rust release it runs on; that its reading of Rust is the compiler's.
 - **The bounds** of a configuration: an error past them is not found. A theorem (level 3) is what would say so.
 - **That the model is of the code.** No model reads the code; levels 4 and 5 are what will. A proof (level 6) is of the

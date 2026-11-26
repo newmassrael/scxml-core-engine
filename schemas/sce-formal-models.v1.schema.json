@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-models.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal models manifest (wire schema v1)",
+  "description": "What a repository declares of its TLA+ models, judged by `sce-codegen formal models --manifest <file>` (docs/adr/0144, D1; docs/adr/0115, D5 and D9). Written by the repository beside its modules and configurations, which are read relative to this file's directory; never emitted by SCE. Every module and configuration in that directory is declared, every part of a model has a run that takes it out, and everything a holding run checks has a run that shows it can fail. No tool is named here: the judge pins its tools (docs/adr/0144, D3). Authoritative reader is sce-build/src/formal/models.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": [
+    "v",
+    "models"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "The version of this format."
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/model"
+      }
+    }
+  },
+  "definitions": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "module",
+        "runs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "$ref": "#/definitions/name",
+          "description": "The module, `<module>.tla` beside the manifest."
+        },
+        "decision": {
+          "type": "string",
+          "description": "The record that decides what the model is of."
+        },
+        "parts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Each constant that switches a piece of the protocol, with the value that keeps it in."
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/run"
+          }
+        },
+        "promise": {
+          "$ref": "#/definitions/name",
+          "description": "The temporal property that states the refinement of the abstract module `refines` names."
+        },
+        "refines": {
+          "$ref": "#/definitions/name"
+        },
+        "abstract": {
+          "type": "boolean",
+          "description": "A promise, run only by what refines it."
+        },
+        "progress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/name"
+          }
+        },
+        "no_progress": {
+          "type": "string",
+          "description": "Why the model states no progress."
+        },
+        "possible": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State predicates p with AG EF p."
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "config",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string",
+          "pattern": "\\.cfg$"
+        },
+        "expect": {
+          "enum": [
+            "holds",
+            "violates"
+          ]
+        },
+        "states": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The distinct states a holding run explores."
+        },
+        "invariant": {
+          "$ref": "#/definitions/name"
+        },
+        "property": {
+          "$ref": "#/definitions/name"
+        },
+        "possible": {
+          "type": "string"
+        },
+        "without": {
+          "$ref": "#/definitions/name",
+          "description": "The part a violating run takes out."
+        },
+        "against": {
+          "type": "string",
+          "description": "The assumption a violating run goes against."
+        },
+        "promise": {
+          "enum": [
+            "broken",
+            "kept"
+          ]
+        },
+        "why": {
+          "type": "string",
+          "description": "Why a part is there when the promise is kept without it."
+        }
+      }
+    }
+  }
+}

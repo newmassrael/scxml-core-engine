@@ -1,13 +1,14 @@
 name: Formal Models
 
-# The TLA+ models of docs/formal under TLC (docs/adr/0115, D5). Until this lane,
-# nothing ran them: `scripts/formal/check.sh` was a script a person called, so a
-# model could go stale, or lose a configuration, with no verdict.
+# The TLA+ models of docs/formal under TLC (docs/adr/0115, D5), judged by
+# `sce-codegen formal models` (docs/adr/0144), the command a consumer runs on its
+# own manifest; the consumer-shaped fixture under
+# sce-build/tests/fixtures/formal_consumer is judged by the same command.
 #
 # ## Why a lane of its own
 #
-# It needs Java and the pinned TLC and no other lane does. The jar is small (4 MB)
-# and checked against the digest `docs/formal/models.json` pins, so it is cached
+# It needs Java and the pinned TLC and no other lane does. The jar is small (2 MB)
+# and admitted by the digest sce-build/src/formal/toolchain.json pins, so it is cached
 # under a key made of that file.
 #
 # ## Why `ci_only` in the registry
@@ -20,9 +21,9 @@ on:
     branches: [ main, develop ]
     paths:
       - 'docs/formal/**'
-      - 'scripts/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'sce-build/tests/fixtures/formal_consumer/**'
       - 'tools/git-hooks/spec_isolation.py'
-      - 'scripts/lib/ctest_shards.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -31,9 +32,9 @@ on:
     branches: [ main ]
     paths:
       - 'docs/formal/**'
-      - 'scripts/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'sce-build/tests/fixtures/formal_consumer/**'
       - 'tools/git-hooks/spec_isolation.py'
-      - 'scripts/lib/ctest_shards.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -46,8 +47,8 @@ concurrency:
 
 jobs:
   # The runs in three parts, one job each, spread by the states each run
-  # records (`shard_runs` in scripts/formal/models.py, whose self-test the gate
-  # runs first holds the parts to every run once). Whole, the runs took 1042 s
+  # records (`shard_runs` in sce-build/src/formal/models.rs, whose unit test
+  # holds the parts to every run once). Whole, the runs took 1042 s
   # (job 138489726305, 2026-11-24), the largest 248 s, so three parts are
   # about six minutes each beside a minute of Java and TLC every job pays.
   formal-models:
@@ -70,13 +71,37 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # libxml2 backs the default `xsd` feature the generator builds with.
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxml2-dev
+
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
+
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
+
       - name: Restore TLC
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/sce-formal
-          key: tlc-${{ hashFiles('docs/formal/models.json') }}
+          key: tlc-${{ hashFiles('sce-build/src/formal/toolchain.json') }}
+
+      # The judge never fetches (docs/adr/0144, D1): the pinned TLC is fetched and
+      # admitted by its digest here, or found in the cache and admitted again.
+      - name: Install the pinned TLC
+        run: cargo run --quiet --bin sce-codegen --features cli -p sce-build -- formal install --tool tlc
 
       - name: Formal models gate
         env:
           SCE_FORMAL_MODELS_SHARD: ${{ matrix.shard }}/3
         run: scripts/gate formal-models
+
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

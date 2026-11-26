@@ -681,6 +681,7 @@ at this position" should read `expected`. These needs never coincide.
 | `mesh-external` | vsomeip.json / zenoh.json5 resolver | Name resolution, schema conflicts. |
 | `mesh-topology` | Target / binding resolver | Send-target coverage, pattern capability, binding field validation. |
 | `mesh-codegen` | Mesh template engine | Transport-specific rendering and collision checks. |
+| `formal` | Formal judges (`sce-codegen formal`) | A models or proofs manifest judged against the tree it describes, and the pinned tools it runs (docs/adr/0144). |
 
 ### 4.1 Pipeline routing
 
@@ -1340,6 +1341,14 @@ references against a real document and drift silently.
 | `mesh/topology-unresolved-targets` | `mesh-topology` | no | SCE Mesh §9 |
 | `timer/slot-overflow` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.D |
 
+### 5.4 Formal
+
+| Code | Stage | Fix? | Spec |
+|---|---|---|---|
+| `formal/declaration` | `formal` | no | ADR 0144 D1 |
+| `formal/tool-unavailable` | `formal` | no | ADR 0144 D1 |
+| `formal/verdict` | `formal` | no | ADR 0144 D1 |
+
 <!-- END GENERATED: code catalog -->
 
 ## 6. Exit codes
@@ -1364,7 +1373,7 @@ would have to guess; `cli/query-no-match` is the case that exists.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. `test-profile/trace-text`, `test-profile/trace-test-case`, `test-profile/trace-port`, `test-profile/trace-type`, `test-profile/trace-value` — `check-trace` read the suite and the trace, and the trace does not fit the suite (docs/SCE_TTCN3_LANE.md §10.2): the same class of answer, the inputs read and the answer no, as `grep` and `diff` exit 1. |
+| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. `test-profile/trace-text`, `test-profile/trace-test-case`, `test-profile/trace-port`, `test-profile/trace-type`, `test-profile/trace-value` — `check-trace` read the suite and the trace, and the trace does not fit the suite (docs/SCE_TTCN3_LANE.md §10.2): the same class of answer, the inputs read and the answer no, as `grep` and `diff` exit 1. `formal/declaration`, `formal/verdict` — a formal judge read its manifest and the tree it describes, and the answer is no: the manifest is not as the tree is, or a run answered otherwise than declared (docs/adr/0144, D1). |
 | `2` | `xml/*` |
 | `3` | `validation/*` |
 | `4` | `expression/*` |
@@ -1377,6 +1386,7 @@ would have to guess; `cli/query-no-match` is the case that exists.
 | `12` | `mesh/codegen-*` |
 | `13` | `mesh/io` |
 | `14` | `mesh/external-*` |
+| `15` | `formal/tool-*` — a formal judge could not run: a pinned tool or its runtime is missing, or is not the one pinned (docs/adr/0144, D1). No verdict about the manifest. |
 | `20` | `cli/*` (CLI-boundary errors), including `cli/usage` — the command line itself did not parse |
 
 ## 7. Determinism guarantees
