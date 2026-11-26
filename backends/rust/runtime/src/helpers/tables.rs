@@ -1545,9 +1545,13 @@ fn listed<T>(pool: &[T], position: usize, count: impl FnOnce(&T) -> u16) -> &[T]
 /// correct generator never reaches. The policy's reads of its own values by
 /// number ([`StatePolicy::state_of`](crate::StatePolicy::state_of) and its
 /// kin) stop here too.
+///
+/// Public, and hidden from the documentation, because a generated policy's
+/// reads of its values by number stop here as the runtime's do.
+#[doc(hidden)]
 #[cold]
 #[inline(never)]
-pub(crate) fn row_missing() -> ! {
+pub fn row_missing() -> ! {
     panic!("a document's tables name a row they do not hold: sce-codegen wrote them wrong")
 }
 
