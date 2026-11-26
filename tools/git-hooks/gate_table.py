@@ -45,6 +45,8 @@
 #                                        'container <slug> <containerfile>'
 #   gate_table.py shard-env <slug>       the variable the gate reads its part
 #                                        from, or nothing
+#   gate_table.py container-env <slug>   the variables a gate in an image is
+#                                        handed from its lane, one a line
 #   gate_table.py submodules [--which] <slug>...
 #                                        the gates that need submodules, and
 #                                        which (see require_submodules.sh)
@@ -565,9 +567,9 @@ def submodule_needs(repo_root: Path, slugs, table, which: bool = False):
 def main(argv: list[str]) -> int:
     """The runner's questions; see the header for each."""
     if not argv or argv[0] not in ("order", "placement", "shard-env",
-                                   "submodules"):
-        print("usage: gate_table.py order|placement|shard-env|submodules "
-              "[--which] <slug>...", file=sys.stderr)
+                                   "container-env", "submodules"):
+        print("usage: gate_table.py order|placement|shard-env|container-env|"
+              "submodules [--which] <slug>...", file=sys.stderr)
         return 2
     question, slugs = argv[0], argv[1:]
     which = question == "submodules" and slugs[:1] == ["--which"]
@@ -591,8 +593,11 @@ def main(argv: list[str]) -> int:
         for where, slug, containerfile in container_placement(slugs, table):
             print(f"{where} {slug} {containerfile}".rstrip())
     elif len(slugs) != 1:
-        print("gate: shard-env takes one slug", file=sys.stderr)
+        print(f"gate: {question} takes one slug", file=sys.stderr)
         return 2
+    elif question == "container-env":
+        for name in table[slugs[0]].get("container_env", []):
+            print(name)
     else:
         print(table[slugs[0]].get("shard_env", ""))
     return 0

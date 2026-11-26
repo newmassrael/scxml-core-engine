@@ -804,7 +804,17 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 # docker alone. A pin the gate reads from an install script has a second copy
 # in the image that installs the tool, and the two are held to one
 # (`a-gate-image-holds-the-pins-its-gate-reads`).
+#
+# An image starts from an environment of its own, so a variable a lane sets
+# for its gate does not reach the run inside unless the runner hands it in. A
+# gate whose script, or a tool it runs, reads such a variable names it in
+# `container_env`, and `gate_in_container` hands exactly those in
+# (`gate_table.py container-env <slug>`). The part a sharded lane runs is not
+# one of them: it goes in as `--shard`, which the runner inside checks.
+# `a-gate-in-an-image-is-handed-what-its-lane-sets` holds every name to a
+# gate in an image, to a variable's spelling, and to a lane that sets it.
 CONTAINER_NEED = "docker"
+CONTAINER_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 IMAGE_INSTALLS_RUST = re.compile(
     r"\brustup\b|sh\.rustup\.rs|static\.rust-lang\.org|\bcargo\s+install\b"
     r"|\brustc\b|\bcargo\b")
@@ -4065,6 +4075,43 @@ def self_test(repo_root: Path) -> int:
                     f"container: `gate_in_container` in scripts/gate no longer "
                     f"holds {mark!r}: the gate in the image would not run on "
                     f"the Rust this run selected")
+
+    # a-gate-in-an-image-is-handed-what-its-lane-sets. A name in
+    # `container_env` is a variable spelled as one, of a gate that runs in an
+    # image, other than its part, and set by a workflow the gate mirrors: a
+    # name no lane sets hands nothing in and reads as if it did.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        names = spec.get("container_env")
+        if names is None:
+            continue
+        if not spec.get("container"):
+            failures.append(
+                f"container_env: {slug} names variables to hand into an image "
+                f"and runs in none")
+        if not isinstance(names, list) or not names:
+            failures.append(
+                f"container_env: {slug} declares {names!r}; it is a list of "
+                f"variable names, absent when there are none")
+            continue
+        lanes = "\n".join(
+            (repo_root / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+            for wf in spec.get("workflows", [])
+            if (repo_root / ".github" / "workflows" / wf).is_file())
+        for name in names:
+            if not isinstance(name, str) or not CONTAINER_ENV_NAME.match(name):
+                failures.append(
+                    f"container_env: {slug} names {name!r}, which is not a "
+                    f"variable's name")
+                continue
+            if name == spec.get("shard_env"):
+                failures.append(
+                    f"container_env: {slug} names its part's variable {name}, "
+                    f"which goes into the image as `--shard`")
+            if not re.search(rf"^\s*{name}:", lanes, re.M):
+                failures.append(
+                    f"container_env: {slug} hands {name} into its image and "
+                    f"no workflow it mirrors ({spec.get('workflows')}) sets it")
 
     # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
     # the release `scripts/install_emsdk.sh` pins, and the image a gate that
