@@ -1151,19 +1151,41 @@ fn lane_running_a_skip_capable_gate_requires_its_tools() {
                          a runner without the tool would skip the check and still report green"
                     ));
                 }
-                let installs = job
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.starts_with('#'))
-                    .any(|l| {
-                        l.split_whitespace()
-                            .any(|w| w.trim_end_matches('\\') == package)
-                    });
-                if !installs {
-                    violations.push(format!(
-                        "{name} runs `{slug}` under SCE_REQUIRE_TOOLS but that job installs \
-                         no `{package}`, so the lane fails on its own requirement"
-                    ));
+                // Where the tool comes from. A gate that runs in an image
+                // (`container` of its registry entry) runs the image's
+                // programs, and no job installs a package at job time
+                // (ADR 0145), so the image's Containerfile is what must
+                // install it; a package the job installed would not be in the
+                // image. Any other gate runs on the job's runner, so the job
+                // installs it.
+                if let Some(containerfile) = gate_container(slug) {
+                    match fs::read_to_string(repo_root().join(&containerfile)) {
+                        Ok(text) if names_word(&uncommented(&text), package) => {}
+                        Ok(_) => violations.push(format!(
+                            "{name} runs `{slug}` under SCE_REQUIRE_TOOLS in the image \
+                             {containerfile} builds, which installs no `{package}`, so the \
+                             lane fails on its own requirement"
+                        )),
+                        Err(e) => violations.push(format!(
+                            "{name} runs `{slug}` in the image {containerfile} builds, and \
+                             that file cannot be read ({e})"
+                        )),
+                    }
+                } else {
+                    let installs = job
+                        .lines()
+                        .map(str::trim)
+                        .filter(|l| !l.starts_with('#'))
+                        .any(|l| {
+                            l.split_whitespace()
+                                .any(|w| w.trim_end_matches('\\') == package)
+                        });
+                    if !installs {
+                        violations.push(format!(
+                            "{name} runs `{slug}` under SCE_REQUIRE_TOOLS but that job installs \
+                             no `{package}`, so the lane fails on its own requirement"
+                        ));
+                    }
                 }
             }
 
@@ -1179,6 +1201,56 @@ fn lane_running_a_skip_capable_gate_requires_its_tools() {
         "skip-capable gate(s) whose lane does not claim the check ran:\n  {}",
         violations.join("\n  "),
     );
+}
+
+/// The Containerfile a gate's registry entry names in `container`, if it names
+/// one: the `"container": "<path>",` line of `tools/git-hooks/gates/<slug>.py`.
+fn gate_container(slug: &str) -> Option<String> {
+    let entry =
+        fs::read_to_string(repo_root().join(format!("tools/git-hooks/gates/{slug}.py"))).ok()?;
+    entry
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .find_map(|l| {
+            let value = l.strip_prefix("\"container\":")?;
+            Some(
+                value
+                    .trim()
+                    .trim_end_matches(',')
+                    .trim_matches('"')
+                    .to_string(),
+            )
+        })
+}
+
+/// Whether `text` names `word` as a whole word: no letter, digit, `.`, `+`,
+/// `_` or `-` on either side. So `clang-19` is not read out of
+/// `libclang-19-dev`, and `emsdk` is read out of `/opt/emsdk/emsdk_env.sh`.
+fn names_word(text: &str, word: &str) -> bool {
+    let part = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '_' | '-');
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        !before.is_some_and(part) && !after.is_some_and(part)
+    })
+}
+
+/// The reader above, on the shapes a Containerfile and an apt line take.
+#[test]
+fn a_package_is_read_as_a_whole_word() {
+    assert!(names_word("apt-get install -y clang-19 \\", "clang-19"));
+    assert!(!names_word(
+        "apt-get install -y libclang-19-dev",
+        "clang-19"
+    ));
+    assert!(!names_word(
+        "apt-get install -y clang-format-19",
+        "clang-19"
+    ));
+    assert!(names_word("ENV EMSDK=/opt/emsdk", "emsdk"));
+    assert!(!names_word("ENV EMSDK_ROOT=/opt/sdk", "emsdk"));
+    assert!(names_word("    python3-dev", "python3-dev"));
 }
 
 // ── A gate that builds against third_party/ says so BEFORE it builds ──

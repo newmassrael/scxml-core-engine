@@ -651,10 +651,18 @@ def built_reads(repo_root: Path, name: str) -> list[str]:
     return list(_READS_CACHE[key])
 
 
+def image_context(containerfile: str) -> str:
+    """The glob of the build context of the image `containerfile` builds:
+    the directory that holds it. The image is built from every file of that
+    directory and addressed by their digest ("Gates that run in an image" in
+    gate_registry.py), so an edit of any of them is a new environment."""
+    return f"{posixpath.dirname(containerfile)}/**"
+
+
 def triggers_of(repo_root: Path, spec: dict) -> list[str]:
     """One gate's trigger globs, derived from its entry `spec`: its
-    workflows' `paths:`, its own lists, what it builds and what the ledgers
-    it names enrol.
+    workflows' `paths:`, its own lists, the build context of the image it
+    runs in, what it builds and what the ledgers it names enrol.
 
     `narrows` is the one case where a gate does not inherit its workflow's
     trigger. A workflow with no `paths:` filter is telling CI "run this on
@@ -681,6 +689,11 @@ def triggers_of(repo_root: Path, spec: dict) -> list[str]:
             continue
         globs.extend(wf_globs)
     globs.extend(spec.get("extra", []))
+    if spec.get("container"):
+        # The image is the gate's environment: a version moved in its
+        # Containerfile is a change the gate judges (ADR 0145, D3), so the
+        # image's build context selects the gate as its sources do.
+        globs.append(image_context(spec["container"]))
     for built in spec.get("builds", []):
         globs.extend(built_inputs(repo_root, built))
     if spec.get("enrolled_by"):

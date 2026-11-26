@@ -790,6 +790,20 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 # `a-gate-image-builds-on-the-selected-rust` holds both halves: no Containerfile
 # line installs Rust (`IMAGE_INSTALLS_RUST`), and `gate_in_container` mounts
 # the selected toolchain and passes its release in.
+#
+# Every gate that runs on Linux names an image (ADR 0145, D1), one of a few
+# shared by environment (D4): `tools/ci-images/host/Containerfile` for the C,
+# C++, Rust, JVM, Go and Python lanes, `tools/ci-images/swift/Containerfile`
+# for Swift, and `tools/interface-standard/Containerfile` for the newest GCC.
+# The image is built from the directory that holds its Containerfile and
+# addressed by the digest of those files, so that directory is one of the
+# gate's triggers and is in the key of every unit that runs the gate
+# (`image_context` in trigger_globs.py): a version moved in the image is a
+# change the gate judges (D3). A gate in an image names no `packages`: what
+# its script runs is the image's, and the machine its unit goes to needs
+# docker alone. A pin the gate reads from an install script has a second copy
+# in the image that installs the tool, and the two are held to one
+# (`a-gate-image-holds-the-pins-its-gate-reads`).
 CONTAINER_NEED = "docker"
 IMAGE_INSTALLS_RUST = re.compile(
     r"\brustup\b|sh\.rustup\.rs|static\.rust-lang\.org|\bcargo\s+install\b"
@@ -1776,7 +1790,9 @@ def unit_inputs(closure, table=None, triggers=None, reads=None):
     triggers), of `RUNNER_INPUTS`, and of each gate's script, entry and
     mirrored workflows, sorted so that one closure always yields one key. A
     gate keyed on its triggers adds `trigger_globs.py`, which the runner's
-    submodule preflight reads to learn what those triggers reach.
+    submodule preflight reads to learn what those triggers reach. A gate in an
+    image adds the image's build context, which the runner reads to address
+    and build the image the gate runs in.
     """
     table = GATES if table is None else table
     patterns: set[str] = set(RUNNER_INPUTS)
@@ -1789,6 +1805,8 @@ def unit_inputs(closure, table=None, triggers=None, reads=None):
         patterns.add(gate_table.entry_input(slug))
         if table[slug].get("inputs") == INPUTS_ARE_TRIGGERS:
             patterns.add(TRIGGER_GLOBS_INPUT)
+        if table[slug].get("container"):
+            patterns.add(trigger_globs.image_context(table[slug]["container"]))
         patterns.update(f".github/workflows/{wf}"
                         for wf in table[slug].get("workflows", []))
     return sorted(patterns)
@@ -2665,7 +2683,10 @@ def rust_cache_failures(repo_root: Path) -> list[str]:
     return failures
 
 
-GRADLE_CACHE_PATH = "~/.gradle/caches"
+# A Gradle cache's `path`: the runner's own home, or the home a gate in an
+# image keeps Gradle in on the runner (`~/.cache/sce-gate-containers/<slug>/home`,
+# `gate_in_container` in scripts/gate).
+GRADLE_CACHE_PATH = re.compile(r"^~/(?:\.cache/sce-gate-containers/[\w.-]+/home/)?\.gradle/caches$")
 
 
 def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
@@ -2683,7 +2704,8 @@ def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str]
     found = 0
     for rel, lines in sorted(workflows.items()):
         for number, _action, step in workflow_steps(lines, CACHE_STEP):
-            if GRADLE_CACHE_PATH not in step_values(step, "path"):
+            if not any(GRADLE_CACHE_PATH.match(path)
+                       for path in step_values(step, "path")):
                 continue
             found += 1
             for key in step_values(step, "key"):
@@ -2759,7 +2781,10 @@ def per_run_cache_failures(workflows: dict[str, list[str]]) -> tuple[list[str], 
 def per_run_cache_sweep(repo_root: Path) -> list[str]:
     """`per_run_cache_failures` over every workflow in the tree."""
     failures, found = per_run_cache_failures(workflow_texts(repo_root))
-    if found < 30:
+    # A bound on the parse, not on the tree: 28 steps were read on 2026-11-26,
+    # once the toolchains the lanes cached moved into the gates' images
+    # (ADR 0145), and the lanes still migrating remove more of them.
+    if found < 10:
         failures.append(
             f"found {found} cache step(s) in .github; a broken step parse passes "
             f"by finding none")
@@ -3427,8 +3452,8 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None,
 # has five halves that can each go stale without a gate turning red: the table
 # reads the script's release line and checks Arm's build by name, the script pins
 # a digest for every host it accepts, the gate puts that release first on PATH
-# and refuses another build, the hosted lane installs it with the same script,
-# and the budget names the build its figures are measured with. QEMU is no tool
+# and refuses another build, the image the gate runs in installs it by the same
+# pin, and the budget names the build its figures are measured with. QEMU is no tool
 # here: its release does not move the verdict, so it is `packages` of the gate.
 ARM_TOOLCHAIN_INSTALL = "scripts/install_arm_gnu_toolchain.sh"
 ARM_TOOLCHAIN_PLACE = "~/.local/share/arm-gnu-toolchain/{version}"
@@ -3501,19 +3526,29 @@ def arm_toolchain_failures(repo_root: Path, tables=None) -> list[str]:
             failures.append(f"scripts/gates/{ARM_TOOLCHAIN_GATE}.sh does not {what} "
                             f"(no `{needle}` in its code)")
 
-    # The hosted lane installs the same build with the same script, and not the
-    # distribution's.
-    for workflow in GATES.get(ARM_TOOLCHAIN_GATE, {}).get("workflows", []):
-        path = repo_root / ".github" / "workflows" / workflow
-        lines = [line.strip() for line in
-                 (path.read_text(encoding="utf-8").splitlines() if path.is_file() else [])
-                 if not line.strip().startswith("#")]
-        if not any("run:" in line and ARM_TOOLCHAIN_INSTALL in line for line in lines):
-            failures.append(f".github/workflows/{workflow} runs `{ARM_TOOLCHAIN_GATE}` and "
-                            f"does not install {build} with {ARM_TOOLCHAIN_INSTALL}")
-        if any("apt-get install" in line and "gcc-arm-none-eabi" in line.split()
-               for line in lines):
-            failures.append(f".github/workflows/{workflow} installs the distribution's "
+    # The image the gate runs in, on the hosted lane as on every other machine
+    # (ADR 0145, D1), installs the same build: with the same script, or by the
+    # release and the digest the script pins for the hosted runners' x86_64
+    # archive (D3). Never the distribution's.
+    containerfile = GATES.get(ARM_TOOLCHAIN_GATE, {}).get("container")
+    image = repo_root / containerfile if isinstance(containerfile, str) else None
+    if image is None or not image.is_file():
+        failures.append(f"`{ARM_TOOLCHAIN_GATE}` names no image it runs in "
+                        f"({containerfile!r}), so the hosted lane judges it with "
+                        f"whatever compiler its runner carries")
+    else:
+        image_code = script_code(image)
+        x86 = re.search(rf'"arm-gnu-toolchain-{re.escape(version)}-x86_64-arm-none-eabi'
+                        rf'\.tar\.xz ([0-9a-f]{{64}})"', install_text)
+        by_script = ARM_TOOLCHAIN_INSTALL in image_code
+        by_pin = x86 is not None and version in image_code \
+            and x86.group(1) in image_code
+        if not (by_script or by_pin):
+            failures.append(f"{containerfile}, the image `{ARM_TOOLCHAIN_GATE}` runs in, "
+                            f"installs no {build}: it runs {ARM_TOOLCHAIN_INSTALL}, or "
+                            f"names the release and the x86_64 digest that script pins")
+        if "gcc-arm-none-eabi" in image_code.split():
+            failures.append(f"{containerfile} installs the distribution's "
                             f"gcc-arm-none-eabi, another build than {build}")
 
     # The budget names the build its figures are measured with.
@@ -4032,10 +4067,12 @@ def self_test(repo_root: Path) -> int:
                     f"the Rust this run selected")
 
     # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
-    # the release `scripts/install_emsdk.sh` pins, and the hosted lanes name
-    # one in their own `emsdk install` steps. A landing judged on one release
-    # and audited on another would compare two compilers, so every step names
-    # the script's.
+    # the release `scripts/install_emsdk.sh` pins, and the image a gate that
+    # builds with emscripten runs in names one on its own `emsdk install`
+    # line, as a workflow's step did before the lanes ran their gates in
+    # images. A landing judged on one release and audited on another would
+    # compare two compilers, so every such line names the script's, and every
+    # image an emscripten gate runs in has one.
     cases += 1
     emsdk_script = repo_root / "scripts" / "install_emsdk.sh"
     pin = None
@@ -4049,19 +4086,40 @@ def self_test(repo_root: Path) -> int:
             "bx.toml's emsdk tool reads")
     else:
         named = 0
-        for workflow in sorted((repo_root / ".github" / "workflows").glob("*.yml")):
-            text = workflow.read_text(encoding="utf-8", errors="replace")
+        installing: set[str] = set()
+        sources = [str(w.relative_to(repo_root)) for w in
+                   sorted((repo_root / ".github" / "workflows").glob("*.yml"))]
+        sources += sorted({spec["container"] for spec in GATES.values()
+                           if isinstance(spec.get("container"), str)
+                           and (repo_root / spec["container"]).is_file()})
+        for rel in sources:
+            text = (repo_root / rel).read_text(encoding="utf-8", errors="replace")
             for step in re.finditer(r"emsdk (?:install|activate) (\S+)", text):
                 named += 1
+                installing.add(rel)
                 if step.group(1) != pin:
                     failures.append(
-                        f"emsdk: {workflow.name} names emsdk {step.group(1)} "
+                        f"emsdk: {rel} names emsdk {step.group(1)} "
                         f"and the build machines install {pin} "
                         f"(scripts/install_emsdk.sh)")
+        emscripten = re.compile(
+            r"\bemsdk\b|sce_gate_emscripten_node|sce_gate_configure_wasm_tree")
+        for slug, spec in sorted(GATES.items()):
+            containerfile = spec.get("container")
+            script = gate_script(repo_root, slug)
+            if not isinstance(containerfile, str) or not script.is_file() \
+                    or not emscripten.search(script_code(script)):
+                continue
+            if containerfile not in installing:
+                failures.append(
+                    f"emsdk: {slug} builds with emscripten in the image "
+                    f"{containerfile} builds, which has no `emsdk install "
+                    f"{pin}` line: the release it builds with is then no "
+                    f"one the build machines install")
         if named == 0:
             failures.append(
-                "emsdk: no workflow names an `emsdk install` release, so this "
-                "case read nothing")
+                "emsdk: no workflow or gate image names an `emsdk install` "
+                "release, so this case read nothing")
 
     # the-fleet-runs-the-wasm-bindgen-cargo-lock-holds. The tool refuses a
     # module another version of the crate built. The build machines install
@@ -4331,7 +4389,13 @@ def self_test(repo_root: Path) -> int:
         # is, so a filtered workflow is held to the derived list too.
         built = [g for b in spec.get("builds") or []
                  for g in built_inputs(repo_root, b)]
-        for own in (spec.get("local") or []) + (spec.get("extra") or []) + built:
+        # The image a gate runs in selects it as its sources do
+        # (`image_context`), so the lane runs for an edit of the image too.
+        image = ([trigger_globs.image_context(spec["container"])]
+                 if spec.get("container") else [])
+        owns = ((spec.get("local") or []) + (spec.get("extra") or [])
+                + built + image)
+        for own in owns:
             pairs_seen += 1
             for path in tracked_matching(repo_root, own):
                 if not any(p.match(path) for p in wf_pats):
@@ -5546,13 +5610,23 @@ def self_test(repo_root: Path) -> int:
     # absent or a non-empty list of distinct package names, and each name is in
     # the code of the gate's script or of a script it runs, which is what runs
     # the package's program: a name neither mentions any longer would keep the
-    # unit off machines for nothing.
+    # unit off machines for nothing. A gate in an image names none: its script
+    # runs the image's programs, and its unit asks the machine for docker alone.
     cases += 1
-    declaring = 0
+    read_gates = 0
     for slug, spec in sorted(GATES.items()):
+        if spec.get("container"):
+            read_gates += 1
+            if "packages" in spec:
+                failures.append(
+                    f"packages: {slug} runs in the image {spec['container']} "
+                    f"builds and asks the machine for the package(s) "
+                    f"{spec['packages']!r}; the image holds what its script "
+                    f"runs, so its unit asks for {CONTAINER_NEED!r} alone")
+            continue
         if "packages" not in spec:
             continue
-        declaring += 1
+        read_gates += 1
         packages = spec["packages"]
         if not isinstance(packages, list) or not packages \
                 or len(set(packages)) != len(packages) \
@@ -5574,10 +5648,10 @@ def self_test(repo_root: Path) -> int:
                     f"neither scripts/gates/{slug}.sh nor a script it runs "
                     f"names in its code, so the requirement keeps its unit "
                     f"off machines for nothing")
-    if declaring == 0:
+    if read_gates == 0:
         failures.append(
-            "packages: no gate declares a package, so the check above read "
-            "nothing; `c11-mcu` requires qemu-system-arm")
+            "packages: no gate declares a package and none runs in an image, "
+            "so the check above read nothing")
 
     # a-verdict-that-reads-head-carries-it. A gate script that hands git the
     # name HEAD (`--rev HEAD`, `git worktree add … HEAD`, `git show HEAD:…`)
@@ -6311,10 +6385,49 @@ def self_test(repo_root: Path) -> int:
                         f"run `go test`")
 
     # the-arm-compiler-is-declared-pinned-and-run-by-its-gate. The table, the
-    # install's digests, the gate's PATH, the hosted lane and the budget, held
+    # install's digests, the gate's PATH, the gate's image and the budget, held
     # to one another (see "The ARM compiler bx.toml declares" above).
     cases += 1
     failures.extend(f"arm-toolchain: {f}" for f in arm_toolchain_failures(repo_root))
+
+    # a-gate-image-holds-the-pins-its-gate-reads. A gate reads a tool's release
+    # from the line of an install script that pins it (`X_REV="..."` in
+    # `scripts/install_<tool>.sh`), and in an image the tool is the image's,
+    # named there by version (ADR 0145, D3). The pin then has two homes, and a
+    # release moved in one alone would be a gate that looks for one build and
+    # runs another; the image's copy is held to the script's here. Derived from
+    # the gate's own code, so a gate that starts reading a pin tomorrow is held
+    # without an edit here.
+    cases += 1
+    pins_held = 0
+    for slug, spec in sorted(GATES.items()):
+        containerfile = spec.get("container")
+        script = gate_script(repo_root, slug)
+        if not isinstance(containerfile, str) or not script.is_file() \
+                or not (repo_root / containerfile).is_file():
+            continue
+        code = script_code(script)
+        image_code = script_code(repo_root / containerfile)
+        for install in sorted(set(re.findall(r"scripts/install_\w+\.sh", code))):
+            install_path = repo_root / install
+            if not install_path.is_file():
+                continue
+            pins = re.findall(r'^([A-Z][A-Z0-9_]*_REV)="([^"]+)"$',
+                              install_path.read_text(encoding="utf-8"), re.M)
+            for var, value in pins:
+                if var not in code:
+                    continue
+                pins_held += 1
+                if value not in image_code:
+                    failures.append(
+                        f"image-pins: {slug} reads {var}={value} from {install} "
+                        f"and runs in the image {containerfile} builds, which "
+                        f"names no {value}: the gate would look for one release "
+                        f"and run whatever the image installed")
+    if pins_held == 0:
+        failures.append(
+            "image-pins: no gate in an image reads a pin from an install script, "
+            "so this case read nothing; c11-mcu reads ARM_GNU_TOOLCHAIN_REV")
 
     # the-arm-check-refuses-a-drifted-declaration. Its silence above is a
     # reading only if it refuses a table needed by more than the gate, one that
