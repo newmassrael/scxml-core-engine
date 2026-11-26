@@ -834,6 +834,227 @@
           "why": "the waker is what progress stands on: without it what reaches each queue is still in order, once, and never lost, and an input waits in an inbox nobody drains"
         }
       ]
+    },
+    {
+      "module": "AppendixD",
+      "decision": "docs/adr/0115",
+      "abstract": true,
+      "runs": []
+    },
+    {
+      "module": "W3CTest388",
+      "decision": "docs/adr/0115",
+      "parts": {
+        "ExitOrder": "TRUE",
+        "EntryOrder": "TRUE",
+        "EnterAncestors": "TRUE",
+        "RecordHistory": "TRUE",
+        "DeepHistory": "TRUE",
+        "RunToCompletion": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "AppendixD",
+      "progress": [
+        "Passes"
+      ],
+      "runs": [
+        {
+          "config": "W3CTest388.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest388_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest388_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Passes",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes the interpreter take its next step; Appendix D's steps are safety and need none"
+        },
+        {
+          "config": "W3CTest388_without_exit_order.cfg",
+          "expect": "violates",
+          "invariant": "ChildrenExitFirst",
+          "without": "ExitOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest388_without_entry_order.cfg",
+          "expect": "violates",
+          "invariant": "ParentsEnterFirst",
+          "without": "EntryOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest388_without_entry_ancestors.cfg",
+          "expect": "violates",
+          "invariant": "LegalConfiguration",
+          "without": "EnterAncestors",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest388_without_history_record.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "RecordHistory",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest388_without_deep_history.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "DeepHistory",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest388_without_run_to_completion.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "RunToCompletion",
+          "promise": "broken"
+        }
+      ]
+    },
+    {
+      "module": "W3CTest570",
+      "decision": "docs/adr/0115",
+      "parts": {
+        "ExitOrder": "TRUE",
+        "EntryOrder": "TRUE",
+        "FillParallel": "TRUE",
+        "DoneCompound": "TRUE",
+        "DoneParallel": "TRUE",
+        "RunToCompletion": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "AppendixD",
+      "progress": [
+        "Passes"
+      ],
+      "runs": [
+        {
+          "config": "W3CTest570.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest570_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest570_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Passes",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes the interpreter take its next step; Appendix D's steps are safety and need none"
+        },
+        {
+          "config": "W3CTest570_without_exit_order.cfg",
+          "expect": "violates",
+          "invariant": "ChildrenExitFirst",
+          "without": "ExitOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest570_without_entry_order.cfg",
+          "expect": "violates",
+          "invariant": "ParentsEnterFirst",
+          "without": "EntryOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest570_without_parallel_fill.cfg",
+          "expect": "violates",
+          "invariant": "LegalConfiguration",
+          "without": "FillParallel",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest570_without_compound_done.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "DoneCompound",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest570_without_parallel_done.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "DoneParallel",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest570_without_run_to_completion.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "RunToCompletion",
+          "promise": "broken"
+        }
+      ]
+    },
+    {
+      "module": "W3CTest403c",
+      "decision": "docs/adr/0115",
+      "parts": {
+        "ExitOrder": "TRUE",
+        "EntryOrder": "TRUE",
+        "RemoveConflicts": "TRUE",
+        "RunToCompletion": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "AppendixD",
+      "progress": [
+        "Passes"
+      ],
+      "runs": [
+        {
+          "config": "W3CTest403c.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest403c_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "W3CTest403c_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Passes",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes the interpreter take its next step; Appendix D's steps are safety and need none"
+        },
+        {
+          "config": "W3CTest403c_without_exit_order.cfg",
+          "expect": "violates",
+          "invariant": "ChildrenExitFirst",
+          "without": "ExitOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest403c_without_entry_order.cfg",
+          "expect": "violates",
+          "invariant": "ParentsEnterFirst",
+          "without": "EntryOrder",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest403c_without_conflict_removal.cfg",
+          "expect": "violates",
+          "invariant": "LegalConfiguration",
+          "without": "RemoveConflicts",
+          "promise": "broken"
+        },
+        {
+          "config": "W3CTest403c_without_run_to_completion.cfg",
+          "expect": "violates",
+          "invariant": "NeverFails",
+          "without": "RunToCompletion",
+          "promise": "broken"
+        }
+      ]
     }
   ]
 }

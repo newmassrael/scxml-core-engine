@@ -13,7 +13,7 @@ this file says what is here and how to read it.
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | | no |
-| 4. A model generated from a document (D7, D8) | | no |
+| 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus written as the generator will write them | the semantics and three documents, by hand; no generator, and no trace read against it |
 | 5. A run read against a model (D4) | | no |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, and the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), by Verus | yes, for two modules |
 
@@ -29,6 +29,12 @@ this file says what is here and how to read it.
 | `BrowserNode` | ADR 0117, the pages of one browser as one node: the lock, the store, a cleared store, a change of person |
 | `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
 | `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted |
+| `AppendixD`, `W3CTest388`, `W3CTest570`, `W3CTest403c` | ADR 0115 D7, the SCXML recommendation's Appendix D over a document's tables, and three documents of the W3C corpus over it: history recorded and restored, the done events of a parallel state's regions and of the state, the removal of conflicting transitions |
+
+`AppendixD` is declared `abstract`: it is the semantics a document's model instantiates, and is run only by those. A
+document's module extends it with its tables and promises Appendix D with every part in (`Refines`). Its holding runs
+keep that promise by construction; what shows a part is the run that takes it out, which must break an invariant of the
+document and the promise both.
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
@@ -71,5 +77,7 @@ After a change that moves a count on purpose, `--record` writes the counts TLC f
 - **That the model is of the code.** No model reads the code; levels 4 and 5 are what will. A proof (level 6) is of the
   code it is written on, and the model its preconditions name is read by a person.
 - **That the promise is what was meant.** It is read by a person.
+- **That `AppendixD.tla` is the recommendation's algorithm.** It is read by a person against the text, until the W3C
+  corpus run by the Interpreter is accepted by it (ADR 0115, D8).
 - What is judged elsewhere and not here: the memory order (GenMC), the bytes of a wire (the conformance kits), and
   cryptography (assumed).
