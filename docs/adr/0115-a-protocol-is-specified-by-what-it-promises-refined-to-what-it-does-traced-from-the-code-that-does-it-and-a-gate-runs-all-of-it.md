@@ -5,6 +5,11 @@
   owner's order. Amended 2026-11-22 by the owner: D15, with what it changes of D7 and D8. Amended 2026-11-23 by the
   owner, at a consumer's requirements for a proof made at the level of a design: D7 takes a codec by its values and
   refusals, a connector of every kind by its promise, and the faults of a channel as parameters; D8 gains its converse.
+- Amended by: ADR 0146 (2026-11-26, the owner): the judges of every level are `sce-codegen formal`, run on a manifest
+  it is given (D5), with the tools pinned by the judge and not by a manifest (D13), D11's refusals in the judge, and
+  D7's module and D4 and D8's traces judged by its one runner.
+- Amended by: ADR 0147 (2026-11-26, the owner): the Scope gains ADR 0084's door, the one concurrency of every runtime,
+  proved as a concurrent object: a promise, a protocol refining it, every runtime's history linearizable to it.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
