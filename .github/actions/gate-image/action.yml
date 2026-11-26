@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# What a job does before `scripts/gate` runs a gate in an image (docs/adr/0145,
+# D2). The runner addresses the image by the digest of its build context and
+# pulls ghcr.io/newmassrael/sce-gate-<family>:<digest>; it builds the image only
+# when the registry holds none of that digest, and pushes what it built when
+# SCE_GATE_IMAGE_PUSH is 1 ("Gates that run in an image" in
+# tools/git-hooks/gate_registry.py). This action gives the runner the two
+# things a hosted job has to be given for that.
+#
+# The registry's credentials: it logs in to ghcr.io with the job's own token.
+# A pull needs no more than `packages: read`, and a public package none; a push
+# needs `packages: write`. A job's `permissions:` cannot depend on the event
+# (GitHub reads them as literals), so a job that uses this action declares
+# `packages: write`, and GitHub gives a pull request from a fork a read-only
+# token whatever the job declares. `a-lane-of-a-gate-in-an-image-pulls-it` in
+# the registry's self-test holds both: the job uses this action, and declares
+# the permission.
+#
+# Whether to push: only a run on a push to main sets SCE_GATE_IMAGE_PUSH=1. An
+# image built for a pull request, or on another branch, is the image of a
+# change that may never land, and a tag names the first image pushed under it
+# for good; on main the image is the one the next run of every lane pulls. A
+# run on main that cannot log in fails here, since it would build an image no
+# later run could pull; any other run goes on, and pulls the image as a public
+# package or builds it.
+#
+# Nothing else is the image's to keep: the runner mounts this machine's cargo
+# registry download into the image's cargo home, so the one
+# .github/actions/compile-cache restores serves the gate inside as well.
+name: Pull the gate's image
+description: Logs in to the registry the gate images live in, and lets a run on main push an image it built. Runs before scripts/gate.
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to the gate images' registry
+      shell: bash
+      env:
+        TOKEN: ${{ github.token }}
+        ACTOR: ${{ github.actor }}
+        PUSHES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+        set -euo pipefail
+        if docker login ghcr.io --username "$ACTOR" --password-stdin <<<"$TOKEN"; then
+          echo "logged in to ghcr.io as $ACTOR"
+        elif [[ "$PUSHES" == true ]]; then
+          echo "::error title=gate-image::this run on main could not log in to ghcr.io, so an image it builds could not be pushed for the runs after it"
+          exit 1
+        else
+          echo "::warning title=gate-image::could not log in to ghcr.io; the image is pulled as a public package or built here"
+        fi
+        if [[ "$PUSHES" == true ]]; then
+          echo "SCE_GATE_IMAGE_PUSH=1" >>"$GITHUB_ENV"
+        fi

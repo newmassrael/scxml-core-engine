@@ -104,6 +104,7 @@ on:
       - '.github/workflows/cpp-interface-standard.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -167,6 +168,7 @@ on:
       - '.github/workflows/cpp-interface-standard.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 # The run in flight is kept and one waiting run holds the newest commit, as on
@@ -202,10 +204,17 @@ jobs:
       max-parallel: 6
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     # No `container:` here. The image the gate runs in is
     # `tools/interface-standard/Containerfile` (gcc:15.3.0 and what the
-    # configure and the generator need), and the runner builds it and runs the
-    # gate inside it wherever the gate runs: this lane, a build machine judging
+    # configure and the generator need), and the runner pulls it by the digest
+    # of its build context, or builds it, and runs the gate inside it wherever
+    # the gate runs: this lane, a build machine judging
     # an update to main, a workstation. Until 2026-11-08 the image was this
     # job's `container:` and its install steps, which only this lane had, so a
     # build machine would have judged the gate with its own GCC.
@@ -226,26 +235,18 @@ jobs:
 
       # Rust compiles through the shared compile cache
       # (.github/actions/compile-cache), inside the image too: the gate hands
-      # the image sccache and the cache's address and token (`gate_in_container`
-      # in scripts/gate). The image's cargo keeps a home of its own, whose
-      # registry download the step after restores.
+      # the image sccache and the cache's address and token, and mounts the
+      # registry download it restores into the image's cargo home
+      # (`gate_in_container` in scripts/gate).
       - name: Compile through the shared compile cache
         id: compile-cache
         uses: ./.github/actions/compile-cache
-        with:
-          registry: false
 
-      # The image's cargo registry download, keyed as every registry download is
-      # (.github/actions/compile-cache): the crates Cargo.lock names, not their
-      # unpacked sources, and no build directory, which the compile cache answers.
-      - name: Cache the image's cargo registry download
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: |
-            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry/index
-            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry/cache
-            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/git/db
-          key: gcc15-image-cargo-registry-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+      # The registry's credentials, so the runner pulls the image by the digest
+      # of its build context and a run on main pushes one it built
+      # (.github/actions/gate-image).
+      - name: Pull the gate's image
+        uses: ./.github/actions/gate-image
 
       # Guards, configure, the plan, this shard's generation, then its
       # compiles at both standards are one gate, so the check has one spelling

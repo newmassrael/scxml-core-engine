@@ -506,6 +506,150 @@ if [[ -z "${SCE_GATE_CONTAINER:-}" ]]; then
     done <<<"$PLACEMENT_TEXT"
 fi
 
+# ── The image a gate runs in: addressed by its build context, pulled ──
+#
+# An image is addressed by its content (ADR 0145, D2). Its tag is the digest of
+# its build context, the directory its Containerfile is in: one line per file,
+# in byte order of the path, holding the SHA-256 of the file's content, whether
+# it is executable and its path, and the SHA-256 of those lines. The context is
+# what `docker build` sends, so a file the Containerfile copies in moves the tag
+# as the Containerfile does, and a file it never reads moves it too: a tag that
+# moves for nothing costs a build, one that stays while the image changes would
+# name two environments. Only the executable bit of a file's mode is read,
+# since a checkout's other bits follow the umask of whoever made it.
+#
+# The image's family is the name of that directory (`host`, `swift`), and the
+# registry holds it as `$GATE_IMAGE_REGISTRY/sce-gate-<family>:<digest>`. The
+# runner pulls that before it builds anything, so a machine judges a gate with
+# the bytes every other machine pulled; it builds only when the registry has no
+# image of the digest, which is when the change it judges moved the context. A
+# run on main that built one pushes it (`SCE_GATE_IMAGE_PUSH=1`, which only the
+# lane's `.github/actions/gate-image` sets, on a push to main), so the next run
+# pulls. One digest is one environment: an image is never pushed under a tag
+# the registry already holds.
+GATE_IMAGE_REGISTRY="ghcr.io/newmassrael"
+
+# gate_image_digest <context>: the digest that names the image built from
+# directory <context>, on stdout; status 1 when the directory holds no file or
+# a file of it cannot be read.
+gate_image_digest() {
+    local context="$1" path sum mode listing=""
+    local -a paths=()
+    mapfile -d '' -t paths < <(cd "$context" && LC_ALL=C find . -type f -print0 | LC_ALL=C sort -z)
+    (( ${#paths[@]} > 0 )) || return 1
+    for path in "${paths[@]}"; do
+        sum="$(sha256sum <"$context/$path")" || return 1
+        mode=-
+        [[ -x "$context/$path" ]] && mode=x
+        listing+="${sum%% *} $mode ${path#./}"$'\n'
+    done
+    sum="$(printf '%s' "$listing" | sha256sum)" || return 1
+    printf '%s\n' "${sum%% *}"
+}
+
+# gate_image_pull <remote>: pull it, three tries with a growing pause between
+# them. A registry that answers that it holds no such image, or will not show
+# it, is answered at once (status 1): that is the answer, and asking again
+# would not change it. Any other failure (the network, the registry's own
+# errors) is tried again, and status 1 after the third.
+gate_image_pull() {
+    local remote="$1" try out pause=10
+    for try in 1 2 3; do
+        if out="$(docker pull --quiet "$remote" 2>&1)"; then
+            printf 'gate: pulled %s\n' "$remote" >&2
+            return 0
+        fi
+        case "$out" in
+            *"manifest unknown"* | *"not found"* | *denied* | *unauthorized*)
+                printf 'gate: the registry holds no %s readable here (%s)\n' "$remote" "$out" >&2
+                return 1
+                ;;
+        esac
+        printf 'gate: pulling %s failed, try %d of 3: %s\n' "$remote" "$try" "$out" >&2
+        if (( try < 3 )); then
+            sleep "$pause"
+            pause=$(( pause * 3 ))
+        fi
+    done
+    return 1
+}
+
+# gate_image_push <local> <remote>: push the image this run built, unless the
+# registry holds the tag already (another job of the same push built the same
+# digest and pushed first): a tag names one image, and the first one stays.
+# Three tries. A push that fails leaves the gate's verdict alone (the image is
+# what the next run would pull, not what this one judged with), and says so.
+gate_image_push() {
+    local local_tag="$1" remote="$2" try
+    if docker manifest inspect "$remote" >/dev/null 2>&1; then
+        printf 'gate: the registry holds %s already; it is not pushed again\n' "$remote" >&2
+        return 0
+    fi
+    docker tag "$local_tag" "$remote" >&2 || return 1
+    for try in 1 2 3; do
+        if docker push --quiet "$remote" >&2; then
+            printf 'gate: pushed %s\n' "$remote" >&2
+            return 0
+        fi
+        if (( try < 3 )); then
+            sleep $(( 10 * try ))
+        fi
+    done
+    return 1
+}
+
+# gate_image <containerfile>: the local tag of the image the file's directory
+# builds, on stdout, made present here: taken from this machine when it holds
+# it, else pulled from the registry and tagged locally, else built (and pushed
+# when `SCE_GATE_IMAGE_PUSH=1`). Status 3 when it can be had none of those ways.
+gate_image() {
+    local containerfile="$1" context family digest local_tag remote
+    context="$(dirname "$REPO_ROOT/$containerfile")"
+    family="$(basename "$context")"
+    if ! digest="$(gate_image_digest "$context")"; then
+        printf '\nERROR gate: the build context %s of %s could not be read\n' "$context" "$containerfile" >&2
+        return 3
+    fi
+    local_tag="sce-gate-$family:$digest"
+    remote="$GATE_IMAGE_REGISTRY/sce-gate-$family:$digest"
+    if docker image inspect "$local_tag" >/dev/null 2>&1; then
+        printf '%s\n' "$local_tag"
+        return 0
+    fi
+    if gate_image_pull "$remote"; then
+        docker tag "$remote" "$local_tag" >&2 \
+            || { printf '\nERROR gate: could not tag %s as %s\n' "$remote" "$local_tag" >&2; return 3; }
+        printf '%s\n' "$local_tag"
+        return 0
+    fi
+    printf '\ngate: building %s from %s, which the registry does not hold\n' "$local_tag" "$containerfile" >&2
+    docker build --tag "$local_tag" --file "$REPO_ROOT/$containerfile" "$context" >&2 \
+        || { printf '\nERROR gate: the image did not build from %s\n' "$containerfile" >&2; return 3; }
+    if [[ "${SCE_GATE_IMAGE_PUSH:-}" == 1 ]] && ! gate_image_push "$local_tag" "$remote"; then
+        printf '\nWARNING gate: %s was built and not pushed; the next run builds it again\n' "$remote" >&2
+    fi
+    printf '%s\n' "$local_tag"
+}
+
+# What every run in an image is handed from this run's environment, whatever
+# its gate, when it is set here:
+#   BX_GRANT_CORES, BX_GRANT_MEM_MB  the share of the machine bx gave the unit,
+#                         which the builds inside size their jobs by
+#                         (scripts/lib/sce_build_jobs.sh).
+#   SCE_GATE_NO_FAIL_FAST the runner's own switch, which a lane may set to have
+#                         a suite report every failure.
+#   GITHUB_ACTIONS        that this is a hosted runner, which
+#                         `sce_rust_on_hosted_runner` (scripts/lib/
+#                         rust_toolchains.sh) reads.
+#   CI                    that this is a CI run, which tools the gates run read
+#                         for themselves (npm and the Node tools of the wasm
+#                         gates do), so they behave inside as on the lane.
+# The compile cache's wrappers (RUSTC_WRAPPER, CMAKE_C_COMPILER_LAUNCHER,
+# CMAKE_CXX_COMPILER_LAUNCHER, EM_COMPILER_WRAPPER) cross too, renamed to the
+# sccache mounted inside (`RUNNER_WRAPPERS`, `gate_in_container`).
+RUNNER_ENV=(BX_GRANT_CORES BX_GRANT_MEM_MB SCE_GATE_NO_FAIL_FAST GITHUB_ACTIONS CI)
+RUNNER_WRAPPERS=(RUSTC_WRAPPER CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER EM_COMPILER_WRAPPER)
+
 # gate_in_container <slug> <containerfile>: run this runner on the gate inside
 # the image the file builds, and end with its status.
 #
@@ -524,6 +668,33 @@ fi
 # with exactly the compiler the unit's key names. A toolchain whose release is
 # no x.y.z, or that has no cargo beside its rustc, is 3, could not run.
 #
+# Every other Rust toolchain this machine declares (`~/.local/rust/<name>`,
+# where bx and `scripts/install_rust.sh --declared` put them: the pinned
+# nightly and the MSRV releases a gate may ask for) is mounted the same way,
+# read-only, where the runner inside looks for it, so a gate that needs one
+# finds the one this machine was provisioned with.
+#
+# The rev-pinned Mnemosyne builds this machine carries are handed in the same
+# way, read-only, each binary where `scripts/lib/mnemosyne_pin.sh` looks under
+# the image's home: their revision is the tree's (`MNEMOSYNE_REV` in
+# spec-citations.yml), and the runner provisions them (bx installs them as a
+# tool of bx.toml, a lane with `scripts/install_mnemosyne_cli.sh`) as it
+# provisions Rust. Each binary is mounted by the file it resolves to, since bx
+# links the path the pin names to its own store.
+#
+# Cargo's registry download is this machine's: its `registry/` and `git/`
+# and the two files cargo locks them with are mounted into the image's cargo
+# home, so a crate the lane's compile cache restored, or another run fetched,
+# is not fetched again, and two runs that share them take the same lock. What
+# cargo builds stays in the image's own `target/`.
+#
+# The image starts from an environment of its own, so a variable crosses into
+# it only by name. What the runner and the machine set for every gate is
+# `RUNNER_ENV` (below); what a lane sets for one gate is the gate's
+# `container_env` (gate_table.py `container-env`); and the gate's part goes
+# in as `--shard`, which the runner inside checks. Nothing else of this
+# machine's environment crosses: a path in it would name this machine.
+#
 # The uid follows the daemon (bx's rule for containers on fleet machines,
 # measured 2026-10-19): under a rootless one, uid 0 inside IS the caller and any other
 # uid is one of its subordinates, to which the mounted checkout reads as
@@ -531,14 +702,16 @@ fi
 # runner) the caller's own uid owns what it writes. `safe.directory` would
 # answer git and leave the write refused.
 #
-# Docker missing, or an image that does not build, is 3, could not run: the
-# machine cannot measure the gate, and a landing unit asks bx for docker so it
-# is placed where it can. Docker's own failures (125, 126, 127) are 3 as well;
-# the gate's statuses inside pass through as they are.
+# Docker missing, or an image that can be neither pulled nor built, is 3, could
+# not run: the machine cannot measure the gate, and a landing unit asks bx for
+# docker so it is placed where it can. Docker's own failures (125, 126, 127)
+# are 3 as well; the gate's statuses inside pass through as they are. The PATH
+# inside is the image's own (its Containerfile's `ENV PATH`), which is where
+# the image puts the toolchains it holds.
 gate_in_container() {
     local slug="$1" containerfile="$2" tag rc=0 cache target common security
-    local release sysroot wrapper=""
-    local -a user mounts inner wrapper_env=()
+    local release sysroot wrapper="" name bin rel toolchain cargo_home lock container_env=""
+    local -a user mounts inner wrapper_env=() handed=()
     if ! command -v docker >/dev/null 2>&1; then
         printf '\nERROR gate: %s runs in the image %s builds, and docker is not on PATH here.\n' \
             "$slug" "$containerfile" >&2
@@ -559,13 +732,7 @@ gate_in_container() {
             "$RUST_WANT" "$release" >&2
         return 3
     fi
-    tag="sce-gate-${slug}:$(sha256sum "$REPO_ROOT/$containerfile" | cut -c1-16)"
-    if ! docker image inspect "$tag" >/dev/null 2>&1; then
-        printf '\ngate: building the image of %s from %s (%s)\n' "$slug" "$containerfile" "$tag" >&2
-        docker build --tag "$tag" --file "$REPO_ROOT/$containerfile" \
-                "$(dirname "$REPO_ROOT/$containerfile")" >&2 \
-            || { printf '\nERROR gate: the image of %s did not build from %s\n' "$slug" "$containerfile" >&2; return 3; }
-    fi
+    tag="$(gate_image "$containerfile")" || return 3
     security="$(docker info --format '{{.SecurityOptions}}' 2>/dev/null || true)"
     if [[ "$security" == *name=rootless* ]]; then
         user=(--user 0:0)
@@ -578,6 +745,33 @@ gate_in_container() {
     mkdir -p "$cache/home/.local/rust/$release" "$cache/cargo" "$cache/target"
     mounts=(-v "$REPO_ROOT:$REPO_ROOT" -v "$cache:/sce-cache"
             -v "$sysroot:/sce-cache/home/.local/rust/$release:ro")
+    for toolchain in "$HOME"/.local/rust/*; do
+        name="$(basename "$toolchain")"
+        [[ -d "$toolchain" && "$name" != "$release" ]] || continue
+        mkdir -p "$cache/home/.local/rust/$name"
+        mounts+=(-v "$(readlink -f "$toolchain"):/sce-cache/home/.local/rust/$name:ro")
+    done
+    cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+    for name in registry git; do
+        if [[ -d "$cargo_home/$name" ]]; then
+            mkdir -p "$cache/cargo/$name"
+            mounts+=(-v "$cargo_home/$name:/sce-cache/cargo/$name")
+        fi
+    done
+    if [[ -d "$cargo_home/registry" ]]; then
+        for lock in .package-cache .package-cache-mutate; do
+            [[ -e "$cargo_home/$lock" ]] || : >"$cargo_home/$lock"
+            [[ -e "$cache/cargo/$lock" ]] || : >"$cache/cargo/$lock"
+            mounts+=(-v "$cargo_home/$lock:/sce-cache/cargo/$lock")
+        done
+    fi
+    for bin in "$HOME"/.local/share/mnemosyne-rev/*/bin/*; do
+        [[ -x "$bin" ]] || continue
+        rel="${bin#"$HOME"/}"
+        mkdir -p "$(dirname "$cache/home/$rel")"
+        [[ -e "$cache/home/$rel" ]] || : >"$cache/home/$rel"
+        mounts+=(-v "$(readlink -f "$bin"):/sce-cache/home/$rel:ro")
+    done
     common="$(git rev-parse --path-format=absolute --git-common-dir)"
     case "$common/" in
         "$REPO_ROOT"/*) ;;
@@ -627,23 +821,46 @@ gate_in_container() {
         fi
     fi
     inner+=("$slug")
+    # `-e NAME` with no value passes NAME only where this run has it set, so a
+    # variable the lane left unset stays unset inside.
+    for name in "${RUNNER_ENV[@]}"; do
+        handed+=(-e "$name")
+    done
+    container_env="$(python3 -I "$TABLE" container-env "$slug")" || return 2
+    while IFS= read -r name; do
+        if [[ -n "$name" ]]; then
+            handed+=(-e "$name")
+        fi
+    done <<<"$container_env"
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
         "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2
-    # The compile cache a CI lane compiles Rust through
-    # (.github/actions/compile-cache): sccache, named by RUSTC_WRAPPER. The
-    # binary is static and is mounted read-only beside nothing the image holds;
-    # the settings and the cache service's address and token it reads go in
-    # with it. What it answers is a compilation whose inputs, the compiler and
-    # its target among them, are the image's own, and what links is linked in
-    # the image, so nothing built against another libc is handed in. Its server
-    # lives in the container, so its counts are printed there, after the gate
-    # and with the gate's status kept.
-    if [[ "$(basename "${RUSTC_WRAPPER:-}")" == sccache ]] \
-            && wrapper="$(command -v "$RUSTC_WRAPPER" 2>/dev/null)" && [[ -n "$wrapper" ]]; then
-        mounts+=(-v "$wrapper:/opt/sce-sccache/sccache:ro")
-        wrapper_env=(-e RUSTC_WRAPPER=/opt/sce-sccache/sccache -e CARGO_INCREMENTAL=0
-                     -e SCCACHE_GHA_ENABLED -e SCCACHE_GHA_RW_MODE -e SCCACHE_IDLE_TIMEOUT
-                     -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN -e ACTIONS_CACHE_SERVICE_V2)
+    # The compile cache a CI lane compiles through
+    # (.github/actions/compile-cache): sccache, named by RUSTC_WRAPPER for Rust,
+    # CMAKE_C_COMPILER_LAUNCHER and CMAKE_CXX_COMPILER_LAUNCHER for CMake's C
+    # and C++, and EM_COMPILER_WRAPPER for what emcc compiles. The binary is
+    # static and is mounted read-only beside nothing the image holds, and each
+    # of those variables the lane set names it there; the settings and the
+    # cache service's address and token it reads go in with it. What it
+    # answers is a compilation whose inputs, the compiler and its target among
+    # them, are the image's own, and what links is linked in the image, so
+    # nothing built against another libc is handed in. Its server lives in the
+    # container, so its counts are printed there, after the gate and with the
+    # gate's status kept.
+    for name in "${RUNNER_WRAPPERS[@]}"; do
+        [[ "$(basename "${!name:-}")" == sccache ]] || continue
+        if [[ -z "$wrapper" ]]; then
+            wrapper="$(command -v "${!name}" 2>/dev/null)" || wrapper=""
+            [[ -n "$wrapper" ]] || continue
+            mounts+=(-v "$wrapper:/opt/sce-sccache/sccache:ro")
+            wrapper_env+=(-e SCCACHE_GHA_ENABLED -e SCCACHE_GHA_RW_MODE -e SCCACHE_IDLE_TIMEOUT
+                          -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN -e ACTIONS_CACHE_SERVICE_V2)
+        fi
+        wrapper_env+=(-e "$name=/opt/sce-sccache/sccache")
+        if [[ "$name" == RUSTC_WRAPPER ]]; then
+            wrapper_env+=(-e CARGO_INCREMENTAL=0)
+        fi
+    done
+    if [[ -n "$wrapper" ]]; then
         inner=(bash -c '"$@"; rc=$?; /opt/sce-sccache/sccache --show-stats >&2; exit "$rc"' \
             gate-in-container "${inner[@]}")
     fi
@@ -654,8 +871,7 @@ gate_in_container() {
         -e SCE_GATE_CONTAINER="$containerfile" \
         -e SCE_GATE_REPRO_HANDOFF=/sce-cache/repro.jsonl \
         -e HOME=/sce-cache/home -e CARGO_HOME=/sce-cache/cargo \
-        -e PATH="/opt/clang-format-19/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-        -e BX_GRANT_CORES -e BX_GRANT_MEM_MB -e SCE_GATE_NO_FAIL_FAST \
+        "${handed[@]}" \
         ${wrapper_env[@]+"${wrapper_env[@]}"} \
         "$tag" "${inner[@]}" || rc=$?
     cat "$cache/repro.jsonl" >>"$SCE_GATE_REPRO_FILE" 2>/dev/null || true

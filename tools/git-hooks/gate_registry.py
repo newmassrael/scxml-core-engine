@@ -764,16 +764,51 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 
 # ── Gates that run in an image: `container` ───────────────────────────
 #
-# A gate whose verdict is one compiler's names, in `container`, the tracked
-# Containerfile of the image it runs in. The runner then never runs it on the
-# machine it is on: it builds that image (tagged by the file's digest) and runs
-# `scripts/gate <slug>` inside it, with the checkout mounted at its own path,
-# so the gate and everything it depends on (`deps`, the generator build among
-# them) run there and nowhere else. Hosted CI, a build machine and a
-# workstation therefore judge it with the same compiler, and the file is the
-# one place that compiler is named. `container_placement` says which gates of a
-# run go into an image and which run where the runner is; the dependencies only
-# a gate in an image needs go in with it.
+# A gate names, in `container`, the tracked Containerfile of the image it runs
+# in (docs/adr/0145). The runner then never runs it on the machine it is on: it
+# makes the image present and runs `scripts/gate <slug>` inside it, with the
+# checkout mounted at its own path, so the gate and everything it depends on
+# (`deps`, the generator build among them) run there and nowhere else. Hosted
+# CI, a build machine and a workstation therefore judge it with the same
+# system packages and toolchains, and the file is the one place they are named;
+# no workflow installs a package at job time
+# (sce-build/tests/no_workflow_installs_a_package_at_job_time.rs). The images
+# are shared by environment, not made per gate (D4): a Containerfile's
+# directory is its family, `tools/ci-images/host` for the Linux lanes'
+# toolchains, `tools/ci-images/swift` for the Swift toolchain, and
+# `tools/interface-standard` for the newest GCC that `cpp-interface-standard`
+# measures with. `container_placement` says which gates of a run go into an
+# image and which run where the runner is; the dependencies only a gate in an
+# image needs go in with it.
+#
+# An image is addressed by its content and pulled (D2). Its tag is the digest
+# of its build context, the Containerfile's directory, every file of it by path
+# and content (`gate_image_digest` in scripts/gate). The runner takes the
+# image this machine holds under that tag, else pulls
+# `ghcr.io/newmassrael/sce-gate-<family>:<digest>` (three tries), else builds
+# it: only a change that moved the context builds one. A run on main that
+# built one pushes it, so the next run pulls (`SCE_GATE_IMAGE_PUSH`, which
+# only `.github/actions/gate-image` sets, on a push to main); a tag the
+# registry holds is never pushed again. A lane's job that runs such a gate
+# uses that action and declares `packages: write`
+# (`a-lane-of-a-gate-in-an-image-pulls-it`).
+#
+# A rebuild of one context yields the same packages (D3): the base image named
+# by digest, the package archive read from a dated snapshot, and each
+# downloaded toolchain by its release and checksum
+# (`a-gate-image-is-pinned`). A release a script or bx.toml pins already is
+# written in the Containerfile again, since nothing outside the context reaches
+# the build, and `an-image-installs-the-releases-the-tree-pins` holds every
+# such copy to its source. `IMAGES_NOT_YET_PINNED` names an image that does
+# not yet name its base and archive so, with the reason, and is refused once
+# the image does.
+#
+# The image starts from an environment of its own, so what a lane sets for the
+# gate crosses by name: the variables its entry names in `container_env`
+# (below), and its part as `--shard`. A variable a lane sets in the job that
+# runs the gate that is neither would be read nowhere
+# (`a-lane-sets-only-what-its-image-is-handed`), and a name no lane sets hands
+# nothing in (`a-gate-in-an-image-is-handed-what-its-lane-sets`).
 #
 # A build machine runs containers only under its run account's rootless Docker
 # (the registry's `containers = "rootless"`), so such a gate names
@@ -787,9 +822,24 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 # the gate's generator with a compiler the unit's key does not name. The runner
 # mounts the toolchain it selected, read-only, where the runner inside looks
 # for a declared release, and names that release with `--rust`.
-# `a-gate-image-builds-on-the-selected-rust` holds both halves: no Containerfile
-# line installs Rust (`IMAGE_INSTALLS_RUST`), and `gate_in_container` mounts
-# the selected toolchain and passes its release in.
+# `a-gate-image-builds-on-the-selected-rust` holds both halves: no line of a
+# Containerfile's last stage, the image the gate runs in, installs Rust
+# (`IMAGE_INSTALLS_RUST`; an earlier stage may build a dependency with one and
+# hand the image what it installed, as the host image's zenoh-c stage does),
+# and `gate_in_container` mounts the selected toolchain and passes its release
+# in. The compile cache's sccache, the other Rust toolchains the machine
+# declares (the pinned nightly among them) and the rev-pinned Mnemosyne build
+# are handed in the same way, since their pins are the tree's and the runner
+# provisions them.
+#
+# An image starts from an environment of its own, so a variable a lane sets
+# for its gate does not reach the run inside unless the runner hands it in. A
+# gate whose script, or a tool it runs, reads such a variable names it in
+# `container_env`, and `gate_in_container` hands exactly those in
+# (`gate_table.py container-env <slug>`). The part a sharded lane runs is not
+# one of them: it goes in as `--shard`, which the runner inside checks.
+# `a-gate-in-an-image-is-handed-what-its-lane-sets` holds every name to a
+# gate in an image, to a variable's spelling, and to a lane that sets it.
 #
 # Every gate that runs on Linux names an image (ADR 0145, D1), one of a few
 # shared by environment (D4): `tools/ci-images/host/Containerfile` for the C,
@@ -804,21 +854,272 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 # docker alone. A pin the gate reads from an install script has a second copy
 # in the image that installs the tool, and the two are held to one
 # (`a-gate-image-holds-the-pins-its-gate-reads`).
-#
-# An image starts from an environment of its own, so a variable a lane sets
-# for its gate does not reach the run inside unless the runner hands it in. A
-# gate whose script, or a tool it runs, reads such a variable names it in
-# `container_env`, and `gate_in_container` hands exactly those in
-# (`gate_table.py container-env <slug>`). The part a sharded lane runs is not
-# one of them: it goes in as `--shard`, which the runner inside checks.
-# `a-gate-in-an-image-is-handed-what-its-lane-sets` holds every name to a
-# gate in an image, to a variable's spelling, and to a lane that sets it.
 CONTAINER_NEED = "docker"
 CONTAINER_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 IMAGE_INSTALLS_RUST = re.compile(
     r"\brustup\b|sh\.rustup\.rs|static\.rust-lang\.org|\bcargo\s+install\b"
     r"|\brustc\b|\bcargo\b")
 CONTAINER_RUNNER_MARKS = ('--rust "$release"', '.local/rust/$release:ro')
+
+# The action a lane's job runs before `scripts/gate` runs a gate in an image,
+# and the permission a push to main needs of the job's token.
+GATE_IMAGE_ACTION = "./.github/actions/gate-image"
+GATE_IMAGE_PERMISSION = "packages: write"
+
+# What `a-gate-image-is-pinned` reads: a `FROM` that names its base by digest,
+# and the dated snapshot an image that installs packages reads them from.
+IMAGE_BASE_BY_DIGEST = re.compile(r"^FROM\s+\S+@sha256:[0-9a-f]{64}(\s+AS\s+\S+)?\s*$", re.I)
+IMAGE_INSTALLS_PACKAGES = re.compile(r"\bapt-get\b.*\binstall\b|\bapt\s+install\b")
+IMAGE_SNAPSHOT = re.compile(r"^ARG\s+UBUNTU_SNAPSHOT=\d{8}T\d{6}Z\s*$", re.M)
+IMAGE_SNAPSHOT_SOURCE = "https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}"
+
+# An image that does not yet name its base by digest and its archive by date,
+# with why; refused once it does, so the list is no longer than what is true.
+IMAGES_NOT_YET_PINNED: dict[str, str] = {
+    "tools/interface-standard/Containerfile":
+        "cpp-interface-standard's GCC 15 image is built from the tag gcc:15.3.0 "
+        "and reads Debian's live archive; its gate keeps no verdict for that "
+        "reason (its entry's no_cache_reason) until the file names both",
+}
+
+
+def image_last_stage(code: str) -> list[str]:
+    """The lines of a Containerfile's last stage (from its last `FROM`), the
+    image a gate runs in; every line when it names no `FROM`."""
+    lines = code.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.match(r"^\s*FROM\s", line, re.I)]
+    return lines[starts[-1]:] if starts else lines
+
+
+def image_args(text: str) -> dict[str, str]:
+    """The `ARG NAME=value` lines of a Containerfile, by name."""
+    return dict(re.findall(r"^ARG\s+([A-Z0-9_]+)=(\S+)\s*$", text, re.M))
+
+
+def image_runs(text: str) -> list[str]:
+    """Each `RUN` of a Containerfile as one line, its continuations joined and
+    its whole-line comments dropped."""
+    runs: list[str] = []
+    current: list[str] | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if current is None:
+            if not re.match(r"^RUN\s", stripped):
+                continue
+            current = []
+        current.append(stripped.rstrip("\\").strip())
+        if not stripped.endswith("\\"):
+            runs.append(" ".join(current))
+            current = None
+    if current is not None:
+        runs.append(" ".join(current))
+    return runs
+
+
+def image_pin_failures(path: str, text: str) -> list[str]:
+    """What `a-gate-image-is-pinned` refuses in the Containerfile `text` at
+    `path`: a base not named by digest, packages read from an archive that is
+    not a dated snapshot, a download not checked against a checksum in the
+    same step, and a repository cloned without a commit checked out."""
+    failures: list[str] = []
+    code = [line.strip() for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+    froms = [line for line in code if re.match(r"^FROM\s", line, re.I)]
+    if not froms:
+        failures.append(f"{path} names no base image")
+    # A stage built from an earlier one (`FROM base`) names its base by that
+    # stage, which is pinned where it is made.
+    stages = {match.group(1).lower() for match in
+              (re.search(r"\sAS\s+(\S+)\s*$", line, re.I) for line in froms) if match}
+    for line in froms:
+        named = line.split()[1].lower() if len(line.split()) > 1 else ""
+        if named in stages:
+            continue
+        if not IMAGE_BASE_BY_DIGEST.match(line):
+            failures.append(f"{path} names its base {line!r} by a tag, which the "
+                            f"registry can move; name it by its digest (@sha256:...)")
+    runs = image_runs(text)
+    if any(IMAGE_INSTALLS_PACKAGES.search(run) for run in runs) and not (
+            IMAGE_SNAPSHOT.search(text) and IMAGE_SNAPSHOT_SOURCE in text):
+        failures.append(f"{path} installs packages from an archive that is not a "
+                        f"dated snapshot (ARG UBUNTU_SNAPSHOT and "
+                        f"{IMAGE_SNAPSHOT_SOURCE}), so a rebuild reads whatever "
+                        f"the archive holds that day")
+    for run in runs:
+        if re.search(r"\b(?:curl|wget)\s+-", run) and "sha256sum --check" not in run:
+            failures.append(f"{path} downloads in a step that checks no SHA-256: "
+                            f"{run[:90]!r}")
+        if re.search(r"\bgit\s+clone\b", run) \
+                and not re.search(r"\bcheckout\b|\brev-parse\s+HEAD\b", run):
+            failures.append(f"{path} clones a repository and neither checks out a "
+                            f"commit nor holds the clone to one: {run[:90]!r}")
+    return failures
+
+
+def image_release_failures(repo_root: Path) -> list[str]:
+    """What `an-image-installs-the-releases-the-tree-pins` refuses: a release or
+    checksum written in an image's Containerfile that is not the one the tree
+    pins it to, read from the pin's own file. The releases a gate reads from
+    an install script's `X_REV` line are held by
+    `a-gate-image-holds-the-pins-its-gate-reads` too; this holds the checksums
+    beside them and the releases no gate reads."""
+    failures: list[str] = []
+
+    def read(rel: str) -> str:
+        try:
+            return (repo_root / rel).read_text(encoding="utf-8")
+        except OSError:
+            failures.append(f"image-releases: {rel} could not be read")
+            return ""
+
+    def first(pattern: str, text: str) -> str:
+        found = re.search(pattern, text, re.M)
+        return found.group(1) if found else ""
+
+    def held(image: str, args: dict[str, str], name: str, want: str, source: str):
+        if not want:
+            failures.append(f"image-releases: {source} names no value for {name} "
+                            f"to hold {image} to")
+        elif args.get(name) != want:
+            failures.append(f"image-releases: {image} has {name}={args.get(name)!r} "
+                            f"and {source} pins {want!r}")
+
+    host = "tools/ci-images/host/Containerfile"
+    args = image_args(read(host))
+    go = first(r"^go ([0-9]+\.[0-9]+\.[0-9]+)\s*$", read("backends/go/forge-runtime/go.mod"))
+    held(host, args, "GO_RELEASE", go, "backends/go/forge-runtime/go.mod")
+    held(host, args, "GO_SHA256",
+         first(r'"go' + re.escape(go) + r'\.linux-amd64\.tar\.gz ([0-9a-f]{64})"',
+               read("scripts/install_go.sh")) if go else "", "scripts/install_go.sh")
+    arm_script = read("scripts/install_arm_gnu_toolchain.sh")
+    arm = first(r'^ARM_GNU_TOOLCHAIN_REV="([^"]+)"', arm_script)
+    held(host, args, "ARM_GNU_TOOLCHAIN_REV", arm, "scripts/install_arm_gnu_toolchain.sh")
+    held(host, args, "ARM_GNU_TOOLCHAIN_SHA256",
+         first(r'"arm-gnu-toolchain-' + re.escape(arm)
+               + r'-x86_64-arm-none-eabi\.tar\.xz ([0-9a-f]{64})"', arm_script) if arm else "",
+         "scripts/install_arm_gnu_toolchain.sh")
+    held(host, args, "GENMC_REV", first(r'^GENMC_REV="([^"]+)"', read("scripts/install_genmc.sh")),
+         "scripts/install_genmc.sh")
+    chrome = read("scripts/install_chrome.sh")
+    held(host, args, "CHROME_REV", first(r'^CHROME_REV="([^"]+)"', chrome), "scripts/install_chrome.sh")
+    held(host, args, "CHROME_ZIP_SHA256", first(r'^CHROME_ZIP_SHA256="([0-9a-f]{64})"', chrome),
+         "scripts/install_chrome.sh")
+    held(host, args, "WASM_BINDGEN_REV",
+         first(r'^WASM_BINDGEN_REV="([^"]+)"', read("scripts/install_wasm_bindgen.sh")),
+         "scripts/install_wasm_bindgen.sh")
+    bazel = first(r'^SCE_BAZEL_VERSION="([^"]+)"', read("scripts/lib/bazel_pins.sh"))
+    held(host, args, "BAZEL_RELEASE", bazel, "scripts/lib/bazel_pins.sh")
+    held(host, args, "BAZEL_SHA256",
+         first(r'"bazel-' + re.escape(bazel) + r'-linux-x86_64 ([0-9a-f]{64})"',
+               read("scripts/install_bazel.sh")) if bazel else "", "scripts/install_bazel.sh")
+    mesh = read("scripts/install_mesh_transports.sh")
+    for name in ("CYCLONEDDS_TAG", "CYCLONEDDS_CXX_TAG", "VSOMEIP_TAG", "ZENOH_C_TAG",
+                 "ZENOH_CPP_TAG", "MESH_TRANSPORTS_REV"):
+        held(host, args, name, first(r'^' + name + r'="([^"]+)"', mesh),
+             "scripts/install_mesh_transports.sh")
+
+    def canonical(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    def version_key(version: str) -> list[int]:
+        return [int(part) for part in re.findall(r"[0-9]+", version)]
+
+    pinned = {canonical(name): version for name, version in re.findall(
+        r"^([A-Za-z0-9_.-]+)==([^\s\\]+)", read("tools/ci-images/host/python-requirements.txt"), re.M)}
+    suite = first(r"^SUITE_PACKAGES=\(([^)]*)\)", read("scripts/install_sce_python.sh"))
+    wanted = [(canonical(name), floor, "scripts/install_sce_python.sh")
+              for name, floor in re.findall(r'"([A-Za-z0-9_.-]+)(?:>=([0-9.]+))?"', suite)]
+    runtime = first(r"^dependencies = \[([^\]]*)\]", read("backends/python/runtime/pyproject.toml"))
+    wanted += [(canonical(name), floor, "backends/python/runtime/pyproject.toml")
+               for name, floor in re.findall(r'"([A-Za-z0-9_.-]+)(?:>=([0-9.]+))?"', runtime)]
+    if len(wanted) < 4:
+        failures.append(f"image-releases: read only {len(wanted)} Python requirement(s) from "
+                        f"scripts/install_sce_python.sh and pyproject.toml; the reader is broken")
+    for name, floor, source in wanted:
+        if name not in pinned:
+            failures.append(f"image-releases: {source} installs {name}, and the host "
+                            f"image's python-requirements.txt does not")
+        elif floor and version_key(pinned[name]) < version_key(floor):
+            failures.append(f"image-releases: the host image pins {name}=={pinned[name]}, "
+                            f"under the floor {floor} {source} names")
+
+    swift = "tools/ci-images/swift/Containerfile"
+    swift_args = image_args(read(swift))
+    bx = read("bx.toml")
+    table = re.search(r"^\[platform\.linux\.tools\.swift\]\n(.*?)(?=^\[|\Z)", bx, re.M | re.S)
+    held(swift, swift_args, "SWIFT_RELEASE",
+         first(r'^version = "([^"]+)"', table.group(1)) if table else "",
+         "bx.toml [platform.linux.tools.swift]")
+    held(swift, swift_args, "SWIFT_SHA256", first(r"ubuntu24\.04\) sum=([0-9a-f]{64})", bx),
+         "bx.toml [platform.linux.tools.swift] (ubuntu24.04)")
+    return failures
+
+
+# A variable a lane sets in a job of its own, read by the job's other steps
+# and never by the gate: the runner reads them outside the image.
+LANE_ENV_OUTSIDE = ("SHARDS_RESULT",)
+# What the runner hands every image whatever `container_env` says (RUNNER_ENV
+# in scripts/gate): the switch of the runner itself, which a lane may set.
+LANE_ENV_RUNNER = ("SCE_GATE_NO_FAIL_FAST",)
+LANE_ENV_KEY = re.compile(r"^\s+(?:-\s+)?(?:run:\s+)?([A-Z][A-Z0-9_]*)[:=]")
+
+
+def image_lane_failures(repo_root: Path, table=None) -> list[str]:
+    """What `a-lane-sets-only-what-its-image-is-handed` and
+    `a-lane-of-a-gate-in-an-image-pulls-it` refuse, for every gate of `table`
+    that runs in an image and every job of its workflows that runs it: a
+    variable of this repository's (`SCE_`, `SPDLOG_`) the job sets, as an
+    `env:` key or a `NAME=value` before a command, that the run inside is not
+    handed (the gate's `container_env` or `shard_env`), a job that does not
+    use the gate-image action, and one that does not declare the permission a
+    push of its image needs."""
+    table = GATES if table is None else table
+    failures: list[str] = []
+    jobs_read = 0
+    for slug, spec in sorted(table.items()):
+        if not spec.get("container"):
+            continue
+        handed = set(spec.get("container_env") or []) | set(LANE_ENV_RUNNER)
+        if spec.get("shard_env"):
+            handed.add(spec["shard_env"])
+        for workflow in spec.get("workflows", []):
+            path = repo_root / ".github" / "workflows" / workflow
+            if not path.is_file():
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for job, start, end in workflow_jobs(lines):
+                code = [line for line in lines[start:end]
+                        if not line.lstrip().startswith("#")]
+                if not gate_table.runs_slug("\n".join(code), slug):
+                    continue
+                jobs_read += 1
+                where = f"{workflow} job `{job}`"
+                for line in code:
+                    key = LANE_ENV_KEY.match(line)
+                    if not key or key.group(1) in LANE_ENV_OUTSIDE \
+                            or not re.match(r"^(SCE_|SPDLOG_)", key.group(1)):
+                        continue
+                    name = key.group(1)
+                    if name not in handed:
+                        failures.append(f"container_env: {where} sets {name} for "
+                                        f"{slug}, which runs in an image and is not "
+                                        f"handed it (container_env of its entry)")
+                if not any(re.match(r"^\s*(?:-\s+)?uses:\s*" + re.escape(GATE_IMAGE_ACTION)
+                                    + r"\s*$", line) for line in code):
+                    failures.append(f"gate-image: {where} runs {slug} in its image and "
+                                    f"does not use {GATE_IMAGE_ACTION}, so its run "
+                                    f"neither logs in to pull the image nor pushes one "
+                                    f"it built")
+                if not any(line.strip() == GATE_IMAGE_PERMISSION for line in code):
+                    failures.append(f"gate-image: {where} runs {slug} in its image and "
+                                    f"does not declare {GATE_IMAGE_PERMISSION!r}, which "
+                                    f"a run on main needs to push the image it built")
+    if jobs_read == 0:
+        failures.append("container_env: no job of any workflow runs a gate in an image, so "
+                        "the case read nothing")
+    return failures
 
 # Every gate's entry is a file of its own, `tools/git-hooks/gates/<slug>.py`,
 # read by `gate_table.load_table`: the fields above, with the reasons for
@@ -865,7 +1166,6 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
     # `scripts/release.py --check`, which the workspace suite runs.
     "release.yml": "publication: scripts/release.py makes the release",
 }
-
 
 # Lines that report rather than run. A hook's `log_step "Stage 0/4 — cargo fmt
 # --all -- --check"` names the command it is about to run, and searching the
@@ -2684,9 +2984,9 @@ def rust_cache_failures(repo_root: Path) -> list[str]:
                         f"which lacks {TOOLCHAIN_CACHE_KEY}: a release move would "
                         f"restore the old release's index into the new one's run")
     # A lower bound, so a step parse that stopped finding caches cannot pass:
-    # the compile cache's restore and save, and the image's own in
-    # cpp-interface-standard.yml.
-    if found < 3:
+    # the compile cache's restore and save, which also serve a gate in an image
+    # (`gate_in_container` mounts the download into the image's cargo home).
+    if found < 2:
         failures.append(
             f"found {found} cargo registry cache step(s) in .github; a broken step "
             f"parse passes by finding none")
@@ -4052,7 +4352,7 @@ def self_test(repo_root: Path) -> int:
         if not isinstance(containerfile, str) \
                 or not (repo_root / containerfile).is_file():
             continue
-        for line in script_code(repo_root / containerfile).splitlines():
+        for line in image_last_stage(script_code(repo_root / containerfile)):
             if IMAGE_INSTALLS_RUST.search(line):
                 failures.append(
                     f"container: {containerfile} (the image of {slug}) "
@@ -4112,6 +4412,66 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"container_env: {slug} hands {name} into its image and "
                     f"no workflow it mirrors ({spec.get('workflows')}) sets it")
+
+    # a-gate-image-is-pinned. Every image a gate runs in names its base by
+    # digest, reads its packages from a dated snapshot and checks every
+    # download against a checksum in the step that downloads it, so a rebuild
+    # of one context yields the same environment (docs/adr/0145, D3). An image
+    # in IMAGES_NOT_YET_PINNED is read the other way: once it is pinned, the
+    # entry is stale. The fixture holds the reader to each refusal.
+    cases += 1
+    digest = "a" * 64
+    pinned_fixture = "\n".join([
+        f"FROM ubuntu:24.04@sha256:{digest}",
+        "ARG UBUNTU_SNAPSHOT=20261126T000000Z",
+        f'RUN echo "{IMAGE_SNAPSHOT_SOURCE}" && apt-get install -y git',
+        "ARG X_SHA256=" + digest,
+        'RUN curl -fsSL -o /tmp/x "https://x" \\',
+        '    && echo "${X_SHA256}  /tmp/x" | sha256sum --check --strict -',
+        "RUN git clone https://x /opt/x && git -C /opt/x checkout --quiet abc"])
+    for label, text, want in (
+            ("pinned", pinned_fixture, 0),
+            ("a base by tag", pinned_fixture.replace(f"@sha256:{digest}", ""), 1),
+            ("a live archive", pinned_fixture.replace(IMAGE_SNAPSHOT_SOURCE, "http://archive"), 1),
+            ("an unchecked download", pinned_fixture.replace(" | sha256sum --check --strict -", ""), 1),
+            ("a clone of no commit", pinned_fixture.replace(" && git -C /opt/x checkout --quiet abc", ""), 1)):
+        got = image_pin_failures("x/Containerfile", text)
+        if len(got) != want:
+            failures.append(f"image-pinned: the fixture {label} gave {len(got)} "
+                            f"refusal(s), not {want}: {got!r}")
+    image_files = sorted({spec["container"] for spec in GATES.values()
+                          if isinstance(spec.get("container"), str)})
+    for containerfile in image_files:
+        path = repo_root / containerfile
+        if not path.is_file():
+            continue
+        found = image_pin_failures(containerfile, path.read_text(encoding="utf-8"))
+        if containerfile in IMAGES_NOT_YET_PINNED:
+            if not found:
+                failures.append(f"image-pinned: {containerfile} names its base by digest "
+                                f"and its archive by date now; drop it from "
+                                f"IMAGES_NOT_YET_PINNED")
+            continue
+        failures.extend(f"image-pinned: {f}" for f in found)
+    for containerfile in sorted(set(IMAGES_NOT_YET_PINNED) - set(image_files)):
+        failures.append(f"image-pinned: IMAGES_NOT_YET_PINNED names {containerfile}, "
+                        f"which no gate runs in")
+
+    # an-image-installs-the-releases-the-tree-pins. A release a script or
+    # bx.toml pins is written in an image's Containerfile again, since nothing
+    # outside its build context reaches the build; each copy is held to the
+    # pin's own file, so the image and a build machine run one release.
+    cases += 1
+    failures.extend(image_release_failures(repo_root))
+
+    # a-lane-sets-only-what-its-image-is-handed and
+    # a-lane-of-a-gate-in-an-image-pulls-it. The image starts from an
+    # environment of its own, so a variable a lane sets for a gate in an image
+    # is in its `container_env`, or its part, or read nowhere; and the job that
+    # runs it logs in to the registry and may push what it built
+    # (.github/actions/gate-image).
+    cases += 1
+    failures.extend(image_lane_failures(repo_root))
 
     # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
     # the release `scripts/install_emsdk.sh` pins, and the image a gate that
