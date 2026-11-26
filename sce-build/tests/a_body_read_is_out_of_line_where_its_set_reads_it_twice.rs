@@ -769,7 +769,7 @@ fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
     }
     assert!(
         held.iter().any(|line| line
-            == "inner = cursor.within(total_length as usize, |_inner| \
+            == "inner = cursor.within(total_length, |_inner| \
                 CodecZenohDeclExtKeyexprInnerView::read_with_inline(_inner, _hook));"),
         "the hot view of codec_zenoh_decl_ext_keyexpr reads its inner body without its \
          hook: {held:#?}"

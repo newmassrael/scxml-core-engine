@@ -134,3 +134,12 @@ readers of their own and keep them. Other backends are unchanged. No unsafe code
 - **Read every arm and optional body as a value and move it in.** It writes each byte of a view once, which the view
   does; on the eager form it moves bodies that hold lists inline, copying their whole capacity, which ADR 0049
   measured and removed. Refused for the eager form.
+
+## Amendment, 2026-11-27: a length reaches the reader in its field's own type
+
+A body bounded by a length was read by `within(len as usize, ..)`: on a target whose `usize` is 32 bits a 64-bit
+length was cut to its low bits, and a negative one of a signed field wrapped, so the frame read a different body
+than the wire named. `SceReader::within` takes the length in its field's own integer type through `WireLength`
+(the byte count it names, or none for a negative one), and the reader refuses a length the target cannot hold as
+`LengthOutOfRange`. Where `usize` is 64 bits wide and the field unsigned, the test folds away; the generated read
+is `cursor.within(len, ..)` with no conversion.

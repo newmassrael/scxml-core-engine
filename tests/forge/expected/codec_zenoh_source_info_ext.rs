@@ -135,7 +135,7 @@ impl<S: CodecZenohSourceInfoExtStorage> CodecZenohSourceInfoExtIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let ext_size = cursor.read_vle_u64();
-        cursor.within(ext_size as usize, |_inner| CodecZenohSourceInfoOwned::<S>::read_into(_inner, &mut _out.info));
+        cursor.within(ext_size, |_inner| CodecZenohSourceInfoOwned::<S>::read_into(_inner, &mut _out.info));
         _out.ext_size = ext_size;
 
     }

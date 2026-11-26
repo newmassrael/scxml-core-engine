@@ -144,7 +144,7 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprIn<S> {
             raw[0]
         };
         let total_length = cursor.read_vle_u64();
-        cursor.within(total_length as usize, |_inner| CodecZenohDeclExtKeyexprInnerOwned::<S>::read_into(_inner, &mut _out.inner));
+        cursor.within(total_length, |_inner| CodecZenohDeclExtKeyexprInnerOwned::<S>::read_into(_inner, &mut _out.inner));
         _out.outer_header = outer_header;
         _out.total_length = total_length;
 
@@ -506,7 +506,7 @@ impl<'a> CodecZenohDeclExtKeyexprView<'a> {
         let total_length = cursor.read_vle_u64();
         #[allow(clippy::needless_late_init)]
         let inner: CodecZenohDeclExtKeyexprInnerView<'a>;
-        inner = cursor.within(total_length as usize, |_inner| CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook));
+        inner = cursor.within(total_length, |_inner| CodecZenohDeclExtKeyexprInnerView::read_with(_inner, _hook));
         Self {
             outer_header,
             total_length,
