@@ -6,16 +6,23 @@
 //! where the set reads it from one, which leaves it to the compiler
 //! (docs/adr/0137). The sites are counted once, from the set's import graph
 //! (`BodyReadSites::count`), and the eager read and the view's are two functions,
-//! each read from its own sites; `inline_decode` asks every body read inlined,
-//! or those of the codecs a build names as on its hot path, whatever their
-//! sites, a name checked to be a codec of the set (docs/adr/0139).
+//! each read from its own sites; `inline_decode` asks every body read inlined
+//! (docs/adr/0136), or names the codecs on a build's hot path, each checked to be
+//! a codec of the set by its stem or an import alias (docs/adr/0139).
+//!
+//! Hotness is a property of a site (docs/adr/0140): the body of a codec named
+//! is hot, and so is every read a hot body makes, transitively. A hot body is
+//! printed once in forms held in place (`read_into_inline`, `read_inline`,
+//! `read_with_inline`), which every hot site calls and which read their ZInts
+//! held in place; its entry points are calls of them, which the cold sites call
+//! and which keep the rule of those sites alone.
 //!
 //! A decode is a thin call: a view's decode answers the view its read builds,
 //! with no default of it made first, and an eager codec built as a value does
 //! the same; the verdict and the move of the cursor are one function of the
 //! runtime for every codec, which the runtime's tests hold.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sce_build::forge::body_reads::{BodyReadSites, BodyReads, InlineDecode};
 use sce_build::forge::error::{ForgeError, GenerateError};
@@ -88,13 +95,17 @@ fn reads(code: &str) -> Vec<(&str, &str)> {
 
 /// Whether `body` reads the frame and is no call of another of the codec's
 /// reads: the eager read that fills its destination, the eager read of a codec
-/// built as a value, and the view's hooked read.
+/// built as a value, and the view's hooked read, whether an entry point or a
+/// form held in place.
 fn reads_the_body(body: &str) -> bool {
     ![
         "*_out = Self::read(",
         "Self::read_into(cursor, &mut _out",
         "Self::read_with(cursor",
         "        Self::read(cursor",
+        "Self::read_into_inline(cursor",
+        "Self::read_inline(cursor",
+        "Self::read_with_inline(cursor",
     ]
     .iter()
     .any(|forward| body.contains(forward))
@@ -119,6 +130,93 @@ fn view_body_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
         .into_iter()
         .find(|(_, body)| reads_the_body(body) && is_view_read(body))
         .unwrap_or_else(|| panic!("{name} has a view body read:\n{code}"))
+}
+
+/// Each form held in place the code declares (docs/adr/0140).
+fn held_reads(code: &str) -> Vec<(&str, &str)> {
+    ["read_inline", "read_into_inline", "read_with_inline"]
+        .into_iter()
+        .flat_map(|name| methods(code, name))
+        .collect()
+}
+
+/// The line before the eager body read held in place of the hot codec `name`
+/// whose code is `code`, and its body.
+fn held_eager_body_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
+    held_reads(code)
+        .into_iter()
+        .find(|(_, body)| reads_the_body(body) && !is_view_read(body))
+        .unwrap_or_else(|| panic!("{name} has an eager body read held in place:\n{code}"))
+}
+
+/// The line before the view's body read held in place of the hot codec `name`,
+/// and its body.
+fn held_view_body_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
+    held_reads(code)
+        .into_iter()
+        .find(|(_, body)| reads_the_body(body) && is_view_read(body))
+        .unwrap_or_else(|| panic!("{name} has a view body read held in place:\n{code}"))
+}
+
+/// The line before the eager entry point of the hot codec `name`, the read
+/// whose one statement calls the eager form held in place, and its body.
+fn eager_entry_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
+    reads(code)
+        .into_iter()
+        .find(|(_, body)| {
+            !is_view_read(body)
+                && statements(body).len() == 1
+                && (body.contains("Self::read_into_inline(cursor, _out")
+                    || body.contains("Self::read_inline(cursor"))
+        })
+        .unwrap_or_else(|| panic!("{name} has an eager entry point:\n{code}"))
+}
+
+/// The line before the view's entry point of the hot codec `name`, the read
+/// whose one statement calls the view's form held in place, and its body.
+fn view_entry_read<'c>(name: &str, code: &'c str) -> (&'c str, &'c str) {
+    reads(code)
+        .into_iter()
+        .find(|(_, body)| {
+            is_view_read(body)
+                && statements(body).len() == 1
+                && body.contains("Self::read_with_inline(cursor")
+        })
+        .unwrap_or_else(|| panic!("{name} has a view entry point:\n{code}"))
+}
+
+/// The lines of `code` that call a body read of another codec: a path, not
+/// `Self`, before `::read`, `::read_into` or `::read_with`, the entry point
+/// or the form held in place (`_inline`).
+fn child_reads(code: &str) -> Vec<&str> {
+    code.lines()
+        .map(str::trim)
+        .filter(|line| {
+            line.match_indices("::read").any(|(at, head)| {
+                let rest = &line[at + head.len()..];
+                let rest = rest
+                    .strip_prefix("_into")
+                    .or_else(|| rest.strip_prefix("_with"))
+                    .unwrap_or(rest);
+                let rest = rest.strip_prefix("_inline").unwrap_or(rest);
+                rest.starts_with('(') && !line[..at].ends_with("Self")
+            })
+        })
+        .collect()
+}
+
+/// The options that generate a codec of the set of `sites` with the codecs
+/// `names` named hot.
+fn hot_options(sites: &BodyReadSites, names: &[&str], views: bool) -> ForgeCompileOptions {
+    let hot = sites
+        .hot_codecs(names)
+        .unwrap_or_else(|e| panic!("{names:?} are codecs of the set: {e}"));
+    ForgeCompileOptions {
+        views,
+        inline_decode: InlineDecode::Codecs(hot),
+        body_reads: sites.clone(),
+        ..ForgeCompileOptions::default()
+    }
 }
 
 /// The statements of `body` after its signature.
@@ -280,12 +378,12 @@ fn inline_decode_inlines_every_body_read_whatever_its_sites() {
     }
 }
 
-/// A codec a build names as on its hot path has its body reads inlined, the
-/// eager read and the view's, whatever the sites of its set that read them: one
-/// site, where the rule leaves the read to the compiler, or two and more, where
-/// it keeps the read out of line (docs/adr/0139).
+/// A hot body is printed once, in the forms held in place, `#[inline(always)]`,
+/// the eager read and the view's; its entry points are calls of them, which keep
+/// ADR 0137's rule over the cold sites alone: the sites of hot bodies call the
+/// forms held in place and are not counted (docs/adr/0140).
 #[test]
-fn a_named_codecs_body_reads_are_inlined_whatever_their_sites() {
+fn a_hot_body_is_held_in_place_and_its_entry_points_keep_the_rule_of_its_cold_sites() {
     let sites = sites_of(&["codec_zenoh_oam.scxml"], true);
     // The entry is read from one site of the eager decode and two of the view,
     // the arm codec from eight, all eager: it is its own view.
@@ -297,48 +395,63 @@ fn a_named_codecs_body_reads_are_inlined_whatever_their_sites() {
         sites.of("codec_zenoh_ext_unit"),
         BodyReads { eager: 8, view: 0 }
     );
-    let hot = sites
-        .hot_codecs(["codec_zenoh_ext_entry", "codec_zenoh_ext_unit"])
-        .unwrap_or_else(|e| panic!("both are codecs of the set: {e}"));
-    let options = ForgeCompileOptions {
-        views: true,
-        inline_decode: InlineDecode::Codecs(hot),
-        body_reads: sites,
-        ..ForgeCompileOptions::default()
-    };
+    let options = hot_options(
+        &sites,
+        &["codec_zenoh_ext_entry", "codec_zenoh_ext_unit"],
+        true,
+    );
 
+    // The frame reads the entry and is cold: every site of the entry is cold.
     let code = rust_with("codec_zenoh_ext_entry", &options);
-    let (before, body) = eager_body_read("codec_zenoh_ext_entry", &code);
+    let (before, body) = held_eager_body_read("codec_zenoh_ext_entry", &code);
     assert_eq!(
         before, "#[inline(always)]",
-        "codec_zenoh_ext_entry is named and its eager read of one site is not inlined:\n{body}"
+        "codec_zenoh_ext_entry is hot and its eager body is not held in place:\n{body}"
     );
-    let (before, body) = view_body_read("codec_zenoh_ext_entry", &code);
+    let (before, body) = held_view_body_read("codec_zenoh_ext_entry", &code);
     assert_eq!(
         before, "#[inline(always)]",
-        "codec_zenoh_ext_entry is named and its view, read from two sites, is not inlined:\n{body}"
+        "codec_zenoh_ext_entry is hot and its view's body is not held in place:\n{body}"
+    );
+    let (before, body) = eager_entry_read("codec_zenoh_ext_entry", &code);
+    assert!(
+        !before.starts_with("#[inline"),
+        "codec_zenoh_ext_entry's eager entry point, called from one cold site, carries \
+         `{before}`:\n{body}"
+    );
+    let (before, body) = view_entry_read("codec_zenoh_ext_entry", &code);
+    assert_eq!(
+        before, "#[inline(never)]",
+        "codec_zenoh_ext_entry's view entry point, called from two cold sites, is not out \
+         of line:\n{body}"
     );
 
+    // The arm codec is read from four sites of the cold frame and four of the
+    // hot entry: its entry point is out of line for the four cold ones.
     let code = rust_with("codec_zenoh_ext_unit", &options);
-    let (before, body) = eager_body_read("codec_zenoh_ext_unit", &code);
+    let (before, body) = held_eager_body_read("codec_zenoh_ext_unit", &code);
     assert_eq!(
         before, "#[inline(always)]",
-        "codec_zenoh_ext_unit is named and its read of eight sites is not inlined:\n{body}"
+        "codec_zenoh_ext_unit is hot and its body is not held in place:\n{body}"
+    );
+    let (before, body) = eager_entry_read("codec_zenoh_ext_unit", &code);
+    assert_eq!(
+        before, "#[inline(never)]",
+        "codec_zenoh_ext_unit's entry point, called from four cold sites, is not out of \
+         line:\n{body}"
     );
 }
 
-/// A codec the build does not name keeps the rule of its sites when others of
-/// its set are named: out of line where two sites or more read it, no
-/// attribute where one does (docs/adr/0137, docs/adr/0139).
+/// A codec the build does not name and no hot body reads keeps the rule of its
+/// sites, and prints what it prints with no codec named: a hot codec makes the
+/// codecs it reads hot, never the codecs that read it (docs/adr/0137,
+/// docs/adr/0140).
 #[test]
-fn a_codec_not_named_keeps_the_rule_of_its_sites() {
+fn a_codec_no_hot_body_reads_keeps_the_rule_of_its_sites() {
     let sites = sites_of(&["codec_zenoh_oam.scxml"], true);
-    let hot = sites
-        .hot_codecs(["codec_zenoh_ext_unit"])
-        .unwrap_or_else(|e| panic!("codec_zenoh_ext_unit is a codec of the set: {e}"));
-    let options = ForgeCompileOptions {
+    let options = hot_options(&sites, &["codec_zenoh_ext_unit"], true);
+    let cold = ForgeCompileOptions {
         views: true,
-        inline_decode: InlineDecode::Codecs(hot),
         body_reads: sites,
         ..ForgeCompileOptions::default()
     };
@@ -347,22 +460,339 @@ fn a_codec_not_named_keeps_the_rule_of_its_sites() {
     let (before, body) = eager_body_read("codec_zenoh_ext_entry", &code);
     assert!(
         !before.starts_with("#[inline"),
-        "codec_zenoh_ext_entry is not named and its eager read of one site carries \
+        "codec_zenoh_ext_entry is not hot and its eager read of one site carries \
          `{before}`:\n{body}"
     );
     let (before, body) = view_body_read("codec_zenoh_ext_entry", &code);
     assert_eq!(
         before, "#[inline(never)]",
-        "codec_zenoh_ext_entry is not named and its view, read from two sites, is not \
+        "codec_zenoh_ext_entry is not hot and its view, read from two sites, is not \
          out of line:\n{body}"
+    );
+    assert_eq!(
+        code,
+        rust_with("codec_zenoh_ext_entry", &cold),
+        "codec_zenoh_ext_entry, which no hot body reads, prints otherwise than with no \
+         codec named"
     );
 
     let code = rust_with("codec_zenoh_ext_zint", &options);
     let (before, body) = eager_body_read("codec_zenoh_ext_zint", &code);
     assert_eq!(
         before, "#[inline(never)]",
-        "codec_zenoh_ext_zint is not named and its read of two sites is not out of line:\n{body}"
+        "codec_zenoh_ext_zint is not hot and its read of two sites is not out of line:\n{body}"
     );
+}
+
+/// A codec read from a hot body and from a cold one is printed in both forms
+/// from its one body, and each parent calls its own: the hot parent the form
+/// held in place, through an embedded body and a chain's rule alike, and the
+/// cold parent the entry point, so the cold parent holds no line of the hot
+/// child's body (docs/adr/0140).
+#[test]
+fn a_child_of_a_hot_and_a_cold_parent_prints_both_forms_and_each_parent_calls_its_own() {
+    let sites = sites_of(&["codec_zenoh_request.scxml"], false);
+    let options = hot_options(&sites, &["codec_zenoh_msg_put"], false);
+
+    // The timestamp is embedded by the hot put and the cold delete.
+    let code = rust_with("codec_zenoh_timestamp", &options);
+    for form in ["read_inline", "read_into_inline"] {
+        assert!(
+            !methods(&code, form).is_empty(),
+            "codec_zenoh_timestamp is read by a hot body and has no `{form}`:\n{code}"
+        );
+    }
+    let (_, held) = held_eager_body_read("codec_zenoh_timestamp", &code);
+    let (_, entry) = eager_entry_read("codec_zenoh_timestamp", &code);
+    assert!(
+        !entry.contains("read_vle"),
+        "codec_zenoh_timestamp's entry point holds a read of its own, not one call of its \
+         body:\n{entry}"
+    );
+    assert_eq!(
+        code.matches("read_vle_u64").count(),
+        held.matches("read_vle_u64").count(),
+        "codec_zenoh_timestamp prints its body more than once:\n{code}"
+    );
+
+    let put = rust_with("codec_zenoh_msg_put", &options);
+    let put_reads = child_reads(&put);
+    assert!(
+        put_reads.iter().any(|line| line.contains("timestamp"))
+            && put_reads.iter().any(|line| line.contains("(_r")),
+        "codec_zenoh_msg_put reads no timestamp or no chain entry: {put_reads:#?}"
+    );
+    for line in &put_reads {
+        assert!(
+            line.contains("_inline("),
+            "the hot codec_zenoh_msg_put calls an entry point: {line}"
+        );
+    }
+
+    let del = rust_with("codec_zenoh_msg_del", &options);
+    let del_reads = child_reads(&del);
+    assert!(
+        del_reads.iter().any(|line| line.contains("timestamp"))
+            && del_reads.iter().any(|line| line.contains("(_r")),
+        "codec_zenoh_msg_del reads no timestamp or no chain entry: {del_reads:#?}"
+    );
+    assert!(
+        !del.contains("_inline"),
+        "the cold codec_zenoh_msg_del calls or holds a form held in place:\n{del}"
+    );
+}
+
+/// The hot closure is transitive: the body of each codec a hot body reads is
+/// hot, through every level of the set, and no codec that reads a hot one is
+/// made hot by it. A site of a hot body is no site of an entry point
+/// (docs/adr/0140).
+#[test]
+fn the_hot_closure_is_transitive_and_a_hot_site_calls_no_entry_point() {
+    let sites = sites_of(&["codec_zenoh_request.scxml"], false);
+    let hot = sites
+        .hot_codecs(["codec_zenoh_msg_put"])
+        .unwrap_or_else(|e| panic!("codec_zenoh_msg_put is a codec of the set: {e}"));
+    assert!(hot.named("codec_zenoh_msg_put"));
+    // The put reads the timestamp, the encoding and the chain's entry, and the
+    // entry reads its arms: two levels below the codec named.
+    for codec in [
+        "codec_zenoh_msg_put",
+        "codec_zenoh_timestamp",
+        "codec_zenoh_encoding",
+        "codec_zenoh_ext_entry",
+        "codec_zenoh_ext_unit",
+        "codec_zenoh_ext_zint",
+        "codec_zenoh_ext_zbuf",
+    ] {
+        assert!(hot.is_hot(codec), "{codec} is not in the hot closure");
+    }
+    for codec in [
+        "codec_zenoh_request",
+        "codec_zenoh_msg_del",
+        "codec_zenoh_query",
+        "codec_zenoh_wireexpr",
+    ] {
+        assert!(!hot.is_hot(codec), "{codec} reads no hot body and is hot");
+    }
+    // The entry's arm and default arm read the unit body, and the entry is
+    // hot; no cold body reads the unit body.
+    assert_eq!(
+        hot.sites_of("codec_zenoh_ext_unit"),
+        BodyReads { eager: 2, view: 0 }
+    );
+    assert_eq!(
+        hot.sites_of("codec_zenoh_ext_unit"),
+        sites.of("codec_zenoh_ext_unit")
+    );
+
+    // Two levels below the codec named, the entry reads its arms by their
+    // forms held in place.
+    let options = hot_options(&sites, &["codec_zenoh_msg_put"], false);
+    let entry = rust_with("codec_zenoh_ext_entry", &options);
+    let arms = child_reads(&entry);
+    assert!(
+        !arms.is_empty()
+            && arms
+                .iter()
+                .all(|line| line.contains("::read_into_inline(cursor, _b")),
+        "the hot codec_zenoh_ext_entry does not read each arm held in place: {arms:#?}"
+    );
+    // The unit body is read from its two hot sites alone, so its entry point,
+    // out of line with no codec named, carries no attribute.
+    let unit = rust_with("codec_zenoh_ext_unit", &options);
+    let (before, body) = eager_entry_read("codec_zenoh_ext_unit", &unit);
+    assert!(
+        !before.starts_with("#[inline"),
+        "codec_zenoh_ext_unit is called from no cold site and its entry point carries \
+         `{before}`:\n{body}"
+    );
+    let cold = ForgeCompileOptions {
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+    let unit = rust_with("codec_zenoh_ext_unit", &cold);
+    let (before, body) = eager_body_read("codec_zenoh_ext_unit", &unit);
+    assert_eq!(
+        before, "#[inline(never)]",
+        "codec_zenoh_ext_unit, read from two sites with no codec named, is not out of \
+         line:\n{body}"
+    );
+}
+
+/// A hot body reads its ZInts by the frame reader's reads held in place, and
+/// any other body by the reader's one read out of line (docs/adr/0140).
+#[test]
+fn a_hot_body_reads_its_zints_held_in_place() {
+    let sites = sites_of(&["codec_zenoh_oam.scxml"], false);
+    let hot = hot_options(&sites, &["codec_zenoh_ext_zint"], false);
+    let cold = ForgeCompileOptions {
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+
+    let code = rust_with("codec_zenoh_ext_zint", &hot);
+    let (_, held) = held_eager_body_read("codec_zenoh_ext_zint", &code);
+    assert!(
+        held.contains("cursor.read_vle_u64_inline()"),
+        "the hot codec_zenoh_ext_zint does not read its ZInt held in place:\n{held}"
+    );
+    assert!(
+        !code.contains("cursor.read_vle_u64()"),
+        "the hot codec_zenoh_ext_zint calls the reader's ZInt read:\n{code}"
+    );
+
+    let code = rust_with("codec_zenoh_ext_zint", &cold);
+    assert!(
+        code.contains("cursor.read_vle_u64()") && !code.contains("_inline"),
+        "codec_zenoh_ext_zint with no codec named does not call the reader's one ZInt \
+         read:\n{code}"
+    );
+    // The frame, not hot, reads its own ZInt by the call.
+    let code = rust_with("codec_zenoh_oam", &hot);
+    assert!(
+        code.contains("cursor.read_vle_u16()") && !code.contains("read_vle_u16_inline"),
+        "the cold codec_zenoh_oam does not call the reader's ZInt read:\n{code}"
+    );
+}
+
+/// A body a length says the size of is read held in place where a hot body
+/// reads it, the eager read and the view's alike, and the view the length
+/// hands its bytes is read by its form held in place (docs/adr/0140).
+#[test]
+fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
+    let sites = sites_of(&["codec_zenoh_decl_ext_keyexpr.scxml"], true);
+    let options = hot_options(&sites, &["codec_zenoh_decl_ext_keyexpr"], true);
+    let code = rust_with("codec_zenoh_decl_ext_keyexpr", &options);
+    let within: Vec<&str> = code
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.contains("cursor.within("))
+        .collect();
+    assert_eq!(
+        within.len(),
+        2,
+        "codec_zenoh_decl_ext_keyexpr reads its inner body within a length once eager and \
+         once as a view: {within:#?}"
+    );
+    for line in &within {
+        assert!(
+            line.contains("_inline"),
+            "the hot codec_zenoh_decl_ext_keyexpr reads its inner body by an entry point: {line}"
+        );
+    }
+    let inner = rust_with("codec_zenoh_decl_ext_keyexpr_inner", &options);
+    assert!(
+        !methods(&inner, "read_inline").is_empty(),
+        "codec_zenoh_decl_ext_keyexpr_inner is read by a hot body and has no `read_inline`:\n{inner}"
+    );
+}
+
+/// A codec outside the hot closure prints exactly what it prints with no codec
+/// named: the forms held in place are printed for hot bodies alone, and no
+/// golden of a build that names none moves (docs/adr/0140).
+#[test]
+fn a_codec_outside_the_hot_closure_prints_what_it_printed() {
+    let sites = sites_of(&["codec_zenoh_request.scxml"], false);
+    let hot = hot_options(&sites, &["codec_zenoh_msg_put"], false);
+    let cold = ForgeCompileOptions {
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+    for name in [
+        "codec_zenoh_request",
+        "codec_zenoh_msg_del",
+        "codec_zenoh_query",
+        "codec_zenoh_wireexpr",
+    ] {
+        assert_eq!(
+            rust_with(name, &hot),
+            rust_with(name, &cold),
+            "{name}, outside the hot closure, prints otherwise than with no codec named"
+        );
+    }
+}
+
+/// A codec is named by its document's stem or by an alias an import of the set
+/// gives it, both the one codec; a name that is a stem of one codec and an
+/// alias of another names two and is refused (docs/adr/0140).
+#[test]
+fn a_codec_is_named_by_its_stem_or_an_import_alias_and_a_name_of_two_is_refused() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let frame = aliased_set(tmp.path());
+    let sites = BodyReadSites::of_documents(&[frame.display().to_string()], &[], |_| false);
+
+    // The alias names the one codec it is given to.
+    let by_alias = sites
+        .hot_codecs(["codec_x_body"])
+        .unwrap_or_else(|e| panic!("codec_x_body names a codec of the set: {e}"));
+    assert!(
+        by_alias.named("body") && !by_alias.named("other"),
+        "codec_x_body does not name the codec body alone"
+    );
+    let by_stem = sites
+        .hot_codecs(["other"])
+        .unwrap_or_else(|e| panic!("other is a codec of the set: {e}"));
+    assert!(by_stem.named("other") && !by_stem.named("body"));
+    // A codec given by its stem and by an alias is one codec.
+    let both = sites
+        .hot_codecs(["other", "codec_x_body"])
+        .unwrap_or_else(|e| panic!("both name codecs of the set: {e}"));
+    assert!(both.named("other") && both.named("body"));
+
+    let refusal = sites
+        .hot_codecs(["codec_x_body", "body"])
+        .expect_err("a name of two codecs is refused");
+    let ForgeError::Generate(boxed) = &refusal else {
+        panic!("the refusal is not a generation error: {refusal:?}");
+    };
+    let GenerateError::CodegenInlineDecodeCodecAmbiguous { name, codecs } = boxed.as_ref() else {
+        panic!("the refusal is not codegen/inline-decode-codec-ambiguous: {refusal:?}");
+    };
+    assert_eq!(name, "body");
+    assert_eq!(codecs, &["body".to_string(), "other".to_string()]);
+}
+
+/// A frame that embeds the codec `body` under the alias `codec_x_body` and the
+/// codec `other` under the alias `body`, written into `dir` with the two
+/// codecs, and its path.
+fn aliased_set(dir: &Path) -> PathBuf {
+    let codec = |name: &str, datamodel: &str| {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" \
+             sce:kind=\"codec\" sce:default-endian=\"big\" name=\"{name}\">\n{datamodel}</scxml>\n"
+        )
+    };
+    let write = |name: &str, text: String| {
+        let path = dir.join(format!("{name}.scxml"));
+        std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+        path
+    };
+    write(
+        "body",
+        codec(
+            "body",
+            "  <datamodel>\n    <sce:field id=\"value\" sce:type=\"uint64\" sce:byte=\"0\" sce:bit-size=\"vle\"/>\n  </datamodel>\n",
+        ),
+    );
+    write(
+        "other",
+        codec(
+            "other",
+            "  <datamodel>\n    <data id=\"n\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\"/>\n  </datamodel>\n",
+        ),
+    );
+    write(
+        "frame",
+        codec(
+            "frame",
+            "  <sce:import src=\"body.scxml\" kind=\"codec\" as=\"codec_x_body\"/>\n  \
+             <sce:import src=\"other.scxml\" kind=\"codec\" as=\"body\"/>\n  <datamodel>\n    \
+             <sce:field id=\"tag\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\"/>\n    \
+             <sce:embed id=\"first\" type=\"codec_x_body\" sce:byte=\"1\"/>\n    \
+             <sce:embed id=\"second\" type=\"body\" sce:byte=\"2\"/>\n  </datamodel>\n",
+        ),
+    )
 }
 
 /// A name that is no codec of the set is refused, naming the set's codecs, so a

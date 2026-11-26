@@ -4006,6 +4006,99 @@ fn inline_decode_marks_the_body_reads_and_changes_nothing_else() {
     }
 }
 
+/// The request family of the zenoh resources, every codec its request reaches.
+const REQUEST_SET: &[&str] = &[
+    "codec_zenoh_ext_unit.scxml",
+    "codec_zenoh_ext_zint.scxml",
+    "codec_zenoh_ext_zbuf.scxml",
+    "codec_zenoh_ext_entry.scxml",
+    "codec_zenoh_timestamp.scxml",
+    "codec_zenoh_encoding.scxml",
+    "codec_zenoh_wireexpr.scxml",
+    "codec_zenoh_msg_put.scxml",
+    "codec_zenoh_msg_del.scxml",
+    "codec_zenoh_query.scxml",
+    "codec_zenoh_request.scxml",
+];
+
+/// A declaration that reads a key expression whose inner body a length bounds,
+/// with every codec it reaches.
+const KEYEXPR_SET: &[&str] = &[
+    "codec_zenoh_decl_ext_keyexpr_inner.scxml",
+    "codec_zenoh_decl_ext_keyexpr.scxml",
+    "codec_zenoh_undecl_subscriber.scxml",
+];
+
+/// A set generated with codecs named hot (docs/adr/0140) still compiles as a
+/// program, without views and with them: each hot body is printed in its forms
+/// held in place, which every site of a hot body calls through an arm, an
+/// embedded body, a chain's rule, a view's scan and the walks of its lists, and
+/// the cold codecs that read the same bodies call their entry points. In the
+/// chain-membership set the envelope is named, so the chain's entry it holds is
+/// read from a hot body and from the cold marker; in the request family the put
+/// is named, so the timestamp and the chain's entry are read from the hot put
+/// and from the cold delete, query and request; in the key expression's set the
+/// body a length bounds is read held in place by the hot key expression, eager
+/// and as a view.
+#[test]
+fn a_set_with_hot_codecs_compiles_with_and_without_views() {
+    use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
+    let dir = resource_dir();
+    let rust = sce_build::generator::Language::Rust;
+    for (set, named, child, cold, views, test_id) in [
+        (
+            CHAIN_HAS_SET,
+            "codec_chain_has_envelope",
+            "codec_zenoh_ext_entry",
+            "codec_chain_has_marker",
+            false,
+            "hot_sites_chain_has_rust",
+        ),
+        (
+            REQUEST_SET,
+            "codec_zenoh_msg_put",
+            "codec_zenoh_ext_entry",
+            "codec_zenoh_msg_del",
+            true,
+            "hot_sites_request_views_rust",
+        ),
+        (
+            KEYEXPR_SET,
+            "codec_zenoh_decl_ext_keyexpr",
+            "codec_zenoh_decl_ext_keyexpr_inner",
+            "codec_zenoh_undecl_subscriber",
+            true,
+            "hot_sites_keyexpr_views_rust",
+        ),
+    ] {
+        let documents: Vec<String> = set
+            .iter()
+            .map(|document| dir.join(document).display().to_string())
+            .collect();
+        let sites = BodyReadSites::of_documents(&documents, &[], |_| views);
+        let hot = sites
+            .hot_codecs([named])
+            .unwrap_or_else(|e| panic!("{named} is a codec of the set: {e}"));
+        assert!(
+            hot.is_hot(child) && !hot.is_hot(cold),
+            "{child}, which {named} reads, is not hot, or {cold}, which reads it, is"
+        );
+        let mut opts = golden_options(rust);
+        opts.views = views;
+        opts.inline_decode = InlineDecode::Codecs(hot);
+        opts.body_reads = sites;
+        let files = generate_files_for_codec_set_with(&dir, set, rust, opts)
+            .unwrap_or_else(|e| panic!("generate the set with {named} hot: {e}"));
+        assert!(
+            files.iter().any(|(_, code)| code.contains("_inline(")),
+            "no form held in place was printed or called with {named} hot"
+        );
+        if let Err(e) = rustc_run_generated_set(files, test_id, "build", RustcProfile::Alloc) {
+            panic!("the set generated with {named} hot does not compile:\n{e}");
+        }
+    }
+}
+
 /// A golden is text; this is the gate that it is also a program. The
 /// chain-membership lowering names locals, entry accessors and members on
 /// both the decode and the encode site, in six spellings each, and a name

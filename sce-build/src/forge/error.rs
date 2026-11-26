@@ -6958,6 +6958,25 @@ pub enum GenerateError {
     #[error("{}", inline_decode_codec_message(.codec, .set))]
     CodegenInlineDecodeCodecNotInSet { codec: String, set: Vec<String> },
 
+    /// A name a build gives for a codec's body reads to be inlined
+    /// (`generate --inline-decode-for`, docs/adr/0140) that names two codecs
+    /// of the set being generated: the stem of one codec's document and an
+    /// alias an import gives another, or one alias two imports give two
+    /// codecs. Producer:
+    /// [`crate::forge::body_reads::BodyReadSites::hot_codecs`], before any
+    /// document of the set is generated. Refused rather than resolved to
+    /// either, since the hot path the build measured reads one of them and
+    /// the other would be inlined with no word said. `name` is the name as
+    /// given; `codecs` the stems of the codecs it names, in order. No document
+    /// holds the name, so the record carries no location.
+    #[error(
+        "the build names '{name}' for its body reads to be inlined (--inline-decode-for), \
+         and it names more than one codec of the set being generated: {}; name the \
+         codec by its document's stem",
+        .codecs.join(", ")
+    )]
+    CodegenInlineDecodeCodecAmbiguous { name: String, codecs: Vec<String> },
+
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge
     /// runtime does not implement yet. The kind is specified for three

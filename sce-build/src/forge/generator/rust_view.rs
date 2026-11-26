@@ -85,9 +85,14 @@ pub(super) fn walk_name(codec: &str, field: &str) -> String {
 }
 
 /// The name of the walk a codec's module writes for the lists whose entries are that codec
-/// ([`entry_walk_item`]): `{Codec}Walk`, `type_name` being the codec's type name.
-pub(super) fn entry_walk_name(type_name: &str) -> String {
-    format!("{type_name}Walk")
+/// ([`entry_walk_item`]), read by a list at `site`: `{Codec}Walk`, `type_name` being the
+/// codec's type name, and `{Codec}InlineWalk`, the walk that reads the entry by its form held
+/// in place, for a list a body on the build's hot path holds (docs/adr/0140).
+pub(super) fn entry_walk_name(type_name: &str, site: ReadSite) -> String {
+    match site {
+        ReadSite::Cold => format!("{type_name}Walk"),
+        ReadSite::Hot => format!("{type_name}InlineWalk"),
+    }
 }
 
 /// How one list of a view reads its entries: the marker type its field names, and the item
@@ -160,31 +165,53 @@ pub(super) fn named_views<'m>(
     lists_and_bodies.chain(arms).collect()
 }
 
-/// How list field `field` of codec `codec` reads its entries: `entry`, `entry_ty`, `inputs`
-/// and `advance` as [`walk_item`] takes them, and `shared` the import whose module's walk it
-/// reads by ([`shared_entry_walk`]).
+/// A list of a view, as [`list_walk`] prints how it reads its entries.
+pub(super) struct WalkedList<'a> {
+    /// The document name of the codec that holds the list.
+    pub codec: &'a str,
+    /// The list field's id.
+    pub field: &'a str,
+    /// The entry's view as a path for a call (`{Entry}View`), as [`walk_item`] takes it.
+    pub entry: &'a str,
+    /// The entry's view as a type, with the lifetime `'b` where it carries one.
+    pub entry_ty: &'a str,
+    /// The import whose module's walk the list reads by ([`shared_entry_walk`]).
+    pub shared: Option<&'a ImportContext>,
+    /// How many flag inputs the entry's decode takes.
+    pub inputs: usize,
+    /// How the values the list carries are rewritten from the entry just read, as
+    /// [`walk_item`] takes them.
+    pub advance: &'a [String],
+    /// Where the body that holds the list reads its entries: a list of a body on the build's
+    /// hot path reads each by its form held in place (docs/adr/0140).
+    pub site: ReadSite,
+}
+
+/// How `list` reads its entries.
 ///
 /// A list that reads by its entry's walk names the one walk the entry's module writes
 /// ([`entry_walk_item`]), so a program that walks lists of one entry from several codecs holds
 /// one walk and not one per list. Its own name, `{Codec}{Field}Walk`, stays as an alias of
 /// that walk, so a consumer that named it names the same type. Any other list has a walk of
 /// its own.
-pub(super) fn list_walk(
-    codec: &str,
-    field: &str,
-    entry: &str,
-    entry_ty: &str,
-    shared: Option<&ImportContext>,
-    inputs: usize,
-    advance: &[String],
-) -> ListWalkOf {
+pub(super) fn list_walk(list: &WalkedList<'_>) -> ListWalkOf {
+    let WalkedList {
+        codec,
+        field,
+        entry,
+        entry_ty,
+        shared,
+        inputs,
+        advance,
+        site,
+    } = *list;
     let own = walk_name(codec, field);
     match shared {
         Some(imp) => {
             let ty = format!(
                 "super::{}::{}",
                 imp.namespace,
-                entry_walk_name(&imp.type_name)
+                entry_walk_name(&imp.type_name, site)
             );
             ListWalkOf {
                 item: format!(
@@ -197,7 +224,7 @@ pub(super) fn list_walk(
             }
         }
         None => ListWalkOf {
-            item: walk_item(&own, entry, entry_ty, inputs, advance),
+            item: walk_item(&own, entry, entry_ty, inputs, advance, site),
             ty: own,
         },
     }
@@ -207,24 +234,48 @@ pub(super) fn list_walk(
 /// carries nothing from one entry to the next ([`list_walk`]): `{Codec}Walk`, whose entry is
 /// the codec's view, read with the `inputs` flag inputs the codec declares. `struct_name` is
 /// the codec's type name and `view_borrowed` whether its view carries a lifetime.
-pub(super) fn entry_walk_item(struct_name: &str, view_borrowed: bool, inputs: usize) -> String {
+///
+/// A codec whose body is read on the build's hot path (`hot`) writes `{Codec}InlineWalk`
+/// after it, which reads the entry by its form held in place: the walk of every such list a
+/// hot body holds (docs/adr/0140).
+pub(super) fn entry_walk_item(
+    struct_name: &str,
+    view_borrowed: bool,
+    inputs: usize,
+    hot: bool,
+) -> String {
     let entry = format!("{struct_name}View");
     let entry_ty = if view_borrowed {
         format!("{entry}<'b>")
     } else {
         entry.clone()
     };
-    format!(
-        "/// How a list of `{struct_name}` reads its entries when it carries nothing from one\n\
-         /// entry to the next: one walk for every such list of every codec.\n\
-         {}",
+    let walk = |site: ReadSite| {
         walk_item(
-            &entry_walk_name(struct_name),
+            &entry_walk_name(struct_name, site),
             &entry,
             &entry_ty,
             inputs,
-            &[]
+            &[],
+            site,
         )
+    };
+    let cold = format!(
+        "/// How a list of `{struct_name}` reads its entries when it carries nothing from one\n\
+         /// entry to the next: one walk for every such list of every codec.\n\
+         {}",
+        walk(ReadSite::Cold)
+    );
+    if !hot {
+        return cold;
+    }
+    format!(
+        "{cold}\n\
+         /// How a list of `{struct_name}` a body on the build's hot path holds reads its\n\
+         /// entries when it carries nothing from one entry to the next: each entry read by\n\
+         /// its form held in place (docs/adr/0140).\n\
+         {}",
+        walk(ReadSite::Hot)
     )
 }
 
@@ -244,15 +295,18 @@ pub(super) fn entry_walk_item(struct_name: &str, view_borrowed: bool, inputs: us
 /// `entry` is the entry's view as a path for a call (`{Entry}View`), `entry_ty` as a type with the
 /// lifetime `'b` where it carries one, and `inputs` how many flag inputs its decode takes, each
 /// handed over from `args` by position. `advance` rewrites the carried values from `_e`, the entry
-/// just read, into `_s`.
+/// just read, into `_s`. `site` is where the list is read: a walk of a list a body on the
+/// build's hot path holds reads its entry by the form held in place (docs/adr/0140).
 pub(super) fn walk_item(
     walk: &str,
     entry: &str,
     entry_ty: &str,
     inputs: usize,
     advance: &[String],
+    site: ReadSite,
 ) -> String {
     let call_args: String = (0..inputs).map(|i| format!(", _a[{i}]")).collect();
+    let held = site.suffix();
     let advance = advance.join(" ");
     format!(
         "#[allow(dead_code)]\n\
@@ -263,7 +317,7 @@ pub(super) fn walk_item(
          \n    \
              #[inline(always)]\n    \
              fn read_with<'b, H: {RUNTIME_CODEC}::ChainHook>(_r: &mut SceReader<'b>, _a: &[u8; {inputs}], _h: &mut H) -> Self::Entry<'b> {{\n        \
-                 {entry}::read_with(_r{call_args}, _h)\n    \
+                 {entry}::read_with{held}(_r{call_args}, _h)\n    \
              }}\n\
          \n    \
              fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{ {advance} }}\n\
@@ -284,6 +338,10 @@ pub(super) struct ViewList<'a> {
     /// The start the list is held to its law from (`rust_law_start`;
     /// docs/adr/0065 §6 R8), `None` for a list with no law.
     pub law_start: Option<&'a str>,
+    /// Where the body that holds the list reads its entries: a scan of a list
+    /// a body on the build's hot path holds reads each entry by its form held
+    /// in place (docs/adr/0140).
+    pub site: ReadSite,
 }
 
 impl ViewList<'_> {
@@ -387,6 +445,7 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
     let id = list.id();
     let entry = list.entry;
     let decode_arg = list.decode_arg;
+    let held = list.site.suffix();
     let count_ref = match &field.bit_size {
         BitSize::Repeat { count_ref } => count_ref,
         _ => unreachable!("a view repeat statement is made for a repeat field"),
@@ -410,7 +469,7 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
                  if cursor.failed() {{\n{indent}        \
                      break;\n{indent}    \
                  }}\n{indent}    \
-                 {past}{entry}::read_with(cursor{decode_arg}, _hook);\n{indent}    \
+                 {past}{entry}::read_with{held}(cursor{decode_arg}, _hook);\n{indent}    \
                  {SCAN_COUNT}\n{indent}\
              }}"
         )

@@ -819,6 +819,7 @@ references against a real document and drift silently.
 | `codegen/feature-lifting-mismatch` | `generate` | no |  |
 | `codegen/feature-selection-required` | `generate` | no |  |
 | `codegen/generic-kind-backend-emit-missing` | `generate` | no |  |
+| `codegen/inline-decode-codec-ambiguous` | `generate` | no | ADR 0140 |
 | `codegen/inline-decode-codec-not-in-set` | `generate` | no | ADR 0139 |
 | `codegen/mcu-class-kind-on-non-mcu-language` | `generate` | no |  |
 | `codegen/no-std-fs-load-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |

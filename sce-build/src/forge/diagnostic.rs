@@ -1651,6 +1651,12 @@ pub enum DiagnosticCode {
     /// [`GenerateError::CodegenInlineDecodeCodecNotInSet`].
     #[serde(rename = "codegen/inline-decode-codec-not-in-set")]
     CodegenInlineDecodeCodecNotInSet,
+    /// A name a build gives for a codec's body reads to be inlined that names
+    /// two codecs of the set being generated, by a stem and an import alias or
+    /// by one alias of two imports (docs/adr/0140) — see
+    /// [`GenerateError::CodegenInlineDecodeCodecAmbiguous`].
+    #[serde(rename = "codegen/inline-decode-codec-ambiguous")]
+    CodegenInlineDecodeCodecAmbiguous,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -4335,6 +4341,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenStandardHostBoundRelation,
         // ADR 0139: a codec named hot that is no codec of the set
         CodegenInlineDecodeCodecNotInSet,
+        // ADR 0140: a name of a hot codec that names two codecs of the set
+        CodegenInlineDecodeCodecAmbiguous,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -4995,6 +5003,7 @@ impl DiagnosticCode {
 
             // ── The codecs a build names hot (docs/adr/0139) ──
             CodegenInlineDecodeCodecNotInSet => Some("ADR 0139"),
+            CodegenInlineDecodeCodecAmbiguous => Some("ADR 0140"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -6138,6 +6147,7 @@ impl DiagnosticCode {
             | CodegenStandardHostTypeNotServed
             | CodegenStandardHostBoundRelation
             | CodegenInlineDecodeCodecNotInSet
+            | CodegenInlineDecodeCodecAmbiguous
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
@@ -6724,6 +6734,7 @@ impl DiagnosticCode {
             CodegenStandardHostTypeNotServed => "codegen/standard-host-type-not-served",
             CodegenStandardHostBoundRelation => "codegen/standard-host-bound-relation",
             CodegenInlineDecodeCodecNotInSet => "codegen/inline-decode-codec-not-in-set",
+            CodegenInlineDecodeCodecAmbiguous => "codegen/inline-decode-codec-ambiguous",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -12767,6 +12778,17 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![codec.clone()],
         },
+        // docs/adr/0140: as the name no codec holds, the name is a build's
+        // argument and the record carries no `actual` and no `fix`; the name
+        // keys it, and the codecs it names do not.
+        GenerateError::CodegenInlineDecodeCodecAmbiguous { name, codecs: _ } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenInlineDecodeCodecAmbiguous,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![name.clone()],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -17476,6 +17498,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:09c8535d3075d277","code":"codegen/inline-decode-codec-not-in-set","stage":"generate","spec":"ADR 0139","message":"the build names the codec 'push_bdy' for its body reads to be inlined (--inline-decode-for), and no codec of the set being generated is named so: its codecs are frame_header, push, push_body"}"#,
             ),
+            (
+                // A build names a codec by an alias an import gives another
+                // codec too (docs/adr/0140).
+                "codegen/inline-decode-codec-ambiguous",
+                GenerateError::CodegenInlineDecodeCodecAmbiguous {
+                    name: "ext_entry".into(),
+                    codecs: vec!["ext_entry".into(), "ext_entry_v2".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8eeb08b0dbe192b7","code":"codegen/inline-decode-codec-ambiguous","stage":"generate","spec":"ADR 0140","message":"the build names 'ext_entry' for its body reads to be inlined (--inline-decode-for), and it names more than one codec of the set being generated: ext_entry, ext_entry_v2; name the codec by its document's stem"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -22091,6 +22124,9 @@ mod tests {
             // holds, so no `Fix` of a document spells it; the message names the
             // set's codecs.
             | CodegenInlineDecodeCodecNotInSet
+            // ADR 0140: the same, and the message names the codecs the name
+            // names.
+            | CodegenInlineDecodeCodecAmbiguous
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -22977,6 +23013,7 @@ mod tests {
                 | CodegenStandardHostTypeNotServed
                 | CodegenStandardHostBoundRelation
                 | CodegenInlineDecodeCodecNotInSet
+                | CodegenInlineDecodeCodecAmbiguous
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -23313,9 +23350,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            569,
+            570,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 569 distinct variants to match the DiagnosticCode \
+             expected 570 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24113,6 +24150,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // generated, with no location; no scenario names a codec hot
             // (docs/adr/0139).
             | CodegenInlineDecodeCodecNotInSet
+            // The same, for a name of two codecs (docs/adr/0140).
+            | CodegenInlineDecodeCodecAmbiguous
             // Raised by the Rust generator under `--no-std`, after the static
             // lowering, and located on the delayed `<send>` the proof cannot
             // bound through `locate_codegen_error`; the scenarios generate

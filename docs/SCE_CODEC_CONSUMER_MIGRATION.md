@@ -4114,3 +4114,22 @@ names no codec generates what it did.
   every other keeps the rule of ADR 0137. A name that is no codec of the set is refused
   (`codegen/inline-decode-codec-not-in-set`) before anything is generated. A build measures its image and its hot
   path after it names them.
+
+## A Rust read is hot by its site, and a hot body is printed in forms held in place (ADR 0140)
+
+Landing: the commits that add this section. No golden and no committed tree of generated code changes; a build that
+names no codec generates what it did, and `--inline-decode` prints what it printed.
+
+- **What `--inline-decode-for` names changed meaning**: the codecs named are the roots of the hot path, and every codec
+  a hot body reads is hot too. A hot codec is printed with forms held in place, `#[inline(always)]`
+  (`read_into_inline`, `read_inline`, `read_with_inline`), which every hot site calls; its `read_into`, `read` and
+  `read_with` stay, each a call of its form held in place, placed by the cold sites alone. A hot body reads its ZInts by
+  `SceReader::read_vle_u16_inline` and its widths, so a build generates against a runtime that has them. A build that
+  named a codec only to inline it at a cold site measures again: cold sites now call the entry point.
+- **A codec may be named by the alias an import gives it** as well as by its document's stem. A name that is the stem
+  of one codec and an alias of another, or an alias of two, is refused (`codegen/inline-decode-codec-ambiguous`): name
+  the codec by its stem.
+- **Library builds**: `HotCodecs::contains` is `HotCodecs::named`, beside `is_hot` and `sites_of`;
+  `InlineDecode::inlines` is replaced by `InlineDecode::forms(codec, &sites)`, which answers `BodyReadForms`. Every
+  document of the set is generated with the same `InlineDecode::Codecs` and the same `body_reads`: a hot body calls
+  the forms held in place of the codecs it reads, which their own generation prints only under the same names.

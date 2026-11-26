@@ -4564,9 +4564,10 @@ pub struct ForgeCompileOptions {
     /// property of one document: an attribute on a function needs nothing of
     /// the functions it calls.
     pub inline_encode: bool,
-    /// Rust only: the codecs whose body reads are always inlined
+    /// Rust only: the body reads a build asks inlined
     /// (`generate --inline-decode`, `generate --with-imports
-    /// --inline-decode-for`; docs/adr/0136, docs/adr/0137, docs/adr/0139).
+    /// --inline-decode-for`; docs/adr/0136, docs/adr/0137, docs/adr/0139,
+    /// docs/adr/0140).
     ///
     /// The function a parent reads a codec's body through, an arm of a
     /// dispatching variant, an embedded body or a list's entry, carries no
@@ -4581,14 +4582,23 @@ pub struct ForgeCompileOptions {
     /// - [`forge::body_reads::InlineDecode::Every`] asks every one, so a
     ///   frame's decode is one function. Like [`Self::inline_encode`] it is a
     ///   property of one document;
-    /// - [`forge::body_reads::InlineDecode::Codecs`] asks those of the codecs
-    ///   the build names, the ones on its hot path, and leaves every other to
-    ///   the sites of its set. What a build's hot path reads is the build's to
-    ///   say and no document's. The names are of codecs of the set, checked by
+    /// - [`forge::body_reads::InlineDecode::Codecs`] names the codecs on the
+    ///   build's hot path. Hotness is a property of a read's site: the body of
+    ///   each codec named is hot, and so is every read a hot body makes,
+    ///   transitively. A hot body is printed once, in forms held in place where
+    ///   they are called (`read_into_inline`, `read_inline`,
+    ///   `read_with_inline`), which each hot site calls and which read their
+    ///   ZInts held in place; its entry points are calls of them, which every
+    ///   other site calls and which keep the rule of the sites that call them,
+    ///   so no cold body holds a hot one's code (docs/adr/0140). What a build's
+    ///   hot path reads is the build's to say and no document's. The names are
+    ///   of codecs of the set, checked by
     ///   [`forge::body_reads::BodyReadSites::hot_codecs`] on the same count
-    ///   handed as [`Self::body_reads`], so like it this is a property of a SET.
+    ///   handed as [`Self::body_reads`], so like it this is a property of a
+    ///   SET: every document of the set is generated with the same value.
     ///
-    /// The runtime's read of a chain stays out of line either way.
+    /// The runtime's read of a chain stays out of line either way; the rule a
+    /// hot body's chain is read by calls the entry's form held in place.
     pub inline_decode: forge::body_reads::InlineDecode,
     /// Rust only: the sites of the generated set that read each codec's body
     /// (docs/adr/0137), counted from the set's import graph by

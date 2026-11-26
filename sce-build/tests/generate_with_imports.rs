@@ -36,8 +36,9 @@
 //   - machines written into one directory share one sourcemap naming them
 //     all;
 //   - the set's manifest names each document that was rejected;
-//   - a codec named by `--inline-decode-for` has its body read inlined, and a
-//     name that is no codec of the set is refused before anything is written;
+//   - a codec named by `--inline-decode-for`, by its stem or an import alias,
+//     is printed in its form held in place, and a name that is no codec of the
+//     set, or names two, is refused before anything is written;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -877,11 +878,14 @@ fn simple_frame(tmp: &Path) -> PathBuf {
     document
 }
 
-/// The line before the body read of the Rust codec `simple_frame` written
-/// below `out`, trimmed: the codec is built as a value, so its body read is
-/// `read`, and the one generated function of that signature.
-fn before_the_body_read(out: &Path) -> String {
-    let befores: Vec<String> = tree(out)
+/// The function `pub fn {name}(cursor: &mut SceReader<..` of the Rust codec
+/// `simple_frame` written below `out`: the line before its signature and the
+/// line after it, trimmed. The codec is built as a value, so its body read is
+/// `read`, or `read_inline` where it is hot, and the one generated function of
+/// that signature.
+fn around_the_read(out: &Path, name: &str) -> (String, String) {
+    let head = format!("pub fn {name}(cursor: &mut SceReader<");
+    let found: Vec<(String, String)> = tree(out)
         .into_iter()
         .filter(|(path, _)| path.ends_with(".rs"))
         .flat_map(|(_, bytes)| {
@@ -890,42 +894,52 @@ fn before_the_body_read(out: &Path) -> String {
             lines
                 .iter()
                 .enumerate()
-                .filter(|(_, line)| {
-                    line.trim_start()
-                        .starts_with("pub fn read(cursor: &mut SceReader<")
-                })
+                .filter(|(_, line)| line.trim_start().starts_with(&head))
                 .map(|(at, _)| {
-                    at.checked_sub(1)
+                    let before = at
+                        .checked_sub(1)
                         .map(|before| lines[before].trim().to_string())
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    let after = lines
+                        .get(at + 1)
+                        .map(|after| after.trim().to_string())
+                        .unwrap_or_default();
+                    (before, after)
                 })
                 .collect::<Vec<_>>()
         })
         .collect();
     assert_eq!(
-        befores.len(),
+        found.len(),
         1,
-        "the run wrote one body read of simple_frame: {befores:?}"
+        "the run wrote one `{name}` of simple_frame: {found:?}"
     );
-    befores.into_iter().next().unwrap_or_default()
+    found.into_iter().next().unwrap_or_default()
 }
 
-/// `--inline-decode-for` names a codec of the set, by its name, for its body
-/// read to be inlined whatever the sites of the set that read it; a run that
-/// names none leaves the read of a body no site reads to the compiler
-/// (docs/adr/0137, docs/adr/0139).
+/// `--inline-decode-for` names a codec of the set, by its document's stem: its
+/// body is printed once, in the form held in place, `#[inline(always)]`, and
+/// its entry point is a call of it, placed by the sites that call it, none
+/// here; a run that names none prints the body in the entry point, left to the
+/// compiler, and no form held in place (docs/adr/0137, docs/adr/0140).
 #[test]
-fn a_codec_named_hot_has_its_body_read_inlined() {
+fn a_codec_named_hot_is_printed_in_its_form_held_in_place() {
     let tmp = tempfile::tempdir().expect("temp dir");
     let codec = simple_frame(tmp.path());
 
     let plain = tmp.path().join("plain");
     let run = generate_documents(std::slice::from_ref(&codec), &plain, "rust", &[]);
     succeeded(&run, "the run that names no codec");
-    let before = before_the_body_read(&plain);
+    let (before, _) = around_the_read(&plain, "read");
     assert!(
         !before.starts_with("#[inline"),
         "the read of a body no site reads carries `{before}` with no codec named"
+    );
+    assert!(
+        !tree(&plain)
+            .values()
+            .any(|bytes| String::from_utf8_lossy(bytes).contains("_inline")),
+        "the run that names no codec printed a form held in place"
     );
 
     let hot = tmp.path().join("hot");
@@ -936,10 +950,156 @@ fn a_codec_named_hot_has_its_body_read_inlined() {
         &["--inline-decode-for", "simple_frame"],
     );
     succeeded(&run, "the run that names simple_frame");
+    let (before, _) = around_the_read(&hot, "read_inline");
     assert_eq!(
-        before_the_body_read(&hot),
-        "#[inline(always)]",
-        "the read of the codec named is not inlined"
+        before, "#[inline(always)]",
+        "the body of the codec named is not held in place"
+    );
+    let (before, after) = around_the_read(&hot, "read");
+    assert!(
+        !before.starts_with("#[inline"),
+        "the entry point of a body no site reads carries `{before}`"
+    );
+    assert_eq!(
+        after, "Self::read_inline(cursor)",
+        "the entry point of the codec named is not a call of its form held in place"
+    );
+}
+
+/// A frame that embeds the codec `body` under the alias `codec_x_body`, and, with
+/// `other_as_body`, the codec `other` under the alias `body`, written into a
+/// source directory of `tmp` with the codecs it imports, and its path.
+fn aliased_frame(tmp: &Path, other_as_body: bool) -> PathBuf {
+    let src = tmp.join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    let codec = |name: &str, imports: &str, datamodel: &str| {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" \
+             sce:kind=\"codec\" sce:default-endian=\"big\" name=\"{name}\">\n{imports}  \
+             <datamodel>\n{datamodel}  </datamodel>\n</scxml>\n"
+        )
+    };
+    fs::write(
+        src.join("body.scxml"),
+        codec(
+            "body",
+            "",
+            "    <sce:field id=\"value\" sce:type=\"uint64\" sce:byte=\"0\" sce:bit-size=\"vle\"/>\n",
+        ),
+    )
+    .expect("write body");
+    fs::write(
+        src.join("other.scxml"),
+        codec(
+            "other",
+            "",
+            "    <data id=\"n\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\"/>\n",
+        ),
+    )
+    .expect("write other");
+    let (imports, second) = if other_as_body {
+        (
+            "  <sce:import src=\"body.scxml\" kind=\"codec\" as=\"codec_x_body\"/>\n  \
+             <sce:import src=\"other.scxml\" kind=\"codec\" as=\"body\"/>\n",
+            "    <sce:embed id=\"second\" type=\"body\" sce:byte=\"2\"/>\n",
+        )
+    } else {
+        (
+            "  <sce:import src=\"body.scxml\" kind=\"codec\" as=\"codec_x_body\"/>\n",
+            "",
+        )
+    };
+    let frame = src.join("frame.scxml");
+    fs::write(
+        &frame,
+        codec(
+            "frame",
+            imports,
+            &format!(
+                "    <sce:field id=\"tag\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\"/>\n    \
+                 <sce:embed id=\"first\" type=\"codec_x_body\" sce:byte=\"1\"/>\n{second}"
+            ),
+        ),
+    )
+    .expect("write frame");
+    frame
+}
+
+/// The Rust a run wrote below `out` for the document `stem`, every file of it
+/// joined.
+fn rust_of(out: &Path, stem: &str) -> String {
+    let file = format!("{stem}.rs");
+    let code: Vec<String> = tree(out)
+        .into_iter()
+        .filter(|(path, _)| path.ends_with(&file))
+        .map(|(_, bytes)| String::from_utf8_lossy(&bytes).into_owned())
+        .collect();
+    assert!(!code.is_empty(), "the run wrote no {file}");
+    code.join("\n")
+}
+
+/// `--inline-decode-for` names a codec by the alias an import of the set gives
+/// it as well as by its stem: the codec the alias names is hot, read held in
+/// place with its ZInt, and the frame that imports it, not named, calls its
+/// entry point (docs/adr/0140).
+#[test]
+fn a_codec_named_by_an_import_alias_is_hot() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let frame = aliased_frame(tmp.path(), false);
+    let out = tmp.path().join("out");
+    let run = generate_documents(
+        std::slice::from_ref(&frame),
+        &out,
+        "rust",
+        &["--inline-decode-for", "codec_x_body"],
+    );
+    succeeded(&run, "the run that names body by its alias");
+    let body = rust_of(&out, "body");
+    assert!(
+        body.contains("cursor.read_vle_u64_inline()") && body.contains("_inline("),
+        "the codec the alias names is not printed held in place:\n{body}"
+    );
+    let frame = rust_of(&out, "frame");
+    assert!(
+        !frame.contains("_inline"),
+        "the frame, which is not named, calls a form held in place:\n{frame}"
+    );
+}
+
+/// A name that is the stem of one codec of the set and an alias an import gives
+/// another names two codecs, and is refused, by its own code and before any
+/// document of the set is written (docs/adr/0140).
+#[test]
+fn a_name_of_two_codecs_is_refused_before_anything_is_written() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let frame = aliased_frame(tmp.path(), true);
+    let out = tmp.path().join("out");
+    let run = generate_documents(
+        std::slice::from_ref(&frame),
+        &out,
+        "rust",
+        &["--inline-decode-for", "body"],
+    );
+    assert!(
+        !run.status.success(),
+        "a run naming two codecs by one name succeeded: {}",
+        stderr(&run)
+    );
+    let refusal = record(&run);
+    assert_eq!(
+        refusal["code"], "codegen/inline-decode-codec-ambiguous",
+        "{refusal}"
+    );
+    let message = refusal["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("'body'") && message.contains("body, other"),
+        "the refusal names the name and the codecs it names: {refusal}"
+    );
+    assert!(
+        !out.exists() || tree(&out).is_empty(),
+        "the refused run wrote {:?}",
+        tree(&out).keys().collect::<Vec<_>>()
     );
 }
 

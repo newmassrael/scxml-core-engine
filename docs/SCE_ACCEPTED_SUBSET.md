@@ -11302,7 +11302,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (569 codes)
+## Appendix — `DiagnosticCode` index (570 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11871,6 +11871,7 @@ or SCE-internal issues.
 | `codegen/standard-host-type-not-served` | Generate | A machine that runs an `<invoke>` of a standard host type generated for a lane, or lowered for the Interpreter (`sce-codegen lower`), whose reference host does not serve it: the table of standard types names the lanes that serve each type (`docs/SCE_HOST_FEATURES.md` section 7, ADR 0107 D8) |
 | `codegen/standard-host-bound-relation` | Generate | A machine that runs a standard signing or sealing operation built with bounds (`--limit`) that break a relation of the table of standard types: the bound of a signed object at least 256 bytes above its payload's, of a sealed one at least 128 above its plaintext's (`docs/SCE_HOST_FEATURES.md` section 10, ADR 0109 D17) |
 | `codegen/inline-decode-codec-not-in-set` | Generate | A build that names, for its body reads to be inlined (`generate --with-imports --inline-decode-for`), a codec that is no codec of the set being generated: the name is a build's argument, checked against the set before any document of it is generated, so a name misspelt cannot leave a hot read out of line (ADR 0139) |
+| `codegen/inline-decode-codec-ambiguous` | Generate | A build that names, for its body reads to be inlined (`generate --with-imports --inline-decode-for`), a codec by a name that names two codecs of the set being generated: the stem of one codec's document and an alias an import gives another, or one alias two imports give two codecs. The name is checked against the set before any document of it is generated, so the hot path the build measured is not read as another codec's; the build names the codec by its document's stem (ADR 0140) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |

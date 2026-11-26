@@ -16,7 +16,11 @@
 
     `cursor` is the frame's reader (`SceReader`, docs/adr/0128): every read is
     total and records a refusal in it, so no statement here returns early and
-    the frame's verdict is said once, by the caller that made the reader. -#}
+    the frame's verdict is said once, by the caller that made the reader.
+
+    `site_suffix` names the form each body this one holds is read by: the
+    entry point, or the form held in place where this body is read on the
+    build's hot path (docs/adr/0140). -#}
 {#- One field of the positional prefix, bound to its own local. An
     enum-typed field travels on the wire as the enum's carrier, so
     `decode_expr` reads that carrier and the enum's own conversion
@@ -203,7 +207,7 @@
 {% if arm.rust_cfg %}
             {{ arm.rust_cfg }}
 {% endif %}
-            {{ arm.value_literal }} => {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.view_body_type }}::read_with(cursor{{ arm.body_decode_args_after_cursor }}, _hook)),
+            {{ arm.value_literal }} => {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm.view_body_type }}::read_with{{ site_suffix }}(cursor{{ arm.body_decode_args_after_cursor }}, _hook)),
 {% if arm.rust_cfg_off %}
             {{ arm.rust_cfg_off }}
             {{ arm.value_literal }} => {
@@ -218,7 +222,7 @@
    bits, so what reaches here is a tag the default arm may hold. #}
             other => {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
                 tag: {{ variant.unknown_tag.type_name }}(other),
-                body: {{ variant.default_arm.view_body_type }}::read_with(cursor{{ variant.default_arm.body_decode_args_after_cursor }}, _hook),
+                body: {{ variant.default_arm.view_body_type }}::read_with{{ site_suffix }}(cursor{{ variant.default_arm.body_decode_args_after_cursor }}, _hook),
             },
 {% else %}
             // Build-time `codec/variant-arm-unreachable` proves the
@@ -259,7 +263,7 @@
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ arm.variant_name }}(_b) = &mut _out.body {
-                    {{ arm.stored_body }}::read_into(cursor, _b{{ arm.body_decode_args_after_cursor }});
+                    {{ arm.stored_body }}::read_into{{ site_suffix }}(cursor, _b{{ arm.body_decode_args_after_cursor }});
                 }
             }
 {% if arm.rust_cfg_off %}
@@ -284,7 +288,7 @@
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} { body: _b, .. } = &mut _out.body {
-                    {{ variant.default_arm.stored_body }}::read_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }});
+                    {{ variant.default_arm.stored_body }}::read_into{{ site_suffix }}(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }});
                 }
             }
 {% else %}

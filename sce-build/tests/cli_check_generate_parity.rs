@@ -361,11 +361,11 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
             "tests/forge/resources/codec_simple_frame.scxml",
         ]),
         "rust",
-        "marks the functions that read the bodies of the Rust codecs a set names \
-         inline, whatever the sites of the set that read them (docs/adr/0139); \
-         what is written changes and what is accepted does not, and it is ignored \
-         for other languages, so `check` needs no counterpart. A name that is no \
-         codec of the set is refused before anything is written, which is a \
+        "prints the bodies the hot path of a Rust set reads in forms held in place, \
+         which their hot sites call (docs/adr/0139, docs/adr/0140); what is written \
+         changes and what is accepted does not, and it is ignored for other \
+         languages, so `check` needs no counterpart. A name that is no codec of the \
+         set, or names two, is refused before anything is written, which is a \
          refusal of the build's argument, not of a document",
     ),
     f(

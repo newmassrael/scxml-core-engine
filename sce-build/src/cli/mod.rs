@@ -2162,15 +2162,18 @@ struct GenerateArgs {
     /// document, not of a set; ignored for other languages.
     #[arg(long)]
     inline_decode: bool,
-    /// Rust only, with `--with-imports`: always inline the function that reads
-    /// the body of each codec named, the codecs whose reads are on the build's
-    /// hot path, whatever the sites of the set that read it; every other body
-    /// read keeps the rule of the set's sites (docs/adr/0137, docs/adr/0139).
-    /// A codec is named by its name, the `name` of its document's `<scxml>`;
-    /// the flag takes a list separated by commas and may be given again. A
-    /// name that is no codec of the set is refused before anything is written
-    /// (`codegen/inline-decode-codec-not-in-set`). Not with `--inline-decode`,
-    /// which already names every codec; ignored for other languages.
+    /// Rust only, with `--with-imports`: the codecs whose reads are on the
+    /// build's hot path. The body of each codec named, and of every codec a hot
+    /// body reads, is printed once in forms held in place where they are
+    /// called, which each hot site calls, and reads its ZInts held in place;
+    /// every other site calls the codec's entry point, which keeps the rule of
+    /// the set's sites (docs/adr/0137, docs/adr/0139, docs/adr/0140). A codec
+    /// is named by its document's stem or by an alias an import of the set
+    /// gives it; the flag takes a list separated by commas and may be given
+    /// again. A name that is no codec of the set, or names two, is refused
+    /// before anything is written (`codegen/inline-decode-codec-not-in-set`,
+    /// `codegen/inline-decode-codec-ambiguous`). Not with `--inline-decode`,
+    /// which already asks every body read inlined; ignored for other languages.
     #[arg(
         long,
         value_name = "CODEC",
