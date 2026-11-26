@@ -28,7 +28,7 @@
     # `k/N` (the `SWIFT_BACKEND_SHARDS` lines of scripts/gates/swift-backend.sh),
     # as the lane's three jobs do: whole, the gate ran 1209 s on a hosted
     # runner (job 138967193099). A plan makes one unit per part
-    # (`shard_count`), each on a machine that carries the pin.
+    # (`shard_count`), each on a machine with a rootless Docker.
     "shard_env": "SCE_SWIFT_BACKEND_SHARD",
     "deps": ["codegen-build"],
     # The swift image (ADR 0145, family `swift`): the pinned Swift toolchain and
