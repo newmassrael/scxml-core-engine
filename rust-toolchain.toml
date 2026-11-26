@@ -36,7 +36,9 @@
 # what any other checkout's does; the registry's self-test holds the two lists
 # together. Kept to what a build of the workspace asks for without being told:
 # clippy and rustfmt for the lint and format gates, thumbv7em-none-eabihf for
-# the no_std runtime, wasm32-unknown-unknown for the wasm32 scenarios.
+# the no_std runtime, thumbv6m-none-eabi for its build on a core with no
+# read-modify-write atomics (the nostd-mcu gate), wasm32-unknown-unknown for
+# the wasm32 scenarios.
 #
 # Each value stays on one line: the shell readers above take it with sed, and
 # the registry without a TOML parser (a build machine runs Python 3.10).
@@ -44,4 +46,4 @@
 channel = "1.100.0"
 profile = "minimal"
 components = ["clippy", "rustfmt"]
-targets = ["thumbv7em-none-eabihf", "wasm32-unknown-unknown"]
+targets = ["thumbv7em-none-eabihf", "thumbv6m-none-eabi", "wasm32-unknown-unknown"]

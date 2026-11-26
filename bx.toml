@@ -285,7 +285,7 @@ version_pattern = '^channel = "([0-9.]+)"'
 path = "~/.rustup/toolchains/{version}-x86_64-unknown-linux-gnu/bin/cargo"
 check = "cargo {version}"
 prefix_link = "~/.rustup/toolchains/{version}-x86_64-unknown-linux-gnu"
-install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix} -c clippy -c rustfmt -t thumbv7em-none-eabihf -t wasm32-unknown-unknown"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix} -c clippy -c rustfmt -t thumbv7em-none-eabihf -t thumbv6m-none-eabi -t wasm32-unknown-unknown"
 install_inputs = ["scripts/install_rust.sh"]
 
 # THE NIGHTLY, `SCE_RUST_NIGHTLY` in scripts/lib/rust_toolchains.sh: Miri and ThreadSanitizer over
