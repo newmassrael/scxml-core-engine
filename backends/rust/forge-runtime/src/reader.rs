@@ -300,12 +300,23 @@ impl<'a> SceReader<'a> {
     /// and none holds the body's answer or its record (docs/adr/0138).
     ///
     /// A ZInt of one or two bytes, what nearly every field holds (an id, a
-    /// length, a count, a sequence number), is answered by this function's first
-    /// two branches: one call answers it, and only a longer one goes on to the
-    /// shared body (docs/adr/0138, amendments of 2026-11-26). Two bytes hold
-    /// fourteen bits, below every width's limit, so neither branch tests it.
+    /// length, a count, a sequence number), is answered by the first two
+    /// branches of [`Self::read_vle_held`]: one call answers it, and only a
+    /// longer one goes on to the shared body (docs/adr/0138, amendments of
+    /// 2026-11-26).
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
+        self.read_vle_held(max_bits)
+    }
+
+    /// The reader's one decode of a ZInt held to `max_bits`, held in place
+    /// where it is called: the body of [`Self::read_vle_inner`], the read
+    /// every body calls, and of the `_inline` reads, which a body on the
+    /// build's hot path holds in place so that its ZInts are no call
+    /// (docs/adr/0140). Two bytes hold fourteen bits, below every width's
+    /// limit, so neither of the first two branches tests it.
+    #[inline(always)]
+    fn read_vle_held(&mut self, max_bits: u32) -> u64 {
         if let Some(&first) = self.buf.get(self.pos) {
             if first & 0x80 == 0 {
                 self.pos += 1;
@@ -348,6 +359,26 @@ impl<'a> SceReader<'a> {
     #[inline]
     pub fn read_vle_u64(&mut self) -> u64 {
         self.read_vle_inner(64)
+    }
+
+    /// [`Self::read_vle_u16`] held in place: the read a body on the build's
+    /// hot path makes, with no call (docs/adr/0140). Every other body calls
+    /// [`Self::read_vle_u16`], so its ZInts share one function.
+    #[inline(always)]
+    pub fn read_vle_u16_inline(&mut self) -> u16 {
+        self.read_vle_held(16) as u16
+    }
+
+    /// [`Self::read_vle_u32`] held in place (see [`Self::read_vle_u16_inline`]).
+    #[inline(always)]
+    pub fn read_vle_u32_inline(&mut self) -> u32 {
+        self.read_vle_held(32) as u32
+    }
+
+    /// [`Self::read_vle_u64`] held in place (see [`Self::read_vle_u16_inline`]).
+    #[inline(always)]
+    pub fn read_vle_u64_inline(&mut self) -> u64 {
+        self.read_vle_held(64)
     }
 
     /// Where the reader stands, to come back to with [`Self::rewind`]: how a
@@ -674,6 +705,47 @@ mod tests {
                             assert_eq!((value, r.verdict()), (0, Err(e)), "{bytes:?} at {bits}");
                         }
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_zint_read_in_place_reads_as_its_call_reads_it() {
+        // The reads a body on the build's hot path holds in place run the
+        // reader's one decode, so they answer what the reads every other body
+        // calls answer: the value, the verdict and the bytes consumed, at every
+        // length of chain, cut at every byte, at every width (docs/adr/0140).
+        let chains: [&[u8]; 6] = [
+            &[0x05],
+            &[0x80, 0x01],
+            &[0xFF, 0xFF, 0x03],
+            &[0xFF, 0xFF, 0xFF, 0x0F],
+            &[0xFF; 9],
+            &[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00],
+        ];
+        for chain in chains {
+            for cut in 0..=chain.len() {
+                let bytes = &chain[..cut];
+                for bits in [16u32, 32, 64] {
+                    let mut called = SceReader::new(bytes);
+                    let mut held = SceReader::new(bytes);
+                    let (by_call, in_place) = match bits {
+                        16 => (
+                            u64::from(called.read_vle_u16()),
+                            u64::from(held.read_vle_u16_inline()),
+                        ),
+                        32 => (
+                            u64::from(called.read_vle_u32()),
+                            u64::from(held.read_vle_u32_inline()),
+                        ),
+                        _ => (called.read_vle_u64(), held.read_vle_u64_inline()),
+                    };
+                    assert_eq!(
+                        (in_place, held.verdict(), held.position()),
+                        (by_call, called.verdict(), called.position()),
+                        "{bytes:?} at {bits}"
+                    );
                 }
             }
         }

@@ -2091,11 +2091,41 @@ mod tests {
         let cursor = region(codec, "impl<'a> SceCursor<'a> {", "\n}\n");
         let frame = region(reader, "impl<'a> SceReader<'a> {", "\n}\n");
         for (owner, methods) in [("cursor", cursor), ("reader", frame)] {
-            let (attrs, body) = function(methods, "read_vle_inner");
+            let (attrs, mut body) = function(methods, "read_vle_inner");
             assert!(
                 attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
                 "the {owner}'s ZInt read is out of line and not cold: {attrs}"
             );
+            // The frame reader's read is the call of its decode held in place,
+            // which the reads a body on the build's hot path hold too
+            // (docs/adr/0140).
+            if owner == "reader" {
+                assert!(
+                    body.contains("self.read_vle_held(max_bits)"),
+                    "the reader's ZInt read is the call of its held decode:\n{body}"
+                );
+                let (held_attrs, held) = function(methods, "read_vle_held");
+                assert!(
+                    held_attrs.contains("#[inline(always)]"),
+                    "the reader's ZInt decode is held in place: {held_attrs}"
+                );
+                for width in [
+                    "read_vle_u16_inline",
+                    "read_vle_u32_inline",
+                    "read_vle_u64_inline",
+                ] {
+                    let (attrs, body) = function(methods, width);
+                    assert!(
+                        attrs.contains("#[inline(always)]"),
+                        "the reader's {width} is held in place: {attrs}"
+                    );
+                    assert!(
+                        body.contains("self.read_vle_held(") && !body.contains("read_vle_inner"),
+                        "the reader's {width} holds the one decode and calls nothing:\n{body}"
+                    );
+                }
+                body = held;
+            }
             assert!(
                 body.contains("read_zint(self.buf, self.pos, max_bits)"),
                 "the {owner}'s ZInt read runs the one body:\n{body}"
