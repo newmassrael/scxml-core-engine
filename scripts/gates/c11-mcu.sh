@@ -27,11 +27,12 @@
 # The compiler is Arm's build of the release scripts/install_arm_gnu_toolchain.sh
 # pins (`[platform.linux.tools.arm-none-eabi-gcc]` in bx.toml), because the
 # budget's figures are that compiler's; the gate puts its `bin/` first on PATH,
-# under the release read from the script's own line. QEMU is a package the
-# gate's unit requires (`packages` of its entry in tools/git-hooks/gate_registry.py),
-# so bx gives this gate only to a machine that has both; anywhere else a missing
-# tool, or a compiler that is not that build, ends the gate as "could not run"
-# (exit 3), never as a pass.
+# under the release read from the script's own line, from the root the install
+# script installs to (ARM_GNU_TOOLCHAIN_ROOT, which the gate's image names for
+# the copy it holds). The gate runs in the image its registry entry names
+# (`container` in tools/git-hooks/gate_registry.py), which holds the compiler
+# and QEMU; anywhere a tool is missing, or the compiler is not that build, the
+# gate ends as "could not run" (exit 3), never as a pass.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -64,15 +65,18 @@ INCLUDES=(-I backends/c/runtime/include -I backends/c/forge-runtime/include -I "
 BOARD_SOURCES=("$MCU_DIR/startup.c" "$MCU_DIR/semihosting.c" "$MCU_DIR/seams.c")
 
 # The Arm GNU Toolchain release, read from the one line that pins it, and its
-# `bin/` where the install script and bx's store entry put it.
+# `bin/` where the install script puts it: ARM_GNU_TOOLCHAIN_ROOT when it is
+# set, as the image sets it, else the default that script and bx's store entry
+# share. The version check below refuses any other build either way.
 ARM_GNU_TOOLCHAIN_REV="$(sed -n 's/^ARM_GNU_TOOLCHAIN_REV="\(.*\)"$/\1/p' scripts/install_arm_gnu_toolchain.sh)"
 [[ -n "$ARM_GNU_TOOLCHAIN_REV" ]] \
     || sce_gate_fail "scripts/install_arm_gnu_toolchain.sh states no ARM_GNU_TOOLCHAIN_REV=\"...\" line"
-PATH="$HOME/.local/share/arm-gnu-toolchain/$ARM_GNU_TOOLCHAIN_REV/bin:$PATH"
+ARM_GNU_TOOLCHAIN_ROOT="${ARM_GNU_TOOLCHAIN_ROOT:-$HOME/.local/share/arm-gnu-toolchain/$ARM_GNU_TOOLCHAIN_REV}"
+PATH="$ARM_GNU_TOOLCHAIN_ROOT/bin:$PATH"
 
 for tool in arm-none-eabi-gcc arm-none-eabi-size qemu-system-arm timeout; do
     command -v "$tool" >/dev/null 2>&1 \
-        || sce_gate_cannot_run "$tool is not on PATH. The compiler is Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV under ~/.local/share/arm-gnu-toolchain/$ARM_GNU_TOOLCHAIN_REV, installed by scripts/install_arm_gnu_toolchain.sh (a build machine: [platform.linux.tools.arm-none-eabi-gcc] of bx.toml, bx-provision <alias> --apply); QEMU is the apt package qemu-system-arm, which this gate's unit requires"
+        || sce_gate_cannot_run "$tool is not on PATH. The compiler is Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV under $ARM_GNU_TOOLCHAIN_ROOT, installed by scripts/install_arm_gnu_toolchain.sh (the gate's image holds it; a build machine without docker: [platform.linux.tools.arm-none-eabi-gcc] of bx.toml, bx-provision <alias> --apply); QEMU is the package qemu-system-arm, which the gate's image installs"
 done
 
 CODEGEN="$(sce_gate_codegen)"

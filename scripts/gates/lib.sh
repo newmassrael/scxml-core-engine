@@ -1083,15 +1083,17 @@ sce_gate_w3c_cpp_suite() {
 # through `sce_gate_requires_tool`, which knows whether a missing one is a skip
 # or a failure.
 #
-# The pinned SDK a build machine carries is looked for too, at the path
-# `scripts/install_emsdk.sh` derives from its release: bx installs it there as
-# the `[platform.linux.tools.emsdk]` tool of bx.toml and runs the units of the
-# emscripten gates only where it is, and no lane step sources it for them.
+# The pinned SDK is looked for too, where `scripts/install_emsdk.sh` installs
+# it: EMSDK_ROOT when it is set, as a gate's image sets it for the SDK it holds,
+# else the path that script derives from its release, where bx installs it as
+# the `[platform.linux.tools.emsdk]` tool of bx.toml on a build machine. No
+# lane step sources it for the gates.
 sce_gate_activate_emsdk() {
     if ! command -v emcmake >/dev/null 2>&1; then
         local emsdk_env rev
         rev="$(sed -n 's/^EMSDK_REV="\([0-9.][0-9.]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_emsdk.sh" 2>/dev/null)"
         for emsdk_env in "${EMSDK:-}/emsdk_env.sh" \
+            ${EMSDK_ROOT:+"${EMSDK_ROOT}/emsdk_env.sh"} \
             ${rev:+"${HOME}/.local/share/emsdk/${rev}/emsdk_env.sh"} \
             "${HOME}/emsdk/emsdk_env.sh"; do
             [ -f "${emsdk_env}" ] || continue

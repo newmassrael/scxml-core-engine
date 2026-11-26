@@ -83,11 +83,15 @@ locked="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "
     || sce_gate_fail "Cargo.lock holds no single wasm-bindgen version (read: '${locked}'), so the tool to match is not defined"
 
 # The tool at that version: the one on PATH when it is that version, else the
-# one bx installs on a build machine (`[platform.linux.tools.wasm-bindgen]`,
-# scripts/install_wasm_bindgen.sh) at the path derived from the version.
+# one scripts/install_wasm_bindgen.sh installed, at WASM_BINDGEN_ROOT when it is
+# set (the gate's image names the copy it holds there) or at the path derived
+# from the version, where bx installs it on a build machine
+# (`[platform.linux.tools.wasm-bindgen]`). The version check below refuses any
+# other either way.
+bindgen_root="${WASM_BINDGEN_ROOT:-$HOME/.local/share/wasm-bindgen/${locked}}"
 if [[ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen ${locked}" ]] \
-        && [[ -x "$HOME/.local/share/wasm-bindgen/${locked}/bin/wasm-bindgen" ]]; then
-    PATH="$HOME/.local/share/wasm-bindgen/${locked}/bin:$PATH"
+        && [[ -x "$bindgen_root/bin/wasm-bindgen" ]]; then
+    PATH="$bindgen_root/bin:$PATH"
     export PATH
 fi
 command -v wasm-bindgen >/dev/null 2>&1 \
@@ -96,13 +100,16 @@ command -v wasm-bindgen >/dev/null 2>&1 \
     || sce_gate_cannot_run "wasm-bindgen is '$(wasm-bindgen --version)' and Cargo.lock holds ${locked}; install the tool at that version (scripts/install_wasm_bindgen.sh)"
 
 # The browser: the pinned Chrome for Testing (scripts/install_chrome.sh), which
-# bx installs on a build machine and the hosted lane installs with the same
-# script. A CHROME_BIN the caller set is taken as given. Outside a landing a
-# machine without the pinned build may still replay in the Chrome on its PATH,
-# as a developer's does; a landing's verdict is the pinned browser's or none,
-# since a pass is kept from it under a key that names no other Chrome.
+# bx installs on a build machine and the gate's image holds, each where that
+# script installs it: CHROME_ROOT when it is set, as the image sets it, else the
+# path derived from the release. A CHROME_BIN the caller set is taken as given.
+# Outside a landing a machine without the pinned build may still replay in the
+# Chrome on its PATH, as a developer's does; a landing's verdict is the pinned
+# browser's or none, since a pass is kept from it under a key that names no
+# other Chrome.
 chrome_rev="$(sed -n 's/^CHROME_REV="\([0-9.][0-9.]*\)"$/\1/p' scripts/install_chrome.sh)"
-pinned_chrome="$HOME/.local/share/chrome-for-testing/${chrome_rev}/chrome-linux64/chrome"
+chrome_root="${CHROME_ROOT:-$HOME/.local/share/chrome-for-testing/${chrome_rev}}"
+pinned_chrome="$chrome_root/chrome-linux64/chrome"
 if [[ -z "${CHROME_BIN:-}" && -n "$chrome_rev" && -x "$pinned_chrome" ]]; then
     export CHROME_BIN="$pinned_chrome"
 fi

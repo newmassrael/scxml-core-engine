@@ -16,12 +16,15 @@
 SCE_BAZEL_RULES_CC_VERSION="0.2.27"
 SCE_BAZEL_VERSION="9.3.1"
 
-# sce_bazel_select: put the pinned Bazel bx installs on a build machine
-# (`[platform.linux.tools.bazel]` in bx.toml, scripts/install_bazel.sh) first on
-# PATH when it is there. Where it is not (a hosted runner, a workstation) the
-# `bazel` already on PATH runs, bazelisk reading the consumer's .bazelversion.
+# sce_bazel_select: put the pinned Bazel first on PATH when it is installed where
+# scripts/install_bazel.sh installs it: BAZEL_ROOT when it is set, as a gate's
+# image sets it for the Bazel it holds, else the path that script derives from
+# the version, where bx installs it on a build machine
+# (`[platform.linux.tools.bazel]` in bx.toml). Where it is not (a workstation)
+# the `bazel` already on PATH runs, bazelisk reading the consumer's
+# .bazelversion.
 sce_bazel_select() {
-    local bin="$HOME/.local/share/bazel/$SCE_BAZEL_VERSION/bin"
+    local bin="${BAZEL_ROOT:-$HOME/.local/share/bazel/$SCE_BAZEL_VERSION}/bin"
     if [[ -x "$bin/bazel" ]]; then
         PATH="$bin:$PATH"
         export PATH
