@@ -1037,7 +1037,11 @@ impl {{ runtime_codec }}::RecordRead for {{ struct_name }}{{ arm.variant_name }}
 /// yet read: a borrow of the reader and nothing else. `read()` reads the arm's
 /// view and `read_with(hook)` shows `hook` each chain entry as it is read; a
 /// record not read is skipped by the next `next`, as its own arm.
-#[allow(dead_code)]
+// Each arm is named by the codec the document names for it, the name the
+// view's variant gives the same arm, so a consumer matches both by one name.
+// With no default arm here, those names can share a prefix the generator did
+// not choose and may not strip.
+#[allow(dead_code, clippy::enum_variant_names)]
 pub enum {{ struct_name }}Record<'r, 'f> {
 {% for arm in variant.arms %}
 {% if arm.rust_cfg %}
