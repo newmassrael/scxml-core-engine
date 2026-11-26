@@ -465,7 +465,10 @@ COST_MEASURED: dict[str, str] = {
 # `generated-diff` arrived as the gate forms of two lanes that ran their
 # scripts inline, so that the lanes could run them in the host image
 # (docs/adr/0145). Each entry derives its estimate; its first run reads it.
-UNMEASURED_COST_CEILING = 35
+# 35 -> 36 on 2026-11-27, the same direction: `mutation-swift` arrived when the
+# Swift rounds left `mutation-rounds` for an image of their own (ADR 0145), and
+# declares that gate's figure until a run of its own is timed.
+UNMEASURED_COST_CEILING = 36
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1507,6 +1510,27 @@ def script_code(path: Path) -> str:
         for line in path.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("#")
     )
+
+
+SOURCED_GATE_SCRIPT = re.compile(
+    r'^\s*source\s+"\$\(dirname\s+"\$\{BASH_SOURCE\[0\]\}"\)/([A-Za-z0-9_-]+)\.sh"')
+
+
+def gate_script_code(path: Path) -> str:
+    """A gate script's code (`script_code`), followed by the code of any other
+    gate's script it sources beside it: `mutation-swift` is `mutation-rounds`'s
+    script run over the Swift share of the corpus, so what that script reads,
+    this gate reads. `lib.sh`, which every gate script sources, is a library
+    and not followed."""
+    code = script_code(path)
+    parts = [code]
+    for line in code.splitlines():
+        found = SOURCED_GATE_SCRIPT.match(line)
+        if found and found.group(1) != "lib":
+            sourced = path.parent / f"{found.group(1)}.sh"
+            if sourced.is_file() and sourced != path:
+                parts.append(script_code(sourced))
+    return "\n".join(parts)
 
 
 def gate_triggers(repo_root: Path, slugs=None) -> dict[str, list[str]]:
@@ -4389,8 +4413,10 @@ def self_test(repo_root: Path) -> int:
 
     # a-gate-in-an-image-is-handed-what-its-lane-sets. A name in
     # `container_env` is a variable spelled as one, of a gate that runs in an
-    # image, other than its part, and set by a workflow the gate mirrors: a
-    # name no lane sets hands nothing in and reads as if it did.
+    # image, other than its part, and set by a workflow the gate mirrors (a
+    # key of an `env:` mapping, or an assignment its steps make, to a command
+    # or to `$GITHUB_ENV`): a name no lane sets hands nothing in and reads as
+    # if it did.
     cases += 1
     for slug, spec in sorted(GATES.items()):
         names = spec.get("container_env")
@@ -4419,7 +4445,7 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"container_env: {slug} names its part's variable {name}, "
                     f"which goes into the image as `--shard`")
-            if not re.search(rf"^\s*{name}:", lanes, re.M):
+            if not re.search(rf"^\s*{name}:|\b{name}=", lanes, re.M):
                 failures.append(
                     f"container_env: {slug} hands {name} into its image and "
                     f"no workflow it mirrors ({spec.get('workflows')}) sets it")
@@ -6113,7 +6139,7 @@ def self_test(repo_root: Path) -> int:
         script = gate_script(repo_root, slug)
         reads = script.is_file() and any(
             change_reader.search(line)
-            for line in script_code(script).splitlines())
+            for line in gate_script_code(script).splitlines())
         declared = "CHANGES" in spec.get("commits", [])
         readers_seen += reads
         if reads and not declared:

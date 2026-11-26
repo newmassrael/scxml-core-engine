@@ -2697,17 +2697,24 @@ mutation_swift_package_dir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
 # `swift` is a link into a toolchain whose own tools sit beside the file it points at,
 # and a toolchain installed by hand is not on PATH. A hosted runner image carries a
 # Swift of its own on PATH, of whatever release the image moved to, so the pinned one is
-# put FIRST and a `swift` already on PATH is not trusted: a round judged on another
-# compiler than the lane that gates the backend answers about a build nobody ships.
+# put FIRST and a `swift` already on PATH is not trusted for being there: a round judged
+# on another compiler than the lane that gates the backend answers about a build nobody
+# ships. The swift image the Swift rounds run in (ADR 0145) holds the pinned release on
+# PATH and has no such link, so a `swift` on PATH is taken when it reports that release,
+# as `sce_gate_require_swift` takes it.
 mutation_swift_use_toolchain() {
     local version link
     source "$SCE_REPO_ROOT/scripts/lib/swift_pin.sh"
     version="$(sce_swift_pin_version)"
     [[ -n "$version" ]] || return 1
     link="$HOME/.local/share/swift/$version/bin/swift"
-    [[ -x "$link" ]] || return 1
-    PATH="$(dirname "$(readlink -f "$link")"):$PATH"
-    export PATH
+    if [[ -x "$link" ]]; then
+        PATH="$(dirname "$(readlink -f "$link")"):$PATH"
+        export PATH
+        return 0
+    fi
+    command -v swift >/dev/null 2>&1 \
+        && grep -qF "$(sce_swift_pin_tag "$version")" <<<"$(swift --version 2>&1)"
 }
 
 mutation_swift_require() {
@@ -2718,8 +2725,9 @@ mutation_swift_require() {
         return 1
     fi
     if ! mutation_swift_use_toolchain; then
-        red "mutation_swift needs the Swift toolchain bx.toml pins under ~/.local/share/swift/<version>/,"
-        red "and this host has none (scripts/install_swift_toolchain.sh installs it): every case would"
+        red "mutation_swift needs the Swift toolchain bx.toml pins, under ~/.local/share/swift/<version>/"
+        red "or on PATH as in the swift image, and this host has neither (scripts/install_swift_toolchain.sh"
+        red "installs it; scripts/gate mutation-swift runs the round in the image): every case would"
         red "read as a build that failed."
         return 1
     fi

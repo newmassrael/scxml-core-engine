@@ -52,6 +52,10 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The Containerfile of the image `mutation-rounds` runs in (its registry entry's
+/// `container`, ADR 0145).
+const HOST_IMAGE: &str = "tools/ci-images/host/Containerfile";
+
 /// What the gate reads, and so what every copy of the tree it runs in carries:
 /// the harness and the gate, the corpus, the workflow whose ceiling the gate
 /// sizes each job against (`scripts/lib/mutation_rounds_cost.sh`), and the
@@ -659,27 +663,88 @@ fn step_condition(workflow: &str, step_name: &str) -> String {
         .to_string()
 }
 
-/// Every runner the corpus declares is provisioned in the job that runs it.
+/// The steps of the workflow that run a round: each step whose `run:` is one
+/// `scripts/gate <slug>`, as `(its `if:` condition, the slug)`.
+fn round_steps(workflow: &str) -> Vec<(String, String)> {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let mut steps = Vec::new();
+    for (at, line) in lines.iter().enumerate() {
+        if !line.trim().starts_with("- name: ") {
+            continue;
+        }
+        let body: Vec<&str> = lines[at + 1..]
+            .iter()
+            .take_while(|l| !l.trim().starts_with("- name:"))
+            .copied()
+            .collect();
+        let Some(slug) = body
+            .iter()
+            .find_map(|l| l.trim().strip_prefix("run: scripts/gate "))
+        else {
+            continue;
+        };
+        let condition = body
+            .iter()
+            .find_map(|l| l.trim().strip_prefix("if: "))
+            .unwrap_or("")
+            .to_string();
+        steps.push((condition, slug.trim().to_string()));
+    }
+    steps
+}
+
+/// Whether a round step's `if:` admits a job whose matrix entry names
+/// `runner`. The conditions this lane writes are one comparison of
+/// `matrix.runner` with a quoted runner; any other shape is refused, so a
+/// condition this reading cannot evaluate is not read as one that admits.
+fn admits(condition: &str, runner: &str) -> bool {
+    let condition = condition.trim();
+    if let Some(value) = condition.strip_prefix("matrix.runner == ") {
+        return value.trim_matches('\'') == runner;
+    }
+    if let Some(value) = condition.strip_prefix("matrix.runner != ") {
+        return value.trim_matches('\'') != runner;
+    }
+    panic!(
+        "⚠ a round step is conditioned on `{condition}`, which is not one comparison of \
+         `matrix.runner`: the route from a runner to its gate is no longer readable here"
+    );
+}
+
+/// The Containerfile a gate's registry entry names as its image, or nothing.
+fn gate_image(slug: &str) -> Option<String> {
+    let entry = fs::read_to_string(repo_root().join(format!("tools/git-hooks/gates/{slug}.py")))
+        .unwrap_or_else(|e| panic!("read the registry entry of {slug}: {e}"));
+    entry.lines().find_map(|l| {
+        let value = l.trim().strip_prefix("\"container\":")?;
+        Some(
+            value
+                .trim()
+                .trim_end_matches(',')
+                .trim_matches('"')
+                .to_string(),
+        )
+    })
+}
+
+/// Every runner the corpus declares is routed to a gate in the image that
+/// holds its toolchain.
 ///
-/// The rounds job is one job per casefile and it installs by CONDITION —
-/// `matrix.runner == 'ctest'` builds a CMake tree, and a cargo round pays for
-/// none of it. That shape is right and it is also the shape of the defect this
-/// repository has already paid for twice: a lane that did not install what a
-/// round needed reported `baseline is not green` — a true sentence about a
-/// missing tool, phrased as a defect in the tree — for every run the casefile
-/// ever had. The rev-pinned validator cost two casefiles their rounds that way
-/// (2026-08-25), and the same silence is one `mutation_go` away from
-/// happening again with a toolchain nobody thought to add.
+/// The rounds job is one job per casefile, and what a round needs is its
+/// runner's toolchain. Until ADR 0145 the job installed it by CONDITION —
+/// `matrix.runner == 'ctest'` built a CMake tree, `'go'` set up Go — and the
+/// shape of the defect this repository paid for twice was a lane that did not
+/// install what a round needed: `baseline is not green`, a true sentence about a
+/// missing tool phrased as a defect in the tree. The rev-pinned validator cost
+/// two casefiles their rounds that way (2026-08-25).
 ///
-/// So this derives rather than lists: it reads the runner off every casefile
-/// through `scripts/mutate --declares`, and asks the workflow whether some
-/// step keys off it. Add a casefile in a new language and this fails until the
-/// lane can run it — which is the moment it is cheapest to notice, rather than
-/// after a round has reported a red baseline about a missing interpreter.
-///
-/// `cargo` is exempt and is the only exemption: the Rust toolchain is
-/// installed unconditionally, because every job in this lane needs it to build
-/// `sce-codegen`.
+/// Now no step installs anything: each round runs in its gate's image, a
+/// Swift round in the swift image (`mutation-swift`) and every other in
+/// the host image (`mutation-rounds`). So the question this asks is the route:
+/// every runner the corpus declares, read through `scripts/mutate --declares`,
+/// is admitted by exactly one round step, and the gate that step runs is in the
+/// image of that runner's family. Add a casefile in a new language and this
+/// still has to hold, which is the moment to decide which image runs it.
 #[test]
 fn every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job() {
     let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
@@ -693,27 +758,52 @@ fn every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job() {
         corpus.len()
     );
 
-    let mut runners: BTreeSet<String> = corpus.iter().map(|c| declared_runner(c)).collect();
-    runners.remove("cargo");
-
+    let runners: BTreeSet<String> = corpus.iter().map(|c| declared_runner(c)).collect();
     assert!(
-        runners.len() >= 4,
-        "⚠ the corpus declares {} non-cargo runner(s): {runners:?}. Four are \
-         expected — ctest, go, gradle and pytest — and a smaller set means \
+        runners.len() >= 5,
+        "⚠ the corpus declares {} runner(s): {runners:?}. Six are expected — \
+         cargo, ctest, go, gradle, pytest and swift — and a smaller set means \
          either a runner was dropped or this derivation stopped reading them, \
          which would make the sweep below vacuous",
         runners.len()
     );
+    assert!(
+        runners.contains("swift"),
+        "⚠ the corpus declares no `swift` runner, so the route to the swift image \
+         is not measured here: {runners:?}"
+    );
+
+    let steps = round_steps(&workflow);
+    assert!(
+        steps.len() >= 2,
+        "⚠ the workflow has {} round step(s); a round runs in the host image or \
+         the swift image, one step each: {steps:?}",
+        steps.len()
+    );
 
     for runner in &runners {
-        let wanted = format!("matrix.runner == '{runner}'");
-        assert!(
-            workflow.contains(&wanted),
-            "⚠ the corpus declares a `{runner}` runner and no step in \
-             .github/workflows/mutation-rounds.yml is conditioned on \
-             `{wanted}`. A round whose toolchain the job never installed does \
-             not report a missing tool — it reports the baseline it could not \
-             run, as though the tree were broken."
+        let routes: Vec<&(String, String)> = steps
+            .iter()
+            .filter(|(condition, _)| admits(condition, runner))
+            .collect();
+        assert_eq!(
+            routes.len(),
+            1,
+            "⚠ a `{runner}` round is admitted by {} round step(s) of \
+             .github/workflows/mutation-rounds.yml ({routes:?}); exactly one runs \
+             it, or its job runs no round or two",
+            routes.len()
+        );
+        let slug = &routes[0].1;
+        let family = if runner == "swift" { "swift" } else { "host" };
+        let wanted = format!("tools/ci-images/{family}/Containerfile");
+        assert_eq!(
+            gate_image(slug).as_deref(),
+            Some(wanted.as_str()),
+            "⚠ a `{runner}` round runs `scripts/gate {slug}`, whose image is not \
+             {wanted}, the one that holds a `{runner}` round's toolchain. A round \
+             whose toolchain its image lacks does not report a missing tool — it \
+             reports the baseline it could not run, as though the tree were broken."
         );
     }
 }
@@ -936,6 +1026,12 @@ fn lane_selection_status(
         .env("SCE_GATE_CHANGED_FILE", &changed_file)
         .env("GITHUB_OUTPUT", &github_output)
         .env("RUNNER_TEMP", &runner_temp)
+        // The gate runs in the host image wherever it runs (ADR 0145), and
+        // `scripts/gate` runs a gate where it is when SCE_GATE_CONTAINER names
+        // the image it is in. The selection builds and installs nothing, so
+        // this process stands in for that image, and the step's choosing is
+        // what is measured, not a container's start.
+        .env("SCE_GATE_CONTAINER", HOST_IMAGE)
         .envs(extra_env.iter().copied())
         .output()
         .expect("run the workflow's selection step");
@@ -1164,23 +1260,31 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
          than CI does. Move the expression into the step's `env:`:\n{script}"
     );
     assert_eq!(
-        step_condition(&workflow, "Configure the CMake tree").trim(),
+        step_condition(&workflow, "Cache CMake Build").trim(),
         "matrix.runner == 'ctest'",
-        "⚠ the step that configures the tree must key off the runner the selection \
-         step recorded for THIS casefile. A verdict nothing reads is the same \
-         silence as no verdict at all, and a lane-wide answer would make every \
-         cargo casefile in a mixed selection pay for a tree it never opens."
+        "⚠ the step that restores the tree a ctest round's gate configures must \
+         key off the runner the selection step recorded for THIS casefile. A \
+         verdict nothing reads is the same silence as no verdict at all, and a \
+         lane-wide answer would make every cargo casefile in a mixed selection \
+         pay for a tree it never opens."
     );
     assert_eq!(
         run_body_named(&workflow, "Run the round").trim(),
         "scripts/gate mutation-rounds",
         "⚠ the round must be the gate, not a recipe restated in the lane."
     );
+    // Every round step, one per image, hands its gate the casefile.
+    let named = workflow
+        .lines()
+        .filter(|l| l.trim() == "SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}")
+        .count();
+    let rounds = round_steps(&workflow).len();
     assert!(
-        workflow.contains("SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}"),
+        rounds >= 2 && named == rounds,
         "⚠ the round must run the casefile the matrix named, through the gate's \
-         own subset channel. Any second derivation here is the shape of defect \
-         that had this lane answering for a different set than it selected."
+         own subset channel, in each of the {rounds} round step(s); {named} of them \
+         do. Any second derivation here is the shape of defect that had this lane \
+         answering for a different set than it selected."
     );
 
     // Which runner each casefile drives its round through, from the
@@ -1930,12 +2034,262 @@ fn round_argv(rounds: &[&str], shard: Option<&str>) -> RoundArgv {
     }
 }
 
-/// A cargo casefile whose round the fixture above can reach — no ctest
-/// selector, because the fixture deliberately carries no configured tree.
+/// What a run of a gate script did in a fixture standing in for its image: its
+/// status, what it handed `scripts/mutate` for each round, and the order in
+/// which the tree and the validator were prepared (`prepare`, `install`), with
+/// the run's combined log.
+struct ImageRun {
+    ok: bool,
+    argv: Vec<String>,
+    prepared: Vec<String>,
+    log: String,
+}
+
+/// Run `gate` (a script under `scripts/gates/`) over the named casefiles in a
+/// copy of the tree, as a run inside `image` (SCE_GATE_CONTAINER, which
+/// `gate_in_container` sets) or, with `None`, as a run where the runner is.
+///
+/// The harness is replaced by the shim `round_argv` uses, and the two scripts a
+/// run in an image calls before its rounds by shims that say they were called:
+/// the tree's preparation leaves the `build/CMakeCache.txt` a configure would,
+/// and the validator's installer installs nothing.
+fn image_rounds(gate: &str, image: Option<&str>, rounds: &[&str]) -> ImageRun {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    for entry in GATE_TREE {
+        let dest = root.join(entry);
+        fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
+        copy_tree(&repo_root().join(entry), &dest);
+    }
+    let harness = root.join("scripts/mutate-under-test");
+    fs::rename(root.join("scripts/mutate"), &harness).expect("move the harness aside");
+    write_shim(
+        &root.join("scripts/mutate"),
+        &format!(
+            "for arg in \"$@\"; do\n\
+             \x20 case \"$arg\" in\n\
+             \x20   --declares|--check|--targets) exec '{harness}' \"$@\" ;;\n\
+             \x20 esac\n\
+             done\n\
+             printf '%s\\n' \"$*\" >> \"$SCE_ROUND_ARGV\"\n",
+            harness = harness.display()
+        ),
+    );
+    write_shim(
+        &root.join("scripts/prepare_ctest_tree.sh"),
+        "printf 'prepare\\n' >> \"$SCE_SHIM_LOG\"\n\
+         mkdir -p build\n\
+         : > build/CMakeCache.txt\n",
+    );
+    write_shim(
+        &root.join("scripts/install_mnemosyne_cli.sh"),
+        "printf 'install\\n' >> \"$SCE_SHIM_LOG\"\n",
+    );
+    for args in [vec!["init", "-q"], vec!["add", "-A"]] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .expect("prepare the fixture index");
+        assert!(out.status.success(), "git {args:?} failed in the fixture");
+    }
+
+    let observed = root.join("argv.txt");
+    let shim_log = root.join("prepared.txt");
+    let mut command = gate_shell();
+    command
+        .arg(gate)
+        .current_dir(root)
+        .env("SCE_MUTATION_ROUNDS", rounds.join(","))
+        .env("SCE_ROUND_ARGV", &observed)
+        .env("SCE_SHIM_LOG", &shim_log);
+    if let Some(image) = image {
+        command.env("SCE_GATE_CONTAINER", image);
+    }
+    let out = command.output().expect("run the gate");
+    let lines = |path: &Path| -> Vec<String> {
+        fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    ImageRun {
+        ok: out.status.success(),
+        argv: lines(&observed),
+        prepared: lines(&shim_log),
+        log: format!(
+            "--- stdout ---\n{}\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
+}
+
+/// A casefile whose round needs nothing but its runner: no service and no
+/// toolchain of its own.
+fn a_plain_casefile_of(runner: &str) -> String {
+    casefiles()
+        .into_iter()
+        .find(|casefile| {
+            declared_runner(casefile) == runner
+                && declared_needs(casefile).is_empty()
+                && !fs::read_to_string(repo_root().join(casefile))
+                    .unwrap_or_default()
+                    .contains("mutation_env ")
+        })
+        .unwrap_or_else(|| panic!("⚠ the corpus holds no `{runner}` casefile that declares no service and no toolchain"))
+}
+
+/// In an image, the gate configures the tree a ctest round needs and provides
+/// the rev-pinned validator before the round; where the runner is, it refuses
+/// the round for want of a tree it was not handed.
+///
+/// The lane's job configured the tree on the runner until ADR 0145, and a tree
+/// configured there names the runner's compilers, which the image does not
+/// have; the image's home starts without the validator the citation suites
+/// refuse to run without. So both are the gate's in an image (SCE_GATE_CONTAINER),
+/// before any round, and the run where the runner is keeps its refusal, which is
+/// exit 3 and no verdict.
+#[test]
+fn in_an_image_the_gate_prepares_what_a_ctest_round_needs() {
+    let casefile = a_plain_casefile_of("ctest");
+
+    let run = image_rounds(
+        "scripts/gates/mutation-rounds.sh",
+        Some(HOST_IMAGE),
+        &[&casefile],
+    );
+    assert!(run.ok, "⚠ the gate failed in the image:\n{}", run.log);
+    assert_eq!(
+        run.prepared,
+        vec!["prepare".to_string(), "install".to_string()],
+        "⚠ in the image the gate must configure the tree its ctest round needs \
+         and put the rev-pinned validator in the image's home, each once, before \
+         the round; it did {:?}\n{}",
+        run.prepared,
+        run.log
+    );
+    assert_eq!(
+        run.argv.len(),
+        1,
+        "⚠ one casefile was named, so one round should have run: {:?}\n{}",
+        run.argv,
+        run.log
+    );
+    assert!(
+        run.argv[0].contains(&casefile),
+        "⚠ the round ran something other than the casefile it was named: {}\n{}",
+        run.argv[0],
+        run.log
+    );
+
+    let outside = image_rounds("scripts/gates/mutation-rounds.sh", None, &[&casefile]);
+    assert!(
+        !outside.ok && outside.argv.is_empty(),
+        "⚠ where the runner is, with no tree, the ctest round must be refused \
+         before it runs; it ran {:?}\n{}",
+        outside.argv,
+        outside.log
+    );
+    assert!(
+        outside.prepared.is_empty(),
+        "⚠ where the runner is the gate prepared {:?}: the machine's own tree and \
+         validator are not the gate's to make there\n{}",
+        outside.prepared,
+        outside.log
+    );
+    assert!(
+        outside.log.contains("no configured CMake tree at build/"),
+        "⚠ refused, but not for the reason under test:\n{}",
+        outside.log
+    );
+}
+
+/// A round runs only in the image its runner needs: the host gate refuses a
+/// Swift casefile it is named, the Swift gate refuses a cargo one, and the Swift
+/// gate runs a Swift round without the validator, which no Swift oracle needs.
+///
+/// The lane routes each matrix entry to the gate of its runner
+/// (`every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job`); this is
+/// the other half, the gate refusing a round its image cannot run rather than
+/// reporting the baseline it could not build as a defect in the tree.
+#[test]
+fn a_round_runs_only_in_the_image_its_runner_needs() {
+    let swift = a_plain_casefile_of("swift");
+    let cargo = a_cargo_casefile();
+    const SWIFT_GATE_SCRIPT: &str = "scripts/gates/mutation-swift.sh";
+    const SWIFT_IMAGE: &str = "tools/ci-images/swift/Containerfile";
+
+    let host_named_swift = image_rounds(
+        "scripts/gates/mutation-rounds.sh",
+        Some(HOST_IMAGE),
+        &[&swift],
+    );
+    assert!(
+        !host_named_swift.ok && host_named_swift.argv.is_empty(),
+        "⚠ the host gate ran a Swift round it cannot build: {:?}\n{}",
+        host_named_swift.argv,
+        host_named_swift.log
+    );
+    assert!(
+        host_named_swift.log.contains("run in another image")
+            && host_named_swift.log.contains("scripts/gate mutation-swift"),
+        "⚠ refused, but without naming the gate that runs it:\n{}",
+        host_named_swift.log
+    );
+
+    let swift_named_cargo = image_rounds(SWIFT_GATE_SCRIPT, Some(SWIFT_IMAGE), &[&cargo]);
+    assert!(
+        !swift_named_cargo.ok && swift_named_cargo.argv.is_empty(),
+        "⚠ the Swift gate ran a cargo round its image does not hold: {:?}\n{}",
+        swift_named_cargo.argv,
+        swift_named_cargo.log
+    );
+    assert!(
+        swift_named_cargo
+            .log
+            .contains("scripts/gate mutation-rounds."),
+        "⚠ refused, but without naming the gate that runs it:\n{}",
+        swift_named_cargo.log
+    );
+
+    let swift_round = image_rounds(SWIFT_GATE_SCRIPT, Some(SWIFT_IMAGE), &[&swift]);
+    assert!(
+        swift_round.ok,
+        "⚠ the Swift gate failed on a Swift round:\n{}",
+        swift_round.log
+    );
+    assert_eq!(
+        swift_round.argv.len(),
+        1,
+        "⚠ one Swift casefile was named, so one round should have run: {:?}\n{}",
+        swift_round.argv,
+        swift_round.log
+    );
+    assert!(
+        swift_round.prepared.is_empty(),
+        "⚠ the Swift gate prepared {:?} for a Swift round, which needs neither a \
+         CMake tree nor the validator\n{}",
+        swift_round.prepared,
+        swift_round.log
+    );
+}
+
+/// Whether a casefile's rounds are cargo rounds: no ctest selector, because the
+/// fixtures below deliberately carry no configured tree, and run by the gate as
+/// itself, in the host image, which a Swift round is not ("Two gates over one
+/// corpus" in scripts/gates/mutation-rounds.sh).
+fn is_cargo_casefile(casefile: &str) -> bool {
+    declared_runner(casefile) == "cargo"
+}
+
+/// A cargo casefile whose round the fixture above can reach.
 fn a_cargo_casefile() -> String {
     casefiles()
         .into_iter()
-        .find(|casefile| !declares_ctest(casefile) && declared_needs(casefile).is_empty())
+        .find(|casefile| is_cargo_casefile(casefile) && declared_needs(casefile).is_empty())
         .expect("⚠ the corpus holds no cargo casefile that declares no service")
 }
 
@@ -2010,7 +2364,7 @@ fn the_shard_the_lane_names_reaches_the_harness() {
 fn a_shard_named_over_more_than_one_casefile_is_refused() {
     let corpus: Vec<String> = casefiles()
         .into_iter()
-        .filter(|casefile| !declares_ctest(casefile) && declared_needs(casefile).is_empty())
+        .filter(|casefile| is_cargo_casefile(casefile) && declared_needs(casefile).is_empty())
         .take(2)
         .collect();
     assert_eq!(
@@ -2074,17 +2428,21 @@ fn is_configure(command: &str) -> bool {
 /// So the assertion is not "the step names a build type"; it is that the step's
 /// configure IS the gates' configure, compared by running both. A recipe
 /// restated here can drift from the one the gates use; a delegated one cannot.
+///
+/// Since ADR 0145 the preparation is the gate's own, run in its image (a tree
+/// configured on the runner would name the runner's compilers), so what is run
+/// here is the line of `scripts/gates/mutation-rounds.sh` that prepares it.
 #[test]
 fn the_lane_prepares_the_tree_the_rounds_judge() {
-    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
-        .expect("read the mutation-rounds workflow");
-    let step = run_body_named(&workflow, "Configure the CMake tree");
-    assert!(
-        !step.contains("${{"),
-        "⚠ the step interpolates a workflow expression, which bash sees \
-         literally — this test would be running a different string than CI \
-         does. Move the expression into the step's `env:`:\n{step}"
-    );
+    let gate_script = fs::read_to_string(repo_root().join("scripts/gates/mutation-rounds.sh"))
+        .expect("read the mutation-rounds gate");
+    let step = gate_script
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .find(|l| l.starts_with("bash scripts/prepare_ctest_tree.sh"))
+        .map(|l| format!("{}\n", l.trim_end_matches('\\').trim()))
+        .expect("⚠ the gate no longer runs scripts/prepare_ctest_tree.sh, so nothing prepares the tree its ctest rounds need");
 
     let (lane, lane_log) = prepared_by(&step);
     // What the gates do when they need this tree, run the same way. The
@@ -2500,7 +2858,7 @@ fn the_gate_starts_the_declared_service_for_that_round_and_no_other() {
             needs_of[*casefile]
                 .iter()
                 .any(|need| need == "http-fixture")
-                && !declares_ctest(casefile)
+                && is_cargo_casefile(casefile)
         })
         .unwrap_or_else(|| {
             panic!(
@@ -2514,7 +2872,7 @@ fn the_gate_starts_the_declared_service_for_that_round_and_no_other() {
         .clone();
     let controls: Vec<String> = corpus
         .iter()
-        .filter(|casefile| needs_of[*casefile].is_empty() && !declares_ctest(casefile))
+        .filter(|casefile| needs_of[*casefile].is_empty() && is_cargo_casefile(casefile))
         .take(2)
         .cloned()
         .collect();

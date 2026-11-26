@@ -33,8 +33,22 @@
 {
     "workflows": ["mutation-rounds.yml"],
     # Its ctest casefiles run in the main tree, which it configures
-    # (scripts/prepare_ctest_tree.sh) where none is.
+    # (scripts/prepare_ctest_tree.sh) in its image, and where none is.
     "builds": ["main-tree"],
+    # The host image (ADR 0145, family `host`): the toolchains of every round
+    # but the Swift ones, which `mutation-swift` runs in the swift
+    # image over the same selection ("Two gates over one corpus" in
+    # scripts/gates/mutation-rounds.sh). The runner pulls the image its
+    # Containerfile's digest names and runs `scripts/gate mutation-rounds`
+    # inside it.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # What the lane hands the run inside: the casefile and the slice a round
+    # job runs and when the job started, and for the selection, the change set
+    # and the switch that only names what it chose.
+    "container_env": ["SCE_MUTATION_ROUNDS", "SCE_MUTATION_SHARD",
+                      "SCE_MUTATION_JOB_STARTED", "SCE_MUTATION_ROUNDS_DRY_RUN",
+                      "SCE_GATE_CHANGED_FILE"],
     "runner_workflow": True,
     "narrows": "the workflow is unfiltered so CI starts it on every push; "
                "what actually decides a round is the casefiles' own "
@@ -82,8 +96,12 @@
     # And the two readings of a ctest tree the harness shares with the C++
     # suite's shards: the commands a configured tree registers, and the
     # fixtures whose setup builds the whole tree.
+    #
+    # And the image the rounds run in, and the installer of the rev-pinned
+    # validator the gate runs there.
     "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock",
               "scripts/prepare_ctest_tree.sh",
+              "tools/ci-images/host/**", "scripts/install_mnemosyne_cli.sh",
               "scripts/lib/ctest_registered_commands.cmake",
               "scripts/lib/ctest_shards.py"],
     "cost_s": 877,

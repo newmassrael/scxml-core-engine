@@ -79,6 +79,18 @@
 #
 # `scripts/gate mutation-rounds` still runs it by hand, and the lane calls
 # exactly that, so both judge the corpus by one set of rules.
+#
+# ── Two gates over one corpus ─────────────────────────────────────
+#
+# A gate runs in one image (ADR 0145, D4), and a round needs its runner's
+# toolchain: a Swift round the swift image's, every other round the host
+# image's. So the corpus is run by two gates, `mutation-rounds` in the host
+# image and `mutation-swift` in the swift image, and this script is
+# both: `scripts/gates/mutation-swift.sh` sources it with the family
+# `swift` as its argument, and run as itself it is the host's. Each chooses as
+# below and runs the rounds of its own image, and the lane routes each matrix
+# entry to the gate of its runner.
+MUTATION_ROUNDS_FAMILY="${1:-host}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -410,6 +422,41 @@ if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
     exit 0
 fi
 
+# ── The rounds this gate's image runs ─────────────────────────────
+#
+# The selection above is the corpus's, and each casefile's rounds run in the
+# image its runner's toolchain is in: `swift` in the swift image, every other
+# runner in the host image ("Two gates over one corpus" above). A dry run named
+# every selected casefile whatever its image, since selecting is not running
+# and the lane routes each to its gate by its runner; a run keeps its own
+# image's share and names the rest, which the other gate runs. A casefile named
+# by SCE_MUTATION_ROUNDS that this gate's image cannot run is refused rather
+# than passed over: the caller asked for a verdict this run cannot give.
+mutation_rounds_family_of() {
+    if [[ "$1" == swift ]]; then printf 'swift\n'; else printf 'host\n'; fi
+}
+mutation_rounds_gate_of() {
+    if [[ "$1" == swift ]]; then printf 'mutation-swift\n'; else printf 'mutation-rounds\n'; fi
+}
+OWN=()
+OTHER=()
+for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
+    if [[ "$(mutation_rounds_family_of "${RUNNER_OF[$casefile]}")" == "$MUTATION_ROUNDS_FAMILY" ]]; then
+        OWN+=("$casefile")
+    else
+        OTHER+=("$casefile")
+    fi
+done
+if (( ${#OTHER[@]} > 0 )); then
+    other_gate="$(mutation_rounds_gate_of "$(mutation_rounds_family_of "${RUNNER_OF[${OTHER[0]}]}")")"
+    if [[ -n "${SCE_MUTATION_ROUNDS:-}" && "$SCE_MUTATION_ROUNDS" != all ]]; then
+        sce_gate_fail "SCE_MUTATION_ROUNDS names ${OTHER[*]}, whose rounds run in another image than this gate's ($MUTATION_ROUNDS_FAMILY).
+Run them with SCE_MUTATION_ROUNDS=${OTHER[0]} scripts/gate $other_gate."
+    fi
+    sce_gate_step "${#OTHER[@]} selected casefile(s) run in another image, by $other_gate: ${OTHER[*]}"
+fi
+SELECTED=(${OWN[@]+"${OWN[@]}"})
+
 # ── Refuse rather than skip what this machine cannot run ──────────
 #
 # A ctest round selects from a configured CMake tree. Without one there is
@@ -423,26 +470,29 @@ fi
 # transport SDKs, where it reported FAILED for what was never its tree's
 # fault.
 #
-# A landing is the other party that prepares the tree rather than refusing, for
-# the reason the lane does: it is a judgment nobody iterates on, and a refusal
-# there would send back as not measured every item that reaches a ctest
-# casefile, on every build machine whose checkout was never configured. It runs
-# the lane's own recipe, so the tree judged there is the tree judged here.
-if [[ ! -f build/CMakeCache.txt ]]; then
-    needs_ctest=()
-    for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
-        [[ "${RUNNER_OF[$casefile]}" == "ctest" ]] && needs_ctest+=("$casefile")
-    done
-    if (( ${#needs_ctest[@]} > 0 )) && sce_gate_landing; then
-        sce_gate_step "configuring build/ for ${#needs_ctest[@]} ctest casefile(s), as the lane does (scripts/prepare_ctest_tree.sh)"
+# Two parties prepare the tree rather than refusing. A run in an image
+# (SCE_GATE_CONTAINER, set by `gate_in_container` in scripts/gate) always
+# does: the tree has to be configured with the image's compilers, and nothing
+# outside the image can do that, so the lane's job no longer configures one
+# and a tree its cache restored is configured again here. A landing does when
+# no tree is there: it is a judgment nobody iterates on, and a refusal there
+# would send back as not measured every item that reaches a ctest casefile, on
+# every build machine whose checkout was never configured. Both run the one
+# recipe, so the tree judged in either place is the same tree.
+needs_ctest=()
+for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
+    [[ "${RUNNER_OF[$casefile]}" == "ctest" ]] && needs_ctest+=("$casefile")
+done
+if (( ${#needs_ctest[@]} > 0 )); then
+    if [[ -n "${SCE_GATE_CONTAINER:-}" ]] \
+        || { [[ ! -f build/CMakeCache.txt ]] && sce_gate_landing; }; then
+        sce_gate_step "configuring build/ for ${#needs_ctest[@]} ctest casefile(s) (scripts/prepare_ctest_tree.sh)"
         bash scripts/prepare_ctest_tree.sh \
             || sce_gate_fail "scripts/prepare_ctest_tree.sh could not configure build/ for the ctest casefiles: ${needs_ctest[*]}"
-        needs_ctest=()
-    fi
-    if (( ${#needs_ctest[@]} > 0 )); then
+    elif [[ ! -f build/CMakeCache.txt ]]; then
         sce_gate_cannot_run "no configured CMake tree at build/, and ${#needs_ctest[@]} selected casefile(s) declare a ctest selector: ${needs_ctest[*]}
-Prepare one with scripts/prepare_ctest_tree.sh — the same script the lane
-runs, so the tree judged here is the tree judged there — or run only the
+Prepare one with scripts/prepare_ctest_tree.sh — the same script a run in the
+image runs, so the tree judged here is the tree judged there — or run only the
 cargo casefiles with SCE_MUTATION_ROUNDS."
     fi
 fi
@@ -450,6 +500,14 @@ fi
 if (( ${#SELECTED[@]} == 0 )); then
     sce_gate_step "no declared mutation target changed; the anchors are checked by mutation-cases"
     exit 0
+fi
+
+# The rev-pinned validator the citation suites need, which a round whose oracle
+# is one of them runs (`gate_registry_contract` is the oracle of several
+# casefiles). In an image it is put in the image's home; elsewhere the machine
+# has it. The Swift rounds' oracles are Swift packages, which need none.
+if [[ "$MUTATION_ROUNDS_FAMILY" == host ]]; then
+    sce_gate_provide_mnemosyne_pin
 fi
 
 # ── Run them ──────────────────────────────────────────────────────

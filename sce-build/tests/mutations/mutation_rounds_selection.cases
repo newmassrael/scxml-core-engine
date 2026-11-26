@@ -39,11 +39,11 @@ mutation_runtime_targets scripts/lib/mutation_rounds_cost.sh
 # workflow is a runtime target too. The gate answering correctly was never the
 # half that broke.
 mutation_runtime_targets .github/workflows/mutation-rounds.yml
-# The lane's tree preparation, executed the same way by
-# `the_lane_prepares_the_tree_the_rounds_judge`: the script the step now calls,
-# and the helper it delegates the configure to. Both are read at run time, and
-# both carried a defect that only a runner could meet — a configure with no
-# generator built first.
+# The tree preparation, executed the same way by
+# `the_lane_prepares_the_tree_the_rounds_judge`: the script the gate calls in
+# its image, and the helper it delegates the configure to. Both are read at run
+# time, and both carried a defect that only a runner could meet — a configure
+# with no generator built first.
 mutation_runtime_targets scripts/prepare_ctest_tree.sh
 mutation_runtime_targets scripts/gates/lib.sh
 # The harness, because the oracle side of a selection is resolved there: the
@@ -203,17 +203,16 @@ PY
 # to build. Measured 20/20, deterministic. Five casefiles went 34 commits
 # without a single CI round before anybody read the lane.
 #
-# A case against the workflow rather than the gate on purpose: the gate was
-# right the whole time, and a corpus that only mutates the gate would have
-# stayed green through all 34 of those commits.
+# A case against the workflow rather than the gate on purpose, while the lane
+# configured the tree: the gate was right the whole time, and a corpus that
+# only mutated the gate would have stayed green through all 34 of those
+# commits. Since ADR 0145 the gate configures the tree in its image, so the
+# recipe a case can restate is the gate's line.
 
 mutation_case "the lane writes its own recipe for the tree again" <<'PY'
-edit(".github/workflows/mutation-rounds.yml",
-     "      run: scripts/prepare_ctest_tree.sh",
-     """      run: |
-        set -euo pipefail
-        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --parallel "$(nproc)\"""")
+edit("scripts/gates/mutation-rounds.sh",
+     "        bash scripts/prepare_ctest_tree.sh \\",
+     "        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \\")
 PY
 
 # ── The tree is configured without the generator it needs ──────────
@@ -305,8 +304,12 @@ PY
 
 mutation_case "the round runs the dispatch's subset instead of its own entry" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}""",
-     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}""")
+     """      if: matrix.runner != 'swift'
+      env:
+        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}""",
+     """      if: matrix.runner != 'swift'
+      env:
+        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}""")
 PY
 
 # ── The job stops being told which slice it is ─────────────────────
@@ -373,17 +376,18 @@ edit(".github/workflows/mutation-rounds.yml",
           NR == 1 { next }""")
 PY
 
-# ── A tree is built for the casefile that needs one ────────────────
+# ── A round runs in the image its runner needs ─────────────────────
 #
-# The runner column travels with the casefile so the answer is per job. A
-# lane-wide answer is the version that makes every cargo casefile in a mixed
-# selection pay for a tree it never opens, and it reads as a saving nowhere.
+# The runner column travels with the casefile so the answer is per job: a Swift
+# round to the swift image's gate, every other round to the host image's. A
+# lane-wide answer runs a Swift round in an image without Swift, which reports
+# the baseline it could not build as though the tree were broken.
 
-mutation_case "the tree is built for every job or for none" <<'PY'
+mutation_case "every round runs in the host image whatever its runner" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """    - name: Configure the CMake tree
-      if: matrix.runner == 'ctest'""",
-     """    - name: Configure the CMake tree
+     """    - name: Run the round
+      if: matrix.runner != 'swift'""",
+     """    - name: Run the round
       if: needs.select.outputs.count != '0'""")
 PY
 

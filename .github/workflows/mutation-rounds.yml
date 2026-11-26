@@ -34,9 +34,19 @@ name: Mutation Rounds
 # the first time a case names a new file. So the workflow starts on every push
 # and the gate narrows inside itself.
 #
-# That narrowing is what keeps this affordable: the job below asks for the
-# selection before it installs anything, and most pushes select nothing and
-# stop there.
+# That narrowing is what keeps this affordable: the selection job below asks
+# the gate which casefiles a push reaches before any round job starts, and
+# most pushes select nothing and stop there.
+#
+# ## Two gates, two images
+#
+# Every round runs in an image (ADR 0145): `mutation-rounds` in the host
+# image for every runner but Swift, `mutation-swift` in the swift image
+# for the Swift rounds, the same script choosing by one set of rules ("Two
+# gates over one corpus" in scripts/gates/mutation-rounds.sh). No step of this
+# file installs a package or a toolchain; a round job runs the gate of its
+# matrix entry's runner, and that gate configures the CMake tree a ctest round
+# needs inside its image.
 
 on:
   push:
@@ -208,10 +218,13 @@ jobs:
     timeout-minutes: 10
 
     # `actions: read` lists this workflow's earlier runs to find the last one
-    # that reached a verdict; `contents: read` is what checkout needs.
+    # that reached a verdict; `contents: read` is what checkout needs;
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image).
     permissions:
       contents: read
       actions: read
+      packages: write
 
     outputs:
       count: ${{ steps.select.outputs.count }}
@@ -283,9 +296,14 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    # Before anything is installed or built: which casefiles does this change
-    # reach, and do any of them select through ctest? A push that reaches none
-    # ends here, which is most of them.
+    # The selection runs in the host image as every run of the gate does, and
+    # the image is all it needs: it builds nothing.
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
+
+    # Before any round job starts: which casefiles does this change reach, and
+    # which runner does each need? A push that reaches none ends here, which is
+    # most of them.
     - name: Which casefiles does this change reach
       id: select
       env:
@@ -524,6 +542,11 @@ jobs:
     needs: select
     if: needs.select.outputs.count != '0'
     runs-on: ubuntu-24.04
+    # `packages: write` lets the image action push an image this push built
+    # (.github/actions/gate-image); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     # Declared rather than inherited. GitHub's default is 360 minutes, and a
     # job that crosses it is `cancelled` — which this workflow's own header
@@ -600,160 +623,13 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
-    # Only what this casefile actually needs. A cargo round wants no CMake,
-    # and the runner column travelled here from the selection so a cargo
-    # casefile in a mixed selection does not pay for a tree it never opens.
-    # clang-format-19 on both rows: the ctest tree generates C++ through
-    # `sce-codegen`, and so do cargo oracles such as `cli_guard_emission` —
-    # the generator formats C++ with clang-format pinned to major 19 and
-    # refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9).
-    - name: Install Dependencies
-      if: matrix.runner == 'ctest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential cmake g++ meson ninja-build lld \
-          pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev \
-          clang-format-19
-
-    - name: Install libxml2 for sce-build
-      if: matrix.runner != 'ctest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
-
-    # A round whose oracle is a Go suite compiles it with `go test -c`, so the
-    # toolchain has to be here and has to be the one `w3c-tests.yml` pins —
-    # a round judging a backend on a different Go than the lane that gates it
-    # would be answering about a build nobody ships. Both read it where
-    # bx.toml's `[platform.linux.tools.go]` does: the `go` line of that go.mod.
-    #
-    # Installed under the runner condition rather than always, because these
-    # jobs are one per casefile and most of them are cargo rounds that would
-    # pay for a toolchain they never call.
-    - name: Setup Go
-      if: matrix.runner == 'go'
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: backends/go/forge-runtime/go.mod
-        cache-dependency-path: |
-          backends/go/runtime/go.sum
-          backends/go/lua/go.sum
-          backends/go/tests/go.sum
-
-    # The same for a pytest round, and here the install is load-bearing in a
-    # way the Go one is not: `lupa` is the Lua binding the Python runtime's
-    # script engine is, and `pytest` is the runner itself. Without them the
-    # round's baseline fails to collect and reports a red tree — which is the
-    # exact shape this job already paid for once with the rev-pinned validator
-    # below, a true sentence about a missing tool phrased as a defect.
-    - name: Setup Python
-      if: matrix.runner == 'pytest'
-      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-      with:
-        python-version: '3.11'
-
-    - name: Install the Python runtime's dependencies
-      if: matrix.runner == 'pytest'
-      run: |
-        python3 -m pip install --upgrade pip
-        python3 -m pip install lupa pytest
-
-    # And the same for a Gradle round, which is the JVM backend's. The version
-    # is the one every other Kotlin lane in this repository pins
-    # (`ecma262-lowered-kotlin.yml`, `w3c-tests.yml`): a round judging the
-    # backend on a different JDK than the lane that gates it would be
-    # answering about a build nobody ships — the reason the Go step above
-    # states for its own pin.
-    - name: Setup JDK
-      if: matrix.runner == 'gradle'
-      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    # A Gradle round is one invocation per case and each one starts from the
-    # dependency graph, so an uncached job would download the whole of it
-    # before the baseline could run. Keyed by this lane, as every Kotlin lane
-    # keys its own (`ecma262-lowered-kotlin.yml` says why), and restored
-    # loosely, because a partial hit is still most of the download.
-    - name: Cache Gradle
-      if: matrix.runner == 'gradle'
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-mutation-rounds-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-mutation-rounds-
-          ${{ runner.os }}-gradle-
-
-    # And the same for a Swift round, which is the Swift backend's. The toolchain is the
-    # one `bx.toml` pins (`[platform.linux.tools.swift]`) and `swift-backend.yml` installs: a round
-    # judging the backend on a different compiler than the lane that gates it would be
-    # answering about a build nobody ships, the reason the Go step above states for its
-    # own pin. The release and the digest are read from `bx.toml` and written nowhere in
-    # this file.
-    - name: Install the packages the Swift toolchain links against
-      if: matrix.runner == 'swift'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y binutils libc6-dev libcurl4-openssl-dev libedit2 \
-          libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
-          pkg-config tzdata unzip zlib1g-dev
-
-    - name: Read the Swift pin
-      id: swift-pin
-      if: matrix.runner == 'swift'
-      run: |
-        SCE_REPO_ROOT="$PWD"
-        source scripts/lib/swift_pin.sh
-        echo "version=$(sce_swift_pin_version)" >> "$GITHUB_OUTPUT"
-        echo "digest=$(sce_swift_pin_digest 24.04)" >> "$GITHUB_OUTPUT"
-
-    - name: Cache the Swift toolchain
-      if: matrix.runner == 'swift'
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.local/share/swift/${{ steps.swift-pin.outputs.version }}
-        key: swift-toolchain-ubuntu24.04-${{ steps.swift-pin.outputs.version }}-${{ steps.swift-pin.outputs.digest }}
-
-    - name: Install the pinned Swift toolchain
-      if: matrix.runner == 'swift'
-      run: scripts/install_swift_toolchain.sh
-
-    # The same repair `rust-workspace-tests.yml` already carries, and for the
-    # same two tests. `gate_registry_contract` is the ORACLE of three casefiles
-    # in this corpus, and it drives the staged citation stage as a subprocess;
-    # that stage refuses — exit 3, "the gate could not run, its own tooling is
-    # missing" — without the rev-pinned binary. This job never installed it, so
-    # every round on that oracle stopped at `baseline is not green (2 failing)`
-    # before mutating anything.
-    #
-    # Measured 2026-08-25: the first whole-corpus sweep reported that for
-    # `ci_lane_gate_selection` and `ledger_citations_gate`, while the same
-    # binary passed 21/21 locally and `cargo test --workspace` passed on a
-    # runner — because THAT lane installs this and this one did not. Reproduced
-    # by running the built binary with `HOME` pointed at an empty directory:
-    # `the_commit_stage_rejects_a_fabricated_citation_in_staged_content` and
-    # `the_staged_stage_scope_is_not_bounded_by_path_or_extension` fail, and
-    # nothing else does.
-    #
-    # A red baseline is not a mutation verdict, so this cost two casefiles
-    # their rounds and said nothing about either one's cases.
-    - name: Cache mnemosyne-cli (rev-pinned)
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-      with:
-        path: ~/.local/share/mnemosyne-rev
-        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
-
-    - name: Install the rev-pinned mnemosyne-cli
-      run: scripts/install_mnemosyne_cli.sh
-
-    # Rust, and the C and C++ of the ctest rounds' tree, compile through the
-    # shared compile cache (.github/actions/compile-cache), read and never
-    # written.
+    # The image's cargo keeps a home of its own, whose registry download the
+    # step after restores. Rust compiles through the shared compile cache
+    # (.github/actions/compile-cache), read and never written: `gate_in_container`
+    # hands sccache into the image as Rust's wrapper. The C and C++ of a ctest
+    # round's tree compiled through it as well while the tree was configured on
+    # the runner; in the image they do once the runner hands sccache in as
+    # CMake's compiler launcher too, which is what the paragraph below is for.
     #
     # The setup of a ctest round is its first build: the closure of what the
     # casefile's tests run, compiled from nothing on every job. It was 24
@@ -775,8 +651,59 @@ jobs:
       id: compile-cache
       uses: ./.github/actions/compile-cache
       with:
-        cmake: true
+        registry: false
         write: false
+
+    # One cargo home per gate in the image (`gate_in_container` in
+    # scripts/gate), so the round job keeps the one of the gate its runner
+    # routes it to.
+    - name: Cache the image's cargo registry download
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/sce-gate-containers/mutation-rounds/cargo/registry/index
+          ~/.cache/sce-gate-containers/mutation-rounds/cargo/registry/cache
+          ~/.cache/sce-gate-containers/mutation-rounds/cargo/git/db
+          ~/.cache/sce-gate-containers/mutation-swift/cargo/registry/index
+          ~/.cache/sce-gate-containers/mutation-swift/cargo/registry/cache
+          ~/.cache/sce-gate-containers/mutation-swift/cargo/git/db
+        key: image-cargo-registry-mutation-rounds-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+
+    # The same repair `rust-workspace-tests.yml` carries, and for the same
+    # two tests. `gate_registry_contract` is the ORACLE of three casefiles in
+    # this corpus, and it drives the staged citation stage as a subprocess;
+    # that stage refuses — exit 3, "the gate could not run, its own tooling is
+    # missing" — without the rev-pinned binary. Measured 2026-08-25: the first
+    # whole-corpus sweep reported `baseline is not green (2 failing)` for
+    # `ci_lane_gate_selection` and `ledger_citations_gate` because this job
+    # never installed it. The gate installs it in the image's home now
+    # (`sce_gate_provide_mnemosyne_pin` in scripts/gates/lib.sh), and this keeps
+    # that home's copy across runs. The revision is read from
+    # `spec-citations.yml`, the one place it lives.
+    - name: Cache the image's mnemosyne-cli (rev-pinned)
+      if: matrix.runner != 'swift'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/sce-gate-containers/mutation-rounds/home/.local/share/mnemosyne-rev
+        key: host-image-mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+
+    # A Gradle round is one invocation per case and each one starts from the
+    # dependency graph, so an uncached job would download the whole of it
+    # before the baseline could run. Keyed by this lane, as every Kotlin lane
+    # keys its own (`ecma262-lowered-kotlin.yml` says why), and restored
+    # loosely, because a partial hit is still most of the download. It is the
+    # Gradle home of the image the round runs in.
+    - name: Cache Gradle
+      if: matrix.runner == 'gradle'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/sce-gate-containers/mutation-rounds/home/.gradle/caches
+          ~/.cache/sce-gate-containers/mutation-rounds/home/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-mutation-rounds-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-mutation-rounds-
+          ${{ runner.os }}-gradle-
 
     # The build type is in the key, not only in the recipe. A cache entry is
     # restored by prefix, and the run that first reached this path left a
@@ -784,7 +711,8 @@ jobs:
     # step used to name. Restoring that into a job that now configures
     # RelWithDebInfo does not reconfigure it: `sce_main_build_dir` refuses a
     # tree whose recorded build type is not the one the gates judge, so the
-    # lane would go red on a cache rather than on anything in the tree.
+    # lane would go red on a cache rather than on anything in the tree. The
+    # gate configures the restored tree again in the image before its round.
     - name: Cache CMake Build
       if: matrix.runner == 'ctest'
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -811,37 +739,27 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-sce-codegen-plans-mutation-rounds-
 
-    # A ctest round selects from a configured tree; without one the gate
-    # refuses (exit 3) rather than reporting green over what it cannot run.
-    # This is the step that makes sure it never has to.
-    #
-    # Delegated for the same reason the selection above is: this step used to
-    # spell the recipe out — `cmake -S . -B build -G Ninja
-    # -DCMAKE_BUILD_TYPE=Debug` — and it was wrong twice over. It configured
-    # without building `sce-codegen`, which no runner can do (the configure
-    # resolves the generator and stops with a FATAL_ERROR), and it named a
-    # build type the gates refuse, so the half-hour it spent would have
-    # produced a tree the rounds then declined to judge. Both survived because
-    # nothing ran them: this path was first reached on 2026-08-17, 34 commits
-    # after the ctest casefiles were written.
-    #
-    # `scripts/prepare_ctest_tree.sh` is the one recipe, and the gate's refusal
-    # names it too, so a developer configuring by hand gets the tree CI gets.
-    - name: Configure the CMake tree
-      if: matrix.runner == 'ctest'
-      run: scripts/prepare_ctest_tree.sh
+    - name: Sign in to the registry the gate images are pulled from
+      uses: ./.github/actions/gate-image
 
     # Delegated rather than restated: the per-round verdict and the floors all
     # live in the gate, so this lane and a developer running
     # `scripts/gate mutation-rounds` by hand judge a casefile by one set of
-    # rules.
+    # rules. The gate configures the CMake tree a ctest round needs in its
+    # image (scripts/prepare_ctest_tree.sh), since a tree configured on this
+    # runner would name the runner's compilers.
     #
     # The casefile comes from the matrix and nowhere else. `SCE_MUTATION_ROUNDS`
     # is the gate's own channel for a named subset, so the job runs exactly the
     # casefile the selection named — there is no change set in this job to
     # re-derive one from, and that is deliberate: two derivations are how this
     # lane came to answer for a different set than it had selected.
+    #
+    # The runner column routes the round to its image: every runner but Swift
+    # to `mutation-rounds` in the host image, Swift to `mutation-swift`
+    # in the swift image, one step each and exactly one of them per job.
     - name: Run the round
+      if: matrix.runner != 'swift'
       env:
         SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
         # Which slice of it. The gate passes this to `scripts/mutate --shard`
@@ -850,6 +768,13 @@ jobs:
         # the one it was scheduled as.
         SCE_MUTATION_SHARD: ${{ matrix.shard }}
       run: scripts/gate mutation-rounds
+
+    - name: Run the Swift round
+      if: matrix.runner == 'swift'
+      env:
+        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+        SCE_MUTATION_SHARD: ${{ matrix.shard }}
+      run: scripts/gate mutation-swift
 
     # What the compile cache answered of this job, and what it could not
     # (.github/actions/compile-cache).
