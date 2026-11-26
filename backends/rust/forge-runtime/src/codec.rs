@@ -1443,6 +1443,11 @@ impl<'a> SceSink for VecSink<'a> {
 mod tests {
     use super::*;
 
+    // The crate is `no_std`; its tests run on the host, whose standard library
+    // the source-text helpers below read the crate's own text with.
+    extern crate std;
+    use std::{format, string::String, vec::Vec};
+
     #[test]
     fn empty_cursor_reports_zero_remaining() {
         let c = SceCursor::new(&[]);
