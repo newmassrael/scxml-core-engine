@@ -18,6 +18,12 @@
   site, and `{Codec}InlineWalk` is withdrawn; the walk reads its entry held in place where the entry codec is hot, a
   property of the codec decided once; a cold scan of a chain of a hot entry reads by `{Codec}ColdScanWalk`, which no
   list names (section "Amendment, 2026-11-26: no public type depends on hotness").
+- Amended again (2026-11-26): a hot body is printed in two forms from its one text, and its entry point is its cold
+  form, never a call of the form held in place. The entry point's reads call the entry points of what it holds; the
+  form held in place reads what it holds held in place. The one walk of a list reads by the entry point at every site,
+  `{Codec}ColdScanWalk` is withdrawn, and a hot body's form held in place scans a chain by a walk held in place and
+  reads it by a rule held in place, which no list and no public type names (section "Amendment, 2026-11-26: a cold
+  read of a hot body expands no hot body").
 
 ## Context
 
@@ -242,3 +248,97 @@ none, every `pub` struct, enum, union, trait, type alias and field declaration i
 that names a hot view's list `ListView<'a, {Entry}Walk, 0>`, holds a cold view's list where the hot view holds its own
 and walks either compiles against the hot set; a hot entry's walk reads it held in place, a cold scan of a chain of it
 calls its entry point, and with no codec named neither changes.
+
+## Amendment, 2026-11-26: a cold read of a hot body expands no hot body
+
+### Context
+
+The consumer generated its set with the hot roots the transport frame header, the frame and the push, and measured it
+on the same image and window as before. The codec area is +11,377 B over its baseline, where it was +1,434 B under ADR
+0139; the receive path did not move, 4,346.9 against 4,332. The growth is off the hot path, in functions the hot closure
+does not hold:
+
+- entry points of codecs in the hot closure, which cold parents call: the wire expression's `read_into` 1,994 B, the
+  extension entry's 1,278 B, the encoding's and the ZBuf slice's 1,111 B each, the ZBuf extension's 621 B, the
+  extension entry's view `read_with::<()>` 1,211 B and the delete's 1,250 B;
+- the entry point of a cold codec with one site, left to the compiler and inlined into its cold parent: the init
+  body's `read_into` 863 B, and `read_declare` +1,084 B;
+- the one walk's lazy read: `ListIter<ExtEntryWalk>::next` 1,288 B and `walk_chain` over that walk for the delete's
+  chain 1,002 B.
+
+Section 2 made an entry point of a hot body one call of its form held in place. A call of an `#[inline(always)]`
+function is the function's text, so the entry point held the whole hot body, and through it the whole hot subtree:
+every read the hot body makes is the form held in place of the child, held in place again. Every cold caller of a hot
+codec, a declaration reading the wire expression, the init body reading an extension, paid for the subtree in the entry
+point it calls, or, where it is the one site and the entry point carries no attribute, in itself. The walk's read was
+the entry's form held in place where the entry is hot (first amendment), so every walk of a list of a hot entry, a
+consumer's iteration and `walk_chain` alike, held the entry's body. Hotness was a property of the site in the closure,
+and of the codec again in the entry point and in the walk.
+
+### Decision
+
+1. **A hot body is printed in two forms from its one text.** The template prints the body once per form, each time
+   with the fields as that form reads them: the entry points (`read_into`, `read`, `read_with`), whose every read is
+   a cold site and calls the entry point of what it holds and the frame reader's out-of-line ZInt read; and the forms
+   held in place (`read_into_inline`, `read_inline`, `read_with_inline`, `#[inline(always)]`), whose every read is a
+   hot site and calls the form held in place of what it holds and the ZInt read held in place. No entry point calls a
+   form held in place, so a cold read of a hot body, wherever it is, expands no hot body: the cold form of a hot codec
+   is the text a cold codec prints. The entry points keep ADR 0137's rule over the cold sites, as section 2 says.
+2. **A walk reads by the entry point at every site.** `{Codec}Walk`'s `ListWalk::read_with`, which a consumer's walk of
+   a list and every entry point's scan of a chain read by, calls the entry's entry point whatever the entry codec and
+   whatever the body that holds the list: a walk is a read a consumer makes of a list after the frame is read, and no
+   read of a hot body. A walk of a list's own (`{Codec}{Field}Walk`) reads the same way. `{Codec}ColdScanWalk` is
+   withdrawn: the walk is cold itself. The count of ADR 0137 keeps the walk of a list as a site of its entry's view, and
+   no hot body holds it, so it places the entry point with the cold sites (`BodyReadSites::count`).
+3. **A hot body's form held in place reads its chains held in place by items no list names.** Its scan of a chain
+   reads by a walk held in place: `{Codec}HeldWalk`, which the module of a hot codec writes beside its walk,
+   `pub(super)`, where the list shares its entry's walk; `{Codec}{Field}HeldWalk`, private to the holder's module,
+   where the list has a walk of its own. Its eager read of a chain reads by `{Codec}{Field}HeldChain`, private to the
+   holder's module. Each is the item it is held in place of but for the read of an entry, the entry's form held in
+   place: a walk held in place carries from one entry to the next by its walk's own `advance`, and a rule held in place
+   ends, carries and asks the kinds of an entry by the chain's rule, so the two of one chain say these by one text. The
+   chain's rule `{Codec}{Field}Chain` reads an entry by its entry point at every site.
+4. **Public types stay identical with and without hot roots.** Every item this amendment adds is `pub(super)` or
+   private; the first amendment's test of the public face holds unchanged.
+
+### Consequences
+
+- No golden moves: with no codec named a body is printed in its entry points alone, which read as they read, and no
+  item held in place is written.
+- A codec outside the hot closure prints what it prints with no codec named, with its view and without: a cold scan
+  of a chain of a hot entry reads by the list's one walk again.
+- Expected, measured by the consumer at the landing: each symbol above shrinks toward the size of the cold body it
+  is, a call of each child's entry point and of `read_vle_inner` in place of each child's held body; `read_declare`
+  and the init body back toward their size before ADR 0139; `ListIter<ExtEntryWalk>::next` and `walk_chain` over
+  `ExtEntryWalk` a call of the entry's entry point per entry. The hot path's text is the form held in place it was, so
+  the receive path is not expected to move; `walk_chain` is instantiated once more for each chain a hot body scans,
+  over the walk held in place.
+- A consumer's walk of a list of a hot entry on its own hot path calls the entry point once per entry, where the first
+  amendment held it in place. The build that wants that walk held in place has no type to name for it; that is the
+  price of the walk being a read the frame's hot path does not make.
+- A consumer that named `{Codec}ColdScanWalk`, visible to the set's modules alone, names nothing in its place.
+
+### Alternatives considered
+
+- **Keep the entry point a call of the form held in place and mark it `#[inline(never)]` at every cold site.** The
+  entry point would stay one function, but it would still hold the whole hot subtree, once per hot codec: the size of
+  the closure copied into every cold entry point of it. Refused: the cold form is what a cold read asks for.
+- **Keep the walk's read held in place for a hot entry** (the first amendment). Measured: `ListIter::next` and
+  `walk_chain` over the walk hold the entry's body for every list of the entry, the cold delete's included. Refused: a walk
+  is not a read the hot path makes. The first amendment refused the walk reading by the entry point because a
+  consumer's walk on its hot path would make a call per entry; the consumer's measurement says the walk is off the path
+  it names hot.
+- **A rule or walk generic over the form** (a parameter of `ChainRule` or of `ListWalk`). Every view's list type and
+  every chain rule would change shape, and with them every golden. Refused: the items held in place are private
+  functions of the set, written beside the items they hold in place.
+
+### Acceptance
+
+Accepted on all of these: the Rust goldens are unchanged; the entry point of a hot codec calls no form held in place
+and reads its ZInts by the call; its form held in place calls the forms held in place of what it holds; a cold parent
+of a hot child calls the child's entry point and holds no form held in place; the walk of a list reads by the entry
+point, hot entry or cold; a hot body's form held in place scans a chain by a walk held in place and reads it by a rule
+held in place, and its entry point by the list's walk and the chain's rule; the walk of a hot body's list is no hot
+site of its entry; a codec outside the hot closure prints what it prints with no codec named, with views and without;
+the public declarations of a set are the same text with and without hot roots; the hot sets compile, a chain with a
+walk of its own among them.
