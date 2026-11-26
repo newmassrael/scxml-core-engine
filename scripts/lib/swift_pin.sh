@@ -7,12 +7,13 @@
 # (`[platform.linux.tools.swift]`; `[tools.swift]` of the shorthand until 2026-11-04),
 # which is what `provision` installs on the build machines.
 #
-# Everything else asks here. The hosted lanes (`swift-backend.yml`, the Swift rounds of
-# `mutation-rounds.yml`) install it with `scripts/install_swift_toolchain.sh`, the
-# gate takes its version from here, and the mutation harness finds the toolchain by the
-# same layout. A second copy of the version or of the tarball's digest in a workflow
-# would be a second answer to "which compiler is this", free to fall behind the build
-# machines' exactly when a bump moves one and not the other; so there is none.
+# Everything else asks here: `scripts/install_swift_toolchain.sh` installs it, the gates
+# take the release they require from here, and the mutation harness finds the toolchain
+# by the same release. The hosted lanes (`swift-backend.yml`, the Swift rounds of
+# `mutation-rounds.yml`) run in the swift image (tools/ci-images/swift/Containerfile),
+# which names the release and its checksum itself (ADR 0145, D3); the gates' check of
+# `swift --version` against this pin is what keeps that second copy from falling
+# behind the build machines' without a red that names both.
 #
 # Sourced; defines functions only. `SCE_REPO_ROOT` is the repository root.
 

@@ -55,9 +55,9 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# The toolchain is the one `bx.toml` pins, which is also what the runner installs
-# (`scripts/install_swift_toolchain.sh`): one source, so the packages are verified on the
-# compiler the build machines have.
+# The toolchain is the one `bx.toml` pins, which the swift image the gate runs in installs
+# (tools/ci-images/swift/Containerfile): a `swift` of another release is refused, so the
+# packages are verified on the compiler the pin names.
 sce_gate_require_swift
 
 # The parts, one job of the lane each. Together they are the default list of

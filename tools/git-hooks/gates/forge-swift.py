@@ -12,18 +12,26 @@
 # forge kinds in part and holds what it writes to the oracle; the queue and broadcast-log
 # history checks the other arms make are read here when Swift has those kinds.
 #
-# `ci_only` for the reason `swift-backend` is: the toolchain pin.
+# `ci_only` for the reason `swift-backend` is: the toolchain is the swift image's.
 {
     "workflows": ["swift-backend.yml"],
     "runner_workflow": True,
     "deps": ["codegen-build"],
-    "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-               "in bx.toml); the gate refuses without it, so a push of "
-               "another ref run on a machine without the pin would be "
-               "refused for a reason that says nothing about the tree. An "
-               "update to main runs it where bx placed it, on a machine "
-               "that carries the pin. swift-backend.yml installs the pin "
-               "by its digest.",
+    # An edit of the image is a change the gate judges.
+    "extra": ["tools/ci-images/swift/**"],
+    # The swift image (ADR 0145, family `swift`): the pinned Swift toolchain and
+    # the packages it links against, the same wherever the gate runs. The
+    # runner pulls the image its Containerfile's digest names and runs
+    # `scripts/gate forge-swift` inside it, the generator build among its deps
+    # ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/swift/Containerfile",
+    "needs": ["docker"],
+    "ci_only": "the toolchain is the swift image's (tools/ci-images/swift/"
+               "Containerfile, at the release `[platform.linux.tools.swift]` "
+               "of bx.toml pins), and a push would pull that image first; "
+               "the gate refuses another release. swift-backend.yml runs it "
+               "in the image, and an update to main runs it where bx placed "
+               "it, on a machine with a rootless Docker.",
     # 102s, `scripts/test_swift_backend.sh forge` through `bx` on a build machine on
     # 2026-11-01 (the script under the gate: a gate run is refused locally for this
     # repository). The forge runtime's 73 tests and 184 conformance tests. Warm, like its

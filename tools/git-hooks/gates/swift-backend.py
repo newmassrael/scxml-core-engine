@@ -31,6 +31,13 @@
     # (`shard_count`), each on a machine that carries the pin.
     "shard_env": "SCE_SWIFT_BACKEND_SHARD",
     "deps": ["codegen-build"],
+    # The swift image (ADR 0145, family `swift`): the pinned Swift toolchain and
+    # the packages it links against, the same wherever the gate runs. The
+    # runner pulls the image its Containerfile's digest names and runs
+    # `scripts/gate swift-backend` inside it, the generator build among its deps
+    # ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/swift/Containerfile",
+    "needs": ["docker"],
     # 38s and 19s, the gate script run twice end to end through `bx` on a
     # build machine on 2026-10-28 (the first run built the packages, the
     # second found them built); 38 is declared, the worse of the two. Not
@@ -38,20 +45,18 @@
     # repository. Both figures include the transfer.
     #
     # `ci_only` is not about the 38s, which the push budget could spend. The
-    # toolchain kept it out of every push: a hand-installed pin that
-    # `provision` puts on a build machine, and a push the hook ran in place
-    # on a machine that lacked it would be refused for a reason that says
-    # nothing about the tree. The gate fails loudly without a toolchain
-    # rather than skipping. An update to main runs it all the same (see
-    # "What `ci_only` means"): the pin is a tool of bx.toml's platform, so
-    # bx runs the unit only on a machine that carries it.
-    "ci_only": "38s, and the 6.4.0 toolchain is a hand-installed pin "
-               "(`[platform.linux.tools.swift]` in bx.toml); the gate "
-               "refuses without it, so a push of another ref run on a "
-               "machine without the pin would be refused for a reason that "
-               "says nothing about the tree. An update to main runs it "
-               "where bx placed it, on a machine that carries the pin. "
-               "swift-backend.yml installs the pin by its digest.",
+    # toolchain keeps it out of every push: it is the swift image's, a pull of
+    # its own ahead of the gate on a machine that has none. The gate fails
+    # loudly on another release rather than skipping. An update to main runs
+    # it all the same (see "What `ci_only` means"), on a machine with a
+    # rootless Docker (`needs`).
+    "ci_only": "38s, and the toolchain is the swift image's "
+               "(tools/ci-images/swift/Containerfile, at the release "
+               "`[platform.linux.tools.swift]` of bx.toml pins), which a "
+               "push would pull first; the gate refuses another release. "
+               "swift-backend.yml runs it in the image, and an update to "
+               "main runs it where bx placed it, on a machine with a "
+               "rootless Docker.",
     "cost_s": 38,
     # The suite's committed traces, which `ATestSuiteRunsThroughItsRunnerTests.swift`
     # replays through the function and the runner program, and the trace's wire schema,
@@ -59,6 +64,8 @@
     # workflow's `paths:` names both, as a `ci_only` gate's triggers must be
     # (`ci-only-coverage`).
     "extra": ["sce-build/tests/fixtures/test_profile/runtime/traces/**",
+              # An edit of the image is a change the gate judges.
+              "tools/ci-images/swift/**",
               "schemas/sce-test-trace.v1.schema.json",
               # The corpus's suites `ACorpusSuiteReplaysToItsExpectedLogsTests.swift`
               # replays: the traces and expected logs of each, read at run time, and the
@@ -67,8 +74,8 @@
               "sce-build/tests/fixtures/test_profile/runs/**",
               "sce-build/tests/fixtures/ttcn3_export/**"],
     "summary": "Swift backend: runtime, host features and generated machines",
-    # The toolchain is a pinned tool of the platform, so its version is in
-    # the key, and a machine without it fails the gate loudly.
+    # The toolchain is the image's, and a release other than the pin fails
+    # the gate loudly.
     "cache": True,
     "inputs": None,
     "commits": [],

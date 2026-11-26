@@ -1514,11 +1514,13 @@ sce_gate_require_jdk() {
 # packages with a compiler this repository never ran them on: the Swift
 # Testing library and the language mode both moved between releases.
 #
-# The version is READ from `bx.toml` (`scripts/lib/swift_pin.sh`), the one place
-# that names it: what `provision` installs on the build machines, and what
-# `scripts/install_swift_toolchain.sh` installs on a hosted runner. A lane and a
-# developer's machine therefore agree about which toolchain builds, and there is no
-# second copy in a workflow to fall behind.
+# The version is READ from `bx.toml` (`scripts/lib/swift_pin.sh`): what `provision`
+# installs on a build machine, what `scripts/install_swift_toolchain.sh` installs
+# elsewhere, and what the swift image the Swift gates run in installs
+# (tools/ci-images/swift/Containerfile, which names the release and its checksum
+# itself, ADR 0145). This check is what holds the image to the pin: a `swift` of
+# another release ends the gate, so the two cannot disagree without a red that
+# names both.
 #
 # Exact, not a floor: unlike a JDK, a Swift release is a different compiler,
 # and the packages are verified on one. A toolchain of another version is not

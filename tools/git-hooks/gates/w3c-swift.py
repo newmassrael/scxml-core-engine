@@ -7,23 +7,31 @@
 # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
 # suite and the engine runs it. It rides the workflow of `swift-backend` as the first step of
 # the `swift-machines` job, with `ecma262-lowered-swift` and `forge-swift`, because what the
-# three need is the same: the generator built, the pinned toolchain installed and checked
-# against its digest. The `swift-backend` gate's parts run in jobs of their own beside it
+# three need is the same: the swift image, which holds the pinned toolchain, and the generator
+# built in it. The `swift-backend` gate's parts run in jobs of their own beside it
 # (`SCE_SWIFT_BACKEND_SHARD`), so the three gates no longer wait for its twenty minutes.
 #
-# `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin,
-# and the gate fails loudly without it. An update to main runs it where bx placed it.
+# `ci_only` for the reason `swift-backend` is: the toolchain is the swift image's, which a push
+# would pull first. An update to main runs it where bx placed it.
 {
     "workflows": ["swift-backend.yml"],
     "runner_workflow": True,
     "deps": ["codegen-build"],
-    "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-               "in bx.toml); the gate refuses without it, so a push of "
-               "another ref run on a machine without the pin would be "
-               "refused for a reason that says nothing about the tree. An "
-               "update to main runs it where bx placed it, on a machine "
-               "that carries the pin. swift-backend.yml installs the pin "
-               "by its digest.",
+    # An edit of the image is a change the gate judges.
+    "extra": ["tools/ci-images/swift/**"],
+    # The swift image (ADR 0145, family `swift`): the pinned Swift toolchain and
+    # the packages it links against, the same wherever the gate runs. The
+    # runner pulls the image its Containerfile's digest names and runs
+    # `scripts/gate w3c-swift` inside it, the generator build among its deps
+    # ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+    "container": "tools/ci-images/swift/Containerfile",
+    "needs": ["docker"],
+    "ci_only": "the toolchain is the swift image's (tools/ci-images/swift/"
+               "Containerfile, at the release `[platform.linux.tools.swift]` "
+               "of bx.toml pins), and a push would pull that image first; "
+               "the gate refuses another release. swift-backend.yml runs it "
+               "in the image, and an update to main runs it where bx placed "
+               "it, on a machine with a rootless Docker.",
     # 76s, `scripts/test_swift_backend.sh w3c` through `bx` on a build machine on
     # 2026-11-01, which is what the gate runs and reads (a gate run is refused locally
     # for this repository, so the script under it was timed). 156 fixtures lowered and

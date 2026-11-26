@@ -26,8 +26,8 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# The toolchain is the one `bx.toml` pins, which is also what the runner installs
-# (`scripts/install_swift_toolchain.sh`).
+# The toolchain is the one `bx.toml` pins, which the swift image the gate runs in installs
+# (tools/ci-images/swift/Containerfile).
 sce_gate_require_swift
 
 source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
