@@ -179,3 +179,15 @@ Accepted on all of these: the runtime's unit tests pass, the encoding and every 
 every boundary; the Rust goldens are unchanged and the conformance lane passes with every frame's bytes and verdict
 as before; `scripts/check_clippy_codec.sh` passes; the nostd-mcu gate's worst-case stack finds no indirect call; the
 consumer measures its runtime bytes at the landing.
+
+## Amendment, 2026-11-26: a ZInt of one byte is the read's first branch
+
+The consumer measured this ADR's landing (bedc527d480) against its baseline (b616325c651) with its corrected
+harness: the codec area at +1,295 B (from +5,728 B), the whole image smaller, and the receive path of an 8-byte put
+at 4,932.2 instructions a message against 4,855.9 (+76.3, +1.6 %), `codec::read_zint` taking 103 of them. Every
+ZInt, a one-byte one included, made two calls: the reader's `read_vle_inner` and the shared `read_zint`.
+
+Each reader's one out-of-line ZInt read now answers a byte below 0x80 in its first branch and calls `read_zint`
+only for a longer ZInt. A one-byte field is one call, as the baseline's out-of-line cursor read was; the shared body
+stays one copy, and no read site holds the test in place, so the size this ADR recovered is kept. The two readers'
+reads each hold the same four-instruction test, which is the price of one call where there were two.

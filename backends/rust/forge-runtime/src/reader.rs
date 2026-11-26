@@ -298,8 +298,19 @@ impl<'a> SceReader<'a> {
     /// so the two readers of a ZInt run one decode (docs/adr/0130). A field is a
     /// call that answers the value; no field reads a ZInt of one byte in place,
     /// and none holds the body's answer or its record (docs/adr/0138).
+    ///
+    /// A ZInt of one byte, the most a field holds (an id, a length, a count), is
+    /// this function's first branch: one call answers it, and only a longer one
+    /// goes on to the shared body (docs/adr/0138, amendment of 2026-11-26). A
+    /// byte below 0x80 is a value every width holds.
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
+        if let Some(&byte) = self.buf.get(self.pos) {
+            if byte & 0x80 == 0 {
+                self.pos += 1;
+                return u64::from(byte);
+            }
+        }
         let (value, at) = read_zint(self.buf, self.pos, max_bits);
         match value {
             Ok(value) => {
