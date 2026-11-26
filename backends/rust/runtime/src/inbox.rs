@@ -28,6 +28,13 @@
 //! A refused post gives its input back ([`InboxRefusal`]), so nothing posted is
 //! dropped without the poster being told.
 //!
+//! What the owner decides when it drains (whether a drain begins, one at a
+//! time; how many inputs it takes from each inbox it reaches; whether an event
+//! of its own waits for a drain) is the submodule `drain`'s, a value with a
+//! transition function that Verus proves refines the owner's actions of
+//! `docs/formal/EngineInbox.tla` (docs/adr/0147, D4). The engine moves the
+//! inputs, through the channel and the ring here, and decides none of it.
+//!
 //! Every session of a tree has its own `std` inbox, a child's as well as the
 //! root's, and the tree keeps one directory of them and one waker
 //! (`TreeInboxes`; ARCHITECTURE.md "Engine Threading", item 3). An input
@@ -56,6 +63,11 @@
 //! (`EngineState::apply_mesh_calls`, the endpoint crate's `apply_to`), so no Mesh
 //! delivery has a caller on another thread, and the set is the inputs that
 //! have one.
+
+// The owner's decisions in a drain, proved by Verus: only in a build that has
+// an inbox to drain, as the engine's drain is.
+#[cfg(any(feature = "std", feature = "bounded-inbox"))]
+pub(crate) mod drain;
 
 #[cfg(feature = "std")]
 use std::any::Any;

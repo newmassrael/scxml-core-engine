@@ -1275,14 +1275,16 @@ pub struct EngineState<P: StatePolicy> {
     /// feature: a build without it has no inbox to attach.
     #[cfg(feature = "bounded-inbox")]
     pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
-    /// A drain of the inboxes is applying what they held
-    /// (`EngineState::drain_inbox`). Applying an input queues an external event,
-    /// and a queued external event asks for a drain first; the drain already
-    /// running is that drain, so the flag turns the second one into nothing
-    /// rather than into a drain inside a drain. Only in a build that has an
-    /// inbox: the `std` profile's own, or one attached with `bounded-inbox`.
+    /// Where the owner stands in draining the inboxes (`crate::inbox::drain`,
+    /// proved by Verus, docs/adr/0147 D4): whether a drain is under way, and
+    /// how many inputs it may still take from the inbox it reached. Applying an
+    /// input queues an external event, and a queued external event asks for a
+    /// drain first; the drain already running is that drain, so the event
+    /// joins the queue in place rather than after a drain inside a drain. Only
+    /// in a build that has an inbox: the `std` profile's own, or one attached
+    /// with `bounded-inbox`.
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
-    pub(crate) draining_inbox: bool,
+    pub(crate) inbox_drain: crate::inbox::drain::Drain,
     /// What [`set_transition_observer`](EngineState::set_transition_observer) set,
     /// told each transition the engine takes (docs/adr/0089); `None` until a
     /// host sets one. Absent from a build without the feature, so such a build
@@ -1345,7 +1347,7 @@ macro_rules! engine_initial_fields {
             #[cfg(feature = "bounded-inbox")]
             attached_inbox: None,
             #[cfg(any(feature = "std", feature = "bounded-inbox"))]
-            draining_inbox: false,
+            inbox_drain: crate::inbox::drain::Drain::idle(),
             #[cfg(feature = "transition-observer")]
             transition_observer: None,
         }
@@ -2304,7 +2306,7 @@ impl<P: StatePolicy> Engine<P> {
         // `raise_external` puts it there. Applied first, so the events counted
         // here are the external events the turn takes before `event`.
         #[cfg(any(feature = "std", feature = "bounded-inbox"))]
-        self.state.drain_inbox();
+        self.state.drain_before_own();
         let ahead = self.state.external_queue.queued().count();
         // Queued behind them with no drain of its own: a post applied between
         // the count and the push would stand ahead of `event` uncounted.
@@ -3378,33 +3380,46 @@ impl<P: StatePolicy> EngineState<P> {
     /// here; what they post meanwhile waits for the next.
     ///
     /// Made at each macrostep boundary, before the external queue is
-    /// consulted, and before this machine puts an event of its own on that
-    /// queue ([`enqueue_external`](Self::enqueue_external)).
+    /// consulted, and where the run ends; before this machine puts an event of
+    /// its own on that queue ([`enqueue_external`](Self::enqueue_external)),
+    /// [`drain_before_own`](Self::drain_before_own) makes it.
     ///
     /// One drain at a time. Applying an input queues an external event (a
     /// posted event, a host-run invocation's `done.invoke`), and that enqueue
     /// asks for a drain first: the drain already applying is that drain, and
     /// takes what it held in order, so the inner request is nothing and an
     /// applied input is queued as it stands, without a drain inside it.
+    /// Whether a drain begins, and how many inputs it takes, is the drain's
+    /// core's to say (`crate::inbox::drain`, docs/adr/0147 D4); this moves
+    /// the inputs.
     ///
     /// Only in a build that has an inbox to drain: the `std` profile's own, or
     /// one attached with the `bounded-inbox` feature. A bare-metal build with
     /// neither carries no drain, and no call of one.
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn drain_inbox(&mut self) {
-        if self.draining_inbox {
-            return;
+        if self.inbox_drain.begin() {
+            self.apply_held_inputs();
         }
-        self.draining_inbox = true;
-        self.apply_held_inputs();
-        self.draining_inbox = false;
     }
 
-    /// The body of [`drain_inbox`](Self::drain_inbox): the engine's own inbox,
-    /// then the attached one. Each holds this session's inputs alone, since
-    /// an input that names another session was posted to that session's inbox
-    /// (ARCHITECTURE.md "Engine Threading", item 3), so applying one never
-    /// reaches another engine of the tree.
+    /// Before an event of this machine's own joins its external queue: what
+    /// the inboxes hold is applied first, and the event goes behind it, unless
+    /// a drain is under way, whose applying of an input queues the event, which
+    /// then joins the queue in that input's place (docs/adr/0084, D2 as
+    /// amended at step 9).
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
+    fn drain_before_own(&mut self) {
+        if let crate::inbox::drain::Own::AfterDrain = self.inbox_drain.own() {
+            self.apply_held_inputs();
+        }
+    }
+
+    /// The body of a drain that began: the engine's own inbox, then the
+    /// attached one, and then the drain is over. Each holds this session's
+    /// inputs alone, since an input that names another session was posted to
+    /// that session's inbox (ARCHITECTURE.md "Engine Threading", item 3), so
+    /// applying one never reaches another engine of the tree.
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn apply_held_inputs(&mut self) {
         // The engine's own inbox holds no type of this machine's, so taking
@@ -3412,19 +3427,22 @@ impl<P: StatePolicy> EngineState<P> {
         // this machine's.
         #[cfg(feature = "std")]
         {
-            let due = self
+            let held = self
                 .inbox
                 .get()
                 .map_or(0, crate::inbox::OwnedInbox::per_boundary);
-            for _ in 0..due {
-                let Some(held) = self.inbox.get().and_then(crate::inbox::OwnedInbox::take) else {
+            self.inbox_drain.reach(held);
+            while self.inbox_drain.take_another() {
+                let Some(input) = self.inbox.get().and_then(crate::inbox::OwnedInbox::take) else {
+                    self.inbox_drain.ran_dry();
                     break;
                 };
-                self.apply_held_input(held);
+                self.apply_held_input(input);
             }
         }
         #[cfg(feature = "bounded-inbox")]
         self.apply_attached_inputs();
+        self.inbox_drain.finish();
     }
 
     /// The attached inbox's part of [`apply_held_inputs`](Self::apply_held_inputs),
@@ -3437,8 +3455,11 @@ impl<P: StatePolicy> EngineState<P> {
         // object, which need no import, and the profile without `std` makes no
         // other.
         if let Some(attached) = self.attached_inbox {
-            for _ in 0..crate::inbox::InboxSource::per_boundary(attached) {
+            self.inbox_drain
+                .reach(crate::inbox::InboxSource::per_boundary(attached));
+            while self.inbox_drain.take_another() {
                 let Some(input) = crate::inbox::InboxSource::take(attached) else {
+                    self.inbox_drain.ran_dry();
                     break;
                 };
                 self.apply_inbox_input(input);
@@ -3462,7 +3483,7 @@ impl<P: StatePolicy> EngineState<P> {
     /// running macrostep's own, and arrival order is the external queue's.
     fn enqueue_external(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         #[cfg(any(feature = "std", feature = "bounded-inbox"))]
-        self.drain_inbox();
+        self.drain_before_own();
         Self::enqueue(&mut self.external_queue, event);
     }
 
@@ -3478,7 +3499,7 @@ impl<P: StatePolicy> EngineState<P> {
             // into `enqueue_external` would be a cycle in the call graph
             // (raise -> drain -> apply -> raise) that the bare-metal stack bound
             // (`nostd-footprint`) cannot be computed over, though the
-            // `draining_inbox` guard would stop it after one level.
+            // drain's core would queue it in place after one level.
             InboxInput::ExternalEvent(event) => Self::enqueue(&mut self.external_queue, event),
             #[cfg(feature = "std")]
             InboxInput::ExternalEventByName { name, metadata } => {

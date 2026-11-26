@@ -188,7 +188,8 @@ host is the arrangement measured above to fail.
     push onto the external queue, while a run is going (what is posted before a run is kept for it), with
     `drainingInbox_` holding one drain at a time, and `processEvent` draining first as the Interpreter's does
     (`StaticExecutionEngine.h`);
-  - Rust: `Engine::enqueue_external` (`engine.rs`), in `std` and `no_std` alike, with `draining_inbox`. While the
+  - Rust: `Engine::enqueue_external` (`engine.rs`), in `std` and `no_std` alike, with the drain's core
+    (`inbox/drain.rs`, proved by Verus, ADR 0147 D4) holding one drain at a time. While the
     policy is lent to generated code (`with_policy`), a posted ending for a child session would reach the child that
     code is using, so in `std` it waits in `held_child_endings` and the next drain made with the policy free (the
     macrostep boundary at the latest) applies it first; an ending for the machine's own session is applied at once,

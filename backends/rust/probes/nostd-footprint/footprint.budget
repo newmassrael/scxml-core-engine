@@ -669,8 +669,9 @@ STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
 # `&dyn InboxSource` and applies what it takes by pushing onto a queue, so its pointer calls
 # reach the inbox's `take` and `per_boundary` and nothing else. It runs before every external
 # enqueue, which a `<send>` makes from inside `enter_state`, so charging it the whole main loop
-# would put a second main loop under the first, a path that cannot run.
-DRAIN='>>::(enqueue_external|drain_inbox|apply_held_inputs)$'
+# would put a second main loop under the first, a path that cannot run. `drain_before_own` is the
+# drain an event of the machine's own waits for (docs/adr/0147, D4), and reaches what the others do.
+DRAIN='>>::(enqueue_external|drain_before_own|drain_inbox|apply_held_inputs)$'
 STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<(?!.*${DRAIN})|\sas\ssce_rust_runtime::engine::MainLoop>::=(${ALL_FEATURES}|${WALKS})"
 STACK_DYN+=" ${DRAIN}=\sas\ssce_rust_runtime::inbox::InboxSource<"
 STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[<>:])'
