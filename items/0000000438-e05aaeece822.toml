@@ -6,3 +6,9 @@ commit = "ba489b9e4a421e1b2b682125c0cea369d63f74ed"
 base = "9b4c0d840c79bbe64a94172452c0efa4bb81b262"
 machine = "mf977c53d872e"
 at = 1795698530
+
+[return]
+reason = "conflict"
+detail = "tests/forge/expected/codec_zenoh_network_envelope.rs tests/forge/expected/views/codec_variant_peek_basic.rs tools/codegen/templates/forge/rust/codec.rs.jinja2"
+report = "m6a944ec3ba29:0000000438-e05aaeece822/attempt-5.log"
+at = 1795703490
