@@ -58,6 +58,10 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # the part a lane job runs, the log level of the runner, and where
+    # its report goes.
+    "container_env": ["SCE_W3C_CPP_SHARD", "SPDLOG_LEVEL", "SCE_W3C_REPORT_DIR"],
     "cache": True,
     "inputs": None,
     "commits": [],

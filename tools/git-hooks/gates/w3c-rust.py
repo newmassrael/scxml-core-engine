@@ -60,6 +60,9 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # the part of the crate's targets a lane job runs.
+    "container_env": ["SCE_W3C_RUST_SHARD"],
     "cache": True,
     "inputs": None,
     "commits": [],

@@ -71,6 +71,10 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # the part of the suite a lane job runs (its matrix shard; no
+    # `shard_env`, so a plan runs the gate whole).
+    "container_env": ["SCE_CTEST_SHARD"],
     "cache": True,
     "inputs": None,
     "commits": [],

@@ -165,12 +165,13 @@ jobs:
     # reports conformance; the shards are no subset, since the job below holds
     # them to the whole registry.
     - name: Run W3C SCXML Test Suite
+      # Set as the step's environment, which the runner hands into the gate's
+      # image by name (`container_env` of the gate's registry entry).
       env:
         SCE_W3C_CPP_SHARD: ${{ matrix.shard }}/6
-      run: |
-        SPDLOG_LEVEL="${{ inputs.log-level || 'debug' }}" \
-        SCE_W3C_REPORT_DIR=build/tests \
-          scripts/gate w3c-cpp
+        SPDLOG_LEVEL: ${{ inputs.log-level || 'debug' }}
+        SCE_W3C_REPORT_DIR: build/tests
+      run: scripts/gate w3c-cpp
 
     # The plan and what this shard ran (`test-cpp` reads them), its joined
     # report and ctest log, and the logs the runner keeps of a failed fixture.

@@ -66,6 +66,10 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # a missing emsdk as a failure rather than a skip, for the
+    # dependency it builds first.
+    "container_env": ["SCE_REQUIRE_TOOLS"],
     # The WASMs it reads are built in the same unit (`deps`), and the
     # stress half's seed is pinned in the script, so the verdict is the
     # tree's. Kept only from a landing unit, through `visualizer-wasm`.

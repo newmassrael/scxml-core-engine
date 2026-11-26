@@ -58,6 +58,10 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # a missing emsdk as a failure rather than a skip, and the part a
+    # lane job runs.
+    "container_env": ["SCE_REQUIRE_TOOLS", "SCE_CPP_SUITE_WASM_SHARD"],
     # The SDK and the Node it ships are the image's, at the release
     # scripts/install_emsdk.sh pins.
     "cache": True,

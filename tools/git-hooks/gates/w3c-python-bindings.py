@@ -37,6 +37,9 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # a missing python3-dev as a failure rather than a skip.
+    "container_env": ["SCE_REQUIRE_TOOLS"],
     "cache": True,
     "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                             "python3-config (python3-dev)",

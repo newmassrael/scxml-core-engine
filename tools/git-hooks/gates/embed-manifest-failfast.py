@@ -23,6 +23,9 @@
     # unit only where docker runs (`needs`).
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
+    # What its lane sets for it, handed into the image (`container_env`):
+    # a missing clang-19 as a failure rather than a skip.
+    "container_env": ["SCE_REQUIRE_TOOLS"],
     # Kept only from a landing unit, where the skip below cannot pass; the
     # image the gate runs in holds clang-19.
     "cache": True,
