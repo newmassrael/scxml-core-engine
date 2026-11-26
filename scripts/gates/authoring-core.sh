@@ -20,9 +20,21 @@
 # the core can make is built and asserted there -- each paired with the nearest
 # situation that must NOT be refused, so a check that refuses everything fails.
 #
-# Python stdlib plus PyYAML and jsonschema. No engine toolchain.
+# Python with PyYAML, jsonschema and the runtime's Lua binding, and the two
+# product binaries the suite drives: the generator, which `codegen-build` (a
+# dependency of this gate) builds, and the specs folder's `sce-spec`, built
+# below.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+# The specs tools (`specs_list`, `specs_read`, `specs_save_model`,
+# `specs_save_requirements`) run `sce-spec`, and the cases that drive them skip
+# where it is not built, as the run-driven cases skip without the generator. A
+# skip reads as a pass, so the gate builds it where the suite runs, the way its
+# dependency builds the generator, rather than judge less on a machine that did
+# not.
+sce_gate_tested -- cargo build -p sce-specs --features cli --bin sce-spec \
+    || sce_gate_fail "sce-spec build"
 
 # On the repository's Python environment where there is one (`sce_gate_python`): the run-driven
 # cases run a statechart under the interpreter that runs the suite (`sys.executable`), through the

@@ -20,6 +20,14 @@
     "workflows": ["regen-reproduces.yml"],
     "runner_workflow": True,
     "deps": ["codegen-build"],
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145): libxml2,
+    # clang-format-19 and clang-19 for the procedure's C++ and embed-manifest
+    # stages, and the Go the go-round-trip and forge-goldens steps build with.
+    # The lane's part (SCE_REGEN_SHARD) goes in by name: a plan runs the gate
+    # whole, so it is no `shard_env`.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    "container_env": ["SCE_REGEN_SHARD"],
     "ci_only": "117s regenerating every committed tree, which is work "
                "proportional to the corpus and not to the change. "
                "regen-reproduces.yml runs it. What this costs is worth "

@@ -13,6 +13,15 @@
 {
     "workflows": ["tree-hygiene.yml"],
     "runner_workflow": True,
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145): libxml2
+    # for sce-build, clang-format-19 for the targets that generate C++, and
+    # the build tools its suites drive. The rev-pinned mnemosyne-cli its
+    # citation cases resolve is handed in by the runner, as Rust is.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    # The lane's claim that the targets' tools are there, which the suites
+    # read (`sce_build::toolchain::tools_are_required`).
+    "container_env": ["SCE_REQUIRE_TOOLS"],
     # Its targets are spread over the lane's six jobs when SCE_TREE_HYGIENE_SHARD
     # names `k/N` (`--gate-targets` in scripts/lib/workspace_shards.py, which
     # reads them from the gate's own `cargo test` command): whole, the job took

@@ -20,6 +20,16 @@
 {
     "workflows": ["authoring-core.yml"],
     "runner_workflow": True,
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145), which holds
+    # the Python environment the suite runs on. The generator its run-driven
+    # cases spawn is built there first, and the script builds `sce-spec` for
+    # the specs cases, so neither is a binary another machine built and a case
+    # never skips for want of one. The lane's claim that the PDF text pack is
+    # there (SCE_REQUIRE_PDF_PACK) goes in by name.
+    "deps": ["codegen-build"],
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
+    "container_env": ["SCE_REQUIRE_PDF_PACK"],
     # Its test modules are spread over the three jobs of the lane's suite with
     # the generator built when SCE_AUTHORING_CORE_SHARD names `k/N`
     # (`--unittest-modules` in scripts/lib/workspace_shards.py): whole, that job

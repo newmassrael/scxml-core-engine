@@ -17,6 +17,8 @@ on:
       - '.github/workflows/targets.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
       - 'scripts/gates/targets.sh'
       # What cargo reads of the generator crate to build it, and the fixtures
       # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
@@ -38,6 +40,8 @@ on:
       - '.github/workflows/targets.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
       - 'scripts/gates/targets.sh'
       # What cargo reads of the generator crate to build it, and the fixtures
       # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
@@ -62,42 +66,30 @@ jobs:
     name: Interface is platform-free, library judges as verify does
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Install Dependencies
-        # libxml2-dev: the `libxml` crate behind sce-build's XSD validator
-        # needs the dev headers at build time (see forge-conformance.yml).
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxml2-dev pkg-config g++
+      # The gate runs in the host image (tools/ci-images/host), with what this
+      # job used to install: libxml2 for the generator's XSD validator, g++ for
+      # the library it builds, clang-format-19, which `sce-codegen` formats the
+      # library's C++ with (docs/SCE_CODEGEN_DETERMINISM.md section 9), and a
+      # Python environment holding PyYAML, jsonschema and `lupa`, which
+      # `verify` runs a statechart through. The gate builds the generator
+      # there first (`codegen-build`), and refuses to run without it.
       - uses: ./.github/actions/install-rust
       - name: Compile through the shared compile cache
         id: compile-cache
         uses: ./.github/actions/compile-cache
-      - name: Build sce-codegen
-        run: |
-          source scripts/lib/sce_codegen.sh
-          sce_codegen_drop_stale_release
-          cargo build --bin sce-codegen --features cli -p sce-build
-      - name: Refuse to run the suite without the generator
-        run: test -x target/debug/sce-codegen
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.x'
-      - name: Install the two libraries a pack is parsed and validated with
-        run: python3 -m pip install --upgrade pyyaml jsonschema
-      - name: Install the Python runtime's Lua binding
-        # `verify` judges a statechart by importing the Python the generator writes, and that
-        # runs through `lupa` (backends/python/runtime/pyproject.toml declares it). Without it the
-        # statechart cases here failed on the import (the second run of this lane, 2026-10-15).
-        run: python3 -m pip install lupa
-      - name: Install clang-format-19
-        # The library is generated as C++, which `sce-codegen` formats with clang-format pinned to
-        # major 19 or refuses (docs/SCE_CODEGEN_DETERMINISM.md section 9). The runner ships 18, so the
-        # first run of this lane (2026-10-14) refused every parity case until this step existed.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format-19
+      # The registry's credentials, so the runner pulls the gate's image by the
+      # digest of its build context and a run on main pushes one it built
+      # (.github/actions/gate-image).
+      - name: Pull the gate's image
+        uses: ./.github/actions/gate-image
       - name: Targets gate
         run: scripts/gate targets
 

@@ -95,6 +95,12 @@ jobs:
     name: tree-wide gates (part ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       # The account's 20 hosted jobs are shared; one job per shard at once.
@@ -121,16 +127,12 @@ jobs:
       with:
         fetch-depth: 0
 
-    # libxml2 backs sce-build's default `xsd` feature; without it the
-    # crate fails at link time before any test runs. clang-format-19 because
-    # two of the gate's test targets generate C++, and `sce-codegen` formats
-    # it with clang-format pinned to major 19 or refuses
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
-
+    # The gate runs in the host image (tools/ci-images/host). libxml2 backs
+    # sce-build's default `xsd` feature; without it the crate fails at link
+    # time before any test runs. clang-format-19 because two of the gate's
+    # test targets generate C++, and `sce-codegen` formats it with
+    # clang-format pinned to major 19 or refuses
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The image carries both.
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
@@ -138,12 +140,20 @@ jobs:
       id: compile-cache
       uses: ./.github/actions/compile-cache
 
+    # The registry's credentials, so the runner pulls the gate's image by the
+    # digest of its build context and a run on main pushes one it built
+    # (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
+
     # `gate_registry_contract` drives the *staged* citation stage as a
     # subprocess, and that stage refuses — exit 3, "the gate could not run,
     # its own tooling is missing" — without the rev-pinned binary. This job
     # never had it, so two of its tests failed on every push and said nothing
     # about the tree each time. The revision is read from
-    # `spec-citations.yml`, the one place it lives.
+    # `spec-citations.yml`, the one place it lives. Installed on the runner
+    # and handed into the image read-only (`gate_in_container` in
+    # scripts/gate), as the Rust release is.
     - name: Cache mnemosyne-cli (rev-pinned)
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
@@ -173,13 +183,15 @@ jobs:
         SCE_TREE_HYGIENE_SHARD: ${{ matrix.shard }}/6
       run: scripts/gate tree-hygiene
 
-    # The plan and what this part ran (`hygiene` reads them).
+    # The plan and what this part ran (`hygiene` reads them). The gate writes
+    # them under `target/`, which in the image is the image's own build
+    # directory in its cache (`gate_in_container` in scripts/gate).
     - name: Upload this part's plan
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: tree-hygiene-shard-${{ matrix.shard }}
-        path: target/tree-hygiene-shard/
+        path: ~/.cache/sce-gate-containers/tree-hygiene/target/tree-hygiene-shard/
         retention-days: 30
         if-no-files-found: warn
 

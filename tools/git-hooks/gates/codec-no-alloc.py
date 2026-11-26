@@ -13,6 +13,10 @@
     # The text algorithms it compiles are read from a materialization of
     # `rust-static-datamodel` (docs/adr/0097), which sce-codegen writes.
     "deps": ["codegen-build"],
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145), with the
+    # generator it builds there and the libxml2 that build links.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "cost_s": 90,
     "summary": "generated codecs compile without alloc",
     "cache": True,

@@ -70,6 +70,8 @@ on:
       - '.github/workflows/drift-verify.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -104,6 +106,8 @@ on:
       - '.github/workflows/drift-verify.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 concurrency:
@@ -115,6 +119,12 @@ jobs:
     name: B9 §6.2.6 drift detection suite
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
@@ -126,6 +136,12 @@ jobs:
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
+
+    # The registry's credentials, so the runner pulls the gate's image by the
+    # digest of its build context and a run on main pushes one it built
+    # (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
 
     # B9 integration suite — synthetic input/template fixtures cover the
     # verify subcommand's clean-pass / drifted-source / older-header-shape /
@@ -149,13 +165,8 @@ jobs:
     #
     # `sourcemap_addr2sce` generates C++, and `sce-codegen` formats C++ with
     # clang-format pinned to major 19 or refuses
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9); the runner image carries other
-    # majors only.
-    - name: Install clang-format-19
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-format-19
-
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9); the gate runs in the host image,
+    # which carries it.
     - name: Verify drift suites (B9 + §5.O sourcemap)
       run: scripts/gate drift-suites
 

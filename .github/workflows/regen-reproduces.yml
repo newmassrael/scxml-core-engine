@@ -71,6 +71,12 @@ jobs:
     name: regeneration reproduces the committed trees (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       # The account's 20 hosted jobs are shared; one job per shard at once.
@@ -87,24 +93,21 @@ jobs:
         fetch-depth: 0
         submodules: recursive
 
-    # libxml2 backs the default `xsd` feature the generator builds with.
+    # The gate runs in the host image (tools/ci-images/host), which carries
+    # what the procedure needs beside Rust. libxml2 backs the default `xsd`
+    # feature the generator builds with.
     #
     # clang-format-19: the procedure regenerates the Mesh C++ envelope tree
     # (`sce/src/mesh/generate_envelope.sh`) through `sce-codegen`, which
     # formats C++ with clang-format pinned to major 19 and refuses without it
-    # (docs/SCE_CODEGEN_DETERMINISM.md §9); the runner image carries other
-    # majors only. Without it the procedure stops at that stage, and a lane
-    # that cannot finish the procedure says nothing about whether any tree
-    # reproduces.
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). Without it the procedure stops at
+    # that stage, and a lane that cannot finish the procedure says nothing
+    # about whether any tree reproduces.
     #
     # clang-19: the procedure emits embed/MANIFEST.json, clang's reading of
     # the public headers, and its stamp (scripts/emit_embed_manifest.sh), and
-    # the emitter refuses without it for the same reason.
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19 clang-19
-
+    # the emitter refuses without it for the same reason. Go: the steps that
+    # build Go run the release the Go modules declare.
     # The release rust-toolchain.toml pins, which lists rustfmt: the
     # generator's Rust output is formatted with it, so what reproduces
     # moves only when that file does.
@@ -115,6 +118,12 @@ jobs:
       id: compile-cache
       uses: ./.github/actions/compile-cache
 
+    # The registry's credentials, so the runner pulls the gate's image by the
+    # digest of its build context and a run on main pushes one it built
+    # (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
+
     # Delegates to the gate runner, which also builds the generator through
     # the `codegen-build` dependency the registry records.
     - name: scripts/gate regen-reproduces
@@ -122,13 +131,15 @@ jobs:
         SCE_REGEN_SHARD: ${{ matrix.shard }}/3
       run: scripts/gate regen-reproduces
 
-    # The plan and what this shard ran (`regen` reads them).
+    # The plan and what this shard ran (`regen` reads them). The gate writes
+    # them under `target/`, which in the image is the image's own build
+    # directory in its cache (`gate_in_container` in scripts/gate).
     - name: Upload this shard's plan
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: regen-shard-${{ matrix.shard }}
-        path: target/regen-shard/
+        path: ~/.cache/sce-gate-containers/regen-reproduces/target/regen-shard/
         retention-days: 30
         if-no-files-found: warn
 

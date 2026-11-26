@@ -22,6 +22,11 @@
     # about the set, and the self-test below holds the delegation.
     "runner_workflow": True,
     "deps": ["codegen-build"],
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145), with the
+    # generator it builds there: clang-format-19 formats the C++ the examples
+    # are generated as, which the lane installed at job time.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "ci_only": "99s against a declared 4s — the widest gap in the table, "
                "and the clearest case of a warmed-sweep reading being "
                "mistaken for what a push pays. It generates from every "

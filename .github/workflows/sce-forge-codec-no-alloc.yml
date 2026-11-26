@@ -57,6 +57,8 @@ on:
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -88,6 +90,8 @@ on:
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 concurrency:
@@ -101,23 +105,31 @@ jobs:
     # The text algorithms are materialized by sce-codegen, which the gate
     # builds first.
     timeout-minutes: 30
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-    # sce-codegen's default `xsd` feature binds libxml2 through pkg-config.
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxml2-dev pkg-config
-
+    # sce-codegen's default `xsd` feature binds libxml2 through pkg-config,
+    # which the host image the gate runs in carries (tools/ci-images/host).
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
     - name: Compile through the shared compile cache
       id: compile-cache
       uses: ./.github/actions/compile-cache
+
+    # The registry's credentials, so the runner pulls the gate's image by the
+    # digest of its build context and a run on main pushes one it built
+    # (.github/actions/gate-image).
+    - name: Pull the gate's image
+      uses: ./.github/actions/gate-image
 
     - name: Compile generated scalar + list codecs no_std without alloc
       run: scripts/gate codec-no-alloc

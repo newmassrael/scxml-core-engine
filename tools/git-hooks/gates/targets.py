@@ -10,6 +10,14 @@
 {
     "workflows": ["targets.yml"],
     "runner_workflow": True,
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145), which holds
+    # the compiler, clang-format-19 and the Python environment the suite runs
+    # on; the generator is built there first, so the gate never meets one
+    # built against another machine's libc. The lane built it in a step of
+    # its own and installed the rest at job time.
+    "deps": ["codegen-build"],
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "ci_only": "81s with the generator built at opt 1: the interface cases are seconds each, "
                "the three parity cases build and run a C++ library. Not taken by "
                "`scripts/gate --measure`, which is refused locally for this repository.",

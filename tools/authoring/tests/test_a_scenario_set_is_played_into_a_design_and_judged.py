@@ -93,10 +93,12 @@ def codegen_is_built() -> bool:
     return _default_codegen().exists()
 
 
-# ⚠ The domain-free job of the authoring-core lane builds nothing on purpose
-# (`.github/workflows/authoring-core.yml`), so a case that spawns the product's
-# generator is skipped there and judged in `verify-with-codegen`. Landed without
-# this on 2026-10-01 and the lane was red for two pushes before anyone read it.
+# ⚠ A run with no generator built skips a case that spawns the product's
+# generator, as a developer's run of the suite alone does. The authoring-core
+# gate builds it first (`codegen-build`), so the lane
+# (`.github/workflows/authoring-core.yml`) judges every such case. Landed
+# without this on 2026-10-01, when a lane's job built nothing, and the lane was
+# red for two pushes before anyone read it.
 needs_the_generator = unittest.skipUnless(codegen_is_built(),
                                           "the product's generator is not built")
 

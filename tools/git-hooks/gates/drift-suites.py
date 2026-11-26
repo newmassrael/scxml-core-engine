@@ -6,6 +6,11 @@
 {
     "workflows": ["drift-verify.yml"],
     "runner_workflow": True,
+    # Runs in the host image (tools/ci-images/host, docs/adr/0145): libxml2
+    # for the generator its suites build and clang-format-19 for the C++
+    # `sourcemap_addr2sce` generates, which the lane installed at job time.
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     "ci_only": "146s. It is declared serial on purpose and that is what "
                "it costs; drift-verify.yml runs it.",
     "cost_s": 146,
