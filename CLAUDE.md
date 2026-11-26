@@ -23,6 +23,16 @@
 - Use W3C SCXML spec references in token form: `// §scxml-6.2: Event scheduler for delayed send`. The ledger gate (`scripts/gates/ledger-citations.sh`, run at the commit and in CI) refuses the prose spelling `W3C SCXML 6.2` in the directories a ledger enrols (the `paths` list of `docs/spec/scxml/mnemosyne.toml`, `sce-build/src` and the engine and runtime source directories among them), and every section cited anywhere must exist in the ledger. A new cite in an enrolled file also needs the file bound to that section: add the binding with the Mnemosyne MCP `add_section_binding` (`references`, file level), never by editing `docs/spec/scxml/.atomic/workspace.atomic.json`. Check a path cheaply with `python3 tools/mnemosyne-adoption/migrate_citations.py --check --from-toml docs/spec/scxml/mnemosyne.toml --only-enrolled <paths>`
 - Reference ARCHITECTURE.md sections for architectural context
 
+
+## A change keeps its name
+
+Every commit carries a `Change-Id:` trailer (`COMMIT_FORMAT.md` "Trailers"; the
+commit-msg hook writes it). A branch's work is judged merged by that name when its
+patch differs on main (bx RFC 0087), so take another branch's work with
+`git cherry-pick`, never by retyping it; a commit that writes another commit's work
+again carries `Supersedes: <that commit's Change-Id>`; work that will not land is
+abandoned on the record (`bx-wt abandon <name> --reason "..." --apply`).
+
 ## Adding W3C Tests
 
 Read `docs/SCE_W3C_TEST_REGISTRATION.md` before adding or registering a fixture. Registration is one entry in

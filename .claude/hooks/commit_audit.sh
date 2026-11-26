@@ -507,10 +507,27 @@ while lines and not lines[-1].strip():
 if not lines:
     sys.exit(0)
 
+# The trailer paragraph (COMMIT_FORMAT.md "Trailers"; bx RFC 0087): the last
+# paragraph when every line of it is a Change-Id or a Supersedes, after a
+# blank line. It is the identity of the change, not body; the body ends before it.
+# The commit-msg hook writes the Change-Id, so a message seen here before the
+# commit (the PreToolUse layer) has none yet, and none is required here.
+TRAILER_RE = re.compile(r"^(Change-Id|Supersedes): I[0-9a-f]{40}$")
+t = len(lines)
+while t > 2 and TRAILER_RE.match(lines[t - 1]):
+    t -= 1
+if t < len(lines) and not lines[t - 1].strip():
+    lines = lines[:t - 1]
+misplaced = [l for l in lines[1:] if re.match(r"^(Change-Id|Supersedes):", l)]
+
 subject = lines[0]
 rest = lines[1:]
 
 violations = []
+for l in misplaced:
+    violations.append(("trailer-misplaced",
+        f"A trailer outside the last paragraph: {l!r}. Change-Id and "
+        f"Supersedes lines end the message, after one blank line."))
 
 # ── Subject rules (COMMIT_FORMAT.md §"Subject Line") ──
 SUBJECT_RE = re.compile(r"^(feat|refactor|fix|docs|test|chore)(?:\([^)]+\))?: \S.*$")

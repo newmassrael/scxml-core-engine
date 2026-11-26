@@ -21,6 +21,12 @@
 # arrives byte-identical.
 #
 # Bypass (for genuine emergencies): `SKIP_COMMIT_MSG=1 git commit ...`.
+#
+# THE CHANGE'S IDENTITY (COMMIT_FORMAT.md "Trailers", bx RFC 0087): before the
+# format is judged, a message with no `Change-Id:` trailer gets one from
+# `bx-change-id` (installed with bx). Where it is not installed (the landing
+# queue's integrator account, whose picks keep the trailer the message has) the
+# message is judged as it is.
 
 set -euo pipefail
 
@@ -40,6 +46,16 @@ if [[ "${SKIP_COMMIT_MSG:-0}" == "1" ]]; then
     printf 'commit-msg: SKIP_COMMIT_MSG=1 — message format check skipped.\n' >&2
     exit 0
 fi
+
+case "$(head -n 1 "$MSG_FILE")" in "fixup! "*|"squash! "*|"amend! "*) ;; *)
+    if ! grep -qE '^Change-Id: I[0-9a-f]{40}$' "$MSG_FILE"; then
+        if command -v bx-change-id >/dev/null 2>&1; then
+            bx-change-id "$MSG_FILE" || { printf 'commit-msg: bx-change-id could not write a Change-Id\n' >&2; exit 1; }
+        else
+            printf 'commit-msg: no bx-change-id on PATH (install bx): this commit gets no Change-Id\n' >&2
+        fi
+    fi ;;
+esac
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"

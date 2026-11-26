@@ -8,6 +8,8 @@
 - <detail 1>
 - <detail 2>
 - <detail 3>
+
+Change-Id: I<40 hex digits>
 ```
 
 ## Rules
@@ -34,6 +36,20 @@
 - A commit that changes what a formal check says (docs/adr/0115, D11) changes nothing
   else but documents, and one bullet names why: `- Spec: <why>`
 - Reference W3C SCXML sections when applicable (e.g., "W3C SCXML 3.12.1")
+
+### 2a. Trailers: the change's identity
+- The message ends with one blank line and a trailer paragraph:
+  `Change-Id: I<40 hex digits>`, and `Supersedes: I<40 hex digits>` lines
+  when there are any. A trailer anywhere else is rejected.
+- The `commit-msg` hook writes the Change-Id (`bx-change-id`, installed
+  with bx); do not write one by hand. Rebase, cherry-pick and amend keep it.
+- It names the change whatever its commits look like: `bx-wt` judges a
+  branch commit whose every Change-Id is on main as merged, though its patch
+  differs (bx RFC 0087).
+- Take another branch's work with `git cherry-pick`, which keeps its
+  Change-Id. A commit that writes another's work again names it:
+  `Supersedes: <that commit's Change-Id>`. Work that will not land is
+  abandoned on the record: `bx-wt abandon <name> --reason "..." --apply`.
 
 ### 3. Style
 - **No emojis**
