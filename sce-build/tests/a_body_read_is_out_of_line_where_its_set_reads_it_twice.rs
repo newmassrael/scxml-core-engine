@@ -730,6 +730,92 @@ fn a_codec_outside_the_hot_closure_prints_what_it_printed() {
     }
 }
 
+/// The body of the `ListWalk` impl of the walk `walk` the code declares, its
+/// entry read with no flag input.
+fn walk_impl<'c>(code: &'c str, walk: &str) -> &'c str {
+    let head = format!("::ListWalk<0> for {walk} {{");
+    let at = code
+        .find(&head)
+        .unwrap_or_else(|| panic!("no walk {walk} is declared:\n{code}"));
+    let body = &code[at..];
+    &body[..body.find("\n}\n").unwrap_or(body.len())]
+}
+
+/// A list names its entry's one walk at every site, a hot view's as a cold
+/// view's, and the walk reads an entry as its entry codec is read: held in place
+/// where the codec is hot. The scan of a chain reads as its site does: a hot
+/// body's through that walk, a cold body's through the walk a hot codec writes
+/// for it, which calls the entry point and which no list names (docs/adr/0140).
+#[test]
+fn a_list_names_its_entrys_one_walk_and_a_cold_scan_of_a_hot_entry_calls_its_entry_point() {
+    let sites = sites_of(&["codec_zenoh_request.scxml"], true);
+    let options = hot_options(&sites, &["codec_zenoh_msg_put"], true);
+    let walk = "super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk";
+    let cold_scan = "super::codec_zenoh_ext_entry::CodecZenohExtEntryColdScanWalk";
+
+    // The entry is hot: its one walk reads it held in place, and the walk a cold
+    // scan reads by calls its entry point and is no type of the public face.
+    let entry = rust_with("codec_zenoh_ext_entry", &options);
+    assert!(
+        !entry.contains("InlineWalk"),
+        "codec_zenoh_ext_entry writes a walk of the hot path:\n{entry}"
+    );
+    let read = walk_impl(&entry, "CodecZenohExtEntryWalk");
+    assert!(
+        read.contains("CodecZenohExtEntryView::read_with_inline(_r, _h)"),
+        "the walk of the hot codec_zenoh_ext_entry does not read it held in place:\n{read}"
+    );
+    assert!(
+        entry.contains("pub(super) struct CodecZenohExtEntryColdScanWalk;"),
+        "the hot codec_zenoh_ext_entry writes no walk for a cold scan, or makes it public:\n{entry}"
+    );
+    let read = walk_impl(&entry, "CodecZenohExtEntryColdScanWalk");
+    assert!(
+        read.contains("CodecZenohExtEntryView::read_with(_r, _h)"),
+        "the cold scan's walk of codec_zenoh_ext_entry does not call its entry point:\n{read}"
+    );
+
+    // The hot put and the cold delete name the one walk in their lists' type;
+    // the put scans by it, the delete by the walk that calls the entry point.
+    let field =
+        format!("pub extensions: Option<Bounded<ListView<'a, {walk}, 0>, {{ usize::MAX }}, 1>>,");
+    let put = rust_with("codec_zenoh_msg_put", &options);
+    let del = rust_with("codec_zenoh_msg_del", &options);
+    for (name, code) in [("codec_zenoh_msg_put", &put), ("codec_zenoh_msg_del", &del)] {
+        assert!(
+            code.contains(&field),
+            "{name}'s view does not name the entry's one walk in its list:\n{code}"
+        );
+    }
+    assert!(
+        put.contains(&format!("walk_chain::<{walk}, ")),
+        "the hot codec_zenoh_msg_put does not scan its chain by the entry's walk:\n{put}"
+    );
+    assert!(
+        del.contains(&format!("walk_chain::<{cold_scan}, ")) && !del.contains("_inline"),
+        "the cold codec_zenoh_msg_del scans its chain by a read held in place:\n{del}"
+    );
+
+    // With no codec named, the one walk reads by the entry point, no walk for a
+    // cold scan is written, and the delete scans by the one walk.
+    let none = ForgeCompileOptions {
+        views: true,
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+    let entry = rust_with("codec_zenoh_ext_entry", &none);
+    let read = walk_impl(&entry, "CodecZenohExtEntryWalk");
+    assert!(
+        read.contains("CodecZenohExtEntryView::read_with(_r, _h)") && !entry.contains("ColdScanWalk"),
+        "codec_zenoh_ext_entry with no codec named reads otherwise than by its entry point:\n{entry}"
+    );
+    let del = rust_with("codec_zenoh_msg_del", &none);
+    assert!(
+        del.contains(&format!("walk_chain::<{walk}, ")),
+        "codec_zenoh_msg_del with no codec named does not scan by the entry's walk:\n{del}"
+    );
+}
+
 /// A codec is named by its document's stem or by an alias an import of the set
 /// gives it, both the one codec; a name that is a stem of one codec and an
 /// alias of another names two and is refused (docs/adr/0140).

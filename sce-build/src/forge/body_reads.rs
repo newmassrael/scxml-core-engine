@@ -456,6 +456,15 @@ pub enum InlineDecode {
 }
 
 impl InlineDecode {
+    /// Whether the body of the codec `codec` is read on the build's hot path
+    /// (docs/adr/0140): the build names hot codecs and `codec` is in their
+    /// closure ([`HotCodecs::is_hot`]). Neither [`Self::None`] nor
+    /// [`Self::Every`] makes a body hot: `--inline-decode` prints no form held
+    /// in place.
+    pub fn is_hot(&self, codec: &str) -> bool {
+        matches!(self, Self::Codecs(hot) if hot.is_hot(codec))
+    }
+
     /// How the generation of the codec `codec` prints the functions that read
     /// its body, `sites` being the count of the set it is generated in, the
     /// one [`BodyReadSites::hot_codecs`] was asked of.

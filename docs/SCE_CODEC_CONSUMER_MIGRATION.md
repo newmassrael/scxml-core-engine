@@ -4148,3 +4148,18 @@ hook decodes as before.
 - **A hot view has no `read_inline`**: the form held in place without a hook that ADR 0140 printed for a view read
   within a length is gone, since that site reads `read_with_inline` with the hook. A call written by hand fails with
   `E0599` (no function `read_inline`): call `read_with_inline(cursor, &mut ())`.
+
+## A Rust list names its entry's one walk whatever codecs the build names hot (ADR 0140, amended)
+
+Landing: the commits that add this section. No golden and no committed tree of generated code changes; a build that
+names no codec generates what it did.
+
+- **`{Codec}InlineWalk` is gone**: a list a hot body holds names its entry's one walk, `{Codec}Walk`, as the same
+  list of a cold view does, so `ListView<'a, {Codec}Walk, K>` names the list of every view of a set generated with or
+  without `--inline-decode-for`. A consumer that wrote `{Codec}InlineWalk` writes `{Codec}Walk`; one that held a
+  list a cold read gave where a hot view holds one compiles again.
+- **The walk of a hot entry reads it held in place**: where the entry codec is in the build's hot closure, `{Codec}Walk`
+  reads each entry by `read_with_inline`, whichever view holds the list, so a walk of the list on the consumer's hot
+  path makes no call per entry. A build measures its image again where it walks lists of hot entries off its hot path.
+- **A hot codec's module writes `{Codec}ColdScanWalk`**, `pub(super)`, the walk a cold view scans a chain of it by;
+  no list names it, and a consumer does not.

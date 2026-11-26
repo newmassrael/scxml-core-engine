@@ -4029,73 +4029,243 @@ const KEYEXPR_SET: &[&str] = &[
     "codec_zenoh_undecl_subscriber.scxml",
 ];
 
+/// A codec set generated with a codec named hot (docs/adr/0140), as the tests of
+/// hot sets read it.
+struct HotSet {
+    /// The documents of the set, each in the resources.
+    set: &'static [&'static str],
+    /// The codec the build names hot.
+    named: &'static str,
+    /// A codec the named one reads, hot by the closure.
+    child: &'static str,
+    /// A codec that reads `child` and that no hot body reads, so cold.
+    cold: &'static str,
+    /// Whether every codec of the set is generated with its view.
+    views: bool,
+    /// The name of the crate the set is compiled as.
+    test_id: &'static str,
+}
+
+/// The hot sets. In the chain-membership set the envelope is named, so the chain's
+/// entry it holds is read from a hot body and from the cold marker; in the request
+/// family the put is named, so the timestamp and the chain's entry are read from the
+/// hot put and from the cold delete, query and request; in the key expression's set
+/// the body a length bounds is read held in place by the hot key expression, eager
+/// and as a view.
+const HOT_SETS: [HotSet; 3] = [
+    HotSet {
+        set: CHAIN_HAS_SET,
+        named: "codec_chain_has_envelope",
+        child: "codec_zenoh_ext_entry",
+        cold: "codec_chain_has_marker",
+        views: false,
+        test_id: "hot_sites_chain_has_rust",
+    },
+    HotSet {
+        set: REQUEST_SET,
+        named: "codec_zenoh_msg_put",
+        child: "codec_zenoh_ext_entry",
+        cold: "codec_zenoh_msg_del",
+        views: true,
+        test_id: "hot_sites_request_views_rust",
+    },
+    HotSet {
+        set: KEYEXPR_SET,
+        named: "codec_zenoh_decl_ext_keyexpr",
+        child: "codec_zenoh_decl_ext_keyexpr_inner",
+        cold: "codec_zenoh_undecl_subscriber",
+        views: true,
+        test_id: "hot_sites_keyexpr_views_rust",
+    },
+];
+
+/// The options the set of `case` is generated with, its codecs `named` named hot:
+/// the count of the set's sites, every codec with its view or none, and no codec named
+/// where `named` is empty, the build that names none.
+fn hot_set_options(case: &HotSet, named: &[&str]) -> sce_build::ForgeCompileOptions {
+    use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
+    let documents: Vec<String> = case
+        .set
+        .iter()
+        .map(|document| resource_dir().join(document).display().to_string())
+        .collect();
+    let sites = BodyReadSites::of_documents(&documents, &[], |_| case.views);
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.views = case.views;
+    if !named.is_empty() {
+        let hot = sites
+            .hot_codecs(named)
+            .unwrap_or_else(|e| panic!("{named:?} are codecs of the set: {e}"));
+        opts.inline_decode = InlineDecode::Codecs(hot);
+    }
+    opts.body_reads = sites;
+    opts
+}
+
+/// The files the set of `case` generates for Rust with its codecs `named` named hot.
+fn generate_hot_set(case: &HotSet, named: &[&str]) -> Vec<(String, String)> {
+    generate_files_for_codec_set_with(
+        &resource_dir(),
+        case.set,
+        sce_build::generator::Language::Rust,
+        hot_set_options(case, named),
+    )
+    .unwrap_or_else(|e| panic!("generate the set of {} with {named:?} hot: {e}", case.named))
+}
+
 /// A set generated with codecs named hot (docs/adr/0140) still compiles as a
 /// program, without views and with them: each hot body is printed in its forms
 /// held in place, which every site of a hot body calls through an arm, an
 /// embedded body, a chain's rule, a view's scan and the walks of its lists, and
-/// the cold codecs that read the same bodies call their entry points. In the
-/// chain-membership set the envelope is named, so the chain's entry it holds is
-/// read from a hot body and from the cold marker; in the request family the put
-/// is named, so the timestamp and the chain's entry are read from the hot put
-/// and from the cold delete, query and request; in the key expression's set the
-/// body a length bounds is read held in place by the hot key expression, eager
-/// and as a view.
+/// the cold codecs that read the same bodies call their entry points
+/// ([`HOT_SETS`]).
 #[test]
 fn a_set_with_hot_codecs_compiles_with_and_without_views() {
-    use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
-    let dir = resource_dir();
-    let rust = sce_build::generator::Language::Rust;
-    for (set, named, child, cold, views, test_id) in [
-        (
-            CHAIN_HAS_SET,
-            "codec_chain_has_envelope",
-            "codec_zenoh_ext_entry",
-            "codec_chain_has_marker",
-            false,
-            "hot_sites_chain_has_rust",
-        ),
-        (
-            REQUEST_SET,
-            "codec_zenoh_msg_put",
-            "codec_zenoh_ext_entry",
-            "codec_zenoh_msg_del",
-            true,
-            "hot_sites_request_views_rust",
-        ),
-        (
-            KEYEXPR_SET,
-            "codec_zenoh_decl_ext_keyexpr",
-            "codec_zenoh_decl_ext_keyexpr_inner",
-            "codec_zenoh_undecl_subscriber",
-            true,
-            "hot_sites_keyexpr_views_rust",
-        ),
-    ] {
-        let documents: Vec<String> = set
-            .iter()
-            .map(|document| dir.join(document).display().to_string())
-            .collect();
-        let sites = BodyReadSites::of_documents(&documents, &[], |_| views);
-        let hot = sites
-            .hot_codecs([named])
-            .unwrap_or_else(|e| panic!("{named} is a codec of the set: {e}"));
+    for case in &HOT_SETS {
+        let named = case.named;
+        let opts = hot_set_options(case, &[named]);
         assert!(
-            hot.is_hot(child) && !hot.is_hot(cold),
-            "{child}, which {named} reads, is not hot, or {cold}, which reads it, is"
+            opts.inline_decode.is_hot(case.child) && !opts.inline_decode.is_hot(case.cold),
+            "{}, which {named} reads, is not hot, or {}, which reads it, is",
+            case.child,
+            case.cold
         );
-        let mut opts = golden_options(rust);
-        opts.views = views;
-        opts.inline_decode = InlineDecode::Codecs(hot);
-        opts.body_reads = sites;
-        let files = generate_files_for_codec_set_with(&dir, set, rust, opts)
-            .unwrap_or_else(|e| panic!("generate the set with {named} hot: {e}"));
+        let files = generate_hot_set(case, &[named]);
         assert!(
             files.iter().any(|(_, code)| code.contains("_inline(")),
             "no form held in place was printed or called with {named} hot"
         );
-        if let Err(e) = rustc_run_generated_set(files, test_id, "build", RustcProfile::Alloc) {
+        if let Err(e) = rustc_run_generated_set(files, case.test_id, "build", RustcProfile::Alloc) {
             panic!("the set generated with {named} hot does not compile:\n{e}");
         }
+    }
+}
+
+/// The declarations of the public face of a generated module, in order: each
+/// line that declares a `pub` struct, enum, union, trait or type alias, or a
+/// `pub` field, as written. An item visible to the modules of the set alone
+/// (`pub(super)`) is no part of it.
+fn public_declarations(code: &str) -> Vec<&str> {
+    const ITEMS: [&str; 5] = [
+        "pub struct ",
+        "pub enum ",
+        "pub union ",
+        "pub trait ",
+        "pub type ",
+    ];
+    code.lines()
+        .map(str::trim)
+        .filter(|line| {
+            ITEMS.iter().any(|item| line.starts_with(item)) || declares_a_pub_field(line)
+        })
+        .collect()
+}
+
+/// Whether `line`, trimmed, declares a `pub` field: `pub name: Type,`.
+fn declares_a_pub_field(line: &str) -> bool {
+    line.strip_prefix("pub ")
+        .and_then(|rest| rest.split_once(':'))
+        .is_some_and(|(name, _)| {
+            !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+        })
+}
+
+/// Whether a read is on the build's hot path says where the read is held in
+/// place, never what a type is (docs/adr/0140): each set generated with a codec
+/// named hot declares, file by file and in the same order, every `pub` struct,
+/// enum, union, trait, type alias and field the set generated with none named
+/// declares, in the same text. A list of a hot view names its entry's one walk
+/// as the same list of a cold view does, and the walk a cold scan of a hot
+/// entry's chain reads by is visible to the modules of the set alone.
+#[test]
+fn a_set_with_hot_codecs_declares_the_public_types_of_the_set_with_none() {
+    for case in &HOT_SETS {
+        let named = case.named;
+        let cold = generate_hot_set(case, &[]);
+        let hot = generate_hot_set(case, &[named]);
+        assert_eq!(
+            cold.iter().map(|(file, _)| file).collect::<Vec<_>>(),
+            hot.iter().map(|(file, _)| file).collect::<Vec<_>>(),
+            "the set of {named} writes other files with it named hot"
+        );
+        assert_ne!(cold, hot, "naming {named} hot changed nothing in its set");
+        if case.views {
+            assert!(
+                hot.iter().any(|(_, code)| public_declarations(code)
+                    .iter()
+                    .any(|declaration| declaration.contains("ListView<"))),
+                "the views of the set of {named} declare no list, so no walk was compared"
+            );
+        }
+        for ((file, plain), (_, held)) in cold.iter().zip(&hot) {
+            assert_eq!(
+                public_declarations(plain),
+                public_declarations(held),
+                "{file}: a public type or field differs with {named} named hot"
+            );
+        }
+    }
+}
+
+/// A consumer names a list of a view by its entry's one walk whatever codecs the
+/// build names hot (docs/adr/0140): compiled against the request family with the
+/// put named hot, a crate that names the put's extensions
+/// `ListView<'a, CodecZenohExtEntryWalk, 0>`, holds the cold delete's extensions
+/// where the hot put holds its own, and walks either by the one walk.
+#[test]
+fn a_consumer_names_a_hot_views_list_by_its_entrys_one_walk() {
+    const CONSUMER: &str = r#"
+use crate::codec_zenoh_ext_entry::CodecZenohExtEntryWalk;
+use crate::codec_zenoh_msg_del::CodecZenohMsgDelView;
+use crate::codec_zenoh_msg_put::CodecZenohMsgPutView;
+use sce_forge_runtime::codec::{Bounded, ListView};
+
+/// The extensions of a message, as a consumer names their type.
+pub type Extensions<'a> = Bounded<ListView<'a, CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>;
+
+/// The extensions of the hot put, by the type the consumer names.
+pub fn put_extensions<'v, 'a>(put: &'v CodecZenohMsgPutView<'a>) -> Option<&'v Extensions<'a>> {
+    put.extensions.as_ref()
+}
+
+/// The put holding the extensions the cold delete holds.
+pub fn put_with_extensions_of<'a>(
+    mut put: CodecZenohMsgPutView<'a>,
+    del: &CodecZenohMsgDelView<'a>,
+) -> CodecZenohMsgPutView<'a> {
+    put.extensions = del.extensions.clone();
+    put
+}
+
+/// How many entries a list of extensions holds, walked by the entry's one walk.
+pub fn count(list: &ListView<'_, CodecZenohExtEntryWalk, 0>) -> usize {
+    list.iter().count()
+}
+
+/// How many extensions the hot put and the cold delete hold together.
+pub fn extensions_of_both(put: &CodecZenohMsgPutView<'_>, del: &CodecZenohMsgDelView<'_>) -> usize {
+    let put = put.extensions.as_ref().map_or(0, |list| count(list));
+    let del = del.extensions.as_ref().map_or(0, |list| count(list));
+    put + del
+}
+"#;
+    let case = &HOT_SETS[1];
+    assert_eq!(
+        (case.named, case.views),
+        ("codec_zenoh_msg_put", true),
+        "the consumer is written against the request family's views with the put hot"
+    );
+    let mut files = generate_hot_set(case, &[case.named]);
+    files.push(("hot_consumer.rs".to_string(), CONSUMER.to_string()));
+    if let Err(e) = rustc_run_generated_set(
+        files,
+        "hot_sites_consumer_rust",
+        "build",
+        RustcProfile::Alloc,
+    ) {
+        panic!(
+            "a consumer that names the entry's one walk does not compile against the hot set:\n{e}"
+        );
     }
 }
 

@@ -661,6 +661,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_view_is_borrowed: bool,
 
+    /// docs/adr/0140: `true` when the imported codec's body is read on the
+    /// build's hot path ([`crate::forge::body_reads::InlineDecode::is_hot`]), so
+    /// its module writes its walk, `{Codec}Walk`, reading each entry by its form
+    /// held in place, and beside it the walk a scan at a cold site reads a chain
+    /// of it by, which calls its entry point. A parent reads it where its view
+    /// scans a chain of the codec. `false` for non-codec imports and for a
+    /// build that names no codec hot.
+    #[serde(skip)]
+    pub codec_body_hot: bool,
+
     /// ADR 0058: `true` when the imported codec has a source interface
     /// (`{Codec}Source`), which a parent that embeds or lists it reads its
     /// body through. A fact about the imported model and its own imports, so it
@@ -1772,6 +1782,7 @@ fn resolve_single_import(
         c11_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
+        codec_body_hot: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
         codec_says_inputs: Vec::new(),
@@ -15498,7 +15509,7 @@ fn render_codec(
                             &view_list,
                             &rust_view::ViewChain {
                                 codec: &m.name,
-                                walk: &walk.ty,
+                                walk: &walk.scan,
                                 rule: &chain_rule,
                             },
                         );
@@ -17922,8 +17933,10 @@ fn render_codec(
             );
             // The one walk every list of this codec that carries nothing from
             // one entry to the next reads it by, whichever codec holds the list
-            // (`rust_view::list_walk`). A codec whose variant takes its tag from
-            // its caller is decoded with that tag, which no list hands it.
+            // (`rust_view::list_walk`), and for a hot body the walk a cold scan
+            // of a chain of it reads by (docs/adr/0140). A codec whose variant
+            // takes its tag from its caller is decoded with that tag, which no
+            // list hands it.
             let caller_tag = m.variant.as_ref().is_some_and(|v| v.tag_field.is_none());
             ctx.insert(
                 "view_entry_walk".into(),
@@ -53264,6 +53277,7 @@ mod tests {
             c11_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
+            codec_body_hot: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
             codec_says_inputs: Vec::new(),
@@ -54202,6 +54216,7 @@ mod tests {
                 c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
+                codec_body_hot: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),
@@ -54283,6 +54298,7 @@ mod tests {
                 c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
+                codec_body_hot: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),

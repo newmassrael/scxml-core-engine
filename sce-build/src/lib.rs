@@ -7682,6 +7682,10 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut view_visited,
                 );
+                // docs/adr/0140: whether the import's body is read on the
+                // build's hot path, which says how its walk reads an entry and
+                // so which walk a cold scan of a chain of it reads by.
+                ctx.codec_body_hot = options.inline_decode.is_hot(&cm.name);
                 // docs/adr/0081 step 4: whether the C++ backend prints the
                 // import from its plan, so a parent, a procedure or a
                 // validator reads its elements through accessors, reads a
