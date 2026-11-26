@@ -227,6 +227,6 @@ fn an_index_read_of_a_list_of_unions_is_read_on_kotlin() {
         .unwrap_or_else(|e| panic!("Kotlin reads the tag of an element at an index: {e}"));
     holds(
         &code,
-        &["com.sce.forge.runtime.SceChecked.at(pendingShapesSentPayload!!.many, (0).toLong()).kind"],
+        &["com.sce.forge.runtime.SceChecked.at(pendingShapesSentPayload!!.many, 0.toLong()).kind"],
     );
 }
