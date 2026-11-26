@@ -2547,10 +2547,10 @@ RUST_TOOLCHAIN_PINS = "scripts/lib/rust_toolchains.sh"
 # read it from there, so the gates and the rest of the tree run one release.
 RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
-# The manifest that pins Verus and the Rust release it runs on, and the judge of it,
-# which a gate body names to need that release.
-VERUS_MANIFEST = "docs/formal/proofs.json"
-VERUS_JUDGE = "scripts/formal/proofs.py"
+# The file that pins Verus and the Rust release it runs on (docs/adr/0146, D3), and
+# the judge that runs it, which a gate body names to need that release.
+VERUS_MANIFEST = "sce-build/src/formal/toolchain.json"
+VERUS_JUDGE = "formal proofs --manifest"
 # The one other place a release is linked: the directory of the run account's
 # rustup home where rustup's proxy finds the release rust-toolchain.toml pins,
 # so a cargo a run starts outside a gate unit installs nothing on its first use
@@ -3365,7 +3365,7 @@ def rustup_proxy_failures(repo_root: Path, proxied: dict[str, dict],
 
 
 def verus_rust_release(repo_root: Path) -> str | None:
-    """The Rust release docs/formal/proofs.json says Verus runs on."""
+    """The Rust release sce-build/src/formal/toolchain.json says Verus runs on."""
     manifest = repo_root / VERUS_MANIFEST
     if not manifest.is_file():
         return None
@@ -3466,7 +3466,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
                     f"{RUST_TOOLCHAIN_FILE} lists {key[:-1]} {item!r} and the install "
                     f"line of [platform.linux.tools.{release}] has no `{flag} {item}`, "
                     f"so a build machine's release lacks what every other checkout's has")
-    # The release Verus runs on (docs/formal/proofs.json), which is no package's
+    # The release Verus runs on (sce-build/src/formal/toolchain.json), which is no package's
     # and not this tree's: one table, read from the manifest that pins Verus.
     pins["VERUS_RUST"] = verus_rust_release(repo_root) or ""
     verus = table_of("VERUS_RUST")

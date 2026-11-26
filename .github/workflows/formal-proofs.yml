@@ -1,13 +1,18 @@
 name: Formal Proofs
 
 # The proofs of the host core under Verus (docs/adr/0115, D13), as
-# docs/formal/proofs.json declares them.
+# docs/formal/proofs.json declares them, judged by `sce-codegen formal proofs`
+# (docs/adr/0146).
 #
 # ## Why a lane of its own
 #
 # It needs the pinned Verus and the Rust release Verus runs on, which is not the one
 # this repository builds with (rust-toolchain.toml) and which no other lane needs. Both
-# are named by the manifest, so the cache is under a key made of that file.
+# are pinned by sce-build/src/formal/toolchain.json. The gate runs in the host image
+# (tools/ci-images/host, docs/adr/0145): the runner installs the Rust release here,
+# which scripts/gate mounts into the image with every release under ~/.local/rust,
+# and the gate fetches Verus there with `sce-codegen formal install`, admitted by its
+# digest, into the image's home. Both are cached under a key made of the pins.
 #
 # ## Why `ci_only` in the registry
 #
@@ -17,8 +22,9 @@ on:
     branches: [ main, develop ]
     paths:
       - 'docs/formal/proofs.json'
-      - 'scripts/formal/proofs.py'
+      - 'sce-build/src/formal/**'
       - 'backends/rust/mesh/src/https/**'
+      - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-proofs.sh'
@@ -27,8 +33,9 @@ on:
     branches: [ main ]
     paths:
       - 'docs/formal/proofs.json'
-      - 'scripts/formal/proofs.py'
+      - 'sce-build/src/formal/**'
       - 'backends/rust/mesh/src/https/**'
+      - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-proofs.sh'
@@ -43,25 +50,47 @@ jobs:
   formal-proofs:
     name: Formal Proofs
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
+    # `packages: write` for the image a run on main builds and pushes
+    # (.github/actions/gate-image says why the permission cannot follow the
+    # event); `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
+
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
+
+      - name: Pull the gate's image
+        uses: ./.github/actions/gate-image
+
       - name: Restore Verus and its Rust release
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
-            ~/.local/verus
+            ~/.cache/sce-gate-containers/formal-proofs/home/.local/verus
             ~/.local/rust
-          key: verus-${{ hashFiles('docs/formal/proofs.json', 'scripts/formal/proofs.py', 'scripts/install_rust.sh') }}
+          key: verus-${{ hashFiles('sce-build/src/formal/toolchain.json', 'scripts/install_rust.sh') }}
 
-      - name: Install Verus and the Rust release it runs on
+      # The release the pins name, read from them as they are compiled in.
+      - name: Install the Rust release Verus runs on
         run: |
-          release="$(python3 -c 'import json; print(json.load(open("docs/formal/proofs.json"))["verus"]["toolchain"])')"
-          python3 scripts/formal/proofs.py --install
+          release="$(python3 -c 'import json; print(json.load(open("sce-build/src/formal/toolchain.json"))["verus"]["toolchain"])')"
           bash scripts/install_rust.sh --declared "$release"
 
       - name: Formal proofs gate
         run: scripts/gate formal-proofs
+
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

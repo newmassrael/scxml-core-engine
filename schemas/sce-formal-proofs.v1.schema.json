@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-proofs.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal proofs manifest (wire schema v1)",
+  "description": "What a repository declares of its Verus proofs, judged by `sce-codegen formal proofs --manifest <file>` (docs/adr/0146, D1; docs/adr/0115, D10 and D13). Written by the repository; never emitted by SCE. Paths are read from the root of the Git work tree that holds this file, and every Rust file of that tree carrying a contract (`cfg_attr(verus_only`) is declared. Each proof is verified whole with the number of functions it records and nothing taken on trust, and each mutant, a change of the code that breaks what a user relies on, must be refused. No tool is named here: the judge pins its tools (docs/adr/0146, D3). Authoritative reader is sce-build/src/formal/proofs.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": [
+    "v",
+    "proofs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "The version of this format."
+    },
+    "proofs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/proof"
+      }
+    }
+  },
+  "definitions": {
+    "proof": {
+      "type": "object",
+      "required": [
+        "file",
+        "compiled_by",
+        "decision",
+        "verified",
+        "mutants"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": "\\.rs$",
+          "description": "The proved file, from the work tree's root."
+        },
+        "compiled_by": {
+          "type": "string",
+          "pattern": "\\.rs$",
+          "description": "The module that declares it, so the proof is of what runs."
+        },
+        "decision": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The functions Verus verifies."
+        },
+        "mutants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/mutant"
+          }
+        }
+      }
+    },
+    "mutant": {
+      "type": "object",
+      "required": [
+        "breaks",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "breaks": {
+          "type": "string",
+          "description": "What a user relies on that the change breaks."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text found exactly once in the file."
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
