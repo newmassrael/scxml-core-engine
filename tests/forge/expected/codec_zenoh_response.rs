@@ -158,6 +158,9 @@ impl<S: CodecZenohResponseStorage> Default for CodecZenohResponseIn<S> {
 // indirection (and allocation) the generated decode path does not need —
 // and which the non-allocating storage profile could not take at all.
 // The size spread is the deliberate tagged-union trade-off.
+// Its variants are the arms' names as the document writes them, as in
+// `CodecZenohResponseVariant`.
+#[allow(clippy::enum_variant_names)]
 #[allow(clippy::large_enum_variant)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
@@ -771,6 +774,9 @@ impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohResponseWalk {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecZenohResponse::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+// Its variants are the arms' names as the document writes them, as in
+// `CodecZenohResponseVariant`.
+#[allow(clippy::enum_variant_names)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecZenohResponseViewVariant<'a> {

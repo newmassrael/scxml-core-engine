@@ -24,6 +24,11 @@ use super::codec_peek_arm_b::CodecPeekArmB;
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
+// Each variant is an arm's name as the document writes it, and the arms of
+// one variant may share a prefix (`CodecZenohInterest`, `CodecZenohResponse`):
+// the lint's remedy, renaming them, would part an arm from its name in the
+// document and in every other enum of the same arms.
+#[allow(clippy::enum_variant_names)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecVariantPeekBasicVariant {
