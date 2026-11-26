@@ -2127,6 +2127,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_frame_is_begun_and_judged_out_of_line_and_only_its_read_is_generic() {
+        let reader = built(include_str!("reader.rs"));
+        let cursor = region(reader, "impl<'a> SceCursor<'a> {", "\n}\n");
+        let frame = region(reader, "impl<'a> SceReader<'a> {", "\n}\n");
+        // A frame read from a cursor and a frame within a length: each bracket,
+        // generic over the read it is handed, is the call of the read between a
+        // start and an end that are one function each, out of line and generic
+        // over nothing a decode reads.
+        for (methods, bracket, begin, end) in [
+            (cursor, "read_frame", "begin_frame", "end_frame"),
+            (frame, "within", "begin_within", "end_within"),
+        ] {
+            let (_, body) = function(methods, bracket);
+            assert!(
+                body.contains(&format!("self.{begin}(")) && body.contains(&format!("self.{end}(&")),
+                "{bracket} is begun by {begin} and ended by {end}:\n{body}"
+            );
+            assert!(
+                !body.contains("SceReader {") && !body.contains("SceReader::new"),
+                "{bracket} makes no reader of its own:\n{body}"
+            );
+            for part in [begin, end] {
+                let (attrs, head) = function(methods, part);
+                assert!(
+                    attrs.contains("#[inline(never)]"),
+                    "{part} is out of line: {attrs}"
+                );
+                assert!(
+                    !head
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .contains(&format!("fn {part}<")),
+                    "{part} is generic over nothing:\n{head}"
+                );
+            }
+        }
+    }
+
     // ── RFC §synth-5-B string primitive — InvalidUtf8 variant exists and is
     // distinct from the other CodecError variants. The actual UTF-8
     // validation lives at the codec emit site (`core::str::from_utf8`

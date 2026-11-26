@@ -361,8 +361,27 @@ impl<'a> SceReader<'a> {
     /// records is this frame's, the first refusal of the two counting first;
     /// where fewer than `n` bytes remain, `NeedMoreBytes` is recorded and
     /// `read` reads nothing.
+    ///
+    /// It is generic over the read, so each body read within a length has its
+    /// own copy, and that copy is the call of the read alone: the start of the
+    /// inner frame is [`Self::begin_within`] and what it recorded is made this
+    /// frame's by [`Self::end_within`], each one function for every codec of a
+    /// program (docs/adr/0138).
     #[inline]
     pub fn within<T>(&mut self, n: usize, read: impl FnOnce(&mut SceReader<'a>) -> T) -> T {
+        let mut inner = self.begin_within(n);
+        let value = read(&mut inner);
+        self.end_within(&inner);
+        value
+    }
+
+    /// The reader of the next `n` bytes as a frame of their own, consumed from
+    /// this one ([`Self::within`]): it starts with this frame's refusal, its
+    /// input ended, where this frame has failed or fewer than `n` bytes remain.
+    /// Not generic over anything a decode reads, so it is one function, out of
+    /// line, for every codec (docs/adr/0138).
+    #[inline(never)]
+    fn begin_within(&mut self, n: usize) -> SceReader<'a> {
         let bytes = self.take_slice(n);
         let mut inner = SceReader {
             buf: bytes,
@@ -373,12 +392,19 @@ impl<'a> SceReader<'a> {
         if inner.fault.is_some() {
             inner.pos = inner.buf.len();
         }
-        let value = read(&mut inner);
+        inner
+    }
+
+    /// What `inner`, begun by [`Self::begin_within`], recorded, made this
+    /// frame's: its refusal, the first of the two counting first, and a value
+    /// past a capacity. One function, out of line, for every codec, as
+    /// [`Self::begin_within`] is (docs/adr/0138).
+    #[inline(never)]
+    fn end_within(&mut self, inner: &SceReader<'a>) {
         if let Some(refused) = inner.fault {
             self.fail(refused);
         }
         self.over |= inner.over;
-        value
     }
 }
 
@@ -395,17 +421,27 @@ impl<'a> SceCursor<'a> {
     /// place once more bytes have arrived.
     ///
     /// It is generic over the read, so each decode has its own copy, inlined
-    /// where the decode is: the reader's start and the call. The verdict and the
-    /// move of the cursor are [`Self::end_frame`], one function for every
-    /// decode of a program (docs/adr/0137).
+    /// where the decode is, and that copy is the call of the read alone: the
+    /// reader's start is [`Self::begin_frame`] (docs/adr/0138), and the verdict
+    /// and the move of the cursor are [`Self::end_frame`] (docs/adr/0137), each
+    /// one function for every decode of a program.
     #[inline]
     pub fn read_frame<T>(
         &mut self,
         read: impl FnOnce(&mut SceReader<'a>) -> T,
     ) -> Result<T, CodecError> {
-        let mut reader = SceReader::new(self.peek_slice(self.remaining()).unwrap_or_default());
+        let mut reader = self.begin_frame();
         let value = read(&mut reader);
         self.end_frame(&reader).map(|()| value)
+    }
+
+    /// A reader over the bytes from where this cursor stands, with nothing
+    /// recorded: the start of the frame [`Self::read_frame`] reads. Not generic
+    /// over anything a decode reads, so it is one function, out of line, for
+    /// every codec, as [`Self::end_frame`] is (docs/adr/0138).
+    #[inline(never)]
+    fn begin_frame(&self) -> SceReader<'a> {
+        SceReader::new(self.peek_slice(self.remaining()).unwrap_or_default())
     }
 
     /// The verdict of the frame `reader` read from where this cursor stands,
@@ -538,6 +574,35 @@ mod tests {
         let read = short.within(9, |inner| inner.take_array::<1>()[0]);
         assert_eq!(read, 0);
         assert_eq!(short.verdict(), Err(CodecError::NeedMoreBytes));
+    }
+
+    #[test]
+    fn a_frame_within_a_length_shares_its_capacity_and_starts_failed_after_a_refusal() {
+        let bytes = [1u8, 2, 3, 4];
+        // A value past a capacity inside the length is the outer frame's, and
+        // the reads go on.
+        let mut r = SceReader::new(&bytes);
+        let head = r.within(2, |inner| {
+            inner.note_capacity();
+            inner.take_array::<1>()[0]
+        });
+        assert_eq!(head, 1);
+        assert_eq!(r.position(), 2);
+        assert!(r.exceeded() && !r.failed());
+        assert_eq!(r.verdict(), Err(CodecError::CapacityExceeded));
+        // After a refusal the inner frame starts with it: it has nothing to
+        // read, reads zeros, and the outer verdict stays the first refusal.
+        let mut failed = SceReader::new(&bytes);
+        failed.fail(CodecError::InvalidUtf8);
+        let seen = failed.within(2, |inner| {
+            (
+                inner.failed(),
+                inner.remaining(),
+                inner.take_array::<1>()[0],
+            )
+        });
+        assert_eq!(seen, (true, 0, 0));
+        assert_eq!(failed.verdict(), Err(CodecError::InvalidUtf8));
     }
 
     #[test]
