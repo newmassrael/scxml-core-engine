@@ -357,7 +357,7 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         Some(&[
             "--with-imports",
             "--inline-decode-for",
-            "simple_frame",
+            "codec_simple_frame",
             "tests/forge/resources/codec_simple_frame.scxml",
         ]),
         "rust",
