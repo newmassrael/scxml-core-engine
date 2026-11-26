@@ -14,24 +14,11 @@
 //! So an install is refused in every file under `.github/`, in any spelling apt
 //! takes: `apt-get` or `apt`, by any path, with any options before `install`,
 //! on a line of its own or continued, in a step's script or a here-document
-//! it runs. A comment is prose and is not read. The workflows whose lanes do
-//! not yet run their gates in an image are named below, one a line, and the
-//! list may be no longer than what is true: a named workflow that installs
-//! nothing any more is refused too, so the entry goes with its last install.
+//! it runs. A comment is prose and is not read. There is no exception: every
+//! lane that ran `apt-get` runs its gates in an image.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// The workflows that still install packages at job time, until their lanes
-/// run their gates in an image. One a line, in byte order, so that removing
-/// one is an edit of its own line.
-const NOT_YET_IN_AN_IMAGE: &[&str] = &[
-    ".github/workflows/forge-conformance.yml",
-    ".github/workflows/mutation-rounds.yml",
-    ".github/workflows/release.yml",
-    ".github/workflows/rust-workspace-tests.yml",
-    ".github/workflows/swift-backend.yml",
-];
 
 /// apt's options that take a value as the next word (`-o Dpkg::Options::=...`),
 /// which is not the command that follows.
@@ -168,7 +155,7 @@ fn no_workflow_installs_a_package_at_job_time() {
     let mut refused: Vec<String> = Vec::new();
     for (path, text) in &files {
         let lines = install_lines(text);
-        if !lines.is_empty() && !NOT_YET_IN_AN_IMAGE.contains(&path.as_str()) {
+        if !lines.is_empty() {
             let at: Vec<String> = lines.iter().map(usize::to_string).collect();
             refused.push(format!("{path}: line(s) {}", at.join(", ")));
         }
@@ -181,34 +168,6 @@ fn no_workflow_installs_a_package_at_job_time() {
          (`container` of its entry under tools/git-hooks/gates/) and run the gate \
          through `scripts/gate` (docs/adr/0145).",
         refused.join("\n  ")
-    );
-
-    let mut stale: Vec<&str> = Vec::new();
-    for &listed in NOT_YET_IN_AN_IMAGE {
-        let installs = files
-            .iter()
-            .find(|(path, _)| path == listed)
-            .is_some_and(|(_, text)| !install_lines(text).is_empty());
-        if !installs {
-            stale.push(listed);
-        }
-    }
-    assert!(
-        stale.is_empty(),
-        "NOT_YET_IN_AN_IMAGE names workflow(s) that install no package (or no longer \
-         exist): {stale:?}\nDrop each line, so the list is no longer than what is true."
-    );
-}
-
-#[test]
-fn the_workflows_not_yet_in_an_image_are_named_once_each_in_order() {
-    let mut sorted = NOT_YET_IN_AN_IMAGE.to_vec();
-    sorted.sort_unstable();
-    sorted.dedup();
-    assert_eq!(
-        NOT_YET_IN_AN_IMAGE,
-        sorted.as_slice(),
-        "NOT_YET_IN_AN_IMAGE is to name each workflow once, in byte order, one a line"
     );
 }
 

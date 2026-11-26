@@ -1070,7 +1070,11 @@ def image_release_failures(repo_root: Path) -> list[str]:
 
 # A variable a lane sets in a job of its own, read by the job's other steps
 # and never by the gate: the runner reads them outside the image.
-LANE_ENV_OUTSIDE = ("SHARDS_RESULT",)
+# `SHARDS_RESULT` is a verdict job's; the four `SCE_` names are the selection
+# step's of mutation-rounds.yml, whose own script cuts the gate's selection to
+# the day's sweep slice and caps a push's jobs after the gate has answered.
+LANE_ENV_OUTSIDE = ("SHARDS_RESULT", "SCE_PUSH_ROUND_JOBS", "SCE_ROUND_EVENT",
+                    "SCE_SWEEP_SLICES", "SCE_SWEEP_SLICE")
 # What the runner hands every image whatever `container_env` says (RUNNER_ENV
 # in scripts/gate): the switch of the runner itself, which a lane may set.
 LANE_ENV_RUNNER = ("SCE_GATE_NO_FAIL_FAST",)
