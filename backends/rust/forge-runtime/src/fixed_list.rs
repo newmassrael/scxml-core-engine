@@ -27,7 +27,7 @@
 //! - The removal copies the entry out into a `MaybeUninit<T>` the impl owns and
 //!   moves the entries after it down one slot; the impl sets the length before it
 //!   drops the entry, so a `Drop` that panics leaves a list that counts exactly
-//!   what it holds. An index past the end panics before anything moves.
+//!   what it holds. An index past the end moves nothing and drops nothing.
 //! - The slot at `index` is `index * size` bytes from the first, inside the
 //!   buffer of `capacity * size` bytes, which a type's size keeps at most
 //!   `isize::MAX`. A type's size is a multiple of its alignment, so every slot is
@@ -80,12 +80,12 @@ unsafe fn push(slots: *mut u8, len: usize, capacity: usize, size: usize, entry: 
 /// slots of `size` bytes, out into `out`, and each entry after it down one
 /// slot, closing the gap.
 ///
-/// The caller sets the length to `len - 1` and owns the entry at `out`.
+/// The caller sets the length to `len - 1` and owns the entry at `out`, and
+/// does so only where this answers `true`.
 ///
-/// # Panics
-///
-/// Where `at` is not below `len`, before anything moves: a removal past the
-/// end is a fault of the caller's index, as it is for `Vec::remove`.
+/// Where `at` is not below `len` it moves nothing and answers `false`: the
+/// removal is total, with no panic path in a bare-metal image (the runtime's
+/// rule since the panic-free reads), and the list is as it was.
 ///
 /// # Safety
 ///
@@ -94,11 +94,10 @@ unsafe fn push(slots: *mut u8, len: usize, capacity: usize, size: usize, entry: 
 ///   `len * size` bytes;
 /// - `out` is valid for writes of `size` bytes, none of them in those slots.
 #[inline(never)]
-unsafe fn remove(slots: *mut u8, len: usize, size: usize, at: usize, out: *mut u8) {
-    assert!(
-        at < len,
-        "an entry removed from past the end of a fixed list"
-    );
+unsafe fn remove(slots: *mut u8, len: usize, size: usize, at: usize, out: *mut u8) -> bool {
+    if at >= len {
+        return false;
+    }
     // SAFETY: `at` is below `len`, so the slot at `at * size` and its `size`
     // bytes lie inside the `len * size` bytes the caller gives, and `out` is
     // `size` writable bytes outside them. The entries after it start one slot
@@ -111,6 +110,7 @@ unsafe fn remove(slots: *mut u8, len: usize, size: usize, at: usize, out: *mut u
         ptr::copy_nonoverlapping(slot, out, size);
         ptr::copy(slot.add(size), slot, (len - at - 1) * size);
     }
+    true
 }
 
 impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
@@ -171,16 +171,19 @@ impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
         // `size_of::<T>()` bytes, at least `len` of them, the first `len` each
         // holding an entry, lent whole by `&mut self`. `taken` is
         // `size_of::<T>()` writable bytes of this frame, not in the vector.
-        // `remove` panics before it moves anything where `at` is not below
-        // `len`, and the vector is then as it was.
-        unsafe {
+        // `remove` moves nothing where `at` is not below `len`, and the
+        // vector is then as it was.
+        let removed = unsafe {
             remove(
                 self.as_mut_ptr().cast::<u8>(),
                 len,
                 mem::size_of::<T>(),
                 at,
                 taken.as_mut_ptr().cast::<u8>(),
-            );
+            )
+        };
+        if !removed {
+            return;
         }
         // SAFETY: the entry at `at` was moved out and each one after it down one
         // slot, so each of the first `len - 1` slots holds an entry, none of them
@@ -301,12 +304,19 @@ mod tests {
         assert_eq!(drops.get(), 5, "every entry is dropped once");
     }
 
+    /// A removal past the end moves nothing and drops nothing: the list is as
+    /// it was, and the runtime keeps no panic path for it.
     #[test]
-    #[should_panic(expected = "an entry removed from past the end of a fixed list")]
-    fn a_removal_past_the_end_panics() {
-        let mut list: heapless::Vec<u16, 4> = heapless::Vec::new();
-        assert_eq!(SceList::try_push(&mut list, 1), Ok(()));
+    fn a_removal_past_the_end_removes_nothing() {
+        let drops = Cell::new(0);
+        let mut list: heapless::Vec<Counted<'_>, 4> = heapless::Vec::new();
+        assert_eq!(SceList::try_push(&mut list, counted(0, 0, &drops)), Ok(()));
         SceList::remove_at(&mut list, 1);
+        SceList::remove_at(&mut list, usize::MAX);
+        assert_eq!(ids(&list), [0]);
+        assert_eq!(drops.get(), 0);
+        drop(list);
+        assert_eq!(drops.get(), 1);
     }
 
     #[test]
