@@ -511,7 +511,9 @@ fn a_list_sent_short_of_its_fields_count_refuses_the_send_whole_on_every_backend
             language: Language::Rust,
             named: "'kept'",
             raises: "platform_error(",
-            send_id: "metadata.send_id",
+            // The id is carried where the profile keeps one (std) and not
+            // where it keeps none (no_std): one call either way.
+            send_id: "carry_send_id(send_id)",
             ends: "break 'action_block;",
         },
         ShortListRefusal {
