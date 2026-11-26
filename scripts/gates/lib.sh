@@ -1448,30 +1448,38 @@ sce_java_major() {
 # added. Nothing in that error named a JDK, and the gate had no way to say "you
 # are on the wrong one".
 #
-# CI never meets this because `actions/setup-java` exports `JAVA_HOME`. So the
-# floor is READ from the version CI pins, and this makes the same guarantee
-# locally rather than inheriting whatever the machine happens to export.
+# So the floor is READ from a file that pins it, and this makes the same
+# guarantee wherever the gate runs rather than inheriting whatever the machine
+# happens to export. Two files pin one: a Gradle build's `jvmToolchain(N)`, the
+# Java toolchain its modules compile and run their tests on, which is what a gate
+# that runs in an image names (the image's JDK is the one on its PATH, and the
+# build's toolchain is what that JDK has to satisfy); and a workflow's
+# `java-version:`, which `actions/setup-java` installs on a lane that is not in
+# an image yet.
 #
 # An adequate `JAVA_HOME` is left alone — overriding a deliberate choice is not
 # a gate's business. `SCE_JAVA_HOME` names one explicitly for a layout the
 # search below does not know.
 #
-# `$1` is the workflow file whose `java-version:` pin is the floor.
+# `$1` is the Gradle build whose `jvmToolchain(N)`, or the workflow whose
+# `java-version:`, is the floor.
 sce_gate_require_jdk() {
     local pin_file="$1" floor now candidate
 
-    # Deliberately not skip-capable. A lane obtains its JDK through
-    # `actions/setup-java` rather than a package install, and these gates are
+    # Deliberately not skip-capable. A lane obtains its JDK from the image its
+    # gate runs in or through `actions/setup-java`, and these gates are
     # selected only when the Kotlin backend changed — a skip there would be
     # silence about the exact change that asked for the check.
     command -v java >/dev/null 2>&1 \
         || sce_gate_fail "java is not on PATH, and this gate was selected because the Kotlin backend changed. Install a JDK 17+ (apt install openjdk-17-jdk) — skipping here would report green on an unverified backend."
 
-    floor="$(sed -n "s/^[[:space:]]*java-version:[[:space:]]*['\"]\{0,1\}\([0-9]\{1,\}\).*/\1/p" \
+    floor="$(sed -n \
+        -e "s/^[[:space:]]*java-version:[[:space:]]*['\"]\{0,1\}\([0-9]\{1,\}\).*/\1/p" \
+        -e "s/^[[:space:]]*jvmToolchain(\([0-9]\{1,\}\)).*/\1/p" \
         "$pin_file")"
     floor="${floor%%$'\n'*}"
     [ -n "$floor" ] \
-        || sce_gate_fail "no \`java-version:\` pin found in $pin_file — this gate derives its JDK floor from the version CI installs, and a missing pin would let it run on any JVM."
+        || sce_gate_fail "no \`jvmToolchain(N)\` or \`java-version:\` pin found in $pin_file — this gate derives its JDK floor from the toolchain the build declares, and a missing pin would let it run on any JVM."
 
     if [ -z "${JAVA_HOME:-}" ] || [ "$(sce_java_major "${JAVA_HOME:-}" || echo 0)" -lt "$floor" ]; then
         # The pinned major first, then anything at or above the floor: a

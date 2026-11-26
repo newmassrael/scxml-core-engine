@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Run `./gradlew` on the JDK CI installs, for a caller that is not a gate.
+# Run `./gradlew` on a JDK at the floor the Gradle build declares, for a caller
+# that is not a gate.
 #
 # The Kotlin gates choose their JDK with `sce_gate_require_jdk`, from the
-# `java-version:` their workflow pins. A build declared outside the gates —
+# `jvmToolchain(N)` of the Gradle build they run. A build declared outside the gates —
 # `bx.toml`'s `build` produces the Kotlin runtime jar the forge
 # gates put on `kotlinc -cp` — reaches Gradle without that step, and Gradle takes
 # `JAVA_HOME`, else the `java` on PATH, whatever a machine's package manager
@@ -18,11 +19,11 @@
 #
 #   scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain
 #
-# The pin is forge-conformance.yml's, the workflow whose Kotlin arm consumes the
-# jar this exists to build.
+# The pin is the forge runtime's Java toolchain, the module whose jar this exists
+# to build.
 
 source "$(dirname "${BASH_SOURCE[0]}")/gates/lib.sh"
 
-sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/forge-conformance.yml"
+sce_gate_require_jdk "$SCE_REPO_ROOT/backends/kotlin/forge-runtime/build.gradle.kts"
 
 exec ./gradlew "$@"

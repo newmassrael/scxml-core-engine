@@ -1268,13 +1268,15 @@ fn the_swift_forge_gate_holds_the_claims_its_run_is_read_for() {
     );
 }
 
-/// Every gate that derives a JDK floor names a workflow that declares one.
+/// Every gate that derives a JDK floor names a file that declares one.
 ///
-/// `sce_gate_require_jdk` reads its floor out of a workflow's `java-version:`
-/// and REFUSES when it finds none — which is the right runtime behaviour and
-/// is not a check anyone runs before pushing. A workflow that stopped pinning
-/// a version would leave the two Kotlin gates with no floor, and Gradle free to
-/// run on whatever JVM the machine exports. On this fleet that has been a JDK 8
+/// `sce_gate_require_jdk` reads its floor out of a Gradle build's
+/// `jvmToolchain(N)` or a workflow's `java-version:` and REFUSES when it finds
+/// neither — which is the right runtime behaviour and is not a check anyone
+/// runs before pushing. A file that stopped pinning a version would leave the
+/// Kotlin gates with no floor, and Gradle free to run on whatever JVM the
+/// machine exports. A gate that runs in an image names the Gradle build: the
+/// image's JDK is not installed by a workflow step, so no workflow pins it. On this fleet that has been a JDK 8
 /// while `java --version` said 17, failing inside a build script with a message
 /// that names no JDK.
 ///
@@ -1342,6 +1344,11 @@ fn every_gate_that_derives_a_jdk_floor_names_a_workflow_that_pins_one() {
         };
         let pin = body.lines().find_map(|line| {
             let line = line.trim_start();
+            if let Some(rest) = line.strip_prefix("jvmToolchain(") {
+                let value: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                return (!value.is_empty() && rest[value.len()..].starts_with(')'))
+                    .then_some(value);
+            }
             let rest = line.strip_prefix("java-version:")?;
             let value = rest.trim().trim_matches('\'').trim_matches('"');
             value.chars().next().filter(char::is_ascii_digit)?;
@@ -1351,14 +1358,14 @@ fn every_gate_that_derives_a_jdk_floor_names_a_workflow_that_pins_one() {
             Some(_) => {}
             None => offenders.push(format!(
                 "{gate} derives its JDK floor from {workflow}, which declares no \
-                 numeric `java-version:`"
+                 numeric `jvmToolchain(N)` or `java-version:`"
             )),
         }
     }
 
     assert!(
         offenders.is_empty(),
-        "⚠ {} gate(s) derive a JDK floor from a workflow that no longer pins \
+        "⚠ {} gate(s) derive a JDK floor from a file that no longer pins \
          one. `sce_gate_require_jdk` would refuse at run time, which is a \
          failed push rather than a caught edit:\n  {}",
         offenders.len(),

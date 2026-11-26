@@ -701,7 +701,7 @@ needed_by = ["c11-mcu"]
 # `./gradlew` runs on the machine's default JDK, and Gradle 8.11.1 with this
 # repository's Kotlin plugin dies on JDK 25 (`* What went wrong: 25.0.4`,
 # measured 2026-09-30 on a build machine whose default `java` was 25.0.4). The script
-# picks the JDK the Kotlin gates pick, from the version CI installs.
+# picks the JDK the Kotlin gates pick, at the floor the Gradle build's Java toolchain declares.
 [commands.build]
 run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain"
 

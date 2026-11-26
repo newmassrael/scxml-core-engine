@@ -37,8 +37,8 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# ⚠ The JDK Gradle runs on is chosen here, from the version CI installs, and not
-# inherited from the machine. Gradle honours `JAVA_HOME` over the `java` on PATH,
+# ⚠ The JDK Gradle runs on is chosen here, at the floor the forge runtime's
+# Java toolchain declares, and not inherited from the machine. Gradle honours `JAVA_HOME` over the `java` on PATH,
 # and a build machine's default JDK is whatever its package manager last
 # installed: Gradle 8.11.1 with this repository's Kotlin plugin cannot configure
 # on JDK 25, and dies in seconds with a message that names no JDK (`* What went
@@ -46,7 +46,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # `ecma262-lowered-kotlin` already ask for the guarantee; this arm was the third
 # Gradle driver and the one that did not, which is why it took a hand-set
 # `JAVA_HOME` on the remote command to run at all.
-sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/forge-conformance.yml"
+sce_gate_require_jdk "$SCE_REPO_ROOT/backends/kotlin/forge-runtime/build.gradle.kts"
 
 # The Gradle build resolves the generator from target/debug via
 # gradle/sce-codegen.gradle.kts, which is what `deps: ["codegen-build"]` in the
