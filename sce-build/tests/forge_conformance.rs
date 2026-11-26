@@ -4179,6 +4179,9 @@ fn declares_a_pub_field(line: &str) -> bool {
 /// entry's chain reads by is visible to the modules of the set alone.
 #[test]
 fn a_set_with_hot_codecs_declares_the_public_types_of_the_set_with_none() {
+    // A set without lists (the key expression's) still compares its types; the
+    // floor is that some set with views declares a list, so a walk is compared.
+    let mut lists_compared = false;
     for case in &HOT_SETS {
         let named = case.named;
         let cold = generate_hot_set(case, &[]);
@@ -4190,12 +4193,11 @@ fn a_set_with_hot_codecs_declares_the_public_types_of_the_set_with_none() {
         );
         assert_ne!(cold, hot, "naming {named} hot changed nothing in its set");
         if case.views {
-            assert!(
-                hot.iter().any(|(_, code)| public_declarations(code)
+            lists_compared |= hot.iter().any(|(_, code)| {
+                public_declarations(code)
                     .iter()
-                    .any(|declaration| declaration.contains("ListView<"))),
-                "the views of the set of {named} declare no list, so no walk was compared"
-            );
+                    .any(|declaration| declaration.contains("ListView<"))
+            });
         }
         for ((file, plain), (_, held)) in cold.iter().zip(&hot) {
             assert_eq!(
@@ -4205,6 +4207,10 @@ fn a_set_with_hot_codecs_declares_the_public_types_of_the_set_with_none() {
             );
         }
     }
+    assert!(
+        lists_compared,
+        "no set with views declares a list, so no walk was compared"
+    );
 }
 
 /// A consumer names a list of a view by its entry's one walk whatever codecs the
