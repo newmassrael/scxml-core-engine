@@ -14,6 +14,10 @@
 - Related: ADR 0128 (a frame's reads are total and its verdict is read once), ADR 0136 (a chain is read by one routine,
   dispatched statically), ADR 0061 (`generate --inline-encode`).
 - Requested by: a downstream bare-metal consumer, 2026-11-26.
+- Amended (2026-11-26): no public type depends on hotness. A list names its entry's one walk, `{Codec}Walk`, at every
+  site, and `{Codec}InlineWalk` is withdrawn; the walk reads its entry held in place where the entry codec is hot, a
+  property of the codec decided once; a cold scan of a chain of a hot entry reads by `{Codec}ColdScanWalk`, which no
+  list names (section "Amendment, 2026-11-26: no public type depends on hotness").
 
 ## Context
 
@@ -69,7 +73,8 @@ A codec whose body is hot is printed in two forms from its one body:
 
 Every hot site calls the form held in place; every cold site calls the entry point. A codec read only from hot sites
 still has its entry points, the functions its own `decode` and an external caller reach. A codec no hot body reads
-prints what it printed, byte for byte.
+prints what it printed, byte for byte, but for the walk its view's scan of a chain of a hot entry reads by (amendment
+below).
 
 The entry point keeps ADR 0137's rule over the sites that call it, the cold ones: none where one site or none calls
 it, `#[inline(never)]` where two or more do. The hot sites are not counted: they call the form held in place. So a
@@ -79,7 +84,8 @@ the sites that call its entry points.
 
 What a hot body reads it reads by the forms held in place, at every kind of site: the arms of its variant, its
 embedded bodies, the entries of its lists, its records (ADR 0130), the scan of a view's lists, and the walk of each
-list, which is `{Codec}InlineWalk` where the list shares its entry's walk. The rule a hot body's chain is read by
+list of its own; a list that shares its entry's walk names that one walk, whose read the entry codec decides
+(amendment below). The rule a hot body's chain is read by
 (ADR 0136) calls the entry's form held in place; the runtime's routine of the chain stays one out-of-line function per
 rule, as ADR 0136 dispatches it statically.
 
@@ -173,3 +179,66 @@ Accepted on all of these: the Rust goldens are unchanged; a codec read from a ho
 and each parent calls its own; the hot closure is transitive; a hot body reads its ZInts by the reads held in place; a
 codec is named by its stem or an import alias, and a name of two codecs is refused; a set with hot codecs compiles
 with and without views; the consumer measures its receive path and its image at the landing.
+
+## Amendment, 2026-11-26: no public type depends on hotness
+
+The consumer generated its set with its hot roots named (the transport frame header, the frame, the push) and no
+longer compiled. A list a hot body held named `{Codec}InlineWalk` where it shared its entry's walk (section 2), so a hot
+view's list field was `ListView<'a, ExtEntryInlineWalk, K>`, inside a `Bounded`, a `Without` or a chain's kinds alike,
+where the same list of a cold view, the list a cold entry point reads, and the consumer's own code name
+`ListView<'a, ExtEntryWalk, K>`. A list a cold read gave could not be held where a hot view holds one, and a function
+the consumer wrote over the list took one of the two. Whether a read is hot is where the read is held in place, a fact
+of the build's workload; a type is the interface a consumer writes against, which naming a hot root must not move.
+
+### Decision
+
+1. **No public type depends on hotness.** Every `pub` struct, enum, union, trait, type alias and field the set
+   generates is the same text whatever codecs the build names hot. A hot body differs from a cold one only in the
+   functions it calls and in the forms held in place it prints (`read_into_inline`, `read_inline`,
+   `read_with_inline`, `read_vle_u16_inline` and its widths), which are functions. `{Codec}InlineWalk` is withdrawn.
+2. **A list names its entry's one walk at every site.** A list that shares its entry's walk (ADR 0049, amendment of
+   2026-11-25) names `{Codec}Walk` in a hot body and in a cold one alike; a list with a walk of its own names
+   `{Codec}{Field}Walk`, as before.
+3. **The read of an entry's walk is a property of the entry codec, decided once.** `{Codec}Walk`'s
+   `ListWalk::read_with`, which its `read` and a consumer's walk of the list call, calls the entry's
+   `read_with_inline` where the entry codec is in the build's hot closure and its `read_with` otherwise. A walk of its
+   own serves one list of one body, so its read stays that body's site, as section 2 says.
+4. **A scan reads as its site does.** The scan of a hot body's list reads each entry held in place: a repeat calls the
+   form held in place in the body, and a chain is scanned by `walk_chain` over the entry's walk, which reads held in
+   place since the entry of a hot body is hot (section 1). The scan of a chain of a hot entry in a cold body reads by
+   `{Codec}ColdScanWalk`, which the hot codec's module writes beside its walk: the same entry, the same inputs and
+   nothing carried, its read the entry point. It is `pub(super)`, seen by the modules of the set and named by no list,
+   so it is no part of the public face, and no cold body's scan holds the hot entry's code. A parent learns that its
+   entry is hot from the import (`ImportContext::codec_body_hot`, `InlineDecode::is_hot`).
+
+### Consequences
+
+- No golden moves: with no codec named, `{Codec}Walk` reads by the entry point as it did, no module writes
+  `{Codec}ColdScanWalk`, and every scan names the walk it named.
+- With codecs named, a codec no hot body reads prints what it printed but for one name, the walk its view's scan of a
+  chain of a hot entry reads by; without views it prints what it printed, byte for byte.
+- A consumer's walk of a list of a hot entry reads each entry held in place wherever the list is held, a cold view's
+  included: the walk is one type, and its read is the entry codec's.
+- A consumer that named `{Codec}InlineWalk` names `{Codec}Walk`.
+
+### Alternatives considered
+
+- **Keep `{Codec}InlineWalk` and convert between the two.** Every signature a consumer writes over a list would name
+  the build's hot roots, and a set generated with other roots would break it again. Refused: the defect itself.
+- **A walk generic over the site** (a parameter of `ListView` or of the walk). The site is still in the type. Refused.
+- **`{Codec}Walk` reads by the entry point everywhere, and a hot scan reads by a walk held in place that no list
+  names.** A consumer's walk of a list on its hot path would call the entry out of line, the call the build named the
+  root to remove. Refused: the walk's read follows the entry codec.
+- **The scan of a cold body reads by `{Codec}Walk` too.** Its text would be what it was, but `walk_chain` instantiated
+  for each cold chain of a hot entry would hold the entry's body, the size section 2 removed. Refused.
+- **The chain's scan rule reads the entry** (a read on `ChainScanRule`, as `ChainRule::read` reads the eager entry).
+  Every view's chain rule would change shape, and with it every golden that holds a view. Refused while a walk of the
+  set's own modules says the read.
+
+### Acceptance
+
+Accepted on all of these: the Rust goldens are unchanged; for each set generated with a codec named hot and with
+none, every `pub` struct, enum, union, trait, type alias and field declaration is the same text, file by file; a crate
+that names a hot view's list `ListView<'a, {Entry}Walk, 0>`, holds a cold view's list where the hot view holds its own
+and walks either compiles against the hot set; a hot entry's walk reads it held in place, a cold scan of a chain of it
+calls its entry point, and with no codec named neither changes.
