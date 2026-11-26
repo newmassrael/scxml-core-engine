@@ -483,9 +483,19 @@ impl<'a> SceCursor<'a> {
     /// is one function, out of line, for every codec (docs/adr/0137).
     #[inline(never)]
     fn end_frame(&mut self, reader: &SceReader<'a>) -> Result<(), CodecError> {
-        match reader.fault {
-            None => self.advance(reader.place.position()).and(reader.verdict()),
-            Some(refused) => Err(refused),
+        if let Some(refused) = reader.fault {
+            return Err(refused);
+        }
+        // The reader was begun over this cursor's unread bytes
+        // ([`Self::begin_frame`]), and a reader that refused nothing holds a
+        // suffix of what it was begun over: what it left unread is what this
+        // cursor leaves, with no position counted and no length tested again
+        // (docs/adr/0143).
+        self.rest = reader.place.rest;
+        if reader.over {
+            Err(CodecError::CapacityExceeded)
+        } else {
+            Ok(())
         }
     }
 }

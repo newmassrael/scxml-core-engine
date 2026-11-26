@@ -65,3 +65,14 @@ were two, and no reload of the position); the consumer measures its receive path
   `unsafe` in every read for what the slice states by its type. Refused.
 - **A pointer pair in place of `buf`** (`start`, `rest`): one word less, but `rewind` and `since` would rebuild a slice
   from a pointer, `unsafe` again. Refused.
+
+## Amendment, 2026-11-26: a frame's end hands its unread bytes back to the cursor
+
+`SceCursor::end_frame` moved the cursor past a frame read whole by counting the reader's position and advancing by
+it, which tested the length again. A frame reader is begun over the cursor's unread bytes (`begin_frame`), and a
+reader that refused nothing holds a suffix of what it was begun over, so its unread bytes are the cursor's:
+`end_frame` sets `rest` to the reader's `rest`, with no position counted and no length tested.
+
+Measured on the consumer's receive harness (its `count_sub` under callgrind, 6,000 messages against 1,000, a
+reproduction of its library with this repository's main), together with ADR 0144: 20.6 instructions a message fewer,
+of which `end_frame` is 4 (13 to 9).
