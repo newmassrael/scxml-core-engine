@@ -210,11 +210,17 @@ sce_gate_step "debug-info layout of the emitted binaries"
 #
 # A shard judges the largest program it built itself: one it did not build is
 # whatever an earlier build left, which says nothing about this one's links.
+# Only what CMake links counts, which is what lies in the build tree: a shard's
+# outputs also name programs another tool links outside it (the generator,
+# `target/debug/sce-codegen`, which cargo links), and the flag above was never
+# theirs to carry.
 if [[ -n "$SHARD_PLAN" ]]; then
     built=()
+    build_root="$(cd "$BUILD_DIR" && pwd -P)"
     for target in ${SHARD_TARGETS[@]+"${SHARD_TARGETS[@]}"}; do
         [[ "$target" == /* ]] || target="$BUILD_DIR/$target"
-        [[ -f "$target" && -x "$target" ]] && built+=("$target")
+        [[ -f "$target" && -x "$target" ]] || continue
+        [[ "$(realpath "$target")" == "$build_root"/* ]] && built+=("$target")
     done
     listing=""
     if (( ${#built[@]} > 0 )); then
