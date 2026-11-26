@@ -578,8 +578,8 @@ pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, C
     }
 }
 
-/// The ZInt at `*pos` of `buf` when it is one or two bytes, consumed, or
-/// `None` with `*pos` unmoved: what nearly every field holds (an id, a
+/// The ZInt at the start of `*rest` when it is one or two bytes, consumed, or
+/// `None` with `*rest` unmoved: what nearly every field holds (an id, a
 /// length, a count), answered by two branches before any call of the decode
 /// (docs/adr/0138, amendments of 2026-11-26). Two bytes hold fourteen bits,
 /// below the limit of every width a field is read at (`vle_u16` the
@@ -588,15 +588,15 @@ pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, C
 /// Written once, held in the two places that answer a short ZInt before the
 /// decode: the cursor's one ZInt read and the frame reader's.
 #[inline(always)]
-pub(crate) fn read_zint_short(buf: &[u8], pos: &mut usize) -> Option<u64> {
-    let first = *buf.get(*pos)?;
+pub(crate) fn read_zint_short(rest: &mut &[u8]) -> Option<u64> {
+    let (&first, after_first) = rest.split_first()?;
     if first & 0x80 == 0 {
-        *pos += 1;
+        *rest = after_first;
         return Some(u64::from(first));
     }
-    let second = *buf.get(*pos + 1)?;
+    let (&second, after_second) = after_first.split_first()?;
     if second & 0x80 == 0 {
-        *pos += 2;
+        *rest = after_second;
         return Some(u64::from(first & 0x7F) | (u64::from(second) << 7));
     }
     None
@@ -608,19 +608,30 @@ pub(crate) fn read_zint_short(buf: &[u8], pos: &mut usize) -> Option<u64> {
 /// after the construction succeeds.
 #[derive(Debug, Clone, Copy)]
 pub struct SceCursor<'a> {
+    /// The whole input: what a position is counted from.
     pub(crate) buf: &'a [u8],
-    pub(crate) pos: usize,
+    /// The bytes of `buf` not yet read, always a suffix of it. A read tests
+    /// this slice's length alone and moves its start, so a read of a fixed
+    /// count of bytes is one comparison and its refusal one branch
+    /// (docs/adr/0143).
+    pub(crate) rest: &'a [u8],
 }
 
 impl<'a> SceCursor<'a> {
     /// Wrap `buf` with cursor position 0.
     pub const fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0 }
+        Self { buf, rest: buf }
     }
 
     /// Bytes remaining from current position to end of input.
     pub const fn remaining(&self) -> usize {
-        self.buf.len() - self.pos
+        self.rest.len()
+    }
+
+    /// How many bytes of its input the cursor has read: the whole input less
+    /// what is left of it.
+    pub(crate) const fn position(&self) -> usize {
+        self.buf.len() - self.rest.len()
     }
 
     /// Borrow the next `n` bytes without advancing. Returns
@@ -632,10 +643,7 @@ impl<'a> SceCursor<'a> {
     /// formats the range, a path no cursor takes, since `pos` never passes
     /// the end of the input.
     pub fn peek_slice(&self, n: usize) -> Result<&'a [u8], CodecError> {
-        self.buf
-            .get(self.pos..)
-            .and_then(|tail| tail.get(..n))
-            .ok_or(CodecError::NeedMoreBytes)
+        self.rest.get(..n).ok_or(CodecError::NeedMoreBytes)
     }
 
     /// The next `N` bytes as an array, without advancing. Returns
@@ -651,9 +659,8 @@ impl<'a> SceCursor<'a> {
     /// site and are not merged into one function.
     #[inline]
     pub fn peek_array<const N: usize>(&self) -> Result<&'a [u8; N], CodecError> {
-        self.buf
-            .get(self.pos..)
-            .and_then(<[u8]>::first_chunk::<N>)
+        self.rest
+            .first_chunk::<N>()
             .ok_or(CodecError::NeedMoreBytes)
     }
 
@@ -662,10 +669,7 @@ impl<'a> SceCursor<'a> {
     /// as its own header, read with no index and so with no panic path.
     #[inline]
     pub fn peek_u8(&self) -> Result<u8, CodecError> {
-        self.buf
-            .get(self.pos)
-            .copied()
-            .ok_or(CodecError::NeedMoreBytes)
+        self.rest.first().copied().ok_or(CodecError::NeedMoreBytes)
     }
 
     /// Advance the cursor by `n` bytes. Decode bodies call this after
@@ -674,11 +678,12 @@ impl<'a> SceCursor<'a> {
     /// programming error in normal use; surfaced as the typed wire
     /// error to keep the contract symmetric).
     pub fn advance(&mut self, n: usize) -> Result<(), CodecError> {
-        if self.remaining() < n {
-            Err(CodecError::NeedMoreBytes)
-        } else {
-            self.pos += n;
-            Ok(())
+        match self.rest.get(n..) {
+            Some(after) => {
+                self.rest = after;
+                Ok(())
+            }
+            None => Err(CodecError::NeedMoreBytes),
         }
     }
 
@@ -707,11 +712,11 @@ impl<'a> SceCursor<'a> {
     /// the cursor reads in every frame, is one call.
     #[inline(never)]
     pub(crate) fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        if let Some(value) = read_zint_short(self.buf, &mut self.pos) {
+        if let Some(value) = read_zint_short(&mut self.rest) {
             return Ok(value);
         }
-        let (value, at) = read_zint(self.buf, self.pos, max_bits);
-        self.pos = at;
+        let (value, read) = read_zint(self.rest, 0, max_bits);
+        self.rest = self.rest.get(read..).unwrap_or_default();
         value
     }
 
@@ -2137,8 +2142,8 @@ mod tests {
             "the one ZInt read is out of line and not cold: {attrs}"
         );
         assert!(
-            shared.contains("read_zint_short(self.buf, &mut self.pos)")
-                && shared.contains("read_zint(self.buf, self.pos, max_bits)"),
+            shared.contains("read_zint_short(&mut self.rest)")
+                && shared.contains("read_zint(self.rest, 0, max_bits)"),
             "the one ZInt read answers a short ZInt and runs the decode:\n{shared}"
         );
         // The frame reader answers a short ZInt in its own read, out of line,
@@ -2149,7 +2154,7 @@ mod tests {
             "the reader's ZInt read is out of line and not cold: {attrs}"
         );
         assert!(
-            body.contains("read_zint_short(self.place.buf, &mut self.place.pos)")
+            body.contains("read_zint_short(&mut self.place.rest)")
                 && body.contains("self.place.read_vle_inner(max_bits)")
                 && !body.contains("read_zint("),
             "the reader's ZInt read answers a short ZInt and calls the one read:\n{body}"

@@ -75,12 +75,12 @@ impl<'a> SceReader<'a> {
     /// The bytes from where the reader stands to the end of its input: zero
     /// once the frame has failed, so a loop to the end of the frame stops.
     pub const fn remaining(&self) -> usize {
-        self.place.buf.len() - self.place.pos
+        self.place.remaining()
     }
 
     /// How many bytes of its input the reader has consumed.
     pub const fn position(&self) -> usize {
-        self.place.pos
+        self.place.position()
     }
 
     /// Whether a refusal is recorded: the frame does not decode, and every read
@@ -123,7 +123,7 @@ impl<'a> SceReader<'a> {
         if self.fault.is_none() {
             self.fault = Some(refusal);
         }
-        self.place.pos = self.place.buf.len();
+        self.place.rest = &[];
     }
 
     /// Note that a value of the frame was past what its profile holds; the
@@ -203,10 +203,9 @@ impl<'a> SceReader<'a> {
     /// zeros alike.
     #[inline]
     pub fn take_array<const N: usize>(&mut self) -> &'a [u8; N] {
-        let buf = self.place.buf;
-        match buf.get(self.place.pos..).and_then(<[u8]>::first_chunk::<N>) {
-            Some(bytes) => {
-                self.place.pos += N;
+        match self.place.rest.split_first_chunk::<N>() {
+            Some((bytes, after)) => {
+                self.place.rest = after;
                 bytes
             }
             None => {
@@ -220,10 +219,9 @@ impl<'a> SceReader<'a> {
     /// where fewer remain.
     #[inline]
     pub fn take_slice(&mut self, n: usize) -> &'a [u8] {
-        let buf = self.place.buf;
-        match buf.get(self.place.pos..).and_then(|rest| rest.get(..n)) {
-            Some(bytes) => {
-                self.place.pos += n;
+        match self.place.rest.split_at_checked(n) {
+            Some((bytes, after)) => {
+                self.place.rest = after;
                 bytes
             }
             None => {
@@ -237,8 +235,8 @@ impl<'a> SceReader<'a> {
     /// frame.
     #[inline]
     pub fn take_rest(&mut self) -> &'a [u8] {
-        let rest = self.rest();
-        self.place.pos = self.place.buf.len();
+        let rest = self.place.rest;
+        self.place.rest = &[];
         rest
     }
 
@@ -246,8 +244,7 @@ impl<'a> SceReader<'a> {
     /// failed.
     #[inline]
     pub fn rest(&self) -> &'a [u8] {
-        let buf = self.place.buf;
-        buf.get(self.place.pos..).unwrap_or(&[])
+        self.place.rest
     }
 
     /// Every byte that remains, not consumed, where at least `N` do; `N` zero
@@ -269,7 +266,7 @@ impl<'a> SceReader<'a> {
     /// it as its own header.
     #[inline]
     pub fn peek_u8(&mut self) -> u8 {
-        match self.place.buf.get(self.place.pos) {
+        match self.place.rest.first() {
             Some(&byte) => byte,
             None => {
                 self.fail(CodecError::NeedMoreBytes);
@@ -281,10 +278,9 @@ impl<'a> SceReader<'a> {
     /// Consume `n` bytes; `NeedMoreBytes` recorded where fewer remain.
     #[inline]
     pub fn advance(&mut self, n: usize) {
-        if self.remaining() < n {
-            self.fail(CodecError::NeedMoreBytes);
-        } else {
-            self.place.pos += n;
+        match self.place.rest.get(n..) {
+            Some(after) => self.place.rest = after,
+            None => self.fail(CodecError::NeedMoreBytes),
         }
     }
 
@@ -304,7 +300,7 @@ impl<'a> SceReader<'a> {
     /// holds the body's answer or its record.
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        if let Some(value) = read_zint_short(self.place.buf, &mut self.place.pos) {
+        if let Some(value) = read_zint_short(&mut self.place.rest) {
             return value;
         }
         match self.place.read_vle_inner(max_bits) {
@@ -323,7 +319,7 @@ impl<'a> SceReader<'a> {
     /// its refusal.
     #[inline(always)]
     fn read_vle_held(&mut self, max_bits: u32) -> u64 {
-        match read_zint_short(self.place.buf, &mut self.place.pos) {
+        match read_zint_short(&mut self.place.rest) {
             Some(value) => value,
             None => self.read_vle_inner(max_bits),
         }
@@ -370,7 +366,7 @@ impl<'a> SceReader<'a> {
     /// Where the reader stands, to come back to with [`Self::rewind`]: how a
     /// decode reads a span again.
     pub const fn mark(&self) -> usize {
-        self.place.pos
+        self.place.position()
     }
 
     /// The bytes consumed since `at`, a [`Self::mark`] of this reader: what one
@@ -381,14 +377,16 @@ impl<'a> SceReader<'a> {
             return &[];
         }
         let buf = self.place.buf;
-        buf.get(at..self.place.pos).unwrap_or(&[])
+        buf.get(at..self.place.position()).unwrap_or(&[])
     }
 
     /// Go back to `at`, a [`Self::mark`] of this reader. What the reader
     /// recorded stays: a failed frame stays failed, and its input ended.
     pub fn rewind(&mut self, at: usize) {
-        if self.fault.is_none() && at <= self.place.buf.len() {
-            self.place.pos = at;
+        if self.fault.is_none() {
+            if let Some(rest) = self.place.buf.get(at..) {
+                self.place.rest = rest;
+            }
         }
     }
 
@@ -425,7 +423,7 @@ impl<'a> SceReader<'a> {
             over: false,
         };
         if inner.fault.is_some() {
-            inner.place.pos = inner.place.buf.len();
+            inner.place.rest = &[];
         }
         inner
     }
@@ -476,7 +474,7 @@ impl<'a> SceCursor<'a> {
     /// every codec, as [`Self::end_frame`] is (docs/adr/0138).
     #[inline(never)]
     fn begin_frame(&self) -> SceReader<'a> {
-        SceReader::new(self.peek_slice(self.remaining()).unwrap_or_default())
+        SceReader::new(self.rest)
     }
 
     /// The verdict of the frame `reader` read from where this cursor stands,
@@ -486,7 +484,7 @@ impl<'a> SceCursor<'a> {
     #[inline(never)]
     fn end_frame(&mut self, reader: &SceReader<'a>) -> Result<(), CodecError> {
         match reader.fault {
-            None => self.advance(reader.place.pos).and(reader.verdict()),
+            None => self.advance(reader.place.position()).and(reader.verdict()),
             Some(refused) => Err(refused),
         }
     }
