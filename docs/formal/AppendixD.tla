@@ -453,51 +453,53 @@ Init ==
     /\ arrived = 0
     /\ outcome = None
 
+\* Each kind of step the interpreter takes is a guard, a predicate of the
+\* current state, and its result, a function of the current state; the
+\* action is the one taking the other.
+
 \* §scxml-D-interpret: running, then enterStates on the document's initial
 \* transition.
-Start ==
-    /\ phase = "start"
-    /\ LET entered == EnterStates(<<InitialOf[Root]>>, [Machine EXCEPT !.phase = "loop"])
-       IN Becomes([m |-> entered.m,
-                   told |-> [NoTold EXCEPT !.fired = <<InitialOf[Root]>>,
-                                           !.entered = entered.entered]])
-    /\ UNCHANGED <<arrived, outcome>>
+CanStart == phase = "start"
+StartResult ==
+    LET entered == EnterStates(<<InitialOf[Root]>>, [Machine EXCEPT !.phase = "loop"])
+    IN [m |-> entered.m,
+        told |-> [NoTold EXCEPT !.fired = <<InitialOf[Root]>>, !.entered = entered.entered]]
 
 \* §scxml-D-mainEventLoop, the macrostep: an eventless microstep first.
-Eventless ==
-    /\ phase = "loop"
-    /\ LET ts == SelectEventlessTransitions(Machine)
-       IN /\ ts # <<>>
-          /\ Becomes(Microstep(ts, Machine))
-    /\ UNCHANGED <<arrived, outcome>>
+CanEventless == phase = "loop" /\ SelectEventlessTransitions(Machine) # <<>>
+EventlessResult == Microstep(SelectEventlessTransitions(Machine), Machine)
 
 \* §scxml-D-mainEventLoop, the macrostep: else an internal event.
-Internal ==
+CanInternal ==
     /\ phase = "loop"
     /\ SelectEventlessTransitions(Machine) = <<>>
     /\ internalQueue # <<>>
-    /\ Becomes(TakeEvent([Machine EXCEPT !.intq = Tail(@), !.event = Head(internalQueue)]))
-    /\ UNCHANGED <<arrived, outcome>>
+InternalResult == TakeEvent([Machine EXCEPT !.intq = Tail(@), !.event = Head(internalQueue)])
 
 \* §scxml-D-mainEventLoop: an external event once the macrostep is done.
-External ==
+CanExternal ==
     /\ phase = "loop"
     /\ externalQueue # <<>>
     /\ RunToCompletion => MacrostepDone(Machine)
-    /\ Becomes(TakeEvent([Machine EXCEPT !.extq = Tail(@), !.event = Head(externalQueue)]))
-    /\ UNCHANGED <<arrived, outcome>>
+ExternalResult == TakeEvent([Machine EXCEPT !.extq = Tail(@), !.event = Head(externalQueue)])
 
 \* §scxml-D-exitInterpreter: every state exited in exit order; the top-level
 \* final state, then the only one active, is the session's done event.
-Stop ==
-    /\ phase = "exit"
-    /\ LET order == ExitSequence(configuration)
-           ran == RunBlocks([i \in 1..Len(order) |-> OnExit[order[i]]], Machine)
-           top == {s \in configuration : IsFinal(s) /\ Parent[s] = Root}
-       IN /\ Becomes([m |-> [ran EXCEPT !.conf = {}, !.phase = "end"],
-                      told |-> [NoTold EXCEPT !.exited = order]])
-          /\ outcome' = IF top = {} THEN None ELSE CHOOSE s \in top : TRUE
-    /\ UNCHANGED arrived
+CanStop == phase = "exit"
+StopResult ==
+    LET order == ExitSequence(configuration)
+        ran == RunBlocks([i \in 1..Len(order) |-> OnExit[order[i]]], Machine)
+    IN [m |-> [ran EXCEPT !.conf = {}, !.phase = "end"],
+        told |-> [NoTold EXCEPT !.exited = order]]
+StopOutcome ==
+    LET top == {s \in configuration : IsFinal(s) /\ Parent[s] = Root}
+    IN IF top = {} THEN None ELSE CHOOSE s \in top : TRUE
+
+Start == CanStart /\ Becomes(StartResult) /\ UNCHANGED <<arrived, outcome>>
+Eventless == CanEventless /\ Becomes(EventlessResult) /\ UNCHANGED <<arrived, outcome>>
+Internal == CanInternal /\ Becomes(InternalResult) /\ UNCHANGED <<arrived, outcome>>
+External == CanExternal /\ Becomes(ExternalResult) /\ UNCHANGED <<arrived, outcome>>
+Stop == CanStop /\ Becomes(StopResult) /\ outcome' = StopOutcome /\ UNCHANGED arrived
 
 \* The environment: the i-th delayed send comes due, onto the external queue.
 Due(i) ==
@@ -528,8 +530,25 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
-\* The interpreter is not starved; the environment is owed nothing.
-LiveSpec == Spec /\ WF_vars(Step)
+\* Whether the result r of a step moves the state; no step of the interpreter
+\* moves arrived.
+Moves(r) == r.m # Machine \/ r.told # told
+
+\* ENABLED <<Step>>_vars, as a predicate of the current state: a guard holds and
+\* its result moves the state.
+StepEnabled ==
+    \/ CanStart /\ Moves(StartResult)
+    \/ CanEventless /\ Moves(EventlessResult)
+    \/ CanInternal /\ Moves(InternalResult)
+    \/ CanExternal /\ Moves(ExternalResult)
+    \/ CanStop /\ (Moves(StopResult) \/ StopOutcome # outcome)
+
+\* The interpreter is not starved; the environment is owed nothing. This is
+\* WF_vars(Step) by its definition, []<>~ENABLED <<Step>>_vars \/ []<><<Step>>_vars
+\* (Lamport, Specifying Systems, 8.4), with StepEnabled for the enabledness:
+\* TLC evaluates ENABLED without the caching of its other evaluation, and
+\* through the recursions of the algorithm that does not end in time.
+LiveSpec == Spec /\ ([]<>(~StepEnabled) \/ []<><<Step>>_vars)
 
 \* A legal configuration: the scxml element and each active compound state
 \* have exactly one active child, an active parallel state has every child
