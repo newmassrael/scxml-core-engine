@@ -482,14 +482,57 @@ fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
     ))
 }
 
+/// The ZInt at the start of nine bytes, which hold it whole, and its length:
+/// each byte's test is a branch out with the value so far, and every index is
+/// a constant below the array's length, so there is no loop, no bounds check
+/// and no panic path. The same answer as [`decode_zint`] over the same bytes.
+#[inline(always)]
+fn decode_zint_whole(b: &[u8; ZINT_MAX_BYTES]) -> (u64, usize) {
+    let mut v = u64::from(b[0] & 0x7F);
+    if b[0] & 0x80 == 0 {
+        return (v, 1);
+    }
+    v |= u64::from(b[1] & 0x7F) << 7;
+    if b[1] & 0x80 == 0 {
+        return (v, 2);
+    }
+    v |= u64::from(b[2] & 0x7F) << 14;
+    if b[2] & 0x80 == 0 {
+        return (v, 3);
+    }
+    v |= u64::from(b[3] & 0x7F) << 21;
+    if b[3] & 0x80 == 0 {
+        return (v, 4);
+    }
+    v |= u64::from(b[4] & 0x7F) << 28;
+    if b[4] & 0x80 == 0 {
+        return (v, 5);
+    }
+    v |= u64::from(b[5] & 0x7F) << 35;
+    if b[5] & 0x80 == 0 {
+        return (v, 6);
+    }
+    v |= u64::from(b[6] & 0x7F) << 42;
+    if b[6] & 0x80 == 0 {
+        return (v, 7);
+    }
+    v |= u64::from(b[7] & 0x7F) << 49;
+    if b[7] & 0x80 == 0 {
+        return (v, 8);
+    }
+    (v | (u64::from(b[8]) << 56), ZINT_MAX_BYTES)
+}
+
 /// The ZInt at `pos` of `buf` held to `max_bits`, and where the read ends: past
 /// the ZInt when it is whole (a value past `2^max_bits - 1` refused with
 /// `VleWidthOverflow` there), and at the end of `buf` with `NeedMoreBytes`
 /// when `buf` ends inside its chain.
 ///
-/// The tail is read by one loop, [`decode_zint`], whatever remains of it: a
-/// second copy of the loop for a tail of nine bytes or more would spare one
-/// test a byte at the price of the loop's size again (docs/adr/0137).
+/// A ZInt with nine bytes after its start, every one but a frame's last few, is
+/// read without a loop by [`decode_zint_whole`]; a shorter tail by the loop,
+/// [`decode_zint`] (docs/adr/0138, third amendment: the consumer's sequence
+/// number, a ZInt of four or five bytes in every frame, cost 65 instructions
+/// through the loop).
 ///
 /// The one body of every ZInt, of every length and width, for the cursor's and
 /// the frame reader's reads alike (docs/adr/0130): each reader calls it from
@@ -499,7 +542,15 @@ fn decode_zint(bytes: &[u8]) -> Option<(u64, usize)> {
 #[inline(never)]
 pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
     let tail = buf.get(pos..).unwrap_or_default();
-    match decode_zint(tail) {
+    // Where nine bytes remain, the longest a ZInt is, it is read straight from
+    // them with no test of the input's end and no loop (`decode_zint_whole`), as
+    // a varint is read where the buffer is known to hold it; only a tail shorter
+    // than that, the end of a frame, is read by the loop that tests each byte.
+    let decoded = match tail.first_chunk::<ZINT_MAX_BYTES>() {
+        Some(bytes) => Some(decode_zint_whole(bytes)),
+        None => decode_zint(tail),
+    };
+    match decoded {
         Some((value, len)) if max_bits < u64::BITS && value >> max_bits != 0 => {
             (Err(CodecError::VleWidthOverflow), pos + len)
         }
@@ -1464,6 +1515,32 @@ mod tests {
     // the source-text helpers below read the crate's own text with.
     extern crate std;
     use std::{format, string::String, vec::Vec};
+
+    /// The read of a ZInt with nine bytes after it and the loop over a tail
+    /// agree on every length, every placement of the flags and the last byte.
+    #[test]
+    fn a_zint_read_whole_answers_as_the_loop_does() {
+        for len in 1..=ZINT_MAX_BYTES {
+            for fill in [0x00u8, 0x55, 0x7F] {
+                let mut bytes = [0u8; ZINT_MAX_BYTES];
+                for (i, b) in bytes.iter_mut().enumerate() {
+                    *b = if i + 1 < len {
+                        fill | 0x80
+                    } else if i + 1 == len {
+                        fill
+                    } else {
+                        0xFF
+                    };
+                }
+                if len == ZINT_MAX_BYTES {
+                    bytes[ZINT_MAX_BYTES - 1] = 0xFF;
+                }
+                let whole = decode_zint_whole(&bytes);
+                assert_eq!(Some(whole), decode_zint(&bytes), "len {len} fill {fill:#x}");
+                assert_eq!(whole.1, len, "len {len} fill {fill:#x}");
+            }
+        }
+    }
 
     #[test]
     fn empty_cursor_reports_zero_remaining() {

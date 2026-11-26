@@ -203,3 +203,15 @@ them.
 Each reader's ZInt read answers two bytes in its second branch as well, with no width test: fourteen bits are below
 every width a field is read at (`vle_u16` the narrowest). Only a ZInt of three bytes or more calls `read_zint`. The
 size cost is a few instructions in each of the two reads; no read site holds anything in place.
+
+## Amendment, 2026-11-26 (third): a ZInt read whole where nine bytes remain
+
+Measured at 089a04818c6: the receive path at 4,892.6 instructions a message against the baseline's 4,856, `read_zint`
+still 65 of its own a message, the two-byte branch having changed nothing: the ZInt that reaches it in every frame
+is the frame's sequence number, which starts at a random value and is a ZInt of four or five bytes.
+
+`read_zint` now reads a ZInt with nine bytes after its start, the longest a ZInt is, straight from them: each
+byte's flag a branch out with the value so far, every index a constant below the array's length, no loop and no test
+of the input's end, as a varint is read where the buffer is known to hold it. The loop that tests each byte reads
+only a tail shorter than nine bytes, the end of a frame. Still one copy in a program, out of line, called only for a
+ZInt of three bytes or more.
