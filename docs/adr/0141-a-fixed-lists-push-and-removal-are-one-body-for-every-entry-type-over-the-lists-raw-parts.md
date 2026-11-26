@@ -37,7 +37,7 @@ parts: the address of its first slot, its length, its capacity and the size of a
 
 - `push` copies the `size` bytes at `entry` into the slot at `len` and answers `true`, or, where `len` is not
   below `capacity`, copies nothing and answers `false`.
-- `remove` panics where `at` is not below `len`, before anything moves; otherwise it copies the slot at `at` into
+- `remove` moves nothing and answers `false` where `at` is not below `len` (no panic path); otherwise it copies the slot at `at` into
   `out` and the `len - at - 1` slots after it down one slot.
 - Neither sets the length: `heapless::Vec`'s length is a private field of a `repr(Rust)` struct, so its only
   address is `set_len`, one store, which the typed impl makes.
