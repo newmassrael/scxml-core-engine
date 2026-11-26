@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "closes": true,
+  "owner": [
+    { "call": "post", "session": 0, "input": 1, "outcome": "taken", "invoked": 1, "returned": 2 }
+  ],
+  "posters": []
+}

@@ -541,6 +541,13 @@ name = "broadcast_history_format"
 path = "tests/broadcast_history_format.rs"
 required-features = ["cli"]
 
+# The inbox history form and `sce-codegen check-inbox-history` on the real
+# binary (docs/adr/0147, D3), held the way the queue's is.
+[[test]]
+name = "inbox_history_format"
+path = "tests/inbox_history_format.rs"
+required-features = ["cli"]
+
 # The specialised broadcast-log checker held equal to the general search on
 # simulated, corrupted and shrunk histories, on every fixture, and through
 # `sce-codegen check-broadcast-history --method` on the real binary.

@@ -4231,6 +4231,27 @@ enum Commands {
         method: HistoryMethod,
     },
 
+    /// Judge recorded inbox histories for linearizability (docs/adr/0147,
+    /// D3).
+    ///
+    /// Each FILE is a history in the JSON form that
+    /// `tests/forge/conformance/inbox_history.schema.json` describes: what
+    /// the posters and the owner thread of one run of ADR 0084's door
+    /// observed, each operation with the instants it was invoked and
+    /// returned. The sequential specification is
+    /// `docs/formal/InboxService.tla`: each session's external queue takes
+    /// the inputs posted to it and its own events in the order they
+    /// linearized, each input taken exactly once, and a post is refused only
+    /// once its session has ended. Judged and reported as
+    /// `check-queue-history` does: one line per file, and the command fails
+    /// when any file is not linearizable, is not a history, or records no
+    /// operation.
+    CheckInboxHistory {
+        /// The history files to judge
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
     /// Verify that generated files were generated from the current inputs,
     /// per spec §synth-6.2.6.
     ///
@@ -4970,6 +4991,7 @@ pub fn main() {
         Commands::CheckBroadcastHistory { files, method } => {
             cmd_check_broadcast_history(&files, method)
         }
+        Commands::CheckInboxHistory { files } => cmd_check_inbox_history(&files),
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
@@ -5231,6 +5253,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::CheckQueueHistory { .. }
         | Commands::Formal { .. }
         | Commands::CheckBroadcastHistory { .. }
+        | Commands::CheckInboxHistory { .. }
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
@@ -16633,6 +16656,18 @@ fn cmd_check_broadcast_history(files: &[String], method: HistoryMethod) {
             .unplaceable
             .map(|unplaceable| unplaceable.to_string());
         Ok((operations, judgement.verdict, why_not))
+    });
+}
+
+/// Judge recorded inbox histories (docs/adr/0147, D3). See
+/// `Commands::CheckInboxHistory`.
+fn cmd_check_inbox_history(files: &[String]) {
+    use crate::inbox_history::{check, History};
+
+    judge_history_files("check-inbox-history", files, |text| {
+        let history = History::from_json(text).map_err(|e| e.to_string())?;
+        let operations = history.owner.len() + history.posters.iter().map(Vec::len).sum::<usize>();
+        Ok((operations, check(&history), None))
     });
 }
 

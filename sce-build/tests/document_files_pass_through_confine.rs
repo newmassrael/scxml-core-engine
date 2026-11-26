@@ -274,9 +274,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("addr2sce_load_symbol_table", 1),
             ("load_sourcemap", 1),
             // The run histories a backend's stress test wrote, named on the
-            // command line (`check-queue-history`, `check-broadcast-history`):
-            // records of a run and not documents a document names. Both commands
-            // read them in the one function that judges the files of a kind.
+            // command line (`check-queue-history`, `check-broadcast-history`,
+            // `check-inbox-history`): records of a run and not documents a
+            // document names. Every such command reads them in the one function
+            // that judges the files of a kind.
             ("judge_history_files", 1),
             // The replay scenario a command is named: the operator's own
             // argument, as `cmd_scenarios` reads it. (The document a command is

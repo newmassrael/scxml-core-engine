@@ -190,6 +190,12 @@ pub mod host_processor_analyzer;
 /// the package directory each unit is generated into
 /// (`sce-codegen generate --with-imports`).
 pub mod import_closure;
+/// The linearizability checker for inbox histories and the JSON form a
+/// runtime's inbox conformance test writes one in (docs/adr/0147, D3): ADR
+/// 0084's door judged against `docs/formal/InboxService.tla`. Here, and not in
+/// a runtime's tests, so `sce-codegen check-inbox-history` judges the history
+/// of every runtime.
+pub mod inbox_history;
 /// How deep a Rust machine's internal event queue must be, proven from what its
 /// document can raise for itself, or why no depth is proven (docs/adr/0076).
 pub mod internal_queue_bound;
