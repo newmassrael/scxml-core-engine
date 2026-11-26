@@ -6,14 +6,15 @@
 #
 # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
 # layer 3), and the mutants that show the check reads orderings at all. It needs
-# GenMC, which no hosted runner carries and which is built from source
-# (`scripts/install_genmc.sh`), so it runs where that was done.
+# GenMC, built from source at the revision `scripts/install_genmc.sh` pins,
+# which the host image holds, so it runs in that image.
 #
-# ⚠ `ci_only` because the install is the cost and the hosts do not all have
-# it: the gate fails loudly where GenMC is absent rather than skipping, and
-# a push that selected it on such a host would be refused for a reason that
-# says nothing about the tree. The workflow caches the build under a key
-# made of the installer's hash, so the pin and the cache move together.
+# ⚠ `ci_only` because a build machine starts the image only under a rootless
+# Docker, which not every one is verified to carry: the gate fails loudly
+# where GenMC is absent rather than skipping, and a push that selected it on
+# such a host would be refused for a reason that says nothing about the tree.
+# The image names the revision the installer pins, and the registry's
+# self-test holds the two to one (`a-gate-image-holds-the-pins-its-gate-reads`).
 {
     "workflows": ["genmc-queue.yml"],
     "runner_workflow": True,
@@ -41,16 +42,24 @@
         "scripts/install_genmc.sh",
     ],
     "ci_only": "72s measured 2026-10-10 on a host that has GenMC, and the "
-               "host is the constraint: GenMC is built from source "
-               "(scripts/install_genmc.sh), no hosted runner carries it, "
-               "and the build machines do not all have it. An update to "
-               "main runs it where bx placed it: GenMC is a tool of "
-               "bx.toml's platform, needed by this gate's runs. "
-               "genmc-queue.yml builds it once per pin and caches it.",
+               "host is the constraint: GenMC is built from source at the "
+               "revision scripts/install_genmc.sh pins and held by the "
+               "host image, which a build machine starts only under a "
+               "rootless Docker that not every one is verified to carry. "
+               "genmc-queue.yml runs it in that image.",
     "cost_s": 72,
     "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
+    # It runs in the host image wherever it runs (ADR 0145): the runner runs
+    # `scripts/gate` inside the image its Containerfile addresses, so the
+    # hosted lane, a build machine and a workstation judge it in one
+    # environment, and no lane installs a package for it. A machine takes its
+    # unit only where docker runs (`needs`).
+    "container": "tools/ci-images/host/Containerfile",
+    "needs": ["docker"],
     # GenMC explores every interleaving its model admits rather than
-    # sampling some, and its revision is pinned by the tracked installer.
+    # sampling some, its revision is pinned by the tracked installer, and the
+    # image that holds it is addressed by its tracked Containerfile, which
+    # selects the gate and so is in its key.
     "cache": True,
     # Keyed on its triggers: `bx --checks prepush --learn genmc-queue`
     # (2026-11-24) found 55 reads and 4 listings, every one inside the

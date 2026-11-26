@@ -9,17 +9,18 @@ name: GenMC Queue
 #
 # ## Why a lane of its own
 #
-# GenMC is not on a hosted runner and is not a package: it is built from source
-# against LLVM 19 and a C++20 compiler (`scripts/install_genmc.sh`, which owns the
-# revision). The build is the cost, so it is cached under a key made of the
-# script's own hash: the pin lives in that script, and a cache that outlived a pin
-# bump would run the old checker.
+# GenMC is not a package: it is built from source against LLVM 19 and a C++20
+# compiler at the revision `scripts/install_genmc.sh` pins, and the host image
+# holds that build (ADR 0145), so the gate runs in the image and this runner
+# installs nothing. The registry's self-test holds the image's copy of the
+# revision to the script's, so a pin bump moves the image with it.
 #
 # ## Why `ci_only` in the registry
 #
-# The build machines carry it on one host, and the gate fails loudly where it is
-# absent rather than skipping, so it is not in the push set; this job is where it
-# runs on every change that can move what it judges.
+# A build machine starts the image only under a rootless Docker, which not every
+# one is verified to carry, and the gate fails loudly where GenMC is absent
+# rather than skipping, so it is not in the push set; this job is where it runs
+# on every change that can move what it judges.
 
 on:
   push:
@@ -38,6 +39,10 @@ on:
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/genmc-queue.sh'
       - '.github/workflows/genmc-queue.yml'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -54,6 +59,10 @@ on:
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/genmc-queue.sh'
       - '.github/workflows/genmc-queue.yml'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
   workflow_dispatch:
 
 concurrency:
@@ -65,11 +74,16 @@ jobs:
   # each part, and a part starts every third run of the order the gate names
   # them in ("IN PARTS" in scripts/gates/genmc-queue.sh). Whole, the 189 runs
   # took 1006 s of a 1236 s job, two or three at a time (job 138783228903,
-  # 2026-11-24), so a part is about six minutes beside the build dependencies
-  # and the cached GenMC every job restores.
+  # 2026-11-24), so a part is about six minutes beside the image every job
+  # pulls, which holds GenMC.
   genmc-queue:
     name: GenMC Queue (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -81,25 +95,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      # What GenMC is built from: a C++20 compiler of g++ 14, clang and the LLVM
-      # development files of a major it supports (19), cmake and ninja, and the
-      # three development libraries it links.
-      - name: Install GenMC build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y g++-14 clang-19 llvm-19-dev cmake ninja-build \
-              libffi-dev zlib1g-dev libedit-dev
+      # The runner hands the image the Rust it selected and refuses to start the
+      # image without one (`gate_in_container` in scripts/gate), so the job
+      # installs the pinned release though the gate compiles no Rust.
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
 
-      - name: Restore GenMC
-        id: genmc-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.local/genmc
-          key: genmc-${{ hashFiles('scripts/install_genmc.sh') }}
-
-      - name: Build GenMC (pinned revision)
-        if: steps.genmc-cache.outputs.cache-hit != 'true'
-        run: scripts/install_genmc.sh
+      # The gate runs in the host image (`container` of its registry entry),
+      # which holds GenMC at the pinned revision and the clang it compiles the
+      # harnesses with.
+      - name: Sign in to the gate images' registry
+        uses: ./.github/actions/gate-image
 
       - name: GenMC queue gate
         env:

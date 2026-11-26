@@ -2,26 +2,27 @@ name: C11 MCU
 
 # A C11 machine's core links with no C library, is weighed against a budget and
 # runs its replay scenario on a Cortex-M4 under QEMU (docs/adr/0110, D3).
-# `scripts/gates/c11-mcu.sh` says what each step proves; this lane installs the
-# ARM cross compiler and QEMU the gate needs and runs it.
+# `scripts/gates/c11-mcu.sh` says what each step proves; this lane runs it in
+# the host image, which holds the ARM cross compiler and QEMU the gate needs
+# (ADR 0145).
 #
 # ## Why a lane of its own
 #
 # The gate needs an ARM cross compiler (Arm's GNU Toolchain at the release
 # scripts/install_arm_gnu_toolchain.sh pins, with its newlib headers and
-# libgcc) and QEMU's Arm system emulator, which no other lane installs, and its
-# verdict is about the C11 generator, the C11 runtime and the fixtures it
-# weighs, which the paths below name. The compiler comes from the same script
-# the build machines install it with, because the budget's figures are that
-# build's; the distribution's gcc-arm-none-eabi is another build.
+# libgcc) and QEMU's Arm system emulator, and its verdict is about the C11
+# generator, the C11 runtime and the fixtures it weighs, which the paths below
+# name. The image holds the compiler at the release that script pins, because
+# the budget's figures are that build's; the distribution's gcc-arm-none-eabi
+# is another build. The registry's self-test holds the image's copy of the pin
+# to the script's.
 #
 # ## Why `ci_only` in the registry
 #
-# bx.toml declares the compiler as a tool needed by this gate alone, and the
-# gate's unit requires the qemu-system-arm package; not every build machine is
-# verified to carry them, the gate ends "could not run" without them, so it is
-# not in the push set, and this job is where it runs on every change that can
-# move what it judges.
+# A build machine starts the gate's image only under a rootless Docker, and
+# not every build machine is verified to carry one; the gate ends "could not
+# run" without it, so it is not in the push set, and this job is where it runs
+# on every change that can move what it judges.
 
 on:
   push:
@@ -48,6 +49,10 @@ on:
       - 'Cargo.toml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/c11-mcu.sh'
@@ -78,6 +83,10 @@ on:
       - 'Cargo.toml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # The image the gate runs in, and the step that signs in to the registry
+      # it is pulled from (ADR 0145).
+      - 'tools/ci-images/host/**'
+      - '.github/actions/gate-image/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/c11-mcu.sh'
@@ -94,52 +103,44 @@ jobs:
   c11-mcu:
     name: C11 machines on a Cortex-M4
     runs-on: ubuntu-24.04
+    # packages: write pulls the gate's image, and pushes it when this run built
+    # it (.github/actions/gate-image).
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      # QEMU's Arm system emulator, the package the gate's unit requires, and
-      # what the generator's build links (libxml2 backs sce-build's XSD
-      # validator).
-      - name: Install QEMU
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-arm libxml2-dev pkg-config
-
-      # The toolchain lives where the build machines keep it, under
-      # `~/.local/share/arm-gnu-toolchain/<release>/`, which is where the gate
-      # looks. The script holds the release and the archives' digests, so its
-      # hash is the key and a new pin is a new entry.
-      - name: Cache the Arm GNU Toolchain
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.local/share/arm-gnu-toolchain
-          key: arm-gnu-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_arm_gnu_toolchain.sh') }}
-
-      # Checked against the pinned digest, and a no-op on a toolchain the cache
-      # restored.
-      - name: Install the pinned Arm GNU Toolchain
-        run: scripts/install_arm_gnu_toolchain.sh
-
+      # The pinned release, which the runner hands the image read-only: the
+      # image carries no Rust of its own (`gate_in_container` in scripts/gate).
       - uses: ./.github/actions/install-rust
 
       - name: Compile through the shared compile cache
         id: compile-cache
         uses: ./.github/actions/compile-cache
 
+      # The gate runs in the host image (`container` of its registry entry),
+      # which holds the Arm GNU Toolchain at the pinned release, QEMU and what
+      # the generator's build links; nothing is installed on this runner.
+      - name: Sign in to the gate images' registry
+        uses: ./.github/actions/gate-image
+
       - name: C11 MCU gate
         run: scripts/gate c11-mcu
 
       # What the gate measured, for the budget's first pin and for a consumer
-      # that cites it.
+      # that cites it. The gate wrote it under `target/` inside the image, which
+      # is the image's own build directory on this runner
+      # (`gate_in_container` in scripts/gate).
       - name: Upload the report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: c11-mcu-report
-          path: target/c11-mcu/report.md
+          path: ~/.cache/sce-gate-containers/c11-mcu/target/c11-mcu/report.md
           if-no-files-found: ignore
 
       # What the compile cache answered of this job, and what it could not
