@@ -555,9 +555,9 @@ fn decode_zint_whole(b: &[u8; ZINT_MAX_BYTES]) -> (u64, usize) {
 ///
 /// The one decode of every ZInt, of every length and width, for the cursor's
 /// and the frame reader's reads alike (docs/adr/0130), written once and held
-/// inside each reader's one out-of-line ZInt read: a ZInt is one call, and
-/// the answer is not handed back through memory (docs/adr/0138, fourth
-/// amendment). No field holds a read of its own.
+/// inside [`read_vle_at`], the one out-of-line ZInt read of the program, so
+/// its answer is not handed back through memory (docs/adr/0138, fourth and
+/// fifth amendments). No field holds a read of its own.
 #[inline(always)]
 pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, CodecError>, usize) {
     let tail = buf.get(pos..).unwrap_or_default();
@@ -576,6 +576,50 @@ pub(crate) fn read_zint(buf: &[u8], pos: usize, max_bits: u32) -> (Result<u64, C
         Some((value, len)) => (Ok(value), pos + len),
         None => (Err(CodecError::NeedMoreBytes), buf.len()),
     }
+}
+
+/// The ZInt at `*pos` of `buf` when it is one or two bytes, consumed, or
+/// `None` with `*pos` unmoved: what nearly every field holds (an id, a
+/// length, a count), answered by two branches before any call of the decode
+/// (docs/adr/0138, amendments of 2026-11-26). Two bytes hold fourteen bits,
+/// below the limit of every width a field is read at (`vle_u16` the
+/// narrowest), so neither branch tests the width.
+///
+/// Written once, held in the two places that answer a short ZInt before the
+/// decode: [`read_vle_at`] and the frame reader's ZInt read.
+#[inline(always)]
+pub(crate) fn read_zint_short(buf: &[u8], pos: &mut usize) -> Option<u64> {
+    let first = *buf.get(*pos)?;
+    if first & 0x80 == 0 {
+        *pos += 1;
+        return Some(u64::from(first));
+    }
+    let second = *buf.get(*pos + 1)?;
+    if second & 0x80 == 0 {
+        *pos += 2;
+        return Some(u64::from(first & 0x7F) | (u64::from(second) << 7));
+    }
+    None
+}
+
+/// The ZInt at `*pos` of `buf` held to `max_bits`, with `*pos` moved where
+/// [`read_zint`] says the read ends: the one out-of-line ZInt read of the
+/// program, which every ZInt either reader cannot answer from two bytes runs
+/// (docs/adr/0138, fifth amendment).
+///
+/// The cursor's read of a ZInt is a call of this function, so the sequence
+/// number of every frame, a ZInt of four or five bytes read by the cursor, is
+/// one call with its answer in registers. The frame reader answers a ZInt of
+/// one or two bytes in its own read and calls this function for a longer one.
+/// The decode is held here once; the program holds no second copy of it.
+#[inline(never)]
+pub(crate) fn read_vle_at(buf: &[u8], pos: &mut usize, max_bits: u32) -> Result<u64, CodecError> {
+    if let Some(value) = read_zint_short(buf, pos) {
+        return Ok(value);
+    }
+    let (value, at) = read_zint(buf, *pos, max_bits);
+    *pos = at;
+    value
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
@@ -671,32 +715,13 @@ impl<'a> SceCursor<'a> {
     /// more bytes have arrived reads again from a copy of the cursor taken
     /// before this read (`SceCursor` is `Copy`).
     ///
-    /// The cursor's one read of a ZInt, out of line, for every width and every
-    /// length: [`read_zint`], the one body the frame reader's ZInt read runs
-    /// too (docs/adr/0130). A field is a call of it; no field reads a ZInt of
-    /// one byte in place (docs/adr/0138).
-    ///
-    /// A ZInt of one or two bytes is answered by this function's first two
-    /// branches: one call answers it, and only a longer one goes on to
-    /// [`read_zint`] (docs/adr/0138, amendments of 2026-11-26).
-    #[inline(never)]
+    /// The cursor's one read of a ZInt, for every width and every length: a
+    /// call of [`read_vle_at`], the one out-of-line ZInt read the frame
+    /// reader's longer ZInts run too (docs/adr/0130, docs/adr/0138 fifth
+    /// amendment). A field is a call of it; no field reads a ZInt in place.
+    #[inline]
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        if let Some(&first) = self.buf.get(self.pos) {
-            if first & 0x80 == 0 {
-                self.pos += 1;
-                return Ok(u64::from(first));
-            }
-            // Two bytes hold fourteen bits, which every width holds.
-            if let Some(&second) = self.buf.get(self.pos + 1) {
-                if second & 0x80 == 0 {
-                    self.pos += 2;
-                    return Ok(u64::from(first & 0x7F) | (u64::from(second) << 7));
-                }
-            }
-        }
-        let (value, at) = read_zint(self.buf, self.pos, max_bits);
-        self.pos = at;
-        value
+        read_vle_at(self.buf, &mut self.pos, max_bits)
     }
 
     /// Read a `vle_u16` field: a ZInt of 1-9 wire bytes whose value is at
@@ -1913,6 +1938,13 @@ mod tests {
                 want,
                 "shared {bits}-bit body on {tail:02x?}"
             );
+            let mut at = offset;
+            let got = read_vle_at(input, &mut at, bits);
+            assert_eq!(
+                (got, input.len() - at),
+                want,
+                "one out-of-line {bits}-bit read on {tail:02x?}"
+            );
             // The frame reader answers zero for a refusal, records it, and
             // ends its input; a value it reads is consumed as the cursor
             // consumes it.
@@ -2096,59 +2128,83 @@ mod tests {
     fn every_zint_is_read_by_one_call_of_its_readers_one_read() {
         let codec = built(include_str!("codec.rs"));
         let reader = built(include_str!("reader.rs"));
-        // The one decode of every ZInt is written once and held inside each
-        // reader's one read, so a ZInt is one call and no tuple is answered
-        // through memory (docs/adr/0138, fourth amendment).
+        // The one decode of every ZInt is written once and held inside the one
+        // out-of-line ZInt read of the program, so no tuple is answered through
+        // memory and the program holds one copy of it (docs/adr/0138, fourth
+        // and fifth amendments).
         let (attrs, _) = function(codec, "read_zint");
         assert!(
             attrs.contains("#[inline(always)]") && !attrs.contains("#[cold]"),
-            "read_zint is held inside each reader's read: {attrs}"
+            "read_zint is held inside the one ZInt read: {attrs}"
         );
-        // Each reader reads a ZInt by one function of its own, out of line, that
-        // runs the body; a field of either width is a call of it and holds no
-        // read of a ZInt of one byte.
+        let (attrs, _) = function(codec, "read_zint_short");
+        assert!(
+            attrs.contains("#[inline(always)]"),
+            "a short ZInt is answered in place by each read: {attrs}"
+        );
+        let (attrs, shared) = function(codec, "read_vle_at");
+        assert!(
+            attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
+            "the one ZInt read is out of line and not cold: {attrs}"
+        );
+        assert!(
+            shared.contains("read_zint_short(buf, pos)")
+                && shared.contains("read_zint(buf, *pos, max_bits)"),
+            "the one ZInt read answers a short ZInt and runs the decode:\n{shared}"
+        );
         let cursor = region(codec, "impl<'a> SceCursor<'a> {", "\n}\n");
         let frame = region(reader, "impl<'a> SceReader<'a> {", "\n}\n");
+        // The cursor's read is the call of the one ZInt read: the frame's
+        // sequence number is one call.
+        let (_, body) = function(cursor, "read_vle_inner");
+        assert!(
+            body.contains("read_vle_at(self.buf, &mut self.pos, max_bits)")
+                && !body.contains("read_zint("),
+            "the cursor's ZInt read is the call of the one read:\n{body}"
+        );
+        // The frame reader answers a short ZInt in its own read, out of line,
+        // and calls the one read for a longer one; it holds no decode.
+        let (attrs, body) = function(frame, "read_vle_inner");
+        assert!(
+            attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
+            "the reader's ZInt read is out of line and not cold: {attrs}"
+        );
+        assert!(
+            body.contains("read_zint_short(self.buf, &mut self.pos)")
+                && body.contains("read_vle_at(self.buf, &mut self.pos, max_bits)")
+                && !body.contains("read_zint("),
+            "the reader's ZInt read answers a short ZInt and calls the one read:\n{body}"
+        );
+        // The reads a body on the build's hot path holds answer a short ZInt in
+        // place and call the reader's read for a longer one (docs/adr/0140).
+        let (held_attrs, held) = function(frame, "read_vle_held");
+        assert!(
+            held_attrs.contains("#[inline(always)]"),
+            "the reader's held read is held in place: {held_attrs}"
+        );
+        assert!(
+            held.contains("read_zint_short(")
+                && held.contains("self.read_vle_inner(max_bits)")
+                && !held.contains("read_vle_at(")
+                && !held.contains("self.fail("),
+            "the held read holds the short answer and calls for the rest:\n{held}"
+        );
+        for width in [
+            "read_vle_u16_inline",
+            "read_vle_u32_inline",
+            "read_vle_u64_inline",
+        ] {
+            let (attrs, body) = function(frame, width);
+            assert!(
+                attrs.contains("#[inline(always)]"),
+                "the reader's {width} is held in place: {attrs}"
+            );
+            assert!(
+                body.contains("self.read_vle_held("),
+                "the reader's {width} is the held read:\n{body}"
+            );
+        }
         for (owner, methods) in [("cursor", cursor), ("reader", frame)] {
-            let (attrs, mut body) = function(methods, "read_vle_inner");
-            assert!(
-                attrs.contains("#[inline(never)]") && !attrs.contains("#[cold]"),
-                "the {owner}'s ZInt read is out of line and not cold: {attrs}"
-            );
-            // The frame reader's read is the call of its decode held in place,
-            // which the reads a body on the build's hot path hold too
-            // (docs/adr/0140).
-            if owner == "reader" {
-                assert!(
-                    body.contains("self.read_vle_held(max_bits)"),
-                    "the reader's ZInt read is the call of its held decode:\n{body}"
-                );
-                let (held_attrs, held) = function(methods, "read_vle_held");
-                assert!(
-                    held_attrs.contains("#[inline(always)]"),
-                    "the reader's ZInt decode is held in place: {held_attrs}"
-                );
-                for width in [
-                    "read_vle_u16_inline",
-                    "read_vle_u32_inline",
-                    "read_vle_u64_inline",
-                ] {
-                    let (attrs, body) = function(methods, width);
-                    assert!(
-                        attrs.contains("#[inline(always)]"),
-                        "the reader's {width} is held in place: {attrs}"
-                    );
-                    assert!(
-                        body.contains("self.read_vle_held(") && !body.contains("read_vle_inner"),
-                        "the reader's {width} holds the one decode and calls nothing:\n{body}"
-                    );
-                }
-                body = held;
-            }
-            assert!(
-                body.contains("read_zint(self.buf, self.pos, max_bits)"),
-                "the {owner}'s ZInt read runs the one body:\n{body}"
-            );
             for width in ["read_vle_u16", "read_vle_u32", "read_vle_u64"] {
                 let (attrs, body) = function(methods, width);
                 assert!(

@@ -231,3 +231,19 @@ call.
 out-of-line ZInt read (the cursor's and the frame reader's), so a ZInt of any length is one call and its answer stays
 in registers. The program holds two copies of the decode, one per reader, where the baseline held one larger read in
 the cursor; no read site holds anything in place.
+
+## Amendment, 2026-11-26 (fifth): the decode is held once, in the cursor's read
+
+Measured at 1c8b51842e3 on the consumer's release image with every body read out of line: the codec area at +1,085
+bytes against its baseline, with the decode held twice, `SceCursor::read_vle_inner` (477 bytes) and
+`SceReader::read_vle_inner` (454 bytes); the receive path did not change when the hot set's reads were held in
+place or not.
+
+The decode is held in one function, `codec::read_vle_at`, out of line: the two short branches
+(`codec::read_zint_short`) and then `read_zint`, held there. The cursor's read of a ZInt is a call of it, so the
+frame's sequence number, the ZInt of four or five bytes the cursor reads in every frame, stays one call with its
+answer in registers (`Result<u64, CodecError>`, `pos` written through the cursor's own field), which is what the
+fourth amendment kept. The frame reader keeps its own out-of-line read: it answers a ZInt of one or two bytes in
+`read_zint_short` and calls `read_vle_at` for a longer one, which is a second call only for a ZInt of three bytes or
+more read by a generated body. The `_inline` reads hold only the two short branches and call the reader's read for
+the rest. The program holds one copy of the decode.

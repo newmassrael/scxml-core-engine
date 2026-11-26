@@ -34,7 +34,7 @@
 //! that starts where the cursor stands and moves the cursor past the frame
 //! only when the frame was read whole.
 
-use crate::codec::{read_zint, CodecError, SceCursor};
+use crate::codec::{read_vle_at, read_zint_short, CodecError, SceCursor};
 
 /// `N` zero bytes that live for the whole program: what a read of a fixed
 /// count of bytes returns once the frame has failed, so that its length is
@@ -294,52 +294,36 @@ impl<'a> SceReader<'a> {
     /// [`SceCursor::read_vle_u64`]).
     ///
     /// The reader's one read of a ZInt, out of line, for every width and every
-    /// length: the cursor's body (`codec::read_zint`) read through this reader,
-    /// so the two readers of a ZInt run one decode (docs/adr/0130). A field is a
-    /// call that answers the value; no field reads a ZInt of one byte in place,
-    /// and none holds the body's answer or its record (docs/adr/0138).
-    ///
-    /// A ZInt of one or two bytes, what nearly every field holds (an id, a
-    /// length, a count, a sequence number), is answered by the first two
-    /// branches of [`Self::read_vle_held`]: one call answers it, and only a
-    /// longer one goes on to the shared body (docs/adr/0138, amendments of
-    /// 2026-11-26).
+    /// length. A ZInt of one or two bytes, what nearly every field holds, is
+    /// answered here by `codec::read_zint_short`; a longer one is a call of
+    /// `codec::read_vle_at`, the program's one copy of the decode, which the
+    /// cursor's read calls too, so the two readers of a ZInt run one decode
+    /// (docs/adr/0130, docs/adr/0138 fifth amendment). A field is a call that
+    /// answers the value, and none holds the body's answer or its record.
     #[inline(never)]
     fn read_vle_inner(&mut self, max_bits: u32) -> u64 {
-        self.read_vle_held(max_bits)
-    }
-
-    /// The reader's one decode of a ZInt held to `max_bits`, held in place
-    /// where it is called: the body of [`Self::read_vle_inner`], the read
-    /// every body calls, and of the `_inline` reads, which a body on the
-    /// build's hot path holds in place so that its ZInts are no call
-    /// (docs/adr/0140). Two bytes hold fourteen bits, below every width's
-    /// limit, so neither of the first two branches tests it.
-    #[inline(always)]
-    fn read_vle_held(&mut self, max_bits: u32) -> u64 {
-        if let Some(&first) = self.buf.get(self.pos) {
-            if first & 0x80 == 0 {
-                self.pos += 1;
-                return u64::from(first);
-            }
-            // Two bytes hold fourteen bits, which every width holds.
-            if let Some(&second) = self.buf.get(self.pos + 1) {
-                if second & 0x80 == 0 {
-                    self.pos += 2;
-                    return u64::from(first & 0x7F) | (u64::from(second) << 7);
-                }
-            }
+        if let Some(value) = read_zint_short(self.buf, &mut self.pos) {
+            return value;
         }
-        let (value, at) = read_zint(self.buf, self.pos, max_bits);
-        match value {
-            Ok(value) => {
-                self.pos = at;
-                value
-            }
+        match read_vle_at(self.buf, &mut self.pos, max_bits) {
+            Ok(value) => value,
             Err(refused) => {
                 self.fail(refused);
                 0
             }
+        }
+    }
+
+    /// The reader's ZInt read held in place where it is called: the `_inline`
+    /// reads, which a body on the build's hot path holds so that a ZInt of one
+    /// or two bytes is no call (docs/adr/0140). A longer one is a call of
+    /// [`Self::read_vle_inner`], so no site holds the decode or the record of
+    /// its refusal.
+    #[inline(always)]
+    fn read_vle_held(&mut self, max_bits: u32) -> u64 {
+        match read_zint_short(self.buf, &mut self.pos) {
+            Some(value) => value,
+            None => self.read_vle_inner(max_bits),
         }
     }
 
