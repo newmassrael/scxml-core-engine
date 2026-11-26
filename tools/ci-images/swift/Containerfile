@@ -70,7 +70,9 @@ RUN apt-get update \
 
 # The Swift toolchain: swift.org's tarball of the release bx.toml pins for
 # Ubuntu 24.04, refused before it is unpacked unless its SHA-256 is the one
-# bx.toml carries. The gates find it on PATH (`sce_gate_require_swift` in
+# bx.toml carries, and refused after unless it names itself by the tag the
+# gates look for (`sce_swift_pin_tag` in scripts/lib/swift_pin.sh: 6.4.0
+# answers `swift-6.4-RELEASE`). The gates find it on PATH (`sce_gate_require_swift` in
 # scripts/gates/lib.sh takes the `swift` on PATH when it prints the pinned
 # tag).
 ARG SWIFT_RELEASE=6.4.0
@@ -82,7 +84,7 @@ RUN archive="swift-${SWIFT_RELEASE}-RELEASE-ubuntu24.04.tar.gz" \
     && mkdir -p /opt/swift \
     && tar -xzf "/tmp/${archive}" -C /opt/swift --strip-components=1 \
     && rm "/tmp/${archive}" \
-    && /opt/swift/usr/bin/swift --version
+    && /opt/swift/usr/bin/swift --version 2>&1 | grep -F "swift-${SWIFT_RELEASE%.0}-RELEASE" >/dev/null
 
 ENV PATH=/opt/swift/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     LANG=C.UTF-8
