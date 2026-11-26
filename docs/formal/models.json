@@ -746,6 +746,94 @@
       "decision": "docs/adr/0115",
       "runs": [],
       "abstract": true
+    },
+    {
+      "module": "InboxService",
+      "decision": "docs/adr/0147",
+      "abstract": true,
+      "runs": []
+    },
+    {
+      "module": "EngineInbox",
+      "decision": "docs/adr/0147",
+      "parts": {
+        "DrainBeforeOwn": "TRUE",
+        "AddressAtPost": "TRUE",
+        "OneDrain": "TRUE",
+        "TakeOut": "TRUE",
+        "ApplyAtEnd": "TRUE",
+        "Wake": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "InboxService",
+      "progress": [
+        "Delivered"
+      ],
+      "runs": [
+        {
+          "config": "EngineInbox.cfg",
+          "expect": "holds",
+          "states": 1240
+        },
+        {
+          "config": "EngineInbox_never_closes.cfg",
+          "expect": "holds",
+          "states": 1324
+        },
+        {
+          "config": "EngineInbox_live.cfg",
+          "expect": "holds",
+          "states": 1240
+        },
+        {
+          "config": "EngineInbox_live_never_closes.cfg",
+          "expect": "holds",
+          "states": 1324
+        },
+        {
+          "config": "EngineInbox_without_drain_before_own.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "DrainBeforeOwn",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_address_at_post.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "AddressAtPost",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_one_drain.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "OneDrain",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_take_out.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "TakeOut",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_apply_at_end.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "ApplyAtEnd",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_wake.cfg",
+          "expect": "violates",
+          "property": "Delivered",
+          "without": "Wake",
+          "promise": "kept",
+          "why": "the waker is what progress stands on: without it what reaches each queue is still in order, once, and never lost, and an input waits in an inbox nobody drains"
+        }
+      ]
     }
   ]
 }
