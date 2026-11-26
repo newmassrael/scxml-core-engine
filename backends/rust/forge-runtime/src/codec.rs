@@ -721,17 +721,15 @@ pub trait SceSink {
     /// u64 caps at 9 bytes — the canonical Zenoh ZInt form (RFC
     /// §synth-5-B Appendix B). `VLE_LEN = ceil((max_bits - 1) / 7)`.
     ///
-    /// The encoding is assembled whole, [`vle_len`] bytes, and handed to
-    /// `write_bytes` in one call: a sink sees one write of the exact length,
+    /// The encoding, [`vle_len`] bytes, is made whole by the runtime's one
+    /// encoding of a VLE (`codec::encode_vle`, out of line and generic over
+    /// nothing, so no sink and no call site holds a copy of its loop) and handed
+    /// to `write_bytes` in one call: a sink sees one write of the exact length,
     /// and a sink of bounded room that refuses a write past its room writes
-    /// none of the VLE.
+    /// none of the VLE (docs/adr/0138).
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), Self::Error> {
         let mut encoding = [0u8; VLE_MAX_BYTES];
-        // `vle_len` is at most `VLE_MAX_BYTES` at every width (asserted where
-        // the constant is defined), so the bound only states that.
-        let (dst, _) = encoding.split_at_mut(vle_len(value, max_bits).min(VLE_MAX_BYTES));
-        fill_vle(dst, value);
-        self.write_bytes(dst)
+        self.write_bytes(encode_vle(value, max_bits, &mut encoding))
     }
 
     /// Append a `vle_u16` field (1-3 wire bytes).
@@ -873,11 +871,11 @@ impl<'a> SceSink for $name<'a> {
         self.put(v.to_be_bytes())
     }
 
-    /// The VLE as one capacity test and the bytes stored in place: its length
-    /// is known from the value ([`vle_len`]), so no byte is tested on its own and
-    /// a VLE that does not fit writes nothing. The bytes are those of the
-    /// provided method (seven bits each with the continuation bit set, the last
-    /// of a full-width value a full eight).
+    /// The VLE as one capacity test and its bytes: one or two stored in place,
+    /// a longer one the runtime's one encoding written whole, so no byte is
+    /// tested on its own and a VLE that does not fit writes nothing. The bytes
+    /// are those of the provided method (seven bits each with the continuation
+    /// bit set, the last of a full-width value a full eight).
     #[$inline]
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
         // A value of seven bits or fewer is one byte of itself, which is most
@@ -917,16 +915,15 @@ impl<'a> SceSink for $name<'a> {
 }
 
 impl<'a> $name<'a> {
-    /// A VLE of two bytes or more: one capacity test and the bytes in place.
+    /// A VLE of three bytes or more: the runtime's one encoding of a VLE
+    /// ([`encode_vle`]) written with the one capacity test of `write_bytes`, as
+    /// the provided method writes it. Out of line, so the VLE write inlined at
+    /// each field stays the one- and two-byte stores and a call; no sink has a
+    /// copy of the encoding's loop (docs/adr/0138).
     #[inline(never)]
     fn write_vle_long(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
-        let n = vle_len(value, max_bits);
-        let Some(dst) = self.buf.get_mut(self.pos..self.pos + n) else {
-            return Err(CodecError::BufferOverflow);
-        };
-        fill_vle(dst, value);
-        self.pos += n;
-        Ok(())
+        let mut encoding = [0u8; VLE_MAX_BYTES];
+        self.write_bytes(encode_vle(value, max_bits, &mut encoding))
     }
 }
     };
@@ -1048,23 +1045,32 @@ const VLE_MAX_BYTES: usize = 10;
 // `vle_len` always fits an array of `VLE_MAX_BYTES`.
 const _: () = assert!(vle_len(u64::MAX, u32::MAX) == VLE_MAX_BYTES);
 
-/// Fill `dst` with the VLE of `value` in `dst.len()` bytes: each byte but the
-/// last carries the next seven data bits with the continuation flag set, and
-/// the last carries what is left. Sized by [`vle_len`], that is the encoding
-/// [`SceSink::write_vle_inner`] writes, the last byte a full eight bits in a
-/// ZInt's ninth. The one statement of the encoding, which the provided write
-/// fills an array with and the bounded sinks fill their room with in place.
-#[inline(always)]
-fn fill_vle(dst: &mut [u8], value: u64) {
-    let Some((last, lead)) = dst.split_last_mut() else {
-        return;
-    };
-    let mut v = value;
-    for slot in lead {
-        *slot = (v as u8 & 0x7F) | 0x80;
-        v >>= 7;
+/// The VLE of `value` at `max_bits`, written into `out` and answered as the
+/// bytes it occupies there, [`vle_len`] of them: each byte but the last carries
+/// the next seven data bits with the continuation flag set, and the last
+/// carries what is left, a full eight bits in a ZInt's ninth.
+///
+/// The one statement of the encoding, and one function, out of line, for every
+/// sink of a program (docs/adr/0138): the provided
+/// [`SceSink::write_vle_inner`] and the bounded sinks' longer VLE call it and
+/// hand what it answers to `write_bytes` in one write. It is generic over
+/// nothing, so no sink and no call site holds a copy of its loop, and it
+/// answers the bytes rather than their count, so the slice is cut once, here,
+/// under the bound this function states, and no caller holds a check of it.
+#[inline(never)]
+pub(crate) fn encode_vle(value: u64, max_bits: u32, out: &mut [u8; VLE_MAX_BYTES]) -> &[u8] {
+    // `vle_len` is at most `VLE_MAX_BYTES` at every width (asserted where the
+    // constant is defined), so the bound only states that.
+    let (encoding, _) = out.split_at_mut(vle_len(value, max_bits).min(VLE_MAX_BYTES));
+    if let Some((last, lead)) = encoding.split_last_mut() {
+        let mut v = value;
+        for slot in lead {
+            *slot = (v as u8 & 0x7F) | 0x80;
+            v >>= 7;
+        }
+        *last = v as u8;
     }
-    *last = v as u8;
+    encoding
 }
 
 /// The bytes [`SceSink::write_vle_inner`] writes for `value` at `max_bits`: seven
@@ -2008,6 +2014,117 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_vle_is_encoded_as_the_shortest_zint_and_every_reader_reads_it_back() {
+        // Every boundary value at every width it fits: the one encoding is the
+        // shortest ZInt, as long as `vle_len` says, and the reference, the
+        // shared body and the frame reader each read it back whole.
+        for value in zint_values() {
+            for bits in [16u32, 32, 64] {
+                if bits < u64::BITS && value >> bits != 0 {
+                    continue;
+                }
+                let len = shortest_zint_len(value);
+                let shortest = zint_of_len(value, len);
+                let mut out = [0xEEu8; VLE_MAX_BYTES];
+                let wire = encode_vle(value, bits, &mut out);
+                assert_eq!(wire, &shortest[..len], "{value:#x} at {bits} bits");
+                assert_eq!(
+                    wire.len(),
+                    vle_len(value, bits),
+                    "{value:#x} at {bits} bits"
+                );
+                assert_eq!(
+                    reference_read(wire, bits),
+                    (Ok(value), 0),
+                    "{value:#x} at {bits} bits"
+                );
+                assert_eq!(
+                    read_zint(wire, 0, bits),
+                    (Ok(value), len),
+                    "{value:#x} at {bits} bits"
+                );
+                let mut reader = SceReader::new(wire);
+                let read = match bits {
+                    16 => u64::from(reader.read_vle_u16()),
+                    32 => u64::from(reader.read_vle_u32()),
+                    _ => reader.read_vle_u64(),
+                };
+                assert_eq!(
+                    (read, reader.verdict(), reader.position()),
+                    (value, Ok(()), len),
+                    "{value:#x} at {bits} bits"
+                );
+            }
+        }
+        // Past 64 bits of width the tenth group is a byte of its own: the
+        // longest encoding, which fills the array.
+        let mut out = [0u8; VLE_MAX_BYTES];
+        assert_eq!(
+            encode_vle(u64::MAX, u32::MAX, &mut out),
+            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]
+        );
+    }
+
+    #[test]
+    fn every_provided_vle_write_is_one_write_of_the_one_encoding() {
+        let codec = built(include_str!("codec.rs"));
+        // The one encoding: out of line and generic over nothing.
+        let (attrs, head) = function(codec, "encode_vle");
+        assert!(
+            attrs.contains("#[inline(never)]"),
+            "encode_vle is out of line: {attrs}"
+        );
+        assert!(
+            !head
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .contains("fn encode_vle<"),
+            "encode_vle is generic over nothing:\n{head}"
+        );
+        // Its loop is the one statement of the encoding in the library.
+        assert_eq!(codec.matches("v >>= 7;").count(), 1, "one encoding loop");
+        // The provided write, which a sink of its own compiles, is a call of it
+        // and one write; each width is a call of the provided write.
+        let sink = region(codec, "pub trait SceSink {", "\n}\n");
+        let (attrs, body) = function(sink, "write_vle_inner");
+        assert!(
+            !attrs.contains("inline"),
+            "the provided VLE write asks for no copy at each call: {attrs}"
+        );
+        assert!(
+            body.contains("self.write_bytes(encode_vle(value, max_bits, &mut encoding))"),
+            "the provided VLE write is one write of the one encoding:\n{body}"
+        );
+        for width in ["write_vle_u16", "write_vle_u32", "write_vle_u64"] {
+            let (attrs, body) = function(sink, width);
+            assert!(
+                !attrs.contains("inline(always)"),
+                "the provided {width} asks for no copy at each call: {attrs}"
+            );
+            assert!(
+                body.contains("self.write_vle_inner("),
+                "the provided {width} is a call of the provided VLE write:\n{body}"
+            );
+        }
+        // The bounded sinks' longer VLE is the same write, out of line.
+        let bounded = region(
+            codec,
+            "macro_rules! bounded_slice_sink",
+            "\nbounded_slice_sink! {",
+        );
+        let (attrs, body) = function(bounded, "write_vle_long");
+        assert!(
+            attrs.contains("#[inline(never)]"),
+            "the bounded sinks' longer VLE is out of line: {attrs}"
+        );
+        assert!(
+            body.contains("self.write_bytes(encode_vle(value, max_bits, &mut encoding))"),
+            "the bounded sinks' longer VLE is one write of the one encoding:\n{body}"
+        );
     }
 
     // ── RFC §synth-5-B string primitive — InvalidUtf8 variant exists and is
