@@ -27,9 +27,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # produced them: a build machine whose `/etc/environment` pointed `JAVA_HOME`
 # at a JDK 8 while `java --version` said 17.
 #
-# The floor is READ from the workflow this gate mirrors, so a mirror cannot
-# measure a different JVM than the lane it mirrors.
-sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/w3c-tests.yml"
+# The floor is READ from the Gradle build of the suites this gate runs
+# (`jvmToolchain(N)`): the lane installs no JDK of its own any more, since the
+# gate runs in the host image (docs/adr/0145), so the build is the one place
+# that names the JVM it compiles for.
+sce_gate_require_jdk "$SCE_REPO_ROOT/backends/kotlin/w3c/build.gradle.kts"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"

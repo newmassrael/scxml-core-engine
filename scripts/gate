@@ -293,6 +293,9 @@ fi
 # gate that needs one (`sce_gate_require_rust` in scripts/gates/lib.sh).
 # shellcheck source=lib/rust_toolchains.sh
 source "$REPO_ROOT/scripts/lib/rust_toolchains.sh"
+# The one rule for how many compiles a build of this repository runs at once,
+# here for the build of a gate's image (`gate_image`).
+source "$REPO_ROOT/scripts/lib/sce_build_jobs.sh"
 if [[ ! "$SCE_RUST_RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     printf 'gate: rust-toolchain.toml pins %q (SCE_RUST_RELEASE), not a release on a `channel = "1.91.0"` line\n' \
         "$SCE_RUST_RELEASE" >&2
@@ -623,7 +626,12 @@ gate_image() {
         return 0
     fi
     printf '\ngate: building %s from %s, which the registry does not hold\n' "$local_tag" "$containerfile" >&2
-    docker build --tag "$local_tag" --file "$REPO_ROOT/$containerfile" "$context" >&2 \
+    # BUILD_JOBS: inside the build `nproc` counts the machine, not the share
+    # this run was given, and an image's compiles at every core were killed at
+    # a run's memory (2026-11-27). The build argument is not part of the
+    # digest: it changes how fast the image builds, not what it holds.
+    docker build --tag "$local_tag" --file "$REPO_ROOT/$containerfile" \
+            --build-arg BUILD_JOBS="$(sce_build_jobs_value)" "$context" >&2 \
         || { printf '\nERROR gate: the image did not build from %s\n' "$containerfile" >&2; return 3; }
     if [[ "${SCE_GATE_IMAGE_PUSH:-}" == 1 ]] && ! gate_image_push "$local_tag" "$remote"; then
         printf '\nWARNING gate: %s was built and not pushed; the next run builds it again\n' "$remote" >&2

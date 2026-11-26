@@ -126,6 +126,10 @@ pub fn mutation_rounds_selectors() -> BTreeSet<String> {
 /// nothing can reach is a rule nothing is keeping true. A synthetic script
 /// exercises it; the real one is what the helper actually uses.
 pub fn selectors_in(script: &str) -> BTreeSet<String> {
+    // Not a selector: `scripts/gate` sets it inside an image to say the run
+    // is already there (ADR 0145). Clearing it would send a gate a test drives
+    // from inside the image to start the image again, inside itself.
+    const WHERE_THE_RUN_IS: [&str; 1] = ["SCE_GATE_CONTAINER"];
     let code: Vec<&str> = script
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
@@ -135,6 +139,7 @@ pub fn selectors_in(script: &str) -> BTreeSet<String> {
     code.iter()
         .flat_map(|line| sce_names(line))
         .filter(|name| !assigned.contains(name))
+        .filter(|name| !WHERE_THE_RUN_IS.contains(&name.as_str()))
         .collect()
 }
 

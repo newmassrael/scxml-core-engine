@@ -2731,14 +2731,15 @@ fn provisions_the_pinned_validator(job: &str, root: &Path) -> bool {
         return true;
     }
     let commands = joined_commands(job);
-    code_lines(&commands).any(|line| {
+    let provided = code_lines(&commands).any(|line| {
         gate_slugs_invoked(line).into_iter().any(|slug| {
             let script = root.join("scripts/gates").join(format!("{slug}.sh"));
             runs_in_an_image(root, &slug)
                 && std::fs::read_to_string(&script)
                     .is_ok_and(|body| code_lines(&body).any(|l| l.starts_with(MNEMOSYNE_PROVIDER)))
         })
-    })
+    });
+    provided
 }
 
 /// The lines of `text` that are code, with whole-line comments dropped.

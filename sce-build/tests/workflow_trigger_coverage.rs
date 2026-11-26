@@ -406,10 +406,6 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // wherever it is written, so a filter over today's fixtures names the
     // documents already known to agree.
     "the_class_walker_runs_as_the_general_interpreter_does",
-    // Reads every file under `.github/` and refuses a package installed at
-    // job time (docs/adr/0145). The workflow that installs the next one is any
-    // workflow, and the lanes' filters name their own files, not one another's.
-    "no_workflow_installs_a_package_at_job_time",
     "workflow_trigger_coverage",
 ];
 
@@ -1632,7 +1628,12 @@ fn stripping_prose_keeps_the_line_numbering() {
 /// itself, so the property this test protects survives the delegation
 /// rather than leaking out of view with the step. The floor guards the
 /// scan, not the count: it fails when the walk stops finding workflows.
-const MIN_CODEGEN_BUILD_STEPS: usize = 11;
+///
+/// 11 -> 2 on 2026-11-27: the lanes that run their gates in an image
+/// (docs/adr/0145) build the generator inside it, through
+/// `sce_codegen_require`, since a generator linked on the runner is not one
+/// to hand to the image's libc. Two lanes still spell the build out.
+const MIN_CODEGEN_BUILD_STEPS: usize = 2;
 
 /// A step that builds only the debug binary must first delete the
 /// release one an earlier build may have left.
