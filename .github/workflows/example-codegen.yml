@@ -81,7 +81,7 @@ jobs:
   example-codegen:
     name: Example codegen smoke + authored-document lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     # `packages: write` for the image a run on main builds and pushes
     # (.github/actions/gate-image says why the permission cannot follow the
     # event); `contents: read` is what checkout needs.

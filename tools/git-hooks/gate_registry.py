@@ -1079,6 +1079,16 @@ LANE_ENV_OUTSIDE = ("SHARDS_RESULT", "SCE_PUSH_ROUND_JOBS", "SCE_ROUND_EVENT",
 # in scripts/gate): the switch of the runner itself, which a lane may set.
 LANE_ENV_RUNNER = ("SCE_GATE_NO_FAIL_FAST",)
 LANE_ENV_KEY = re.compile(r"^\s+(?:-\s+)?(?:run:\s+)?([A-Z][A-Z0-9_]*)[:=]")
+# What a job that runs a gate in an image allows for building that image, on
+# top of what the gate itself takes. A push that changes an image's build
+# context finds no image of the new digest in the registry, so the first job
+# to reach it builds the image, about 13 minutes on a hosted runner
+# (drift-verify, run 45864708622, 2026-11-27), and the jobs of that push with
+# a limit of 10 and 15 minutes were cancelled building it. Every job of a lane
+# in an image declares at least this plus a few minutes of its own gate.
+IMAGE_BUILD_MINUTES = 20
+GATE_FLOOR_MINUTES = 5
+JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*(\d+)\s*$")
 
 
 def image_lane_failures(repo_root: Path, table=None) -> list[str]:
@@ -1127,6 +1137,13 @@ def image_lane_failures(repo_root: Path, table=None) -> list[str]:
                                     f"does not use {GATE_IMAGE_ACTION}, so its run "
                                     f"neither logs in to pull the image nor pushes one "
                                     f"it built")
+                limits = [int(m.group(1)) for m in map(JOB_TIMEOUT.match, code) if m]
+                if limits and limits[0] < IMAGE_BUILD_MINUTES + GATE_FLOOR_MINUTES:
+                    failures.append(f"gate-image: {where} runs {slug} in its image within "
+                                    f"{limits[0]} minute(s), which leaves no room to build "
+                                    f"the image ({IMAGE_BUILD_MINUTES} minutes) on a push "
+                                    f"that changed it; declare at least "
+                                    f"{IMAGE_BUILD_MINUTES + GATE_FLOOR_MINUTES}")
                 if not any(line.strip() == GATE_IMAGE_PERMISSION for line in code):
                     failures.append(f"gate-image: {where} runs {slug} in its image and "
                                     f"does not declare {GATE_IMAGE_PERMISSION!r}, which "

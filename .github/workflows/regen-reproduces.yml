@@ -70,7 +70,7 @@ jobs:
   regen-shard:
     name: regeneration reproduces the committed trees (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     # `packages: write` for the image a run on main builds and pushes
     # (.github/actions/gate-image says why the permission cannot follow the
     # event); `contents: read` is what checkout needs.

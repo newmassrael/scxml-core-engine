@@ -32,7 +32,7 @@ jobs:
   release:
     name: release of the tagged commit
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
 
     # `contents: write` pushes the release tags and creates the release;
     # `packages: write` lets the image action push an image this push built

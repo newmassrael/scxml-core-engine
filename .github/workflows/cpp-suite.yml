@@ -231,7 +231,7 @@ jobs:
       contents: read
       actions: write
       packages: write
-    timeout-minutes: 140
+    timeout-minutes: 160
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -440,7 +440,7 @@ jobs:
       contents: read
       packages: write
     # The whole suite's allowance until a sharded run is measured.
-    timeout-minutes: 150
+    timeout-minutes: 170
     strategy:
       fail-fast: false
       max-parallel: 6

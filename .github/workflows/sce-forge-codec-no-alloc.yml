@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-24.04
     # The text algorithms are materialized by sce-codegen, which the gate
     # builds first.
-    timeout-minutes: 30
+    timeout-minutes: 50
     # `packages: write` for the image a run on main builds and pushes
     # (.github/actions/gate-image says why the permission cannot follow the
     # event); `contents: read` is what checkout needs.

@@ -86,7 +86,7 @@ jobs:
       packages: write
     # An allowance until a sharded run is read: a sixth of the build that
     # took 41 minutes in one job, the shared core and engine on top of it.
-    timeout-minutes: 45
+    timeout-minutes: 65
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -373,7 +373,7 @@ jobs:
       packages: write
     # An allowance until a sharded run is read: a quarter of one tree's build,
     # which took 22 minutes as one program, with a link per program on top.
-    timeout-minutes: 60
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       max-parallel: 8
@@ -531,7 +531,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 65
+    timeout-minutes: 85
     strategy:
       fail-fast: false
       # The account's 20 hosted jobs are shared; one job per shard at once.
@@ -696,7 +696,7 @@ jobs:
   test-kotlin:
     name: Kotlin W3C Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     # The junit reporter below creates a check run, which needs `checks: write`.
     # Without it the step fails with "Resource not accessible by integration"
     # and the Kotlin results have no check of their own — the sibling C++ job
@@ -842,7 +842,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 30
+    timeout-minutes: 50
 
     steps:
     - name: Checkout Repository
@@ -952,7 +952,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
     - name: Checkout Repository
@@ -1040,7 +1040,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
     - name: Checkout Repository
@@ -1152,7 +1152,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 25
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 3

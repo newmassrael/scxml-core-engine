@@ -134,7 +134,7 @@ jobs:
   swift-backend:
     name: Swift packages build and pass, machines replay the shared scenarios (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -196,7 +196,7 @@ jobs:
   swift-machines:
     name: Swift W3C, ECMA-262 lowered-artifact and Forge conformance gates
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     permissions:
       contents: read
       packages: write

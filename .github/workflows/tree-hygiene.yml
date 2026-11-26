@@ -94,7 +94,7 @@ jobs:
   hygiene-shard:
     name: tree-wide gates (part ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 75
     # `packages: write` for the image a run on main builds and pushes
     # (.github/actions/gate-image says why the permission cannot follow the
     # event); `contents: read` is what checkout needs.

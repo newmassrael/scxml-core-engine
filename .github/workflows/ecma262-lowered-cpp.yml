@@ -158,7 +158,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 80
+    timeout-minutes: 100
 
     steps:
     - name: Checkout Repository

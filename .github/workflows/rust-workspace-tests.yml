@@ -511,7 +511,7 @@ jobs:
   test:
     name: cargo test --workspace --features cli,sce-rust-mesh/wss (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
-    timeout-minutes: 170
+    timeout-minutes: 190
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:

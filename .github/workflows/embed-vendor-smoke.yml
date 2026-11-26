@@ -110,7 +110,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 45
+    timeout-minutes: 65
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -198,7 +198,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 45
+    timeout-minutes: 65
 
     steps:
     - name: Checkout Repository
@@ -244,7 +244,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Repository

@@ -220,7 +220,7 @@ jobs:
     # measured puts a job near 23 minutes, and 30 keeps that inside 85% of
     # the ceiling, the share the mutation lane schedules into for the same
     # reason (`scripts/lib/mutation_rounds_cost.sh`).
-    timeout-minutes: 30
+    timeout-minutes: 50
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -296,7 +296,7 @@ jobs:
     runs-on: ubuntu-24.04
     # 20, from 10: the arm builds the generator in the image now, which the
     # build job's 10 minutes used to pay for it.
-    timeout-minutes: 20
+    timeout-minutes: 40
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -366,7 +366,7 @@ jobs:
     runs-on: ubuntu-24.04
     # 25, from 15: the arm builds the generator in the image now, which the
     # build job's 10 minutes used to pay for it.
-    timeout-minutes: 25
+    timeout-minutes: 45
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -461,7 +461,7 @@ jobs:
     runs-on: ubuntu-24.04
     # 25, from 15: the arm builds the generator in the image now, which the
     # build job's 10 minutes used to pay for it.
-    timeout-minutes: 25
+    timeout-minutes: 45
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -558,7 +558,7 @@ jobs:
     runs-on: ubuntu-24.04
     # 25, from 15: the arm builds the generator in the image now, which the
     # build job's 10 minutes used to pay for it.
-    timeout-minutes: 25
+    timeout-minutes: 45
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:
@@ -637,7 +637,7 @@ jobs:
     runs-on: ubuntu-24.04
     # 25, from 15: the arm builds the generator in the image now, which the
     # build job's 10 minutes used to pay for it.
-    timeout-minutes: 25
+    timeout-minutes: 45
     # `packages: write` lets the image action push an image this push built
     # (.github/actions/gate-image); `contents: read` is what checkout needs.
     permissions:

@@ -215,7 +215,7 @@ jobs:
   select:
     name: Which casefiles does this change reach
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     # `actions: read` lists this workflow's earlier runs to find the last one
     # that reached a verdict; `contents: read` is what checkout needs;

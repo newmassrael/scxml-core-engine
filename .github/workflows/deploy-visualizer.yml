@@ -128,7 +128,7 @@ jobs:
   build:
     name: Visualizer WebAssembly (part ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     # packages: write pulls the gate's image, and pushes it when this run built
     # it (.github/actions/gate-image).
     permissions:
@@ -267,7 +267,7 @@ jobs:
     name: Verify diagram layout
     runs-on: ubuntu-24.04
     # The dependency's whole build and the measurement.
-    timeout-minutes: 45
+    timeout-minutes: 65
     # packages: write pulls the gate's image, and pushes it when this run built
     # it (.github/actions/gate-image).
     permissions:

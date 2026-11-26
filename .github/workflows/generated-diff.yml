@@ -39,7 +39,7 @@ jobs:
   diff:
     name: generated diff of the change
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
 
     # `actions: read` lists this workflow's earlier runs to find the last one
     # that published; `contents: read` is what checkout needs; `packages:
