@@ -306,11 +306,11 @@ def self_test() -> int:
         registry = os.path.join(scratch, "fixtures.json")
         with open(registry, "w", encoding="utf-8") as out:
             json.dump({"fixtures": [{"id": i, "harness": "simple"}
-                                    for i in ("144", "147", "403a", "403b")]}, out)
+                                    for i in ("901", "902", "903a", "903b")]}, out)
         runs = os.path.join(scratch, "runs")
-        runner_report(os.path.join(runs, "144", REPORT_NAME), both("144"))
-        runner_report(os.path.join(runs, "147", REPORT_NAME), both("147", "FAIL"))
-        runner_report(os.path.join(runs, "403", REPORT_NAME), both("403a") + both("403b", "SKIPPED"))
+        runner_report(os.path.join(runs, "901", REPORT_NAME), both("901"))
+        runner_report(os.path.join(runs, "902", REPORT_NAME), both("902", "FAIL"))
+        runner_report(os.path.join(runs, "903", REPORT_NAME), both("903a") + both("903b", "SKIPPED"))
         tests = os.path.join(scratch, "tests")
 
         def tests_are(*names: str) -> None:
@@ -323,10 +323,10 @@ def self_test() -> int:
             count = collect(registry, runs, tests, out, whole, faults)
             return count, faults, ElementTree.parse(out).getroot()
 
-        tests_are("w3c_cpp_144", "w3c_cpp_403", "ComprehensiveInteractiveTests")
+        tests_are("w3c_cpp_901", "w3c_cpp_903", "ComprehensiveInteractiveTests")
         count, faults, root = collected()
         check(faults == [], "a shard whose reports hold its fixtures collects: {}".format(faults))
-        check(count == 6, "two fixtures of 403 and one of 144, on two engines: {}".format(count))
+        check(count == 6, "two fixtures of 903 and one of 901, on two engines: {}".format(count))
         check(root.get("tests") == "6" and root.get("skipped") == "2"
               and root.get("failures") == "0" and root.get("errors") == "0",
               "the header is tallied from the cases: {}".format(root.attrib))
@@ -339,10 +339,10 @@ def self_test() -> int:
         check(any("d &amp; e" in l for l in lines), "an attribute is written escaped")
 
         count, faults, _ = collected(whole=True)
-        check(any("147" in f and "no test runs" in f for f in faults),
+        check(any("902" in f and "no test runs" in f for f in faults),
               "a whole run that leaves a test number out is refused: {}".format(faults))
 
-        tests_are("w3c_cpp_144", "w3c_cpp_147", "w3c_cpp_403")
+        tests_are("w3c_cpp_901", "w3c_cpp_902", "w3c_cpp_903")
         count, faults, root = collected(whole=True)
         check(faults == [], "a whole run collects: {}".format(faults))
         check(root.get("failures") == "2", "a failing case is counted, not refused: {}".format(
@@ -353,36 +353,36 @@ def self_test() -> int:
         check(any("580" in f and "no fixture" in f for f in faults),
               "a test number the registry does not list is refused")
 
-        os.remove(os.path.join(runs, "144", REPORT_NAME))
-        tests_are("w3c_cpp_144")
+        os.remove(os.path.join(runs, "901", REPORT_NAME))
+        tests_are("w3c_cpp_901")
         _, faults, _ = collected()
         check(any("wrote no report" in f for f in faults), "a test that wrote no report is named")
 
-        runner_report(os.path.join(runs, "144", REPORT_NAME), [("interpreter", "144", "PASS")])
+        runner_report(os.path.join(runs, "901", REPORT_NAME), [("interpreter", "901", "PASS")])
         _, faults, _ = collected()
-        check(any("no aot case of fixture 144" in f for f in faults),
+        check(any("no aot case of fixture 901" in f for f in faults),
               "an engine's missing case is named: {}".format(faults))
 
-        runner_report(os.path.join(runs, "144", REPORT_NAME), both("144") + both("144") + both("999"))
+        runner_report(os.path.join(runs, "901", REPORT_NAME), both("901") + both("901") + both("999"))
         _, faults, _ = collected()
-        check(any("2 interpreter cases of fixture 144" in f for f in faults),
+        check(any("2 interpreter cases of fixture 901" in f for f in faults),
               "a case listed twice is named: {}".format(faults))
         check(any("'999'" in f for f in faults), "a case of another fixture is named")
 
         shard_a = os.path.join(scratch, "a.xml")
         shard_b = os.path.join(scratch, "b.xml")
-        runner_report(shard_a, both("144") + both("403a"))
-        runner_report(shard_b, both("147") + both("403b"))
+        runner_report(shard_a, both("901") + both("903a"))
+        runner_report(shard_b, both("902") + both("903b"))
         joined = os.path.join(scratch, "all.xml")
         faults = []
         check(join(registry, [shard_a, shard_b], joined, faults) == 8 and faults == [],
               "the shards' reports join to the registry: {}".format(faults))
         faults = []
         join(registry, [shard_a], joined, faults)
-        check(any("fixture 147" in f for f in faults), "a fixture no shard ran is named")
+        check(any("fixture 902" in f for f in faults), "a fixture no shard ran is named")
         faults = []
         join(registry, [shard_a, shard_b, shard_a], joined, faults)
-        check(any("2 aot cases of fixture 144" in f for f in faults),
+        check(any("2 aot cases of fixture 901" in f for f in faults),
               "a fixture two shards ran is named: {}".format(faults))
         faults = []
         join(registry, [], joined, faults)
