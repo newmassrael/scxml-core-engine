@@ -168,6 +168,11 @@ Remove(s) == IF InTable(s) THEN [table EXCEPT ![slotKey[s]] = 0] ELSE table
 \* The keys the table holds a session for.
 Held == {k \in Keys : table[k] # 0}
 
+\* The slots the table holds. Quantified over directly, so that no slot is read through a key
+\* the table holds none for: TLC takes each disjunct of an action as a branch of its own, and
+\* would read inbox[0] in one.
+HeldSlots == {table[k] : k \in Held}
+
 Init ==
     /\ table = [k \in Keys |-> 0]
     /\ made = 0
@@ -227,7 +232,7 @@ ReadStop(e) ==
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
                    evicting, target, stopping, stage, lin, applied>>
 
-\* The admit, with the table held (slot::admit): the stop, then the inbox of the session the table
+\* The admit, with the table held (slot::admission): the stop, then the inbox of the session the table
 \* holds for the key, or a new session. Without PostHoldsTable the post lets the table go once it
 \* has looked its slot up, and writes into it later (Write).
 \* @type: (Str) => Bool;
@@ -427,7 +432,7 @@ Stop ==
 \* Every inbox the table holds is drained.
 Drained ==
     /\ stage = "draining"
-    /\ \A k \in Keys : table[k] = 0 \/ inbox[table[k]] = <<>>
+    /\ \A s \in HeldSlots : inbox[s] = <<>>
     /\ stage' = "saving"
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
                    evicting, status, target, stopping, lin, applied>>
@@ -450,7 +455,7 @@ Save(s) ==
 \* No session the table holds is in memory: the stop has ended.
 Stopped ==
     /\ stage = "saving"
-    /\ \A k \in Keys : table[k] = 0 \/ ~loaded[table[k]]
+    /\ \A s \in HeldSlots : ~loaded[s]
     /\ stage' = "stopped"
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
                    evicting, status, target, stopping, lin, applied>>
