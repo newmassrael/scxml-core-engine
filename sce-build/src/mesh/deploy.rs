@@ -7717,6 +7717,17 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
                          the link it dials itself"
                     ));
                 }
+                // docs/adr/0117, D4: a server holds a request of an instance under the `key`
+                // authenticator to a freshness step, which has no default.
+                if !own
+                    && binding.extra.get("authenticator").and_then(|a| a.as_str()) == Some("key")
+                    && !binding.extra.contains_key("fresh_ms")
+                {
+                    return refuse(format!(
+                        "{at} is under the `key` authenticator and declares no `fresh_ms:`, the \
+                         step a request of an instance signs a value of, which has no default"
+                    ));
+                }
             }
         }
         // docs/adr/0113, D4 and D6: a server holds its members to terms the
@@ -10127,6 +10138,45 @@ topology:
     /// [`joined`] whose `phone` is open, with `lines` beside it.
     fn open_phone(lines: &str) -> String {
         joined("", "", &format!("        instances: open\n{lines}"), "")
+    }
+
+    /// docs/adr/0117, D4: a server holds a request of an instance under the
+    /// `key` authenticator to a freshness step, which has no default: its
+    /// binding of an open machine names `fresh_ms`, and is refused without
+    /// it. Red if `validate_instances` takes the binding without one.
+    #[test]
+    fn an_open_machines_key_binding_names_its_freshness_step() {
+        let deployment = |fresh: &str| {
+            format!(
+                r##"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        bindings:
+          "#phone": {{ transport: https, listen: "127.0.0.1:9443", authenticator: key{fresh} }}
+  handset:
+    machines:
+      phone:
+        source: phone.scxml
+        instances: open
+        members: {{ lease_ms: 60000, provisional_ms: 1000, max_instances: 4 }}
+        bindings:
+          "#rooms": {{ transport: https, url: "https://rooms.example", authenticator: key }}
+"##
+            )
+        };
+        let reason = open_refusal(&deployment(""));
+        assert!(reason.contains("`fresh_ms:`"), "{reason}");
+        assert!(
+            reason.contains("binding '#phone' of machine 'rooms'"),
+            "{reason}"
+        );
+        let cfg =
+            parse_deploy_str(&deployment(", fresh_ms: 60000")).expect("the binding names its step");
+        assert!(cfg.is_open_machine("phone"));
     }
 
     /// docs/adr/0113, D7: a pool of open machines is several masters of one key.

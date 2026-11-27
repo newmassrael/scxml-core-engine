@@ -2551,6 +2551,9 @@ enum HostLinkContext {
         /// (docs/adr/0109, D9); `None` signs nothing.
         sign: Option<String>,
         max_skew_ms: u32,
+        /// The freshness step a request of an instance of an open machine signs a value of
+        /// (docs/adr/0117, D4); `None` holds a request to none.
+        fresh_ms: Option<u32>,
         /// Under `receipt: durable` (docs/adr/0109, D10) the server keeps each client's outbox
         /// in its store, `mailbox` its durable window, each entry kept `retain_ms`; `None` for
         /// `receipt: transport`.
@@ -2746,6 +2749,7 @@ fn generate_host_mesh(
                     trusted_proxies,
                     sign,
                     max_skew_ms,
+                    fresh_ms,
                     receipt,
                     retain_ms,
                     ..
@@ -2762,6 +2766,7 @@ fn generate_host_mesh(
                     trusted_proxies: trusted_proxies.clone(),
                     sign: sign.clone(),
                     max_skew_ms: *max_skew_ms,
+                    fresh_ms: *fresh_ms,
                     receipt: (*receipt == super::deploy::ReceiptMode::Durable)
                         .then_some(machine_receipt),
                     retain_ms: *retain_ms,

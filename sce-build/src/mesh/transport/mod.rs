@@ -1475,8 +1475,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // what a client may cost the server (docs/adr/0109, D1 and D2):
         // `max_clients`, `max_response_bytes`, `rate`, `trusted_proxies`, and
         // the key a response is signed with and the skew a signed request is
-        // held to (`sign`, `max_skew_ms`, D9), and how long a durable
-        // binding's outbox keeps an entry (`retain_ms`, D10). Both:
+        // held to (`sign`, `max_skew_ms`, D9), the freshness step a request
+        // of an instance signs (`fresh_ms`, docs/adr/0117 D4), and how long a
+        // durable binding's outbox keeps an entry (`retain_ms`, D10). Both:
         // `authenticator`. `topology::validate_https_extras_partial` refuses a
         // key of one side on the other.
         optional_binding_fields: &[
@@ -1495,6 +1496,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             "sign",
             "verify",
             "max_skew_ms",
+            "fresh_ms",
             "retain_ms",
         ],
         // What a lost response carried is carried again, and a request whose
@@ -1798,6 +1800,7 @@ mod tests {
                 "sign",
                 "verify",
                 "max_skew_ms",
+                "fresh_ms",
                 "retain_ms"
             ]
         );
@@ -2029,6 +2032,7 @@ mod tests {
                         "sign",
                         "verify",
                         "max_skew_ms",
+                        "fresh_ms",
                         "retain_ms"
                     ]
                 ),

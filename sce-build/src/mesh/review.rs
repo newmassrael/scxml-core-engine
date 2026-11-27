@@ -326,6 +326,7 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             sign,
             verify,
             max_skew_ms,
+            fresh_ms,
             receipt,
             retain_ms,
         } => {
@@ -385,6 +386,12 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
                 verify.as_deref().unwrap_or("(none)"),
             ));
             out.push(Fact::new(at("max-skew-ms"), max_skew_ms.to_string()));
+            // docs/adr/0117, D4: the freshness step. An absent one is not a
+            // default: no request is held to one.
+            out.push(Fact::new(
+                at("fresh-ms"),
+                fresh_ms.map_or_else(|| "(none)".to_string(), |ms| ms.to_string()),
+            ));
             // docs/adr/0109, D10: the receipt in force, and how long a durable
             // binding's outbox keeps an entry.
             out.push(Fact::new(

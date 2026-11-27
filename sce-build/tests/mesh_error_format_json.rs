@@ -702,7 +702,7 @@ fn an_https_binding_that_signs_reaches_the_rust_peer_table_with_its_keys() {
     let out = run_with_deploy_for("rust", &scxml, &deploy, plain.path());
     assert!(out.status.success());
     let table = generated_file_under(plain.path(), "_mesh_peers.rs");
-    for line in ["sign: None,", "max_skew_ms: 300000,"] {
+    for line in ["sign: None,", "max_skew_ms: 300000,", "fresh_ms: None,"] {
         assert!(table.contains(line), "missing `{line}`:\n{table}");
     }
 }
@@ -1409,6 +1409,57 @@ fn an_open_machine_reaches_the_rust_peer_tables_of_both_sides() {
     ] {
         assert!(open.contains(line), "missing `{line}`:\n{table}");
     }
+}
+
+/// docs/adr/0117, D4: the server's binding of an open machine under `key` carries its freshness
+/// step to the Rust peer table, and one that names none is refused where the deployment is read,
+/// naming the key. Red if the template or `HostLinkContext` drops `fresh_ms`, or
+/// `validate_instances` takes the binding without it.
+#[test]
+fn an_open_machines_key_binding_reaches_the_rust_peer_table_with_its_freshness_step() {
+    let keyed = |fresh: &str| {
+        open_https_deploy()
+            .replace(
+                "authenticator: install, hold_ms: 9000",
+                "authenticator: key, hold_ms: 9000",
+            )
+            .replace(
+                "authenticator: install, mailbox: 64",
+                &format!("authenticator: key{fresh}, mailbox: 64"),
+            )
+    };
+    let dir = ScratchDir::new("mesh-open-fresh-rust");
+    dir.write("client.scxml", ANSWERED_CLIENT_SCXML);
+    let scxml = dir.write("server.scxml", ANSWERING_SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", &keyed(", fresh_ms: 60000"));
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+    let (_, open) = table
+        .split_once("open_peers: &[")
+        .expect("the open machines are a list of their own");
+    for line in [
+        "authenticator: sce_rust_mesh::peers::HttpsAuthenticator::Key,",
+        "fresh_ms: Some(60000),",
+    ] {
+        assert!(open.contains(line), "missing `{line}`:\n{table}");
+    }
+
+    let refused = ScratchDir::new("mesh-open-unfresh-rust");
+    refused.write("client.scxml", ANSWERED_CLIENT_SCXML);
+    let scxml = refused.write("server.scxml", ANSWERING_SERVER_SCXML);
+    let deploy = refused.write("deploy.yaml", &keyed(""));
+    let out = run_with_deploy_for("rust", &scxml, &deploy, refused.path());
+    assert!(
+        !out.status.success(),
+        "a key binding of an open machine with no step"
+    );
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("fresh_ms"), "{said}");
 }
 
 /// docs/adr/0113, D7: each backend but Rust refuses a machine of a deployment that declares an

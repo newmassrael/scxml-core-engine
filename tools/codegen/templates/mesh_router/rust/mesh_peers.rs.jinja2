@@ -140,6 +140,7 @@ pub const MACHINE: Machine = Machine {
                 trusted_proxies: &[{% for p in peer.link.trusted_proxies %}"{{ p | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
                 sign: {{ optional_name(peer.link.sign) }},
                 max_skew_ms: {{ peer.link.max_skew_ms }},
+                fresh_ms: {% if peer.link.fresh_ms is not none %}Some({{ peer.link.fresh_ms }}){% else %}None{% endif %},
                 receipt: {{ receipt(peer.link.receipt) }},
                 retain_ms: {{ peer.link.retain_ms }},
             },

@@ -389,6 +389,12 @@ pub enum TransportState {
         /// How far a signed request's `created` may lie from the server's
         /// clock under the `key` authenticator (docs/adr/0109, D9).
         max_skew_ms: u32,
+        /// The freshness step a request under the `key` authenticator signs
+        /// a value of (docs/adr/0117, D4). Read by the server; `None` holds
+        /// a request to none, and only the binding of an open machine names
+        /// one.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fresh_ms: Option<u32>,
         /// The binding's `receipt:` (SCE_MESH.md section 10.11; docs/adr/0109,
         /// D10): under `durable` the accepting side keeps each client's outbox
         /// in its store, and the dialing side acknowledges only what a durable
@@ -2408,6 +2414,39 @@ fn validate_binding_extras(
     Ok(())
 }
 
+/// docs/adr/0117, D4: `fresh_ms` is read on the binding of an open machine
+/// (`instances: open`), whose instances a server holds to the freshness step,
+/// and a binding of a machine that runs once naming it is refused: no client
+/// of it is held to the step (the C++ client signs no value), so the key would
+/// parse and then refuse every request. Whether a target is an open machine
+/// is the deployment's to say, so it is read here, off the one place that
+/// declares it; `deploy::validate_instances` requires the key where it is read.
+fn validate_fresh_steps(
+    deploy: &DeployConfig,
+    machine_name: &str,
+    partials: &[PartialTarget],
+) -> Result<(), TopologyError> {
+    for pt in partials {
+        if pt.transport == "https"
+            && pt.extra.contains_key("fresh_ms")
+            && !deploy.is_open_machine(pt.target.name())
+        {
+            return Err(TopologyError::InvalidBindingField {
+                machine: machine_name.to_string(),
+                target: pt.target.clone(),
+                transport: pt.transport.clone(),
+                field: "fresh_ms".to_string(),
+                reason: format!(
+                    "is read only on the binding of an open machine (`instances: open`), and \
+                     machine '{}' runs once",
+                    pt.target.name()
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Public pipeline entry: resolve, attach, validate in a single step so
 /// external callers cannot observe (let alone construct) a half-built
 /// [`ResolvedTarget`]. Replaces the sequence
@@ -2503,6 +2542,7 @@ pub fn build_resolved_targets(
     }
 
     validate_binding_extras(machine_name, &partials)?;
+    validate_fresh_steps(deploy, machine_name, &partials)?;
     let mut resolved = finalize_targets(partials, machine_name, external)?;
     // docs/adr/0085, sections 3.2 and 3.3: a causal SOME/IP pool binding
     // sends its vector and its repairs to every view member it reaches, so
@@ -3106,7 +3146,7 @@ fn check_positive_u32(value: &serde_yaml_ng::Value) -> Result<(), String> {
 /// The keys only the dialing side of an `https` binding reads.
 const HTTPS_DIAL_KEYS: [&str; 3] = ["url", "hold_ms", "verify"];
 /// The keys only the accepting side of an `https` binding reads.
-const HTTPS_ACCEPT_KEYS: [&str; 12] = [
+const HTTPS_ACCEPT_KEYS: [&str; 13] = [
     "listen",
     "max_hold_ms",
     "max_body_bytes",
@@ -3118,6 +3158,7 @@ const HTTPS_ACCEPT_KEYS: [&str; 12] = [
     "trusted_proxies",
     "sign",
     "max_skew_ms",
+    "fresh_ms",
     "retain_ms",
 ];
 
@@ -3135,7 +3176,11 @@ const HTTPS_ACCEPT_KEYS: [&str; 12] = [
 ///     u64);
 ///   - `sign` and `verify` (docs/adr/0109, D9): a key id and a trust set's
 ///     name, each 1 to 64 bytes; `max_skew_ms` only beside the `key`
-///     authenticator, which is the one that reads it.
+///     authenticator, which is the one that reads it;
+///   - `fresh_ms` (docs/adr/0117, D4): a positive integer that fits a u32,
+///     only beside the `key` authenticator, whose signature covers the value;
+///     whether the binding is of an open machine is the deployment's to say
+///     ([`validate_fresh_steps`]).
 ///
 /// The closed key set itself is the registry's (`optional_binding_fields`),
 /// held at parse time; this checks the values and which side a key belongs to.
@@ -3286,17 +3331,21 @@ fn validate_https_extras_partial(
             check_key_name(v).map_err(|reason| invalid(key, reason))?;
         }
     }
-    if let Some(v) = pt.extra.get("max_skew_ms") {
-        check_positive_u32(v).map_err(|reason| invalid("max_skew_ms", reason))?;
-        // §mesh-22.9: a bound that nothing reads is a setting that silently
-        // does nothing, and only the `key` authenticator signs requests.
-        if pt.extra.get("authenticator").and_then(|a| a.as_str()) != Some("key") {
-            return Err(invalid(
-                "max_skew_ms",
-                "is read only by the `key` authenticator, which signs requests; \
-                 this binding names another"
-                    .to_string(),
-            ));
+    // §mesh-22.9: a bound that nothing reads is a setting that silently does
+    // nothing, and only the `key` authenticator signs requests: the skew of
+    // their `created`, and the freshness step whose value they sign
+    // (docs/adr/0117, D4).
+    for key in ["max_skew_ms", "fresh_ms"] {
+        if let Some(v) = pt.extra.get(key) {
+            check_positive_u32(v).map_err(|reason| invalid(key, reason))?;
+            if pt.extra.get("authenticator").and_then(|a| a.as_str()) != Some("key") {
+                return Err(invalid(
+                    key,
+                    "is read only by the `key` authenticator, which signs requests; \
+                     this binding names another"
+                        .to_string(),
+                ));
+            }
         }
     }
     // docs/adr/0109, D10 and Open question 6: an outbox entry is kept at
@@ -3564,6 +3613,11 @@ fn https_state(pt: &PartialTarget) -> TransportState {
         sign: text("sign"),
         verify: text("verify"),
         max_skew_ms: number("max_skew_ms", HTTPS_DEFAULT_MAX_SKEW_MS),
+        // docs/adr/0117, D4: no default, and none when the binding names none.
+        fresh_ms: extra
+            .get("fresh_ms")
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u32::try_from(n).ok()),
         // docs/adr/0109, D10: the binding's receipt, and how long an outbox
         // entry is kept, its default applied once here.
         receipt: pt.receipt,
@@ -6035,6 +6089,39 @@ topology:
         );
     }
 
+    /// docs/adr/0117, D4: the binding of an open machine under `key` reads its
+    /// freshness step as written; a binding of a machine that runs once naming
+    /// one is refused, since no client of it signs a value. Red if
+    /// `validate_fresh_steps` takes the key off an open machine's binding.
+    #[test]
+    fn a_freshness_step_is_read_on_the_binding_of_an_open_machine_alone() {
+        let https = r#"{ transport: https, listen: "127.0.0.1:9443", authenticator: key, fresh_ms: 60000 }"#;
+        let open = reached_at_run_time(
+            https,
+            "{ source: phone.scxml, instances: open, members: { lease_ms: 60000, \
+             provisional_ms: 1000, max_instances: 4 } }",
+        )
+        .expect("an open machine's binding");
+        assert!(
+            matches!(
+                &open[0].state,
+                TransportState::Https {
+                    fresh_ms: Some(60_000),
+                    ..
+                }
+            ),
+            "{:?}",
+            open[0].state
+        );
+        match reached_at_run_time(https, "{ source: phone.scxml }") {
+            Err(TopologyError::InvalidBindingField { field, reason, .. }) => {
+                assert_eq!(field, "fresh_ms");
+                assert!(reason.contains("runs once"), "{reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
     /// docs/adr/0113, D2: a literal `<send target="mesh://phone/a1">` names an
     /// instance of the open machine `phone`, and resolves to the one binding of
     /// that machine, answered by the instance; it names no target of its own.
@@ -6685,6 +6772,7 @@ topology:
                 sign,
                 verify,
                 max_skew_ms,
+                fresh_ms,
                 receipt,
                 retain_ms,
             } => {
@@ -6702,6 +6790,8 @@ topology:
                 assert_eq!(*sign, None);
                 assert_eq!(*verify, None);
                 assert_eq!(*max_skew_ms, HTTPS_DEFAULT_MAX_SKEW_MS);
+                // docs/adr/0117, D4: no freshness step unless named, and none by default.
+                assert_eq!(*fresh_ms, None);
                 assert_eq!(*listen, None);
                 assert_eq!(*authenticator, HttpsAuthenticator::Bearer);
                 assert_eq!(*hold_ms, HTTPS_DEFAULT_HOLD_MS);
@@ -6978,6 +7068,21 @@ topology:
                 ", listen: \"0.0.0.0:9443\", authenticator: key, max_skew_ms: 0",
                 "max_skew_ms",
                 "between 1",
+            ),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: install, fresh_ms: 60000",
+                "fresh_ms",
+                "`key` authenticator",
+            ),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: key, fresh_ms: 0",
+                "fresh_ms",
+                "between 1",
+            ),
+            (
+                ", url: \"https://cal.example\", authenticator: key, fresh_ms: 60000",
+                "fresh_ms",
+                "other side",
             ),
             (
                 ", url: \"https://cal.example\", authenticator: bearer, verify: \"\"",
