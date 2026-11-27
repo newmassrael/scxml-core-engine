@@ -79,6 +79,15 @@
 //! 16.7 row 9. An entry older than `retain_ms` expires ([`Pool::expire`]), and
 //! the session that sent it is told at its next run, as row 15.
 //!
+//! A session whose machine says facts into the event journal (docs/adr/0114,
+//! D1; [`SessionMachine::take_journal`]) has them appended to its own stream,
+//! the machine and the key (D2), by the write of the checkpoint that holds the
+//! state that said them, so an entry exists exactly when that state does: a
+//! write that fails keeps them for the next, and a session that ends appends
+//! them by the write that removes it, one the store never held too. The pool
+//! keeps its sessions through a handle of its own machine
+//! (`SessionStore::machine`), or of a store that keeps one machine.
+//!
 //! [`Pool::stop`] stops the pool in order: it admits nothing, runs what each
 //! inbox holds, and saves every session as a clean checkpoint, so a start
 //! after it raises no `restored`.
@@ -116,11 +125,12 @@ use std::time::{Duration, Instant};
 
 use sce_forge_runtime::codec::SceCursor;
 use sce_rust_metrics::{Counter, Eviction, Gauge, Metrics, PoolShed, RestoredFrom};
+use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
-    AcquireError, Append, Change, Failure, Held, LeaseError, SessionStore, Write, WriteError,
-    LATEST_MOMENT,
+    AcquireError, Append, Change, Fact, FactData, Failure, Held, Journal, LeaseError, SessionStore,
+    Write, WriteError, LATEST_MOMENT,
 };
 
 use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
@@ -162,6 +172,16 @@ pub trait SessionMachine: Send {
     /// Whether the machine reached a top-level final state: its session is
     /// over, and the next input for its key starts a new one.
     fn finished(&self) -> bool;
+
+    /// The entries of the event journal its runs made since the last take, in
+    /// the order made, leaving none (docs/adr/0114, D1): the generated
+    /// machine's `EngineState::take_journal`. The pool appends them by the
+    /// write of the checkpoint that holds the state that made them, so an entry
+    /// exists exactly when that state does. A machine that says no fact makes
+    /// none.
+    fn take_journal(&mut self) -> Vec<JournalEntry> {
+        Vec::new()
+    }
 }
 
 /// The endpoint a session's machine is registered with
@@ -215,6 +235,10 @@ pub struct PoolConfig {
 pub enum PoolConfigError {
     /// The machine's deployment declares no `sessions:`.
     NotPooled { machine: String },
+    /// The store keeps the sessions of another machine
+    /// (`SessionStore::machine`, docs/adr/0114, D2): a session of this pool is
+    /// this machine and its key.
+    StoreOfAnotherMachine { machine: String, store: String },
     /// The renewal period is zero, or not below the lease's length.
     Renewal {
         renew_every_ms: u64,
@@ -478,6 +502,10 @@ struct Live<M, T, E> {
     /// D10): the next write takes every note up to it, in the transaction that
     /// keeps what the machine made of them.
     notes_through: u64,
+    /// The entries of the event journal its runs made that no durable write
+    /// appended yet (docs/adr/0114, D1): the next write of the session, which
+    /// keeps the state that made them, appends them.
+    facts: Vec<JournalEntry>,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -654,6 +682,14 @@ where
                 machine: machine.name.to_string(),
             });
         };
+        // docs/adr/0114, D2: a store whose handle keeps a named machine's
+        // sessions keeps this machine's, or another's would be written.
+        if !store.machine().is_empty() && store.machine() != machine.name {
+            return Err(PoolConfigError::StoreOfAnotherMachine {
+                machine: machine.name.to_string(),
+                store: store.machine().to_string(),
+            });
+        }
         if config.renew_every_ms == 0 || config.renew_every_ms >= config.lease_ttl_ms {
             return Err(PoolConfigError::Renewal {
                 renew_every_ms: config.renew_every_ms,
@@ -1604,6 +1640,7 @@ where
             unsaved: Vec::new(),
             provisional: loaded.is_none(),
             notes_through,
+            facts: Vec::new(),
         })
     }
 
@@ -1893,6 +1930,9 @@ where
         let mut stepped = false;
         loop {
             stepped |= session.machine.run(calls, now);
+            // docs/adr/0114, D1: what the run said is appended with the state
+            // it left, by the session's next write.
+            session.facts.extend(session.machine.take_journal());
             let mut endpoint = lock(&session.endpoint);
             self.report(key, &mut endpoint);
             calls = endpoint.take_calls();
@@ -1973,6 +2013,9 @@ where
                 })
                 .collect();
             let document = taken.to_json();
+            // docs/adr/0114, D1: the facts the state said are appended by the
+            // write that keeps it, so both are durable or neither is.
+            let facts = facts_of(&session.facts);
             // docs/adr/0109, D15: handed to the committer, which writes it with
             // what other sessions handed meanwhile and answers once the
             // transaction that holds it is durable (step 2); step 3 follows.
@@ -1986,7 +2029,7 @@ where
                     expected_version: session.version,
                     fence,
                     outbox: &appends,
-                    journal: None,
+                    journal: self.journal_of(&facts),
                     notes_through: session.notes_through,
                     now_ms: now,
                     sessions: &[],
@@ -1997,6 +2040,7 @@ where
         match written {
             Ok(written) => {
                 session.version = written.version;
+                session.facts.clear();
                 if let Some(outboxes) = &self.outboxes {
                     let envelopes: Vec<Vec<u8>> = outbound
                         .into_iter()
@@ -2072,10 +2116,13 @@ where
             // A session the store never held (a provisional one whose first
             // run finished, docs/adr/0109, D1) has nothing to remove, and what
             // it sent leaves at once: nothing durable changed, unless a
-            // durable client's outbox is appended to or a host operation of it
-            // kept a first result.
+            // durable client's outbox is appended to, a host operation of it
+            // kept a first result, or it said a fact (docs/adr/0114, D1),
+            // which the removal appends.
+            let facts = facts_of(&finished.facts);
+            let nothing_kept_by_the_removal = host_sessions.is_empty() && facts.is_empty();
             let removed =
-                if finished.version == 0 && outbound.is_empty() && host_sessions.is_empty() {
+                if finished.version == 0 && outbound.is_empty() && nothing_kept_by_the_removal {
                     Ok(None)
                 } else {
                     let incarnation = if outbound.is_empty() {
@@ -2097,6 +2144,7 @@ where
                             key,
                             &Write {
                                 outbox: &appends,
+                                journal: self.journal_of(&facts),
                                 now_ms: now,
                                 sessions: &host_session_ids,
                                 ..Write::delete(finished.version, fence)
@@ -2306,9 +2354,32 @@ where
         lock(&self.errors).push(error);
     }
 
+    /// The journal a write of a session of this machine appends `facts` to
+    /// (docs/adr/0114, D1 and D2): the session's own stream, its machine and
+    /// its key; none when it says no fact.
+    fn journal_of<'a>(&'a self, facts: &'a [Fact<'a>]) -> Option<Journal<'a>> {
+        (!facts.is_empty()).then_some(Journal {
+            machine: self.machine.name,
+            facts,
+        })
+    }
+
     fn wall_now(&self) -> u64 {
         lock(&self.environment).now_unix_ms()
     }
+}
+
+/// The facts `entries` say, in their order, as a write appends them.
+fn facts_of(entries: &[JournalEntry]) -> Vec<Fact<'_>> {
+    entries
+        .iter()
+        .map(|entry| Fact {
+            schema: entry.schema,
+            revision: entry.revision,
+            data: FactData::Bytes(&entry.data),
+            valid_ms: entry.valid_ms,
+        })
+        .collect()
 }
 
 /// Settle every receipt of `receipts` as `fate`, and forget them.
@@ -2460,6 +2531,8 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Condvar;
     use std::time::{Duration, Instant};
+
+    mod journal;
 
     /// The wall clock every test starts at.
     const T0: u64 = 1_700_000_000_000;
