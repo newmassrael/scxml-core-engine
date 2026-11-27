@@ -3631,7 +3631,8 @@ mod tests {
                     inline.clear();
                 }
             }
-            assert!(*other == inline && inline == *other, "step {step}");
+            assert!(*other == inline, "step {step}: equal one way");
+            assert!(inline == *other, "step {step}: equal the other way");
             assert!(other.iter().eq(inline.iter()), "step {step}");
             let mut at = (other.first(), inline.first());
             while let (Some(here), Some(there)) = at {
