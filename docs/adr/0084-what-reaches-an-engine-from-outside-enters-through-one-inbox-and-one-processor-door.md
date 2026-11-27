@@ -264,6 +264,15 @@ host is the arrangement measured above to fail.
   an engine keeps no field for an inbox and makes no drain, at a macrostep boundary or before an external enqueue.
   It was present on every target with compare-and-swap of a byte and of a pointer, and a program that never posted
   paid for the drain in each machine's enqueue and in the shared main loop.
+  Amended 2026-11-27: a session holds one inbox, never two. The `std` profile has `BoundedInbox` so that a
+  bare-metal crate's code compiles and runs in a build that unifies `std` in, and a Rust engine with both used to
+  drain its own inbox and then the attached one, so two posts to the two that did not overlap in time could be
+  applied out of the order they linearized in (ADR 0147, D1). The engine now holds its inbox as one value of one type
+  (`SessionInbox`, `inbox.rs`), of the kind the first of its two doors made: `Engine::inbox` panics on an engine
+  a bounded inbox is attached to, and `Engine::attach_inbox` on one whose own inbox was made, as wiring a host
+  writes once. One sequence that both inboxes feed was set aside: it would make the bounded inbox a door into the
+  unbounded channel, which changes what a full inbox refuses on a host, or order the two by numbers taken at post,
+  which step 10 rejected.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
   such as Kotlin's coroutine mode or the Interpreter's worker, wakes itself). Amended at step 4: Rust's generated
   machines fix their HAL, so `Hal::wake` alone is no waker a host installs. A `std` post calls the HAL's wake and then

@@ -10,7 +10,7 @@
 //! queue is consulted, in the order the inbox took the posts. A posted input and
 //! a direct call therefore cannot differ in what they do.
 //!
-//! One inbox per profile:
+//! One inbox per session, of the kind its profile has:
 //!
 //! - `EngineInbox`, the `std` profile's: the engine's own, handed out by
 //!   `Engine::inbox`. Unbounded, on the standard library's channel, whose send
@@ -25,12 +25,22 @@
 //!   inbox to drain, and its engine carries no drain: no field for an inbox,
 //!   no call at a macrostep boundary and none before an external enqueue.
 //!
+//! An engine holds one of the two, never both (`SessionInbox`). Two inboxes
+//! drained one after the other would apply a post to the second ahead of an
+//! earlier post to the first, though the two posts did not overlap in time,
+//! and the door promises the order the posts linearized in
+//! (docs/formal/InboxService.tla; docs/adr/0147, D1). The `std` profile has
+//! `BoundedInbox` only so that a bare-metal crate's code compiles and runs in a
+//! build that unifies `std` in (docs/adr/0053), and a session such code
+//! attaches one to has that one alone: `Engine::inbox` and
+//! `Engine::attach_inbox` each refuse a session that holds the other kind.
+//!
 //! A refused post gives its input back ([`InboxRefusal`]), so nothing posted is
 //! dropped without the poster being told.
 //!
 //! What the owner decides when it drains (whether a drain begins, one at a
-//! time; how many inputs it takes from each inbox it reaches; whether an event
-//! of its own waits for a drain) is the submodule `drain`'s, a value with a
+//! time; how many inputs it takes from the inbox; whether an event of its own
+//! waits for a drain) is the submodule `drain`'s, a value with a
 //! transition function that Verus proves refines the owner's actions of
 //! `docs/formal/EngineInbox.tla` (docs/adr/0147, D4). The engine moves the
 //! inputs, through the channel and the ring here, and decides none of it.
@@ -266,6 +276,45 @@ pub(crate) trait InboxSource<I> {
 /// whose policy is `P`, as the engine holds it.
 #[cfg(feature = "bounded-inbox")]
 pub(crate) type AttachedInbox<P> = &'static (dyn InboxSource<InboxInputOf<P>> + Sync);
+
+/// The one inbox of a session, as its engine holds it (docs/adr/0084, D2;
+/// docs/adr/0147, D1): its own, in the `std` profile, or one a deployment
+/// declared and attached. One value of one type, so an engine cannot hold two,
+/// whose drains one after the other would take two posts that did not overlap
+/// in time out of the order they linearized in. Which kind a session holds is
+/// fixed by the first of the two doors its host takes (`Engine::inbox`,
+/// `Engine::attach_inbox`), and the other door then refuses; attaching again
+/// replaces an attached one. The bare-metal profile has the attached kind
+/// alone.
+#[cfg(any(feature = "std", feature = "bounded-inbox"))]
+pub(crate) enum SessionInbox<P: StatePolicy> {
+    /// The session's own, in the `std` profile: made by the first
+    /// `Engine::inbox` call, or when the session joins its parent's tree.
+    #[cfg(feature = "std")]
+    Owned(OwnedInbox),
+    /// One a deployment declared in a `static` and handed to
+    /// `Engine::attach_inbox`.
+    // Made only by `Engine::attach_inbox`, which a target without
+    // compare-and-swap of a byte and of a pointer does not have, since it has
+    // no `BoundedInbox` to attach.
+    #[cfg(feature = "bounded-inbox")]
+    #[cfg_attr(
+        not(all(target_has_atomic = "8", target_has_atomic = "ptr")),
+        allow(dead_code)
+    )]
+    Attached(AttachedInbox<P>),
+}
+
+#[cfg(feature = "std")]
+impl<P: StatePolicy> SessionInbox<P> {
+    /// The session's own inbox, when that is the one it holds.
+    pub(crate) fn owned(&self) -> Option<&OwnedInbox> {
+        match self {
+            SessionInbox::Owned(owned) => Some(owned),
+            SessionInbox::Attached(_) => None,
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // The std profile: each session's own inbox, unbounded, and the tree's

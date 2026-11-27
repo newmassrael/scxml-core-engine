@@ -101,18 +101,7 @@ impl Machine {
         let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
         let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
         let inbox = engine.inbox();
-        let host: Arc<Mutex<Vec<String>>> = Arc::default();
-        let log = Arc::clone(&host);
-        engine.register_invoker(TYPE, move |event: HostInvokeEvent| {
-            let (line, answer) = match event {
-                HostInvokeEvent::Start(request) => {
-                    (format!("start:{}", request.token), on_start(&inbox))
-                }
-                HostInvokeEvent::Cancel(cancel) => (format!("cancel:{}", cancel.token), None),
-            };
-            log.lock().expect("the host's log").push(line);
-            answer
-        });
+        let host = serve(&mut engine, move || on_start(&inbox));
         Self {
             engine,
             script_engine,
@@ -123,6 +112,23 @@ impl Machine {
     /// Entered and driven once on the calling thread, which owns it.
     fn booted() -> Self {
         let mut machine = Self::built();
+        machine.boot();
+        machine
+    }
+
+    /// Built with `bounded` attached as its one inbox, served, and entered and
+    /// driven once. A session has one inbox (docs/adr/0084, D2), so this one has
+    /// none of its own, and its invoker, handed none, answers nothing on a start.
+    fn booted_with(bounded: &'static BoundedInbox<Policy, 4, StdHal>) -> Self {
+        let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
+        let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
+        engine.attach_inbox(bounded);
+        let host = serve(&mut engine, || None);
+        let mut machine = Self {
+            engine,
+            script_engine,
+            host,
+        };
         machine.boot();
         machine
     }
@@ -158,6 +164,26 @@ impl Machine {
             .map(|token| token.parse::<u64>().expect("a token is a number"))
             .expect("`job` never started")
     }
+}
+
+/// Register the fixture's invoker on `engine`: on each start it does `on_start`
+/// and answers what that returns. What it was asked, in order, is the log this
+/// returns, as `start:<token>` and `cancel:<token>`.
+fn serve(
+    engine: &mut Engine<Policy>,
+    mut on_start: impl FnMut() -> Option<HostInvokeResponse> + Send + 'static,
+) -> Arc<Mutex<Vec<String>>> {
+    let host: Arc<Mutex<Vec<String>>> = Arc::default();
+    let log = Arc::clone(&host);
+    engine.register_invoker(TYPE, move |event: HostInvokeEvent| {
+        let (line, answer) = match event {
+            HostInvokeEvent::Start(request) => (format!("start:{}", request.token), on_start()),
+            HostInvokeEvent::Cancel(cancel) => (format!("cancel:{}", cancel.token), None),
+        };
+        log.lock().expect("the host's log").push(line);
+        answer
+    });
+    host
 }
 
 /// `text` as the JSON string the machine reads back as `text` in `_event.data`.
@@ -516,10 +542,9 @@ fn session_of(machine: &Machine) -> String {
 // session is refused then, with the input, and not taken to be dropped later.
 #[test]
 fn a_bounded_inbox_takes_an_ending_naming_its_engines_session_and_refuses_another() {
-    let mut machine = Machine::booted();
+    let mut machine = Machine::booted_with(&BOUNDED_OWN);
     let token = machine.latest_token();
     let session = session_of(&machine);
-    machine.engine.attach_inbox(&BOUNDED_OWN);
 
     let answer = BOUNDED_OWN.post(ending_of(
         Some("no-such-session"),
@@ -554,13 +579,11 @@ fn a_bounded_inbox_takes_an_ending_naming_its_engines_session_and_refuses_anothe
 // engine's session, and refuses one naming the engine it served before.
 #[test]
 fn a_bounded_inbox_attached_to_another_engine_answers_for_that_engines_session() {
-    let mut first = Machine::booted();
-    first.engine.attach_inbox(&BOUNDED_MOVED);
+    let first = Machine::booted_with(&BOUNDED_MOVED);
     let before = session_of(&first);
     drop(first);
 
-    let mut second = Machine::booted();
-    second.engine.attach_inbox(&BOUNDED_MOVED);
+    let mut second = Machine::booted_with(&BOUNDED_MOVED);
     let token = second.latest_token();
     let now = session_of(&second);
     assert_ne!(before, now, "two machines were built under one drawn id");

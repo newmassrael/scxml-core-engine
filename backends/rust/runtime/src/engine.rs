@@ -21,7 +21,8 @@
 //! (`initialize`, `step`, `tick`, `process_event`, `stop`). Another thread
 //! reaches it through its inbox (`crate::inbox`): `inbox()` in the `std`
 //! profile, and the `BoundedInbox` a bare-metal deployment declares and hands
-//! to `attach_inbox`, with the `bounded-inbox` feature.
+//! to `attach_inbox`, with the `bounded-inbox` feature. A session has one of
+//! the two, never both.
 //!
 //! ## The policy and the state
 //!
@@ -1089,7 +1090,8 @@ pub(crate) struct RunningHostInvoke {
 /// only through `&mut self`. Its owner-thread operations are the ones the
 /// module documentation lists. Its inbox handle is `inbox()` (`EngineInbox`)
 /// in the `std` profile; a bare-metal deployment declares a `BoundedInbox` and
-/// hands it to `attach_inbox`, with the `bounded-inbox` feature.
+/// hands it to `attach_inbox`, with the `bounded-inbox` feature. An engine
+/// holds one of the two, never both.
 ///
 /// ## HAL routing (SCE Protocol-Synthesis RFC §synth-5-J-2)
 ///
@@ -1258,24 +1260,24 @@ pub struct EngineState<P: StatePolicy> {
     /// through a saved state, so a restored machine never hands the document an
     /// id an earlier run already did — the document may still hold it.
     pub(crate) auto_send_seq: u64,
-    /// This engine's own inbox in the `std` profile (docs/adr/0084), made by
-    /// the first `inbox()` call, or when the engine joins its parent's tree as
-    /// a child, so an engine nobody posts to keeps no channel. Dropped with
-    /// the engine, which refuses every post made after it.
-    #[cfg(feature = "std")]
-    pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox>,
+    /// This session's one inbox (docs/adr/0084, D2; docs/adr/0147, D1): its
+    /// own in the `std` profile, made by the first `inbox()` call or when the
+    /// engine joins its parent's tree as a child, so an engine nobody posts to
+    /// keeps no channel; or the one a deployment declared and handed over with
+    /// `attach_inbox`. One, never both: two inboxes drained one after the
+    /// other would apply two posts that did not overlap in time out of the
+    /// order they linearized in, so the door that would make a second refuses.
+    /// Its own is dropped with the engine, which refuses every post made after
+    /// it. Only in a build that has an inbox: the `std` profile, or one with
+    /// the `bounded-inbox` feature.
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
+    pub(crate) inbox: core::cell::OnceCell<crate::inbox::SessionInbox<P>>,
     /// The inboxes of the tree this session is in (ARCHITECTURE.md "Engine
     /// Threading", item 3): its own until a parent hands it the tree's
     /// ([`share_tree_inboxes_with`](EngineState::share_tree_inboxes_with)).
     #[cfg(feature = "std")]
     pub(crate) tree_inboxes: crate::inbox::TreeInboxes,
-    /// The inbox a deployment declared and handed over with `attach_inbox`
-    /// (docs/adr/0084), drained at each macrostep boundary after the engine's
-    /// own. `None` until one is attached. Only with the `bounded-inbox`
-    /// feature: a build without it has no inbox to attach.
-    #[cfg(feature = "bounded-inbox")]
-    pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
-    /// Where the owner stands in draining the inboxes (`crate::inbox::drain`,
+    /// Where the owner stands in draining the inbox (`crate::inbox::drain`,
     /// proved by Verus, docs/adr/0147 D4): whether a drain is under way, and
     /// how many inputs it may still take from the inbox it reached. Applying an
     /// input queues an external event, and a queued external event asks for a
@@ -1340,12 +1342,10 @@ macro_rules! engine_initial_fields {
             scheduler: <P::Scheduler as SchedulerOps>::EMPTY,
             donedata_at_final: <P::DoneData as DoneDataStorage>::EMPTY,
             auto_send_seq: 0,
-            #[cfg(feature = "std")]
+            #[cfg(any(feature = "std", feature = "bounded-inbox"))]
             inbox: core::cell::OnceCell::new(),
             #[cfg(feature = "std")]
             tree_inboxes: crate::inbox::TreeInboxes::default(),
-            #[cfg(feature = "bounded-inbox")]
-            attached_inbox: None,
             #[cfg(any(feature = "std", feature = "bounded-inbox"))]
             inbox_drain: crate::inbox::drain::Drain::idle(),
             #[cfg(feature = "transition-observer")]
@@ -1531,21 +1531,40 @@ impl<P: StatePolicy> Engine<P> {
     /// An ending that names a child session of the tree is posted straight to
     /// that child's inbox, and the child applies it (ARCHITECTURE.md "Engine
     /// Threading", item 3).
+    ///
+    /// # Panics
+    ///
+    /// When a bounded inbox was attached to this engine
+    /// ([`attach_inbox`](Self::attach_inbox)): a session has one inbox
+    /// (docs/adr/0084, D2), and that one is it. A second, drained after the
+    /// first, would take two posts that did not overlap in time out of the
+    /// order they linearized in (docs/adr/0147, D1). A panic rather than a
+    /// `Result`, because this is wiring a host writes once, as its
+    /// registration of an event processor is.
     #[cfg(feature = "std")]
     pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
         crate::inbox::EngineInbox::of(self.owned_inbox())
     }
 
-    /// This session's own inbox, made in the tree it is in now if it has none
-    /// yet.
+    /// This session's own inbox, made in the tree it is in now if it has no
+    /// inbox yet. Refused, as [`inbox`](Self::inbox) says, when the session's
+    /// one inbox is a bounded one attached to it.
     #[cfg(feature = "std")]
     fn owned_inbox(&self) -> &crate::inbox::OwnedInbox {
-        self.state.inbox.get_or_init(|| {
-            crate::inbox::OwnedInbox::new(
-                self.policy.own_session_id(),
-                self.state.tree_inboxes.clone(),
+        self.state
+            .inbox
+            .get_or_init(|| {
+                crate::inbox::SessionInbox::Owned(crate::inbox::OwnedInbox::new(
+                    self.policy.own_session_id(),
+                    self.state.tree_inboxes.clone(),
+                ))
+            })
+            .owned()
+            .expect(
+                "Engine::inbox on an engine a bounded inbox is attached to: a session has one \
+                 inbox (docs/adr/0084, D2), and two drained one after the other would take \
+                 posts out of the order they linearized in",
             )
-        })
     }
 
     /// Be in `tree`, the tree's inboxes, and hand it on to every child this
@@ -1584,9 +1603,9 @@ impl<P: StatePolicy> Engine<P> {
         self.state.end_turn(opened);
     }
 
-    /// Drain `inbox`, which the deployment declared in a `static`, at each
-    /// macrostep boundary of this engine and before an event of its own joins
-    /// its external queue, after the engine's own inbox: the
+    /// Make `inbox`, which the deployment declared in a `static`, this
+    /// session's one inbox, drained at each macrostep boundary of this engine
+    /// and before an event of its own joins its external queue: the
     /// bare-metal profile's inbox, whose capacity the deployment names
     /// (`BoundedInbox`). Replaces one attached before; what that one still
     /// holds stays in it.
@@ -1605,6 +1624,13 @@ impl<P: StatePolicy> Engine<P> {
     /// refused by the token check.
     ///
     /// Only with the crate's `bounded-inbox` feature, which `std` asks for.
+    ///
+    /// # Panics
+    ///
+    /// In the `std` profile, when this engine's own inbox was made, by
+    /// `inbox()` or by joining its parent's tree as a child: a session has one
+    /// inbox (docs/adr/0084, D2), and that one is it. A session a bare-metal
+    /// crate's code drives is attached its inbox before anything asks for one.
     #[cfg(all(
         feature = "bounded-inbox",
         target_has_atomic = "8",
@@ -1617,9 +1643,21 @@ impl<P: StatePolicy> Engine<P> {
         crate::inbox::InboxInputOf<P>: Send,
     {
         #[cfg(feature = "std")]
-        inbox.attached_to(self.policy.own_session_id());
+        {
+            assert!(
+                self.state
+                    .inbox
+                    .get()
+                    .and_then(crate::inbox::SessionInbox::owned)
+                    .is_none(),
+                "Engine::attach_inbox on an engine whose own inbox was made: a session has one \
+                 inbox (docs/adr/0084, D2), and two drained one after the other would take \
+                 posts out of the order they linearized in"
+            );
+            inbox.attached_to(self.policy.own_session_id());
+        }
         let source: crate::inbox::AttachedInbox<P> = inbox;
-        self.state.attached_inbox = Some(source);
+        self.state.inbox = core::cell::OnceCell::from(crate::inbox::SessionInbox::Attached(source));
         // docs/adr/0084, D2: the tokens this engine gave before it was attached
         // count for the engine attached to the inbox next, and the ones engines
         // attached to it before gave count for this one.
@@ -3384,11 +3422,11 @@ impl<P: StatePolicy> EngineState<P> {
         child.adopt_tree_inboxes(&self.tree_inboxes);
     }
 
-    /// Apply, on the owner, what other threads posted, oldest first, each by
-    /// the owner-thread operation of the same name
-    /// ([`apply_inbox_input`](Self::apply_inbox_input)). What an inbox held
-    /// when the drain began, so posters that never stop cannot hold the owner
-    /// here; what they post meanwhile waits for the next.
+    /// Apply, on the owner, what other threads posted to this session's one
+    /// inbox, oldest first, each by the owner-thread operation of the same
+    /// name ([`apply_inbox_input`](Self::apply_inbox_input)). What the inbox
+    /// held when the drain reached it, so posters that never stop cannot hold
+    /// the owner here; what they post meanwhile waits for the next.
     ///
     /// Made at each macrostep boundary, before the external queue is
     /// consulted, and where the run ends; before this machine puts an event of
@@ -3415,7 +3453,7 @@ impl<P: StatePolicy> EngineState<P> {
     }
 
     /// Before an event of this machine's own joins its external queue: what
-    /// the inboxes hold is applied first, and the event goes behind it, unless
+    /// the inbox holds is applied first, and the event goes behind it, unless
     /// a drain is under way, whose applying of an input queues the event, which
     /// then joins the queue in that input's place (docs/adr/0084, D2 as
     /// amended at step 9).
@@ -3426,55 +3464,69 @@ impl<P: StatePolicy> EngineState<P> {
         }
     }
 
-    /// The body of a drain that began: the engine's own inbox, then the
-    /// attached one, and then the drain is over. Each holds this session's
-    /// inputs alone, since an input that names another session was posted to
-    /// that session's inbox (ARCHITECTURE.md "Engine Threading", item 3), so
+    /// The body of a drain that began: this session's one inbox, whichever
+    /// kind it is, and then the drain is over. It holds this session's inputs
+    /// alone, since an input that names another session was posted to that
+    /// session's inbox (ARCHITECTURE.md "Engine Threading", item 3), so
     /// applying one never reaches another engine of the tree.
     #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn apply_held_inputs(&mut self) {
-        // The engine's own inbox holds no type of this machine's, so taking
-        // from it is the same code for every machine and only applying is
-        // this machine's.
-        #[cfg(feature = "std")]
-        {
-            let held = self
-                .inbox
-                .get()
-                .map_or(0, crate::inbox::OwnedInbox::per_boundary);
-            self.inbox_drain.reach(held);
-            while self.inbox_drain.take_another() {
-                let Some(input) = self.inbox.get().and_then(crate::inbox::OwnedInbox::take) else {
-                    self.inbox_drain.ran_dry();
-                    break;
-                };
-                self.apply_held_input(input);
+        match self.inbox.get() {
+            None => {}
+            #[cfg(feature = "std")]
+            Some(crate::inbox::SessionInbox::Owned(_)) => self.apply_owned_inputs(),
+            #[cfg(feature = "bounded-inbox")]
+            Some(&crate::inbox::SessionInbox::Attached(attached)) => {
+                self.apply_attached_inputs(attached);
             }
         }
-        #[cfg(feature = "bounded-inbox")]
-        self.apply_attached_inputs();
         self.inbox_drain.finish();
     }
 
-    /// The attached inbox's part of [`apply_held_inputs`](Self::apply_held_inputs),
-    /// after the engine's own: only with the `bounded-inbox` feature, which is
+    /// [`apply_held_inputs`](Self::apply_held_inputs) of a session whose one
+    /// inbox is its own, in the `std` profile.
+    #[cfg(feature = "std")]
+    fn apply_owned_inputs(&mut self) {
+        // The engine's own inbox holds no type of this machine's, so taking
+        // from it is the same code for every machine and only applying is
+        // this machine's.
+        let held = self
+            .inbox
+            .get()
+            .and_then(crate::inbox::SessionInbox::owned)
+            .map_or(0, crate::inbox::OwnedInbox::per_boundary);
+        self.inbox_drain.reach(held);
+        while self.inbox_drain.take_another() {
+            let Some(input) = self
+                .inbox
+                .get()
+                .and_then(crate::inbox::SessionInbox::owned)
+                .and_then(crate::inbox::OwnedInbox::take)
+            else {
+                self.inbox_drain.ran_dry();
+                break;
+            };
+            self.apply_held_input(input);
+        }
+    }
+
+    /// [`apply_held_inputs`](Self::apply_held_inputs) of a session whose one
+    /// inbox is `attached`: only with the `bounded-inbox` feature, which is
     /// what attaches one.
     #[cfg(feature = "bounded-inbox")]
     #[inline]
-    fn apply_attached_inputs(&mut self) {
+    fn apply_attached_inputs(&mut self, attached: crate::inbox::AttachedInbox<P>) {
         // Named by path: the calls on the attached inbox are calls on a trait
         // object, which need no import, and the profile without `std` makes no
         // other.
-        if let Some(attached) = self.attached_inbox {
-            self.inbox_drain
-                .reach(crate::inbox::InboxSource::per_boundary(attached));
-            while self.inbox_drain.take_another() {
-                let Some(input) = crate::inbox::InboxSource::take(attached) else {
-                    self.inbox_drain.ran_dry();
-                    break;
-                };
-                self.apply_inbox_input(input);
-            }
+        self.inbox_drain
+            .reach(crate::inbox::InboxSource::per_boundary(attached));
+        while self.inbox_drain.take_another() {
+            let Some(input) = crate::inbox::InboxSource::take(attached) else {
+                self.inbox_drain.ran_dry();
+                break;
+            };
+            self.apply_inbox_input(input);
         }
     }
 
@@ -5381,7 +5433,7 @@ impl<P: StatePolicy> EngineState<P> {
     /// lives and ends with it.
     #[cfg(feature = "std")]
     fn count_host_invoke_tokens_with_attached_inbox(&mut self) {
-        if let Some(attached) = self.attached_inbox {
+        if let Some(&crate::inbox::SessionInbox::Attached(attached)) = self.inbox.get() {
             let next = crate::inbox::InboxSource::host_invoke_tokens_from(
                 attached,
                 self.host_processors.next_token(),

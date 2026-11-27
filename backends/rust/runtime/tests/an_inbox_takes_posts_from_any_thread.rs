@@ -17,7 +17,9 @@
 //     raise would be, and not held where nobody reads it;
 //   * the bare-metal inbox a deployment declares refuses a post when full, gives
 //     the input back and counts the refusal, and the engine it is attached to
-//     applies what it took.
+//     applies what it took;
+//   * an engine holds one inbox, its own or a bounded one, and refuses the
+//     other.
 //
 // The machine: one state, `s`, whose two targetless transitions take `ping` and
 // `pong` and record, in order, the name of each event they took, and the
@@ -522,4 +524,29 @@ fn a_bounded_inbox_refuses_a_post_when_full_and_its_engine_applies_what_it_took(
         .expect("an inbox the owner drained takes a post again");
     engine.step();
     assert_eq!(engine.policy().taken, ["ping", "pong", "ping"]);
+}
+
+/// Bounded inboxes for the cases below, one each, as cargo runs them on
+/// parallel threads.
+static AFTER_ITS_OWN: BoundedInbox<InboxPolicy, 2, CountingHal> = BoundedInbox::new();
+static BEFORE_ITS_OWN: BoundedInbox<InboxPolicy, 2, CountingHal> = BoundedInbox::new();
+
+// A session has one inbox (docs/adr/0084, D2; docs/adr/0147, D1): two, drained
+// one after the other, would take a post to the second ahead of an earlier post
+// to the first. So an engine whose own inbox was made refuses a bounded one...
+#[test]
+#[should_panic(expected = "a session has one inbox")]
+fn an_engine_whose_own_inbox_was_made_refuses_a_bounded_one() {
+    let mut engine = Engine::new(InboxPolicy::new());
+    let _own = engine.inbox();
+    engine.attach_inbox(&AFTER_ITS_OWN);
+}
+
+// ...and an engine a bounded inbox is attached to makes no inbox of its own.
+#[test]
+#[should_panic(expected = "a session has one inbox")]
+fn an_engine_a_bounded_inbox_is_attached_to_makes_no_inbox_of_its_own() {
+    let mut engine = Engine::new(InboxPolicy::new());
+    engine.attach_inbox(&BEFORE_ITS_OWN);
+    let _own = engine.inbox();
 }
