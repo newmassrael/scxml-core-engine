@@ -757,10 +757,13 @@ mod tests {
             Some("0".to_string()),
             "a durable binding acknowledges nothing its page has not reported held"
         );
+        // A request's acknowledgement is read when the lane begins it, which is when the
+        // exchange before it is answered (docs/adr/0109, D10): the page reports what it holds
+        // first, and the request begun after carries it.
+        assert_eq!(effects(client.held(&received).expect("a mark")), json!([]));
         client
             .answered("poll", 200, &headers, &[0x01])
             .expect("a lane");
-        assert_eq!(effects(client.held(&received).expect("a mark")), json!([]));
         assert_eq!(
             ack(&signed_request(&mut client, "poll")),
             Some("1".to_string())
