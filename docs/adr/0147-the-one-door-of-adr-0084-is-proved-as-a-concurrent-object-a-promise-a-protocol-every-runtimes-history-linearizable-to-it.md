@@ -208,7 +208,11 @@ ring is judged under the C11 memory model by loom instead: the models beside it 
 `forge-rust` gate through the target `loom_inbox_ring`) run two posters and the owner under every interleaving within
 three preemptions. They hold each input taken once, none lost, each poster's order kept, a refusal only while every
 slot is held, and a drain's take of a post that returned past one under way. The casefile
-`a_bounded_inbox_ring_orders_every_slot_hand_over_rust.cases` weakens each hand-over in turn.
+`a_bounded_inbox_ring_orders_every_slot_hand_over_rust.cases` weakens each hand-over in turn. Their first run (2026-11-27)
+found the ring's tail moved and read with relaxed order. A post could then fill a position and return while the fill
+before it, by a post that had moved the tail and not yet returned, stayed unseen by the owner. The owner's drain read
+the head's cell as empty and stopped in front of an input that had returned. The tail now moves with release and is
+read with acquire, so every fill before a position happens-before the fill of that position and whatever learns of it.
 
 ## Consequences
 

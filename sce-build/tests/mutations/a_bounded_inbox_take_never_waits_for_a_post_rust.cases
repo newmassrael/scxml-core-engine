@@ -59,7 +59,7 @@ PY
 mutation_case "Rust's bounded inbox answers empty behind a take that did not move the head" <<'PY'
 edit("backends/rust/runtime/src/inbox/ring.rs",
      r'''                // Taken by a take stopped before it moved the head past it.
-                Self::pass(&self.head, position);''',
+                Self::pass(&self.head, position, Ordering::Relaxed);''',
      r'''                // Taken by a take stopped before it moved the head past it.
                 return None;''')
 PY
@@ -67,7 +67,7 @@ PY
 mutation_case "Rust's bounded inbox refuses a post behind a put that did not move the tail" <<'PY'
 edit("backends/rust/runtime/src/inbox/ring.rs",
      r'''                // Filled by a put stopped before it moved the tail past it.
-                Self::pass(&self.tail, position);''',
+                Self::pass(&self.tail, position, Ordering::Release);''',
      r'''                // Filled by a put stopped before it moved the tail past it.
                 return false;''')
 PY

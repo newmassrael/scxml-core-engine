@@ -13,6 +13,9 @@
 # one hand-over away:
 #
 #   the release of the swap that puts an index on a ring;
+#   the acquire of the tail's load, and the release of the swap that moves the
+#   tail, which carry every fill before a position to the put that fills it
+#   and on to a take that learns of that put;
 #   the acquire of the load, and of the swap, that take an index off a ring;
 #   the order of a post's write of its input and the put that publishes it;
 #   the order of a take's read of the input and the put that frees the slot.
@@ -53,6 +56,29 @@ edit("backends/rust/runtime/src/inbox/ring.rs",
 edit("backends/rust/runtime/src/inbox/ring.rs",
      r'''.compare_exchange(seen, taken, Ordering::AcqRel, Ordering::Relaxed)''',
      r'''.compare_exchange(seen, taken, Ordering::Release, Ordering::Relaxed)''')
+PY
+
+# The two halves of the tail's hand-over are cases of their own: either alone
+# breaks the chain from the fill of one position to the fill of the next, and
+# the model of the take past a post under way then reads an earlier cell as
+# empty (as it did before they were there, 2026-11-27).
+mutation_case "a put reads the tail without acquiring the fills before it" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''            let position = self.tail.load(Ordering::Acquire);''',
+     r'''            let position = self.tail.load(Ordering::Relaxed);''')
+PY
+
+mutation_case "a put moves the tail without releasing the fill before it" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''                    Self::pass(&self.tail, position, Ordering::Release);
+                    return true;''',
+     r'''                    Self::pass(&self.tail, position, Ordering::Relaxed);
+                    return true;''')
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''                // Filled by a put stopped before it moved the tail past it.
+                Self::pass(&self.tail, position, Ordering::Release);''',
+     r'''                // Filled by a put stopped before it moved the tail past it.
+                Self::pass(&self.tail, position, Ordering::Relaxed);''')
 PY
 
 mutation_case "a post publishes its slot's index before it writes its input" <<'PY'

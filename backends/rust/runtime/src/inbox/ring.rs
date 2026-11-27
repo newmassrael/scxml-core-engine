@@ -58,8 +58,18 @@
 //!   D1). No post is refused while a slot is free.
 //!
 //! **Ordering.** A cell is loaded with acquire and swapped with
-//! acquire-release, and the ends move with relaxed swaps, which only say where
-//! to look: the cells say what is there. An input's write into its slot
+//! acquire-release. The tail moves with a release swap and is read with
+//! acquire, because it says more than where to look: a put that reads the tail
+//! at `p` goes on to fill `p` on the word that every position before `p` is
+//! filled, so the fills before `p` happen-before its own, and a take that
+//! learns of the put at `p` (a drain begun after that post returned) also sees
+//! every fill before it, and never reads an earlier cell as still empty. With a
+//! relaxed tail, a put could fill `p + 1` and return while the fill of `p`, by
+//! a post that had moved the tail and not yet returned, stayed unseen by the
+//! owner, whose drain then read the head's cell as empty and stopped in front
+//! of an input that had returned (found by the loom model of the take past a
+//! post under way, 2026-11-27). The head moves with a relaxed swap: only takes
+//! read it, and what a take decides it decides from the cell. An input's write into its slot
 //! happens-before the take that reads it, through the release of the swap that
 //! fills the index's cell and the acquire of the load the take reads it with;
 //! the read happens-before the slot's next write, through the same pair on the
@@ -226,20 +236,18 @@ impl<const N: usize> IndexRing<N> {
     }
 
     /// Move `end` past `position`, whose cell is done with, unless another
-    /// context has.
-    fn pass(end: &AtomicU32, position: u32) {
-        let _ = end.compare_exchange(
-            position,
-            ahead(position, 1),
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        );
+    /// context has; `ordering` is the swap's when it moves it.
+    fn pass(end: &AtomicU32, position: u32, ordering: Ordering) {
+        let _ = end.compare_exchange(position, ahead(position, 1), ordering, Ordering::Relaxed);
     }
 
     /// Put `index` at the back; false when the ring holds `N` indices.
     fn put(&self, index: u8) -> bool {
         loop {
-            let position = self.tail.load(Ordering::Relaxed);
+            // Acquired from the release that moved the tail here, after the
+            // cell before it was seen filled: every fill before the tail
+            // happens-before this put's.
+            let position = self.tail.load(Ordering::Acquire);
             let cell = self.cell(position);
             let seen = cell.load(Ordering::Acquire);
             let stamp = stamp_of(seen);
@@ -250,12 +258,12 @@ impl<const N: usize> IndexRing<N> {
                     .compare_exchange(seen, filled, Ordering::AcqRel, Ordering::Relaxed)
                     .is_ok()
                 {
-                    Self::pass(&self.tail, position);
+                    Self::pass(&self.tail, position, Ordering::Release);
                     return true;
                 }
             } else if stamp == ahead(position, 1) {
                 // Filled by a put stopped before it moved the tail past it.
-                Self::pass(&self.tail, position);
+                Self::pass(&self.tail, position, Ordering::Release);
             } else if stamp == behind(ahead(position, 1), Self::LEN) {
                 // Still filled from the lap before: the ring holds N.
                 return false;
@@ -281,7 +289,7 @@ impl<const N: usize> IndexRing<N> {
                     .compare_exchange(seen, taken, Ordering::AcqRel, Ordering::Relaxed)
                     .is_ok()
                 {
-                    Self::pass(&self.head, position);
+                    Self::pass(&self.head, position, Ordering::Relaxed);
                     return Some(index_of(seen));
                 }
             } else if stamp == position {
@@ -290,7 +298,7 @@ impl<const N: usize> IndexRing<N> {
                 return None;
             } else if stamp == ahead(position, Self::LEN) {
                 // Taken by a take stopped before it moved the head past it.
-                Self::pass(&self.head, position);
+                Self::pass(&self.head, position, Ordering::Relaxed);
             }
             // Otherwise the head read was behind, or another context moved
             // first: read again.
