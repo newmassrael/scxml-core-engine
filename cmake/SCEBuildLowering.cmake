@@ -59,12 +59,66 @@ endif()
 
 get_filename_component(_SCE_LOWERING_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
 
+# The cargo the staticlib is built with is the one of the release
+# rust-toolchain.toml pins, the one every other cargo of this checkout runs.
+# find_program keeps the path it found in the cache, so a tree configured
+# before the pin moved kept the old release's cargo: it built into the same
+# target/ as the new release and each refused the other's crates (E0514, seen
+# 2026-11-27 with 1.99.1 and 1.100.0). The cached cargo is therefore asked its
+# release at every configure and found again when it is not the pinned one,
+# first where a gate unit installs the release (~/.local/rust/<release>, as
+# scripts/lib/rust_toolchains.sh does), then on PATH, whose rustup proxy reads
+# the pin in this directory. A move of the pin configures the tree again.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${_SCE_LOWERING_ROOT}/rust-toolchain.toml")
+file(STRINGS "${_SCE_LOWERING_ROOT}/rust-toolchain.toml" _sce_rust_channel
+     REGEX "^channel = \"[0-9]+\\.[0-9]+\\.[0-9]+\"$")
+if(NOT _sce_rust_channel MATCHES "^channel = \"([0-9]+\\.[0-9]+\\.[0-9]+)\"$")
+    message(FATAL_ERROR
+        "SCE: rust-toolchain.toml no longer pins a release as "
+        "channel = \"<major>.<minor>.<patch>\", and the lowering staticlib is "
+        "built with that release.")
+endif()
+set(_sce_rust_release "${CMAKE_MATCH_1}")
+
+function(_sce_cargo_release cargo out)
+    execute_process(
+        COMMAND "${cargo}" --version
+        WORKING_DIRECTORY "${_SCE_LOWERING_ROOT}"
+        OUTPUT_VARIABLE _version
+        ERROR_QUIET
+        RESULT_VARIABLE _rc)
+    if(_rc EQUAL 0 AND _version MATCHES "^cargo ([0-9]+\\.[0-9]+\\.[0-9]+)")
+        set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    else()
+        set(${out} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+if(SCE_CARGO)
+    _sce_cargo_release("${SCE_CARGO}" _sce_cargo_found)
+    if(NOT _sce_cargo_found STREQUAL _sce_rust_release)
+        unset(SCE_CARGO CACHE)
+    endif()
+endif()
+find_program(SCE_CARGO cargo
+             HINTS "$ENV{HOME}/.local/rust/${_sce_rust_release}/bin"
+             NO_DEFAULT_PATH)
 find_program(SCE_CARGO cargo)
 if(NOT SCE_CARGO)
     message(FATAL_ERROR
         "SCE: cargo not found, and sce_scripting links sce-build's lowering "
         "surface. Install a Rust toolchain, or configure with "
         "-DSCE_ENABLE_LUA=OFF.")
+endif()
+_sce_cargo_release("${SCE_CARGO}" _sce_cargo_found)
+if(NOT _sce_cargo_found STREQUAL _sce_rust_release)
+    message(FATAL_ERROR
+        "SCE: the cargo found at ${SCE_CARGO} is of Rust ${_sce_cargo_found}, and "
+        "rust-toolchain.toml pins ${_sce_rust_release}. Two releases building into "
+        "one target/ refuse each other's crates. Install the pinned release "
+        "(scripts/install_rust.sh, or rustup, which reads the pin), or put its "
+        "cargo first on PATH.")
 endif()
 
 # Release, deliberately, and unlike the generator. The generator's cost is
