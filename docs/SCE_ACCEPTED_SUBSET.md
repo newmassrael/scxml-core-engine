@@ -1605,6 +1605,10 @@ other backend refuses a document that writes one, by its backend's name
 (`generate/unsupported-feature`), and its runtime refuses a computed one as a
 target it cannot address.
 
+- Amended by: ADR 0114 (D1, D2, D4 and D6, steps 3 and 4 of its order of work):
+  `journal:`, `follows:` and `streams:`, with their refusals, and what a session
+  of a machine that follows a journal is handed.
+
 The event journal (docs/adr/0114) is declared by three keys. A machine takes
 `journal: true` (D1): its sessions keep a journal of the facts their document
 says with `<send type="sce:journal">` (§2.15). A machine takes `follows:`, a
@@ -1640,6 +1644,16 @@ stream's schemas, each of which must be an event schema,
 do, each schema the document imports declaring the `key_from` field as a key
 (`mesh/deploy-sessions-key-not-in-request`), so a pool that serves no request
 and follows a journal is a view of it.
+
+The Rust host core hands each entry of a followed journal, in the order of its
+positions, to the session its `key_from` field names, as an external event of the
+entry's event whose data is the entry's record; its `_event.origintype` is
+`sce:journal` and its `_event.origin` is `journal://<machine>/<key>/<position>`,
+or `journal://<stream>/<position>` for an observed stream. The session keeps the
+position it took in of each journal in its checkpoint and drops a repeat, so each
+entry takes effect once (SCE_MESH.md §14.4, "Keyed session pool"). A follower
+and the machines it follows keep their sessions in one store, a session being its
+machine and its key (docs/adr/0114, D2).
 
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
@@ -5560,6 +5574,10 @@ serve the operation (docs/adr/0109, D0); every other lane refuses it as
 every lane: a `<log>` of a marked value writes `sce-secret` or `sce-personal` in its
 place, and a statechart of another data model that imports a marked schema is
 refused (docs/adr/0109, Open question 9; "What a `<log>` shows" above).
+
+- Amended by: ADR 0114 (D1 and D5, step 3 of its order of work):
+  `<send type="sce:journal">`, `sce:valid-time`, `sce-host-journal-read` and
+  `sce:from="journal"`, each with its refusals and its row in the appendix.
 
 **A fact said into the event journal: `<send type="sce:journal">`** (docs/adr/0114,
 D1 and D5). A document of a keyed pool that keeps a journal (§2.8, `journal: true`)

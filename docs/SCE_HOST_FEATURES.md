@@ -67,6 +67,10 @@
   program as the parts that landed make it: its stores in one file sealed at
   rest, the reference hosts' constructors and setters, the metrics port and the
   named bounds; the orderly stop leaves what a server lacks.
+- Amended by: ADR 0114 (D5, step 3 of its order of work): new section 16 (the
+  event journal), served by the Rust reference host; (D1, D2 and D4, step 4)
+  section 9, the server's file holds the journal its pools append to and
+  follow, and keeps the sessions of each machine apart.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -734,11 +738,14 @@ These are not built, and nothing here stands in for them:
   health checks, and the metrics port (`sce-rust-metrics`). The reference host
   of these features serves such a program's machine as it serves any other:
   - **Its stores.** One SQLite file holds every store a server keeps
-    (`sce_rust_session_store::SqliteStore`, layout 8): the sessions the pool
-    keeps, and the host's key-value store (section 3), key ring (section 13),
-    credentials (section 14) and audit log (section 15); `SqliteStore` is a
-    `SessionStore`, a `KvStore`, a `KeyStore`, a `CredentialStore` and an
-    `AuditStore`. A server keeps it sealed at rest: `Sealed<S>`
+    (`sce_rust_session_store::SqliteStore`, layout 12): the sessions the pools
+    keep, each machine's through a handle of its own
+    (`SqliteStore::of_machine`), the event journal their sessions say facts
+    into and the pools that follow it read (section 16), and the host's
+    key-value store (section 3), key ring (section 13), credentials (section
+    14) and audit log (section 15); `SqliteStore` is a `SessionStore`, a
+    `KvStore`, a `KeyStore`, a `CredentialStore`, an `AuditStore` and a
+    `JournalStore`. A server keeps it sealed at rest: `Sealed<S>`
     (`sce_rust_crypto::sealed`, docs/SCE_SEALED_RECORD.md) implements each of
     those contracts over the file, every value a sealed record and every key
     its keyed digest, under keys of a key ring whose key-encryption key the
@@ -748,8 +755,10 @@ These are not built, and nothing here stands in for them:
     `ReferenceHost::with_kv_store(clock, transport, store)` in the store it is
     given; `set_keyring`, `set_credentials`, `set_audit_store` and
     `set_audit_streams` give it the other stores and the streams it keeps,
-    each in memory until given; `set_cose_keys` its configured keys;
-    `set_random_source` and `set_nonce_source` the source of what it draws;
+    each in memory until given, and `set_journal_store` the journal it
+    reads (section 16), empty until given; `set_cose_keys` its configured
+    keys; `set_random_source` and `set_nonce_source` the source of what it
+    draws;
     `set_named_bounds` the numbers of the named bounds its machine's build
     resolved (section 8); `set_metrics` the metrics port (section 8). A
     server's transport is `NetworkTransport` of `sce-rust-host-http`, built
@@ -1510,7 +1519,7 @@ machine follows, which the build generated with its deployment holds it to.
 **The store.** The Rust host reads the journal store it is given
 (`ReferenceHost::set_journal_store`, a `sce_rust_session_store::JournalStore`: in
 memory and empty unless the embedding gives the store its keyed pool's sessions
-keep their facts in, the session store's SQLite file, `SqliteStore`, layout 8,
-sealed under `Sealed` on a server). Its bounds are the build's
+keep their facts in, the session store's SQLite file, `SqliteStore` from layout
+8, sealed under `Sealed` on a server). Its bounds are the build's
 (`ReferenceHost::set_named_bounds`, `journal_page` and `journal_page_bytes`).
 `backends/rust/host-features/tests/journal.rs` holds the host to a reading.

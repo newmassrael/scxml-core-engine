@@ -34,7 +34,9 @@ and brought to every step of it that landed by its step 15:
 
 Amended by ADR 0114
 (`docs/adr/0114-a-keyed-sessions-facts-are-kept-in-a-journal-written-with-its-state-and-a-follower-reads-them-in-an-order-that-misses-nothing.md`),
-D1 to D3, D5, D6 and D8: the event journal's store contract, kept in the session store's file (sections 0 and 3).
+D1 to D6 and D8: the event journal's store contract, kept in the session store's file, the sessions of each machine
+of a deployment kept apart in it, the facts a pool's sessions say appended with their checkpoints, and a pool that
+follows a journal (sections 0, 1, 3 and 8).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -74,8 +76,9 @@ says of "the program" is what such a program must do.
 
 The suite of ADR 0107 D10 holds these parts together, under `tests/server`: sessions killed at random points and
 restored, two processes against one store, the binding through proxies with responses lost on purpose, a durable
-outbox through kills of its commit, acknowledgement and expiry, an orderly stop under load, and the edge's rate
-limits. It is a test suite, not a guarantee of a deployment's own composition.
+outbox through kills of its commit, acknowledgement and expiry, an orderly stop under load, the edge's rate limits,
+an input killed at every write making one entry of the journal or none, and a follower of many sessions killed again
+and again repeating entries and missing none. It is a test suite, not a guarantee of a deployment's own composition.
 
 Not built, and a server must not count on them:
 
@@ -106,12 +109,13 @@ Not built, and a server must not count on them:
 | How a session's machine is started and restored (`SessionFactory`, `SessionMachine`): for a generated machine, `sce_rust_mesh::served::Served` given a `SessionHost` (the policy of each session and the host operations it registers), which owns the engine's clock, registers the endpoint and the host before the first macrostep, and restores through the declared migration; for a machine written by hand, a factory of the program's own, held to the kit `sce_rust_mesh::session_conformance` | `Pool::new` | ADR 0112; `served.rs`, `pool.rs` |
 | For a machine that declares values its deployment supplies, those values: `<Machine>Deployment::read` of the `<machine>.config.json` the build wrote from `config:`, or of the file `config_file:` names, read once at start. A text that does not read is the lift's refusal and builds no machine | the `SessionFactory`, which builds every session's machine from it | section 2.4 |
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
-| The session store, opened on a file, sealed under the keys of its key ring | `Pool::new` | section 3 |
+| The session store, opened on a file, sealed under the keys of its key ring; a handle of it for each machine of the deployment that keeps sessions (`SqliteStore::of_machine`, each sealed), since a session is its machine and its key | `Pool::new` | section 3 |
+| For a machine that follows journals (`follows:`), the store they are kept in: the file the followed machines' pools write, through a handle or a connection of its own (`SqliteStore::open` on the same file), sealed as they are | `Pool::follow_from` | SCE_MESH.md section 14.4, "The event journal" |
 | The key-encryption key (`KeyEncryptionKey::from_file` or `from_variable`), held apart from the store | the key ring the sealing keys are read from, and the host's | sections 3, 3.2 and 8 |
 | The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, `CertificateCheck`, or `KeyPins` over a `PinStore`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
 | The key that signs every `200` when the binding names `sign` (`ServerSettings::signer`, read from the key ring) | `HttpsServer::new` | section 5, "Message signatures" |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
-| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, and `Pool::expire` when a binding is durable, sleeping until `Pool::next_wake_ms` between them (which counts the outbox entries read in this process as they come to expire), and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
+| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, `Pool::expire` when a binding is durable, and `Pool::follow` when the machine follows journals, sleeping until `Pool::next_wake_ms` between them (which counts the outbox entries read in this process as they come to expire, and nothing a followed journal comes to hold: a follower's loop calls `Pool::follow` at an interval of its own, the longest its sessions may lag the journal), and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation; `pool/follow.rs` |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable. The server calls `deliver` at once for different clients and one at a time for each: a host over a keyed pool runs the sessions it is handed on the calling thread, and one over a single endpoint takes a lock of its own | the server | SCE_MESH.md section 22.8 |
 | The standard host features its machine asks for: a `ReferenceHost` over a clock and a transport (`ReferenceHost::new`), or over the key-value store it is given (`ReferenceHost::with_kv_store(clock, transport, store)`, the sealed store of section 3 for one that outlives the process) | the machine, through `sce_rust_host_features::serve` | `docs/SCE_HOST_FEATURES.md` sections 3, 8 and 9 |
 | The transport of the host's HTTP feature, built with the destination policy that says where the machine may reach: `NetworkTransport::new(DestinationPolicy::allow_list(..), NetworkSettings::default())`, or `public_internet()` | `ReferenceHost::new`, `with_kv_store` | `docs/SCE_HOST_FEATURES.md` section 5, "Destination policy" |
@@ -376,8 +380,8 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   another key is refused (`Failure`), and the pool answers that session's requests as it answers a store that
   failed.
 - **What the file shows.** Every value is a record, and every key an entry; in the clear are what the store compares
-  or sets: a session's version, earliest due and lease (owner, fence, expiry), a token's revocation, a key's use,
-  algorithm, creation and state, an outbox's incarnation and numbers, a value's version, the audit log's
+  or sets: a session's machine, version, earliest due and lease (owner, fence, expiry), a token's revocation, a key's
+  use, algorithm, creation and state, an outbox's incarnation and numbers, a value's version, the audit log's
   sequences, moments and chain, and the journal's positions and recorded moments (the table below). The index key
   (`index:sealed`) and the sealing keys (`sealing:<hex>`) are rows of the `keys` table wrapped under the key-encryption key, the one thing the sealed store
   keeps as it is given.
@@ -404,7 +408,7 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
   server's account writes it.
 
-The tables, by the layout that added them (`LAYOUT_1` to `LAYOUT_8` in `sqlite.rs`), and what each column holds under
+The tables, by the layout that added them (the `LAYOUT_` constants of `sqlite.rs`), and what each column holds under
 a sealed store (`docs/SCE_SEALED_RECORD.md` section 3). An entry is the keyed digest of a key, a record a sealed
 value; a column the last column does not name is kept in the clear, since the store compares or sets it.
 
@@ -417,6 +421,7 @@ value; a column the last column does not name is kept in the clear, since the st
 | 6, the key-value feature (`KvStore`, docs/SCE_HOST_FEATURES.md section 3) | `kv_values` (`key`, `value`, `version`); `kv_numbers`, the feature's own counter of versions; `kv_first_results` (`session`, `invoke`, `start`, `outcome`, `version`), the first result of each put-if by its invocation's identity, deleted with the session that started it | `key`, and a first result's `session` and `invoke`, entries; `value` a record |
 | 7, the audit log (`AuditStore`, docs/SCE_HOST_FEATURES.md section 15, docs/SCE_AUDIT_LOG.md) | `audit_heads` (`stream`, `sequence`, `chain`), each stream's last row, which retention leaves; `audit_rows` (`stream`, `sequence`, `at_ms`, `entry`, `chain`), never updated and deleted only with their segment; `audit_checkpoints` (`stream`, `sequence`, `chain`, `signature`); `audit_identities` (`session`, `invoke`, `start`, `sequence`), the sequence each append's identity was appended at, deleted with its session | `stream`, and an identity's `session` and `invoke`, entries; a row's `entry` and a checkpoint's `signature` records; the chain is kept as it is, so the log is verified without the sealing keys |
 | 8, the event journal (`JournalStore`, ADR 0114) | `journal_head` (`issued`, `recorded_ms`), the last position given and the last moment recorded; `journal_entries` (`position`, `recorded_ms`, `name`, `key`, `origin`, `schema`, `revision`, `valid_ms`, `holds_ms`, `data`), a session's entry under its machine's `name` and its `key`, an observed stream's under its `name` and the other system's `origin`; `holds_ms` the valid time, or the recorded moment where there is none; never deleted | `name`, `key` and `origin` entries, `data` a record; `schema` empty, `revision` 0, `valid_ms` null and `holds_ms` the recorded moment |
+| 12, a session by its machine and its key, and the journal's readers (ADR 0114, D2 and D4) | `sessions` and `leases` keyed by `machine` and `session`, the rows of an earlier file under the empty `machine`; `outbox_notes` and `outbox_entries` gain `machine`, that of the session a note is for or an entry was sent by; `journal_readers` (`reader`, `position`), how far each reader of the journal has taken in every entry it reads, which only rises | `machine` kept as the handle names it, and a session's record bound to it (`docs/SCE_SEALED_RECORD.md` section 3); a reader's `reader` an entry |
 
 Every moment is milliseconds since the Unix epoch.
 
@@ -743,7 +748,7 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
 
 | What | Why | How |
 |---|---|---|
-| The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers; every durable client's outbox; the credentials; the key ring's keys, wrapped; the key-value feature's values with their first results; the audit log | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
+| The session store: `<file>`, with its `-wal` and `-shm` | every session of every machine, its replies and its timers; every durable client's outbox; the credentials; the key ring's keys, wrapped; the key-value feature's values with their first results; the audit log; the event journal, with how far each reader of it has read | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
 | The server's TLS key and certificate chain | the clients' trust in the server | as the program keeps them |
 | The client authorities of `mtls`, and the material a `BearerCheck` of the program's own verifies with | who may claim a name | as the program keeps them; the pins and tokens of the credential store are in the session store's file, backed up with it |
 | The key-encryption key of the key ring (section 3.2) | the sealing keys and the index key of a sealed store (section 3), the issuing key of tokens, the audit keys, and the keys a host generated and derived: without it a copy of the store opens nothing, and with it beside the copy the copy is in the clear | apart from the store and from its backups, which hold every key it protects wrapped and none of them in the clear: in the program's secret store or a key management service, with a copy kept where a loss of the server's machine does not reach it |
@@ -765,8 +770,10 @@ store first, and start them after: a process left running holds leases and fence
 counter of versions and fences is behind the numbers it handed out since. After the restore a session restores from a
 checkpoint that is not clean and raises `restored`, and a request it answered after the copy is no duplicate any more:
 sent again, it is handled again. The rest of the file moves back with it: a token issued or a key generated after the
-copy is gone, a revocation made after it is undone, a durable client's outbox holds what it held at the copy, and
-the audit log ends at the copy's last entry.
+copy is gone, a revocation made after it is undone, a durable client's outbox holds what it held at the copy,
+the audit log ends at the copy's last entry, and so does the event journal: the positions it gave after the copy are
+given again to the entries made after the restore, while each reader's mark and the positions each follower's sessions
+took in are the copy's, in step with the journal they read.
 
 ## 9. A stuck session or an idle one
 
