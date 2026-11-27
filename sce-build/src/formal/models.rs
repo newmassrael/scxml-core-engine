@@ -1209,63 +1209,80 @@ pub fn check(
 /// What is written is read back and must be the manifest with those counts.
 pub fn record_counts(text: &str, counts: &[(String, u64)]) -> Result<String, String> {
     let mut written = text.to_string();
+    let mut expected: Value =
+        serde_json::from_str(text).map_err(|e| format!("not a models manifest: {e}"))?;
     for (config, count) in counts {
+        set_run_states(&mut expected, config, *count);
+        // A configuration may be named by a run and by an inductive run; the
+        // count is the run's, and the one place whose edit leaves exactly that
+        // manifest is where it goes.
         let key = format!("\"config\": \"{config}\"");
-        let at = match written
-            .match_indices(&key)
-            .map(|(at, _)| at)
-            .collect::<Vec<_>>()
-            .as_slice()
-        {
-            [at] => *at,
-            found => {
+        let places: Vec<usize> = written.match_indices(&key).map(|(at, _)| at).collect();
+        if places.is_empty() {
+            return Err(format!("{config}: named nowhere in the manifest's text"));
+        }
+        let fitting: Vec<String> = places
+            .iter()
+            .filter_map(|at| with_count(&written, *at, *count).ok())
+            .filter(|edited| {
+                serde_json::from_str::<Value>(edited).is_ok_and(|read| read == expected)
+            })
+            .collect();
+        written = match <[String; 1]>::try_from(fitting) {
+            Ok([edited]) => edited,
+            Err(fitting) => {
                 return Err(format!(
-                    "{config}: named {} times in the manifest's text",
-                    found.len()
+                    "{config}: {} places of its {} in the manifest's text take its count",
+                    fitting.len(),
+                    places.len()
                 ))
             }
         };
-        let end = written[at..]
-            .find('}')
-            .map(|end| at + end)
-            .ok_or_else(|| format!("{config}: its run does not close"))?;
-        let object = &written[at..end];
-        if let Some(states) = object.find("\"states\": ") {
-            let digits_at = at + states + "\"states\": ".len();
-            let digits = written[digits_at..]
-                .chars()
-                .take_while(char::is_ascii_digit)
-                .count();
-            written.replace_range(digits_at..digits_at + digits, &count.to_string());
-        } else {
-            let expect = object
-                .find("\"expect\": \"holds\"")
-                .ok_or_else(|| format!("{config}: a count is recorded only of a run that holds"))?;
-            let expect_at = at + expect;
-            let line_start = written[..expect_at].rfind('\n').map_or(0, |n| n + 1);
-            let indent = written[line_start..expect_at].to_string();
-            let after = expect_at + "\"expect\": \"holds\"".len();
-            written.insert_str(after, &format!(",\n{indent}\"states\": {count}"));
+    }
+    Ok(written)
+}
+
+/// `manifest` with the distinct states of every holding run of `config` set to
+/// `count`.
+fn set_run_states(manifest: &mut Value, config: &str, count: u64) {
+    let runs = manifest["models"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .flat_map(|model| model["runs"].as_array_mut().into_iter().flatten());
+    for run in runs {
+        if run["config"] == config {
+            run["states"] = Value::from(count);
         }
     }
-    let mut expected: Value =
-        serde_json::from_str(text).map_err(|e| format!("not a models manifest: {e}"))?;
-    let read_back: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("the counts written leave no manifest: {e}"))?;
-    for (config, count) in counts {
-        let runs = expected["models"]
-            .as_array_mut()
-            .into_iter()
-            .flatten()
-            .flat_map(|model| model["runs"].as_array_mut().into_iter().flatten());
-        for run in runs {
-            if run["config"] == config.as_str() {
-                run["states"] = Value::from(*count);
-            }
-        }
-    }
-    if read_back != expected {
-        return Err("the counts written moved something else of the manifest".to_string());
+}
+
+/// `text` with the count of the run object whose `"config"` key is at byte `at`
+/// set to `count`: replaced where it records one, written after its
+/// `"expect": "holds"` where it records none.
+fn with_count(text: &str, at: usize, count: u64) -> Result<String, String> {
+    let mut written = text.to_string();
+    let end = written[at..]
+        .find('}')
+        .map(|end| at + end)
+        .ok_or_else(|| "its run does not close".to_string())?;
+    let object = &written[at..end];
+    if let Some(states) = object.find("\"states\": ") {
+        let digits_at = at + states + "\"states\": ".len();
+        let digits = written[digits_at..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .count();
+        written.replace_range(digits_at..digits_at + digits, &count.to_string());
+    } else {
+        let expect = object
+            .find("\"expect\": \"holds\"")
+            .ok_or_else(|| "a count is recorded only of a run that holds".to_string())?;
+        let expect_at = at + expect;
+        let line_start = written[..expect_at].rfind('\n').map_or(0, |n| n + 1);
+        let indent = written[line_start..expect_at].to_string();
+        let after = expect_at + "\"expect\": \"holds\"".len();
+        written.insert_str(after, &format!(",\n{indent}\"states\": {count}"));
     }
     Ok(written)
 }
@@ -1942,6 +1959,13 @@ mod tests {
             text
         );
         assert!(record_counts(text, &[("Nowhere.cfg".to_string(), 1)]).is_err());
+    }
+
+    #[test]
+    fn a_count_goes_to_the_run_of_a_configuration_an_inductive_run_names_too() {
+        let text = "{\n  \"models\": [\n    {\n      \"module\": \"M\",\n      \"runs\": [\n        {\n          \"config\": \"M.cfg\",\n          \"expect\": \"holds\",\n          \"states\": 7\n        }\n      ],\n      \"inductive\": [\n        {\n          \"invariant\": \"Inv\",\n          \"runs\": [\n            {\n              \"config\": \"M.cfg\",\n              \"expect\": \"holds\"\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}\n";
+        let written = record_counts(text, &[("M.cfg".to_string(), 9)]).expect("recorded");
+        assert_eq!(written, text.replace("\"states\": 7", "\"states\": 9"));
     }
 
     #[test]
