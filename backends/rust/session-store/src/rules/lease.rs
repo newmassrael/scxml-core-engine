@@ -11,22 +11,21 @@
 //! (docs/formal/EventJournal.tla): a lease granted is a step of `Take`, its fence one no grant of
 //! the key had; a write made is a step of `Commit` whose transaction holds the fence of the last
 //! grant, `fence[s]`, and continues the state the store holds, so `st[s]` moves by one; a write
-//! refused, a renewal and a release are no step of the store's variables. And of
-//! `CheckpointWrite` (docs/formal/CheckpointWrite.tla), which judges a lease by time: a lease
-//! another owner holds passes to a new one only once it ran out by the clock the taker gives, the
-//! guard `clock[p] >= Due(j)` of its `Take`.
+//! refused, a renewal and a release are no step of the store's variables. And of the lease
+//! steps of `CheckpointWrite` (docs/formal/CheckpointWrite.tla), which judges a lease by time, the
+//! store and the model take the same: a lease another owner holds passes to a new one only once it
+//! ran out by the clock the taker gives, the guard `clock[p] >= Due(j)` of its `Take`, and at once
+//! to the owner it names, a process that started again under its name, whose new fence refuses its
+//! earlier life's writes (`OwnName`); a renewal is of the lease held, by its fence, and before it
+//! ran out (`Renew`, `RenewByHolder`); and a release is of the lease held, by its fence, after
+//! which the key may be taken at once (`GiveUp`, `GiveUpByHolder`). That a process asks again for
+//! its own key only once it holds it no more is the process's, as the model's `Take` says, and no
+//! rule of the store.
 //!
 //! Taken as given, and judged elsewhere: a fence a store grants is a number above every one it
 //! gave before (one counter of the store that only rises, held to that by the conformance kit);
 //! a call of a store is one transaction, so what the rules read is what the write they admit
 //! changes; and whether two owners are one is the store's comparison of their names.
-//!
-//! What `CheckpointWrite` does not model, and a store does: a renewal, which moves the deadline
-//! the store records; a release, after which the key may be taken at once; and an owner that asks
-//! again while it holds the lease, as a process that started again under its name does, whose new
-//! grant fences out its previous life before that life's deadline. Each is a step of
-//! `EventJournal`, whose `Take` no clock judges, and none is a step of `CheckpointWrite`'s
-//! `Take`: its `TakenWhenDue` holds of a store for a lease another owner holds, and of no other.
 //!
 //! The contracts and the proofs are read by Verus and by nothing else: without `cfg(verus_only)`
 //! this file is the plain Rust it compiles as, and needs no crate. What is proved is of this code,
@@ -259,7 +258,8 @@ fn a_write_is_a_step_of_commit(
 /// judges it at `now_ms`: renewed, the lease held keeps its fence and runs out at the new moment;
 /// refused, nothing is written. Either is no step of the store's variables of `EventJournal`, which
 /// has no renewal: the grants and the writes stay as they were, and the lease held is still the
-/// last grant.
+/// last grant. Renewed, it is `CheckpointWrite`'s `Renew`: of the lease held, for its fence, before
+/// it ran out.
 fn a_renewal_is_no_step_of_the_journal(
     held: Option<Grant>, fence: u64, now_ms: u64, expires_ms: u64, keyed: Ghost<Keyed>,
 ) -> (after: (Renewal, Option<Grant>))
@@ -281,7 +281,8 @@ fn a_renewal_is_no_step_of_the_journal(
 /// A release of the lease of `fence`, as each store's `SessionStore::release` judges it: of the
 /// lease held, it is removed; of another, nothing is written. Either is no step of the store's
 /// variables of `EventJournal`: the grants and the writes stay as they were, and a write under the
-/// fence released is refused after it, as a write under a fence another grant replaced is.
+/// fence released is refused after it, as a write under a fence another grant replaced is. Made, it
+/// is `CheckpointWrite`'s `GiveUp`: of the lease held, for its fence.
 fn a_release_is_no_step_of_the_journal(
     held: Option<Grant>, fence: u64, keyed: Ghost<Keyed>,
 ) -> (after: (bool, Option<Grant>))
