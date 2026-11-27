@@ -234,6 +234,10 @@ public final class Engine<Policy: StatePolicy> {
     /// raise do not drain the inbox again (`drainInbox`, `enqueueExternal`).
     var drainingInbox = false
 
+    /// What `setInboxPort` set, told each event the owner puts on the external queue and the
+    /// close of the inbox (docs/adr/0147, D3); nil until a test sets one.
+    var inboxPort: (any InboxPort<Event>)?
+
     /// `_event.invokeid` of the event being processed (§scxml-5.10.1), empty when none is: while
     /// the initial configuration is entered, or between two events. A `<send>` to a processor the
     /// host serves carries it out (`HostSendRequest.invokeID`), as a W3C child's send to its parent
@@ -919,10 +923,16 @@ public final class Engine<Policy: StatePolicy> {
     /// `raise` does not come here, and does not drain: the internal queue is the running
     /// macrostep's own, and arrival order is a property of the external queue.
     private func enqueueExternal(_ event: EventWithMetadata<Event>) {
+        // docs/adr/0147, D3: an event of the owner's own is told before the drain its enqueue
+        // begins with; an input the drain applies, inside it.
+        let port = inboxPort
+        let posted = drainingInbox
+        port?.enqueueBegins(event, posted: posted)
         if isRunning {
             drainInbox()
         }
         externalQueue.raise(event)
+        port?.enqueueEnds(event, posted: posted)
     }
 
     /// The event an event that arrives by name is delivered as (§scxml-3.12.1).
@@ -1825,6 +1835,20 @@ public final class Engine<Policy: StatePolicy> {
         trace.clear()
     }
     #endif
+
+    /// Tells `port` each event the owner puts on the external queue and the close of the inbox
+    /// from now on, each as two calls around it (`InboxPort`, docs/adr/0147, D3). A test that
+    /// writes a run of the inbox as an inbox history sets one before the run and reads its clock in
+    /// each call. The port reads and is asked nothing: an engine with one set does what one without
+    /// does. It must not call back into the engine. Setting a port replaces the one set before.
+    public func setInboxPort(_ port: any InboxPort<Event>) {
+        inboxPort = port
+    }
+
+    /// Tells no inbox port anything; the engine is then as it was before one was set.
+    public func clearInboxPort() {
+        inboxPort = nil
+    }
 
     /// Registers an HTTP send dispatcher callback (§scxml-C-2).
     ///

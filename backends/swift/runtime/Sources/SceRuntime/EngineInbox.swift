@@ -198,8 +198,13 @@ extension Engine {
     /// holds is applied as a direct call would be now. An event joins the external queue of a
     /// machine that will not dequeue it in this run, and an ending finds its invocation over.
     func closeInbox() {
+        // docs/adr/0147, D3: told only when the inbox was open, so a run that ended at a
+        // top-level `<final>` and is then stopped closes it once.
+        let port = inboxClosed ? nil : inboxPort
+        port?.closeBegins()
         inboxClosed = true
         ownedInbox?.refusePosts()
+        port?.closeEnds()
         drainInbox()
     }
 
