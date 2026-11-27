@@ -13,11 +13,11 @@
   ],
   "posters": [
     [
-      { "call": "post", "session": 0, "input": 1, "outcome": "taken", "invoked": 1, "returned": 2 },
-      { "call": "post", "session": 1, "input": 2, "outcome": "taken", "invoked": 5, "returned": 6 }
+      { "call": "post", "session": 0, "input": 1, "door": "handle", "outcome": "taken", "invoked": 1, "returned": 2 },
+      { "call": "post", "session": 1, "input": 2, "door": "handle", "outcome": "taken", "invoked": 5, "returned": 6 }
     ],
     [
-      { "call": "post", "session": 1, "input": 3, "outcome": "taken", "invoked": 3, "returned": 4 }
+      { "call": "post", "session": 1, "input": 3, "door": "handle", "outcome": "taken", "invoked": 3, "returned": 4 }
     ]
   ]
 }

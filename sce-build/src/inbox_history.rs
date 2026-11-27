@@ -11,8 +11,10 @@
 //! order, each with the instants it was invoked and returned, both read from
 //! one clock every thread shares.
 //!
-//! - A poster's `post(session, input)` returned `taken`, or `refused` with
-//!   its reason: `unknown`, `ended` or `full` ([`Refusal`]).
+//! - A poster's `post(session, input)`, through one of two doors ([`Door`]):
+//!   the tree's directory, by the session's id, or the handle of the
+//!   session's own inbox. It returned `taken`, or `refused` with its reason:
+//!   `unknown`, `ended` or `full` ([`Refusal`]).
 //! - The owner's `enqueue(session, item, source)` is recorded for every item
 //!   that entered a session's external queue: an input a post took, applied
 //!   from the inbox (`posted`), or an event of the owner's own (`own`).
@@ -30,10 +32,13 @@
 //! enters anything. As a sequential object, each session holds the inputs
 //! taken and not yet entered, in the order they were taken:
 //!
-//! - a post naming a session the tree does not hold is refused as `unknown`;
+//! - a post through the directory naming a session the tree does not hold is
+//!   refused as `unknown`, and so may be one naming a session whose run has
+//!   ended, which leaves the directory then, whether the runtime closes or
+//!   not; a post through a handle is never `unknown`, and names a session
+//!   the tree holds;
 //! - a post naming a session whose run has ended, where the runtime closes, is
-//!   refused as `ended`, or as `unknown` where the tree has let the session
-//!   go;
+//!   refused as `ended`, through either door;
 //! - a post to a bounded inbox may be refused as `full` when its session holds
 //!   as many inputs as the capacity, and never when it holds fewer;
 //! - any other post is taken, and its input joins the back of what its session
@@ -103,6 +108,18 @@ pub enum Refusal {
     Unknown,
 }
 
+/// The door a post went through (docs/adr/0147, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Door {
+    /// The tree's directory, by the id of the session the post names. The
+    /// directory holds the sessions of the tree, and a session leaves it when
+    /// its run ends.
+    Addressed,
+    /// The handle of the session's own inbox, which names a session of the
+    /// tree and looks nothing up.
+    Handle,
+}
+
 /// Where an item that entered an external queue came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Source {
@@ -119,6 +136,8 @@ pub struct Post {
     pub session: u64,
     /// The input posted. The inputs of a run are distinct values.
     pub input: u64,
+    /// The door the post went through.
+    pub door: Door,
     /// What the inbox answered.
     pub outcome: Delivery,
     /// Clock reading taken immediately before the call.
@@ -188,6 +207,7 @@ enum Act {
     Post {
         session: usize,
         input: u64,
+        door: Door,
         outcome: Delivery,
     },
     Enqueue {
@@ -268,6 +288,7 @@ impl History {
                         act: Act::Post {
                             session: place(post.session),
                             input: post.input,
+                            door: post.door,
                             outcome: post.outcome,
                         },
                         invoked: post.invoked,
@@ -459,18 +480,24 @@ impl Sequential {
             Act::Post {
                 session,
                 input,
+                door,
                 outcome,
             } => {
                 let known = self.known[session];
+                let ended = known && self.ended(session, owner_placed);
                 // Where the runtime closes, every post to a session whose run
-                // has ended is refused, and the tree may have let it go.
-                let closed = known && self.closes && self.ended(session, owner_placed);
+                // has ended is refused, through either door.
+                let closed = ended && self.closes;
+                // A session leaves the directory when its run ends, so a post
+                // through the directory may find it gone, whether the runtime
+                // closes or not; a handle looks nothing up.
+                let gone = ended && door == Door::Addressed;
                 let full = self
                     .capacity
                     .is_some_and(|capacity| state.waiting[session].len() >= capacity);
                 let answered = match outcome {
                     Delivery::Taken => known && !closed,
-                    Delivery::Refused(Refusal::Unknown) => !known || closed,
+                    Delivery::Refused(Refusal::Unknown) => !known || gone,
                     Delivery::Refused(Refusal::Ended) => closed,
                     Delivery::Refused(Refusal::Full) => known && !closed && full,
                 };
@@ -530,6 +557,7 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
                 session,
                 input,
                 outcome: Delivery::Taken,
+                ..
             } = op.act
             {
                 taken.insert(input, (session, who, at));
@@ -579,8 +607,9 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
 
 /// Whether the history can be that of a run: the clock readings can be, no
 /// input is posted twice, since the inputs of a run are distinct values
-/// (`docs/formal/InboxService.tla` takes them so), and the owner runs only
-/// the sessions the tree holds. Participant 0 is the owner and participant `n`
+/// (`docs/formal/InboxService.tla` takes them so), the owner runs only
+/// the sessions the tree holds, and a post through a handle names one of them,
+/// since a handle is a session's own. Participant 0 is the owner and participant `n`
 /// the poster `n - 1`, as the search counts them; `names[place]` is the
 /// session counted at `place`, and `known[place]` whether the tree holds it.
 fn well_formed(participants: &[Vec<Step>], names: &[u64], known: &[bool]) -> Result<(), String> {
@@ -596,6 +625,25 @@ fn well_formed(participants: &[Vec<Step>], names: &[u64], known: &[bool]) -> Res
                  the sessions the tree holds (`sessions`): the owner runs only those",
                 names[session]
             ));
+        }
+    }
+    for (who, ops) in participants.iter().enumerate() {
+        for (at, op) in ops.iter().enumerate() {
+            if let Act::Post {
+                session,
+                door: Door::Handle,
+                ..
+            } = op.act
+            {
+                if !known[session] {
+                    return Err(format!(
+                        "participant {who} operation {at} posts through the handle of session {}, \
+                         which is not among the sessions the tree holds (`sessions`): a handle is \
+                         a session's own",
+                        names[session]
+                    ));
+                }
+            }
         }
     }
     let mut posted: HashMap<u64, (usize, usize)> = HashMap::new();
@@ -644,6 +692,13 @@ enum PosterCallWire {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+enum DoorWire {
+    Addressed,
+    Handle,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 enum DeliveryWire {
     Taken,
     Refused,
@@ -657,13 +712,15 @@ enum RefusalWire {
     Unknown,
 }
 
-/// One post. `reason` is a refused post's, and a taken post names none.
+/// One post, and the door it went through. `reason` is a refused post's, and
+/// a taken post names none.
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(deny_unknown_fields)]
 struct PostWire {
     call: PosterCallWire,
     session: u64,
     input: u64,
+    door: DoorWire,
     outcome: DeliveryWire,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reason: Option<RefusalWire>,
@@ -795,6 +852,10 @@ impl PostWire {
             call: PosterCallWire::Post,
             session: post.session,
             input: post.input,
+            door: match post.door {
+                Door::Addressed => DoorWire::Addressed,
+                Door::Handle => DoorWire::Handle,
+            },
             outcome,
             reason,
             invoked: post.invoked,
@@ -824,6 +885,10 @@ impl PostWire {
         Ok(Post {
             session: self.session,
             input: self.input,
+            door: match self.door {
+                DoorWire::Addressed => Door::Addressed,
+                DoorWire::Handle => Door::Handle,
+            },
             outcome,
             invoked: self.invoked,
             returned: self.returned,

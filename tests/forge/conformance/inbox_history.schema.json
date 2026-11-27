@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "InboxHistory",
-  "description": "What the posters and the owner thread of one run of ADR 0084's door observed (docs/adr/0147, D3). Every runtime's inbox conformance test writes this form and `sce-codegen check-inbox-history` judges it, so one linearizability checker serves all of them. A poster is one thread or goroutine that posts inputs to the sessions' inboxes; the owner is the one thread that runs the sessions, moves what each inbox holds into that session's external queue, puts the sessions' own events there, and ends them. Each lists its operations in its program order. Every operation carries two readings of ONE clock that all threads share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each thread increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential specification `docs/formal/InboxService.tla`: a post is either taken or refused when it is posted. Each input a post took enters exactly once, into the queue of the session it was posted to, and each session's external queue takes the inputs posted to it and its own events in the order those posts and events linearized, so an own event enters behind every post taken before it. An input a post refused never enters any queue, and a refusal gives its reason: `unknown` for a session not in `sessions`, or one whose run has ended where `closes` is true; `ended` for a session whose run has ended where `closes` is true; `full` where `capacity` is given and the session holds that many inputs taken and not yet entered. A post to a session in `sessions` is taken in every other case, and may be taken past `capacity`. An own event enters once and before its session ends, and a session ends once; the owner operates only on the sessions in `sessions`. A history is that of a whole run: every input taken has entered by its last operation. The inputs of a run are distinct values, and so are its own events.",
+  "description": "What the posters and the owner thread of one run of ADR 0084's door observed (docs/adr/0147, D3). Every runtime's inbox conformance test writes this form and `sce-codegen check-inbox-history` judges it, so one linearizability checker serves all of them. A poster is one thread or goroutine that posts inputs to the sessions' inboxes; the owner is the one thread that runs the sessions, moves what each inbox holds into that session's external queue, puts the sessions' own events there, and ends them. Each lists its operations in its program order. Every operation carries two readings of ONE clock that all threads share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each thread increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential specification `docs/formal/InboxService.tla`: a post is either taken or refused when it is posted. Each input a post took enters exactly once, into the queue of the session it was posted to, and each session's external queue takes the inputs posted to it and its own events in the order those posts and events linearized, so an own event enters behind every post taken before it. A post goes through one of two doors (`door`): the tree's directory, by the id of the session it names (`addressed`), or the handle of that session's own inbox (`handle`), which names a session in `sessions` and looks nothing up. A session leaves the directory when its run ends. An input a post refused never enters any queue, and a refusal gives its reason: `unknown` for a post through the directory naming a session not in `sessions`, or one whose run has ended, whatever `closes` says, and never for a post through a handle; `ended` for a session whose run has ended where `closes` is true, through either door; `full` where `capacity` is given and the session holds that many inputs taken and not yet entered. A post to a session in `sessions` is taken in every other case, and may be taken past `capacity`. An own event enters once and before its session ends, and a session ends once; the owner operates only on the sessions in `sessions`. A history is that of a whole run: every input taken has entered by its last operation. The inputs of a run are distinct values, and so are its own events.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "sessions", "closes", "owner", "posters"],
@@ -49,10 +49,10 @@
   },
   "definitions": {
     "Post": {
-      "description": "One post: the input `input` posted to the inbox of the session `session`, which the inbox took or refused. A refused post gives its reason (`reason`), and a taken post names none.",
+      "description": "One post: the input `input` posted to the inbox of the session `session` through the door `door`, which the inbox took or refused. A refused post gives its reason (`reason`), and a taken post names none.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["call", "session", "input", "outcome", "invoked", "returned"],
+      "required": ["call", "session", "input", "door", "outcome", "invoked", "returned"],
       "properties": {
         "call": {
           "const": "post"
@@ -65,11 +65,15 @@
           "type": "integer",
           "minimum": 0
         },
+        "door": {
+          "description": "The door the post went through. `addressed`: the tree's directory, by the id of the session the post names; the directory holds the sessions of the tree, and a session leaves it when its run ends. `handle`: the handle of the session's own inbox, which names a session in `sessions` and looks nothing up.",
+          "enum": ["addressed", "handle"]
+        },
         "outcome": {
           "enum": ["taken", "refused"]
         },
         "reason": {
-          "description": "Why the inbox refused the post. `full`: the session's bounded inbox held its capacity. `ended`: the session's run had ended and the runtime closes its inbox then. `unknown`: the tree does not hold the session, never having held it or having let it go when its run ended.",
+          "description": "Why the inbox refused the post. `full`: the session's bounded inbox held its capacity. `ended`: the session's run had ended and the runtime closes its inbox then. `unknown`: the post went through the directory, which does not hold the session: the tree never held it, or its run has ended and it left the directory.",
           "enum": ["full", "ended", "unknown"]
         },
         "invoked": {

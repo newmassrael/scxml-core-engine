@@ -12,6 +12,10 @@
 //     child that joined its tree, posted to from several threads while the
 //     owner drives both, puts events of its own on their queues and ends them;
 //     posts naming a session the tree does not hold are refused;
+//   * the two doors (docs/adr/0147, D1): an input posted through a session's
+//     own handle, and an ending posted through the tree's directory by the id
+//     of the session it names, which is refused as unknown once that session
+//     has ended and left the directory;
 //   * the bare-metal profile's bounded inbox a deployment declares, attached
 //     to one session, refusing posts when it holds its capacity;
 //   * a recorded run with one of the owner's enqueues taken out, and one with
@@ -36,11 +40,11 @@
 // enqueue is recorded there.
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use sce_build::inbox_history::{
-    check, Delivery, History, OwnerCall, OwnerOperation, Post, Refusal, Source, Verdict,
+    check, Delivery, Door, History, OwnerCall, OwnerOperation, Post, Refusal, Source, Verdict,
 };
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
@@ -391,9 +395,9 @@ fn posted(value: u64) -> InboxInput<Ev, Tag> {
 /// An ending of a host-run invocation of the session the tree does not hold:
 /// what a post naming that session posts. No run here starts an invocation,
 /// so were it taken it would raise nothing, and its input would never enter.
-fn naming_the_absent_session() -> InboxInput<Ev, Tag> {
+fn naming(session_id: &str) -> InboxInput<Ev, Tag> {
     InboxInput::host_invoke_ending(
-        Some(ABSENT_ID),
+        Some(session_id),
         HostInvokeEnding {
             processor_type: "x-inbox-history",
             invoke_id: "none",
@@ -427,11 +431,12 @@ fn delivery<I>(answer: Result<(), InboxRefusal<I>>) -> Delivery {
 }
 
 /// Post `input` with `post`, recorded as a post of input `value` to
-/// `session` with the clock read immediately around it.
+/// `session` through `door` with the clock read immediately around it.
 fn record_post<I>(
     clock: &Clock,
     session: u64,
     value: u64,
+    door: Door,
     post: impl FnOnce() -> Result<(), InboxRefusal<I>>,
 ) -> Post {
     let invoked = clock.tick();
@@ -440,6 +445,7 @@ fn record_post<I>(
     Post {
         session,
         input: value,
+        door,
         outcome: delivery(answer),
         invoked,
         returned,
@@ -459,6 +465,9 @@ const OWN_PER_SESSION: u64 = 40;
 /// Runs of each kind of inbox: the schedules that matter are a small fraction
 /// of those a machine gives.
 const RUNS: usize = 4;
+/// The input of the post a run makes through the directory once its child has
+/// left, past every other input of the run.
+const LATE_INPUT: u64 = 900_000;
 /// The first value of the owner's own events, past every input a poster posts.
 const OWN_BASE: u64 = 1_000_000;
 
@@ -494,25 +503,36 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
 
     let made = AtomicUsize::new(0);
     let running = AtomicUsize::new(POSTERS);
+    let child_left = AtomicBool::new(false);
     let total = POSTERS * PER_POSTER as usize;
 
-    let posters: Vec<Vec<Post>> = std::thread::scope(|scope| {
+    let mut posters: Vec<Vec<Post>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..POSTERS)
             .map(|poster| {
                 let (root_inbox, child_inbox) = (root_inbox.clone(), child_inbox.clone());
-                let (made, running) = (&made, &running);
+                let (made, running, child_left) = (&made, &running, &child_left);
                 scope.spawn(move || {
                     let mut posts = Vec::new();
                     for k in 0..PER_POSTER {
                         let value = input_of(poster, k, PER_POSTER);
                         posts.push(match k % 5 {
-                            4 => record_post(clock, ABSENT, value, || {
-                                root_inbox.post(naming_the_absent_session())
-                            }),
-                            1 | 3 => {
-                                record_post(clock, 1, value, || child_inbox.post(posted(value)))
+                            // Through the directory: the child once it has
+                            // left, refused as unknown, and before that the
+                            // session the tree never held.
+                            4 if child_left.load(Ordering::Acquire) => {
+                                record_post(clock, 1, value, Door::Addressed, || {
+                                    root_inbox.post(naming(SESSION_IDS[1]))
+                                })
                             }
-                            _ => record_post(clock, 0, value, || root_inbox.post(posted(value))),
+                            4 => record_post(clock, ABSENT, value, Door::Addressed, || {
+                                root_inbox.post(naming(ABSENT_ID))
+                            }),
+                            1 | 3 => record_post(clock, 1, value, Door::Handle, || {
+                                child_inbox.post(posted(value))
+                            }),
+                            _ => record_post(clock, 0, value, Door::Handle, || {
+                                root_inbox.post(posted(value))
+                            }),
                         });
                         made.fetch_add(1, Ordering::AcqRel);
                         std::thread::yield_now();
@@ -549,6 +569,7 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
                 // generated parent has it leave, and what its inbox still
                 // holds is applied then.
                 child.leave_tree_inboxes();
+                child_left.store(true, Ordering::Release);
                 child_ended = true;
             }
             std::thread::yield_now();
@@ -565,8 +586,21 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
     child.step();
     if child.is_running() {
         record_end(1, || child.stop());
-        child.step();
+        child.leave_tree_inboxes();
     }
+    // A post through the directory naming the child once it has left, which
+    // every run makes: refused as unknown, whatever the runtime's inbox does.
+    let late = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                vec![record_post(clock, 1, LATE_INPUT, Door::Addressed, || {
+                    root_inbox.post(naming(SESSION_IDS[1]))
+                })]
+            })
+            .join()
+            .expect("the posting thread")
+    });
+    posters.push(late);
     record_end(0, || root.stop());
     root.step();
 
@@ -609,7 +643,9 @@ fn record_bounded_run(clock: &Arc<Clock>) -> History {
                 (0..filler_posts)
                     .map(|k| {
                         let value = input_of(0, k, filler_posts);
-                        record_post(clock, 0, value, || BOUNDED.post(posted(value)))
+                        record_post(clock, 0, value, Door::Handle, || {
+                            BOUNDED.post(posted(value))
+                        })
                     })
                     .collect::<Vec<Post>>()
             })
@@ -634,11 +670,13 @@ fn record_bounded_run(clock: &Arc<Clock>) -> History {
                     for k in 0..PER_POSTER {
                         let value = base + input_of(poster, k, PER_POSTER);
                         posts.push(if k % 7 == 6 {
-                            record_post(clock, ABSENT, value, || {
-                                BOUNDED.post(naming_the_absent_session())
+                            record_post(clock, ABSENT, value, Door::Addressed, || {
+                                BOUNDED.post(naming(ABSENT_ID))
                             })
                         } else {
-                            record_post(clock, 0, value, || BOUNDED.post(posted(value)))
+                            record_post(clock, 0, value, Door::Handle, || {
+                                BOUNDED.post(posted(value))
+                            })
                         });
                         made.fetch_add(1, Ordering::AcqRel);
                         std::thread::yield_now();
@@ -796,6 +834,16 @@ fn every_run_of_a_trees_own_inboxes_is_linearizable_to_the_promise() {
         let history = record_std_run(&clock);
         let what = format!("std run {run}");
         assert_run_exercised(&what, &history, Refusal::Unknown);
+        assert!(
+            history
+                .posters
+                .iter()
+                .flatten()
+                .any(|post| post.session == 1
+                    && post.door == Door::Addressed
+                    && post.outcome == Delivery::Refused(Refusal::Unknown)),
+            "{what}: no post through the directory named the child once it had left"
+        );
         assert_run_is_linearizable(&what, &history);
     }
 }

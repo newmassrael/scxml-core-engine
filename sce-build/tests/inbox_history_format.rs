@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use sce_build::inbox_history::{
-    check, Delivery, History, OwnerCall, OwnerOperation, Post, Refusal, Source, Verdict,
+    check, Delivery, Door, History, OwnerCall, OwnerOperation, Post, Refusal, Source, Verdict,
     HISTORY_FORMAT_VERSION,
 };
 
@@ -87,6 +87,10 @@ fn expectation(name: &str) -> Option<&'static str> {
         Some("posters[0][1]: a refused post says why it was refused")
     } else if name == "not_a_history_a_capacity_of_zero.json" {
         Some("`capacity` is 0")
+    } else if name == "not_a_history_a_post_without_a_door.json" {
+        // Which door a post went through decides whether it may be refused as
+        // unknown once its session has ended, and the format refuses to guess.
+        Some("missing field `door`")
     } else if name.starts_with("not_a_history_") {
         panic!("{name} states no phrase its refusal must carry")
     } else if name == "records_no_operation.json" {
@@ -100,7 +104,7 @@ fn expectation(name: &str) -> Option<&'static str> {
 fn every_fixture_is_judged_as_its_name_says() {
     let files = fixtures();
     assert!(
-        files.len() >= 42,
+        files.len() >= 47,
         "the fixtures are the checker's own tests; only {} are here",
         files.len()
     );
@@ -190,13 +194,23 @@ fn the_schema_accepts_what_the_reader_accepts() {
     }
 }
 
+/// A post through the handle of its session's own inbox.
 fn post(session: u64, input: u64, outcome: Delivery, invoked: u64, returned: u64) -> Post {
     Post {
         session,
         input,
+        door: Door::Handle,
         outcome,
         invoked,
         returned,
+    }
+}
+
+/// A post through the tree's directory, by the id of the session it names.
+fn addressed(session: u64, input: u64, outcome: Delivery, invoked: u64, returned: u64) -> Post {
+    Post {
+        door: Door::Addressed,
+        ..post(session, input, outcome, invoked, returned)
     }
 }
 
@@ -243,7 +257,7 @@ fn a_written_history_reads_back_the_same() {
             vec![],
             vec![
                 post(big, 2, Delivery::Refused(Refusal::Ended), 9, 10),
-                post(big + 1, 3, Delivery::Refused(Refusal::Unknown), 11, 12),
+                addressed(big + 1, 3, Delivery::Refused(Refusal::Unknown), 11, 12),
                 post(1, 4, Delivery::Refused(Refusal::Full), 13, 14),
             ],
         ],
@@ -306,7 +320,7 @@ fn the_reader_refuses_what_is_not_the_form() {
     .contains("owner[0]: an end names its session only"));
     assert!(
         refused(&with_owner(
-            r#"{"call":"post","session":0,"input":1,"outcome":"taken","invoked":1,"returned":2}"#
+            r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"taken","invoked":1,"returned":2}"#
         ))
         .contains("not an inbox history"),
         "a post is a poster's"
@@ -320,7 +334,7 @@ fn the_reader_refuses_what_is_not_the_form() {
     );
     assert!(
         refused(
-            r#"{"version":2,"sessions":[0],"closes":true,"owner":[],"posters":[[{"call":"post","session":0,"input":-1,"outcome":"taken","invoked":1,"returned":2}]]}"#
+            r#"{"version":2,"sessions":[0],"closes":true,"owner":[],"posters":[[{"call":"post","session":0,"door":"handle","input":-1,"outcome":"taken","invoked":1,"returned":2}]]}"#
         )
         .contains("not an inbox history"),
         "a negative input is not an input"
@@ -508,9 +522,11 @@ fn a_post_is_refused_only_after_the_end_and_only_where_the_runtime_closes() {
     assert!(is_not_linearizable(&other_session_ended));
 }
 
-/// A post naming a session the tree does not hold is refused as unknown, and
-/// never taken; a session the tree holds is unknown to it only once its run
-/// has ended where the runtime closes, since the tree may let it go then.
+/// A post through the directory naming a session the tree does not hold is
+/// refused as unknown, and never taken; a session the tree holds is unknown to
+/// the directory only once its run has ended, since it leaves the directory
+/// then, whether the runtime closes or not. A post through a handle is never
+/// unknown.
 #[test]
 fn a_post_naming_a_session_the_tree_does_not_hold_is_refused_as_unknown() {
     let posted = |session: u64, outcome: Delivery| History {
@@ -518,7 +534,7 @@ fn a_post_naming_a_session_the_tree_does_not_hold_is_refused_as_unknown() {
         closes: true,
         capacity: None,
         owner: vec![enqueue(0, 100, Source::Own, 3, 4)],
-        posters: vec![vec![post(session, 1, outcome, 1, 2)]],
+        posters: vec![vec![addressed(session, 1, outcome, 1, 2)]],
     };
     assert_eq!(
         check(&posted(7, Delivery::Refused(Refusal::Unknown))),
@@ -538,15 +554,58 @@ fn a_post_naming_a_session_the_tree_does_not_hold_is_refused_as_unknown() {
         Delivery::Refused(Refusal::Unknown)
     )));
 
-    let after_end = |closes: bool| History {
+    let after_end = |closes: bool, door: Door| History {
         sessions: vec![0],
         closes,
         capacity: None,
         owner: vec![end(0, 1, 2)],
-        posters: vec![vec![post(0, 1, Delivery::Refused(Refusal::Unknown), 3, 4)]],
+        posters: vec![vec![Post {
+            door,
+            ..post(0, 1, Delivery::Refused(Refusal::Unknown), 3, 4)
+        }]],
     };
-    assert_eq!(check(&after_end(true)), Verdict::Linearizable);
-    assert!(is_not_linearizable(&after_end(false)));
+    assert_eq!(
+        check(&after_end(true, Door::Addressed)),
+        Verdict::Linearizable
+    );
+    assert_eq!(
+        check(&after_end(false, Door::Addressed)),
+        Verdict::Linearizable
+    );
+    assert!(is_not_linearizable(&after_end(true, Door::Handle)));
+    assert!(is_not_linearizable(&after_end(false, Door::Handle)));
+    // Before the end the session is in the directory.
+    let before_end = History {
+        sessions: vec![0],
+        closes: false,
+        capacity: None,
+        owner: vec![end(0, 3, 4)],
+        posters: vec![vec![addressed(
+            0,
+            1,
+            Delivery::Refused(Refusal::Unknown),
+            1,
+            2,
+        )]],
+    };
+    assert!(is_not_linearizable(&before_end));
+}
+
+/// A handle is a session's own, so a history whose post went through the
+/// handle of a session the tree does not hold cannot have come from a run.
+#[test]
+fn a_handle_names_a_session_the_tree_holds() {
+    let history = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: None,
+        owner: vec![],
+        posters: vec![vec![post(7, 1, Delivery::Refused(Refusal::Unknown), 1, 2)]],
+    };
+    assert!(matches!(
+        check(&history),
+        Verdict::Malformed(why) if why.contains("posts through the handle of session 7")
+    ));
 }
 
 /// A bounded inbox refuses a post as full when its session holds the capacity
@@ -632,7 +691,13 @@ fn a_refused_post_never_takes_effect() {
         closes: true,
         capacity: None,
         owner: vec![enqueue(0, 1, Source::Posted, 3, 4)],
-        posters: vec![vec![post(7, 1, Delivery::Refused(Refusal::Unknown), 1, 2)]],
+        posters: vec![vec![addressed(
+            7,
+            1,
+            Delivery::Refused(Refusal::Unknown),
+            1,
+            2,
+        )]],
     };
     assert!(is_not_linearizable(&unknown));
 }
@@ -663,8 +728,7 @@ fn the_reader_refuses_a_tree_or_a_refusal_it_cannot_judge() {
     let with = |head: &str, posted: &str| {
         format!(r#"{{"version":2,{head},"owner":[],"posters":[[{posted}]]}}"#)
     };
-    let taken =
-        r#"{"call":"post","session":0,"input":1,"outcome":"taken","invoked":1,"returned":2}"#;
+    let taken = r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"taken","invoked":1,"returned":2}"#;
     assert!(refused(&with(r#""sessions":[],"closes":true"#, taken))
         .contains("`sessions` lists no session"));
     assert!(refused(&with(r#""sessions":[0,3,0],"closes":true"#, taken))
@@ -677,23 +741,23 @@ fn the_reader_refuses_a_tree_or_a_refusal_it_cannot_judge() {
     let tree = r#""sessions":[0],"closes":true"#;
     assert!(refused(&with(
         tree,
-        r#"{"call":"post","session":0,"input":1,"outcome":"refused","invoked":1,"returned":2}"#
+        r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"refused","invoked":1,"returned":2}"#
     ))
     .contains("posters[0][0]: a refused post says why it was refused"));
     assert!(refused(&with(
         tree,
-        r#"{"call":"post","session":0,"input":1,"outcome":"taken","reason":"full","invoked":1,"returned":2}"#
+        r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"taken","reason":"full","invoked":1,"returned":2}"#
     ))
     .contains("posters[0][0]: a taken post gives no `reason`"));
     assert!(refused(&with(
         tree,
-        r#"{"call":"post","session":0,"input":1,"outcome":"refused","reason":"busy","invoked":1,"returned":2}"#
+        r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"refused","reason":"busy","invoked":1,"returned":2}"#
     ))
     .contains("not an inbox history"));
 
     let read = History::from_json(&with(
         r#""sessions":[0],"closes":true,"capacity":2"#,
-        r#"{"call":"post","session":0,"input":1,"outcome":"refused","reason":"full","invoked":1,"returned":2}"#,
+        r#"{"call":"post","session":0,"door":"handle","input":1,"outcome":"refused","reason":"full","invoked":1,"returned":2}"#,
     ))
     .expect("a bounded tree with a refusal and its reason reads");
     assert_eq!(read.sessions, vec![0]);

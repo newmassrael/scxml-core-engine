@@ -7,7 +7,7 @@
   ],
   "posters": [
     [
-      { "call": "post", "session": 7, "input": 1, "outcome": "taken", "invoked": 1, "returned": 2 }
+      { "call": "post", "session": 7, "input": 1, "door": "addressed", "outcome": "taken", "invoked": 1, "returned": 2 }
     ]
   ]
 }

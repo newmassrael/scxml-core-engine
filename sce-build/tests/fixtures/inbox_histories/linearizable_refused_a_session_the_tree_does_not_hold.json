@@ -7,8 +7,8 @@
   ],
   "posters": [
     [
-      { "call": "post", "session": 7, "input": 2, "outcome": "refused", "reason": "unknown", "invoked": 1, "returned": 2 },
-      { "call": "post", "session": 0, "input": 1, "outcome": "taken", "invoked": 3, "returned": 4 }
+      { "call": "post", "session": 7, "input": 2, "door": "addressed", "outcome": "refused", "reason": "unknown", "invoked": 1, "returned": 2 },
+      { "call": "post", "session": 0, "input": 1, "door": "handle", "outcome": "taken", "invoked": 3, "returned": 4 }
     ]
   ]
 }

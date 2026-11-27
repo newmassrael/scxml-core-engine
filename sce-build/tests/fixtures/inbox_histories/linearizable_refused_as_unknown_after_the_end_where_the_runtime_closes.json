@@ -8,7 +8,7 @@
   ],
   "posters": [
     [
-      { "call": "post", "session": 1, "input": 1, "outcome": "refused", "reason": "unknown", "invoked": 3, "returned": 4 }
+      { "call": "post", "session": 1, "input": 1, "door": "addressed", "outcome": "refused", "reason": "unknown", "invoked": 3, "returned": 4 }
     ]
   ]
 }

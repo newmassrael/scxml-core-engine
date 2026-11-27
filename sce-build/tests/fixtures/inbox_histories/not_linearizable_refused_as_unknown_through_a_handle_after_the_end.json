@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "sessions": [0],
+  "closes": true,
+  "owner": [
+    { "call": "end", "session": 0, "invoked": 1, "returned": 2 }
+  ],
+  "posters": [
+    [
+      { "call": "post", "session": 0, "input": 1, "door": "handle", "outcome": "refused", "reason": "unknown", "invoked": 3, "returned": 4 }
+    ]
+  ]
+}

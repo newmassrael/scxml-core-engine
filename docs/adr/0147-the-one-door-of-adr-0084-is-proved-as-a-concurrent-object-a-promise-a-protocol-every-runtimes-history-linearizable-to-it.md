@@ -111,8 +111,9 @@ An **inbox history** is a wire surface registered as the queue history is
 bounded inbox (`capacity`, left out where the inbox has no bound). It records, per thread, the operations in program
 order, each with the two readings of one shared clock it was invoked and returned at (`invoked`, `returned`):
 
-- a poster's `post(session, input)`, whose `outcome` is `taken`, or `refused` with its `reason`: `full`, `ended` or
-  `unknown`;
+- a poster's `post(session, input)`, with the `door` it went through, `addressed` for the tree's directory and
+  `handle` for the session's own inbox (D1), whose `outcome` is `taken`, or `refused` with its `reason`: `full`,
+  `ended` or `unknown`;
 - the owner's `enqueue(session, item, source)`, recorded at the instant `item` entered the session's external queue.
   Its `source` is `posted` for an input a post took, applied from the inbox, and `item` is that input. It is `own`
   for an event of the owner's own, and `item` is the owner's name for it;

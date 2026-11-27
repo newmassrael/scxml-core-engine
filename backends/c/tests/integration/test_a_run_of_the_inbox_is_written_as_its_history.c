@@ -28,6 +28,10 @@
 //
 // The machine's inbox never closes: a post taken after the stop is applied where
 // the owner next drives the machine, and every history says `closes: false`.
+// Each post says its door (docs/adr/0147, D1): a `ping` goes into the machine's
+// own inbox, through its handle, and an ending that names a session goes through
+// the tree's directory. The document drives no child session, so the directory
+// holds none and every post through it names a session the tree does not hold.
 //
 // Built once per row of the queue, as a deployment states its atomics
 // (`SCE_INBOX_ATOMIC_RMW_WIDTH` 64, 32 and 0), each with an inbox of four
@@ -100,6 +104,9 @@ typedef struct {
     uint64_t session;
     uint64_t value;
     post_outcome_t outcome;
+    /* A post through the tree's directory, by the id of the session it names,
+       rather than into the machine's own inbox. */
+    bool addressed;
     bool own;
     uint64_t invoked;
     uint64_t returned;
@@ -163,6 +170,7 @@ void inbox_probe_external_enqueue(const inbox_probe_t *sm, const inbox_probe_eve
     op.session = SESSION;
     op.value = value_of(evt->data);
     op.outcome = POST_TAKEN;
+    op.addressed = false;
     op.own = !posted;
     op.invoked = g_enqueue_invoked;
     op.returned = tick();
@@ -253,14 +261,17 @@ static void naming_the_absent_session(inbox_probe_inbox_input_t *input, uint64_t
 }
 
 /* Post `input`, input `value` of session `session`, recorded in `log` with the
-   clock read immediately around it. The inbox answers a post with whether it took
-   it; a post to the machine's own inbox is refused only for room, and one naming
-   the session the tree does not hold only for that. */
+   clock read immediately around it. An ending that names a session goes through
+   the tree's directory, as `_inbox_post` routes it; every other input goes into
+   the machine's own inbox, through its handle. The inbox answers a post with
+   whether it took it; a post into the machine's own inbox is refused only for
+   room, and one through the directory only for the session it names. */
 static void record_post(op_log_t *log, uint64_t session, uint64_t value, inbox_probe_inbox_input_t *input) {
     op_t op;
     op.kind = OP_POST;
     op.session = session;
     op.value = value;
+    op.addressed = input->kind == INBOX_PROBE_INBOX_HOST_INVOKE_ENDING && input->as.ending.record.session_id[0] != '\0';
     op.own = false;
     op.invoked = tick();
     const bool taken = inbox_probe_inbox_post(&g_sm, input);
@@ -268,7 +279,7 @@ static void record_post(op_log_t *log, uint64_t session, uint64_t value, inbox_p
     if (taken) {
         op.outcome = POST_TAKEN;
     } else {
-        op.outcome = session == ABSENT ? POST_REFUSED_UNKNOWN : POST_REFUSED_FULL;
+        op.outcome = op.addressed ? POST_REFUSED_UNKNOWN : POST_REFUSED_FULL;
         take_back(input);
     }
     log_add(log, &op);
@@ -354,6 +365,7 @@ static void record_end(void) {
     op.session = SESSION;
     op.value = 0u;
     op.outcome = POST_TAKEN;
+    op.addressed = false;
     op.own = false;
     op.invoked = tick();
     inbox_probe_stop(&g_sm);
@@ -487,8 +499,9 @@ static bool run_once(void) {
 /* ── The JSON form ─────────────────────────────────────────────────── */
 
 static void write_post(FILE *out, const op_t *op) {
-    (void)fprintf(out, "{\"call\": \"post\", \"session\": %llu, \"input\": %llu, ", (unsigned long long)op->session,
-                  (unsigned long long)op->value);
+    (void)fprintf(out, "{\"call\": \"post\", \"session\": %llu, \"input\": %llu, \"door\": \"%s\", ",
+                  (unsigned long long)op->session, (unsigned long long)op->value,
+                  op->addressed ? "addressed" : "handle");
     switch (op->outcome) {
     case POST_TAKEN:
         (void)fprintf(out, "\"outcome\": \"taken\", ");
