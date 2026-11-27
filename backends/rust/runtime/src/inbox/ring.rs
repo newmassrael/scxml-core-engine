@@ -87,6 +87,10 @@ impl<T, const N: usize> Ring<T, N> {
         "a bounded inbox holds a power of two of inputs, from 2 to 128"
     );
 
+    /// The value an array of cells is first filled with, only for that: an array
+    /// of a type that is not Copy is repeated from a constant before Rust 1.79,
+    /// the workspace's floor is 1.75, and no cell is ever read from this one.
+    #[allow(clippy::declare_interior_mutable_const)]
     const EMPTY_CELL: Cell<T> = Cell::new(0);
 
     /// An empty queue, for a `static`.
