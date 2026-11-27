@@ -3827,6 +3827,32 @@ is regenerated; a consumer regenerates its Rust peer tables.
   written target reaches always was: a deployment that left out such a binding's `key`, `connect`, `topic` or
   `authenticator` is refused by name where it generated an empty address or stopped the generator.
 
+## An instance of an open machine joins, is fenced and is told an unknown outcome (ADR 0113 step 5)
+
+Landing: the commits that add this section (ADR 0113 step 5). The engine vocabulary
+`stdlib/engine/error_reason.scxml` gains `outcomeUnknown` (85), so every runtime tree generated from it is
+regenerated (`regen-runtime-rust`, `-cpp`, `-c`, `-go`, `-kotlin`, `-python`, `-swift`), and so is every committed
+tree whose source hash covers the standard library.
+
+- The `ErrorReason` of every engine has a member more, `OutcomeUnknown` (`outcomeUnknown`, a communication code). A
+  `match` or `switch` over it that must be exhaustive names it. SCE_MESH.md section 16.7 has a row 20 of that
+  reason, which the Rust host core's client raises; the C++ `kReasonCodeTable` has 20 rows. Rust `Signal` has a
+  variant more, `OutcomeUnknown { invoke_id, envelope_id }`.
+- Rust `LinkEvent` has a variant more, `Fenced(peer, envelopes)`, which `deliver` hands to `Endpoint::peer_fenced`.
+  A `match` over `LinkEvent` names it; the browser shell tells it as `{"tell": "fenced", "peer", "envelopes"}`.
+- Rust `ClientSettings` has a field more, `instance: Option<String>`, `None` from `ClientSettings::new`: a literal
+  that ends in `..ClientSettings::new(..)` changes nothing. `ClientError` and `RouterError` each have
+  `NotAnInstanceId`. A host whose machine is an instance builds its router with `Router::speak_as_instance`.
+- `Judgement` of `sce_rust_mesh::https::server` has a field more, `acting: Option<Principal>`, and is `Clone` and no
+  longer `Copy`: a host that copied one clones it. A host of an open machine hands it on with
+  `Pool::receive_member_for`; `Pool::receive_member` hands on nobody.
+- `Endpoint::receive_within_bound(peer, acting, bytes)` is `Endpoint::receive` for a host that answers its sender by
+  what became of the envelope: an instance past `max_instances` is returned to it, to shed.
+- `Outboxes::of_machine` keeps an outbox per instance of a durable open binding, so `Pool::outboxes` of a pool bound
+  to one is `Some`, and its server is given them (`HttpsServer::keep_outboxes`) as a durable client's are;
+  `Outboxes::clients` lists the clients whose outboxes the process holds, and `Router::open_windows` gives a router's
+  instances their windows.
+
 ## A Rust algorithm and buffer pool hold no operator and no index of their own, and a bounded value can be made with no check
 
 Landing: the commits that add this section. No committed generated tree changes; the Rust codec goldens, five Rust

@@ -13,6 +13,11 @@
     not as two free strings.
   - `schemas/sce-saved-state.v2.schema.json`, by a format 3 (section 7).
   - `SCE_WIRE_CONTRACTS.md`, the saved-state row.
+- Amended by ADR 0113 (decision D2, 2026-11-28): one more shape of origin. An event from an instance of an open
+  machine carries the SCXML type and the instance's address, `mesh://<machine>/<instance>`, each segment
+  percent-encoded: two segments, beside the peer's one and the session endpoint's three. The Mesh transport of the
+  Rust host core writes it; its `sender` is `null`, since an instance is no session of this tree. A document
+  answers it with `<send targetexpr="_event.origin">`, and a saved state holds it as any address.
 - Scope:
   - the C++ Interpreter (`sce/src/runtime`, `sce/include/core/EventMetadata.h`);
   - the C++ generated engine (`sce/include/static`, `tools/codegen/templates/*.jinja2`, the Mesh templates);

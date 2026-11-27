@@ -1560,6 +1560,12 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
+- Amended by: ADR 0113 (D1, D2, D4, D6 and D7): `instances: open` and
+  `members:` on a machine entry, and an instance's origin as a target, below;
+  their codes (`mesh/deploy-invalid-instances`, `mesh/deploy-invalid-members`,
+  `mesh/topology-open-machine-named-literally`,
+  `mesh/codegen-open-instances-unsupported`) are in the appendix.
+
 What a client may cost a server is bounded by keys of its own (amended
 by ADR 0109, decisions D1 and D2): a machine's `sessions:` takes
 `max_live` (default 100000) and `max_inbox` (default 64), each at least

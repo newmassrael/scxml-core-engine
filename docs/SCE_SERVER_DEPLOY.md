@@ -42,6 +42,12 @@ D1 to D6 and D8: the event journal's store contract, kept in the session store's
 of a deployment kept apart in it, the facts a pool's sessions say appended with their checkpoints, and a pool that
 follows a journal (sections 0, 1, 3 and 8).
 
+Amended by ADR 0113
+(`docs/adr/0113-a-machine-of-a-deployment-may-run-as-an-open-set-of-instances-and-a-server-binds-each-as-it-arrives.md`),
+D1 to D7: a machine that runs as an open set of instances, whose server binds each as it arrives, keeps their
+membership in the session store, fences an ended incarnation `412`, keeps an outbox per instance that ends with its
+membership, and whose client joins and is told an unknown outcome (sections 0 to 2).
+
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
 says of "the program" is what such a program must do.
@@ -77,6 +83,9 @@ says of "the program" is what such a program must do.
 | The named bounds of the signing and sealing records, moved by `--limit` and given to the host as the build resolved them | the records' bounds `cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`, `mac_message`, `random_bytes`; `<Machine>Limits`; `NamedBounds` and `ReferenceHost::set_named_bounds` (C++: `CoseFeature(crypto, bounds)`) | ADR 0109, D17; docs/SCE_HOST_FEATURES.md section 10; section 11 |
 | The metrics port: what the server, the pool, the store's committer, the reference hosts and the `https` clients report, by fixed names and closed label sets, and the reference adapter that renders the OpenMetrics text exposition | `sce-rust-metrics` (`Metrics`, `openmetrics::OpenMetrics`, `recording::Recording`), given by `HttpsServer::observed`, `Pool::observed`, `ReferenceHost::set_metrics` and `HttpsClient::start_observed`; C++ `host/Metrics.h`, given by `ReferenceHost::setMetrics`, `AuditFeature::setMetrics` and `ClientHost::metrics` | ADR 0109, D16; section 10 |
 | Health: whether a part takes work in, is stopping, and reaches its store | `HttpsServer::health`, `Pool::health` (`sce_rust_mesh::health::Health`) | ADR 0109, D16; section 10.4 |
+| The members of an open machine: a join offered an incarnation, confirmed by the next exchange, leased, and an exchange under an incarnation the store does not hold fenced `412`; a run kept only under the incarnations it was made under; the person an incarnation acts for | `MembershipStore` of `sce-rust-session-store` (`SqliteStore`, sealed under `Sealed`); `HttpsServer::keep_members` and `keep_principals`, `Listening::admits`; `Pool::with_members`, `Pool::receive_member_for`, `Pool::stand`, `Pool::end_members` | ADR 0113, D3 to D6; ADR 0116; SCE_MESH.md sections 10.9 (invariant 11), 10.11 and 22.3 |
+| An outbox per instance of a durable open binding, with its window, ended with its membership | `sce_rust_mesh::outbox::Outboxes` (`Outboxes::end`), kept by the pool and answered from by the server (`HttpsServer::keep_outboxes`) | ADR 0113, D4; SCE_MESH.md sections 10.11 and 22.3 |
+| The dialing side of an instance: joins, makes every exchange under its incarnation with its low-water mark, and on a fence tells its machine an unknown outcome and joins anew | `ClientSettings::instance`, `Router::speak_as_instance`, `LinkEvent::Fenced`, `Endpoint::peer_fenced` | ADR 0113, D4, D5 and D7; SCE_MESH.md sections 16.7 row 20 and 22.3 |
 
 The suite of ADR 0107 D10 holds these parts together, under `tests/server`: sessions killed at random points and
 restored, two processes against one store, the binding through proxies with responses lost on purpose, a durable
@@ -98,6 +107,15 @@ Not built, and a server must not count on them:
   checkpoint, and the Kotlin and Swift host cores refuse `persistence:` and `receipt: durable` by name
   (`mesh/codegen-durable-receipt-unsupported`).
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
+- An open machine on any backend but Rust's (ADR 0113, D7), which refuses it by name
+  (`mesh/codegen-open-instances-unsupported`).
+- The build's refusal of an open machine's binding under `authenticator: key` that names no `sign:` on the
+  server's side or no `verify:` on the instance's (ADR 0113, D4): a deployment that declares a document reading
+  the person an instance acts for is refused without them (`mesh/codegen-principal-unproved`), and any other is
+  not. The program names both.
+- An instance's host that restores its router from a checkpoint of its own carries no incarnation across the
+  restore: its client joins anew, and what the restored router held of the incarnation before is not ended as a
+  fence ends it (SCE_MESH.md section 16.7 row 20).
 - The removal of expired and revoked tokens from the credential store: a revoked token is kept so that an issue
   repeated under its identity cannot make it live again, and no call of the store removes one (section 5).
 - What ADR 0109 leaves to records or steps of their own (its Open questions 5, 7 and 8): a migration from a state of
@@ -119,7 +137,7 @@ Not built, and a server must not count on them:
 | The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, `CertificateCheck`, or `KeyPins` over a `PinStore`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
 | The key that signs every `200` when the binding names `sign` (`ServerSettings::signer`, read from the key ring) | `HttpsServer::new` | section 5, "Message signatures" |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
-| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, `Pool::expire` when a binding is durable, and `Pool::follow` when the machine follows journals, sleeping until `Pool::next_wake_ms` between them (which counts the outbox entries read in this process as they come to expire, and nothing a followed journal comes to hold: a follower's loop calls `Pool::follow` at an interval of its own, the longest its sessions may lag the journal), and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation; `pool/follow.rs` |
+| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, `Pool::expire` when a binding is durable, `Pool::end_members` when the machine is bound to an open machine, and `Pool::follow` when the machine follows journals, sleeping until `Pool::next_wake_ms` between them (which counts the outbox entries read in this process as they come to expire, and nothing a followed journal comes to hold: a follower's loop calls `Pool::follow` at an interval of its own, the longest its sessions may lag the journal), and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation; `pool/follow.rs` |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable. The server calls `deliver` at once for different clients and one at a time for each: a host over a keyed pool runs the sessions it is handed on the calling thread, and one over a single endpoint takes a lock of its own | the server | SCE_MESH.md section 22.8 |
 | The standard host features its machine asks for: a `ReferenceHost` over a clock and a transport (`ReferenceHost::new`), or over the key-value store it is given (`ReferenceHost::with_kv_store(clock, transport, store)`, the sealed store of section 3 for one that outlives the process) | the machine, through `sce_rust_host_features::serve` | `docs/SCE_HOST_FEATURES.md` sections 3, 8 and 9 |
 | The transport of the host's HTTP feature, built with the destination policy that says where the machine may reach: `NetworkTransport::new(DestinationPolicy::allow_list(..), NetworkSettings::default())`, or `public_internet()` | `ReferenceHost::new`, `with_kv_store` | `docs/SCE_HOST_FEATURES.md` section 5, "Destination policy" |
@@ -335,6 +353,39 @@ after a change of configuration runs on the new values, which take effect at the
 in the machine's memory and in reach of `<log>`, so a key or a credential is never one: it stays in the host, named by
 its id (sections 3.2 and 5). Rust and C++ build a machine from them; every other backend refuses the declaration by
 name.
+
+### 2.5 An open set of instances: `instances: open` and `members:`
+
+A machine entry that runs as any number of copies, each an instance no deployment lists, declares (SCE_MESH.md
+section 14; ADR 0113, D1, D4 and D6):
+
+```yaml
+instances: open
+members: { lease_ms: <integer>, provisional_ms: <integer>, max_instances: <integer> }
+```
+
+None of the three has a default. A member a session kept a message of lives `lease_ms` past its last exchange; one
+no session kept yet, and an offer, `provisional_ms`, at most `lease_ms`; and at most `max_instances` stand at
+once. The machine's bindings are `https` and dialed by the instance; the server's binding to it names `fresh_ms`
+under `authenticator: key` (ADR 0117, D4), and `sign:` with `verify:` on the instance's side are the program's to
+name (section 0). Refusals: `docs/SCE_ACCEPTED_SUBSET.md` section 2.8.
+
+What the program does for it:
+
+- **The server.** It builds the pool of the machine bound to the open one with the store that keeps its sessions
+  (`Pool::with_members`), gives the server the same store (`HttpsServer::keep_members`) and the pool's outboxes
+  (`HttpsServer::keep_outboxes`), and takes `Listening::admits` as the server's `is_bound`, so no list of
+  instances is written. Its `ServerHost::deliver_member` hands each envelope to the pool with the edge's judgement
+  and the person it read (`Pool::receive_member_for`), tells the pool a confirmation (`Pool::stand`), and answers
+  `Durability::Fenced` when a session found an envelope fenced. Its clock loop calls `Pool::end_members`, which lets
+  go of each member whose lease ended, with its records and its outbox.
+- **An instance.** Its host draws the instance id once and keeps it, as it keeps a credential; it builds its router
+  speaking as the instance (`Router::speak_as_instance`) and its client with `ClientSettings::instance`. The client
+  joins, makes every exchange under its incarnation, and on a fence (`412`) tells the machine an unknown outcome
+  for each request that left (SCE_MESH.md section 16.7 row 20); the document decides whether to ask again.
+- **What a restart does.** The membership, the completion records and the outboxes are in the store, so a server
+  started again on it answers a request asked again under a standing incarnation from its record, once; an
+  incarnation whose lease ran out while the server was down is fenced.
 
 ## 3. The session store
 
