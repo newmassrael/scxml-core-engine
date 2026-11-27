@@ -224,6 +224,18 @@ first place when the crate's `[features]` declares each `a = ["b"]`; a consumer 
 a plain document; the interpreter, the deriving backends and the conformance oracle all take that document, so no
 engine re-implements derivation.
 
+**A selection is the set's** (2026-11-27). A run over a set of documents (`generate --with-imports`,
+`orchestrate`, `check` over a set) takes one `--features`: one configuration `c`, of the one build the set is
+generated for (§2: a build's features are the product line's). Each statechart of the set written against a feature
+model is read as `π_c` of itself, `c` held to its own model exactly as `generate --features` holds it for that
+statechart alone; every other document (the feature model itself, a forge document, a statechart that imports no
+model) is read as written. Whether a document is written against a model is one judgement, made on the document as its
+parse reads it, for every route. Two statecharts written against two models are generated together only under a `c`
+both models admit: a name one model does not declare is refused for the statechart written against it, never dropped
+for it. Dropping it would make a statechart's variant depend on what else the set holds, and would build that
+statechart in a configuration nobody named. A selection that no statechart of the set reads selects nothing and is
+refused (`validation/feature-selection-without-model`).
+
 ### 7. Wire surfaces carry the family
 
 - The transition table (`SCE_TRANSITION_TABLE.md`) becomes a featured transition table: each row carries its
