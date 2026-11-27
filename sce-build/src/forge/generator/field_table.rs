@@ -161,20 +161,28 @@ impl Bits {
 }
 
 /// Whether a row is read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Gate {
     Always,
     Set(Bits),
     Clear(Bits),
+    /// Open where any of its clauses is, each a [`Gate::Set`] or a
+    /// [`Gate::Clear`]: `sce:present-if` of `a || b`.
+    Any(Vec<Gate>),
 }
 
 impl Gate {
     /// The gate as the template prints a runtime `Gate` of it.
-    fn context(self) -> serde_json::Value {
+    fn context(&self) -> serde_json::Value {
         match self {
             Gate::Always => serde_json::json!({ "kind": "Always", "bits": null }),
             Gate::Set(bits) => serde_json::json!({ "kind": "Set", "bits": bits.context() }),
             Gate::Clear(bits) => serde_json::json!({ "kind": "Clear", "bits": bits.context() }),
+            Gate::Any(clauses) => serde_json::json!({
+                "kind": "Any",
+                "bits": null,
+                "clauses": clauses.iter().map(Gate::context).collect::<Vec<_>>(),
+            }),
         }
     }
 }
@@ -319,8 +327,9 @@ fn reads_a_chain(gate: &PresentIfPredicate) -> bool {
     gate.scope == PresentIfScope::Chain || gate.or_with.as_deref().is_some_and(reads_a_chain)
 }
 
-/// The gate of the field at `at`, a flag of an earlier carrier no gate decides
-/// or an input of the codec.
+/// The gate of the field at `at`: each clause a flag of an earlier carrier no
+/// gate decides or an input of the codec, and a disjunction of several clauses
+/// open where any of them is.
 fn gate_of(
     m: &CodecModel,
     at: usize,
@@ -329,9 +338,18 @@ fn gate_of(
     let Some(gate) = gate else {
         return Ok(Gate::Always);
     };
-    if gate.or_with.is_some() {
-        return Err(UnstatedField::SeveralClauses);
-    }
+    let clauses = std::iter::successors(Some(gate), |clause| clause.or_with.as_deref())
+        .map(|clause| clause_of(m, at, clause))
+        .collect::<Result<Vec<Gate>, UnstatedField>>()?;
+    Ok(match <[Gate; 1]>::try_from(clauses) {
+        Ok([one]) => one,
+        Err(clauses) => Gate::Any(clauses),
+    })
+}
+
+/// One clause of the gate of the field at `at`, its disjunction aside: the
+/// flag it reads, set or clear.
+fn clause_of(m: &CodecModel, at: usize, gate: &PresentIfPredicate) -> Result<Gate, UnstatedField> {
     let bits = match gate.scope {
         PresentIfScope::Local => {
             let carrier = m.fields[..at]
@@ -460,7 +478,7 @@ fn body_row(
         if !mentions(statement, said[row].local) {
             continue;
         }
-        let ty = match (&earlier.kind, earlier.gate) {
+        let ty = match (&earlier.kind, &earlier.gate) {
             (Kind::Uint { ty, .. } | Kind::Zint { ty, .. }, Gate::Always) => *ty,
             _ => {
                 return Err(UnstatedField::NamesUnstatedNumber {
@@ -990,7 +1008,7 @@ mod tests {
                         bits: 64,
                         ty: "u64"
                     },
-                    gate: flag,
+                    gate: flag.clone(),
                 },
                 Row {
                     kind: Kind::Counted {
@@ -1154,6 +1172,78 @@ mod tests {
         let m = codec("codec_zenoh_request");
         let why = lowered(&m, &[]).expect_err("a variant is no table");
         assert_eq!(why, NotATable::Codec(CodecShape::Variant), "{why}");
+    }
+
+    /// A field gated by several flags (`a || b`) is a row whose gate is the
+    /// disjunction of a clause for each, which the template prints as the
+    /// runtime's `Gate::Any`.
+    #[test]
+    fn a_gate_of_several_clauses_is_a_disjunction_of_flags() {
+        let m = codec("codec_present_if_disjunction");
+        let wire = [
+            context(&[
+                ("id", "flags"),
+                (
+                    "present_if_decode_stmt",
+                    "let flags = { let raw = cursor.take_array::<1>(); raw[0] };",
+                ),
+            ]),
+            context(&[
+                ("id", "seq"),
+                (
+                    "present_if_decode_stmt",
+                    "let seq = if (flags & 0x01u8) != 0 || (flags & 0x02u8) != 0 { \
+                     Some(0) } else { None };",
+                ),
+            ]),
+        ];
+        let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
+        let flag = |bit| Bits {
+            from: Place::Row(0),
+            shift: bit,
+            width: Some(1),
+        };
+        assert_eq!(
+            table.rows[1],
+            Row {
+                kind: Kind::Uint {
+                    bytes: 2,
+                    big: true,
+                    ty: "u16",
+                },
+                gate: Gate::Any(vec![Gate::Set(flag(0)), Gate::Set(flag(1))]),
+            }
+        );
+        let context = table.context(&[], &TableHome::Own);
+        assert_eq!(
+            context["rows"][1]["gate"],
+            serde_json::json!({
+                "kind": "Any",
+                "bits": null,
+                "clauses": [
+                    {
+                        "kind": "Set",
+                        "bits": { "source": "Row", "index": 0, "shift": 0, "width": 1 },
+                    },
+                    {
+                        "kind": "Set",
+                        "bits": { "source": "Row", "index": 0, "shift": 1, "width": 1 },
+                    },
+                ],
+            }),
+            "{context}"
+        );
+        assert_eq!(
+            (
+                &context["stores"]["number"][1],
+                &context["stores"]["absent"]
+            ),
+            (
+                &serde_json::json!({ "row": 1, "ident": "seq", "cast": "u16", "gated": true }),
+                &serde_json::json!([{ "row": 1, "ident": "seq" }]),
+            ),
+            "a field a disjunction gates is stored absent where it is closed: {context}"
+        );
     }
 
     /// A body whose statement names a number a gate decides is no row: the

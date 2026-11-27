@@ -111,14 +111,33 @@ pub enum Gate {
     Set(Bits),
     /// Read where the range is zero.
     Clear(Bits),
+    /// Read where any of the clauses is open: `sce:present-if` of `a || b`,
+    /// each clause a [`Gate::Set`] or a [`Gate::Clear`].
+    Any(&'static [Gate]),
 }
 
 impl Gate {
-    /// Whether the gate reads only rows before the row at `at`, or inputs.
+    /// Whether the gate reads only rows before the row at `at`, or inputs,
+    /// and a disjunction is of one clause or more, each a flag.
     const fn before(self, at: usize) -> bool {
         match self {
             Gate::Always => true,
             Gate::Set(bits) | Gate::Clear(bits) => bits.before(at),
+            Gate::Any(clauses) => {
+                let mut c = 0;
+                while c < clauses.len() {
+                    match clauses[c] {
+                        Gate::Set(bits) | Gate::Clear(bits) => {
+                            if !bits.before(at) {
+                                return false;
+                            }
+                        }
+                        Gate::Always | Gate::Any(_) => return false,
+                    }
+                    c += 1;
+                }
+                !clauses.is_empty()
+            }
         }
     }
 
@@ -128,6 +147,7 @@ impl Gate {
             Gate::Always => true,
             Gate::Set(bits) => bits.of(frame, inputs) != 0,
             Gate::Clear(bits) => bits.of(frame, inputs) == 0,
+            Gate::Any(clauses) => clauses.iter().any(|clause| clause.open(frame, inputs)),
         }
     }
 }
@@ -286,7 +306,7 @@ impl FieldTable {
         while at < rows.len() {
             assert!(
                 rows[at].gate.before(at),
-                "a row's gate reads a row before it or an input"
+                "a row's gate reads a row before it or an input, each clause a flag"
             );
             assert!(
                 rows[at].read.well_formed(at),
@@ -1136,6 +1156,99 @@ mod tests {
             gate: Gate::Always,
         }];
         let _ = FieldTable::new(&ODD);
+    }
+
+    /// A carrier byte, and a 16-bit number read where its bit 0 or its bit 1
+    /// is set.
+    const EITHER_ROWS: &[Row] = &[
+        Row {
+            read: Read::Uint {
+                bytes: 1,
+                big: true,
+            },
+            gate: Gate::Always,
+        },
+        Row {
+            read: Read::Uint {
+                bytes: 2,
+                big: true,
+            },
+            gate: Gate::Any(&[
+                Gate::Set(Bits::range(Source::Row(0), 0, 1)),
+                Gate::Set(Bits::range(Source::Row(0), 1, 1)),
+            ]),
+        },
+    ];
+
+    static EITHER: FieldTable = FieldTable::new(EITHER_ROWS);
+
+    #[test]
+    fn a_gate_of_several_clauses_reads_its_row_where_any_of_them_is_open() {
+        for carrier in [0x01u8, 0x02, 0x03] {
+            let wire = [carrier, 0x12, 0x34];
+            let mut out = Stored::default();
+            let mut reader = SceReader::new(&wire);
+            read_table(&mut reader, &EITHER, &[], &mut out);
+            assert_eq!(reader.verdict(), Ok(()), "carrier {carrier:#04x}");
+            assert_eq!(reader.remaining(), 0, "carrier {carrier:#04x}");
+            assert_eq!(out.numbers[1], Some(0x1234), "carrier {carrier:#04x}");
+            assert!(!out.absent[1], "carrier {carrier:#04x}");
+        }
+        // Neither bit: the number is absent and no byte of it is read.
+        let mut out = Stored::default();
+        let mut reader = SceReader::new(&[0x04, 0x12, 0x34]);
+        read_table(&mut reader, &EITHER, &[], &mut out);
+        assert_eq!(reader.verdict(), Ok(()));
+        assert_eq!(reader.remaining(), 2);
+        assert_eq!(out.numbers[1], None);
+        assert!(out.absent[1]);
+    }
+
+    #[test]
+    #[should_panic(expected = "each clause a flag")]
+    fn a_disjunction_with_a_clause_that_is_no_flag_is_refused() {
+        static ODD: [Row; 2] = [
+            Row {
+                read: Read::Uint {
+                    bytes: 1,
+                    big: true,
+                },
+                gate: Gate::Always,
+            },
+            Row {
+                read: Read::Uint {
+                    bytes: 1,
+                    big: true,
+                },
+                gate: Gate::Any(&[Gate::Set(Bits::range(Source::Row(0), 0, 1)), Gate::Always]),
+            },
+        ];
+        let _ = FieldTable::new(&ODD);
+    }
+
+    #[test]
+    #[should_panic(expected = "a row's gate reads a row before it or an input")]
+    fn a_disjunction_whose_clause_reads_a_row_after_it_is_refused() {
+        static FORWARD: [Row; 2] = [
+            Row {
+                read: Read::Uint {
+                    bytes: 1,
+                    big: true,
+                },
+                gate: Gate::Any(&[
+                    Gate::Set(Bits::range(Source::Input(0), 0, 1)),
+                    Gate::Clear(Bits::range(Source::Row(1), 0, 1)),
+                ]),
+            },
+            Row {
+                read: Read::Uint {
+                    bytes: 1,
+                    big: true,
+                },
+                gate: Gate::Always,
+            },
+        ];
+        let _ = FieldTable::new(&FORWARD);
     }
 
     /// The value of [`WRITTEN`] a write reads, by row: the header, the id, the

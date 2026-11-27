@@ -140,8 +140,6 @@ pub enum UnstatedField {
     Tail,
     /// It is a byte string or a text of a value no storage profile holds.
     NoStorageProfile,
-    /// It is gated by several clauses.
-    SeveralClauses,
     /// It is gated by no earlier carrier.
     GatedByNoCarrier,
     /// It is gated by a carrier a gate decides.
@@ -199,7 +197,6 @@ impl std::fmt::Display for NotATable {
                     ),
                     UnstatedField::Tail => f.write_str("is the bytes left in the frame"),
                     UnstatedField::NoStorageProfile => f.write_str("is held by no storage profile"),
-                    UnstatedField::SeveralClauses => f.write_str("is gated by several clauses"),
                     UnstatedField::GatedByNoCarrier => {
                         f.write_str("is gated by no earlier carrier")
                     }

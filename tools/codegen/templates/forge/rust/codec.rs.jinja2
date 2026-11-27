@@ -391,7 +391,7 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
    method per kind of store, each a `match` on the row's index. #}
 {% macro ft_bits(b) %}{% if b.width is none %}Bits::whole(Source::{{ b.source }}({{ b.index }})){% else %}Bits::range(Source::{{ b.source }}({{ b.index }}), {{ b.shift }}, {{ b.width }}){% endif %}{% endmacro %}
 {% macro ft_read(r) %}{% if r.kind == "Uint" %}Read::Uint { bytes: {{ r.bytes }}, big: {{ r.big }} }{% elif r.kind == "Zint" %}Read::Zint { bits: {{ r.bits }} }{% elif r.kind == "Body" %}Read::Body { inputs: &[{% for b in r.inputs %}{{ ft_bits(b) }}{% if not loop.last %}, {% endif %}{% endfor %}] }{% else %}Read::{{ r.kind }} { len: {{ ft_bits(r.len) }}, max: {{ r.max }} }{% endif %}{% endmacro %}
-{% macro ft_gate(g) %}{% if g.kind == "Always" %}Gate::Always{% else %}Gate::{{ g.kind }}({{ ft_bits(g.bits) }}){% endif %}{% endmacro %}
+{% macro ft_gate(g) %}{% if g.kind == "Always" %}Gate::Always{% elif g.kind == "Any" %}Gate::Any(&[{% for c in g.clauses %}Gate::{{ c.kind }}({{ ft_bits(c.bits) }}){% if not loop.last %}, {% endif %}{% endfor %}]){% else %}Gate::{{ g.kind }}({{ ft_bits(g.bits) }}){% endif %}{% endmacro %}
 {% macro ft_arm(kind, a) %}
 {% if kind == "number" %}
                 self.{{ a.ident }} = {% if a.gated %}Some({% endif %}value{% if a.cast %} as {{ a.cast }}{% endif %}{% if a.gated %}){% endif %};

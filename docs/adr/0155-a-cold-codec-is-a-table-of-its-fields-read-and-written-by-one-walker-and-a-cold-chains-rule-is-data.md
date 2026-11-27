@@ -60,7 +60,8 @@ A codec's table is a `static` `FieldTable` of rows in wire order. A row says:
   16, 32 or 64 bits; a byte string or a text whose count is an earlier row's value or a ZInt prefix, with the
   length's arithmetic and the field's bound; the bytes left in the frame; an embedded body, a variant arm, a repeat
   or a chain, which the value reads itself (below), handed the inputs a flag-bind gives it as bits of earlier rows;
-- **its gate**: always, or a bit range of an earlier row set or clear (`sce:present-if` on a flag of a carrier);
+- **its gate**: always, a bit range of an earlier row or of an input set or clear (`sce:present-if` on a flag of a
+  carrier), or a disjunction of such ranges (`a || b`), open where any of them is;
 - **its place in the value**: the row's index, which the value's store answers.
 
 The walker keeps the number each row read in a frame of its own (`[u64; TABLE_ROWS]`), so a gate, a length, a count,
