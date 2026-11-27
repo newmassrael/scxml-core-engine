@@ -1,10 +1,9 @@
 # ADR 0146 — A bounded FIFO declares what it does when full: it refuses, drops the newest or evicts the oldest, and an element it does not deliver goes back to the push that lost it
 
-- Status: Proposed (2026-11-26). Revised 2026-11-28 on the consumer's review, whose twelve items are each taken
-  (section "Review", which names where). Item 4b of the order agreed with a downstream consumer on 2026-11-19, as
-  ADR 0111 "Open questions" placed it ("U17 (a full queue's policy) reopens ADR 0062 in a record of its own"). Written
-  under the owner's standing rule: the most long-term correct structure, textbook in its foundations, cost ignored;
-  decided, not asked. It is put to the owner for acceptance once the consumer has read this revision.
+- Status: Accepted (2026-11-28) by the owner, after the consumer read the revision and raised no objection.
+  Proposed 2026-11-26; revised 2026-11-28 on the consumer's review, whose twelve items are each taken (section
+  "Review", which names where). Item 4b of the order agreed with a downstream consumer on 2026-11-19, as ADR 0111
+  "Open questions" placed it ("U17 (a full queue's policy) reopens ADR 0062 in a record of its own").
 - Date: 2026-11-26
 - Reopens: ADR 0062 §1, the cell *consumed once x forget the oldest*, and the third bullet of ADR 0062 §8
   ("Overwrite of a consumed queue ... not revisited"), on a reason §1 did not weigh (§"Why ADR 0062's refusal is
