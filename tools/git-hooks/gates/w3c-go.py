@@ -28,7 +28,11 @@
               # The traces and expected logs of the corpus's other suites,
               # which `a_corpus_suite_replays_to_its_expected_logs_test.go`
               # replays and reads at run time.
-              "sce-build/tests/fixtures/test_profile/runs/**"],
+              "sce-build/tests/fixtures/test_profile/runs/**",
+              # The recorded runs of the Go lane, which
+              # `backends/go/tests/run_trace` holds its runs to at run time
+              # (docs/adr/0115, D4 and D8).
+              "docs/formal/traces/**"],
     "deps": ["codegen-build"],
     # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
     # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them

@@ -98,6 +98,34 @@ for module in lua runtime; do
     sce_gate_step "$module_cases Go $module case(s) passed"
 done
 
+# The trace port (docs/adr/0115, D4 and D8), which is compiled only with the
+# build tag `sce_trace_port`, so neither run above reaches it: the runtime's own
+# tests of its writer and recorder, and the runs of the W3C documents
+# docs/formal has a model of, recorded through the port from the machines the
+# suite generated above and held to docs/formal/traces/*.go.json
+# (backends/go/tests/run_trace). Of the runtime, only its `TestTrace` cases: the
+# rest ran above. The floors are the runtime's five cases and the package's
+# five, for the reason the suite has one: a package compiled without its tag
+# holds no case and exits 0.
+for traced in "runtime:.:^TestTrace:5" "tests:./run_trace/:.:5"; do
+    IFS=: read -r module package cases_run floor <<<"$traced"
+    sce_gate_step "running the Go $module module's trace port tests (-tags sce_trace_port)"
+    traced_status=0
+    sce_gate_tested --quiet --log "$LOG/go-trace-$module.log" --cwd "backends/go/$module" \
+        -- go test -tags sce_trace_port -run "$cases_run" "$package" -v -count=1 \
+        || traced_status=$?
+    if (( traced_status != 0 )); then
+        go_failures "$LOG/go-trace-$module.log"
+        sce_gate_fail "the Go $module module's trace port tests failed"
+    fi
+    traced_cases="$(grep -cE '^--- (PASS|FAIL):' "$LOG/go-trace-$module.log" || true)"
+    if (( traced_cases < floor )); then
+        tail -n 20 "$LOG/go-trace-$module.log" >&2
+        sce_gate_fail "only $traced_cases Go $module trace port case(s) ran (expected at least $floor)"
+    fi
+    sce_gate_step "$traced_cases Go $module trace port case(s) passed"
+done
+
 # The same generator, asked for a module of the caller's own.
 #
 # `--output-dir` used to emit a fragment: the generated tests imported
