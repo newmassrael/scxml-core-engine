@@ -191,7 +191,7 @@ pub(crate) fn longer(a: Answer, b: Answer) -> Answer {
 ))]
 pub(crate) fn seconds(wait_ms: u128) -> u64 {
     let whole = wait_ms / 1000;
-    let rounded = if wait_ms % 1000 == 0 {
+    let rounded = if wait_ms.is_multiple_of(1000) {
         whole
     } else {
         whole + 1
