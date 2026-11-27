@@ -195,8 +195,10 @@ fn run(args: &[&str], out: bool, doc: &str, others: &[(&str, String)]) -> (bool,
 
 /// docs/adr/0114, D5: the Rust machine is served the read with no declaration,
 /// writes the stream into the request, and opens the page into the derived record
-/// where the completion is lifted. Red if the build writes no stream, or the
-/// lift opens no page.
+/// where the completion is lifted, each entry by the case its schema's id (the
+/// event the schema declares) names. The cases are JSON the machine holds in a
+/// Rust string literal, so each quote of theirs is escaped there. Red if the
+/// build writes no stream, the lift opens no page, or a case is not written.
 #[test]
 fn a_page_is_read_and_opened_by_the_rust_machine() {
     let doc = reader(READS_ROOMS, "");
@@ -204,7 +206,8 @@ fn a_page_is_read_and_opened_by_the_rust_machine() {
     assert!(ok, "the Rust machine reads a page:\n{out}");
     for said in [
         "::sce_rust_runtime::journal::open_page(",
-        "\"room.booked\"",
+        r#"[\"room.booked\",\"kind\",\"booked\","#,
+        r#"[\"room.cancelled\",\"kind\",\"cancelled\","#,
         "\"rooms\"",
     ] {
         assert!(
