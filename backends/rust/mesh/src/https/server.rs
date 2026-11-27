@@ -343,7 +343,7 @@ impl Listening {
     /// `<machine>/<instance>`. A server built for the address takes this as its `is_bound`, so a
     /// program writes no predicate to widen.
     pub fn admits(&self, name: &str) -> bool {
-        self.peers.iter().any(|peer| *peer == name)
+        self.peers.contains(&name)
             || instance_of(name)
                 .is_some_and(|(machine, _)| self.open.iter().any(|(open, _)| *open == machine))
     }
