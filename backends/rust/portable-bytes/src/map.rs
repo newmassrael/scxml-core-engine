@@ -3234,7 +3234,7 @@ mod tests {
         assert_eq!(inline.index.cells.cell_count(), 2 * BOUND);
         assert!(
             core::mem::size_of::<BoundedMap<u64, u64, BOUND, Inline>>()
-                >= BOUND * core::mem::size_of::<Slot<u64, u64, u64>>() + 2 * BOUND * 4
+                >= BOUND * core::mem::size_of::<Slot<u64, u64, u64, ()>>() + 2 * BOUND * 4
         );
         for key in 0..BOUND as u64 {
             assert_eq!(inline.put(key, key), PutOutcome::Inserted);
@@ -3922,7 +3922,7 @@ mod tests {
         );
         assert!(
             core::mem::size_of::<BoundedMap<u64, u64, 4096, LentIndexed<'static>>>()
-                < 4 * core::mem::size_of::<Slot<u64, u64, u64>>()
+                < 4 * core::mem::size_of::<Slot<u64, u64, u64, ()>>()
         );
         assert_eq!(core::mem::size_of::<[LentSlot<u64, u64>; 0]>(), 0);
     }
