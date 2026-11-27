@@ -1209,15 +1209,18 @@
       "runs": [
         {
           "config": "CheckpointWrite.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 9614
         },
         {
           "config": "CheckpointWrite_two_requests.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 37328
         },
         {
           "config": "CheckpointWrite_live.cfg",
           "expect": "holds",
+          "states": 1126,
           "possible": "CaughtUp"
         },
         {
