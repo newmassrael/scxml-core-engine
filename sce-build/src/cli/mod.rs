@@ -704,7 +704,11 @@ fn is_drift_eligible_path(path: &Path) -> bool {
             | Some("py")
             | Some("c")
             | Some("swift")
-            | Some("ttcn"),
+            | Some("ttcn")
+            // The page surface (docs/adr/0117, D7): a JavaScript module and its
+            // TypeScript declaration, each of whose comments opens with `//`.
+            | Some("mjs")
+            | Some("mts"),
     )
 }
 
@@ -3823,6 +3827,36 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Write the surface a page is written against for a `datamodel="sce-static"`
+    /// statechart (docs/adr/0117, D7): `<name>.mjs`, a JavaScript module, and
+    /// `<name>.d.mts`, its TypeScript declaration, in `--out-dir`, `<name>` the
+    /// stem of the document's file.
+    ///
+    /// The module names the events the machine takes from outside, raises one
+    /// through a port to the machine the page holds, and subscribes to the
+    /// snapshot the machine publishes; the declaration types each, so a page in
+    /// TypeScript that raises an event the machine does not take, or data its
+    /// payload does not hold, does not compile. The module checks what a page in
+    /// JavaScript hands it by the payload schema each event's schema unit
+    /// declares (the text `payload-schema` prints), and refuses there what the
+    /// machine would refuse. It holds no rule of the document. A document of
+    /// another data model, and a published value or a payload with no wire form
+    /// (a map, a set, a value of an open enum), are refused by name.
+    Surface {
+        /// The statechart.
+        scxml: String,
+        /// Directory the two files are written to.
+        #[arg(short = 'o', long = "out-dir", value_name = "DIR")]
+        out_dir: String,
+        /// Directory the `source-hash` the files' headers carry is computed
+        /// over. Defaults to the document's directory, as in `generate`.
+        #[arg(long)]
+        input_root: Option<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments, as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Export a test suite to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
     /// §9.5): the suite's types module, `<suite>_Types.ttcn`, the structural
     /// manifest of it, `<suite>_Types.manifest.json`, the behaviour module,
@@ -4944,6 +4978,18 @@ pub fn main() {
             &include_dir,
             error_format,
         ),
+        Commands::Surface {
+            scxml,
+            out_dir,
+            input_root,
+            include_dir,
+        } => cmd_surface(
+            &scxml,
+            &out_dir,
+            input_root.as_deref(),
+            &include_dir,
+            error_format,
+        ),
         Commands::ExportTtcn3 {
             scxml,
             output_dir,
@@ -5124,7 +5170,7 @@ fn reads_refusal(command: &Commands) -> Option<String> {
 fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
     const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
         generate files: generate, orchestrate, generate-w3c, generate-conformance, deployment, \
-        diagram and export-ttcn3";
+        diagram, export-ttcn3 and surface";
     match command {
         // Both modes generate nothing, so a run in either would pass
         // having compared nothing.
@@ -5139,7 +5185,8 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::GenerateConformance { .. }
         | Commands::Deployment { .. }
         | Commands::Diagram { .. }
-        | Commands::ExportTtcn3 { .. } => None,
+        | Commands::ExportTtcn3 { .. }
+        | Commands::Surface { .. } => None,
         Commands::Check(_)
         | Commands::ReadMetadata { .. }
         | Commands::Manifest { .. }
@@ -15181,6 +15228,50 @@ fn cmd_export_ttcn3(
     });
     for (file, text) in export.files() {
         write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(&text), &drift);
+    }
+    finish_generated_output();
+}
+
+// ── Subcommand: surface ────────────────────────────────────────
+//
+// The surface a page is written against (docs/adr/0117, D7), computed whole by
+// the library before either file is written, so a refused document leaves no
+// file; each file carries the §synth-6.2.6 header over the document's source
+// set, as every generated source does.
+
+fn cmd_surface(
+    scxml_path: &str,
+    out_dir: &str,
+    input_root: Option<&str>,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let mut parser = SCXMLParser::new().with_include_dirs(include_dirs.clone());
+    let mut model = parser
+        .parse_file(scxml_path)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    analyzer::analyze(&mut model, scxml_path);
+    let surface = crate::page_surface::of(&model).unwrap_or_else(|refused| {
+        error_format.emit_forge_and_exit(&Located::in_file(
+            refused.into(),
+            crate::DocumentLabel::for_input_path(scxml_path).diagnostic_label,
+        ))
+    });
+    let drift =
+        document_set_drift_context(input_root, None, &include_dirs, &[Path::new(scxml_path)]);
+    let dir = Path::new(out_dir);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out_dir.to_string(),
+            source: e,
+        })
+    });
+    for (file, text) in [
+        (format!("{}.mjs", surface.machine), &surface.module),
+        (format!("{}.d.mts", surface.machine), &surface.declaration),
+    ] {
+        write_if_changed_drift_aware(&dir.join(file), text, &drift);
     }
     finish_generated_output();
 }

@@ -224,6 +224,10 @@ pub mod near_miss;
 /// serve — written once for the acceptance report, the manifest's `open`
 /// and the acceptance record.
 pub mod open_matters;
+/// The surface a page is written against (docs/adr/0117, D7): a JavaScript
+/// module and its TypeScript declaration of the events a statechart takes and
+/// the snapshot it publishes, written by `sce-codegen surface`.
+pub mod page_surface;
 /// The sites that send to the parent session (`<send target="#_parent">`)
 /// — the fact that a machine needs one, which only a deployment can
 /// satisfy. Published on the manifest as `needs_parent`.

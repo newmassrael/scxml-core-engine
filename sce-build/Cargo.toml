@@ -2045,6 +2045,14 @@ name = "a_schema_unit_declares_the_grammar_of_its_payload"
 path = "tests/a_schema_unit_declares_the_grammar_of_its_payload.rs"
 required-features = ["cli"]
 
+# A page is written against the surface its document generates (docs/adr/0117, D7), whose module
+# checks each event by the payload schema `payload-schema` prints. It runs `sce-codegen`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_page_is_written_against_its_documents_surface"
+path = "tests/a_page_is_written_against_its_documents_surface.rs"
+required-features = ["cli"]
+
 # A list states its lower count in its type, beside its bound, and every misplaced or empty count
 # is refused (docs/adr/0086, section 15). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]

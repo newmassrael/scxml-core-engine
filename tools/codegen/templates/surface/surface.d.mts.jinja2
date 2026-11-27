@@ -1,0 +1,85 @@
+{#- The declaration of the page surface (docs/adr/0117, D7), rendered by
+    sce-build/src/page_surface.rs, which writes each type from the payload
+    schema the module checks the same value by. -#}
+// The declaration of the surface a page is written against for the statechart
+// {{ machine }} (docs/adr/0117, D7), beside the module it declares. A page in
+// TypeScript that raises an event the machine does not take, or data its
+// payload does not hold, does not compile.
+//
+// A value is in its wire form, the one its payload schema states (docs/adr/0086,
+// section 3.1): a 64-bit integer is the text of its digits, a byte string a text
+// of one character for each byte, and a value that may be absent is null when it
+// is.
+
+/** Why the surface refused what a page handed it: nothing of it reached the port. */
+export declare class SurfaceRefused extends TypeError {
+  /** The name of the event refused, or null where what was handed names none. */
+  readonly event: string | null;
+  /** Where in the event, as a JSON Pointer (RFC 6901): "" for the whole of it. */
+  readonly path: string;
+}
+
+/** The statechart this surface is of. */
+export declare const MACHINE: {{ machine_json }};
+
+/** The records and unions the types below hold, by the name of the document that declares each. */
+export interface Definitions {
+{{ definitions }}
+}
+
+/** The data each event carries, by the name of the event; an event that carries none is not here. */
+export interface Payloads {
+{{ payloads }}
+}
+
+/** An event the machine takes, as a page raises it. */
+export type Event ={{ event_type }};
+
+/** The name of each event the machine takes. */
+export type EventName = Event["name"];
+
+/** The name of each event the machine takes, as the module lists them. */
+export declare const EVENTS: readonly EventName[];
+
+/** A state of the machine, by its id. */
+export type StateId = {{ states }};
+
+/** The variables the machine publishes, those its document declares with sce:direction="out". */
+export interface Variables {
+{{ variables }}
+}
+
+/**
+ * What the machine publishes after each macrostep: every state it is in, its published variables,
+ * and whether the macrostep was stopped at its bound of microsteps.
+ */
+export interface Snapshot {
+  readonly configuration: readonly StateId[];
+  readonly variables: Variables;
+  readonly truncated: boolean;
+}
+
+/**
+ * The machine the page holds, as the surface reaches it: raise hands it the event name with
+ * data, the JSON text of its payload or null for an event that carries none, and subscribe
+ * calls listener with the JSON text of each snapshot and answers a function that stops it.
+ */
+export interface MachinePort {
+  raise(name: EventName, data: string | null): void | Promise<void>;
+  subscribe(listener: (snapshot: string) => void): () => void;
+}
+
+/** What a page raises and what it is told, over a port. */
+export interface Surface {
+  /**
+   * Hand the machine event. A page in JavaScript that hands it an event the machine does not
+   * take, or data its payload does not hold, is refused with SurfaceRefused, thrown before
+   * anything reaches the port.
+   */
+  raise(event: Event): Promise<void>;
+  /** Call listener with each snapshot the machine publishes; answers a function that stops it. */
+  subscribe(listener: (snapshot: Snapshot) => void): () => void;
+}
+
+/** The surface over port. */
+export declare function bind(port: MachinePort): Surface;

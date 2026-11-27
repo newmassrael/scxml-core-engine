@@ -1,0 +1,370 @@
+{#- The module of the page surface (docs/adr/0117, D7), rendered by
+    sce-build/src/page_surface.rs. Every value is written where code stands,
+    as JSON the generator encoded: a name as a string, a payload schema as the
+    object it is. -#}
+// The surface a page is written against for the statechart {{ machine }}
+// (docs/adr/0117, D7): the events the machine takes, a function that raises
+// one, and a subscription to the snapshot it publishes, over a port to the
+// machine the page holds. It holds no rule of the document. What a type cannot
+// hold at run time, since a page may be written in JavaScript, it checks here,
+// by the payload schema the schema unit of each event declares (docs/adr/0087,
+// section 1), and refuses before anything reaches the port. Its declaration is
+// the file beside it whose name ends in .d.mts.
+
+/** Why the surface refused what a page handed it: nothing of it reached the port. */
+export class SurfaceRefused extends TypeError {
+  constructor(event, path, words) {
+    super(
+      (event === null ? "the event" : "the event " + JSON.stringify(event)) +
+        " is refused" +
+        (path === "" ? "" : " at " + path) +
+        ": " +
+        words,
+    );
+    this.name = "SurfaceRefused";
+    /** The name of the event refused, or null where what was handed names none. */
+    this.event = event;
+    /** Where in the event, as a JSON Pointer (RFC 6901): "" for the whole of it. */
+    this.path = path;
+  }
+}
+
+/** The statechart this surface is of. */
+export const MACHINE = {{ machine_json }};
+
+/** Each event the machine takes, by its name: the payload schema of its data, or null. */
+const TAKES = new Map([
+{% for event in events %}
+  [{{ event.name }}, {{ event.schema }}],
+{% endfor %}
+]);
+
+/** The name of each event the machine takes. */
+export const EVENTS = Object.freeze([...TAKES.keys()]);
+
+/**
+ * The surface over port, the machine the page holds: port.raise(name, data) hands it the
+ * event name with data, the JSON text of its payload or null for an event that carries none,
+ * and port.subscribe(listener) calls listener with the JSON text of each snapshot and answers
+ * a function that stops it.
+ */
+export function bind(port) {
+  if (
+    port === null ||
+    typeof port !== "object" ||
+    typeof port.raise !== "function" ||
+    typeof port.subscribe !== "function"
+  ) {
+    throw new TypeError("a surface is bound to a port that raises an event and subscribes to snapshots");
+  }
+  return Object.freeze({
+    raise(event) {
+      const [name, data] = admitted(event);
+      return Promise.resolve(port.raise(name, data)).then(() => undefined);
+    },
+    subscribe(listener) {
+      if (typeof listener !== "function") {
+        throw new TypeError("a subscription is given a function to call with each snapshot");
+      }
+      return port.subscribe((text) => listener(frozen(JSON.parse(text))));
+    },
+  });
+}
+
+/** The name of event and the JSON text of its data, held to the payload schema of its name. */
+function admitted(event) {
+  if (!isRecord(event)) {
+    throw new SurfaceRefused(null, "", "an event is an object that names it");
+  }
+  const keys = Object.keys(event);
+  const name = event.name;
+  if (typeof name !== "string" || !TAKES.has(name)) {
+    throw new SurfaceRefused(
+      typeof name === "string" ? name : null,
+      "/name",
+      "the machine takes no event of this name",
+    );
+  }
+  const schema = TAKES.get(name);
+  for (const key of keys) {
+    if (key === "name" || (key === "data" && schema !== null)) {
+      continue;
+    }
+    throw new SurfaceRefused(
+      name,
+      pointer("", key),
+      key === "data" ? "the event carries no data" : "an event holds its name and its data and nothing else",
+    );
+  }
+  if (schema === null) {
+    return [name, null];
+  }
+  if (!keys.includes("data")) {
+    throw new SurfaceRefused(name, "/data", "the event carries data, and none was given");
+  }
+  return [name, JSON.stringify(admit(event.data, schema, schema, "/data", name))];
+}
+
+/** The keywords of a payload schema (schemas/sce-payload-schema.v1.schema.json) this reads. */
+const KEYWORDS = new Set([
+  "$schema",
+  "$id",
+  "x-sce-source-hash",
+  "description",
+  "$ref",
+  "type",
+  "const",
+  "enum",
+  "anyOf",
+  "oneOf",
+  "minimum",
+  "maximum",
+  "maxLength",
+  "x-sce-max-bytes",
+  "pattern",
+  "items",
+  "minItems",
+  "maxItems",
+  "properties",
+  "required",
+  "additionalProperties",
+  "$defs",
+]);
+
+/**
+ * value held to schema, a schema of root whose definitions its references name, at path of
+ * the event event: a copy of it made of what the schema names, so a value read twice is not
+ * two values, or the refusal of the first place that does not hold.
+ */
+function admit(value, schema, root, path, event) {
+  for (const keyword of Object.keys(schema)) {
+    if (!KEYWORDS.has(keyword)) {
+      // The generator wrote a schema this module does not read: its defect, not one of the page.
+      throw new Error("the page surface reads no keyword " + keyword + " of a payload schema");
+    }
+  }
+  if (schema.type !== undefined) {
+    const types = [].concat(schema.type);
+    if (!types.some((type) => isOf(value, type))) {
+      throw new SurfaceRefused(event, path, "is not of the type " + types.join(" or "));
+    }
+    if (typeof value === "string" && !wellFormed(value)) {
+      throw new SurfaceRefused(event, path, "holds a lone surrogate, which no UTF-8 text holds");
+    }
+  }
+  if (schema.const !== undefined && !sameJson(value, schema.const)) {
+    throw new SurfaceRefused(event, path, "is not " + JSON.stringify(schema.const));
+  }
+  if (schema.enum !== undefined && !schema.enum.some((each) => sameJson(value, each))) {
+    throw new SurfaceRefused(event, path, "is none of " + schema.enum.map((each) => JSON.stringify(each)).join(", "));
+  }
+  if (typeof value === "number") {
+    if (schema.minimum !== undefined && value < schema.minimum) {
+      throw new SurfaceRefused(event, path, "is less than " + schema.minimum);
+    }
+    if (schema.maximum !== undefined && value > schema.maximum) {
+      throw new SurfaceRefused(event, path, "is more than " + schema.maximum);
+    }
+  }
+  if (typeof value === "string") {
+    if (schema.maxLength !== undefined && [...value].length > schema.maxLength) {
+      throw new SurfaceRefused(event, path, "holds more than " + schema.maxLength + " characters");
+    }
+    const bytes = schema["x-sce-max-bytes"];
+    if (bytes !== undefined && UTF8.encode(value).length > bytes) {
+      throw new SurfaceRefused(event, path, "is more than " + bytes + " bytes of UTF-8");
+    }
+    if (schema.pattern !== undefined && !compiled(schema.pattern).test(value)) {
+      throw new SurfaceRefused(event, path, "is not of the form " + schema.pattern);
+    }
+  }
+  let copy = value;
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      throw new SurfaceRefused(event, path, "holds fewer than " + schema.minItems + " values");
+    }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      throw new SurfaceRefused(event, path, "holds more than " + schema.maxItems + " values");
+    }
+    if (schema.items !== undefined) {
+      copy = [];
+      for (let at = 0; at < value.length; at += 1) {
+        copy.push(admit(value[at], schema.items, root, path + "/" + at, event));
+      }
+    }
+  }
+  if (isRecord(value) && schema.properties !== undefined) {
+    const keys = Object.keys(value);
+    for (const key of schema.required ?? []) {
+      if (!keys.includes(key)) {
+        throw new SurfaceRefused(event, pointer(path, key), "is required and absent");
+      }
+    }
+    if (schema.additionalProperties === false) {
+      for (const key of keys) {
+        if (!Object.hasOwn(schema.properties, key)) {
+          throw new SurfaceRefused(event, pointer(path, key), "is no field of the payload");
+        }
+      }
+    }
+    copy = Object.create(null);
+    for (const key of Object.keys(schema.properties)) {
+      if (keys.includes(key)) {
+        copy[key] = admit(value[key], schema.properties[key], root, pointer(path, key), event);
+      }
+    }
+  }
+  if (schema.$ref !== undefined) {
+    copy = admit(value, definition(root, schema.$ref), root, path, event);
+  }
+  if (schema.anyOf !== undefined) {
+    copy = cases(value, schema.anyOf, root, path, event, false);
+  }
+  if (schema.oneOf !== undefined) {
+    copy = cases(value, schema.oneOf, root, path, event, true);
+  }
+  return copy;
+}
+
+/**
+ * value held to members, the cases of an anyOf, or of a oneOf when only is true, which
+ * admits a value exactly one of them admits. A refusal names the deepest place a case refused.
+ */
+function cases(value, members, root, path, event, only) {
+  const copies = [];
+  let deepest = null;
+  for (const member of members) {
+    try {
+      copies.push(admit(value, member, root, path, event));
+      if (!only) {
+        return copies[0];
+      }
+    } catch (error) {
+      if (!(error instanceof SurfaceRefused)) {
+        throw error;
+      }
+      if (deepest === null || depth(error.path) > depth(deepest.path)) {
+        deepest = error;
+      }
+    }
+  }
+  if (copies.length === 1) {
+    return copies[0];
+  }
+  if (copies.length > 1) {
+    throw new SurfaceRefused(event, path, "is of more than one of its cases");
+  }
+  throw deepest ?? new SurfaceRefused(event, path, "is of none of its cases");
+}
+
+/** The definition reference names in the $defs of root. */
+function definition(root, reference) {
+  const prefix = "#/$defs/";
+  const name = reference.startsWith(prefix) ? unpointer(reference.slice(prefix.length)) : null;
+  if (name === null || root.$defs === undefined || !Object.hasOwn(root.$defs, name)) {
+    throw new Error("the payload schema defines nothing " + reference + " names");
+  }
+  return root.$defs[name];
+}
+
+function isOf(value, type) {
+  switch (type) {
+    case "object":
+      return isRecord(value);
+    case "array":
+      return Array.isArray(value);
+    case "string":
+      return typeof value === "string";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "null":
+      return value === null;
+    default:
+      throw new Error("the page surface reads no type " + type + " of a payload schema");
+  }
+}
+
+/** An object of keys and values, as JSON writes one: not a list, and of no class. */
+function isRecord(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/** Whether text is a sequence of Unicode scalar values: no surrogate stands alone. */
+function wellFormed(text) {
+  for (let at = 0; at < text.length; at += 1) {
+    const unit = text.charCodeAt(at);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(at + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        return false;
+      }
+      at += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameJson(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((each, at) => sameJson(each, b[at]));
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]))
+    );
+  }
+  return false;
+}
+
+const UTF8 = new TextEncoder();
+
+/** Each pattern of a schema, compiled once: an ECMA-262 regular expression over code points. */
+const PATTERNS = new Map();
+
+function compiled(pattern) {
+  let found = PATTERNS.get(pattern);
+  if (found === undefined) {
+    found = new RegExp(pattern, "u");
+    PATTERNS.set(pattern, found);
+  }
+  return found;
+}
+
+/** path with the reference token of key after it (RFC 6901, section 3). */
+function pointer(path, key) {
+  return path + "/" + key.split("~").join("~0").split("/").join("~1");
+}
+
+function unpointer(token) {
+  return token.split("~1").join("/").split("~0").join("~");
+}
+
+function depth(path) {
+  return path.split("/").length;
+}
+
+/** value, and every object and list it holds, made read-only, as the declaration types them. */
+function frozen(value) {
+  if (value !== null && typeof value === "object") {
+    for (const key of Object.keys(value)) {
+      frozen(value[key]);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
