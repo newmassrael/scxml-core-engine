@@ -275,13 +275,20 @@ fn layout_free(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// A TLA+ module without its comments and the space they left.
+/// A TLA+ module without its comments and the space they left. A line that
+/// was indented keeps one space before it, so a definition inside a LET or a
+/// conjunction is not read as one of the module's.
 fn uncommented(module: &str) -> String {
     let text = BLOCK_COMMENT.replace_all(module, " ");
     text.lines()
         .map(|line| {
             let code = line.split("\\*").next().unwrap_or("");
-            SPACE.replace_all(code, " ").trim().to_string()
+            let body = SPACE.replace_all(code.trim(), " ");
+            if !body.is_empty() && code.starts_with(char::is_whitespace) {
+                format!(" {body}")
+            } else {
+                body.to_string()
+            }
         })
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
@@ -1297,5 +1304,14 @@ mod tests {
             layout_free(&uncommented(old)),
             layout_free(&uncommented(&changed))
         );
+    }
+
+    #[test]
+    fn a_name_defined_in_a_let_is_no_definition_of_the_module() {
+        let module =
+            "---- MODULE M ----\nPair(e) == LET x == e\n    y == <<x, x>>\n    IN y\n====\n";
+        let found = definitions(module);
+        assert!(found.contains_key("Pair"), "{found:?}");
+        assert!(!found.contains_key("y"), "{found:?}");
     }
 }
