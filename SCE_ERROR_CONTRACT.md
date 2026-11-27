@@ -1358,6 +1358,7 @@ references against a real document and drift silently.
 | `formal/declaration` | `formal` | no | ADR 0146 D1 |
 | `formal/isolation` | `formal` | no | ADR 0115 D11 |
 | `formal/no-translation` | `formal` | no | ADR 0115 D7 |
+| `formal/property-refused` | `formal` | no | ADR 0115 D15 |
 | `formal/tool-unavailable` | `formal` | no | ADR 0146 D1 |
 | `formal/verdict` | `formal` | no | ADR 0146 D1 |
 
@@ -1385,7 +1386,7 @@ would have to guess; `cli/query-no-match` is the case that exists.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. `test-profile/trace-text`, `test-profile/trace-test-case`, `test-profile/trace-port`, `test-profile/trace-type`, `test-profile/trace-value` — `check-trace` read the suite and the trace, and the trace does not fit the suite (docs/SCE_TTCN3_LANE.md §10.2): the same class of answer, the inputs read and the answer no, as `grep` and `diff` exit 1. `formal/declaration`, `formal/verdict` — a formal judge read its manifest and the tree it describes, and the answer is no: the manifest is not as the tree is, or a run answered otherwise than declared (docs/adr/0146, D1). `formal/isolation` — `sce-codegen formal isolation` read the commits of the ranges it was given, and one changes what a check says beside what the check judges, or names no reason for it (docs/adr/0115, D11). |
+| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. `test-profile/trace-text`, `test-profile/trace-test-case`, `test-profile/trace-port`, `test-profile/trace-type`, `test-profile/trace-value` — `check-trace` read the suite and the trace, and the trace does not fit the suite (docs/SCE_TTCN3_LANE.md §10.2): the same class of answer, the inputs read and the answer no, as `grep` and `diff` exit 1. `formal/declaration`, `formal/verdict` — a formal judge read its manifest and the tree it describes, and the answer is no: the manifest is not as the tree is, or a run answered otherwise than declared (docs/adr/0146, D1). `formal/isolation` — `sce-codegen formal isolation` read the commits of the ranges it was given, and one changes what a check says beside what the check judges, or names no reason for it (docs/adr/0115, D11). `formal/property-refused` — `sce-codegen formal properties` read a machine's properties, and a property says nothing it can be held to: an assumption about the machine itself, or a guarantee that reads nothing of the machine or holds though a part of it is made stronger (docs/adr/0115, D15). |
 | `2` | `xml/*` |
 | `3` | `validation/*` |
 | `4` | `expression/*` |

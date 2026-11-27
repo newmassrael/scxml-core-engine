@@ -75,6 +75,7 @@ on:
       - 'sce-build/build.rs'
       - 'sce-build/kind-examples/**'
       - 'sce-build/tests/fixtures/**'
+      - 'docs/formal/AppendixD.tla'
       - 'backends/rust/portable-bytes/**'
       - 'backends/rust/runtime/**'
       - 'backends/rust/tests/src/harness.rs'

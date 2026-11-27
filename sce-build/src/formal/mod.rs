@@ -18,6 +18,8 @@
 //!   the ranges it is given (ADR 0115, D11).
 //! - [`document_model`]: the model of one document over Appendix D, which
 //!   `sce-codegen model` writes (ADR 0115, D7).
+//! - [`properties`]: the properties of one machine and their observers over
+//!   that model, with the runs that judge them (ADR 0115, D15).
 //! - [`traces`]: the judge of a traces manifest, every recorded run of the code
 //!   a behaviour of its model (ADR 0115, D4 and D8).
 //! - [`error`]: the `formal/*` diagnostics a judge leaves through
@@ -30,6 +32,7 @@ pub mod inductive;
 pub mod isolation;
 pub mod models;
 pub mod proofs;
+pub mod properties;
 pub mod tlc;
 pub mod toolchain;
 pub mod traces;

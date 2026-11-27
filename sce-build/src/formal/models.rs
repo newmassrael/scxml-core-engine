@@ -305,11 +305,29 @@ pub fn promise_only(config_text: &str, promise: &str) -> String {
 /// The variable is a function of the state, so the graph is the module's own. A
 /// module whose specification is `Init`, `Next` and `vars` is what this reads.
 pub fn possible_module(module: &str, predicate: &str) -> String {
+    possible_module_of(
+        &format!("{module}Possible"),
+        module,
+        predicate,
+        ("Init", "Next", "vars"),
+    )
+}
+
+/// [`possible_module`] named `name`, over a module whose specification is the
+/// initial predicate, the next-state action and the tuple of variables
+/// `spec` names: a module of a document's properties
+/// (`super::properties`) carries its own beside the semantics'.
+pub fn possible_module_of(
+    name: &str,
+    module: &str,
+    predicate: &str,
+    (init, next, vars): (&str, &str, &str),
+) -> String {
     format!(
-        "---- MODULE {module}Possible ----\nEXTENDS {module}\nVARIABLE sce_holds\n\
-         PossibleInit == Init /\\ sce_holds = ({predicate})\n\
-         PossibleNext == Next /\\ sce_holds' = ({predicate})'\n\
-         PossibleSpec == PossibleInit /\\ [][PossibleNext]_<<vars, sce_holds>>\n====\n"
+        "---- MODULE {name} ----\nEXTENDS {module}\nVARIABLE sce_holds\n\
+         PossibleInit == {init} /\\ sce_holds = ({predicate})\n\
+         PossibleNext == {next} /\\ sce_holds' = ({predicate})'\n\
+         PossibleSpec == PossibleInit /\\ [][PossibleNext]_<<{vars}, sce_holds>>\n====\n"
     )
 }
 

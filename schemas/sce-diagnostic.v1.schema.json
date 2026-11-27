@@ -417,6 +417,7 @@
         "formal/tool-unavailable",
         "formal/no-translation",
         "formal/isolation",
+        "formal/property-refused",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",

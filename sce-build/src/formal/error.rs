@@ -71,6 +71,22 @@ pub enum FormalError {
         document: String,
         refusals: Vec<String>,
     },
+
+    /// A properties document states a property that says nothing it can be
+    /// held to (`formal/property-refused`; docs/adr/0115, D15): an assumption
+    /// about the machine itself, which can excuse the machine of anything, or
+    /// a guarantee that reads nothing of the machine or holds though a part of
+    /// it is made stronger, which passes for nothing. `refusals` names each
+    /// property, by the `sce:req` token it states, and why, in the order found.
+    #[error(
+        "{document}: {} propert(y/ies) are refused for what they say: {}",
+        refusals.len(),
+        refusals.join("; ")
+    )]
+    PropertyRefused {
+        document: String,
+        refusals: Vec<String>,
+    },
 }
 
 impl FormalError {
@@ -91,7 +107,8 @@ impl ToDiagnostics for FormalError {
         match self {
             FormalError::Declaration { .. }
             | FormalError::Verdict { .. }
-            | FormalError::Isolation { .. } => Self::EXIT_ANSWER_NO,
+            | FormalError::Isolation { .. }
+            | FormalError::PropertyRefused { .. } => Self::EXIT_ANSWER_NO,
             FormalError::ToolUnavailable { .. } => Self::EXIT_TOOL_UNAVAILABLE,
             FormalError::NoTranslation { .. } => Self::EXIT_NO_TRANSLATION,
         }
@@ -129,6 +146,11 @@ impl SingleDiagnostic for FormalError {
             ),
             FormalError::NoTranslation { document, refusals } => (
                 DiagnosticCode::FormalNoTranslation,
+                refusals.clone(),
+                Some(document.clone()),
+            ),
+            FormalError::PropertyRefused { document, refusals } => (
+                DiagnosticCode::FormalPropertyRefused,
                 refusals.clone(),
                 Some(document.clone()),
             ),

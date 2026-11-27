@@ -3134,6 +3134,12 @@ pub enum DiagnosticCode {
     /// isolation` refuses (docs/adr/0115, D11).
     #[serde(rename = "formal/isolation")]
     FormalIsolation,
+    /// A property of a properties document that says nothing it can be held
+    /// to, which `sce-codegen formal properties` refuses by name: an
+    /// assumption about the machine itself, or a guarantee that passes for
+    /// nothing (docs/adr/0115, D15).
+    #[serde(rename = "formal/property-refused")]
+    FormalPropertyRefused,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -4624,6 +4630,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         FormalToolUnavailable,
         FormalNoTranslation,
         FormalIsolation,
+        FormalPropertyRefused,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4993,6 +5000,7 @@ impl DiagnosticCode {
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
             FormalNoTranslation => Some("ADR 0115 D7"),
             FormalIsolation => Some("ADR 0115 D11"),
+            FormalPropertyRefused => Some("ADR 0115 D15"),
 
             // ── Forge XSD ────────────────────────────────────────
             XmlSchemaValidation => Some("SCE Forge XSD"),
@@ -6425,6 +6433,7 @@ impl DiagnosticCode {
             | FormalToolUnavailable
             | FormalNoTranslation
             | FormalIsolation
+            | FormalPropertyRefused
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -7067,6 +7076,7 @@ impl DiagnosticCode {
             FormalToolUnavailable => "formal/tool-unavailable",
             FormalNoTranslation => "formal/no-translation",
             FormalIsolation => "formal/isolation",
+            FormalPropertyRefused => "formal/property-refused",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -21174,6 +21184,14 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:5408a9f493fb1cfd","code":"formal/isolation","stage":"formal","spec":"ADR 0115 D11","message":"1a2b3c4d5e6..4d5e6f7a8b9: 1 commit(s) change what a check says otherwise than by itself and for a reason: 4d5e6f7a8b9 feat: Change a property with its model","actual":"1a2b3c4d5e6..4d5e6f7a8b9"}"#,
             ),
+            (
+                "formal/property-refused",
+                FormalError::PropertyRefused {
+                    document: "p.scxml".into(),
+                    refusals: vec!["`REQ-1` (<sce:always>): an assumption about the machine itself: it reads In('s0'), and an assumption is of what the environment does, the event that comes (_event.name), never of what the machine decides".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:c1f0189123ca6da2","code":"formal/property-refused","stage":"formal","spec":"ADR 0115 D15","message":"p.scxml: 1 propert(y/ies) are refused for what they say: `REQ-1` (<sce:always>): an assumption about the machine itself: it reads In('s0'), and an assumption is of what the environment does, the event that comes (_event.name), never of what the machine decides","actual":"p.scxml"}"#,
+            ),
         ]
     }
 
@@ -22657,6 +22675,8 @@ mod tests {
             // The repair is a document without the constructs the refusal names,
             // or a translation of them in the generator: no candidate list.
             | FormalNoTranslation
+            // The repair is a property that says something: no candidate list.
+            | FormalPropertyRefused
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -23581,7 +23601,7 @@ mod tests {
                 | CliPseudoUnavailable
                 | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
                 | FormalDeclaration | FormalVerdict | FormalToolUnavailable
-                | FormalNoTranslation | FormalIsolation
+                | FormalNoTranslation | FormalIsolation | FormalPropertyRefused
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployChildEntryShape | MeshDeployChildUnknownParent
@@ -23797,9 +23817,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            585,
+            586,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 585 distinct variants to match the DiagnosticCode \
+             expected 586 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24731,6 +24751,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // construct it refuses with the place of each in the text, in one
             // record: no single node's anchors are its to carry.
             | FormalNoTranslation
+            // The judge of a document's properties reads a properties document,
+            // no statechart this harness drives.
+            | FormalPropertyRefused
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion

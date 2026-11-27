@@ -53,6 +53,9 @@ on:
       - 'sce-build/src/**'
       - 'sce-build/kind-examples/**'
       - 'sce-build/tests/fixtures/**'
+      # The semantics a document's model extends, which the generator compiles
+      # in for the judges that stage it (docs/adr/0115, D15).
+      - 'docs/formal/AppendixD.tla'
       # The library suite compiles the module its tests include by path.
       - 'sce-build/tests/common/**'
       - 'SCE_ERROR_CONTRACT.md'
@@ -89,6 +92,9 @@ on:
       - 'sce-build/src/**'
       - 'sce-build/kind-examples/**'
       - 'sce-build/tests/fixtures/**'
+      # The semantics a document's model extends, which the generator compiles
+      # in for the judges that stage it (docs/adr/0115, D15).
+      - 'docs/formal/AppendixD.tla'
       # The library suite compiles the module its tests include by path.
       - 'sce-build/tests/common/**'
       - 'SCE_ERROR_CONTRACT.md'

@@ -34,6 +34,15 @@ use super::FormalError;
 /// The module every document's model extends: Appendix D, once.
 pub const SEMANTICS: &str = "AppendixD";
 
+/// The text of [`SEMANTICS`], compiled in: the semantics the models this
+/// module writes extend is the generator's, so a judge that runs one stages
+/// the module it was written against, wherever it runs.
+pub const SEMANTICS_TEXT: &str = include_str!("../../../docs/formal/AppendixD.tla");
+
+/// The prefix of the definitions a document's own module gives the constants
+/// of [`SEMANTICS`] by (`DocStates` for `States`).
+pub const DOCUMENT_PREFIX: &str = "Doc";
+
 /// The modules a document's model may not be named as: the semantics, and the
 /// standard modules TLC finds before any module beside it.
 const TAKEN_MODULE_NAMES: [&str; 6] = [
@@ -173,6 +182,9 @@ pub enum Construct {
     /// The W3C verdict asked of a document with no top-level final state of
     /// this id.
     W3cVerdict(&'static str),
+    /// A `<send>` of an observer, which is read by nothing but the properties
+    /// and sends nothing (docs/adr/0115, D15).
+    ObserverSend,
 }
 
 impl fmt::Display for Construct {
@@ -225,6 +237,9 @@ impl fmt::Display for Construct {
                 f,
                 "the W3C verdict, and the document has no top-level <final id=\"{id}\">"
             ),
+            Construct::ObserverSend => f.write_str(
+                "a <send>, and an observer sends nothing: it is read by the properties alone",
+            ),
         }
     }
 }
@@ -249,6 +264,41 @@ pub fn write(
     document: &str,
     options: Options<'_>,
 ) -> Result<DocumentModel, FormalError> {
+    write_with_facts(model, document, options).map(|(written, _)| written)
+}
+
+/// What a module beside a document's own reads of the document by name
+/// (docs/adr/0115, D15): its states and its data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Facts {
+    /// The id of every state, in the order the tables number them; a
+    /// `<history>` is no state a configuration holds, and is not among them.
+    pub(super) states: Vec<String>,
+    /// Each `<data>`'s id and type, in document order.
+    pub(super) data: Vec<(String, Ty)>,
+}
+
+impl Facts {
+    fn of(writer: &Writer<'_>) -> Self {
+        Self {
+            states: writer
+                .tables
+                .states
+                .iter()
+                .map(|row| row.id.clone())
+                .collect(),
+            data: writer.variables.clone(),
+        }
+    }
+}
+
+/// [`write`], and the [`Facts`] of the document a module beside the model
+/// reads it by.
+pub(super) fn write_with_facts(
+    model: &SCXMLModel,
+    document: &str,
+    options: Options<'_>,
+) -> Result<(DocumentModel, Facts), FormalError> {
     let refused = |refusals: Vec<Refusal>| FormalError::NoTranslation {
         document: document.to_string(),
         refusals: refusals.iter().map(Refusal::to_string).collect(),
@@ -259,32 +309,90 @@ pub fn write(
             construct: Construct::Tables(why.to_string()),
         }])
     })?;
-    let mut writer = Writer::new(model, &tables);
+    let mut writer = Writer::new(model, &tables, Role::Machine);
     let module = options.module.unwrap_or(&model.name);
     writer.module_name(module);
     let text = writer.module(module, document, options.w3c_verdict);
     if writer.refusals.is_empty() {
-        Ok(DocumentModel {
-            module: module.to_string(),
-            text,
-        })
+        let facts = Facts::of(&writer);
+        Ok((
+            DocumentModel {
+                module: module.to_string(),
+                text,
+            },
+            facts,
+        ))
     } else {
         Err(refused(writer.refusals))
     }
 }
 
+/// An observer's tables (docs/adr/0115, D15), as a module that carries it
+/// beside a machine writes them.
+#[derive(Debug, Clone)]
+pub(super) struct ObserverTables {
+    /// The definitions, each named `prefix` and the constant of
+    /// [`SEMANTICS`] it gives.
+    pub(super) text: String,
+    pub(super) facts: Facts,
+    /// Whether a condition or a block of it needs the integers below zero.
+    pub(super) integers: bool,
+}
+
+/// The tables of the observer `model` under `prefix`, or every construct of
+/// it with no translation. An observer is a statechart as a machine is and is
+/// translated by the same rules, but for one: it is read by nothing but the
+/// properties, so it sends nothing, and a `<send>` of it is refused.
+pub(super) fn observer_tables(
+    model: &SCXMLModel,
+    prefix: &str,
+) -> Result<ObserverTables, Vec<Refusal>> {
+    let tables = DocumentTables::of(model).map_err(|why| {
+        vec![Refusal {
+            place: "the document".to_string(),
+            construct: Construct::Tables(why.to_string()),
+        }]
+    })?;
+    let mut writer = Writer::new(model, &tables, Role::Observer);
+    writer.whole_document();
+    writer.state_ids();
+    let data0 = writer.data();
+    let text = writer.tables(prefix, &data0);
+    if writer.refusals.is_empty() {
+        Ok(ObserverTables {
+            text,
+            facts: Facts::of(&writer),
+            integers: writer.integers,
+        })
+    } else {
+        Err(writer.refusals)
+    }
+}
+
+/// What a document is translated as: a machine, or an observer of one, which
+/// sends nothing (docs/adr/0115, D15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    Machine,
+    Observer,
+}
+
 /// The type of a value of the model's data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ty {
+pub(super) enum Ty {
     Int,
     Bool,
+    /// An event's name, the sequence of its tokens: what a property compares
+    /// `_event.name` with (docs/adr/0115, D15). No `<data>` holds one.
+    Name,
 }
 
 impl Ty {
-    fn word(self) -> &'static str {
+    pub(super) fn word(self) -> &'static str {
         match self {
             Ty::Int => "an integer",
             Ty::Bool => "a boolean",
+            Ty::Name => "an event name",
         }
     }
 }
@@ -293,7 +401,7 @@ impl Ty {
 /// compound one is parenthesised there, and a junction is parenthesised also
 /// where it stands alone as the value of a `CASE` arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Binding {
+pub(super) enum Binding {
     Atom,
     Compound,
     Junction,
@@ -301,14 +409,14 @@ enum Binding {
 
 /// A translated expression.
 #[derive(Debug, Clone)]
-struct Tla {
-    text: String,
-    ty: Ty,
-    binding: Binding,
+pub(super) struct Tla {
+    pub(super) text: String,
+    pub(super) ty: Ty,
+    pub(super) binding: Binding,
 }
 
 impl Tla {
-    fn atom(text: String, ty: Ty) -> Self {
+    pub(super) fn atom(text: String, ty: Ty) -> Self {
         Self {
             text,
             ty,
@@ -317,7 +425,7 @@ impl Tla {
     }
 
     /// As the operand of an operator.
-    fn operand(&self) -> String {
+    pub(super) fn operand(&self) -> String {
         match self.binding {
             Binding::Atom => self.text.clone(),
             Binding::Compound | Binding::Junction => format!("({})", self.text),
@@ -325,7 +433,7 @@ impl Tla {
     }
 
     /// As the value of a `CASE` arm or of a definition.
-    fn alone(&self) -> String {
+    pub(super) fn alone(&self) -> String {
         match self.binding {
             Binding::Atom | Binding::Compound => self.text.clone(),
             Binding::Junction => format!("({})", self.text),
@@ -366,10 +474,11 @@ struct Writer<'m> {
     blocks: Vec<(String, String)>,
     /// Whether an expression needs the integers below zero (`Integers`).
     integers: bool,
+    role: Role,
 }
 
 impl<'m> Writer<'m> {
-    fn new(model: &'m SCXMLModel, tables: &'m DocumentTables) -> Self {
+    fn new(model: &'m SCXMLModel, tables: &'m DocumentTables, role: Role) -> Self {
         Self {
             model,
             tables,
@@ -378,6 +487,7 @@ impl<'m> Writer<'m> {
             guards: Vec::new(),
             blocks: Vec::new(),
             integers: false,
+            role,
         }
     }
 
@@ -548,165 +658,14 @@ impl<'m> Writer<'m> {
     /// `expr` over the data named `data` (`None`: a `<data>` value, which
     /// reads no variable), or why it has no translation.
     fn expression(&mut self, expr: &Expr, data: Option<&str>) -> Result<Tla, String> {
-        match &expr.kind {
-            ExprKind::Number(spelling) => {
-                let decimal = !spelling.is_empty()
-                    && spelling.bytes().all(|b| b.is_ascii_digit())
-                    && (spelling == "0" || !spelling.starts_with('0'));
-                match spelling.parse::<u64>() {
-                    Ok(value) if decimal && value <= LARGEST_INTEGER => {
-                        Ok(Tla::atom(spelling.clone(), Ty::Int))
-                    }
-                    _ => Err(format!(
-                        "`{spelling}` is no integer written in decimal up to {LARGEST_INTEGER}"
-                    )),
-                }
-            }
-            ExprKind::Bool(value) => Ok(Tla::atom(
-                String::from(if *value { "TRUE" } else { "FALSE" }),
-                Ty::Bool,
-            )),
-            ExprKind::Ident(name) => {
-                let Some(data) = data else {
-                    return Err(format!(
-                        "reads `{name}`, and a <data> value is written with literals alone"
-                    ));
-                };
-                match self.type_of(name) {
-                    Some(ty) => Ok(Tla::atom(format!("{data}.{name}"), ty)),
-                    None => Err(format!("`{name}` is no <data> of the document")),
-                }
-            }
-            ExprKind::Unary { op, operand } => {
-                let inner = self.expression(operand, data)?;
-                match (op, inner.ty) {
-                    (UnaryOp::Not, Ty::Bool) => Ok(Tla {
-                        text: format!("~{}", inner.operand()),
-                        ty: Ty::Bool,
-                        binding: Binding::Compound,
-                    }),
-                    (UnaryOp::Neg, Ty::Int) => {
-                        self.integers = true;
-                        Ok(Tla {
-                            text: format!("-{}", inner.operand()),
-                            ty: Ty::Int,
-                            binding: Binding::Compound,
-                        })
-                    }
-                    (UnaryOp::Not, ty) | (UnaryOp::Neg, ty) => Err(format!(
-                        "`{}` is applied to {}",
-                        unary_spelling(*op),
-                        ty.word()
-                    )),
-                    (UnaryOp::Pos | UnaryOp::BitNot | UnaryOp::TypeOf, _) => Err(format!(
-                        "`{}`, which has no translation",
-                        unary_spelling(*op)
-                    )),
-                }
-            }
-            ExprKind::Binary { op, left, right } => {
-                let tla_op = match op {
-                    BinOp::StrictEq | BinOp::LooseEq => "=",
-                    BinOp::StrictNeq | BinOp::LooseNeq => "#",
-                    BinOp::Lt => "<",
-                    BinOp::Gt => ">",
-                    BinOp::LtEq => "<=",
-                    BinOp::GtEq => ">=",
-                    BinOp::Add => "+",
-                    BinOp::Sub => "-",
-                    BinOp::Mul => "*",
-                    BinOp::Div => return Err("`/`, which leaves the integers".to_string()),
-                    BinOp::Mod => {
-                        return Err(
-                            "`%`, whose sign TLA+ and ECMAScript take differently".to_string()
-                        )
-                    }
-                    BinOp::BitAnd
-                    | BinOp::BitOr
-                    | BinOp::BitXor
-                    | BinOp::Shl
-                    | BinOp::Shr
-                    | BinOp::UShr => {
-                        return Err("a bitwise operator, which has no translation".to_string())
-                    }
-                    BinOp::InstanceOf | BinOp::In => {
-                        return Err(
-                            "an operator on objects, which the model does not hold".to_string()
-                        )
-                    }
-                };
-                let l = self.expression(left, data)?;
-                let r = self.expression(right, data)?;
-                let equality = matches!(
-                    op,
-                    BinOp::StrictEq | BinOp::LooseEq | BinOp::StrictNeq | BinOp::LooseNeq
-                );
-                if equality {
-                    if l.ty != r.ty {
-                        return Err(format!(
-                            "compares {} with {}, which ECMAScript converts",
-                            l.ty.word(),
-                            r.ty.word()
-                        ));
-                    }
-                } else if l.ty != Ty::Int || r.ty != Ty::Int {
-                    return Err(format!("`{tla_op}` is applied to a boolean"));
-                }
-                if matches!(op, BinOp::Sub) {
-                    self.integers = true;
-                }
-                let arithmetic = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul);
-                Ok(Tla {
-                    text: format!("{} {tla_op} {}", l.operand(), r.operand()),
-                    ty: if arithmetic { Ty::Int } else { Ty::Bool },
-                    binding: Binding::Compound,
-                })
-            }
-            ExprKind::Logical { op, left, right } => {
-                let l = self.expression(left, data)?;
-                let r = self.expression(right, data)?;
-                if l.ty != Ty::Bool || r.ty != Ty::Bool {
-                    return Err(
-                        "`&&` or `||` of a value that is no boolean, which ECMAScript answers \
-                         with an operand"
-                            .to_string(),
-                    );
-                }
-                let junction = match op {
-                    LogicalOp::And => "/\\",
-                    LogicalOp::Or => "\\/",
-                };
-                Ok(Tla {
-                    text: format!("{} {junction} {}", l.operand(), r.operand()),
-                    ty: Ty::Bool,
-                    binding: Binding::Junction,
-                })
-            }
-            ExprKind::Str(_) => Err("a string, which the model's data do not hold".to_string()),
-            ExprKind::Nullish => {
-                Err("null or undefined, which the model's data do not hold".to_string())
-            }
-            ExprKind::Call { .. } => {
-                Err("a call, In() among them, which has no translation".to_string())
-            }
-            ExprKind::Member { .. } | ExprKind::Index { .. } => Err(
-                "a member of an object, _event among them, which the model does not hold"
-                    .to_string(),
-            ),
-            ExprKind::Conditional { .. } => {
-                Err("a conditional expression, which has no translation".to_string())
-            }
-            ExprKind::This
-            | ExprKind::Array(_)
-            | ExprKind::Object(_)
-            | ExprKind::New { .. }
-            | ExprKind::Function { .. } => {
-                Err("an object, an array or a function, which the model does not hold".to_string())
-            }
-            ExprKind::Update { .. } | ExprKind::Assign { .. } => {
-                Err("an assignment inside an expression, which has no translation".to_string())
-            }
-        }
+        let mut scope = DataScope {
+            variables: &self.variables,
+            data,
+            integers: false,
+        };
+        let translated = translate(expr, &mut scope);
+        self.integers |= scope.integers;
+        translated
     }
 
     /// The key of `cond` in `DocGuard`, its translation recorded once, or
@@ -764,6 +723,9 @@ impl<'m> Writer<'m> {
                     }
                 }
                 "raise" => raised.push(self.event_name(place, &action.event)),
+                "send" if self.role == Role::Observer => {
+                    self.refuse(place, Construct::ObserverSend);
+                }
                 "send" => {
                     if let Some((event, delayed)) = self.send(place, action) {
                         if delayed {
@@ -972,15 +934,9 @@ impl<'m> Writer<'m> {
                 }
             }
         }
-
-        let order = self.document_order();
-        let quoted_order: Vec<String> = order.iter().map(|id| tla_string(id)).collect();
-        let kinds = self.kinds(&order);
-        let parents = self.parents(&order);
-        let history_types = self.history_types();
-        let rows = self.rows();
-        let on_entry = self.handlers(&order, Handler::Entry);
-        let on_exit = self.handlers(&order, Handler::Exit);
+        // Before the head: a condition that needs the integers below zero is
+        // found while the tables are written.
+        let tables = self.tables(DOCUMENT_PREFIX, &data0);
 
         let mut text = String::new();
         let line = |text: &mut String, content: &str| {
@@ -1009,103 +965,7 @@ impl<'m> Writer<'m> {
             line(&mut text, &format!("EXTENDS {SEMANTICS}"));
         }
         line(&mut text, "");
-        line(&mut text, &wrapped("DocStates == {", &quoted_order, "}"));
-        line(&mut text, "");
-        line(&mut text, &wrapped("DocOrder == <<", &quoted_order, ">>"));
-        line(&mut text, "");
-        line(
-            &mut text,
-            &format!(
-                "DocKind == {}",
-                function("s", "DocStates", &kinds, "\"state\"")
-            ),
-        );
-        line(&mut text, "");
-        line(
-            &mut text,
-            &format!(
-                "DocParent == {}",
-                function("s", "DocStates", &parents, "Root")
-            ),
-        );
-        line(&mut text, "");
-        let history_ids: Vec<String> = self
-            .tables
-            .histories
-            .iter()
-            .map(|row| tla_string(&row.id))
-            .collect();
-        line(
-            &mut text,
-            &format!(
-                "DocHistoryType == {}",
-                function(
-                    "h",
-                    &format!("{{{}}}", history_ids.join(", ")),
-                    &history_types,
-                    "\"shallow\""
-                )
-            ),
-        );
-        line(&mut text, "");
-        line(&mut text, "DocTransitions == <<");
-        let last = rows.len().saturating_sub(1);
-        for (at, row) in rows.iter().enumerate() {
-            let comma = if at == last { "" } else { "," };
-            line(&mut text, &format!("    {row}{comma}"));
-        }
-        line(&mut text, ">>");
-        line(&mut text, "");
-        line(
-            &mut text,
-            &format!(
-                "DocOnEntry == {}",
-                function("s", "DocStates", &on_entry, "NoContent")
-            ),
-        );
-        line(&mut text, "");
-        line(
-            &mut text,
-            &format!(
-                "DocOnExit == {}",
-                function("s", "DocStates", &on_exit, "NoContent")
-            ),
-        );
-        line(&mut text, "");
-        line(&mut text, &format!("DocData0 == {data0}"));
-        line(&mut text, "");
-        if self.guards.is_empty() {
-            line(
-                &mut text,
-                "\\* No transition of the document has a condition.",
-            );
-            line(&mut text, "DocGuard(cond, data, event, conf) == FALSE");
-        } else {
-            line(&mut text, "DocGuard(cond, data, event, conf) ==");
-            let arms: Vec<(String, String)> = self
-                .guards
-                .iter()
-                .map(|(key, guard)| (format!("cond = {}", tla_string(key)), guard.clone()))
-                .collect();
-            push_case(&mut text, &arms);
-        }
-        line(&mut text, "");
-        if self.blocks.is_empty() {
-            line(&mut text, "\\* The document has no executable content.");
-            line(
-                &mut text,
-                "DocExecute(block, data, event) == Effect(data, <<>>, <<>>, <<>>)",
-            );
-        } else {
-            line(&mut text, "DocExecute(block, data, event) ==");
-            let arms: Vec<(String, String)> = self
-                .blocks
-                .iter()
-                .map(|(name, effect)| (format!("block = {}", tla_string(name)), effect.clone()))
-                .collect();
-            push_case(&mut text, &arms);
-        }
-        line(&mut text, "");
+        text.push_str(&tables);
         line(
             &mut text,
             "\\* Appendix D with every part in, over the same tables: what each part taken",
@@ -1139,6 +999,145 @@ impl<'m> Writer<'m> {
             line(&mut text, "Passes == <>(outcome = \"pass\")");
         }
         line(&mut text, "====");
+        text
+    }
+
+    /// The document's tables as Appendix D takes them, each a definition
+    /// named `prefix` and the constant it gives (`DocStates` for `States`
+    /// under the prefix `Doc`), each followed by an empty line: its states,
+    /// their order, kinds and parents, its histories' types, its transitions
+    /// by row, its handlers, `data0` its datamodel when it starts, and its
+    /// conditions and blocks. A module of the document and a module that
+    /// carries a second document beside it (an observer, `super::properties`)
+    /// write the same tables under two prefixes.
+    fn tables(&mut self, prefix: &str, data0: &str) -> String {
+        let order = self.document_order();
+        let quoted_order: Vec<String> = order.iter().map(|id| tla_string(id)).collect();
+        let kinds = self.kinds(&order);
+        let parents = self.parents(&order);
+        let history_types = self.history_types();
+        let rows = self.rows();
+        let on_entry = self.handlers(&order, Handler::Entry);
+        let on_exit = self.handlers(&order, Handler::Exit);
+        let states = format!("{prefix}States");
+
+        let mut text = String::new();
+        let line = |text: &mut String, content: &str| {
+            text.push_str(content);
+            text.push('\n');
+        };
+        line(
+            &mut text,
+            &wrapped(&format!("{states} == {{"), &quoted_order, "}"),
+        );
+        line(&mut text, "");
+        line(
+            &mut text,
+            &wrapped(&format!("{prefix}Order == <<"), &quoted_order, ">>"),
+        );
+        line(&mut text, "");
+        line(
+            &mut text,
+            &format!(
+                "{prefix}Kind == {}",
+                function("s", &states, &kinds, "\"state\"")
+            ),
+        );
+        line(&mut text, "");
+        line(
+            &mut text,
+            &format!(
+                "{prefix}Parent == {}",
+                function("s", &states, &parents, "Root")
+            ),
+        );
+        line(&mut text, "");
+        let history_ids: Vec<String> = self
+            .tables
+            .histories
+            .iter()
+            .map(|row| tla_string(&row.id))
+            .collect();
+        line(
+            &mut text,
+            &format!(
+                "{prefix}HistoryType == {}",
+                function(
+                    "h",
+                    &format!("{{{}}}", history_ids.join(", ")),
+                    &history_types,
+                    "\"shallow\""
+                )
+            ),
+        );
+        line(&mut text, "");
+        line(&mut text, &format!("{prefix}Transitions == <<"));
+        let last = rows.len().saturating_sub(1);
+        for (at, row) in rows.iter().enumerate() {
+            let comma = if at == last { "" } else { "," };
+            line(&mut text, &format!("    {row}{comma}"));
+        }
+        line(&mut text, ">>");
+        line(&mut text, "");
+        line(
+            &mut text,
+            &format!(
+                "{prefix}OnEntry == {}",
+                function("s", &states, &on_entry, "NoContent")
+            ),
+        );
+        line(&mut text, "");
+        line(
+            &mut text,
+            &format!(
+                "{prefix}OnExit == {}",
+                function("s", &states, &on_exit, "NoContent")
+            ),
+        );
+        line(&mut text, "");
+        line(&mut text, &format!("{prefix}Data0 == {data0}"));
+        line(&mut text, "");
+        if self.guards.is_empty() {
+            line(
+                &mut text,
+                "\\* No transition of the document has a condition.",
+            );
+            line(
+                &mut text,
+                &format!("{prefix}Guard(cond, data, event, conf) == FALSE"),
+            );
+        } else {
+            line(
+                &mut text,
+                &format!("{prefix}Guard(cond, data, event, conf) =="),
+            );
+            let arms: Vec<(String, String)> = self
+                .guards
+                .iter()
+                .map(|(key, guard)| (format!("cond = {}", tla_string(key)), guard.clone()))
+                .collect();
+            push_case(&mut text, &arms);
+        }
+        line(&mut text, "");
+        if self.blocks.is_empty() {
+            line(&mut text, "\\* The document has no executable content.");
+            line(
+                &mut text,
+                &format!("{prefix}Execute(block, data, event) == Effect(data, <<>>, <<>>, <<>>)"),
+            );
+        } else {
+            line(
+                &mut text,
+                &format!("{prefix}Execute(block, data, event) =="),
+            );
+            let arms: Vec<(String, String)> = self
+                .blocks
+                .iter()
+                .map(|(name, effect)| (format!("block = {}", tla_string(name)), effect.clone()))
+                .collect();
+            push_case(&mut text, &arms);
+        }
+        line(&mut text, "");
         text
     }
 
@@ -1297,6 +1296,214 @@ impl<'m> Writer<'m> {
             }
         }
         rows
+    }
+}
+
+/// What an expression reads, apart from its literals and its operators: the
+/// names, calls, members and strings it holds, which each context of
+/// translation answers for itself. A document's conditions read its data
+/// ([`DataScope`]); a property's conditions read an observation
+/// (`super::properties`).
+pub(super) trait Scope {
+    /// The identifier `name`.
+    fn ident(&mut self, name: &str) -> Result<Tla, String>;
+    /// The call `callee(args)`.
+    fn call(&mut self, callee: &Expr, args: &[Expr]) -> Result<Tla, String>;
+    /// The member `object.property`, or `object[index]` with `property`
+    /// `None` where the index is computed.
+    fn member(&mut self, object: &Expr, property: Option<&str>) -> Result<Tla, String>;
+    /// The string literal `text`.
+    fn string(&mut self, text: &str) -> Result<Tla, String>;
+    /// The translation needs the integers below zero (`Integers`).
+    fn needs_integers(&mut self);
+}
+
+/// `expr` as TLA+ over `scope`, or why it has no translation: the integers
+/// and the booleans with their operators, each name, call, member and string
+/// as `scope` reads it.
+pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, String> {
+    match &expr.kind {
+        ExprKind::Number(spelling) => {
+            let decimal = !spelling.is_empty()
+                && spelling.bytes().all(|b| b.is_ascii_digit())
+                && (spelling == "0" || !spelling.starts_with('0'));
+            match spelling.parse::<u64>() {
+                Ok(value) if decimal && value <= LARGEST_INTEGER => {
+                    Ok(Tla::atom(spelling.clone(), Ty::Int))
+                }
+                _ => Err(format!(
+                    "`{spelling}` is no integer written in decimal up to {LARGEST_INTEGER}"
+                )),
+            }
+        }
+        ExprKind::Bool(value) => Ok(Tla::atom(
+            String::from(if *value { "TRUE" } else { "FALSE" }),
+            Ty::Bool,
+        )),
+        ExprKind::Ident(name) => scope.ident(name),
+        ExprKind::Unary { op, operand } => {
+            let inner = translate(operand, scope)?;
+            match (op, inner.ty) {
+                (UnaryOp::Not, Ty::Bool) => Ok(Tla {
+                    text: format!("~{}", inner.operand()),
+                    ty: Ty::Bool,
+                    binding: Binding::Compound,
+                }),
+                (UnaryOp::Neg, Ty::Int) => {
+                    scope.needs_integers();
+                    Ok(Tla {
+                        text: format!("-{}", inner.operand()),
+                        ty: Ty::Int,
+                        binding: Binding::Compound,
+                    })
+                }
+                (UnaryOp::Not, ty) | (UnaryOp::Neg, ty) => Err(format!(
+                    "`{}` is applied to {}",
+                    unary_spelling(*op),
+                    ty.word()
+                )),
+                (UnaryOp::Pos | UnaryOp::BitNot | UnaryOp::TypeOf, _) => Err(format!(
+                    "`{}`, which has no translation",
+                    unary_spelling(*op)
+                )),
+            }
+        }
+        ExprKind::Binary { op, left, right } => {
+            let tla_op = match op {
+                BinOp::StrictEq | BinOp::LooseEq => "=",
+                BinOp::StrictNeq | BinOp::LooseNeq => "#",
+                BinOp::Lt => "<",
+                BinOp::Gt => ">",
+                BinOp::LtEq => "<=",
+                BinOp::GtEq => ">=",
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => return Err("`/`, which leaves the integers".to_string()),
+                BinOp::Mod => {
+                    return Err("`%`, whose sign TLA+ and ECMAScript take differently".to_string())
+                }
+                BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::UShr => {
+                    return Err("a bitwise operator, which has no translation".to_string())
+                }
+                BinOp::InstanceOf | BinOp::In => {
+                    return Err("an operator on objects, which the model does not hold".to_string())
+                }
+            };
+            let l = translate(left, scope)?;
+            let r = translate(right, scope)?;
+            let equality = matches!(
+                op,
+                BinOp::StrictEq | BinOp::LooseEq | BinOp::StrictNeq | BinOp::LooseNeq
+            );
+            if equality {
+                if l.ty != r.ty {
+                    return Err(format!(
+                        "compares {} with {}, which ECMAScript converts",
+                        l.ty.word(),
+                        r.ty.word()
+                    ));
+                }
+            } else if l.ty != Ty::Int || r.ty != Ty::Int {
+                let other = if l.ty == Ty::Int { r.ty } else { l.ty };
+                return Err(format!("`{tla_op}` is applied to {}", other.word()));
+            }
+            if matches!(op, BinOp::Sub) {
+                scope.needs_integers();
+            }
+            let arithmetic = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul);
+            Ok(Tla {
+                text: format!("{} {tla_op} {}", l.operand(), r.operand()),
+                ty: if arithmetic { Ty::Int } else { Ty::Bool },
+                binding: Binding::Compound,
+            })
+        }
+        ExprKind::Logical { op, left, right } => {
+            let l = translate(left, scope)?;
+            let r = translate(right, scope)?;
+            if l.ty != Ty::Bool || r.ty != Ty::Bool {
+                return Err(
+                    "`&&` or `||` of a value that is no boolean, which ECMAScript answers \
+                     with an operand"
+                        .to_string(),
+                );
+            }
+            let junction = match op {
+                LogicalOp::And => "/\\",
+                LogicalOp::Or => "\\/",
+            };
+            Ok(Tla {
+                text: format!("{} {junction} {}", l.operand(), r.operand()),
+                ty: Ty::Bool,
+                binding: Binding::Junction,
+            })
+        }
+        ExprKind::Str(text) => scope.string(text),
+        ExprKind::Nullish => {
+            Err("null or undefined, which the model's data do not hold".to_string())
+        }
+        ExprKind::Call { callee, args } => scope.call(callee, args),
+        ExprKind::Member { object, property } => scope.member(object, Some(&property.text)),
+        ExprKind::Index { object, .. } => scope.member(object, None),
+        ExprKind::Conditional { .. } => {
+            Err("a conditional expression, which has no translation".to_string())
+        }
+        ExprKind::This
+        | ExprKind::Array(_)
+        | ExprKind::Object(_)
+        | ExprKind::New { .. }
+        | ExprKind::Function { .. } => {
+            Err("an object, an array or a function, which the model does not hold".to_string())
+        }
+        ExprKind::Update { .. } | ExprKind::Assign { .. } => {
+            Err("an assignment inside an expression, which has no translation".to_string())
+        }
+    }
+}
+
+/// A document's data, as its conditions and its blocks read them: each
+/// `<data>` a field of the record named `data`, and nothing else.
+struct DataScope<'v> {
+    /// Each `<data>`'s id and type, in document order.
+    variables: &'v [(String, Ty)],
+    /// The record a name is read from; `None` for a `<data>` value, which
+    /// reads no variable.
+    data: Option<&'v str>,
+    integers: bool,
+}
+
+impl Scope for DataScope<'_> {
+    fn ident(&mut self, name: &str) -> Result<Tla, String> {
+        let Some(data) = self.data else {
+            return Err(format!(
+                "reads `{name}`, and a <data> value is written with literals alone"
+            ));
+        };
+        match self.variables.iter().find(|(id, _)| id == name) {
+            Some((_, ty)) => Ok(Tla::atom(format!("{data}.{name}"), *ty)),
+            None => Err(format!("`{name}` is no <data> of the document")),
+        }
+    }
+
+    fn call(&mut self, _callee: &Expr, _args: &[Expr]) -> Result<Tla, String> {
+        Err("a call, In() among them, which has no translation".to_string())
+    }
+
+    fn member(&mut self, _object: &Expr, _property: Option<&str>) -> Result<Tla, String> {
+        Err("a member of an object, _event among them, which the model does not hold".to_string())
+    }
+
+    fn string(&mut self, _text: &str) -> Result<Tla, String> {
+        Err("a string, which the model's data do not hold".to_string())
+    }
+
+    fn needs_integers(&mut self) {
+        self.integers = true;
     }
 }
 
@@ -1798,5 +2005,49 @@ mod tests {
         assert!(text.lines().count() > 1, "{text}");
         assert!(text.lines().all(|line| line.len() < 80), "{text}");
         assert!(text.ends_with("\"state29\"}"), "{text}");
+    }
+
+    /// Turns red if an observer's tables are written under another prefix
+    /// than the one asked for, its facts lose a state, or an observer may send
+    /// (docs/adr/0115, D15).
+    #[test]
+    fn an_observer_is_written_under_its_prefix_and_sends_nothing() {
+        let tables = observer_tables(&model_of(BARE), "Obs1").expect("the tables of an observer");
+        for expected in [
+            "Obs1States == {\"a\", \"pass\", \"fail\"}\n",
+            "Obs1Kind == [s \\in Obs1States |->\n",
+            "Obs1Transitions == <<\n",
+            "Obs1Guard(cond, data, event, conf) == FALSE\n",
+            "Obs1Execute(block, data, event) == Effect(data, <<>>, <<>>, <<>>)\n",
+        ] {
+            assert!(
+                tables.text.contains(expected),
+                "missing {expected:?} in\n{}",
+                tables.text
+            );
+        }
+        assert!(!tables.text.contains("DocStates"), "{}", tables.text);
+        let mut states = tables.facts.states.clone();
+        states.sort();
+        assert_eq!(states, ["a", "fail", "pass"]);
+        let refused = observer_tables(&model_of(HISTORY), "Obs1").expect_err("a send is refused");
+        assert!(
+            refused.iter().any(|r| r.to_string()
+                == "transition 0 of state `s0`: a <send>, and an observer sends nothing: it is \
+                    read by the properties alone"),
+            "{refused:?}"
+        );
+    }
+
+    /// Turns red if a document's own module stops writing its tables under
+    /// the prefix its configurations name.
+    #[test]
+    fn a_documents_tables_are_written_under_its_own_prefix() {
+        let text = written(BARE, Options::default());
+        assert!(
+            text.contains("\nDocStates == {\"a\", \"pass\", \"fail\"}\n"),
+            "{text}"
+        );
+        assert!(text.contains("\nDocData0 == "), "{text}");
     }
 }
