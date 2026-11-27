@@ -8,7 +8,10 @@
 (* amended at step 9), one drain at a time; an input that names a session  *)
 (* is posted to that session's inbox when it is posted (step 10); what an  *)
 (* inbox holds when its session ends is applied then, and a runtime that   *)
-(* never closes applies a later post at the end of its loop.               *)
+(* never closes applies a later post at the end of its loop. A post is     *)
+(* refused when it is posted: one naming a session the tree's directory    *)
+(* does not hold, one to a session whose run has ended where the runtime   *)
+(* closes, and one into an inbox that holds Capacity inputs.               *)
 (*                                                                         *)
 (* The parts, each a constant that is TRUE in the protocol, and each taken *)
 (* out by a run that must find what it breaks:                             *)
@@ -18,6 +21,9 @@
 (*   TakeOut         a drain takes out of the inbox what it applies        *)
 (*   ApplyAtEnd      what the inbox holds at the end is applied, not left  *)
 (*   Wake            a post wakes the owner                                *)
+(*   Lookup          a post's session is looked up in the directory, and   *)
+(*                   one the tree does not hold is refused                 *)
+(*   RefuseFull      a post into an inbox that holds Capacity is refused   *)
 (*                                                                         *)
 (* lin is a history variable: the order posts and own events linearized,   *)
 (* per session, which no runtime keeps and every property is stated by.   *)
@@ -40,10 +46,18 @@ CONSTANTS
     RootInputs,
     \* @type: Set(Str);
     ChildInputs,
+    \* a session the tree does not hold, and the inputs posted naming it
+    \* @type: Str;
+    Unknown,
+    \* @type: Set(Str);
+    UnknownInputs,
     \* @type: Set(Str);
     RootOwn,
     \* @type: Set(Str);
     ChildOwn,
+    \* the most inputs an inbox holds
+    \* @type: Int;
+    Capacity,
     \* whether the runtime refuses a post after the end
     \* @type: Bool;
     Closes,
@@ -59,7 +73,11 @@ CONSTANTS
     \* @type: Bool;
     ApplyAtEnd,
     \* @type: Bool;
-    Wake
+    Wake,
+    \* @type: Bool;
+    Lookup,
+    \* @type: Bool;
+    RefuseFull
 
 VARIABLES
     \* each session's inbox, the inputs posted to it in order
@@ -68,7 +86,7 @@ VARIABLES
     \* each session's external queue
     \* @type: Str -> Seq(Str);
     extq,
-    \* each input: none, taken or refused
+    \* each input: none, taken, or refused for a reason (unknown, ended or full)
     \* @type: Str -> Str;
     status,
     \* the events of the owner not yet put on a queue
@@ -87,7 +105,8 @@ VARIABLES
 vars == <<inbox, extq, status, ownUnsent, ended, awake, lin>>
 
 \* The tree as the promise names it.
-Tree == INSTANCE InboxService WITH arrivals <- [s \in {Root, Child} |-> <<>>]
+Tree == INSTANCE InboxService
+    WITH arrivals <- [s \in {Root, Child} |-> <<>>], entered <- [s \in {Root, Child} |-> 0]
 Sessions == Tree!Sessions
 Inputs == Tree!Inputs
 OwnEvents == Tree!OwnEvents
@@ -112,15 +131,29 @@ Init ==
     /\ awake = TRUE
     /\ lin = [s \in Sessions |-> <<>>]
 
-\* A thread posts the input i through the tree's handle.
+\* The post of i is refused for the reason why, and changes nothing else.
+\* @type: (Str, Str) => Bool;
+Refuse(i, why) ==
+    /\ status' = [status EXCEPT ![i] = why]
+    /\ UNCHANGED <<inbox, awake, lin>>
+
+\* A thread posts the input i through the tree's handle. The directory says
+\* whether the tree holds the session i names, and the inbox whether it is
+\* full; without the lookup the post is taken, and no inbox holds it.
 Post(i) ==
     LET s == Tree!Target(i)
         at == IF AddressAtPost THEN s ELSE Root
     IN
     /\ status[i] = "none"
-    /\ IF ended[s] /\ Closes
-         THEN /\ status' = [status EXCEPT ![i] = "refused"]
-              /\ UNCHANGED <<inbox, awake, lin>>
+    /\ IF s \notin Sessions
+         THEN IF Lookup
+                THEN Refuse(i, "unknown")
+                ELSE /\ status' = [status EXCEPT ![i] = "taken"]
+                     /\ UNCHANGED <<inbox, awake, lin>>
+         ELSE IF ended[s] /\ Closes
+         THEN Refuse(i, "ended")
+         ELSE IF RefuseFull /\ Len(inbox[at]) >= Capacity
+         THEN Refuse(i, "full")
          ELSE /\ status' = [status EXCEPT ![i] = "taken"]
               /\ inbox' = [inbox EXCEPT ![at] = Append(@, i)]
               /\ awake' = (awake \/ Wake)
@@ -208,6 +241,9 @@ NoLoss ==
             \/ \E t \in Sessions : InSeq(i, extq[t])
             \/ \E s \in Sessions : InSeq(i, ItemsTo(inbox[s], Tree!Target(i)))
 
+\* No inbox holds more than its capacity.
+Bounded == \A s \in Sessions : Len(inbox[s]) <= Capacity
+
 \* Every input taken reaches the queue of the session it names.
 Delivered == \A i \in Tree!Addressed : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
 
@@ -228,30 +264,34 @@ Refines == Promise!Spec
 \* inbox holds only inputs that name its session, so a drain moves the inbox's inputs to the end of
 \* that session's queue and nowhere else (InOrder); every input and own event is linearized once,
 \* an input when it is taken and an own event when it leaves ownUnsent (AtMostOnce); and an input
-\* taken is linearized, so it is in the queue or the inbox of its session (NoLoss).
+\* taken is linearized, so it is in the queue or the inbox of its session (NoLoss). A refused post
+\* changes only its own answer, and no input naming a session the tree does not hold is taken.
 
-\* The most a queue can hold: every input and every own event, once. Apalache generates each
-\* sequence up to it (Gen), and the invariant implies no sequence is longer, so the states it starts
-\* from are every state the invariant allows.
-Capacity ==
+\* The most a queue can hold: every input that names a session of the tree and every own event,
+\* once. Apalache generates each sequence up to it (Gen), and the invariant implies no sequence is
+\* longer, so the states it starts from are every state the invariant allows.
+Longest ==
     Cardinality(RootInputs) + Cardinality(ChildInputs) + Cardinality(RootOwn) + Cardinality(ChildOwn)
 
 \* Each variable a value of its type, for Apalache to start the step from, conjoined with the
 \* invariant (the types of models.json): a sequence is given one only by Gen. It narrows nothing
 \* the invariant does not.
 Typed ==
-    /\ inbox = [s \in Sessions |-> Gen(Capacity)]
-    /\ extq = [s \in Sessions |-> Gen(Capacity)]
-    /\ status \in [Inputs -> {"none", "taken", "refused"}]
+    /\ inbox = [s \in Sessions |-> Gen(Longest)]
+    /\ extq = [s \in Sessions |-> Gen(Longest)]
+    /\ status \in [Inputs -> {"none", "taken"} \cup Tree!Refusals]
     /\ ownUnsent \in SUBSET OwnEvents
     /\ ended \in [Sessions -> BOOLEAN]
     /\ awake \in BOOLEAN
-    /\ lin = [s \in Sessions |-> Gen(Capacity)]
+    /\ lin = [s \in Sessions |-> Gen(Longest)]
 
 QueueInductive ==
-    /\ status \in [Inputs -> {"none", "taken", "refused"}]
+    /\ status \in [Inputs -> {"none", "taken"} \cup Tree!Refusals]
     /\ ownUnsent \subseteq OwnEvents
     /\ Inputs \cap OwnEvents = {}
+    /\ Unknown \notin Sessions
+    \* No input naming a session the tree does not hold is taken.
+    /\ \A i \in Inputs : Tree!Target(i) \notin Sessions => status[i] # "taken"
     \* What a session linearized is its queue, then its inbox.
     /\ \A t \in Sessions : lin[t] = extq[t] \o inbox[t]
     /\ \A s \in Sessions : \A k \in DOMAIN inbox[s] : Tree!Target(inbox[s][k]) = s
@@ -261,5 +301,5 @@ QueueInductive ==
            /\ lin[t][k] \in Inputs => status[lin[t][k]] = "taken"
            /\ lin[t][k] \in OwnEvents => lin[t][k] \notin ownUnsent
     /\ \A t \in Sessions : \A j, k \in DOMAIN lin[t] : j # k => lin[t][j] # lin[t][k]
-    /\ \A i \in Inputs : status[i] = "taken" => InSeq(i, lin[Tree!Target(i)])
+    /\ \A i \in Tree!Addressed : status[i] = "taken" => InSeq(i, lin[Tree!Target(i)])
 ====
