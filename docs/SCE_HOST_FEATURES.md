@@ -1462,3 +1462,55 @@ every redaction, chain and checkpoint of the file. Rust in
 `backends/rust/crypto/tests/audit.rs` and
 `backends/rust/host-features/tests/audit.rs`, C++ in
 `tests/integration/AStandardHostAuditTest.cpp`.
+
+## 16. Event journal
+
+A statechart reads the facts a stream of the event journal holds, a page at a
+time (docs/adr/0114, D5): the facts its own sessions said, those of a machine it
+follows, or those another system's adapter observed. A read is as of a position
+and a valid time, so the pages of one reading are of one moment and never change
+however the journal grows. Served by the Rust reference host (section 7); every
+other lane refuses a machine that reads one.
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Read a page | `sce-host-journal-read` | `journal_read_request`: `stream` (64), `observed` bool, `key` (256), `as_of_position` uint64, `valid_ms` int64, `after_valid_ms` int64, `after_position` uint64, `limit` uint16 | `journal_read_result`: `horizon` uint64, `as_of_position` uint64, `entries` bytes (`journal_page_bytes`=65536) |
+
+Failure codes: `unavailable` (the store could not be read) and
+`response_too_large` (the page's bytes pass `journal_page_bytes`: ask again for
+fewer entries).
+
+Refusal (`invalid_argument`): an empty `stream` or one past its bound, a `key` on
+an observed stream or none on a machine's, a number that is none, a `limit` of 0
+or past `journal_page` (64, which `--limit` moves), and an `as_of_position`
+above the journal's horizon, which no read answered.
+
+**What a page is.** The entries of the stream at or below the position
+`as_of_position` whose fact holds from `valid_ms` or before, ordered by when each
+holds from and then by position, after the entry the cursor names
+(`after_valid_ms`, `after_position`; `after_position` 0 reads from the first). An
+`as_of_position` of 0 is read as of the last position the horizon has passed, and
+the answer names the position read as of, which the next page passes;
+`horizon` is the position at or below which nothing can still become visible
+(`sce_rust_session_store::JournalStore`). A page shorter than its limit is the
+last one up to the horizon. `entries` is the page's deterministic CBOR
+(`sce_rust_runtime::journal::page_description`): each entry's `position`,
+`recorded_ms`, `holds_ms`, `origin`, `schema`, `revision` and its fact's bytes.
+
+**The machine reads facts, never bytes.** `sce:journal="m"` or `sce:stream="s"`
+names the stream, which the build writes into `stream` and `observed`, and
+`sce:entries="U"` the imported union whose cases are the schemas of the facts read;
+the build derives the completion's record, in which `entries` is a list of entries
+whose `fact` is a value of `U`, and the generated machine opens the page into it
+where the completion is lifted, each fact read by the case its schema names; a fact
+no case holds makes the completion `not_a_record` (SCE Accepted Subset §2.15, "A
+page of the event journal"). A document reads only its own journal and those its
+machine follows, which the build generated with its deployment holds it to.
+
+**The store.** The Rust host reads the journal store it is given
+(`ReferenceHost::set_journal_store`, a `sce_rust_session_store::JournalStore`: in
+memory and empty unless the embedding gives the store its keyed pool's sessions
+keep their facts in, the session store's SQLite file, `SqliteStore`, layout 8,
+sealed under `Sealed` on a server). Its bounds are the build's
+(`ReferenceHost::set_named_bounds`, `journal_page` and `journal_page_bytes`).
+`backends/rust/host-features/tests/journal.rs` holds the host to a reading.

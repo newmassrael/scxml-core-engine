@@ -79,7 +79,10 @@ impl MeshError {
     /// the deployment ([`DeployError::mark_in`]) or nowhere.
     pub fn document_location(&self) -> Option<&crate::forge::error::SourceLocation> {
         match self {
-            Self::Codegen(CodegenError::JournalMismatch { at, .. }) => at.as_ref(),
+            Self::Codegen(
+                CodegenError::JournalMismatch { at, .. }
+                | CodegenError::JournalReadRefused { at, .. },
+            ) => at.as_ref(),
             _ => None,
         }
     }
@@ -4045,6 +4048,25 @@ pub enum CodegenError {
         reason: String,
         at: Option<crate::forge::error::SourceLocation>,
     },
+
+    /// A read of the event journal (`sce-host-journal-read`, docs/adr/0114, D5)
+    /// the deployment does not let the machine make: of a machine that is
+    /// neither this one, keeping a journal, nor one it follows, of an observed
+    /// stream it does not follow, or with a union that holds no case of a
+    /// schema the stream's facts are of. A document reads only its own journal
+    /// and those it follows (Open question 1). `journal` is the stream the
+    /// read names, `at` where its `sce:journal` or `sce:stream` is written,
+    /// where the refusal is placed ([`MeshError::document_location`]).
+    #[error(
+        "machine '{machine}': its read of the journal '{journal}' is refused — {reason} \
+         (docs/adr/0114, D5)."
+    )]
+    JournalReadRefused {
+        machine: String,
+        journal: String,
+        reason: String,
+        at: Option<crate::forge::error::SourceLocation>,
+    },
 }
 
 /// Which declaration of the event journal (docs/adr/0114) a
@@ -6665,6 +6687,21 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone()],
+        },
+        CodegenError::JournalReadRefused {
+            machine,
+            journal,
+            reason,
+            ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenJournalReadRefused,
+            stage: Stage::MeshCodegen,
+            // The stream as the read names it.
+            actual: Some(journal.clone()),
+            // Follow the stream, read another, or widen the union: the author's.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), journal.clone(), reason.clone()],
         },
         CodegenError::JournalMismatch {
             machine, reason, ..

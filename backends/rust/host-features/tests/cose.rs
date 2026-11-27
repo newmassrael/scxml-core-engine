@@ -638,6 +638,8 @@ fn a_host_given_no_bounds_holds_the_librarys_numbers() {
             cose_sealed: 4480,
             mac_message: 4096,
             random_bytes: 256,
+            journal_page: 64,
+            journal_page_bytes: 65536,
         }
     );
     assert_eq!(NamedBounds::default(), NamedBounds::LIBRARY);
@@ -668,6 +670,8 @@ const MOVED: NamedBounds = NamedBounds {
     cose_sealed: 8576,
     mac_message: 4096,
     random_bytes: 256,
+    journal_page: 64,
+    journal_page_bytes: 65536,
 };
 
 /// docs/adr/0109, D17: a host given its build's bounds signs a payload at the

@@ -549,6 +549,7 @@ label_set! {
         CredentialIssue => "sce-host-credential-issue",
         CredentialRevoke => "sce-host-credential-revoke",
         AuditAppend => "sce-host-audit-append",
+        JournalRead => "sce-host-journal-read",
     }
 }
 

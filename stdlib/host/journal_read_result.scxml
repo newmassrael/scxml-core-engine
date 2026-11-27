@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/journal_read_result.scxml: the answer of
+  `sce-host-journal-read` (docs/SCE_HOST_FEATURES.md, "Event journal").
+
+  `horizon` is the position at or below which nothing can still become
+  visible when the read was made, and `as_of_position` the position the page
+  was read as of; both 64-bit unsigned integers. `entries` is the page, the
+  deterministic CBOR of its entries, which the machine never reads as bytes:
+  the build derives the completion's record, in which `entries` is a list of
+  at most `journal_page` entries, each with its position, its recorded moment,
+  when it holds from, the id another system gave it and the fact, a value of
+  the union the invoke's `sce:entries` names. A page shorter than its limit is
+  the last one up to the horizon.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="journal_read_result"
+       sce:event-name="host.journal.read.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="horizon" sce:type="uint64" sce:direction="in"/>
+    <data id="as_of_position" sce:type="uint64" sce:direction="in"/>
+    <data id="entries" sce:type="bytes[journal_page_bytes=65536]" sce:direction="in"/>
+  </datamodel>
+</scxml>

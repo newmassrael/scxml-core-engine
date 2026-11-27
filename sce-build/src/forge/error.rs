@@ -1722,6 +1722,23 @@ pub enum ValidationError {
         detail: String,
     },
 
+    /// docs/adr/0114, D5: a read of the event journal (`sce-host-journal-read`)
+    /// that names no stream or union the build can read a page of: `sce:journal`,
+    /// `sce:stream` or `sce:entries` on an `<invoke>` of another type, a read
+    /// that names no stream, two, or none by a name, no union, or a union the
+    /// document does not import, one with an empty case, two cases of one
+    /// record, or a case whose record has no deterministic CBOR; or a derived
+    /// record whose alias the document imports another record under. `attr` is
+    /// the attribute the refusal stands on, `value` its value as written, the
+    /// record's `actual` when it is not empty.
+    #[error("<invoke id=\"{invoke_id}\" {attr}=\"{value}\">: {detail}")]
+    JournalReadSchema {
+        invoke_id: String,
+        attr: String,
+        value: String,
+        detail: String,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

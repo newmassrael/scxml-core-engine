@@ -11991,6 +11991,15 @@ pub fn compile_mesh_transport(
         model,
         &followed_events,
     )?;
+    // docs/adr/0114, D5 and Open question 1: a document reads only its own
+    // journal and those its machine follows.
+    mesh::topology::check_journal_reads(
+        &effective_machine_name,
+        device.and_then(|d| d.machines.get(&effective_machine_name)),
+        model,
+        &deploy_cfg,
+        deploy_dir,
+    )?;
     let keyed_pool = device
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.sessions.as_ref())

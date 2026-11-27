@@ -307,6 +307,12 @@ pub const TYPES: &[StandardHostType] = &[
         result: "audit_append_result",
         served_by: COSE_REFERENCE_HOSTS,
     },
+    StandardHostType {
+        invoke_type: crate::forge::journal::JOURNAL_READ,
+        request: Some("journal_read_request"),
+        result: "journal_read_result",
+        served_by: crate::forge::journal::JOURNAL_LANES,
+    },
 ];
 
 /// The standard operation `invoke_type` names, if it names one.
@@ -379,13 +385,17 @@ pub const BOUND_RELATIONS: &[BoundRelation] = &[
 /// The fields of `invoke_type`'s request that the build writes and a document
 /// does not: the answer schema of a model's generation, written from
 /// `sce:answer` (docs/adr/0087, section 4.1, item 2), and the marks of an
-/// audit entry's schema, written from `sce:entry` (docs/adr/0109, D14). Empty
-/// for every other type, standard or not.
+/// audit entry's schema, written from `sce:entry` (docs/adr/0109, D14), and the
+/// stream a page of the event journal is read from, written from `sce:journal`
+/// or `sce:stream` (docs/adr/0114, D5). Empty for every other type, standard or
+/// not.
 pub fn written_by_build(invoke_type: &str) -> &'static [&'static str] {
     if invoke_type == crate::forge::model_answer::MODEL_GENERATE {
         &[crate::forge::model_answer::ANSWER_SCHEMA_FIELD]
     } else if invoke_type == crate::forge::audit_entry::AUDIT_APPEND {
         &[crate::forge::audit_entry::SENSITIVITY_FIELD]
+    } else if invoke_type == crate::forge::journal::JOURNAL_READ {
+        crate::forge::journal::READ_FIELDS_BY_BUILD
     } else {
         &[]
     }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/journal_read_request.scxml: the request of
+  `sce-host-journal-read` (docs/SCE_HOST_FEATURES.md, "Event journal";
+  docs/adr/0114, D5): a page of one stream of the event journal, as of a
+  position and a valid time.
+
+  `stream` and `observed` are the build's, never the document's: the stream
+  the invoke's `sce:journal` (a machine's, `observed` false) or `sce:stream`
+  (an observed stream's, `observed` true) names. `key` is the session of a
+  machine's stream whose entries are read, and empty for an observed stream.
+
+  The page is the entries at or below the position `as_of_position` whose
+  valid time is at or before `valid_ms` (milliseconds since the Unix epoch;
+  9223372036854775807 bounds nothing), ordered by when each holds from and then
+  by position, after the entry `after_valid_ms` and `after_position` name:
+  `after_position` 0 reads from the first entry, and the next page passes the
+  `holds_ms` and the `position` of the last entry of the page before.
+  `as_of_position` 0 reads as of the journal's horizon when the read is made,
+  and the answer names the position it read as of, which the next page passes,
+  so every page of one reading is of one moment. `limit` is how many entries
+  at most, at least 1 and at most `journal_page`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="journal_read_request"
+       sce:event-name="host.journal.read.request">
+  <datamodel>
+    <data id="stream" sce:type="string[64]" sce:direction="in"/>
+    <data id="observed" sce:type="bool" sce:direction="in"/>
+    <data id="key" sce:type="string[256]" sce:direction="in"/>
+    <data id="as_of_position" sce:type="uint64" sce:direction="in"/>
+    <data id="valid_ms" sce:type="int64" sce:direction="in"/>
+    <data id="after_valid_ms" sce:type="int64" sce:direction="in"/>
+    <data id="after_position" sce:type="uint64" sce:direction="in"/>
+    <data id="limit" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>

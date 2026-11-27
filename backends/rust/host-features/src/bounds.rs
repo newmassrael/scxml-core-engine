@@ -34,6 +34,12 @@ pub struct NamedBounds {
     pub mac_message: usize,
     /// `random_bytes`: the most bytes `sce-host-random-bytes` draws.
     pub random_bytes: usize,
+    /// `journal_page`: the most entries `sce-host-journal-read` answers in a
+    /// page (docs/adr/0114, D5).
+    pub journal_page: usize,
+    /// `journal_page_bytes`: the most bytes the deterministic CBOR of a page
+    /// `sce-host-journal-read` answers holds.
+    pub journal_page_bytes: usize,
 }
 
 impl NamedBounds {
@@ -46,6 +52,8 @@ impl NamedBounds {
         cose_sealed: 4480,
         mac_message: 4096,
         random_bytes: 256,
+        journal_page: 64,
+        journal_page_bytes: 65536,
     };
 }
 

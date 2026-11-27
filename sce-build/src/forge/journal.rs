@@ -607,3 +607,614 @@ pub fn refuse_unkept(model: &SCXMLModel, lane: HostLane) -> Result<(), GenerateE
     });
     refused.map_or(Ok(()), Err)
 }
+
+// ── A page of the event journal: `sce-host-journal-read` (docs/adr/0114, D5) ──
+//
+// ```xml
+// <invoke type="sce-host-journal-read" id="page" sce:journal="rooms" sce:entries="Facts"
+//         sce:request="JournalReadRequest" sce:result="JournalReadResult">
+//   <param name="key" expr="room"/>
+//   <param name="as_of_position" expr="as_of"/>
+//   ...
+// </invoke>
+// ```
+//
+// The read names the stream it reads by `sce:journal` (a machine's: the
+// document's own, or one its machine follows) or `sce:stream` (an observed
+// stream it follows), and by `sce:entries` the imported union whose cases are
+// the schemas of the facts it reads (docs/adr/0092). The build writes the
+// request's `stream` and `observed` from the first ([`write_read_requests`]),
+// derives the completion's record from the library's result with the second
+// ([`derive_reads`]), and the Rust machine opens the page's bytes into that
+// record where the completion is lifted (`sce_rust_runtime::journal::open_page`).
+// Where the machine is generated with its deployment, a stream it neither keeps
+// nor follows, and a union that holds no case of a schema the stream's facts
+// are of, are refused (`crate::mesh::topology::check_journal_reads`).
+
+/// The standard operation that reads a page of the event journal.
+pub const JOURNAL_READ: &str = "sce-host-journal-read";
+
+/// The fields of the read's request the build writes, from `sce:journal` or
+/// `sce:stream`: the stream's name, and whether it is an observed one.
+pub const READ_FIELDS_BY_BUILD: &[&str] = &[STREAM_FIELD, OBSERVED_FIELD];
+
+/// The field of the request that names the stream.
+pub const STREAM_FIELD: &str = "stream";
+
+/// The field of the request that says whether the stream is an observed one.
+pub const OBSERVED_FIELD: &str = "observed";
+
+/// The field of the result that holds the page.
+pub const ENTRIES_FIELD: &str = "entries";
+
+/// The name of the bound of how many entries a page holds, which `--limit`
+/// moves, and the number the library gives it.
+pub const PAGE_LIMIT: &str = "journal_page";
+
+/// The number of entries a page holds when no build moves [`PAGE_LIMIT`].
+pub const PAGE_LIMIT_WRITTEN: u32 = 64;
+
+/// How the completion of a read is opened where it is lifted (docs/adr/0114,
+/// D5): the bounds of its page and the case of the union each schema's fact is.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct JournalReading {
+    /// The most entries the page holds ([`PAGE_LIMIT`], as the build resolved it).
+    pub page_entries: u32,
+    /// The most bytes the page's deterministic CBOR holds (`journal_page_bytes`).
+    pub page_bytes: u64,
+    /// Each case of the union, as JSON: `[[event, tag, variant, description],
+    /// ...]`, the schema's event a fact of it is kept under, the union's tag,
+    /// the case's variant, and the description of its record the record codec
+    /// reads the fact by ([`describe`]).
+    pub cases: String,
+    /// The completion the read's failure `not_a_record` is: a page whose bytes
+    /// are no value of the page, or one with a fact no case holds.
+    pub failure: String,
+}
+
+/// A read of the event journal `model` makes, as the deployment judges it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalRead {
+    /// The stream the read names.
+    pub stream: String,
+    /// Whether it is an observed stream (`sce:stream`).
+    pub observed: bool,
+    /// The events of the schemas the union's cases are records of.
+    pub cases: std::collections::BTreeSet<String>,
+    /// Where `sce:journal` or `sce:stream` is written.
+    pub at: Option<crate::forge::error::SourceLocation>,
+}
+
+/// The host-run `<invoke>`s of `model`, in document order.
+fn host_invokes(model: &SCXMLModel) -> Vec<&crate::model::UnsupportedInvokeInfo> {
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    states
+        .into_iter()
+        .flat_map(|state| state.invokes.iter())
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Unsupported(info) => Some(info),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether `name` may name a stream a read names: a letter, then letters,
+/// digits, `_` or `-`, which a machine of a deployment and an observed stream
+/// are named by.
+fn is_journal_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// A case of a read's union: the event of its record's schema, the union's
+/// tag, the case's variant and the description of its record.
+type UnionCase = (String, String, String, String);
+
+/// The cases of the union `alias` of `model` ([`UnionCase`]), or why the union
+/// holds no page's facts: it is not imported, a case is empty, two cases hold
+/// one record, or a record has no deterministic CBOR.
+fn union_cases(model: &SCXMLModel, alias: &str) -> Result<Vec<UnionCase>, String> {
+    let Some(union) = model.imported_type_scope.unions.get(alias) else {
+        return Err("names no union this document imports".to_string());
+    };
+    let mut cases = Vec::with_capacity(union.cases.len());
+    let mut events = std::collections::BTreeSet::new();
+    for case in &union.cases {
+        let Some(record) = &case.record else {
+            return Err(format!(
+                "names {}, whose case `{}` holds no record, and a fact of the journal is a \
+                 record of its schema",
+                union.name, case.variant.name
+            ));
+        };
+        let event = union
+            .scope
+            .records
+            .get(record)
+            .map(|scoped| scoped.lineage.event.clone())
+            .unwrap_or_default();
+        if event.is_empty() {
+            return Err(format!(
+                "names {}, whose case `{}` holds `{record}`, which is no event schema a fact \
+                 is kept under",
+                union.name, case.variant.name
+            ));
+        }
+        if !events.insert(event.clone()) {
+            return Err(format!(
+                "names {}, two of whose cases hold the record of `{event}`, so a fact of it \
+                 would be no one case",
+                union.name
+            ));
+        }
+        let description = describe(
+            &ValueType::Record {
+                alias: record.clone(),
+            },
+            &union.scope,
+        )
+        .map_err(|why| {
+            format!(
+                "names {}, whose case `{}` holds a record with no deterministic CBOR a fact \
+                 is kept as (docs/adr/0101, section 2): {why}",
+                union.name, case.variant.name
+            )
+        })?;
+        cases.push((
+            event,
+            union.tag.clone(),
+            case.variant.name.clone(),
+            description,
+        ));
+    }
+    Ok(cases)
+}
+
+/// Judge every read of the event journal of `model` (docs/adr/0114, D5): an
+/// invoke of [`JOURNAL_READ`] names one stream, by `sce:journal` or
+/// `sce:stream`, by a name, and by `sce:entries` an imported union whose every
+/// case holds the record of one event schema, no two the same, each with a
+/// deterministic CBOR; an invoke of any other type names none of the three.
+/// Each refusal is `validation/journal-read-schema`, on the attribute.
+///
+/// Run where the imports are resolved, beside the other judgements of what an
+/// imported schema is asked to carry.
+pub fn resolve_reads(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
+    for info in host_invokes(model) {
+        let refuse = |attr: &str,
+                      value: &str,
+                      at: &Option<crate::forge::error::SourceLocation>,
+                      detail: String| {
+            located(
+                at.as_ref().or(info.base.source_location.as_ref()),
+                diag_label,
+                crate::forge::error::ValidationError::JournalReadSchema {
+                    invoke_id: info.base.invoke_id.clone(),
+                    attr: attr.to_string(),
+                    value: value.to_string(),
+                    detail,
+                },
+            )
+        };
+        let stream_attr = if info.journal_observed {
+            "sce:stream"
+        } else {
+            "sce:journal"
+        };
+        let names = info.journal_stream_at.is_some() || info.journal_entries_at.is_some();
+        if info.invoke_type != JOURNAL_READ {
+            if !names {
+                continue;
+            }
+            let (attr, value, at) = if info.journal_stream_at.is_some() {
+                (stream_attr, &info.journal_stream, &info.journal_stream_at)
+            } else {
+                (
+                    "sce:entries",
+                    &info.journal_entries,
+                    &info.journal_entries_at,
+                )
+            };
+            return Err(refuse(
+                attr,
+                value,
+                at,
+                format!(
+                    "is written on an <invoke> of type \"{}\", and only {JOURNAL_READ} reads a \
+                     page of the event journal",
+                    info.invoke_type
+                ),
+            ));
+        }
+        if info.journal_stream_at.is_none() {
+            return Err(refuse(
+                "sce:journal",
+                "",
+                &None,
+                format!(
+                    "a {JOURNAL_READ} names the stream it reads, by sce:journal (a machine's \
+                     journal) or sce:stream (an observed stream), and this one names none"
+                ),
+            ));
+        }
+        if !is_journal_name(&info.journal_stream) {
+            return Err(refuse(
+                stream_attr,
+                &info.journal_stream,
+                &info.journal_stream_at,
+                "names no stream: a machine and an observed stream are named by a letter, \
+                 then letters, digits, `_` or `-`"
+                    .to_string(),
+            ));
+        }
+        if info.journal_entries_at.is_none() || info.journal_entries.is_empty() {
+            return Err(refuse(
+                "sce:entries",
+                &info.journal_entries,
+                &info.journal_entries_at,
+                format!(
+                    "a {JOURNAL_READ} names by sce:entries the union each fact it reads is a \
+                     value of (docs/adr/0092), and this one names none"
+                ),
+            ));
+        }
+        union_cases(model, &info.journal_entries).map_err(|why| {
+            refuse(
+                "sce:entries",
+                &info.journal_entries,
+                &info.journal_entries_at,
+                why,
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// A field of a record the build derives, of `ty`.
+fn derived_field(id: &str, ty: ValueType) -> crate::forge::model::SchemaField {
+    crate::forge::model::ForgeField {
+        id: id.to_string(),
+        sce_type: ty,
+        direction: crate::forge::model::Direction::In,
+        expr: None,
+        expr_spelling: None,
+        expr_splices: None,
+        quantity: None,
+        max_size: None,
+        limit: None,
+        default_covers: Vec::new(),
+        retain: None,
+        initial: None,
+        initial_spelling: None,
+        since: None,
+        optional_since: None,
+        default: None,
+        default_spelling: None,
+        sensitivity: None,
+        valid_time: false,
+    }
+}
+
+/// Derive the completion's record of every read of the event journal of
+/// `model`, judged by [`resolve_reads`] (docs/adr/0114, D5): an entry record,
+/// `JournalEntryOf<Invoke>`, of each entry's `position`, `recorded_ms`,
+/// `holds_ms` (when the fact holds from), `origin` (the id another system gave
+/// it, empty for a session's) and `fact`, a value of the read's union; and the
+/// library's result whose `entries` is a list of at most [`PAGE_LIMIT`] of
+/// them, which `done.invoke.<id>` is bound to. Writes how the page is opened
+/// ([`JournalReading`]) onto the invoke.
+pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
+    use crate::forge::value_type::{Bound, ScopedRecord, TypeScope};
+    struct Derived {
+        invoke_id: String,
+        result_alias: String,
+        entry_alias: String,
+        entry_schema: crate::forge::model::EventSchemaModel,
+        entry_scoped: ScopedRecord,
+        result_schema: crate::forge::model::EventSchemaModel,
+        result_scoped: ScopedRecord,
+        reading: JournalReading,
+    }
+    let mut derived: Vec<Derived> = Vec::new();
+    for info in host_invokes(model) {
+        if info.invoke_type != JOURNAL_READ || info.journal_entries.is_empty() {
+            continue;
+        }
+        let (Some(result), Some(scoped)) = (
+            model.imported_records.get(&info.result_schema),
+            model.imported_type_scope.records.get(&info.result_schema),
+        ) else {
+            // A result the library does not give is refused where the
+            // standard type is held to its records.
+            continue;
+        };
+        let Some(union) = model.imported_type_scope.unions.get(&info.journal_entries) else {
+            continue;
+        };
+        let Some(page_bytes) = result.fields.iter().find_map(|field| {
+            match (&field.sce_type, field.id == ENTRIES_FIELD) {
+                (ValueType::Bytes { max }, true) => Some(max.max),
+                _ => None,
+            }
+        }) else {
+            continue;
+        };
+        let suffix = crate::filters::to_pascal_case(info.base.field_suffix.clone());
+        let snake = crate::filters::to_snake_case(info.base.field_suffix.clone());
+        let entry_alias = format!("JournalEntryOf{suffix}");
+        let result_alias = format!("{}Of{suffix}", info.result_schema);
+        for alias in [&entry_alias, &result_alias] {
+            if model.imported_records.contains_key(alias) {
+                return Err(located(
+                    info.journal_entries_at
+                        .as_ref()
+                        .or(info.base.source_location.as_ref()),
+                    diag_label,
+                    crate::forge::error::ValidationError::JournalReadSchema {
+                        invoke_id: info.base.invoke_id.clone(),
+                        attr: "sce:entries".to_string(),
+                        value: info.journal_entries.clone(),
+                        detail: format!(
+                            "the completion's records are named `{entry_alias}` and \
+                             `{result_alias}`, and the document imports another record as \
+                             `{alias}`: rename the import"
+                        ),
+                    },
+                ));
+            }
+        }
+        let cases = union_cases(model, &info.journal_entries).unwrap_or_default();
+        let page_entries = crate::limits::resolve(PAGE_LIMIT, PAGE_LIMIT_WRITTEN);
+        let entry_fields: Vec<(String, ValueType)> = vec![
+            (
+                "position".to_string(),
+                ValueType::Scalar(crate::forge::model::SceType::Uint64),
+            ),
+            (
+                "recorded_ms".to_string(),
+                ValueType::Scalar(crate::forge::model::SceType::Uint64),
+            ),
+            (
+                "holds_ms".to_string(),
+                ValueType::Scalar(crate::forge::model::SceType::Int64),
+            ),
+            (
+                "origin".to_string(),
+                ValueType::Text {
+                    max: Bound::of(page_bytes),
+                },
+            ),
+            (
+                "fact".to_string(),
+                ValueType::Union {
+                    alias: info.journal_entries.clone(),
+                },
+            ),
+        ];
+        let entry_schema = crate::forge::model::EventSchemaModel {
+            name: format!("journal_entry_{snake}"),
+            event_name: format!("sce.journal.entry.{}", info.base.invoke_id),
+            fields: entry_fields
+                .iter()
+                .map(|(id, ty)| derived_field(id, ty.clone()))
+                .collect(),
+            payload_none: false,
+            datamodel_markers: Vec::new(),
+            revision: None,
+            source_location: None,
+        };
+        let mut entry_scope = TypeScope::default();
+        entry_scope
+            .unions
+            .insert(info.journal_entries.clone(), union.clone());
+        let entry_scoped = ScopedRecord {
+            identity: format!("sce:journal-entry#{}", info.base.invoke_id),
+            name: entry_schema.name.clone(),
+            fields: entry_fields,
+            scope: entry_scope,
+            added: Default::default(),
+            lineage: Default::default(),
+        };
+        let page = ValueType::List {
+            elem: Box::new(ValueType::Record {
+                alias: entry_alias.clone(),
+            }),
+            max: Bound {
+                max: page_entries,
+                limit: Some(PAGE_LIMIT.to_string()),
+                min: 0,
+            },
+        };
+        let mut result_schema = result.clone();
+        result_schema.name = format!("{}_{snake}", result.name);
+        result_schema.event_name = format!("done.invoke.{}", info.base.invoke_id);
+        for field in &mut result_schema.fields {
+            if field.id == ENTRIES_FIELD {
+                field.sce_type = page.clone();
+                field.max_size = None;
+                field.limit = None;
+            }
+        }
+        let mut result_scope = scoped.scope.clone();
+        result_scope
+            .records
+            .insert(entry_alias.clone(), entry_scoped.clone());
+        let result_scoped = ScopedRecord {
+            identity: format!("{}#{}", scoped.identity, info.base.invoke_id),
+            name: result_schema.name.clone(),
+            fields: scoped
+                .fields
+                .iter()
+                .map(|(id, ty)| {
+                    if id == ENTRIES_FIELD {
+                        (id.clone(), page.clone())
+                    } else {
+                        (id.clone(), ty.clone())
+                    }
+                })
+                .collect(),
+            scope: result_scope,
+            added: scoped.added.clone(),
+            lineage: Default::default(),
+        };
+        let failure: serde_json::Map<String, serde_json::Value> = result_schema
+            .fields
+            .iter()
+            .map(|field| {
+                let zero = if field.id == "error" {
+                    serde_json::Value::String(
+                        crate::forge::payload_record::NOT_A_RECORD.to_string(),
+                    )
+                } else {
+                    crate::forge::payload_record::zero_of(&field.sce_type)
+                };
+                (field.id.clone(), zero)
+            })
+            .collect();
+        let cases_json: Vec<serde_json::Value> = cases
+            .into_iter()
+            .map(|(event, tag, variant, description)| {
+                let description: serde_json::Value =
+                    serde_json::from_str(&description).unwrap_or(serde_json::Value::Null);
+                serde_json::json!([event, tag, variant, description])
+            })
+            .collect();
+        derived.push(Derived {
+            invoke_id: info.base.invoke_id.clone(),
+            result_alias,
+            entry_alias,
+            entry_schema,
+            entry_scoped,
+            result_schema,
+            result_scoped,
+            reading: JournalReading {
+                page_entries,
+                page_bytes: u64::from(page_bytes),
+                cases: serde_json::Value::Array(cases_json).to_string(),
+                failure: serde_json::Value::Object(failure).to_string(),
+            },
+        });
+    }
+    for one in derived {
+        model
+            .imported_records
+            .insert(one.entry_alias.clone(), one.entry_schema);
+        model
+            .imported_type_scope
+            .records
+            .insert(one.entry_alias, one.entry_scoped);
+        model
+            .imported_records
+            .insert(one.result_alias.clone(), one.result_schema);
+        model
+            .imported_type_scope
+            .records
+            .insert(one.result_alias.clone(), one.result_scoped);
+        for state in model.states.values_mut() {
+            for invoke in &mut state.invokes {
+                if let crate::model::Invoke::Unsupported(info) = invoke {
+                    if info.base.invoke_id == one.invoke_id && info.invoke_type == JOURNAL_READ {
+                        info.journal_result = one.result_alias.clone();
+                        info.journal_reading = Some(one.reading.clone());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Write the `stream` and `observed` of every host-served read of the event
+/// journal: literal `<param>`s of the stream its `sce:journal` or `sce:stream`
+/// names. Run where the build decides which invokes a host serves
+/// (`crate::host_processor_analyzer::declare_host_surfaces`), so the
+/// parameters are the build's: the document's own were refused where its
+/// request was judged.
+pub fn write_read_requests(model: &mut SCXMLModel) {
+    for state in model.states.values_mut() {
+        for invoke in &mut state.invokes {
+            let crate::model::Invoke::Unsupported(info) = invoke else {
+                continue;
+            };
+            if info.invoke_type != JOURNAL_READ
+                || !info.host_served
+                || info.journal_stream_at.is_none()
+            {
+                continue;
+            }
+            let at = info
+                .journal_stream_at
+                .clone()
+                .or_else(|| info.base.source_location.clone());
+            let observed = if info.journal_observed {
+                "true"
+            } else {
+                "false"
+            };
+            for (name, expr, value) in [
+                (
+                    STREAM_FIELD,
+                    format!("'{}'", info.journal_stream),
+                    info.journal_stream.clone(),
+                ),
+                (OBSERVED_FIELD, observed.to_string(), observed.to_string()),
+            ] {
+                if info.base.params.iter().any(|param| param.name == name) {
+                    continue;
+                }
+                info.base.params.push(crate::model::Param {
+                    name: name.to_string(),
+                    expr,
+                    is_static_literal: true,
+                    static_value: value,
+                    source_location: at.clone(),
+                    ..crate::model::Param::default()
+                });
+            }
+        }
+    }
+}
+
+/// How the completion `event` is opened where it is lifted, for the
+/// completion of a read of the event journal; `None` for any other event.
+pub fn reading_of<'m>(model: &'m SCXMLModel, event: &str) -> Option<&'m JournalReading> {
+    host_invokes(model)
+        .into_iter()
+        .find(|info| format!("done.invoke.{}", info.base.invoke_id) == event)
+        .and_then(|info| info.journal_reading.as_ref())
+}
+
+/// The reads of the event journal `model` makes, each with the events its
+/// union's cases are of, as the deployment judges them
+/// (`crate::mesh::topology::check_journal_reads`).
+pub fn reads(model: &SCXMLModel) -> Vec<JournalRead> {
+    host_invokes(model)
+        .into_iter()
+        .filter(|info| info.invoke_type == JOURNAL_READ && info.journal_stream_at.is_some())
+        .map(|info| JournalRead {
+            stream: info.journal_stream.clone(),
+            observed: info.journal_observed,
+            cases: union_cases(model, &info.journal_entries)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(event, ..)| event)
+                .collect(),
+            at: info.journal_stream_at.clone(),
+        })
+        .collect()
+}
+
+fn located(
+    at: Option<&crate::forge::error::SourceLocation>,
+    diag_label: &str,
+    error: crate::forge::error::ValidationError,
+) -> Located<ForgeError> {
+    Located::new(
+        error.into(),
+        diag_label,
+        at.and_then(|l| l.line),
+        at.and_then(|l| l.col),
+    )
+}

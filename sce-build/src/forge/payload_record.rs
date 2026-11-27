@@ -666,7 +666,7 @@ pub fn completion_reading(model: &SCXMLModel, event: &str) -> Option<CompletionR
 /// The JSON of the zero of a field of `ty` in a result record: an empty text
 /// or byte string, `false`, `0` (a 64-bit integer as the text of its digits,
 /// as a payload writes one), and `null` for a value that may be absent.
-fn zero_of(ty: &ValueType) -> serde_json::Value {
+pub(crate) fn zero_of(ty: &ValueType) -> serde_json::Value {
     use serde_json::json;
     match ty {
         TypeOf::Scalar(SceType::Bool) => json!(false),

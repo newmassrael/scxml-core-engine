@@ -35,6 +35,7 @@ pub mod cose;
 pub mod credentials;
 pub mod destination;
 mod http;
+pub mod journal;
 pub mod keys;
 mod kv;
 mod model;
@@ -62,8 +63,8 @@ pub use sce_rust_crypto::keyring::Keyring;
 pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
 pub use sce_rust_session_store::{
-    AuditStore, CredentialStore, Failure as StoreFailure, KvStore, MemoryCredentials, MemoryStore,
-    TokenRow, TokenStore,
+    AuditStore, CredentialStore, Failure as StoreFailure, JournalStore, KvStore, MemoryCredentials,
+    MemoryStore, TokenRow, TokenStore,
 };
 pub use serve::{serve, Shared};
 
@@ -103,7 +104,7 @@ impl Invocation {
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 27] = [
+pub const TYPES: [&str; 28] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -131,6 +132,7 @@ pub const TYPES: [&str; 27] = [
     credentials::CREDENTIAL_ISSUE,
     credentials::CREDENTIAL_REVOKE,
     audit::AUDIT_APPEND,
+    journal::JOURNAL_READ,
 ];
 
 /// What a host answers a start with.
@@ -201,6 +203,10 @@ pub struct ReferenceHost<T: Transport> {
     /// The streams the host keeps, each with its policy; an append to another
     /// fails `unknown_stream`.
     pub(crate) audit_streams: audit::AuditStreams,
+    /// The event journal the host reads pages of (docs/SCE_HOST_FEATURES.md,
+    /// section 16; docs/adr/0114, D5): in memory, and empty, until the
+    /// embedding gives the store its sessions keep their facts in.
+    pub(crate) journal: Arc<dyn JournalStore>,
     /// The numbers of the named bounds of the records the host judges a
     /// request and its answer by: the library's until the embedding gives
     /// its build's (docs/adr/0109, D17).
@@ -260,6 +266,7 @@ impl<T: Transport> ReferenceHost<T> {
             credentials: Arc::new(MemoryCredentials::new()),
             audit: Arc::new(MemoryStore::new()),
             audit_streams: audit::AuditStreams::new(),
+            journal: Arc::new(MemoryStore::new()),
             bounds: NamedBounds::LIBRARY,
             metrics: None,
         }
@@ -287,6 +294,15 @@ impl<T: Transport> ReferenceHost<T> {
     /// `unknown_stream`.
     pub fn set_audit_streams(&mut self, streams: audit::AuditStreams) {
         self.audit_streams = streams;
+    }
+
+    /// Read pages of the event journal from `store` from here on: the store the
+    /// program opened, which the keyed pool's sessions append their facts to
+    /// (docs/adr/0114, D1), durable when it is one (the session store's SQLite
+    /// file, sealed under `Sealed` on a server). A host given none reads an
+    /// empty journal.
+    pub fn set_journal_store(&mut self, store: Arc<dyn JournalStore>) {
+        self.journal = store;
     }
 
     /// The audit log the host appends to, which a reader verifies
@@ -592,6 +608,7 @@ impl<T: Transport> ReferenceHost<T> {
                 credentials::refuses(of_credentials, params)
             }
             audit::AUDIT_APPEND => audit::refuses(params),
+            journal::JOURNAL_READ => journal::refuses(params, &self.bounds),
             _ => false,
         };
         if refused {
@@ -649,6 +666,7 @@ impl<T: Transport> ReferenceHost<T> {
                 credentials::perform(self, of_credentials, invocation, params)
             }
             audit::AUDIT_APPEND => audit::perform(self, invocation, params),
+            journal::JOURNAL_READ => journal::perform(self, params),
             _ => unreachable!("the type was checked against TYPES"),
         }
     }
@@ -723,6 +741,9 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
         credentials::CREDENTIAL_ISSUE => serde_json::json!({ "token": "" }),
         credentials::CREDENTIAL_REVOKE => serde_json::json!({ "revoked": 0 }),
         audit::AUDIT_APPEND => serde_json::json!({ "sequence": "0" }),
+        journal::JOURNAL_READ => {
+            serde_json::json!({ "horizon": "0", "as_of_position": "0", "entries": "" })
+        }
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {

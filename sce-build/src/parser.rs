@@ -1543,6 +1543,16 @@ struct TypedInvokeAttrs {
     /// (`crate::forge::payload_record::resolve`).
     payload: String,
     payload_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:journal` or `sce:stream` (docs/adr/0114, D5): the stream a page of
+    /// the event journal is read from, whether it is an observed one, and where
+    /// it is spelled; judged where the imports resolve
+    /// (`crate::forge::journal::resolve_reads`).
+    journal_stream: String,
+    journal_observed: bool,
+    journal_stream_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:entries`: the union a page's facts are values of.
+    journal_entries: String,
+    journal_entries_at: Option<crate::forge::error::SourceLocation>,
 }
 
 /// Read `sce:request` / `sce:result` from `node`, refusing them where they
@@ -1664,6 +1674,64 @@ fn collect_typed_invoke_attrs(
                 line: Some(pos.row),
                 col: Some(pos.col),
             });
+            continue;
+        }
+        if matches!(attribute.name(), "journal" | "stream" | "entries") {
+            // docs/adr/0114, D5: the stream a page of the event journal is read
+            // from and the union its facts are values of, and only an invoke
+            // the host runs reads one. Whether its type is the read and what
+            // each names is judged where the imports resolve, under its own
+            // code.
+            crate::sce_attr::note(node, &attribute);
+            let pos = node.document().text_pos_at(attribute.range_value().start);
+            let at = Some(crate::forge::error::SourceLocation {
+                file: artifact_label(source_name),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            });
+            if !host_runnable {
+                return Err(Located::new(
+                    ValidationError::JournalReadSchema {
+                        invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                        attr: format!("sce:{}", attribute.name()),
+                        value: attribute.value().to_string(),
+                        detail: format!(
+                            "is written on an <invoke> of type \"{invoke_type}\", which SCE runs \
+                             itself or resolves at run time, and only {} reads a page of the \
+                             event journal",
+                            crate::forge::journal::JOURNAL_READ
+                        ),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
+            if attribute.name() == "entries" {
+                attrs.journal_entries = attribute.value().to_string();
+                attrs.journal_entries_at = at;
+            } else {
+                if attrs.journal_stream_at.is_some() {
+                    return Err(Located::new(
+                        ValidationError::JournalReadSchema {
+                            invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                            attr: format!("sce:{}", attribute.name()),
+                            value: attribute.value().to_string(),
+                            detail: "a read names one stream, by sce:journal (a machine's) or \
+                                     sce:stream (an observed one), and this one names two"
+                                .to_string(),
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
+                attrs.journal_stream = attribute.value().to_string();
+                attrs.journal_observed = attribute.name() == "stream";
+                attrs.journal_stream_at = at;
+            }
             continue;
         }
         let (slot, at) = match attribute.name() {
@@ -3769,6 +3837,9 @@ impl SCXMLParser {
             // schema too (docs/adr/0114, D1): judged against the same map, and
             // what its entry is made by written onto the send.
             crate::forge::journal::resolve(&mut model, diag_label)?;
+            // A read of the event journal names its stream and the union of the
+            // facts it reads (docs/adr/0114, D5), judged against the same scope.
+            crate::forge::journal::resolve_reads(&model, diag_label)?;
             // A mark of a schema is followed where a value's type is known, and
             // a statechart of any data model but `sce-static` has none: one that
             // imports a schema marking a field is refused here, by every route
@@ -3786,6 +3857,10 @@ impl SCXMLParser {
             // the record the build derives of the library's result, so that is
             // what its completion is bound to below (docs/adr/0109, D9).
             crate::forge::payload_record::derive_completions(&mut model, diag_label)?;
+            // A page of the event journal completes with the record the build
+            // derives of the library's result, its entries holding the union
+            // the read names (docs/adr/0114, D5).
+            crate::forge::journal::derive_reads(&mut model, diag_label)?;
             crate::forge::typed_invoke::bind_results(&mut model);
             // A closed interface is judged against the schemas just
             // resolved, here where they are read and for the same reason
@@ -6329,6 +6404,11 @@ impl SCXMLParser {
                 entry_schema_at: typed.entry_at,
                 payload_schema: typed.payload,
                 payload_schema_at: typed.payload_at,
+                journal_stream: typed.journal_stream,
+                journal_observed: typed.journal_observed,
+                journal_stream_at: typed.journal_stream_at,
+                journal_entries: typed.journal_entries,
+                journal_entries_at: typed.journal_entries_at,
                 // What lowering fills in, for a document that has it lowered.
                 ..UnsupportedInvokeInfo::default()
             })));

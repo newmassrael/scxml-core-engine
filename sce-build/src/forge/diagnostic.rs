@@ -951,6 +951,11 @@ pub enum DiagnosticCode {
     /// name.
     #[serde(rename = "validation/payload-record-schema")]
     ValidationPayloadRecordSchema,
+    /// `<invoke sce:journal|sce:stream|sce:entries>` (docs/adr/0114, D5): a
+    /// read of the event journal that names no stream or union a page is read
+    /// of.
+    #[serde(rename = "validation/journal-read-schema")]
+    ValidationJournalReadSchema,
     /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
     /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
     /// union's payload, that no number the build holds sizes.
@@ -3782,6 +3787,11 @@ pub enum DiagnosticCode {
     /// journal (docs/adr/0114, D1 and D4).
     #[serde(rename = "mesh/codegen-journal-mismatch")]
     MeshCodegenJournalMismatch,
+    /// A read of the event journal of a stream the machine neither keeps nor
+    /// follows, or whose union holds no case of a schema the stream's facts
+    /// are of (docs/adr/0114, D5).
+    #[serde(rename = "mesh/codegen-journal-read-refused")]
+    MeshCodegenJournalReadRefused,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4175,6 +4185,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationJournalValueAssigned,
         ValidationAuditEntrySchema,
         ValidationPayloadRecordSchema,
+        // ADR 0114, D5: a read of the event journal that names nothing it can read
+        ValidationJournalReadSchema,
         ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
@@ -4736,6 +4748,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenPersistenceWithoutSavedState,
         // ADR 0114, D1 and D4: a document and its deployment that disagree about its journal
         MeshCodegenJournalMismatch,
+        // ADR 0114, D5: a read of a stream the machine neither keeps nor follows
+        MeshCodegenJournalReadRefused,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5029,6 +5043,7 @@ impl DiagnosticCode {
 
             // ── A record signed or sealed by name (docs/adr/0109, D9) ──
             ValidationPayloadRecordSchema => Some("ADR 0109 D9"),
+            ValidationJournalReadSchema | MeshCodegenJournalReadRefused => Some("ADR 0114 D5"),
 
             // ── The relations of the records' named bounds (docs/adr/0109, D17) ──
             CodegenStandardHostBoundRelation => Some("ADR 0109 D17"),
@@ -6039,6 +6054,7 @@ impl DiagnosticCode {
             | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
+            | ValidationJournalReadSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -6490,6 +6506,7 @@ impl DiagnosticCode {
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
+            | MeshCodegenJournalReadRefused
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6615,6 +6632,7 @@ impl DiagnosticCode {
             ValidationJournalValueAssigned => "validation/journal-value-assigned",
             ValidationAuditEntrySchema => "validation/audit-entry-schema",
             ValidationPayloadRecordSchema => "validation/payload-record-schema",
+            ValidationJournalReadSchema => "validation/journal-read-schema",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
@@ -7200,6 +7218,7 @@ impl DiagnosticCode {
                 "mesh/codegen-persistence-without-saved-state"
             }
             MeshCodegenJournalMismatch => "mesh/codegen-journal-mismatch",
+            MeshCodegenJournalReadRefused => "mesh/codegen-journal-read-refused",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -8951,6 +8970,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: (!alias.is_empty()).then(|| alias.clone()),
             fix: None,
             key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
+        },
+        // docs/adr/0114, D5: the value as written is `actual`; each repair
+        // (import the union, name one stream, split a case) is a choice, so no
+        // fix.
+        ValidationError::JournalReadSchema {
+            invoke_id,
+            attr,
+            value,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationJournalReadSchema,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!value.is_empty()).then(|| value.clone()),
+            fix: None,
+            key_fragments: vec![
+                invoke_id.clone(),
+                attr.clone(),
+                value.clone(),
+                detail.clone(),
+            ],
         },
         ValidationError::NativeActionArgument {
             name,
@@ -14670,6 +14710,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:766db4b535df1beb","code":"validation/payload-record-schema","stage":"validation","spec":"ADR 0109 D9","message":"<invoke id=\"sign\" sce:payload=\"Note\">: names no event schema this document imports","actual":"Note"}"#,
+            ),
+            (
+                // A read of the event journal names a union the document does
+                // not import (docs/adr/0114, D5).
+                "forge/journal-read-schema",
+                ValidationError::JournalReadSchema {
+                    invoke_id: "page".into(),
+                    attr: "sce:entries".into(),
+                    value: "Facts".into(),
+                    detail: "names no union this document imports".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:28d34234e065af8a","code":"validation/journal-read-schema","stage":"validation","spec":"ADR 0114 D5","message":"<invoke id=\"page\" sce:entries=\"Facts\">: names no union this document imports","actual":"Facts"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -20851,6 +20904,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:33d6e86a4a6f05a9","code":"mesh/codegen-journal-mismatch","stage":"mesh-codegen","spec":"ADR 0114 D1","message":"machine 'rooms': its event journal cannot be kept as written — the deployment keeps a journal of the machine (`journal: true`), and its document says no fact into it (<send type=\"sce:journal\">) (docs/adr/0114, D1).","actual":"rooms"}"#,
             ),
             (
+                "mesh/codegen-journal-read-refused",
+                CodegenError::JournalReadRefused {
+                    machine: "view".into(),
+                    journal: "rooms".into(),
+                    reason: "machine 'rooms' is neither this machine nor one it follows (`follows:`), and a document reads only its own journal and those it follows".into(),
+                    at: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:784710b2db11460f","code":"mesh/codegen-journal-read-refused","stage":"mesh-codegen","spec":"ADR 0114 D5","message":"machine 'view': its read of the journal 'rooms' is refused — machine 'rooms' is neither this machine nor one it follows (`follows:`), and a document reads only its own journal and those it follows (docs/adr/0114, D5).","actual":"rooms"}"#,
+            ),
+            (
                 "mesh/io",
                 MeshError::Io {
                     path: std::path::PathBuf::from("/tmp/mesh.log"),
@@ -21969,6 +22033,7 @@ mod tests {
             | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
+            | ValidationJournalReadSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -22536,6 +22601,7 @@ mod tests {
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
+            | MeshCodegenJournalReadRefused
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -23032,6 +23098,7 @@ mod tests {
                 | ValidationJournalValueAssigned
                 | ValidationAuditEntrySchema
                 | ValidationPayloadRecordSchema
+                | ValidationJournalReadSchema
                 | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
@@ -23424,6 +23491,7 @@ mod tests {
                 | MeshCodegenOpenInstancesUnsupported
                 | MeshCodegenPersistenceWithoutSavedState
                 | MeshCodegenJournalMismatch
+                | MeshCodegenJournalReadRefused
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -23503,9 +23571,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            575,
+            577,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 575 distinct variants to match the DiagnosticCode \
+             expected 577 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24168,6 +24236,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
+            | ValidationJournalReadSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -24574,6 +24643,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
+            | MeshCodegenJournalReadRefused
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

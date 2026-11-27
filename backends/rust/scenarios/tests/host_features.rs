@@ -993,6 +993,8 @@ fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
         cose_sealed: Limits::COSE_SEALED as usize,
         mac_message: Limits::MAC_MESSAGE as usize,
         random_bytes: Limits::RANDOM_BYTES as usize,
+        // The machine reads no journal, so its build names neither bound.
+        ..NamedBounds::LIBRARY
     };
     assert_eq!(
         (

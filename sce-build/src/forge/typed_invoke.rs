@@ -182,11 +182,15 @@ pub fn bind_results(model: &mut SCXMLModel) {
                 continue;
             };
             // A verification or an opening that names a record completes with
-            // the record the build derived for it (docs/adr/0109, D9).
-            let bound_to = if info.payload_result.is_empty() {
-                &info.result_schema
-            } else {
+            // the record the build derived for it (docs/adr/0109, D9), and a
+            // page of the event journal with the one whose entries hold the
+            // union its `sce:entries` names (docs/adr/0114, D5).
+            let bound_to = if !info.payload_result.is_empty() {
                 &info.payload_result
+            } else if !info.journal_result.is_empty() {
+                &info.journal_result
+            } else {
+                &info.result_schema
             };
             if let Some(schema) = model.imported_records.get(bound_to) {
                 let event = format!("{DONE_INVOKE_PREFIX}{}", info.base.invoke_id);
@@ -262,6 +266,8 @@ fn check_request(
         if by_build.contains(&param.name.as_str()) {
             let from = if info.invoke_type == crate::forge::audit_entry::AUDIT_APPEND {
                 "sce:entry"
+            } else if info.invoke_type == crate::forge::journal::JOURNAL_READ {
+                "sce:journal or sce:stream"
             } else {
                 "sce:answer"
             };

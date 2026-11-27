@@ -5576,6 +5576,42 @@ the entries in the child's engine, which no host core's write takes, and is refu
 the `<invoke>`, on every lane, naming the child and its fact
 (`generate/journal-facts-in-child`).
 
+**A page of the event journal: `<invoke type="sce-host-journal-read">`**
+(docs/adr/0114, D5; docs/SCE_HOST_FEATURES.md, section 16). A document reads the
+facts of a stream a page at a time with the standard operation
+`sce-host-journal-read`, naming the stream by `sce:journal="m"` (the journal of the
+machine `m`: its own, or one its machine follows) or `sce:stream="s"` (an observed
+stream it follows), and by `sce:entries="U"` the imported union (docs/adr/0092)
+whose every case holds the record of one event schema, the facts it reads being
+values of it. The request is `sce:std/host/journal_read_request.scxml`: the
+document gives `key` (the session of a machine's stream, empty for an observed
+one), `as_of_position` (0 reads as of the horizon when the read is made, and the
+answer names the position it read as of), `valid_ms`, `after_valid_ms` and
+`after_position` (the cursor; 0 reads from the first entry) and `limit`; the build
+writes `stream` and `observed`, and a `<param>` of either is
+`validation/typed-invoke-request`. The build derives the completion's record from
+`sce:std/host/journal_read_result.scxml`: `horizon`, `as_of_position`, and
+`entries`, a list of at most `journal_page` (64, which `--limit` moves) entries,
+each its `position`, `recorded_ms`, `holds_ms` (when the fact holds from),
+`origin` (the id another system gave it, empty for a session's) and `fact`, a value
+of `U`. The host answers the page as its deterministic CBOR, within
+`journal_page_bytes` (65536), and the Rust machine opens it where the completion is
+lifted (`sce_rust_runtime::journal::open_page`); a page that holds a fact no case
+holds, or bytes that are no value of a case's record, makes the completion the
+failure `not_a_record`. Refused on the attribute as `validation/journal-read-schema`:
+`sce:journal`, `sce:stream` or `sce:entries` on an `<invoke>` of another type,
+a read that names no stream, two, or one by no name (a letter, then letters,
+digits, `_` or `-`), no union or one the document does not import, a union with
+an empty case, two cases of one record, or a case whose record has no
+deterministic CBOR, and a derived record whose alias the document imports another
+record under. Where the machine is generated with its deployment, a document reads
+only its own journal and those it follows (docs/adr/0114, Open question 1): a read
+of a machine that is neither the machine, keeping a journal, nor one it follows,
+of an observed stream it does not follow, and with a union that holds no case of a
+schema the stream's facts are of is refused on the read's `sce:journal` or
+`sce:stream` (`mesh/codegen-journal-read-refused`). Rust serves the read; every
+other lane refuses the machine by name (`codegen/standard-host-type-not-served`).
+
 **A record signed and sealed by name: `sce:payload`** (docs/adr/0109, D9;
 docs/adr/0107, Open question 1; docs/SCE_HOST_FEATURES.md, "Signing and sealing").
 `<invoke type="sce-host-cose-sign1" sce:payload="Note">` names the imported event
@@ -11438,7 +11474,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (575 codes)
+## Appendix — `DiagnosticCode` index (577 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11540,6 +11576,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/journal-value-assigned` | Validation |
 | `validation/audit-entry-schema` | Validation |
 | `validation/payload-record-schema` | Validation |
+| `validation/journal-read-schema` | Validation |
 | `validation/encoded-size-overflow` | Validation |
 | `test-profile/datamodel` | Validation |
 | `test-profile/matcher-type` | Validation |
@@ -11987,6 +12024,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-open-instances-unsupported` | Mesh Codegen |
 | `mesh/codegen-persistence-without-saved-state` | Mesh Codegen |
 | `mesh/codegen-journal-mismatch` | Mesh Codegen |
+| `mesh/codegen-journal-read-refused` | Mesh Codegen |
 
 ### Diagnostic-only
 

@@ -4212,3 +4212,13 @@ that says no fact.
   the last take, which a host appends with the write of the checkpoint that holds them (`Write::journal`). A machine
   that says a fact needs the runtime's `record-cbor` feature. `mesh::topology::resolve_keyed_pool_following` keys a
   pool by the entries it follows too.
+- A statechart reads a page of the event journal with `<invoke type="sce-host-journal-read" sce:journal="m"`
+  (or `sce:stream="s"`) `sce:entries="U">` (section 2.15), with the codes `validation/journal-read-schema` and
+  `mesh/codegen-journal-read-refused`; a `match` over `ValidationError` or `CodegenError` names `JournalReadSchema`
+  and `JournalReadRefused`. The library holds `sce:std/host/journal_read_request.scxml` and
+  `journal_read_result.scxml`. `sce_rust_host_features::NamedBounds` has `journal_page` and `journal_page_bytes`
+  (a literal that names every field adds both, or ends in `..NamedBounds::LIBRARY`); `TYPES` holds 28 operations;
+  `ReferenceHost::set_journal_store` gives the host the store it reads; the crate now asks for the runtime's
+  `record-cbor` feature. `sce_rust_metrics::HostOperation` has `JournalRead`, and so does the C++
+  `SCE::Metrics::HostOperation` (`tests/metrics/metric_names.json` lists it). A generated machine that reads a
+  page calls `sce_rust_runtime::journal::open_page` (feature `record-cbor`).

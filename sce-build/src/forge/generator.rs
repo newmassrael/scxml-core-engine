@@ -6151,6 +6151,24 @@ data,\n                    \"{}\",\n                    \"{}\",\n               
                     )
                 })
                 .unwrap_or_default();
+            // docs/adr/0114, D5: the completion of a read of the event journal
+            // carries the page's deterministic CBOR, which the runtime opens
+            // into the entries of the derived record, each fact a value of the
+            // read's union, before the completion is lifted; a page that is no
+            // value of them makes the completion the failure `not_a_record`.
+            let opened = match crate::forge::journal::reading_of(model, event) {
+                Some(reading) => format!(
+                    "{opened}let data: &str = &::sce_rust_runtime::journal::open_page(\n                    \
+data,\n                    \"{}\",\n                    {},\n                    {},\n                    \
+\"{}\",\n                    \"{}\",\n                );\n                ",
+                    filters::escape_rust(crate::forge::journal::ENTRIES_FIELD.to_string()),
+                    reading.page_entries,
+                    reading.page_bytes,
+                    filters::escape_rust(reading.cases.clone()),
+                    filters::escape_rust(reading.failure.clone()),
+                ),
+                None => opened,
+            };
             lift_arms.push_str(&format!(
                 "            {machine_name}Event::{variant} => {{\n                \
 {opened}let fields = ::sce_rust_runtime::event_payload::PayloadFields::{decode}?;\n                \

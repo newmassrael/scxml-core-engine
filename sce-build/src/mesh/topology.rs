@@ -4675,6 +4675,80 @@ pub fn check_journal(
     Ok(())
 }
 
+/// Refuse `machine`'s reads of the event journal (`sce-host-journal-read`,
+/// docs/adr/0114, D5) that its deployment entry `entry` does not let it make, as
+/// [`crate::mesh::error::CodegenError::JournalReadRefused`], placed on the read's
+/// `sce:journal` or `sce:stream`. A document reads only its own journal and
+/// those it follows (Open question 1):
+///
+/// * `sce:journal` names the machine itself, which keeps a journal
+///   (`journal: true`), or a machine of the deployment it follows;
+/// * `sce:stream` names an observed stream of `streams:` it follows;
+///
+/// and the read's union holds a case of every schema the stream's facts are of:
+/// the facts the machine itself or the followed machine says, or the schemas of
+/// the observed stream, so no page holds a fact the machine could not read.
+pub fn check_journal_reads(
+    machine: &str,
+    entry: Option<&crate::mesh::deploy::MachineConfig>,
+    model: &SCXMLModel,
+    deploy: &DeployConfig,
+    deploy_dir: &Path,
+) -> Result<(), crate::mesh::error::MeshError> {
+    let follows = |name: &str| entry.is_some_and(|m| m.follows.iter().any(|f| f == name));
+    for read in crate::forge::journal::reads(model) {
+        let refuse = |reason: String| crate::mesh::error::CodegenError::JournalReadRefused {
+            machine: machine.to_string(),
+            journal: read.stream.clone(),
+            reason,
+            at: read.at.clone(),
+        };
+        let stream = read.stream.as_str();
+        let events: BTreeSet<String> = if read.observed {
+            let Some(declared) = deploy.streams.get(stream).filter(|_| follows(stream)) else {
+                return Err(refuse(format!(
+                    "'{stream}' is no observed stream of `streams:` the machine follows \
+                     (`follows:`), and a document reads only its own journal and those it follows"
+                ))
+                .into());
+            };
+            let mut events = BTreeSet::new();
+            for schema in &declared.schemas {
+                events.insert(stream_schema_event(stream, schema, deploy_dir)?);
+            }
+            events
+        } else if stream == machine {
+            if !entry.is_some_and(|m| m.journal) {
+                return Err(refuse(
+                    "the machine keeps no journal (`journal: true`), so its own has no entry to \
+                     read"
+                        .to_string(),
+                )
+                .into());
+            }
+            crate::forge::journal::journal_events(model)
+        } else if follows(stream) && deploy.device_for_machine(stream).is_some() {
+            load_machine_model(stream, deploy, deploy_dir)?
+                .map(|followed| crate::forge::journal::journal_events(&followed))
+                .unwrap_or_default()
+        } else {
+            return Err(refuse(format!(
+                "machine '{stream}' is neither this machine nor one it follows (`follows:`), and a \
+                 document reads only its own journal and those it follows"
+            ))
+            .into());
+        };
+        if let Some(event) = events.iter().find(|event| !read.cases.contains(*event)) {
+            return Err(refuse(format!(
+                "the stream's facts of `{event}` are no case of the union the read names \
+                 (`sce:entries`), so a page that holds one could not be read"
+            ))
+            .into());
+        }
+    }
+    Ok(())
+}
+
 /// Strict event coverage check for a single sender: every `<send event="Y"/>`
 /// to a static target must have a matching `<transition event="Y"/>` in the
 /// receiver — with the §mesh-9.5 exemption that RpcReply events targeting a

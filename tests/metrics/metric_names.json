@@ -111,7 +111,7 @@
       "name": "sce_host_operation_duration_seconds",
       "type": "histogram",
       "unit": "seconds",
-      "labels": [{"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append"]}],
+      "labels": [{"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append", "sce-host-journal-read"]}],
       "lanes": ["rust", "cpp"]
     },
     {
@@ -119,7 +119,7 @@
       "type": "counter",
       "unit": "",
       "labels": [
-        {"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append"]},
+        {"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append", "sce-host-journal-read"]},
         {"name": "code", "values": ["unavailable", "quota_exceeded", "network", "response_too_large", "invalid_body", "destination_refused", "busy", "context_exceeded", "answer_too_large", "declined", "unknown_key", "key_retired", "unknown_stream", "invalid_argument", "other"]}
       ],
       "lanes": ["rust", "cpp"]

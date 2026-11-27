@@ -487,6 +487,9 @@ pub fn declare_host_surfaces(
         // the build writes the description of the record's type each reads it
         // by (docs/adr/0109, D9).
         crate::forge::payload_record::write_descriptors(model);
+        // A read of the event journal carries the stream its `sce:journal` or
+        // `sce:stream` names, which the build writes (docs/adr/0114, D5).
+        crate::forge::journal::write_read_requests(model);
         model.refresh_invokes_view();
         // §scxml-3.12.1: a host completion falls back to the generic
         // `done.invoke` when the document names no specific one, as an SCXML

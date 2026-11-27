@@ -20,8 +20,10 @@ path = "src/lib.rs"
 
 [dependencies]
 # `std`: the host-processor types this host answers are part of the runtime's
-# `std` profile; the BasicHTTP processor (`http-send`) is not wanted.
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
+# `std` profile; the BasicHTTP processor (`http-send`) is not wanted. The record
+# codec (`record-cbor`): the page of the event journal a read answers is its
+# deterministic CBOR (docs/adr/0114, D5), written by the runtime's one writer.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "record-cbor"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 # Signing, sealing, keyed digests, random bytes and the key ring
 # (docs/SCE_HOST_FEATURES.md, sections 10 to 13): the one implementation of

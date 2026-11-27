@@ -803,6 +803,20 @@
        pre-empt. -->
   <xs:attribute name="payload" type="xs:string"/>
 
+  <!-- docs/adr/0114, D5: on an `<invoke>` of `sce-host-journal-read`, the
+       stream a page of the event journal is read from, by `journal` (a
+       machine's, the document's own or one it follows) or `stream` (an
+       observed stream it follows), and `entries`, the imported union each
+       fact of the page is a value of. `xs:string` for the three: the parser
+       and the build own their refusals (on an invoke of another type, two
+       streams or none, a name that is none, a union with an empty case or two
+       cases of one record), each `validation/journal-read-schema`, and the
+       build generated with its deployment refuses a stream the machine
+       neither keeps nor follows (`mesh/codegen-journal-read-refused`). -->
+  <xs:attribute name="journal" type="xs:string"/>
+  <xs:attribute name="stream" type="xs:string"/>
+  <xs:attribute name="entries" type="xs:string"/>
+
   <!-- Section 4.7: Validator — data-attribute form (target format) -->
   <xs:attribute name="range-min" type="xs:string"/>
   <xs:attribute name="range-max" type="xs:string"/>

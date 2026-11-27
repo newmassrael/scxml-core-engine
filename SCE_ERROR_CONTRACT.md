@@ -1064,6 +1064,7 @@ references against a real document and drift silently.
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/journal-read-schema` | `validation` | no | ADR 0114 D5 |
 | `validation/journal-value-assigned` | `validation` | no | ADR 0114 D1 |
 | `validation/kind-basis-malformed` | `validation` | no |  |
 | `validation/kind-not-inline-eligible` | `validation` | `replace_one_of` | SCE Accepted Subset §2.1 |
@@ -1227,6 +1228,7 @@ references against a real document and drift silently.
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
 | `mesh/codegen-journal-mismatch` | `mesh-codegen` | no | ADR 0114 D1 |
+| `mesh/codegen-journal-read-refused` | `mesh-codegen` | no | ADR 0114 D5 |
 | `mesh/codegen-keyed-pool-unsupported` | `mesh-codegen` | no | SCE Mesh §14.4 |
 | `mesh/codegen-open-instances-unsupported` | `mesh-codegen` | no | ADR 0113 D7 |
 | `mesh/codegen-persistence-without-saved-state` | `mesh-codegen` | no | SCE Mesh §10.11 |

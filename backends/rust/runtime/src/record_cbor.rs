@@ -558,7 +558,7 @@ fn member<'v>(members: &'v [(String, Value)], name: &str) -> Option<&'v Value> {
 
 /// The bytes a Latin-1 text spells, one a character, or `None` for a text
 /// with a character past U+00FF.
-fn latin1_bytes(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn latin1_bytes(text: &str) -> Option<Vec<u8>> {
     text.chars()
         .map(|c| u8::try_from(u32::from(c)).ok())
         .collect()
