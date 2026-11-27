@@ -4330,6 +4330,33 @@ mod tests {
     }
 }
 "#;
+    const HARNESS_INLINE: &str = r#"// Injected by cold_codecs_of_the_same_rows_name_one_table_in_their_set.
+extern crate std;
+
+use crate::codec_shared_first::CodecSharedFirstIn;
+use crate::codec_shared_second::CodecSharedSecondIn;
+use ::sce_forge_runtime::codec::{CodecError, Inline, SceCursor, SceSink, SliceSink};
+
+#[test]
+fn each_codec_of_one_table_holds_and_writes_its_frames_inline() {
+    let frames: [&[u8]; 2] = [&[0x00], &[0x01, 0x02, 0xAA, 0xBB]];
+    for frame in frames {
+        let mut window = [0u8; 16];
+        let first = CodecSharedFirstIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
+        let mut sink = SliceSink::new(&mut window[..]);
+        first.encode(&mut sink).expect("the frame fits the window");
+        let written = sink.position();
+        assert_eq!(&window[..written], frame, "{frame:x?}");
+        let second = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
+        let mut sink = SliceSink::new(&mut window[..]);
+        second.encode(&mut sink).expect("the frame fits the window");
+        let written = sink.position();
+        assert_eq!(&window[..written], frame, "{frame:x?}");
+    }
+    let short = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(&[0x01, 0x02, 0xAA])).map(|_| ());
+    assert_eq!(short, Err(CodecError::NeedMoreBytes));
+}
+"#;
     use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
     use sce_build::forge::shared_tables::SharedTables;
     let dir = std::env::temp_dir().join(format!("sce_shared_tables_{}", std::process::id()));
@@ -4399,10 +4426,22 @@ mod tests {
             "a codec of the rows is not read and written by {table}:\n{module}"
         );
     }
+    // The adapter the writer reads a value through is generic over the value's
+    // storage: the set is compiled and run on the heap tier, the codecs held
+    // at `Heap` and lent, and on the heap-free tier, held `Inline`.
+    let mut inline = files.clone();
     files.push(("shared_tables.rs".to_string(), HARNESS.to_string()));
+    inline.push(("shared_tables.rs".to_string(), HARNESS_INLINE.to_string()));
     let ran = rustc_run_generated_set(files, "shared_tables_rust", "test", RustcProfile::Alloc);
+    let ran_inline = rustc_run_generated_set(
+        inline,
+        "shared_tables_inline_rust",
+        "test",
+        RustcProfile::NoAlloc,
+    );
     let _ = std::fs::remove_dir_all(&dir);
     ran.expect("codecs of one table must read, refuse and write their frames by it");
+    ran_inline.expect("codecs of one table held inline must read and write their frames by it");
 }
 
 /// The declarations of the public face of a generated module, in order: each
