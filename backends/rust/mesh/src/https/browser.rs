@@ -16,8 +16,8 @@
 //!   D16), as the label of `ExchangeOutcome`.
 //! * `{"tell": "ready" | "restarted", "peer"}`, `{"tell": "lost" | "interrupted" |
 //!   "unauthenticated", "peer", "words"}`, `{"tell": "arrived" | "unsent", "peer", "envelope"}`
-//!   and `{"tell": "carried", "peer", "envelopes"}`: a [`LinkEvent`], each envelope in
-//!   standard base64.
+//!   and `{"tell": "carried" | "fenced", "peer", "envelopes"}`: a [`LinkEvent`], each envelope
+//!   in standard base64.
 //! * `{"ask": "draw", "lane", "bytes"}`: draw that many random bytes and read the moment, then
 //!   [`BrowserClient::drawn`].
 //! * `{"ask": "sign", "lane", "base"}`: sign the base (standard base64 of its bytes) with the
@@ -586,6 +586,13 @@ fn told(event: LinkEvent) -> Value {
                 .map(|envelope| STANDARD.encode(envelope))
                 .collect();
             json!({ "tell": "carried", "peer": peer, "envelopes": envelopes })
+        }
+        LinkEvent::Fenced(peer, envelopes) => {
+            let envelopes: Vec<String> = envelopes
+                .iter()
+                .map(|envelope| STANDARD.encode(envelope))
+                .collect();
+            json!({ "tell": "fenced", "peer": peer, "envelopes": envelopes })
         }
     }
 }

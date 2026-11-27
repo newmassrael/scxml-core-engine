@@ -296,12 +296,14 @@ async fn run_relay(address: &str) {
                 }
                 // A WebSocket link is ready or lost; it is never interrupted with what its peer
                 // keeps for this machine, nor told its peer started again without it, nor
-                // verifies an answer by a signature of its own, nor acknowledges by an exchange.
+                // verifies an answer by a signature of its own, nor acknowledges by an exchange,
+                // nor is fenced as an instance of an open machine.
                 LinkEvent::Unsent(_, _)
                 | LinkEvent::Interrupted(..)
                 | LinkEvent::Restarted(_)
                 | LinkEvent::Unauthenticated(..)
-                | LinkEvent::Carried(..) => {}
+                | LinkEvent::Carried(..)
+                | LinkEvent::Fenced(..) => {}
             },
             line = commands.recv() => {
                 let Some(line) = line else { break };

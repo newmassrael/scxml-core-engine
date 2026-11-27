@@ -154,13 +154,14 @@ impl ServerHost for PoolHost {
                 }
                 // The accepting side hands back nothing it could not write: what the pool sends
                 // waits in the client's mailbox. Nor does it tell an interruption, a restart, an
-                // answer that did not verify or an exchange that carried what the client sent,
-                // which are what a client observes of its server.
+                // answer that did not verify, an exchange that carried what the client sent or a
+                // fence, which are what a client observes of its server.
                 LinkEvent::Unsent(..)
                 | LinkEvent::Interrupted(..)
                 | LinkEvent::Restarted(_)
                 | LinkEvent::Unauthenticated(..)
-                | LinkEvent::Carried(..) => Vec::new(),
+                | LinkEvent::Carried(..)
+                | LinkEvent::Fenced(..) => Vec::new(),
             };
             for key in run {
                 pool.run(&key);
@@ -510,7 +511,8 @@ impl Client {
                     | LinkEvent::Unsent(..)
                     | LinkEvent::Restarted(_)
                     | LinkEvent::Unauthenticated(..)
-                    | LinkEvent::Carried(..) => {}
+                    | LinkEvent::Carried(..)
+                    | LinkEvent::Fenced(..) => {}
                 }
                 self.hand_on(event);
             }

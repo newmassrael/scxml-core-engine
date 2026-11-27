@@ -148,7 +148,8 @@ fn peer_of(event: &LinkEvent) -> &str {
         | LinkEvent::Interrupted(p, _)
         | LinkEvent::Restarted(p)
         | LinkEvent::Unauthenticated(p, _)
-        | LinkEvent::Carried(p, _) => p,
+        | LinkEvent::Carried(p, _)
+        | LinkEvent::Fenced(p, _) => p,
     }
 }
 

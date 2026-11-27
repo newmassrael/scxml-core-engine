@@ -601,6 +601,18 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.apply(effects);
     }
 
+    /// `peer` fenced this machine, an instance of an open machine that dials
+    /// it (docs/adr/0113, D4): what left under the incarnation that ended ends
+    /// with an unknown outcome, as section 16.7 row 20, and is never sent
+    /// again ([`Router::peer_fenced`]), a transmission of `unacknowledged`
+    /// waiting out its backoff among it.
+    pub fn peer_fenced(&mut self, peer: &str, unacknowledged: &[Vec<u8>]) {
+        self.retries
+            .retain(|retry| retry.peer != peer || !unacknowledged.contains(&retry.bytes));
+        let effects = self.router.peer_fenced(peer, unacknowledged);
+        self.apply(effects);
+    }
+
     /// An answer that arrived as `peer`'s did not prove it came from `peer`
     /// (SCE_MESH.md section 22.9), and the link took nothing of it: the
     /// machine is told, as section 16.7 row 19. Readiness, what waits and
@@ -1205,6 +1217,50 @@ mod tests {
             1,
             "the link is still ready, so a send leaves at once"
         );
+    }
+
+    /// docs/adr/0113, D4: a fence ends what the binding held that its server
+    /// had not acknowledged as row 20, naming the envelope and the binding,
+    /// and a transmission of it waiting out its backoff is not made. Red if
+    /// `deliver` drops the event, or if the retry is left to run under the
+    /// next incarnation.
+    #[test]
+    fn a_fence_ends_what_was_sent_as_row_20_and_retries_none_of_it() {
+        use crate::generated::envelope::Envelope;
+        use crate::link::{deliver, LinkEvent};
+
+        let retry = RetryPolicy {
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 300,
+            jitter_pct: 0,
+        };
+        let mut hmi = endpoint("ecu", "hmi", Some(retry));
+        hmi.send(&send("note", "s-1"));
+        let (_, bytes) = hmi.transport.sent.pop().expect("sent at once");
+        hmi.transmit_failed("hmi", bytes.clone(), failure(true));
+        assert!(!hmi.is_quiet(), "a retry waits out its backoff");
+        deliver(
+            &mut hmi,
+            LinkEvent::Fenced("hmi".to_string(), vec![bytes.clone()]),
+        );
+        let id = Envelope::decode(&mut sce_forge_runtime::codec::SceCursor::new(&bytes))
+            .unwrap()
+            .id;
+        let events = raised(&mut hmi);
+        let [event] = events.as_slice() else {
+            panic!("expected one error event, got {events:?}");
+        };
+        assert_eq!(event.name, "error.communication");
+        assert_eq!(
+            event.metadata.data,
+            format!(
+                r#"{{"errorName":"communication","reason":"outcomeUnknown","envelope_id":"{}","target":"hmi","transport":"wss"}}"#,
+                crate::rpc::uuid_text(&<[u8; 16]>::from(id))
+            )
+        );
+        assert!(hmi.is_quiet(), "the retry is not made");
     }
 
     /// What the machine is told when it sends to `target` and no binding for it is held: one

@@ -120,6 +120,23 @@ impl Correlation {
         lost
     }
 
+    /// Forget every request sent to `peer` whose envelope `left` says left
+    /// this machine, in wire-id order: `peer` fenced it, and no reply to one
+    /// that left will come (docs/adr/0113, D4; SCE_MESH.md section 16.7 row
+    /// 20). One that has not left waits on.
+    pub fn forget_left_for(&mut self, peer: &str, left: impl Fn(&[u8]) -> bool) -> Vec<[u8; 16]> {
+        let lost: Vec<[u8; 16]> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.target == peer && left(&p.request))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &lost {
+            self.pending.remove(id);
+        }
+        lost
+    }
+
     /// The envelope of every request still waiting on `peer`, in wire-id
     /// order.
     pub fn sent_to<'a>(&'a self, peer: &'a str) -> impl Iterator<Item = &'a [u8]> + 'a {

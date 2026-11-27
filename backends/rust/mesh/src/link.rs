@@ -51,6 +51,13 @@ pub enum LinkEvent {
     /// `receipt: durable` (docs/adr/0109, D10; SCE_MESH.md section 10.11). Told only on such a
     /// binding; the core holds them no more.
     Carried(String, Vec<Vec<u8>>),
+    /// `peer` fenced this machine, an instance of an open machine that dials it (docs/adr/0113,
+    /// D4): it answered an exchange made under the incarnation the instance held `412`, that
+    /// incarnation having ended, and with it what `peer` kept for this machine. These are the
+    /// envelopes the link held that `peer` had not acknowledged: whether each took effect is not
+    /// known, and none is sent again. Each request waiting on `peer` that left ends with that
+    /// outcome, raised as SCE_MESH.md section 16.7 row 20, and the link joins anew.
+    Fenced(String, Vec<Vec<u8>>),
 }
 
 /// Hand a link's event to the endpoint it concerns.
@@ -72,6 +79,7 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
         LinkEvent::Restarted(peer) => endpoint.peer_restarted(&peer),
         LinkEvent::Unauthenticated(peer, _) => endpoint.peer_unauthenticated(&peer),
         LinkEvent::Carried(peer, envelopes) => endpoint.peer_carried(&peer, &envelopes),
+        LinkEvent::Fenced(peer, envelopes) => endpoint.peer_fenced(&peer, &envelopes),
     }
 }
 

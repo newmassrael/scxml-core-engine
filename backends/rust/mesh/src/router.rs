@@ -1461,6 +1461,92 @@ impl Router {
         Ok(effects)
     }
 
+    /// `peer` fenced this machine, an instance of an open machine that dials
+    /// it (docs/adr/0113, D4): it answered an exchange made under the
+    /// incarnation the instance held `412`, that incarnation having ended,
+    /// and with it what `peer` kept of the instance (its completion records,
+    /// its mailbox, its outbox). `unacknowledged` is what the binding held
+    /// for `peer` that `peer` had not acknowledged.
+    ///
+    /// What left this machine under the ended incarnation may or may not
+    /// have taken effect, and nothing can tell which, so it ends here and is
+    /// never sent again: under the next incarnation it would be a request of
+    /// its own, and could take effect twice. Each request still waiting on
+    /// `peer` that left is forgotten, as a lost link forgets one, and is
+    /// SCE_MESH.md section 16.7 row 20 with its `invoke_id`; each other
+    /// envelope of `unacknowledged`, and each one durable receipt holds that
+    /// left, is row 20 with its `envelope_id`, and durable receipt holds it no
+    /// more. What has not left, a request a checkpoint not yet durable holds
+    /// or one that waits for the link to be ready, waits on and goes under the
+    /// next incarnation. Readiness is the link's to tell.
+    pub fn peer_fenced(
+        &mut self,
+        peer: &str,
+        unacknowledged: &[Vec<u8>],
+    ) -> Result<Vec<Effect>, RouterError> {
+        self.bind(peer)?;
+        let persist = self.persist.as_ref();
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let mut unknown: Vec<Vec<u8>> = unacknowledged.to_vec();
+        if let Some(out) = bound.durable_out.as_mut() {
+            let left: Vec<u64> = out
+                .unacked
+                .iter()
+                .filter(|(_, held)| held.sent_ms.is_some())
+                .map(|(sequence, _)| *sequence)
+                .collect();
+            for sequence in left {
+                if let Some(held) = out.unacked.remove(&sequence) {
+                    if !unknown.contains(&held.bytes) {
+                        unknown.push(held.bytes);
+                    }
+                }
+            }
+        }
+        let bound = &*bound;
+        let waits = |request: &[u8]| {
+            persist.is_some_and(|persist| persist.holds(peer, request))
+                || bound.outbound.queued().any(|(queued, _)| queued == request)
+                || bound.durable_out.as_ref().is_some_and(|out| {
+                    out.unacked
+                        .values()
+                        .any(|held| held.sent_ms.is_none() && held.bytes.as_slice() == request)
+                })
+        };
+        let lost = self
+            .requests
+            .forget_left_for(peer, |request| !waits(request));
+        let raise = |invoke_id: Option<String>, envelope_id: Option<String>| Effect::Raise {
+            peer: Some(peer.to_string()),
+            signal: Signal::OutcomeUnknown {
+                invoke_id,
+                envelope_id,
+            },
+        };
+        let mut effects: Vec<Effect> = lost
+            .iter()
+            .map(|wire_id| raise(Some(rpc::uuid_text(wire_id)), None))
+            .collect();
+        for bytes in &unknown {
+            let Ok(envelope) = Envelope::decode(&mut SceCursor::new(bytes)) else {
+                continue;
+            };
+            // A request that waited is told by its own row above; one that did not was answered
+            // or cancelled before the fence, and nothing waits on it.
+            if envelope.pattern == PatternKind::RpcRequest {
+                continue;
+            }
+            effects.push(raise(
+                None,
+                Some(rpc::uuid_text(&<[u8; 16]>::from(envelope.id))),
+            ));
+        }
+        Ok(effects)
+    }
+
     /// Whether `peer` is bound.
     pub fn has_peer(&self, peer: &str) -> bool {
         self.peers.contains_key(peer)
@@ -4027,6 +4113,91 @@ mod tests {
         let unknown = Err(RouterError::UnknownPeer("nobody".to_string()));
         assert_eq!(ecu.peer_interrupted("nobody"), unknown);
         assert_eq!(ecu.peer_restarted("nobody", 0), unknown);
+        assert_eq!(ecu.peer_fenced("nobody", &[]), unknown);
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `CFenced`: a fence ends each
+    /// request that left and still waits as row 20, naming it, and each other envelope the link
+    /// had not seen acknowledged, naming that; nothing of either is sent again, and a reply that
+    /// arrives after ends nothing. Red if `peer_fenced` keeps the request waiting (a restart would
+    /// then send it under the next incarnation, where it could run twice) or drops the
+    /// notification without its row.
+    #[test]
+    fn a_fence_ends_what_left_with_an_unknown_outcome_and_sends_none_of_it_again() {
+        let mut ecu = requester(None);
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        started(&mut ecu, None);
+        let note = transmitted(ecu.send(&request("#hmi", "status.changed", ""), [2; 16], 20));
+        let unknown = |invoke_id: Option<&str>, envelope_id: Option<String>| Effect::Raise {
+            peer: Some("hmi".to_string()),
+            signal: Signal::OutcomeUnknown {
+                invoke_id: invoke_id.map(str::to_string),
+                envelope_id,
+            },
+        };
+        assert_eq!(
+            ecu.peer_fenced("hmi", &[note]).unwrap(),
+            alloc::vec![
+                unknown(Some(WIRE_TEXT), None),
+                unknown(None, Some(rpc::uuid_text(&[2; 16]))),
+            ]
+        );
+        assert!(!ecu.awaits_reply(&WIRE));
+        assert!(
+            ecu.peer_restarted("hmi", 40).unwrap().is_empty(),
+            "nothing waits to be asked again"
+        );
+        assert!(ecu
+            .receive("hmi", reply(2, Some(RpcStatus::Ok), None, "1"), 50)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// docs/adr/0113, D4: what has not left waits on, and goes under the next incarnation; what
+    /// durable receipt sent and holds for its acknowledgement is held no more, and is not sent
+    /// again at the next readiness edge. Red if `peer_fenced` ends a request a checkpoint still
+    /// holds, or leaves what durable receipt sent to be sent again.
+    #[test]
+    fn a_fence_lets_what_has_not_left_wait_and_lets_go_of_what_durable_receipt_sent() {
+        let mut ecu = requester(None);
+        ecu.enable_checkpoints();
+        ecu.send_durably("hmi", DurableSend::default()).unwrap();
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        match ecu.invoke(&ask("#hmi", None), WIRE, [1; 16], 10, 1000) {
+            Ok(Invoked::Started(effects)) => assert!(effects.is_empty(), "{effects:?}"),
+            other => panic!("expected the request to start, got {other:?}"),
+        }
+        assert!(
+            ecu.peer_fenced("hmi", &[]).unwrap().is_empty(),
+            "a checkpoint not yet durable holds the request"
+        );
+        assert!(ecu.awaits_reply(&WIRE));
+        ecu.seal(
+            1,
+            Clocks {
+                monotonic_ms: 20,
+                wall_ms: 2000,
+            },
+        )
+        .unwrap();
+        let asked = transmitted(ecu.durable(1, 30));
+        assert!(ecu.holds_for_durability(), "held until acknowledged");
+        assert_eq!(
+            ecu.peer_fenced("hmi", &[asked]).unwrap(),
+            alloc::vec![Effect::Raise {
+                peer: Some("hmi".to_string()),
+                signal: Signal::OutcomeUnknown {
+                    invoke_id: Some(WIRE_TEXT.to_string()),
+                    envelope_id: None,
+                },
+            }]
+        );
+        assert!(!ecu.awaits_reply(&WIRE));
+        assert!(!ecu.holds_for_durability(), "held no more");
+        assert!(
+            ecu.peer_ready("hmi", 40).unwrap().is_empty(),
+            "nothing is sent again at the next readiness edge"
+        );
     }
 
     /// `ecu` asking `hmi` over an ordered binding (§mesh-10.6): every
