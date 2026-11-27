@@ -29739,9 +29739,26 @@ fn lower_wire_value(
             send_held: None,
         }));
     }
-    let slot = ty
-        .wire_param_slot()
-        .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;
+    // A literal takes the type of the place it lands in (SCE_FORGE.md §3.4,
+    // "Typing convention"): a param of a `<send>` of an event whose schema the
+    // document imports lands in that schema's field, so an integer or a real
+    // literal crosses in the field's type and is held to its range, as a literal
+    // of a request typed by `sce:request` is. Any other value crosses in its own
+    // type, which the judge held to the field.
+    let landed = match (ty, sent_field_type(param.name, sent_as, rewrites)) {
+        (
+            InferredType::UntypedInt,
+            Some(want @ (InferredType::Int { .. } | InferredType::Float { .. })),
+        )
+        | (InferredType::UntypedFloat, Some(want @ InferredType::Float { .. })) => Some(want),
+        _ => None,
+    };
+    let slot = match landed {
+        Some(want) => want,
+        None => ty
+            .wire_param_slot()
+            .ok_or_else(|| refused("its type has no wire spelling".to_string()))?,
+    };
     // A byte string crosses as its Latin-1 text, which each backend spells in the
     // type it carries a string in; one that does not yet is refused by name.
     let bytes = slot == InferredType::Bytes;
@@ -29759,19 +29776,27 @@ fn lower_wire_value(
         rewrites.owned(written, ctx, renames, slot)
     }
     .map_err(|r| refused(r.error.to_string()))?;
+    // An integer literal that took its field's type stands in no place the
+    // language types it by, so it is spelled in that type: a bare Rust literal
+    // the wire helper takes is an `i32` whatever the field holds.
+    let spelled = landed
+        .and_then(|want| {
+            crate::forge::expr::integer_literal_typed_as(written, want, target.expr_target())
+        })
+        .unwrap_or_else(|| value.text.clone());
     let wired = if bytes {
         target
-            .wire_bytes(&value.text)
+            .wire_bytes(&spelled)
             .ok_or_else(|| refused("a byte string has no wire spelling here yet".to_string()))?
     } else {
-        target.wire_value(slot, &value.text)
+        target.wire_value(slot, &spelled)
     };
     // A target that leaves the expression in the document (the Interpreter) writes
     // the value as it crosses: a 64-bit integer as the text of its digits.
     if target.lowers_host_action_arguments() && !bytes {
         rewrites.note(written, param.spelling, &wired);
     } else {
-        rewrites.note(written, param.spelling, &value.text);
+        rewrites.note(written, param.spelling, &spelled);
     }
     Ok(Some(WireValue {
         text: wired,
@@ -29942,6 +29967,33 @@ fn unproven_count(
         &[Step::Field(name)],
     )?;
     crate::forge::value_type::count_left_to_send(held, &field.ty)
+}
+
+/// The type of the field `name` of the schema the document imports for the
+/// event `sent_as`, as an expression types a value of it: what a literal sent
+/// under that name lands in. `None` where no schema of an event reads the
+/// value, where the schema declares no such field, and where the field holds
+/// no scalar.
+fn sent_field_type(
+    name: &str,
+    sent_as: Option<&str>,
+    rewrites: &Rewrites<'_>,
+) -> Option<InferredType> {
+    use crate::forge::value_path::{walk, Place, Step};
+    use crate::forge::value_type::ValueType;
+    let event = sent_as.filter(|event| !event.is_empty())?;
+    let alias = rewrites.event_aliases.get(event)?;
+    let field = walk(
+        Some(&rewrites.type_scope),
+        &Place::of(ValueType::Record {
+            alias: alias.clone(),
+        }),
+        &[Step::Field(name)],
+    )?;
+    match &field.ty {
+        ValueType::Scalar(scalar) => Some(InferredType::from_sce_type(scalar)),
+        _ => None,
+    }
 }
 
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in

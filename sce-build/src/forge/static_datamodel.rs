@@ -5667,6 +5667,20 @@ impl<'a> Judge<'a> {
             (None, None) => (None, None),
         };
         for (reader, field, held) in readers {
+            // A literal lands in the field and takes its type (SCE_FORGE.md,
+            // "Typing convention"), as a literal of a request typed by
+            // `sce:request` does, so one the field's range does not hold is
+            // refused where it is written (`expression/literal-out-of-range`).
+            if let SentValue::Typed {
+                ty: InferredType::UntypedInt | InferredType::UntypedFloat,
+                ..
+            } = &value
+            {
+                let want = InferredType::of_field(&field.sce_type);
+                if matches!(want, InferredType::Int { .. } | InferredType::Float { .. }) {
+                    self.expr(ctx, written, param.spelling, Expected::Hint(want))?;
+                }
+            }
             if let Some(misfit) = value.misfit(field, held) {
                 let consequence = match misfit {
                     Misfit::Kind(why) => format!(

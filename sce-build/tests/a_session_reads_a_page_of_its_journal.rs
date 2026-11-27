@@ -322,7 +322,8 @@ topology:
 }
 
 /// The document of `rooms`: it says the fact `room.booked` on `book` and
-/// `room.cancelled` on `cancel`, both of the room `east`.
+/// `room.cancelled` on `cancel`, both of the room `east`. The booking holds
+/// from a time past `int32`, a literal that crosses in its `int64` field's type.
 fn rooms() -> String {
     r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -333,7 +334,7 @@ fn rooms() -> String {
     <transition event="book" type="internal">
       <send type="sce:journal" event="room.booked">
         <param name="room" expr="'east'"/>
-        <param name="at" expr="1"/>
+        <param name="at" expr="1690000000000"/>
       </send>
     </transition>
     <transition event="cancel" type="internal">
@@ -467,6 +468,8 @@ use view::ViewHostInvokers;
 /// The moment the store recorded both entries, in milliseconds.
 const RECORDED_MS: u64 = 1_700_000_000_000;
 const RECORDED_AT: i64 = RECORDED_MS as i64;
+/// The time the booking holds from, as the rooms document writes it.
+const BOOKED_AT: i64 = 1_690_000_000_000;
 
 /// The host of the read: it keeps each start's token and the stream the
 /// request names, and completes the read later.
@@ -499,7 +502,7 @@ fn main() {
     let said = rooms.take_journal();
     let schemas: Vec<&str> = said.iter().map(|entry| entry.schema).collect();
     assert_eq!(schemas, ["room.booked", "room.cancelled"], "the facts, in the order said");
-    assert_eq!(said[0].valid_ms, Some(1), "a booking holds from the time it names");
+    assert_eq!(said[0].valid_ms, Some(BOOKED_AT), "a booking holds from the time it names");
     assert_eq!(said[1].valid_ms, None, "a cancellation names none");
 
     // The page the host answers: both entries, at positions 1 and 2.
@@ -547,11 +550,11 @@ fn main() {
     match &opened[0].fact {
         view::ViewRoomFactsUnion::Booked(fact) => {
             assert_eq!(fact.room.as_str(), "east", "the booking's room");
-            assert_eq!(fact.at, 1, "the booking's time");
+            assert_eq!(fact.at, BOOKED_AT, "the booking's time");
         }
         other => panic!("the first entry is the booking: {other:?}"),
     }
-    assert_eq!((opened[0].position, opened[0].holds_ms), (1, 1));
+    assert_eq!((opened[0].position, opened[0].holds_ms), (1, BOOKED_AT));
     match &opened[1].fact {
         view::ViewRoomFactsUnion::Cancelled(fact) => {
             assert_eq!(fact.room.as_str(), "east", "the cancellation's room");

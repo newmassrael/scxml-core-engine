@@ -3455,6 +3455,27 @@ fn c_family_wide_literal(to: InferredType, node: &TypedExpr) -> Option<String> {
     )
 }
 
+/// `written`, an integer literal standing alone (a `-` before it is its own),
+/// spelled as `target` spells a literal of the integer type `ty`
+/// ([`typed_integer_literal`]): how a literal takes the type of a place no
+/// statement of the language declares around it, such as the field of the
+/// record a `<send>` carries. `None` for any other expression, for a type that
+/// is no integer, and for a target whose literal takes its type where it is
+/// used.
+pub(crate) fn integer_literal_typed_as(
+    written: &str,
+    ty: InferredType,
+    target: ExprTarget,
+) -> Option<String> {
+    if !matches!(ty, InferredType::Int { .. }) {
+        return None;
+    }
+    let mut node = parse_to_ast(written.trim()).ok()?;
+    integer_literal_parts(&node)?;
+    node.ty = ty;
+    typed_integer_literal(target, &node)
+}
+
 /// `node`, an integer literal whose context gave it its type
 /// ([`land_integers`]: an operand of an operation none of whose operands has a
 /// declared type), written in that type for `target`: `1u64`, `UINT64_C(1)`,
