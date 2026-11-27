@@ -1718,12 +1718,12 @@ func (p *StaticModelHarnessPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "prompt", Value: sceValue})
 			}
 			if !requestRefused {
-				sceValue := int64(256)
+				sceValue := int64(uint32(256))
 				hostInvokeParams["max_tokens"] = append(hostInvokeParams["max_tokens"], sce.ToWireString(sceValue))
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "max_tokens", Value: sceValue})
 			}
 			if !requestRefused {
-				sceValue := int64(0)
+				sceValue := int64(uint16(0))
 				hostInvokeParams["temperature_milli"] = append(hostInvokeParams["temperature_milli"], sce.ToWireString(sceValue))
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "temperature_milli", Value: sceValue})
 			}

@@ -1345,13 +1345,13 @@ class StaticModelHarnessStateMachine(
                             putParam(hostInvokePayload, "prompt", v)
                         }
                         run {
-                            val v: Any? = (256).toLong()
+                            val v: Any? = (256u).toLong()
                             hostInvokeParams["max_tokens"] =
                                 (hostInvokeParams["max_tokens"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "max_tokens", v)
                         }
                         run {
-                            val v: Any? = (0).toLong()
+                            val v: Any? = (0.toUShort()).toLong()
                             hostInvokeParams["temperature_milli"] =
                                 (hostInvokeParams["temperature_milli"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "temperature_milli", v)

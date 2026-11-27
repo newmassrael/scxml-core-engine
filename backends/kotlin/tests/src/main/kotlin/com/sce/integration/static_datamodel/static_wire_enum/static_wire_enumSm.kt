@@ -595,7 +595,7 @@ class StaticWireEnumStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "layout", (vLayout).declaredName)
 
-            putParam(sendPayload, "zoom", (3).toLong())
+            putParam(sendPayload, "zoom", (3.toUByte()).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -637,7 +637,7 @@ class StaticWireEnumStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "layout", (if (vLayout == StaticWireEnumViewModeEnum.WEEK) StaticWireEnumViewModeEnum.DAY else vLayout).declaredName)
 
-            putParam(sendPayload, "zoom", (4).toLong())
+            putParam(sendPayload, "zoom", (4.toUByte()).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue

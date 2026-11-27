@@ -1703,7 +1703,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 			parts = append(parts, sce.EventDataParam{Name: "last", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := int64(uint32(0))
 			parts = append(parts, sce.EventDataParam{Name: "gen", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1745,7 +1745,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 			parts = append(parts, sce.EventDataParam{Name: "last", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := int64(uint32(0))
 			parts = append(parts, sce.EventDataParam{Name: "gen", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)

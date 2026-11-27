@@ -595,7 +595,7 @@ class StaticBytesWireStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "sensor", (3).toLong())
+            putParam(sendPayload, "sensor", (3.toUByte()).toLong())
 
             putParam(sendPayload, "frame", com.sce.runtime.EventPayload.bytesAsText(vHeld))
 

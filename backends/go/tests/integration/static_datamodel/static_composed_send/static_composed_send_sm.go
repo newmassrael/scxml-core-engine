@@ -1619,7 +1619,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 			}
 		}
 		{
-			sceValue := int64(3)
+			sceValue := int64(uint8(3))
 			parts = append(parts, sce.EventDataParam{Name: "hops", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1755,7 +1755,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 			}
 		}
 		{
-			sceValue := int64(3)
+			sceValue := int64(uint8(3))
 			parts = append(parts, sce.EventDataParam{Name: "hops", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)

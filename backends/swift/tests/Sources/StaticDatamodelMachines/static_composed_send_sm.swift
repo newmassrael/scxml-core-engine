@@ -885,7 +885,7 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
 break sceBlock
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(3))
+                        let sceValue: WireValue = .integer(Int64(UInt8(3)))
                         sendParts.append(PayloadPair("hops", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
@@ -1003,7 +1003,7 @@ break sceBlock
 break sceBlock
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(3))
+                        let sceValue: WireValue = .integer(Int64(UInt8(3)))
                         sendParts.append(PayloadPair("hops", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)

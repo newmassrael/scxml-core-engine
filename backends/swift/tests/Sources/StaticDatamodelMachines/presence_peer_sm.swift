@@ -959,7 +959,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("last", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .integer(Int64(UInt32(0)))
                         sendParts.append(PayloadPair("gen", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
@@ -997,7 +997,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("last", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .integer(Int64(UInt32(0)))
                         appendFormParam(&sendForm, "gen", sceValue)
                         sendParts.append(PayloadPair("gen", sceValue))
                     }

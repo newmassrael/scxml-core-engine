@@ -1084,7 +1084,7 @@ func (p *StaticSchemaPendingPolicy) ExecuteTransitionContent(source StaticSchema
 			parts = append(parts, sce.EventDataParam{Name: "level", Value: sceValue})
 		}
 		{
-			sceValue := int64(7)
+			sceValue := int64(uint16(7))
 			parts = append(parts, sce.EventDataParam{Name: "count", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)

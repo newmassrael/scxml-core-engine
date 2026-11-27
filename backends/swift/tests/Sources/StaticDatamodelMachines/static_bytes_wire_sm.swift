@@ -630,7 +630,7 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceValue: WireValue = .integer(Int64(3))
+                        let sceValue: WireValue = .integer(Int64(UInt8(3)))
                         sendParts.append(PayloadPair("sensor", sceValue))
                     }
                     do {

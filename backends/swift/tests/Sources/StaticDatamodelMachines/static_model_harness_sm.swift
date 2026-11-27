@@ -1104,12 +1104,12 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
             hostParts.append(PayloadPair("prompt", sceValue))
         }
         do {
-            let sceValue: WireValue = .integer(Int64(256))
+            let sceValue: WireValue = .integer(Int64(UInt32(256)))
             appendFormParam(&hostParams, "max_tokens", sceValue)
             hostParts.append(PayloadPair("max_tokens", sceValue))
         }
         do {
-            let sceValue: WireValue = .integer(Int64(0))
+            let sceValue: WireValue = .integer(Int64(UInt16(0)))
             appendFormParam(&hostParams, "temperature_milli", sceValue)
             hostParts.append(PayloadPair("temperature_milli", sceValue))
         }

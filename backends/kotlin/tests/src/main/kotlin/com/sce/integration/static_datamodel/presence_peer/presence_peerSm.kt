@@ -879,7 +879,7 @@ class PresencePeerStateMachine(
 
             putParam(sendPayload, "last", (pendingPresenceAlivePayload!!.at).toString())
 
-            putParam(sendPayload, "gen", (0).toLong())
+            putParam(sendPayload, "gen", (0u).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
@@ -899,7 +899,7 @@ class PresencePeerStateMachine(
 
             putParam(sendPayload, "last", (pendingPresenceAlivePayload!!.at).toString())
 
-            putParam(sendPayload, "gen", (0).toLong())
+            putParam(sendPayload, "gen", (0u).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // The same pairs as the text a form carries (W3C SCXML C.2), so no

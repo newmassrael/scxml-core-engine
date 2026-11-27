@@ -1436,7 +1436,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("nodeId", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .integer(Int64(UInt8(0)))
                         sendParts.append(PayloadPair("op", sceValue))
                     }
                     do {
@@ -1444,15 +1444,15 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("aRef", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .unsigned64(UInt64(0))
                         sendParts.append(PayloadPair("aRow", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .unsigned64(UInt64(0))
                         sendParts.append(PayloadPair("aCol", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .signed64(Int64(0))
                         sendParts.append(PayloadPair("aVal", sceValue))
                     }
                     do {
@@ -1460,15 +1460,15 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("bRef", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .unsigned64(UInt64(0))
                         sendParts.append(PayloadPair("bRow", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .unsigned64(UInt64(0))
                         sendParts.append(PayloadPair("bCol", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .signed64(Int64(0))
                         sendParts.append(PayloadPair("bVal", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
@@ -1526,7 +1526,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("nodeId", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .integer(Int64(UInt8(0)))
                         appendFormParam(&sendForm, "op", sceValue)
                         sendParts.append(PayloadPair("op", sceValue))
                     }
@@ -1623,7 +1623,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("col", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(0))
+                        let sceValue: WireValue = .signed64(Int64(0))
                         sendParts.append(PayloadPair("value", sceValue))
                     }
                     do {

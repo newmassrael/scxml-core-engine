@@ -756,7 +756,7 @@ class StaticComposedSendStateMachine(
                 return@send true
             }
 
-            putParam(sendPayload, "hops", (3).toLong())
+            putParam(sendPayload, "hops", (3.toUByte()).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
@@ -842,7 +842,7 @@ class StaticComposedSendStateMachine(
                 return@send true
             }
 
-            putParam(sendPayload, "hops", (3).toLong())
+            putParam(sendPayload, "hops", (3.toUByte()).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an

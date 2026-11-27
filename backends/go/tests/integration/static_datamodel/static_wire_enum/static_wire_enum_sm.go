@@ -1134,7 +1134,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 			parts = append(parts, sce.EventDataParam{Name: "layout", Value: sceValue})
 		}
 		{
-			sceValue := int64(3)
+			sceValue := int64(uint8(3))
 			parts = append(parts, sce.EventDataParam{Name: "zoom", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1220,7 +1220,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 			parts = append(parts, sce.EventDataParam{Name: "layout", Value: sceValue})
 		}
 		{
-			sceValue := int64(4)
+			sceValue := int64(uint8(4))
 			parts = append(parts, sce.EventDataParam{Name: "zoom", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)

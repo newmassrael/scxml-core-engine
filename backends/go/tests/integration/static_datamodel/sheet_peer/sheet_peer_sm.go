@@ -2885,7 +2885,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := int64(uint8(0))
 			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
 		}
 		{
@@ -2893,15 +2893,15 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Uint64PayloadText(uint64(uint64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Uint64PayloadText(uint64(uint64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Int64PayloadText(int64(int64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
 		}
 		{
@@ -2909,15 +2909,15 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Uint64PayloadText(uint64(uint64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Uint64PayloadText(uint64(uint64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Int64PayloadText(int64(int64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -2975,7 +2975,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := int64(uint8(0))
 			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
 		}
 		{
@@ -3089,7 +3089,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			parts = append(parts, sce.EventDataParam{Name: "col", Value: sceValue})
 		}
 		{
-			sceValue := int64(0)
+			sceValue := sce.Int64PayloadText(int64(int64(0)))
 			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
 		}
 		{

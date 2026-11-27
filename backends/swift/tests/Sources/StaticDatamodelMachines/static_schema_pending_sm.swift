@@ -611,7 +611,7 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("level", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(7))
+                        let sceValue: WireValue = .integer(Int64(UInt16(7)))
                         sendParts.append(PayloadPair("count", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)

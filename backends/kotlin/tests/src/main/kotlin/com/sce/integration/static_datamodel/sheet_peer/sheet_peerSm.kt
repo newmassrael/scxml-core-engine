@@ -1282,23 +1282,23 @@ class SheetPeerStateMachine(
 
             putParam(sendPayload, "nodeId", (vNode).toString())
 
-            putParam(sendPayload, "op", (0).toLong())
+            putParam(sendPayload, "op", (0.toUByte()).toLong())
 
             putParam(sendPayload, "aRef", false)
 
-            putParam(sendPayload, "aRow", (0).toLong())
+            putParam(sendPayload, "aRow", (0uL).toString())
 
-            putParam(sendPayload, "aCol", (0).toLong())
+            putParam(sendPayload, "aCol", (0uL).toString())
 
-            putParam(sendPayload, "aVal", (0).toLong())
+            putParam(sendPayload, "aVal", (0L).toString())
 
             putParam(sendPayload, "bRef", false)
 
-            putParam(sendPayload, "bRow", (0).toLong())
+            putParam(sendPayload, "bRow", (0uL).toString())
 
-            putParam(sendPayload, "bCol", (0).toLong())
+            putParam(sendPayload, "bCol", (0uL).toString())
 
-            putParam(sendPayload, "bVal", (0).toLong())
+            putParam(sendPayload, "bVal", (0L).toString())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
@@ -1326,7 +1326,7 @@ class SheetPeerStateMachine(
 
             putParam(sendPayload, "nodeId", (vNode).toString())
 
-            putParam(sendPayload, "op", (0).toLong())
+            putParam(sendPayload, "op", (0.toUByte()).toLong())
 
             putParam(sendPayload, "aRef", false)
 
@@ -1402,7 +1402,7 @@ class SheetPeerStateMachine(
 
             putParam(sendPayload, "col", (pendingSheetFormulaPayload!!.col).toString())
 
-            putParam(sendPayload, "value", (0).toLong())
+            putParam(sendPayload, "value", (0L).toString())
 
             putParam(sendPayload, "wallTime", (vClock.wallTime).toString())
 

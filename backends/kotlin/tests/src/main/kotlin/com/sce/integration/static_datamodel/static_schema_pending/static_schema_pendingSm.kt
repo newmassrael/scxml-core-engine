@@ -544,7 +544,7 @@ class StaticSchemaPendingStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "level", (StaticSchemaPendingSignalLevelEnum.HIGH).declaredName)
 
-            putParam(sendPayload, "count", (7).toLong())
+            putParam(sendPayload, "count", (7.toUShort()).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: Delayed send

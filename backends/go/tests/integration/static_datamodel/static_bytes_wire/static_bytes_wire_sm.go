@@ -1083,7 +1083,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
 		{
-			sceValue := int64(3)
+			sceValue := int64(uint8(3))
 			parts = append(parts, sce.EventDataParam{Name: "sensor", Value: sceValue})
 		}
 		{

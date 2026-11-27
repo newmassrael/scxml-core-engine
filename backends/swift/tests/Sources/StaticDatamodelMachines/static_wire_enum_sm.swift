@@ -657,7 +657,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("layout", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(3))
+                        let sceValue: WireValue = .integer(Int64(UInt8(3)))
                         sendParts.append(PayloadPair("zoom", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
@@ -731,7 +731,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("layout", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(4))
+                        let sceValue: WireValue = .integer(Int64(UInt8(4)))
                         sendParts.append(PayloadPair("zoom", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
