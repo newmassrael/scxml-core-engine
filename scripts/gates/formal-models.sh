@@ -24,6 +24,13 @@
 # gives TLC the standard module `Apalache` a model extends. Without the pinned
 # runtime, TLC or Apalache the judge exits 15 (`formal/tool-unavailable`), which
 # is "could not run" and no verdict about the models.
+#
+# The first part also judges docs/formal/quantities.json with
+# `sce-codegen formal quantities` (docs/adr/0119, D4): each JANI model of a
+# document, the second encoding Storm reads, held to the TLA+ module of the same
+# document, its state graph to TLC's and every recorded run of the module to a
+# path of it. Storm is installed as the others are; the system libraries its
+# package asks for are the host image's.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -36,13 +43,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # the runs took 1042 s on a hosted runner (job 138489726305, 2026-11-24). The
 # consumer fixture is four states and is judged by the first part alone.
 SHARD_ARGS=()
-CONSUMER=1
+FIRST_PART=1
 if [[ -n "${SCE_FORMAL_MODELS_SHARD:-}" ]]; then
     SHARD_ARGS=(--shard "$SCE_FORMAL_MODELS_SHARD")
-    [[ "$SCE_FORMAL_MODELS_SHARD" == 1/* ]] || CONSUMER=0
+    [[ "$SCE_FORMAL_MODELS_SHARD" == 1/* ]] || FIRST_PART=0
 fi
 
-for tool in java tlc apalache; do
+for tool in java tlc apalache storm; do
     install=0
     target/debug/sce-codegen formal install --tool "$tool" || install=$?
     case "$install" in
@@ -111,8 +118,18 @@ judge_turnstile() {
         "every property holds as judged"
 }
 
+quantities() {
+    local status=0
+    target/debug/sce-codegen formal quantities --workers "$WORKERS" --manifest "$1" || status=$?
+    case "$status" in
+        0) ;;
+        15) sce_gate_cannot_run "not the pinned Java runtime, TLC or Storm: sce-codegen formal install" ;;
+        *) sce_gate_fail "a JANI model is not held to its TLA+ model as $1 declares it" ;;
+    esac
+}
+
 judge docs/formal/models.json ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"}
-if [[ "$CONSUMER" == 1 ]]; then
+if [[ "$FIRST_PART" == 1 ]]; then
     judge sce-build/tests/fixtures/formal_consumer/formal/models.json
     RECORDED="$(mktemp)"
     PROPERTIES_FLAGS=(--record "$RECORDED")
@@ -132,4 +149,5 @@ if [[ "$CONSUMER" == 1 ]]; then
     judge_properties turnstile_vacuous_properties.scxml turnstile_exploration.scxml 1 \
         "VAC-1 (<sce:leads-to>): vacuous: it holds though \`In('unlocked')\` is replaced by true, so it passes for nothing in that part"
     judge_properties turnstile_assumes_itself_properties.scxml turnstile_exploration.scxml 1
+    quantities docs/formal/quantities.json
 fi

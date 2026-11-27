@@ -388,6 +388,16 @@ FORMAL_MODELS=(
     "W3CTest403c resources/403/test403c.scxml"
 )
 
+# The second encoding of one of them, the JANI model Storm reads, written by
+# `sce-codegen model --jani` from the same tables (docs/adr/0119, D2), in the
+# environment its configuration gives the module (nothing from outside, as
+# W3CTest403c.cfg has it). docs/formal/quantities.json declares it, and
+# `sce-codegen formal quantities` holds it to the module and to what the
+# generator writes (D4).
+FORMAL_JANI=(
+    "W3CTest403c resources/403/test403c.scxml"
+)
+
 step_formal_models() {
     require_codegen
 
@@ -404,6 +414,19 @@ step_formal_models() {
             return 1
         fi
         cp "$written" "docs/formal/$module.tla"
+        rm -f "$written"
+    done
+
+    stage "The JANI models of documents over Appendix D"
+    for entry in "${FORMAL_JANI[@]}"; do
+        read -r module document <<<"$entry"
+        written="$(mktemp)"
+        if ! "$CODEGEN" model "$document" --module "$module" --w3c-verdict --jani >"$written"; then
+            rm -f "$written"
+            echo "regen_all_committed_trees.sh: sce-codegen model --jani refused $document" >&2
+            return 1
+        fi
+        cp "$written" "docs/formal/$module.jani"
         rm -f "$written"
     done
 }

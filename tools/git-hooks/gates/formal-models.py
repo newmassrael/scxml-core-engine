@@ -27,12 +27,15 @@
     # part (`shard_count`).
     "shard_env": "SCE_FORMAL_MODELS_SHARD",
     # The judge and its pins are sce-build's (docs/adr/0146), and the consumer
-    # fixture is judged with this repository's models.
+    # fixture is judged with this repository's models. The quantities judge
+    # (docs/adr/0119, D4) writes the JANI model of W3C test 403c again from its
+    # document and holds it to the committed one, so that document is read too.
     "extra": ["docs/formal/**", "sce-build/src/formal/**",
               "sce-build/tests/fixtures/formal_consumer/**",
               # The machine whose properties the gate judges, each form held and
               # each broken on purpose (docs/adr/0115, D15).
-              "sce-build/tests/fixtures/formal_properties/**"],
+              "sce-build/tests/fixtures/formal_properties/**",
+              "resources/403/**"],
     "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
                "states), which takes minutes of a push that has five for everything. "
                "formal-models.yml runs it on every change to a model or its judge.",

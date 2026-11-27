@@ -2326,8 +2326,9 @@ outputs = [
 ]
 
 # The models of three W3C documents over Appendix D (docs/adr/0115, D7), which the step writes
-# beside the modules of docs/formal written by hand: its outputs name the three files, and its
-# inputs the generator's block and the documents' directories of resources/.
+# beside the modules of docs/formal written by hand, and the JANI model of one of them
+# (docs/adr/0119, D2): its outputs name the four files, and its inputs the generator's block and
+# the documents' directories of resources/.
 [actions.regen-formal-models]
 run = 'scripts/regen_all_committed_trees.sh formal-models'
 inputs = [
@@ -2391,6 +2392,7 @@ outputs = [
     "docs/formal/W3CTest388.tla",
     "docs/formal/W3CTest570.tla",
     "docs/formal/W3CTest403c.tla",
+    "docs/formal/W3CTest403c.jani",
 ]
 
 # THE CBOR PIN (docs/adr/0101, Landing order step 0 and section 8.3), the one action that is no step
