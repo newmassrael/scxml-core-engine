@@ -9,6 +9,9 @@
 - Amended 2026-11-27 by the owner: Apalache joins the toolchain of D3, approved that day as the tool of ADR 0115 D3.
   `formal models` judges with it the inductive invariants a manifest states (D1), by one runner (D4), and TLC is given
   its standard module `Apalache` for a model that extends it.
+- Amended 2026-11-27: the Java runtime TLC and Apalache run on joins the toolchain of D3. Apalache 0.63.0 is built
+  for Java 21, and a build machine whose `java` was 17 answered every inductive run with
+  `UnsupportedClassVersionError`; the CI host image carries Java 17 for the Kotlin lanes alone.
 - Date: 2026-11-26
 - Also amends `SCE_ERROR_CONTRACT.md` (the stage `formal`, its three codes, and the exit status 15) and
   `docs/SCE_ACCEPTED_SUBSET.md` (its appendix of codes).
@@ -109,13 +112,22 @@ the gates to the command. No revision has two judges that answer.
 
 ### D3. The judge pins the tools
 
-`sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on, and Apalache: version, URL
-and sha256 of each. Apalache joined it on 2026-11-27 with ADR 0115 D3, by the owner's approval; Storm joins it when
+`sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on, Apalache, and the Java
+runtime TLC and Apalache run on: version, URL and sha256 of each. Apalache joined it on 2026-11-27 with ADR 0115 D3,
+by the owner's approval; Storm joins it when
 ADR 0119 brings it, with the owner's approval. The file
 is compiled into the binary, so a binary of a revision knows its pins without a tree; it sits among the module's
 sources, since it is one of them. `formal toolchain` prints
 them. `bx.toml`, the workflows and `gate_registry.py` read this file, not a manifest. A manifest that names a tool
 is refused as having an unknown key.
+
+The runtime is pinned with the tools, since a tool pinned by its digest that runs on whatever virtual machine a
+machine has is not pinned: a verdict is a function of the program run, and a JVM of another release runs another
+program, or none (Apalache 0.63.0 is built for Java 21, class file 65). The pin is Eclipse Temurin's JRE for Linux on
+x64. `formal install` installs it with TLC or Apalache, at `~/.local/jre/<version>`. TLC is run by that runtime's
+`bin/java`, and Apalache's launcher, which runs the `java` its search path finds first, is given a search path led by
+that runtime's `bin` and `JAVA_HOME` naming it. A runtime that is not there, or that cannot load the tool, is
+`formal/tool-unavailable` (exit 15), never a verdict.
 
 The transport is `curl`. The digest admits the bytes, as D3's source says. No network crate enters the default
 build of `sce-build`, which keeps its one network client behind `remote-cache`.
