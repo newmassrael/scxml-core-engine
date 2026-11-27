@@ -1,7 +1,10 @@
 name: Rust engine on wasm32
 
 # The Rust engine, built as the module a browser loads and run under Node and in
-# headless Chrome on the scenarios every backend replays.
+# headless Chrome on the scenarios every backend replays; and the browser node
+# (docs/adr/0117), its module of the HTTPS binding's client core and the shell
+# of the page's own parts around it, held to its kit under Node and in headless
+# Chrome and Firefox, against the binding's own server.
 #
 # No other lane can say whether the engine starts on this target. A
 # `wasm32-unknown-unknown` module is handed no clock, no threads and no files by
@@ -18,8 +21,9 @@ name: Rust engine on wasm32
 # gate refuses another), and the pinned Chrome for Testing
 # `scripts/install_chrome.sh` names, the browser the build machines replay in
 # when they judge an update to main, so the two judge the module in one
-# browser. The target's standard library is the selected Rust's, which the
-# runner hands the image.
+# browser, and the pinned Firefox `scripts/install_firefox.sh` names, the
+# kit's second engine. The target's standard library is the selected Rust's,
+# which the runner hands the image.
 #
 # The triggers are what the module is made of: the engine, the forge runtime it
 # checks integers with, the replay crate, and the machines it replays, which its
@@ -35,6 +39,13 @@ on:
       - 'backends/rust/forge-runtime/**'
       - 'backends/rust/scenarios/**'
       - 'backends/rust/portable-bytes/**'
+      # The browser node (docs/adr/0117): its module and kit, the Mesh host core it
+      # holds and the crates that core builds with, and the binding's echo server.
+      - 'backends/rust/browser-node/**'
+      - 'backends/rust/mesh/**'
+      - 'backends/rust/crypto/**'
+      - 'backends/rust/metrics/**'
+      - 'backends/rust/session-store/**'
       # What cargo reads of the generator crate to build it, and the fixtures
       # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
       # its self-test holds a narrowed list to the build's).
@@ -49,6 +60,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'scripts/install_chrome.sh'
+      - 'scripts/install_firefox.sh'
       - 'scripts/install_wasm_bindgen.sh'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'
@@ -65,6 +77,13 @@ on:
       - 'backends/rust/forge-runtime/**'
       - 'backends/rust/scenarios/**'
       - 'backends/rust/portable-bytes/**'
+      # The browser node (docs/adr/0117): its module and kit, the Mesh host core it
+      # holds and the crates that core builds with, and the binding's echo server.
+      - 'backends/rust/browser-node/**'
+      - 'backends/rust/mesh/**'
+      - 'backends/rust/crypto/**'
+      - 'backends/rust/metrics/**'
+      - 'backends/rust/session-store/**'
       # What cargo reads of the generator crate to build it, and the fixtures
       # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
       # its self-test holds a narrowed list to the build's).
@@ -79,6 +98,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'scripts/install_chrome.sh'
+      - 'scripts/install_firefox.sh'
       - 'scripts/install_wasm_bindgen.sh'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'

@@ -4,7 +4,8 @@
 #
 # Mirrors: wasm32-scenarios.yml
 #
-# The Rust engine, run as the module a browser loads.
+# The Rust lane on wasm32: the engine run as the module a browser loads, and
+# the browser node (docs/adr/0117) held to its kit.
 #
 # Every other lane judges the engine on a host that has an operating system. A
 # `wasm32-unknown-unknown` module has none: the target gives it no clock, no
@@ -20,6 +21,14 @@
 # files every backend replays (`sce-build/tests/fixtures/static_datamodel/
 # scenarios/*.json`), so the module is held to the answers the native engine, the
 # C++ one and the other four are held to, and not to answers of its own.
+#
+# The browser node is the HTTPS binding's client core in a module of its own
+# (`sce-rust-browser-node`), stepped by the shell the page's script is made of
+# (backends/rust/browser-node/js). Its kit holds that shell to the binding's own
+# server (the example `https_echo` of `sce-rust-mesh`, built for the host),
+# under Node and in headless Chrome and Firefox, the two engines of the kit
+# (docs/adr/0117, open question 3): Node on its own fetch, WebCrypto and timers,
+# each browser on its IndexedDB and Web Locks too.
 #
 # The module is built WITHOUT telling the engine a clock. The replay installs a
 # manual clock only for the scenarios of a delayed send, so the rest run on
@@ -38,6 +47,9 @@ TARGET="wasm32-unknown-unknown"
 CRATE="sce-rust-scenarios"
 NODE_RUNNER="backends/rust/scenarios/wasm/run.mjs"
 CHROME_RUNNER="backends/rust/scenarios/wasm/run_chrome.mjs"
+NODE_CRATE="sce-rust-browser-node"
+KIT_NODE_RUNNER="backends/rust/browser-node/kit/run_node.mjs"
+KIT_BROWSER_RUNNER="backends/rust/browser-node/kit/run_browser.mjs"
 
 # The target's standard library is a part of a toolchain a compiler can be
 # without: a machine that has a compiler and not this target fails inside cargo
@@ -70,6 +82,10 @@ if (( LINT )); then
     sce_gate_step "clippy for $TARGET"
     sce_gate_tested -- cargo clippy -p "$CRATE" --target "$TARGET" -- -D warnings \
         || sce_gate_fail "cargo clippy -p $CRATE --target $TARGET"
+    # The browser node's module, and the Mesh host core under the feature
+    # `browser` with it: the only build of that core for this target.
+    sce_gate_tested -- cargo clippy -p "$NODE_CRATE" --target "$TARGET" -- -D warnings \
+        || sce_gate_fail "cargo clippy -p $NODE_CRATE --target $TARGET"
 fi
 if (( ! REPLAY )); then
     exit 0
@@ -117,6 +133,20 @@ if sce_gate_landing && [[ "${CHROME_BIN:-}" != "$pinned_chrome" ]]; then
     sce_gate_cannot_run "the pinned Chrome for Testing ${chrome_rev:-?} is not at $pinned_chrome (scripts/install_chrome.sh). This run is a landing's, where only the pinned browser judges the module."
 fi
 
+# Firefox, the kit's second engine, as Chrome is: the pinned release
+# (scripts/install_firefox.sh) at FIREFOX_ROOT, as the image sets it, else at
+# the path derived from the release; a FIREFOX_BIN the caller set is taken as
+# given, and a landing's verdict is the pinned browser's or none.
+firefox_rev="$(sed -n 's/^FIREFOX_REV="\([0-9.][0-9.]*\)"$/\1/p' scripts/install_firefox.sh)"
+firefox_root="${FIREFOX_ROOT:-$HOME/.local/share/firefox/${firefox_rev}}"
+pinned_firefox="$firefox_root/firefox/firefox"
+if [[ -z "${FIREFOX_BIN:-}" && -n "$firefox_rev" && -x "$pinned_firefox" ]]; then
+    export FIREFOX_BIN="$pinned_firefox"
+fi
+if sce_gate_landing && [[ "${FIREFOX_BIN:-}" != "$pinned_firefox" ]]; then
+    sce_gate_cannot_run "the pinned Firefox ${firefox_rev:-?} is not at $pinned_firefox (scripts/install_firefox.sh). This run is a landing's, where only the pinned browser judges the browser node."
+fi
+
 # The dev profile, not release. Release is `lto = "thin"` with one codegen unit
 # (Cargo.toml), which sends the 44 generated machines through a single unit:
 # measured 2026-10-08 it took 10m15s to build this crate, for a run that lasts a
@@ -155,3 +185,38 @@ case "$chrome_status" in
     3) sce_gate_cannot_run "no Chrome on PATH and none named by CHROME_BIN (scripts/install_chrome.sh installs the pinned one); the web target is Chrome" ;;
     *) sce_gate_fail "the $TARGET module failed in Chrome, or the page could not report (each failing scenario and its panic, or the reason, are printed above)" ;;
 esac
+
+# The browser node: its module for the target, its two glues as the scenarios'
+# have, and the binding's own server for the host, which its kit runs against.
+sce_gate_step "building $NODE_CRATE for $TARGET, and the binding's echo server"
+sce_gate_tested -- cargo build -p "$NODE_CRATE" --target "$TARGET" \
+    || sce_gate_fail "cargo build -p $NODE_CRATE --target $TARGET"
+sce_gate_tested -- cargo build -p sce-rust-mesh --features https --example https_echo \
+    || sce_gate_fail "cargo build -p sce-rust-mesh --features https --example https_echo"
+
+node_module="${CARGO_TARGET_DIR:-$SCE_REPO_ROOT/target}/$TARGET/debug/${NODE_CRATE//-/_}.wasm"
+echo_server="${CARGO_TARGET_DIR:-$SCE_REPO_ROOT/target}/debug/examples/https_echo"
+node_kit_glue="$(mktemp -d)"
+web_kit_glue="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$node_kit_glue' '$web_kit_glue'"
+wasm-bindgen --target nodejs --out-dir "$node_kit_glue" "$node_module" \
+    || sce_gate_fail "wasm-bindgen (nodejs) could not read the browser node's module"
+wasm-bindgen --target web --out-dir "$web_kit_glue" "$node_module" \
+    || sce_gate_fail "wasm-bindgen (web) could not read the browser node's module"
+
+sce_gate_step "running the browser node's kit under Node"
+node "$KIT_NODE_RUNNER" "$node_kit_glue" "$echo_server" \
+    || sce_gate_fail "the browser node's kit failed under Node (each failing case and why are printed above)"
+
+# Both engines give a verdict; a machine without one cannot, which is the
+# gate's input missing and not a fault of the node.
+for engine in chrome firefox; do
+    sce_gate_step "running the browser node's kit in $engine"
+    kit_status=0
+    node "$KIT_BROWSER_RUNNER" "$engine" "$web_kit_glue" "$echo_server" || kit_status=$?
+    case "$kit_status" in
+        0) ;;
+        3) sce_gate_cannot_run "no $engine on PATH and none named by its variable (scripts/install_$engine.sh installs the pinned one); the browser node's kit runs in two engines" ;;
+        *) sce_gate_fail "the browser node's kit failed in $engine, or the page could not report (each failing case and why, or the reason, are printed above)" ;;
+    esac
+done

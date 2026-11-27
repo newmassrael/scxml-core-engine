@@ -30,6 +30,13 @@ required-features = ["wss"]
 name = "mesh_probe"
 required-features = ["wss"]
 
+# A server of the HTTPS binding that answers every envelope a client sends with the same envelope,
+# for the browser node's kit (backends/rust/browser-node/kit) to hold the browser shell to:
+# `cargo build --features https --example https_echo`.
+[[example]]
+name = "https_echo"
+required-features = ["https"]
+
 # What a Mesh envelope costs to cross a Zenoh network, through whatever routers lie between a device
 # and the server: `cargo run --release --features zenoh --example zenoh_probe -- server|client ...`.
 [[example]]

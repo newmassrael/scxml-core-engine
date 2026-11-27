@@ -9,6 +9,11 @@
 # say whether the engine starts on `wasm32-unknown-unknown`: that target
 # gives a module no clock, and the failure compiles and traps only when the
 # module runs. Chrome is the web target's own host and Node the faster one.
+# And the browser node (docs/adr/0117): its module, the HTTPS binding's
+# client core, held with the page's shell around it to its kit under Node and
+# in headless Chrome and Firefox, against the binding's own server, which the
+# gate builds for the host (`sce-rust-mesh`'s example `https_echo`). Its
+# cost is not in `cost_s` below, which was measured before it was added.
 #
 # `ci_only` for what it needs rather than for the number alone: the target's
 # standard library, Node, Chrome, and a `wasm-bindgen` tool at exactly the
@@ -39,7 +44,8 @@
                "the pinned Chrome and wasm-bindgen; the runner hands it "
                "the selected Rust with its wasm32 standard library.",
     "cost_s": 107,
-    "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
+    "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome; "
+               "the browser node's kit in Node, Chrome and Firefox",
     # It runs in the host image wherever it runs (ADR 0145): the runner runs
     # `scripts/gate` inside the image its Containerfile addresses, so the
     # hosted lane, a build machine and a workstation judge it in one
@@ -59,7 +65,9 @@
     "cache": True,
     "kept_only_from_a_landing": "outside a landing it replays in whatever "
                                 "Chrome is on PATH where the pinned Chrome "
-                                "for Testing is absent",
+                                "for Testing is absent, and runs the kit in "
+                                "whatever Firefox is on PATH where the pinned "
+                                "one is absent",
     "inputs": None,
     "commits": [],
     "peak_gb": 5,

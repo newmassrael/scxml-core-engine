@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+  SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+  The page run_browser.mjs serves to a headless browser: it loads the browser node's module the
+  way a page does (an ES module and a streamed .wasm), runs the kit on the page's own parts
+  (pagePlatform: fetch, WebCrypto, IndexedDB, Web Locks, BroadcastChannel and timers), and posts
+  the report back to the origin that served it. Two nodes the kit starts on one name are two
+  pages of the origin as far as the lock, the store and the channel are concerned: each is held,
+  opened and listened to apart.
+-->
+<meta charset="utf-8">
+<title>Browser node kit</title>
+<script type="module">
+  let report;
+  try {
+    const { default: init, Client } = await import("./pkg/sce_rust_browser_node.js");
+    const { pagePlatform } = await import("./js/node.mjs");
+    const { runKit } = await import("./kit/kit.mjs");
+    await init();
+    const server = await (await fetch("/kit/server")).json();
+    report = await runKit({
+      host: navigator.userAgent,
+      Client,
+      platform: () => pagePlatform(),
+      origin: location.origin,
+      server,
+      control: {
+        proxy: async (open) => {
+          await fetch(`/kit/proxy?open=${open ? 1 : 0}`, { method: "POST" });
+        },
+      },
+    });
+  } catch (error) {
+    report = { error: String(error?.stack ?? error) };
+  }
+  await fetch("/kit/result", { method: "POST", body: JSON.stringify(report) });
+</script>
