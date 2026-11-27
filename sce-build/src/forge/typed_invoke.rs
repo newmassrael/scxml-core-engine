@@ -187,8 +187,12 @@ pub fn bind_results(model: &mut SCXMLModel) {
             // union its `sce:entries` names (docs/adr/0114, D5).
             let bound_to = if !info.payload_result.is_empty() {
                 &info.payload_result
-            } else if !info.journal_result.is_empty() {
-                &info.journal_result
+            } else if let Some(read) = info
+                .journal
+                .as_deref()
+                .filter(|read| !read.result.is_empty())
+            {
+                &read.result
             } else {
                 &info.result_schema
             };

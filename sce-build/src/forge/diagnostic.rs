@@ -5757,7 +5757,6 @@ impl DiagnosticCode {
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
             | GenerateInlineChildUnreturnable
-            | GenerateJournalFactsInChild
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired

@@ -2222,48 +2222,14 @@ pub struct UnsupportedInvokeInfo {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub payload_result: String,
-    /// `sce:journal` or `sce:stream` of an invoke of `sce-host-journal-read`
-    /// (docs/adr/0114, D5): the machine whose journal, or the observed stream,
-    /// a page is read of, which the build writes into the request's `stream`.
-    /// Empty when the invoke names none ([`crate::forge::journal::resolve_reads`]).
+    /// What an invoke of `sce-host-journal-read` says of the journal it reads
+    /// (`sce:journal` or `sce:stream`, and `sce:entries`), and what the build
+    /// derives of it (docs/adr/0114, D5; [`crate::forge::journal::JournalReadInvoke`]).
+    /// `None` when the invoke writes none of the three. Boxed, so that an invoke
+    /// that reads no journal carries one pointer for it.
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
-    pub journal_stream: String,
-    /// Whether [`Self::journal_stream`] is an observed stream (`sce:stream`),
-    /// written into the request's `observed`.
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_observed: bool,
-    /// Where `sce:journal` or `sce:stream` is spelled, and whether either is
-    /// written: the place a refusal of the read stands on.
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_stream_at: Option<SourceLocation>,
-    /// `sce:entries` of an invoke of `sce-host-journal-read`: the alias of the
-    /// imported union each fact of the page is a value of (docs/adr/0092).
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_entries: String,
-    /// Where `sce:entries`'s value is spelled.
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_entries_at: Option<SourceLocation>,
-    /// The alias of the record the build derives for the completion of a read
-    /// of the journal: the library's result with its `entries` a list of
-    /// entries whose fact is a value of [`Self::journal_entries`], which
-    /// `done.invoke.<id>` is bound to ([`crate::forge::journal::derive_reads`]).
-    /// Empty for every other invoke.
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_result: String,
-    /// How the completion of that read is opened where it is lifted: the
-    /// bounds of its page, the case of the union each schema's fact is, and
-    /// the failure a page that is no value of them is
-    /// ([`crate::forge::journal::JournalReading`]). `None` for every other
-    /// invoke.
-    #[serde(skip)]
-    #[cfg_attr(test, schemars(skip))]
-    pub journal_reading: Option<crate::forge::journal::JournalReading>,
+    pub journal: Option<Box<crate::forge::journal::JournalReadInvoke>>,
     /// Codegen-internal: the field of the request whose bytes are the record
     /// [`Self::payload_schema`] names, in its deterministic CBOR (`payload` of
     /// a signing, `plaintext` of a seal); empty for every other invoke. Set

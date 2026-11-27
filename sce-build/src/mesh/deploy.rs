@@ -10583,6 +10583,8 @@ topology:
             let mark = refusal.mark_in(&yaml).expect("a key of the deployment");
             let line = yaml
                 .lines()
+                .collect::<Vec<_>>()
+                .iter()
                 .rposition(|line| line.trim_start().starts_with(key))
                 .expect("written");
             assert_eq!(

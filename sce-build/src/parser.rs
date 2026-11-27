@@ -6404,11 +6404,17 @@ impl SCXMLParser {
                 entry_schema_at: typed.entry_at,
                 payload_schema: typed.payload,
                 payload_schema_at: typed.payload_at,
-                journal_stream: typed.journal_stream,
-                journal_observed: typed.journal_observed,
-                journal_stream_at: typed.journal_stream_at,
-                journal_entries: typed.journal_entries,
-                journal_entries_at: typed.journal_entries_at,
+                journal: (typed.journal_stream_at.is_some() || typed.journal_entries_at.is_some())
+                    .then(|| {
+                        Box::new(crate::forge::journal::JournalReadInvoke {
+                            stream: typed.journal_stream,
+                            observed: typed.journal_observed,
+                            stream_at: typed.journal_stream_at,
+                            entries: typed.journal_entries,
+                            entries_at: typed.journal_entries_at,
+                            ..crate::forge::journal::JournalReadInvoke::default()
+                        })
+                    }),
                 // What lowering fills in, for a document that has it lowered.
                 ..UnsupportedInvokeInfo::default()
             })));

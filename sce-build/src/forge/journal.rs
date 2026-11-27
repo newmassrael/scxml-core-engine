@@ -672,6 +672,50 @@ pub struct JournalReading {
     pub failure: String,
 }
 
+/// What an invoke of [`JOURNAL_READ`] says of the journal it reads, and what the
+/// build derives of it (docs/adr/0114, D5): kept boxed on the invoke
+/// (`crate::model::UnsupportedInvokeInfo::journal`), which names it only when it
+/// writes `sce:journal`, `sce:stream` or `sce:entries`.
+#[derive(Debug, Clone, Default)]
+pub struct JournalReadInvoke {
+    /// The machine whose journal, or the observed stream, the page is read of
+    /// (`sce:journal` or `sce:stream`), which the build writes into the
+    /// request's `stream`; empty when the invoke names none.
+    pub stream: String,
+    /// Whether [`Self::stream`] is an observed stream (`sce:stream`), written into
+    /// the request's `observed`.
+    pub observed: bool,
+    /// Where `sce:journal` or `sce:stream` is spelled; `None` when neither is
+    /// written.
+    pub stream_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:entries`: the alias of the imported union each fact of the page is a
+    /// value of (docs/adr/0092).
+    pub entries: String,
+    /// Where `sce:entries`'s value is spelled.
+    pub entries_at: Option<crate::forge::error::SourceLocation>,
+    /// The alias of the record the build derives for the read's completion, which
+    /// `done.invoke.<id>` is bound to ([`derive_reads`]); empty until derived.
+    pub result: String,
+    /// How that completion is opened where it is lifted; `None` until derived.
+    pub reading: Option<JournalReading>,
+}
+
+/// What an invoke that writes none of the read's attributes says of the journal.
+static NO_READ: JournalReadInvoke = JournalReadInvoke {
+    stream: String::new(),
+    observed: false,
+    stream_at: None,
+    entries: String::new(),
+    entries_at: None,
+    result: String::new(),
+    reading: None,
+};
+
+/// What `info` says of the journal it reads, or [`NO_READ`].
+fn read_of(info: &crate::model::UnsupportedInvokeInfo) -> &JournalReadInvoke {
+    info.journal.as_deref().unwrap_or(&NO_READ)
+}
+
 /// A read of the event journal `model` makes, as the deployment judges it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalRead {
@@ -783,6 +827,7 @@ fn union_cases(model: &SCXMLModel, alias: &str) -> Result<Vec<UnionCase>, String
 /// imported schema is asked to carry.
 pub fn resolve_reads(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
     for info in host_invokes(model) {
+        let read = read_of(info);
         let refuse = |attr: &str,
                       value: &str,
                       at: &Option<crate::forge::error::SourceLocation>,
@@ -798,24 +843,20 @@ pub fn resolve_reads(model: &SCXMLModel, diag_label: &str) -> Result<(), Located
                 },
             )
         };
-        let stream_attr = if info.journal_observed {
+        let stream_attr = if read.observed {
             "sce:stream"
         } else {
             "sce:journal"
         };
-        let names = info.journal_stream_at.is_some() || info.journal_entries_at.is_some();
+        let names = read.stream_at.is_some() || read.entries_at.is_some();
         if info.invoke_type != JOURNAL_READ {
             if !names {
                 continue;
             }
-            let (attr, value, at) = if info.journal_stream_at.is_some() {
-                (stream_attr, &info.journal_stream, &info.journal_stream_at)
+            let (attr, value, at) = if read.stream_at.is_some() {
+                (stream_attr, &read.stream, &read.stream_at)
             } else {
-                (
-                    "sce:entries",
-                    &info.journal_entries,
-                    &info.journal_entries_at,
-                )
+                ("sce:entries", &read.entries, &read.entries_at)
             };
             return Err(refuse(
                 attr,
@@ -828,7 +869,7 @@ pub fn resolve_reads(model: &SCXMLModel, diag_label: &str) -> Result<(), Located
                 ),
             ));
         }
-        if info.journal_stream_at.is_none() {
+        if read.stream_at.is_none() {
             return Err(refuse(
                 "sce:journal",
                 "",
@@ -839,35 +880,29 @@ pub fn resolve_reads(model: &SCXMLModel, diag_label: &str) -> Result<(), Located
                 ),
             ));
         }
-        if !is_journal_name(&info.journal_stream) {
+        if !is_journal_name(&read.stream) {
             return Err(refuse(
                 stream_attr,
-                &info.journal_stream,
-                &info.journal_stream_at,
+                &read.stream,
+                &read.stream_at,
                 "names no stream: a machine and an observed stream are named by a letter, \
                  then letters, digits, `_` or `-`"
                     .to_string(),
             ));
         }
-        if info.journal_entries_at.is_none() || info.journal_entries.is_empty() {
+        if read.entries_at.is_none() || read.entries.is_empty() {
             return Err(refuse(
                 "sce:entries",
-                &info.journal_entries,
-                &info.journal_entries_at,
+                &read.entries,
+                &read.entries_at,
                 format!(
                     "a {JOURNAL_READ} names by sce:entries the union each fact it reads is a \
                      value of (docs/adr/0092), and this one names none"
                 ),
             ));
         }
-        union_cases(model, &info.journal_entries).map_err(|why| {
-            refuse(
-                "sce:entries",
-                &info.journal_entries,
-                &info.journal_entries_at,
-                why,
-            )
-        })?;
+        union_cases(model, &read.entries)
+            .map_err(|why| refuse("sce:entries", &read.entries, &read.entries_at, why))?;
     }
     Ok(())
 }
@@ -919,7 +954,8 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
     }
     let mut derived: Vec<Derived> = Vec::new();
     for info in host_invokes(model) {
-        if info.invoke_type != JOURNAL_READ || info.journal_entries.is_empty() {
+        let read = read_of(info);
+        if info.invoke_type != JOURNAL_READ || read.entries.is_empty() {
             continue;
         }
         let (Some(result), Some(scoped)) = (
@@ -930,7 +966,7 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
             // standard type is held to its records.
             continue;
         };
-        let Some(union) = model.imported_type_scope.unions.get(&info.journal_entries) else {
+        let Some(union) = model.imported_type_scope.unions.get(&read.entries) else {
             continue;
         };
         let Some(page_bytes) = result.fields.iter().find_map(|field| {
@@ -948,14 +984,14 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
         for alias in [&entry_alias, &result_alias] {
             if model.imported_records.contains_key(alias) {
                 return Err(located(
-                    info.journal_entries_at
+                    read.entries_at
                         .as_ref()
                         .or(info.base.source_location.as_ref()),
                     diag_label,
                     crate::forge::error::ValidationError::JournalReadSchema {
                         invoke_id: info.base.invoke_id.clone(),
                         attr: "sce:entries".to_string(),
-                        value: info.journal_entries.clone(),
+                        value: read.entries.clone(),
                         detail: format!(
                             "the completion's records are named `{entry_alias}` and \
                              `{result_alias}`, and the document imports another record as \
@@ -965,7 +1001,7 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
                 ));
             }
         }
-        let cases = union_cases(model, &info.journal_entries).unwrap_or_default();
+        let cases = union_cases(model, &read.entries).unwrap_or_default();
         let page_entries = crate::limits::resolve(PAGE_LIMIT, PAGE_LIMIT_WRITTEN);
         let entry_fields: Vec<(String, ValueType)> = vec![
             (
@@ -989,7 +1025,7 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
             (
                 "fact".to_string(),
                 ValueType::Union {
-                    alias: info.journal_entries.clone(),
+                    alias: read.entries.clone(),
                 },
             ),
         ];
@@ -1008,7 +1044,7 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
         let mut entry_scope = TypeScope::default();
         entry_scope
             .unions
-            .insert(info.journal_entries.clone(), union.clone());
+            .insert(read.entries.clone(), union.clone());
         let entry_scoped = ScopedRecord {
             identity: format!("sce:journal-entry#{}", info.base.invoke_id),
             name: entry_schema.name.clone(),
@@ -1115,9 +1151,12 @@ pub fn derive_reads(model: &mut SCXMLModel, diag_label: &str) -> Result<(), Loca
         for state in model.states.values_mut() {
             for invoke in &mut state.invokes {
                 if let crate::model::Invoke::Unsupported(info) = invoke {
-                    if info.base.invoke_id == one.invoke_id && info.invoke_type == JOURNAL_READ {
-                        info.journal_result = one.result_alias.clone();
-                        info.journal_reading = Some(one.reading.clone());
+                    if info.base.invoke_id != one.invoke_id || info.invoke_type != JOURNAL_READ {
+                        continue;
+                    }
+                    if let Some(journal) = info.journal.as_deref_mut() {
+                        journal.result = one.result_alias.clone();
+                        journal.reading = Some(one.reading.clone());
                     }
                 }
             }
@@ -1138,27 +1177,21 @@ pub fn write_read_requests(model: &mut SCXMLModel) {
             let crate::model::Invoke::Unsupported(info) = invoke else {
                 continue;
             };
-            if info.invoke_type != JOURNAL_READ
-                || !info.host_served
-                || info.journal_stream_at.is_none()
-            {
+            if info.invoke_type != JOURNAL_READ || !info.host_served {
                 continue;
             }
-            let at = info
-                .journal_stream_at
-                .clone()
-                .or_else(|| info.base.source_location.clone());
-            let observed = if info.journal_observed {
-                "true"
-            } else {
-                "false"
+            let Some((stream, observed, stream_at)) = info
+                .journal
+                .as_deref()
+                .filter(|read| read.stream_at.is_some())
+                .map(|read| (read.stream.clone(), read.observed, read.stream_at.clone()))
+            else {
+                continue;
             };
+            let at = stream_at.or_else(|| info.base.source_location.clone());
+            let observed = if observed { "true" } else { "false" };
             for (name, expr, value) in [
-                (
-                    STREAM_FIELD,
-                    format!("'{}'", info.journal_stream),
-                    info.journal_stream.clone(),
-                ),
+                (STREAM_FIELD, format!("'{stream}'"), stream.clone()),
                 (OBSERVED_FIELD, observed.to_string(), observed.to_string()),
             ] {
                 if info.base.params.iter().any(|param| param.name == name) {
@@ -1183,7 +1216,7 @@ pub fn reading_of<'m>(model: &'m SCXMLModel, event: &str) -> Option<&'m JournalR
     host_invokes(model)
         .into_iter()
         .find(|info| format!("done.invoke.{}", info.base.invoke_id) == event)
-        .and_then(|info| info.journal_reading.as_ref())
+        .and_then(|info| read_of(info).reading.as_ref())
 }
 
 /// The reads of the event journal `model` makes, each with the events its
@@ -1192,16 +1225,16 @@ pub fn reading_of<'m>(model: &'m SCXMLModel, event: &str) -> Option<&'m JournalR
 pub fn reads(model: &SCXMLModel) -> Vec<JournalRead> {
     host_invokes(model)
         .into_iter()
-        .filter(|info| info.invoke_type == JOURNAL_READ && info.journal_stream_at.is_some())
+        .filter(|info| info.invoke_type == JOURNAL_READ && read_of(info).stream_at.is_some())
         .map(|info| JournalRead {
-            stream: info.journal_stream.clone(),
-            observed: info.journal_observed,
-            cases: union_cases(model, &info.journal_entries)
+            stream: read_of(info).stream.clone(),
+            observed: read_of(info).observed,
+            cases: union_cases(model, &read_of(info).entries)
                 .unwrap_or_default()
                 .into_iter()
                 .map(|(event, ..)| event)
                 .collect(),
-            at: info.journal_stream_at.clone(),
+            at: read_of(info).stream_at.clone(),
         })
         .collect()
 }
