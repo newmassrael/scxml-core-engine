@@ -402,6 +402,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0115, D4 and D8: the same machine, built with its trace port and its
+    # transition observer on. The driver defines both hooks and holds the steps the
+    # port is told to the document: a start, an event step per transition off the
+    # queue its event came by, under the name it was sent under, and a stop; and
+    # the transitions those steps took to the ones the observer is told. The W3C
+    # documents docs/formal has models of take no external event, so this program
+    # is the one that holds the external step.
+    add_executable(sce_c_integration_trace_port
+        integration/test_a_traced_run_tells_each_step_it_takes.c
+        ${INTEGRATION_C_TEST_a_computed_event_name_is_matched_like_any_other_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_trace_port PRIVATE
+        SCE_TRACE_PORT=1
+        SCE_TRANSITION_OBSERVER=1
+    )
+    sce_c_link_runtime(sce_c_integration_trace_port)
+    target_include_directories(sce_c_integration_trace_port PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_trace_port PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_trace_port
+        COMMAND sce_c_integration_trace_port
+    )
+    set_tests_properties(c11_integration_trace_port PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset 2.21: a document that declares its transition function
     # (`sce:transition-function="emit"`) is generated with a header of its own
     # beside the machine, `<stem>_transition_function.h`, every symbol under a

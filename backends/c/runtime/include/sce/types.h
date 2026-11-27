@@ -177,6 +177,19 @@
 #define SCE_TRANSITION_OBSERVER 0
 #endif
 
+// docs/adr/0115, D4 and D8: whether the machines of this build tell a trace
+// port each step of Appendix D they take, so a run can be judged a behaviour of
+// the document's model (sce/trace_port.h). Off by default, and then the
+// preprocessor leaves nothing of the port in a machine: no declaration, no
+// call, no byte of its struct. A machine's own `<PREFIX><NAME>_TRACE_PORT`
+// takes this value unless the build sets that one, so a build can trace one
+// machine of several. A machine that traces calls `<prefix><name>_trace_step`,
+// which the host defines; the link refuses a build that turned the port on and
+// defined none.
+#ifndef SCE_TRACE_PORT
+#define SCE_TRACE_PORT 0
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used

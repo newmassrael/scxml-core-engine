@@ -101,6 +101,56 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t state_target({{ _t }}_state_t s) {
     return (uint8_t)s;
 }
 
+#if {{ _u }}_TRACE_PORT
+/* ════════════════════════════════════════════════════════════════════════
+   docs/adr/0115, D4 and D8: the trace port
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* No list of a step names more than the recorder holds: a step exits and
+   enters each state at most once, and its microstep takes at most
+   `_MAX_SELECTED` transitions. */
+SCE_STATIC_ASSERT((unsigned){{ _u }}_STATE_COUNT <= SCE_TRACE_MAX_NAMES,
+                  "a step's exits, entries and configuration fit the trace recorder");
+SCE_STATIC_ASSERT((unsigned){{ _u }}_MAX_SELECTED <= SCE_TRACE_MAX_NAMES,
+                  "a step's transitions fit the trace recorder");
+
+/* The name a step names its event by: the name it was taken under
+   (§scxml-5.10), which is the member's own unless a door resolved a longer one
+   to it, and then rides in `name`. */
+SCE_SM_FN static SCE_C_UNUSED const char *trace_port_event_name(const {{ _t }}_event_with_meta_t *evt) {
+    if (evt->name[0] != '\0') {
+        return evt->name;
+    }
+    switch (evt->event) {
+{% for event_name in model.events | sort %}
+    case {{ _u }}_EVENT_{{ event_name | to_c11_upper_ident }}:
+        return "{{ event_name | event_wire_name }}";
+{% endfor %}
+    default:
+        return "";
+    }
+}
+
+/* The step is over: what it left, the configuration in document order or, for
+   a stop, the top-level <final> the run ended in, and the host told it. */
+SCE_SM_FN static SCE_C_UNUSED void trace_port_end({{ _t }}_t *sm) {
+    if (!sce_trace_is_open(&sm->trace)) {
+        return;
+    }
+    if (sm->trace.step.kind == SCE_TRACE_STOP) {
+        sce_trace_outcome(&sm->trace, sm->has_terminal_state ? {{ _t }}_state_name(sm->terminal_state) : NULL);
+    } else {
+        for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+            const {{ _t }}_state_t s = k_document_order[k];
+            if ((sm->active & state_bit(s)) != 0u) {
+                sce_trace_configuration(&sm->trace, {{ _t }}_state_name(s));
+            }
+        }
+    }
+    {{ _t }}_trace_step(sm, sce_trace_close(&sm->trace));
+}
+#endif
+
 /* Appendix D's isCompoundState: a <state> with child states. A <parallel> is
    not one — `state_is_compound` answers true for it too, because the parser
    gives every parent an `initial` — and with the <scxml> element this is the
@@ -671,6 +721,10 @@ SCE_SM_FN static void exit_states({{ _t }}_t *sm, const {{ _t }}_transition_info
         }
         /* §scxml-D-exitStates: onexit, cancel its invocations, then out of
            the configuration. */
+#if {{ _u }}_TRACE_PORT
+        /* docs/adr/0115, D4: the step being told exits it, in this order. */
+        sce_trace_exited(&sm->trace, {{ _t }}_state_name(s));
+#endif
         execute_exit_actions(sm, s);
         sm->active &= ~state_bit(s);
     }
@@ -685,15 +739,28 @@ SCE_SM_FN static void exit_states({{ _t }}_t *sm, const {{ _t }}_transition_info
    has not ended (`_stop`). The configuration it leaves is empty, so a second
    call exits nothing. */
 SCE_SM_FN static void exit_interpreter({{ _t }}_t *sm) {
+#if {{ _u }}_TRACE_PORT
+    /* docs/adr/0115, D4: the exit is a step of the run once, while it runs. A
+       call after it, which exits nothing, is no step of Appendix D. */
+    if (sm->is_running) {
+        sce_trace_begin(&sm->trace, SCE_TRACE_STOP, NULL);
+    }
+#endif
     for (uint32_t k = (uint32_t){{ _u }}_STATE_COUNT; k > 0u; --k) {
         const {{ _t }}_state_t s = k_document_order[k - 1u];
         if ((sm->active & state_bit(s)) == 0u) {
             continue;
         }
+#if {{ _u }}_TRACE_PORT
+        sce_trace_exited(&sm->trace, {{ _t }}_state_name(s));
+#endif
         execute_exit_actions(sm, s);
         sm->active &= ~state_bit(s);
     }
     sm->is_running = false;
+#if {{ _u }}_TRACE_PORT
+    trace_port_end(sm);
+#endif
 }
 
 {% if model.test_component %}
@@ -832,6 +899,10 @@ SCE_SM_FN static void enter_states({{ _t }}_t *sm, const {{ _t }}_entry_transiti
            initial state is being entered by default, then a history's
            default content owed to it. */
         sm->active |= state_bit(s);
+#if {{ _u }}_TRACE_PORT
+        /* docs/adr/0115, D4: the step being told enters it, in this order. */
+        sce_trace_entered(&sm->trace, {{ _t }}_state_name(s));
+#endif
         execute_entry_actions(sm, s);
         /* §scxml-D-enterStates: a <final> whose parent is the <scxml> element
            ends the run, and entering one records it as the run's terminal
@@ -862,6 +933,13 @@ SCE_SM_FN static void microstep({{ _t }}_t *sm, const {{ _t }}_transition_info_t
     if (count == 0u) {
         return;
     }
+#if {{ _u }}_TRACE_PORT
+    /* docs/adr/0115, D4: the rows the step being told takes, in selection
+       order, by the same pairs the transition observer is told. */
+    for (uint8_t i = 0u; i < count; ++i) {
+        sce_trace_fired(&sm->trace, {{ _t }}_state_name(transitions[i].source), (uint32_t)transitions[i].index);
+    }
+#endif
 #if {{ _u }}_TRANSITION_OBSERVER
     /* docs/adr/0089: the selected set, before the first exit, each transition
        once and in selection order, as the Python engine tells it. */
@@ -893,7 +971,15 @@ SCE_SM_FN static void enter_initial_configuration({{ _t }}_t *sm) {
     initial.is_internal = false;
     initial.targets = k_document_initial_targets;
     initial.target_count = (uint8_t){{ model.initial_targets | length }}u;
+#if {{ _u }}_TRACE_PORT
+    /* docs/adr/0115, D4: the entry into the initial configuration is the run's
+       first step. */
+    sce_trace_begin(&sm->trace, SCE_TRACE_START, NULL);
+#endif
     enter_states(sm, &initial, 1u);
+#if {{ _u }}_TRACE_PORT
+    trace_port_end(sm);
+#endif
 }
 
 /* ════════════════════════════════════════════════════════════════════════

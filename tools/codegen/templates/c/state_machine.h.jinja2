@@ -163,6 +163,25 @@
    answers that nothing failed. */
 #include "sce/script_session.h"
 
+/* ── docs/adr/0115, D4 and D8: the trace port, when the build asks for it ── */
+{# A per-machine switch whose default is the build's (`SCE_TRACE_PORT`,
+   sce/types.h, 0 unless set), as the transition observer's is below. Declared
+   here, before the struct, which holds the step being told when it is on. Off,
+   the preprocessor removes the include, the member, the hook's declaration and
+   every call (c/microstep.jinja2, c/state_machine.c.jinja2), and the machine is
+   what it was before the port existed. On, the machine calls a function the
+   HOST defines, for the reason the observer does: `_init` zeroes the struct and
+   takes the first steps in one call, so a pointer could not be set before them. #}
+#ifndef {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT SCE_TRACE_PORT
+#endif
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+/* `sce_trace_step_t`, what the hook below is handed, and the recorder the
+   machine fills it in. Freestanding, so a machine's core may include it
+   (docs/adr/0110, D1). */
+#include "sce/trace_port.h"
+#endif
+
 {% if model.test_component %}
 /* docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
    component, whose context this machine keeps and whose doors its component
@@ -1475,6 +1494,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint8_t restored_host_invoke_count;
 {% endif %}
     {% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+    /* docs/adr/0115, D4: the step of Appendix D being told, which the machine
+       fills as it takes it and hands `_trace_step` once it is over. No step is
+       open from `_init`, which clears the struct, until the entry into the
+       initial configuration opens the first. */
+    sce_trace_recorder_t trace;
+#endif
 #if SCE_MAX_INBOX > 0
     /* A drain is applying what the inbox held. An input it applies raises an
        external event, which asks for a drain first; this makes that request
@@ -1561,6 +1587,22 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    const, and it must not call back into the machine. */
 void {{ csym_prefix }}{{ model.name }}_observe_transition(const {{ csym_prefix }}{{ model.name }}_t *sm,
     {{ csym_prefix }}{{ model.name }}_state_t source, uint32_t index);
+#endif
+
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+/* docs/adr/0115, D4 and D8: defined by the host, and called by the machine once
+   each step of Appendix D it takes is over, with what the step did
+   (sce/trace_port.h): the entry into the initial configuration, each
+   microstep on eventless transitions, each event it takes off its internal or
+   external queue with the microstep that event selects (none when it selects
+   nothing), and the exit of the interpreter. Called in the order the run takes
+   the steps, from inside the call that drove the machine (`_init`, `_step`,
+   `_tick`, `_advance_time_ms`, `_stop` and their siblings). `step` and every
+   text it names are valid for the length of the call. It reads: `sm` is const,
+   and it must not call back into the machine. `sce/trace_json.h` writes the
+   steps in the run trace format `sce-codegen formal traces` judges. */
+void {{ csym_prefix }}{{ model.name }}_trace_step(const {{ csym_prefix }}{{ model.name }}_t *sm,
+    const sce_trace_step_t *step);
 #endif
 
 {% if model.host_processor_types %}

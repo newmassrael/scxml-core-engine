@@ -5405,6 +5405,11 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
 {% if model.needs_script_engine %}
         event_release_current(sm, &sm->current_internal, &evt);
 {% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        /* docs/adr/0115, D4: the event taken off the internal queue is a step,
+           with the microstep it selects or none. */
+        sce_trace_begin(&sm->trace, SCE_TRACE_INTERNAL, trace_port_event_name(&evt));
+#endif
         if (select_transitions(sm, evt.event, enabled, &count)) {
             microstep(sm, enabled, count);
             /* W3C SCXML Appendix D: the loop turn that selects nothing takes
@@ -5432,6 +5437,9 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            failure again rather than a link in this event's chain. */
         sm->handling_error_event = false;
 {% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        trace_port_end(sm);
+#endif
 
         /* W3C App.D.2: re-evaluate eventless transitions before the next
            dequeue so cond expressions reading the current `_event`
@@ -5660,6 +5668,11 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            is answered is a link in its chain. */
         sm->handling_error_event = _in_place;
 {% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        /* docs/adr/0115, D4: the event taken off the external queue is a step,
+           with the microstep it selects or none. */
+        sce_trace_begin(&sm->trace, SCE_TRACE_EXTERNAL, trace_port_event_name(&evt));
+#endif
         if (select_transitions(sm, evt.event, enabled, &count)) {
             microstep(sm, enabled, count);
         }
@@ -5690,6 +5703,9 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
 {% if event_payload_active and error_events %}
         sm->handling_error_event = false;
 {% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        trace_port_end(sm);
+#endif
 
         check_eventless_transitions(sm);
         return true;
@@ -5750,7 +5766,14 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
             record_truncated_macrostep(sm, enabled[0].source);
             return;
         }
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        /* docs/adr/0115, D4: a microstep on eventless transitions is a step. */
+        sce_trace_begin(&sm->trace, SCE_TRACE_EVENTLESS, NULL);
+#endif
         microstep(sm, enabled, count);
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRACE_PORT
+        trace_port_end(sm);
+#endif
         sm->macrostep_microsteps_taken++;
     }
 }
