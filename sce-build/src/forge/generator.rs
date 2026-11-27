@@ -2465,6 +2465,8 @@ pub fn generate_cpp_with_imports_and_externs(
             imports,
             crate::generator::Language::Cpp,
             CodecForms::default(),
+            &crate::forge::shared_tables::SharedTables::default(),
+            &mut None,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Cpp)?
@@ -14514,12 +14516,18 @@ fn body_read_attribute(every: bool, sites: u32) -> &'static str {
     }
 }
 
+/// The text of the codec `m` for `lang`. A Rust codec of a set whose cold
+/// codecs' tables are written where `set_tables` says (docs/adr/0155 section
+/// 4) hands back the table its module prints, if any, in `printed_table`, for
+/// the set to read; every other backend passes the default and prints none.
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
     forms: CodecForms,
+    set_tables: &crate::forge::shared_tables::SharedTables,
+    printed_table: &mut Option<crate::forge::shared_tables::SetTable>,
 ) -> Result<String, ForgeError> {
     let CodecForms {
         owned_origin,
@@ -17956,16 +17964,26 @@ fn render_codec(
                 ))
             })?;
             // docs/adr/0155: the table of a cold codec, made with the numbers
-            // its write derives where the runtime's one writer writes it.
+            // its write derives where the runtime's one writer writes it, and
+            // written where the set says: in the module of an earlier codec
+            // whose table is the same rows, or in its own (section 4).
             if let Some(table) = &cold_table {
+                let rows = table.rows_key(&rendered.derived);
+                let home = set_tables.home(&m.name, &rows);
                 ctx.insert(
                     "field_table".into(),
                     serde_json::json!({
                         "name": table.name,
                         "inputs": table.inputs,
-                        "items": table.items(&rendered.derived),
+                        "items": table.items(&rendered.derived, &home),
                     }),
                 );
+                *printed_table = Some(crate::forge::shared_tables::SetTable {
+                    codec: m.name.clone(),
+                    module: filters::to_snake_case(m.name.clone()),
+                    name: table.name.clone(),
+                    rows,
+                });
             }
             ctx.insert("source_block".into(), rendered.text.into());
         }
@@ -30240,6 +30258,8 @@ pub fn generate_kotlin_with_imports(
             imports,
             crate::generator::Language::Kotlin,
             CodecForms::default(),
+            &crate::forge::shared_tables::SharedTables::default(),
+            &mut None,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -30452,6 +30472,9 @@ pub fn generate_rust_with_imports_and_externs(
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
+    // docs/adr/0155 section 4: the table a cold codec's module prints, which
+    // the set reads to find the codecs whose tables are one.
+    let mut printed_table = None;
     let code = match doc {
         // Statechart documents flow through the SCXML pipeline
         // (`classify_document` routes `sce:kind="statechart"` to
@@ -30487,6 +30510,8 @@ pub fn generate_rust_with_imports_and_externs(
                 inline_encode: options.inline_encode,
                 body_read: options.inline_decode.forms(&m.name, &options.body_reads),
             },
+            &options.shared_tables,
+            &mut printed_table,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -30611,6 +30636,7 @@ pub fn generate_rust_with_imports_and_externs(
     }
     Ok(GeneratedOutput {
         files,
+        field_tables: printed_table.into_iter().collect(),
         ..Default::default()
     })
 }
@@ -34978,6 +35004,8 @@ pub fn generate_go_with_imports(
             imports,
             crate::generator::Language::Go,
             CodecForms::default(),
+            &crate::forge::shared_tables::SharedTables::default(),
+            &mut None,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
@@ -35258,6 +35286,8 @@ pub fn generate_python_with_imports(
             imports,
             crate::generator::Language::Python,
             CodecForms::default(),
+            &crate::forge::shared_tables::SharedTables::default(),
+            &mut None,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Python)?
@@ -36550,6 +36580,8 @@ pub fn generate_c11_with_imports_and_externs(
             imports,
             crate::generator::Language::C11,
             CodecForms::default(),
+            &crate::forge::shared_tables::SharedTables::default(),
+            &mut None,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::C11)?

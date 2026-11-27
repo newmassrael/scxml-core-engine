@@ -29,6 +29,7 @@ use crate::filters;
 use crate::forge::body_reads::{BodyReadSites, HotCodecs, InlineDecode};
 use crate::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use crate::forge::error::{ForgeError, Located, RelatedRole};
+use crate::forge::shared_tables::SharedTables;
 use crate::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
 };
@@ -7683,7 +7684,28 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             Err(refusal) => error_format.emit_and_exit(&refusal, "Forge codegen error: "),
         }
     };
-    let body_reads = SetBodyReads { sites, hot };
+    // docs/adr/0155 section 4: where the build names its hot roots, the cold
+    // codecs of a Rust set whose tables are the same rows name one table. The
+    // set is generated once more, in memory and as each of its documents is
+    // generated below, to read the table each prints.
+    let tables = match &hot {
+        Some(hot) if matches!(lang, Language::Rust) && !args.inline_decode => {
+            SharedTables::of_documents(
+                &documents,
+                &crate::ForgeCompileOptions {
+                    owned_origin: args.owned_origin,
+                    views: args.views,
+                    inline_encode: args.inline_encode,
+                    inline_decode: InlineDecode::Codecs(hot.clone()),
+                    body_reads: sites.clone(),
+                    include_dirs: include_dirs.clone(),
+                    ..Default::default()
+                },
+            )
+        }
+        _ => SharedTables::default(),
+    };
+    let body_reads = SetBodyReads { sites, hot, tables };
 
     let root = PathBuf::from(&args.output_dir);
     let mut set = GenerateReport {
@@ -7776,6 +7798,10 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
 struct SetBodyReads {
     sites: BodyReadSites,
     hot: Option<HotCodecs>,
+    /// Where the table of each cold codec of the set is written
+    /// (docs/adr/0155 section 4): read from the set where the build names its
+    /// hot roots, and each codec's own otherwise.
+    tables: SharedTables,
 }
 
 /// Generate one document as `generate` does, and hand back what the run
@@ -7949,6 +7975,7 @@ fn cmd_generate(
                 inline_encode,
                 inline_decode,
                 body_reads: set.sites.clone(),
+                shared_tables: set.tables.clone(),
                 // The digest every file of this run is headed by, which a schema
                 // unit's payload schema names (docs/adr/0087, section 1.1).
                 source_hash: Some(drift_ctx.header.source_hex()),

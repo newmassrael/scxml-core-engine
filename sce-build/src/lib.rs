@@ -2829,6 +2829,7 @@ fn emit_lifted_artifacts<D: variant_dialect::Dialect>(
         files,
         deps,
         requires,
+        field_tables: Vec::new(),
     })
 }
 
@@ -4722,6 +4723,15 @@ pub struct ForgeCompileOptions {
     /// one document, which reads no body of its own, so no body read carries an
     /// attribute but the one [`Self::inline_decode`] asks for.
     pub body_reads: forge::body_reads::BodyReadSites,
+    /// Rust only: where the table of each cold codec of the generated set is
+    /// written (docs/adr/0155 section 4): a codec whose table is the same rows
+    /// as an earlier codec's of the set names that codec's `static`, found by
+    /// [`forge::shared_tables::SharedTables::of_documents`].
+    ///
+    /// Like [`Self::body_reads`] it is a property of a SET of documents, and
+    /// every document of the set is generated with the same value. Empty (the
+    /// default) writes each cold codec's table in its own module.
+    pub shared_tables: forge::shared_tables::SharedTables,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default

@@ -4255,6 +4255,151 @@ mod tests {
         .expect("a cold codec read by its table must decode, refuse and write back its frames");
 }
 
+/// Two cold codecs of a set whose fields are the same rows name one table
+/// (docs/adr/0155 section 4): the first in the set's order writes the `static`
+/// the set's modules see, the second names it by its path in place of one of
+/// its own, and each reads, refuses and writes its frames by it with stores of
+/// its own.
+#[test]
+fn cold_codecs_of_the_same_rows_name_one_table_in_their_set() {
+    const GATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="NAME">
+  <datamodel>
+    <sce:flags id="CARRIER" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="P" bit="0"/>
+    </sce:flags>
+    <sce:field id="COUNT" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
+               sce:present-if="CARRIER.P"/>
+    <sce:field id="CONTENT" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="COUNT" sce:max-size="64" sce:present-if="CARRIER.P"/>
+  </datamodel>
+</scxml>
+"#;
+    const ROOT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_shared_root">
+  <datamodel>
+    <sce:field id="value" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>
+"#;
+    const HARNESS: &str = r#"// Injected by cold_codecs_of_the_same_rows_name_one_table_in_their_set.
+#[cfg(test)]
+mod tests {
+    use crate::codec_shared_first::CodecSharedFirst;
+    use crate::codec_shared_second::CodecSharedSecond;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    /// The bytes of an encode, whether it can refuse a value or not.
+    trait Written {
+        fn written(self) -> Vec<u8>;
+    }
+
+    impl Written for Vec<u8> {
+        fn written(self) -> Vec<u8> {
+            self
+        }
+    }
+
+    impl<E: core::fmt::Debug> Written for Result<Vec<u8>, E> {
+        fn written(self) -> Vec<u8> {
+            self.expect("the value encodes")
+        }
+    }
+
+    #[test]
+    fn each_codec_of_one_table_reads_and_writes_its_frames() {
+        let frames: [&[u8]; 2] = [&[0x00], &[0x01, 0x02, 0xAA, 0xBB]];
+        for frame in frames {
+            let first = CodecSharedFirst::decode(&mut SceCursor::new(frame)).expect("decode");
+            assert_eq!(first.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
+            let second = CodecSharedSecond::decode(&mut SceCursor::new(frame)).expect("decode");
+            assert_eq!(second.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
+        }
+        let second = CodecSharedSecond::decode(&mut SceCursor::new(&[0x01, 0x02, 0xAA, 0xBB]))
+            .expect("decode");
+        assert_eq!(second.key_len, Some(2));
+        let short = CodecSharedSecond::decode(&mut SceCursor::new(&[0x01, 0x02, 0xAA])).map(|_| ());
+        assert_eq!(short, Err(CodecError::NeedMoreBytes));
+    }
+}
+"#;
+    use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
+    use sce_build::forge::shared_tables::SharedTables;
+    let dir = std::env::temp_dir().join(format!("sce_shared_tables_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory for the set");
+    let first = GATED
+        .replace("NAME", "codec_shared_first")
+        .replace("CARRIER", "header")
+        .replace("COUNT", "payload_len")
+        .replace("CONTENT", "payload");
+    let second = GATED
+        .replace("NAME", "codec_shared_second")
+        .replace("CARRIER", "flags")
+        .replace("COUNT", "key_len")
+        .replace("CONTENT", "key");
+    let names = [
+        "codec_shared_root.scxml",
+        "codec_shared_first.scxml",
+        "codec_shared_second.scxml",
+    ];
+    for (name, text) in names.iter().zip([ROOT.to_string(), first, second]) {
+        std::fs::write(dir.join(name), text).expect("a document of the set");
+    }
+    let documents: Vec<String> = names
+        .iter()
+        .map(|name| dir.join(name).display().to_string())
+        .collect();
+    let sites = BodyReadSites::of_documents(&documents, &[], |_| false);
+    let hot = sites
+        .hot_codecs(["codec_shared_root"])
+        .unwrap_or_else(|e| panic!("codec_shared_root is a codec of the set: {e}"));
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.inline_decode = InlineDecode::Codecs(hot);
+    opts.body_reads = sites;
+    opts.shared_tables = SharedTables::of_documents(&documents, &opts);
+    let mut files =
+        generate_files_for_codec_set_with(&dir, &names, sce_build::generator::Language::Rust, opts)
+            .unwrap_or_else(|e| panic!("the set generates: {e}"));
+    let code = |module: &str| {
+        files
+            .iter()
+            .filter(|(name, _)| name.starts_with(module))
+            .map(|(_, code)| code.clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let lent = code("codec_shared_first");
+    let borrowed = code("codec_shared_second");
+    assert!(
+        lent.contains(
+            "pub(super) static CODEC_SHARED_FIRST_FIELDS: ::sce_forge_runtime::codec::FieldTable"
+        ),
+        "the first codec of the rows does not lend its table:\n{lent}"
+    );
+    assert!(
+        borrowed.contains(
+            "use super::codec_shared_first::CODEC_SHARED_FIRST_FIELDS as CODEC_SHARED_SECOND_FIELDS;"
+        ) && !borrowed.contains("static CODEC_SHARED_SECOND_FIELDS"),
+        "the second codec of the rows does not name the first one's table:\n{borrowed}"
+    );
+    for (module, table) in [
+        (&lent, "CODEC_SHARED_FIRST_FIELDS"),
+        (&borrowed, "CODEC_SHARED_SECOND_FIELDS"),
+    ] {
+        assert!(
+            module.contains(&format!("::read_table(cursor, &{table}, "))
+                && module.contains(&format!("::write_table(w, &{table}, ")),
+            "a codec of the rows is not read and written by {table}:\n{module}"
+        );
+    }
+    files.push(("shared_tables.rs".to_string(), HARNESS.to_string()));
+    let ran = rustc_run_generated_set(files, "shared_tables_rust", "test", RustcProfile::Alloc);
+    let _ = std::fs::remove_dir_all(&dir);
+    ran.expect("codecs of one table must read, refuse and write their frames by it");
+}
+
 /// The declarations of the public face of a generated module, in order: each
 /// line that declares a `pub` struct, enum, union, trait or type alias, or a
 /// `pub` field, as written. An item visible to the modules of the set alone

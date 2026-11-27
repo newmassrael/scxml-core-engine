@@ -89,6 +89,7 @@ pub mod saved_migration;
 pub mod schema_revision;
 pub(crate) mod schema_unit_type;
 pub mod sensitivity;
+pub mod shared_tables;
 pub mod sourcemap;
 pub mod standard_host;
 pub mod static_datamodel;

@@ -28,6 +28,7 @@ use crate::forge::model::{
     BitSize, CodecEncoding, CodecField, CodecModel, Endian, PresentIfPredicate, PresentIfScope,
     SceType,
 };
+use crate::forge::shared_tables::TableHome;
 
 use super::{rust_storage_tag, to_upper_snake, RUNTIME_CODEC, STORAGE_PARAM};
 
@@ -70,16 +71,59 @@ pub(super) struct PrintedTable {
 }
 
 impl PrintedTable {
-    /// The module's items: the `static` of the rows, with the numbers the
-    /// encode derives where the codec is written by the runtime's one writer
-    /// over its table (`derived`, docs/adr/0155 section 3), and the value's
-    /// stores. A table no write derives a number of is made with none.
-    pub(super) fn items(&self, derived: &[Derive]) -> String {
+    /// What the table is, row for row: its rows and the numbers its write
+    /// derives (`derived`), as the `static` prints them. Two codecs of a set
+    /// whose tables are the same text are one table (docs/adr/0155 section 4).
+    pub(super) fn rows_key(&self, derived: &[Derive]) -> String {
+        let (rows, derived) = self.printed_rows(derived);
+        format!("{rows}{derived}")
+    }
+
+    /// The `ROWS` of the table and its `DERIVED`, empty where its write
+    /// derives no number, each as the `static` holds it.
+    fn printed_rows(&self, derived: &[Derive]) -> (String, String) {
         let rows_text: String = self
             .rows
             .iter()
             .map(|row| format!("        {},\n", row.print()))
             .collect();
+        let rows = format!("    const ROWS: &[Row] = &[\n{rows_text}    ];\n");
+        if derived.is_empty() {
+            return (rows, String::new());
+        }
+        let lines: String = derived
+            .iter()
+            .map(|derive| format!("        {},\n", derive.print()))
+            .collect();
+        (
+            rows,
+            format!("    const DERIVED: &[Derive] = &[\n{lines}    ];\n"),
+        )
+    }
+
+    /// The module's items: the `static` of the rows, with the numbers the
+    /// encode derives where the codec is written by the runtime's one writer
+    /// over its table (`derived`, docs/adr/0155 section 3), and the value's
+    /// stores. A table no write derives a number of is made with none. Where
+    /// the table is an earlier codec's of the set (`home`, section 4), the
+    /// module names that codec's `static` by its own table's name in place of
+    /// one of its own; where a later codec names this one, the modules of the
+    /// set see it.
+    pub(super) fn items(&self, derived: &[Derive], home: &TableHome) -> String {
+        let struct_name = &self.struct_name;
+        let name = &self.name;
+        let stores = &self.stores;
+        let visibility = match home {
+            TableHome::Borrowed { path, .. } => {
+                return format!(
+                    "/// The fields of `{struct_name}` are the rows of the table of a codec\n\
+                     /// before it in the set, which it names (docs/adr/0155).\n\
+                     use {path} as {name};\n\n{stores}"
+                );
+            }
+            TableHome::Lent => "pub(super) ",
+            TableHome::Own => "",
+        };
         let mut uses = vec!["FieldTable", "Gate", "Read", "Row"];
         if !derived.is_empty() || self.rows.iter().any(Row::names_bits) {
             uses.extend(["Bits", "Source"]);
@@ -91,29 +135,17 @@ impl PrintedTable {
             "FieldTable::with_derived(ROWS, DERIVED)"
         };
         uses.sort_unstable();
-        let derived_text = if derived.is_empty() {
-            String::new()
-        } else {
-            let lines: String = derived
-                .iter()
-                .map(|derive| format!("        {},\n", derive.print()))
-                .collect();
-            format!("    const DERIVED: &[Derive] = &[\n{lines}    ];\n")
-        };
+        let (rows, derived) = self.printed_rows(derived);
         format!(
             "/// The fields of `{struct_name}` in wire order, read by the runtime's one\n\
              /// walker: the codec is read once per event, not on the per-message path\n\
              /// (docs/adr/0155).\n\
-             static {name}: {RUNTIME_CODEC}::FieldTable = {{\n\
+             {visibility}static {name}: {RUNTIME_CODEC}::FieldTable = {{\n\
              \x20   use {RUNTIME_CODEC}::{{{uses}}};\n\
-             \x20   const ROWS: &[Row] = &[\n{rows_text}    ];\n\
-             {derived_text}\
+             {rows}{derived}\
              \x20   {made}\n\
              }};\n\n{stores}",
-            struct_name = self.struct_name,
-            name = self.name,
             uses = uses.join(", "),
-            stores = self.stores,
         )
     }
 }
@@ -1012,9 +1044,9 @@ mod tests {
              for CodecZenohWireexprIn<S> {",
         ] {
             assert!(
-                table.items(&[]).contains(printed),
+                table.items(&[], &TableHome::Own).contains(printed),
                 "the table of codec_zenoh_wireexpr has no `{printed}`:\n{}",
-                table.items(&[])
+                table.items(&[], &TableHome::Own)
             );
         }
     }
@@ -1052,16 +1084,16 @@ mod tests {
             chain,
         ] {
             assert!(
-                table.items(&[]).contains(printed),
+                table.items(&[], &TableHome::Own).contains(printed),
                 "the table of codec_zenoh_msg_del has no `{printed}`:\n{}",
-                table.items(&[])
+                table.items(&[], &TableHome::Own)
             );
         }
         assert!(
-            !table.items(&[]).contains("fn absent("),
+            !table.items(&[], &TableHome::Own).contains("fn absent("),
             "codec_zenoh_msg_del gates its bodies in their statements, and has an absent \
              store:\n{}",
-            table.items(&[])
+            table.items(&[], &TableHome::Own)
         );
     }
 
@@ -1169,7 +1201,7 @@ mod tests {
         assert_eq!(derived.len(), 2, "{derived:?}");
         assert!(derived.contains(&flag), "{derived:?}");
         assert!(derived.contains(&count), "{derived:?}");
-        let items = table.items(&derived);
+        let items = table.items(&derived, &TableHome::Own);
         for printed in [
             "use ::sce_forge_runtime::codec::{Bits, Derive, Derived, FieldTable, Gate, Read, \
              Row, Source};",
@@ -1183,10 +1215,39 @@ mod tests {
                 "the table of codec_present_if_string has no `{printed}`:\n{items}"
             );
         }
-        let read_only = table.items(&[]);
+        let read_only = table.items(&[], &TableHome::Own);
         assert!(
             read_only.contains("    FieldTable::new(ROWS)\n") && !read_only.contains("DERIVED"),
             "a table no write derives a number of is made with none:\n{read_only}"
+        );
+        // docs/adr/0155 section 4: what the table is names no codec, so two
+        // codecs of the same rows have one; the first lends its `static` to
+        // the set, and a later one names it in place of one of its own.
+        let rows = table.rows_key(&derived);
+        assert!(
+            rows.contains("const ROWS: &[Row] = &[")
+                && rows.contains("const DERIVED: &[Derive] = &[")
+                && !rows.contains("PRESENT_IF_STRING"),
+            "{rows}"
+        );
+        let lent = table.items(&derived, &TableHome::Lent);
+        assert!(
+            lent.contains("pub(super) static CODEC_PRESENT_IF_STRING_FIELDS: "),
+            "a lent table is no static the set sees:\n{lent}"
+        );
+        let borrowed = table.items(
+            &derived,
+            &TableHome::Borrowed {
+                path: "super::codec_a::CODEC_A_FIELDS".to_string(),
+                rows,
+            },
+        );
+        assert!(
+            borrowed.contains(
+                "use super::codec_a::CODEC_A_FIELDS as CODEC_PRESENT_IF_STRING_FIELDS;\n"
+            ) && !borrowed.contains("static ")
+                && borrowed.contains("TableOut<'f> for CodecPresentIfStringIn<S> {"),
+            "a borrowed table is not the earlier codec's, with stores of its own:\n{borrowed}"
         );
     }
 
