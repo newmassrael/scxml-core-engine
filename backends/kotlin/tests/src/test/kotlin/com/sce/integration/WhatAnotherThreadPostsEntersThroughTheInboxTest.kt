@@ -26,7 +26,15 @@
 //     own session after it (W3C test 201's shape), in both driving modes;
 //   * an ending posted for a child session during its parent's macrostep is on
 //     that child's queue before an event the parent sends it later in the same
-//     macrostep (docs/adr/0084, D2 as amended at step 10), in both driving modes.
+//     macrostep (docs/adr/0084, D2 as amended at step 10), in both driving modes;
+//   * each run of the inbox under posters on several threads is recorded as an
+//     inbox history (docs/adr/0147, D3): every post with what the inbox
+//     answered, every item the owner put on the external queue as the engine's
+//     inbox port tells it, and the end of the run, against one clock. Each
+//     history is held here to the arrival order the drain before an event of
+//     the owner's own keeps, and written where SCE_INBOX_HISTORY_DIR names, for
+//     `sce-codegen check-inbox-history` to judge linearizable to
+//     docs/formal/InboxService.tla (scripts/gates/w3c-kotlin.sh runs it).
 //
 // The machine is written by hand, as the smallest one with a host-run
 // invocation: `working` starts `job` on entry and cancels it on exit, and every
@@ -45,6 +53,7 @@ import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.HistoryId
 import com.sce.runtime.InboxInput
+import com.sce.runtime.InboxPort
 import com.sce.runtime.MeshCall
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
@@ -55,7 +64,11 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -279,6 +292,378 @@ private class ArrivalProbeMachine(
         const val GO = 0
         const val POSTED = 1
         const val OWN = 2
+    }
+}
+
+private sealed interface HistoryProbeState : State {
+    data object Taking : HistoryProbeState
+}
+
+private sealed interface HistoryProbeEvent : Event {
+    data object Ping : HistoryProbeEvent
+}
+
+/** The id the history probe's root session is bound to, which a post through the tree's directory names. */
+private const val HISTORY_ROOT_ID = "inbox-history-root"
+
+/** The id a post naming the session the tree does not hold gives. */
+private const val HISTORY_ABSENT_ID = "inbox-history-absent"
+
+/**
+ * The machine of the recorded runs: one state, `taking`, whose one targetless
+ * transition takes `ping`. What it takes is no part of the record; the queue it
+ * takes it from is. Its root session is bound to [HISTORY_ROOT_ID], so the
+ * tree's directory finds it by that id.
+ */
+private class HistoryProbeMachine : StateMachineEngine<HistoryProbeState, HistoryProbeEvent>() {
+    init {
+        bindRootSessionId(HISTORY_ROOT_ID)
+    }
+
+    override val initialState: HistoryProbeState = HistoryProbeState.Taking
+
+    override fun firstEnabledTransition(
+        state: HistoryProbeState,
+        event: HistoryProbeEvent?,
+    ): EnabledTransition<HistoryProbeState, HistoryId>? =
+        if (event == HistoryProbeEvent.Ping) {
+            EnabledTransition<HistoryProbeState, HistoryId>(state, emptyList(), 0, hasActions = false, isInternal = false)
+        } else {
+            null
+        }
+
+    override fun onEntry(state: HistoryProbeState, isDefaultEntry: Boolean) {}
+
+    override fun onExit(state: HistoryProbeState) {}
+
+    override fun executeTransitionContent(source: HistoryProbeState, transitionIndex: Int) {}
+
+    override fun resolveState(stateId: String): HistoryProbeState? =
+        if (stateId == "taking") HistoryProbeState.Taking else null
+
+    override fun stateIdOf(state: HistoryProbeState): String = "taking"
+
+    override fun resolveEventByName(name: String): HistoryProbeEvent? =
+        if (name == "ping") HistoryProbeEvent.Ping else null
+
+    override fun eventNameOf(event: HistoryProbeEvent): String = "ping"
+}
+
+/**
+ * The one clock every thread of a recorded run reads, immediately before and
+ * immediately after each operation it records. One read-modify-write chain on
+ * one atomic orders the readings with the calls between them, so "returned
+ * before invoked" in the record means it in the run, and no two readings are
+ * equal.
+ */
+private class HistoryClock {
+    private val readings = AtomicLong(0)
+
+    fun tick(): Long = readings.incrementAndGet()
+}
+
+/** The number the history names the probe's one session by. */
+private const val HISTORY_SESSION = 0L
+
+/** The number the history names the session the tree does not hold by. */
+private const val HISTORY_ABSENT = 1L
+
+/**
+ * One post a poster observed, in the inbox history's form: through the tree's
+ * directory ([addressed]) or the session's own handle, taken or refused.
+ */
+private class RecordedPost(
+    val session: Long,
+    val input: Long,
+    val addressed: Boolean,
+    val taken: Boolean,
+    val invoked: Long,
+    val returned: Long,
+) {
+    /**
+     * Why a refused post was refused. The inbox answers whether it took a post,
+     * not why, so the reason is the one a post of its kind can have: `unknown`
+     * for one naming the session the tree does not hold, and `ended` for one
+     * reaching the session the tree holds, whose inbox closes with its run. The
+     * checker holds the refusal to the place the post linearized at, so a post
+     * refused while the session ran is not linearizable as `ended`.
+     */
+    val reason: String?
+        get() = when {
+            taken -> null
+            session == HISTORY_ABSENT -> "unknown"
+            else -> "ended"
+        }
+
+    fun toJson(): String {
+        val door = if (addressed) "addressed" else "handle"
+        val answered = reason?.let { "\"outcome\":\"refused\",\"reason\":\"$it\"" } ?: "\"outcome\":\"taken\""
+        return "{\"call\":\"post\",\"session\":$session,\"input\":$input,\"door\":\"$door\",$answered," +
+            "\"invoked\":$invoked,\"returned\":$returned}"
+    }
+}
+
+/**
+ * One operation of the owner: an item that entered the session's external
+ * queue, or the end of its run, which names no item ([item] `null`).
+ */
+private class RecordedOwnerOperation(
+    val item: Long?,
+    val own: Boolean,
+    val invoked: Long,
+    val returned: Long,
+) {
+    fun toJson(): String {
+        val call = if (item == null) {
+            "\"call\":\"end\""
+        } else {
+            val source = if (own) "own" else "posted"
+            "\"call\":\"enqueue\",\"item\":$item,\"source\":\"$source\""
+        }
+        return "{$call,\"session\":$HISTORY_SESSION,\"invoked\":$invoked,\"returned\":$returned}"
+    }
+}
+
+/**
+ * What the owner of a recorded run did, as its engine's inbox port tells it
+ * (docs/adr/0147, D3): each item it put on the external queue, read from the
+ * run's clock around it, and the end of the run, read around the close of the
+ * inbox, from which every post is refused. An event of the owner's own is
+ * invoked where the port is first told it, before the drain it begins with,
+ * and the inputs that drain applies lie within it. Told on the owner only.
+ */
+private class OwnerRecorder(private val clock: HistoryClock) : InboxPort<HistoryProbeEvent> {
+    val operations = ArrayList<RecordedOwnerOperation>()
+    private var ownInvoked = 0L
+    private var postedInvoked = 0L
+    private var closeInvoked = 0L
+
+    override fun enqueueBegins(event: HistoryProbeEvent, metadata: EventMetadata, posted: Boolean) {
+        val now = clock.tick()
+        if (posted) postedInvoked = now else ownInvoked = now
+    }
+
+    override fun enqueueEnds(event: HistoryProbeEvent, metadata: EventMetadata, posted: Boolean) {
+        val invoked = if (posted) postedInvoked else ownInvoked
+        operations += RecordedOwnerOperation(metadata.data.toLong(), !posted, invoked, clock.tick())
+    }
+
+    override fun closeBegins() {
+        closeInvoked = clock.tick()
+    }
+
+    override fun closeEnds() {
+        operations += RecordedOwnerOperation(null, own = false, invoked = closeInvoked, returned = clock.tick())
+    }
+}
+
+/** One recorded run: the owner's operations and each poster's posts, each in program order. */
+private class RecordedInboxRun(
+    val owner: List<RecordedOwnerOperation>,
+    val posters: List<List<RecordedPost>>,
+) {
+    /**
+     * The run as an inbox history (tests/forge/conformance/inbox_history.schema.json):
+     * one session, whose inbox closes with its run and has no bound.
+     */
+    fun toJson(): String {
+        val owned = owner.joinToString(",", "[", "]") { it.toJson() }
+        val posted = posters.joinToString(",", "[", "]") { posts ->
+            posts.joinToString(",", "[", "]") { it.toJson() }
+        }
+        return "{\"version\":2,\"sessions\":[$HISTORY_SESSION],\"closes\":true,\"owner\":$owned,\"posters\":$posted}"
+    }
+}
+
+/** Threads that post in a recorded run, beside the owner. */
+private const val HISTORY_POSTERS = 4
+
+/** Posts each of those threads makes in one run. */
+private const val HISTORY_PER_POSTER = 120L
+
+/** Own events the owner raises at most in a recorded run. */
+private const val HISTORY_OWN_PER_RUN = 40L
+
+/** The value of the owner's first own event, past every input a poster posts. */
+private const val HISTORY_OWN_BASE = 1_000_000L
+
+/** The input of the first post made once the run has ended, past every other input of the run. */
+private const val HISTORY_LATE_INPUT = 900_000L
+
+/** Runs recorded, each written as one history: the schedules that matter are a small fraction of those a machine gives. */
+private const val HISTORY_RUNS = 4
+
+/** `ping` carrying [value], the input a poster gives it, for the session's own handle. */
+private fun historyPing(value: Long): InboxInput<HistoryProbeEvent> =
+    InboxInput.ExternalEvent(HistoryProbeEvent.Ping, EventMetadata.external(data = "$value"))
+
+/** `ping` carrying [value], for the tree's directory to post to the session [sessionId] names. */
+private fun historyPingNaming(sessionId: String, value: Long): InboxInput<HistoryProbeEvent> =
+    InboxInput.MeshDelivery(MeshCall.Raise("ping", EventMetadata.external(data = "$value")), sessionId)
+
+/**
+ * Post [input], input [value] of [session], to [sm]'s inbox, recorded with
+ * [clock] read immediately around the post. An input that names a session goes
+ * through the tree's directory, and any other through the session's own handle.
+ */
+private fun recordPost(
+    clock: HistoryClock,
+    sm: HistoryProbeMachine,
+    session: Long,
+    value: Long,
+    input: InboxInput<HistoryProbeEvent>,
+): RecordedPost {
+    val invoked = clock.tick()
+    val taken = sm.inbox.post(input)
+    val returned = clock.tick()
+    return RecordedPost(session, value, input is InboxInput.MeshDelivery, taken, invoked, returned)
+}
+
+/** Run [work] on a thread of its own, join it, and answer what it answered. */
+private fun <T : Any> onAnotherThread(work: () -> T): T {
+    val answer = AtomicReference<T>()
+    val thread = Thread { answer.set(work()) }
+    thread.start()
+    thread.join(10_000)
+    assertFalse(thread.isAlive, "the work on another thread never finished")
+    return answer.get() ?: fail("the work on another thread answered nothing")
+}
+
+/** Raise the own event [value] on the owner, as the host's own raise does. */
+private fun raiseOwn(sm: HistoryProbeMachine, value: Long) {
+    sm.send(HistoryProbeEvent.Ping, EventMetadata.external(data = "$value"))
+}
+
+/**
+ * One recorded run. A post is taken and returns before the owner raises an
+ * event of its own, so every run holds that order. Then [HISTORY_POSTERS]
+ * threads post through the session's own handle and, every fifth post, through
+ * the tree's directory, naming the session the tree does not hold while the run
+ * goes on and the probe's own session once it has ended, while the owner drives
+ * the machine, raises events of its own and stops the run once half the posts
+ * are made. A post through each door once the run has ended closes the record.
+ */
+private fun recordInboxRun(): RecordedInboxRun {
+    val clock = HistoryClock()
+    val recorder = OwnerRecorder(clock)
+    val sm = HistoryProbeMachine()
+    sm.inboxPort = recorder
+    sm.initialize()
+    try {
+        val posters = mutableListOf(
+            listOf(onAnotherThread { recordPost(clock, sm, HISTORY_SESSION, 1, historyPing(1)) }),
+        )
+        raiseOwn(sm, HISTORY_OWN_BASE)
+
+        val made = AtomicLong(0)
+        val running = AtomicInteger(HISTORY_POSTERS)
+        val stopped = AtomicBoolean(false)
+        val total = HISTORY_POSTERS * HISTORY_PER_POSTER
+        val recorded = List(HISTORY_POSTERS) { ArrayList<RecordedPost>() }
+        val threads = (0 until HISTORY_POSTERS).map { poster ->
+            Thread({
+                try {
+                    for (k in 0 until HISTORY_PER_POSTER) {
+                        val value = 2 + poster * HISTORY_PER_POSTER + k
+                        recorded[poster] += when {
+                            k % 5 != 4L -> recordPost(clock, sm, HISTORY_SESSION, value, historyPing(value))
+                            stopped.get() ->
+                                recordPost(clock, sm, HISTORY_SESSION, value, historyPingNaming(HISTORY_ROOT_ID, value))
+                            else ->
+                                recordPost(clock, sm, HISTORY_ABSENT, value, historyPingNaming(HISTORY_ABSENT_ID, value))
+                        }
+                        made.incrementAndGet()
+                        Thread.yield()
+                    }
+                } finally {
+                    running.decrementAndGet()
+                }
+            }, "inbox-history-poster-$poster").also { it.start() }
+        }
+
+        var own = HISTORY_OWN_BASE + 1
+        var round = 0L
+        while (running.get() > 0) {
+            if (!stopped.get()) {
+                sm.tick()
+                round++
+                if (round % 3 == 0L && own < HISTORY_OWN_BASE + HISTORY_OWN_PER_RUN) {
+                    raiseOwn(sm, own)
+                    own++
+                }
+                if (made.get() * 2 >= total) {
+                    sm.stop()
+                    stopped.set(true)
+                }
+            }
+            Thread.yield()
+        }
+        for (thread in threads) {
+            thread.join(10_000)
+            assertFalse(thread.isAlive, "${thread.name} never finished posting")
+        }
+        if (!stopped.get()) {
+            sm.tick()
+            sm.stop()
+            stopped.set(true)
+        }
+        posters += recorded.map { it.toList() }
+        posters += onAnotherThread {
+            listOf(
+                recordPost(clock, sm, HISTORY_SESSION, HISTORY_LATE_INPUT, historyPing(HISTORY_LATE_INPUT)),
+                recordPost(
+                    clock,
+                    sm,
+                    HISTORY_SESSION,
+                    HISTORY_LATE_INPUT + 1,
+                    historyPingNaming(HISTORY_ROOT_ID, HISTORY_LATE_INPUT + 1),
+                ),
+            )
+        }
+        return RecordedInboxRun(recorder.operations.toList(), posters)
+    } finally {
+        sm.cleanup()
+    }
+}
+
+/**
+ * Hold [run], recorded as [what], to what it was meant to exercise and to the
+ * order the door keeps, as far as one run's record says it: posts taken,
+ * refused as unknown and as ended, through both doors; own events entered and
+ * the run ended once; every input a post took entered once; and an event of
+ * the owner's own entered behind every input whose post returned before the
+ * event's enqueue began (docs/adr/0084, D2 as amended at step 9). Whether the
+ * whole record is linearizable is `sce-codegen check-inbox-history`'s to judge.
+ */
+private fun assertRunKeepsTheDoorsOrder(what: String, run: RecordedInboxRun) {
+    val posts = run.posters.flatten()
+    assertTrue(posts.any { it.taken }, "$what: no post was taken")
+    assertTrue(posts.any { it.reason == "unknown" }, "$what: no post was refused as unknown")
+    assertTrue(posts.any { it.reason == "ended" }, "$what: no post was refused as ended")
+    assertTrue(posts.any { it.addressed } && posts.any { !it.addressed }, "$what: a door went unused")
+    assertTrue(run.owner.any { it.item != null && it.own }, "$what: the owner put no event of its own on the queue")
+    assertEquals(1, run.owner.count { it.item == null }, "$what: the run did not end once")
+
+    val taken = posts.filter { it.taken }.map { it.input }.sorted()
+    val enteredPosted = run.owner.withIndex().filter { (_, op) -> op.item != null && !op.own }
+    assertEquals(
+        taken,
+        enteredPosted.mapNotNull { it.value.item }.sorted(),
+        "$what: the inputs that entered the queue are not the inputs the posts took",
+    )
+
+    val enteredAt: Map<Long?, Int> = enteredPosted.associate { (at, op) -> op.item to at }
+    for ((at, op) in run.owner.withIndex()) {
+        if (op.item == null || !op.own) continue
+        for (post in posts) {
+            if (!post.taken || post.returned >= op.invoked) continue
+            val postedAt = enteredAt[post.input] ?: fail("$what: input ${post.input} never entered")
+            assertTrue(
+                postedAt < at,
+                "$what: own event ${op.item} entered ahead of input ${post.input}, whose post returned " +
+                    "before the event's enqueue began",
+            )
+        }
     }
 }
 
@@ -939,6 +1324,25 @@ class WhatAnotherThreadPostsEntersThroughTheInboxTest {
             sm.stop()
             scope.cancel()
             sm.cleanup()
+        }
+    }
+
+    /**
+     * docs/adr/0147, D3: each recorded run of the inbox ([recordInboxRun]) keeps
+     * the order the door promises as far as its own record says it, and is
+     * written as an inbox history where SCE_INBOX_HISTORY_DIR names, one file a
+     * run, for `sce-codegen check-inbox-history` to judge linearizable to
+     * docs/formal/InboxService.tla (scripts/gates/w3c-kotlin.sh). Unset, the
+     * runs are held here and written nowhere.
+     */
+    @Test
+    fun eachRunOfTheInboxIsRecordedAsAHistoryThatKeepsTheDoorsOrder() {
+        val named = System.getenv("SCE_INBOX_HISTORY_DIR")?.takeIf { it.isNotEmpty() }?.let { File(it) }
+        if (named != null) assertTrue(named.isDirectory || named.mkdirs(), "cannot create $named")
+        for (run in 0 until HISTORY_RUNS) {
+            val recorded = recordInboxRun()
+            assertRunKeepsTheDoorsOrder("run $run", recorded)
+            named?.let { File(it, "kotlin_inbox_run_$run.json").writeText(recorded.toJson() + "\n") }
         }
     }
 }

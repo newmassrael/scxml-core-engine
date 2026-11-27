@@ -731,6 +731,14 @@ report_row_heap() {
         || sce_gate_fail "the Kotlin compile daemon's heap on $1 could not be read — the reason is above"
 }
 
+# The inbox's recorded runs (docs/adr/0147, D3) write their histories into the
+# directory SCE_INBOX_HISTORY_DIR names, emptied before each row and judged after
+# it by the command every runtime's inbox histories are judged by
+# (`sce_gate_judge_inbox_histories`): `HISTORY_RUNS` of them, four, in
+# WhatAnotherThreadPostsEntersThroughTheInboxTest. backends/kotlin/tests/build.gradle.kts
+# makes the test task run whenever the variable is set.
+INBOX_HISTORIES="$SCE_REPO_ROOT/target/inbox-histories/kotlin"
+
 for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     engine="${pair%%:*}"
     language="${pair##*:}"
@@ -748,9 +756,12 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     gradle_gc_from="$(log_size "$GRADLE_GC_LOG")"
     kotlin_gc_from="$(log_size "$KOTLIN_GC_LOG")"
     status=0
+    rm -rf "$INBOX_HISTORIES"
+    mkdir -p "$INBOX_HISTORIES"
     mapfile -t row_tasks < <(suite_tasks test)
     sce_gate_tested --log "$LOG/kotlin-$engine-$language.log" "${FAILED_TEST_REPORTS[@]}" \
-        -- ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
+        -- env SCE_INBOX_HISTORY_DIR="$INBOX_HISTORIES" \
+        ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
         "-Psce.script.language=$language" \
         "-Psce.lua.loweringCensus=$CENSUS" \
         "${HEAP_OBSERVED[@]}" \
@@ -796,6 +807,8 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
         || sce_gate_fail "Kotlin conformance on $engine over $language machines: the row's coverage verdict refused — its diagnosis is above"
 
     sce_gate_step "$cases Kotlin case(s) passed on $engine over $language machines, across exactly the $runnable_count class(es) its sources declare"
+
+    sce_gate_judge_inbox_histories "$INBOX_HISTORIES" 4 "Kotlin ($engine over $language machines)"
 done
 
 # ── The lowering census, read from the file the suite wrote ────────

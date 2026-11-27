@@ -1,0 +1,33 @@
+# Mutation cases for docs/adr/0147, D3 on the Kotlin runtime: every run of the
+# engine's inbox is recorded as an inbox history, held to the order the door
+# keeps, and written for `sce-codegen check-inbox-history` to judge
+# linearizable to docs/formal/InboxService.tla.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_inbox_history_holds_the_kotlin_inbox_to_its_promise_kotlin.cases`.
+#
+# The test runs the inbox of a machine written by hand on real threads, records
+# every post and, through the engine's inbox port, every item the owner put on
+# the external queue and the close of the inbox, and holds each record to what
+# a run's own record can say of the promise; scripts/gates/w3c-kotlin.sh judges
+# the histories it writes with the checker. Each mutant takes away one part of
+# the door docs/formal/EngineInbox.tla names:
+#
+#   the drain before an event of the owner's own: an own event enters ahead of
+#   a post that returned before the event's enqueue began (arrival order, W3C
+#   test 201's shape), which every run makes once before its posters start.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.WhatAnotherThreadPostsEntersThroughTheInboxTest.eachRunOfTheInboxIsRecordedAsAHistoryThatKeepsTheDoorsOrder'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/WhatAnotherThreadPostsEntersThroughTheInboxTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+
+# ── Arrival order: the drain before an event of the owner's own ────
+
+mutation_case "Kotlin puts an own event on the external queue ahead of what the inbox holds" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        port?.enqueueBegins(queued.event, queued.metadata, posted)\n        drainInbox()\n        externalEventQueue.addLast(queued)\n",
+     "        port?.enqueueBegins(queued.event, queued.metadata, posted)\n        externalEventQueue.addLast(queued)\n")
+PY

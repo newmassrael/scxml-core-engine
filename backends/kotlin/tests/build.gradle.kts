@@ -74,6 +74,16 @@ tasks.named("compileKotlin") {
 tasks.test {
     mustRunAfter(":sce-kotlin-w3c:test")
 
+    // The inbox's recorded runs write their histories to the directory this
+    // variable names (docs/adr/0147, D3; WhatAnotherThreadPostsEntersThroughTheInboxTest).
+    // The files are the task's output and Gradle does not know it: a gate that
+    // empties the directory and runs the task again would otherwise find it
+    // UP-TO-DATE, the tests unrun and the directory empty. Asking for histories
+    // therefore always runs the tests, as the forge runtime's queue histories do.
+    if (providers.environmentVariable("SCE_INBOX_HISTORY_DIR").isPresent) {
+        outputs.upToDateWhen { false }
+    }
+
     // Data this suite reads through `workingDir` at RUN time, declared so
     // Gradle knows the task is out of date when it changes.
     //

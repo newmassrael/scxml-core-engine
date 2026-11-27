@@ -550,6 +550,31 @@ sce_gate_codegen() {
     sce_codegen_require "$SCE_REPO_ROOT"
 }
 
+# Judge the inbox histories a runtime's inbox conformance test wrote into a
+# directory (docs/adr/0147, D3) with the command every runtime's inbox histories
+# are judged by, against docs/formal/InboxService.tla, and hold their count:
+#
+#   sce_gate_judge_inbox_histories <directory> <minimum> <what>
+#
+# The test writes one history a recorded run where SCE_INBOX_HISTORY_DIR names,
+# and the gate empties that directory before the run, so a file left by an
+# earlier run is never judged in place of one this run did not write. The count
+# is held as well as the verdict: a recorder that wrote fewer histories than it
+# records would otherwise pass, and an empty glob would hand the command
+# nothing to refuse. The CMake runtimes judge theirs with
+# tests/forge/conformance/check_inbox_histories.cmake, for the same reasons.
+sce_gate_judge_inbox_histories() {
+    local dir="$1" minimum="$2" what="$3" histories=()
+    shopt -s nullglob
+    histories=("$dir"/*.json)
+    shopt -u nullglob
+    (( ${#histories[@]} >= minimum )) \
+        || sce_gate_fail "$what inbox histories: ${#histories[@]} written, expected at least $minimum"
+    "$(sce_gate_codegen)" check-inbox-history "${histories[@]}" \
+        || sce_gate_fail "$what inbox histories are not linearizable to docs/formal/InboxService.tla"
+    sce_gate_step "${#histories[@]} $what inbox histories judged, all linearizable"
+}
+
 # Start the W3C BasicHTTP fixture server for the caller, and stop it when the
 # gate exits.
 #
