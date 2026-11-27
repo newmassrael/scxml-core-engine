@@ -48,7 +48,7 @@ use super::client_core::{ClientCore, CoreSettings, Drawn, Effect, Input, Lane, T
 use super::signature::{draw_nonce, normalize_target_uri, RequestSigner};
 use super::{is_path_segment, until, Credential, HttpsTransport, LinkEvent, PATH_PREFIX};
 use crate::endpoint::{Transport, TransportFailure};
-use crate::peers::{HttpsAuthenticator, Peer, PeerLink, Receipt};
+use crate::peers::{is_instance_id, HttpsAuthenticator, Peer, PeerLink, Receipt};
 use crate::reconnect::Backoff;
 
 /// How a client reaches its server.
@@ -81,6 +81,15 @@ pub struct ClientSettings {
     /// ([`HttpsClient::held`]), and each `200` that carried envelopes is told to the host
     /// ([`LinkEvent::Carried`]), whose core keeps each in its checkpoint until then.
     pub durable: bool,
+    /// The instance this machine runs as, when it is an instance of an open machine
+    /// (docs/adr/0113, D1 and D7): the host gives the id, and keeps it, and its core speaks as it
+    /// (`Router::speak_as_instance`). Every exchange then posts to
+    /// `<base>/sce-mesh/1/<own>/<instance>`; the client joins before it carries anything, makes
+    /// every other exchange under the incarnation its server offered (`If-Match`) with its
+    /// low-water mark (`Sce-Mesh-Mark`), and on a fence (`412`) tells the host what its server
+    /// had not acknowledged ([`LinkEvent::Fenced`]) and joins anew. `None` for a machine that is
+    /// not open.
+    pub instance: Option<String>,
 }
 
 impl ClientSettings {
@@ -102,6 +111,7 @@ impl ClientSettings {
             backoff: Backoff::default(),
             verify: None,
             durable: false,
+            instance: None,
         }
     }
 
@@ -156,6 +166,8 @@ pub enum ClientError {
     /// The base is not an `https://` URL, or an `http://` one for a loopback host, or carries a
     /// query or a fragment.
     BadBase(String),
+    /// The instance id is not 1 to 64 characters of `A-Z a-z 0-9 . _ -` (docs/adr/0113, D1).
+    NotAnInstanceId(String),
 }
 
 /// What the two threads share.
@@ -306,8 +318,15 @@ impl HttpsClient {
             return Err(ClientError::BadBase(settings.base));
         }
         // §mesh-22.1: every exchange posts to `<base>/sce-mesh/1/<client>`; the path is the only
-        // place the client's machine name travels.
-        let url = alloc::format!("{base}{PATH_PREFIX}{}", settings.own);
+        // place the client's machine name travels. An instance of an open machine posts under the
+        // pair `<machine>/<instance>` (docs/adr/0113, D2).
+        let url = match &settings.instance {
+            None => alloc::format!("{base}{PATH_PREFIX}{}", settings.own),
+            Some(instance) if is_instance_id(instance) => {
+                alloc::format!("{base}{PATH_PREFIX}{}/{instance}", settings.own)
+            }
+            Some(instance) => return Err(ClientError::NotAnInstanceId(instance.clone())),
+        };
         let Some(target_uri) = normalize_target_uri(&url) else {
             return Err(ClientError::BadBase(settings.base));
         };
@@ -324,6 +343,7 @@ impl HttpsClient {
             max_body_bytes: settings.max_body_bytes,
             backoff: settings.backoff,
             durable: settings.durable,
+            instance: settings.instance.is_some(),
         });
         let shared = Arc::new(Shared {
             server: settings.server,
@@ -774,6 +794,14 @@ mod tests {
             HttpsClient::start(bad_name, Arc::clone(&port), |_| {}),
             Err(ClientError::NotAPathSegment(_))
         ));
+        let bad_instance = ClientSettings {
+            instance: Some("a b".to_string()),
+            ..settings()
+        };
+        assert!(matches!(
+            HttpsClient::start(bad_instance, Arc::clone(&port), |_| {}),
+            Err(ClientError::NotAnInstanceId(_))
+        ));
         let bad_base = ClientSettings {
             base: "http://cal.example".to_string(),
             ..settings()
@@ -782,6 +810,49 @@ mod tests {
             HttpsClient::start(bad_base, port, |_| {}),
             Err(ClientError::BadBase(_))
         ));
+    }
+
+    /// docs/adr/0113, D2 and D4: an instance of an open machine posts under its pair, joins first
+    /// with a nonce and no incarnation, and makes its next exchange under the incarnation the join
+    /// was offered. Red if `start` posts under the machine's name alone, or the shell passes the
+    /// core no `instance`.
+    #[test]
+    fn an_instance_posts_under_its_pair_and_joins_before_anything_else() {
+        let port = Arc::new(Scripted::default());
+        port.polls.lock().unwrap().push_back(Ok(status(
+            200,
+            &[(
+                super::super::ETAG_HEADER,
+                super::super::entity_tag(7).as_str(),
+            )],
+        )));
+        let client = HttpsClient::start(
+            ClientSettings {
+                instance: Some("a1".to_string()),
+                ..settings()
+            },
+            Arc::clone(&port) as Arc<dyn HttpsTransport>,
+            |_| {},
+        )
+        .expect("a client of an instance");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while port.asked.lock().unwrap().len() < 2 {
+            assert!(std::time::Instant::now() < deadline, "a second exchange");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        client.stop();
+        let asked = port.asked.lock().unwrap();
+        assert_eq!(asked[0].url, "https://cal.example/api/sce-mesh/1/phone/a1");
+        assert!(header_of(&asked[0], super::super::signature::NONCE_HEADER).is_some());
+        assert_eq!(header_of(&asked[0], super::super::IF_MATCH_HEADER), None);
+        assert_eq!(
+            header_of(&asked[1], super::super::IF_MATCH_HEADER),
+            Some(super::super::entity_tag(7))
+        );
+        assert_eq!(
+            header_of(&asked[1], super::super::MARK_HEADER).as_deref(),
+            Some("1")
+        );
     }
 
     fn next(rx: &mpsc::Receiver<LinkEvent>) -> LinkEvent {

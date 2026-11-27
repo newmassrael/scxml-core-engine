@@ -451,6 +451,7 @@ fn read_settings(text: &str) -> Result<(CoreSettings, RequestKey), BrowserError>
         },
         backoff,
         durable: true,
+        instance: false,
     };
     Ok((settings, RequestKey::new(&public_key)))
 }

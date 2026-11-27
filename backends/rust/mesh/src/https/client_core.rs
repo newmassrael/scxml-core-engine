@@ -24,6 +24,16 @@
 //! request carried goes again, at once when the client now holds a value other than the one
 //! refused, and after the lane's backoff when it does not. The values are in the trace, in the
 //! requests that sign them and the answers that give them.
+//!
+//! **An instance of an open machine** (docs/adr/0113, D4 and D5; docs/formal/OpenInstances.tla).
+//! A client whose URL names the pair `<machine>/<instance>` joins before it carries anything: the
+//! poll lane's exchange is a join, which names no incarnation and carries a nonce, the same one
+//! while a join is repeated, and the send lane waits. It takes the incarnation the join is offered
+//! (`ETag`), and makes every other exchange under it (`If-Match`) with its low-water mark
+//! (`Sce-Mesh-Mark`): the lowest number of what it carried that no `200` it took covered, or of
+//! what waits to be carried. A fence of that incarnation (`412`) tells the host every envelope
+//! the server had not acknowledged (`LinkEvent::Fenced`), carries none of it again, and joins
+//! anew. The incarnation and the mark are in the trace, in the requests that carry them.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -42,11 +52,13 @@ use super::signature::{
     CONTENT_DIGEST_HEADER, NONCE_HEADER,
 };
 use super::{
-    is_epoch, join_sequence, read_retry_after, split_sequence, HttpsFailure, HttpsRequest,
-    HttpsResponse, LinkEvent, RetryAfter, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER,
-    HOLD_HEADER, IF_MATCH_HEADER,
+    entity_tag, incarnation_of, is_epoch, join_sequence, read_retry_after, split_sequence,
+    HttpsFailure, HttpsRequest, HttpsResponse, LinkEvent, RetryAfter, ACK_HEADER, CONTENT_TYPE,
+    EPOCH_HEADER, ETAG_HEADER, FIRST_HEADER, HOLD_HEADER, IF_MATCH_HEADER, MARK_HEADER,
 };
+use crate::generated::envelope::Envelope;
 use crate::reconnect::Backoff;
+use sce_forge_runtime::codec::SceCursor;
 
 /// Headers, in order, each a name and its value.
 pub(super) type Fields = Vec<(String, String)>;
@@ -75,6 +87,10 @@ pub(super) struct CoreSettings {
     pub(super) backoff: Backoff,
     /// deploy.yaml's `receipt: durable` (docs/adr/0109, D10; SCE_MESH.md section 10.11).
     pub(super) durable: bool,
+    /// Whether the client is an instance of an open machine (docs/adr/0113, D1), whose URL names
+    /// the pair: it joins before it carries anything, and makes every other exchange under the
+    /// incarnation its server offered it.
+    pub(super) instance: bool,
 }
 
 /// One of the client's two lines of exchanges, each with at most one in flight.
@@ -180,6 +196,46 @@ struct Sent {
     mark: Mark,
     fresh: u64,
     answered: Option<Answered>,
+    /// What the request asked of an instance's membership (docs/adr/0113, D4): nothing, for a
+    /// client that is no instance.
+    asked: Asked,
+}
+
+/// What an instance's request asked of its membership (docs/adr/0113, D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Asked {
+    /// Nothing: the client is no instance.
+    Nothing,
+    /// To be offered an incarnation: a join, which names none and carries nothing.
+    Join,
+    /// To be taken in under this incarnation.
+    Under(u64),
+}
+
+/// What an instance of an open machine holds of its membership of its server (docs/adr/0113, D4
+/// and D5; docs/formal/OpenInstances.tla, the variables `cinc`, `cjn` and `slot`).
+#[derive(Debug, Default)]
+struct Membership {
+    /// The incarnation its server offered it and it took, which every exchange names in
+    /// `If-Match`; `None` while it joins.
+    incarnation: Option<u64>,
+    /// The nonce of the join it waits on: drawn by its first join and carried again by a join
+    /// repeated, so that the server offers it the same incarnation (D4, `SameOffer`).
+    nonce: Option<String>,
+    /// What exchanges carried under the incarnation that no `200` it took covered yet, each
+    /// once, oldest first: what a fence reports as of unknown outcome.
+    uncovered: Vec<Vec<u8>>,
+    /// One past the highest number an exchange carried, 1 before any: the low-water mark while
+    /// nothing is uncovered or waits to be carried.
+    next: u64,
+}
+
+/// The number a sender gave `envelope` in its stream (`sequence_no`), when it is an envelope
+/// that carries one.
+fn number_of(envelope: &[u8]) -> Option<u64> {
+    Envelope::decode(&mut SceCursor::new(envelope))
+        .ok()
+        .and_then(|envelope| envelope.sequence_no)
 }
 
 /// One of the profile's checks of a signed answer: `verify_response` of a `200`, `verify_refusal`
@@ -272,11 +328,17 @@ pub(super) struct ClientCore {
     fresh_value: Option<String>,
     poll: LaneState,
     send: LaneState,
+    /// What the client holds of its membership, when it is an instance of an open machine.
+    membership: Option<Membership>,
 }
 
 impl ClientCore {
     pub(super) fn new(settings: CoreSettings) -> Self {
         let mailbox = Mailbox::new(settings.durable);
+        let membership = settings.instance.then(|| Membership {
+            next: 1,
+            ..Membership::default()
+        });
         ClientCore {
             settings,
             outbox: VecDeque::new(),
@@ -288,6 +350,7 @@ impl ClientCore {
             fresh_value: None,
             poll: LaneState::new(),
             send: LaneState::new(),
+            membership,
         }
     }
 
@@ -385,14 +448,34 @@ impl ClientCore {
     /// Begin the lane's next exchange: a poll carries nothing and is held; a send carries what the
     /// outbox holds, up to the bound of one exchange, and asks for no hold, and waits when the
     /// outbox holds nothing.
+    ///
+    /// An instance of an open machine (docs/adr/0113, D4) joins first: while it holds no
+    /// incarnation the poll lane's exchange is a join, which names none, carries nothing and asks
+    /// for no hold, and the send lane waits. Every other exchange names the incarnation in
+    /// `If-Match` and carries the instance's low-water mark ([`Self::carrying`]).
     fn begin(&mut self, lane: Lane, effects: &mut Vec<Effect>) {
-        let (carried, hold) = match lane {
-            Lane::Poll => (Vec::new(), self.settings.hold),
-            Lane::Send if self.outbox.is_empty() => {
+        let incarnation = self
+            .membership
+            .as_ref()
+            .map(|membership| membership.incarnation);
+        let (carried, hold, asked) = match (lane, incarnation) {
+            (Lane::Poll, Some(None)) => (Vec::new(), Duration::ZERO, Asked::Join),
+            (Lane::Send, Some(None)) => {
                 self.send.phase = Phase::Idle;
                 return;
             }
-            Lane::Send => (self.take_outbox(), Duration::ZERO),
+            (Lane::Send, _) if self.outbox.is_empty() => {
+                self.send.phase = Phase::Idle;
+                return;
+            }
+            (Lane::Poll, Some(Some(under))) => {
+                (Vec::new(), self.settings.hold, Asked::Under(under))
+            }
+            (Lane::Send, Some(Some(under))) => {
+                (self.take_outbox(), Duration::ZERO, Asked::Under(under))
+            }
+            (Lane::Poll, None) => (Vec::new(), self.settings.hold, Asked::Nothing),
+            (Lane::Send, None) => (self.take_outbox(), Duration::ZERO, Asked::Nothing),
         };
         let mark = self.mailbox.acknowledging();
         // §mesh-22.1: what every request carries besides its body, the media type of the
@@ -415,6 +498,13 @@ impl ClientCore {
                 fresh = self.fresh.generation;
             }
         }
+        // docs/adr/0113, D4 and D5: an exchange under an incarnation names it, and carries the
+        // lowest number whose answer the instance has not; a join names none.
+        if let Asked::Under(under) = asked {
+            let low_water = self.carrying(&carried);
+            headers.push((IF_MATCH_HEADER.to_string(), entity_tag(under)));
+            headers.push((MARK_HEADER.to_string(), low_water.to_string()));
+        }
         if let Some(authorization) = &self.settings.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
         }
@@ -430,12 +520,15 @@ impl ClientCore {
                 mark,
                 fresh,
                 answered: None,
+                asked,
             },
         };
         // §mesh-22.9: a client that verifies or signs draws a nonce for each
         // exchange, which a response's signature covers so that it answers this request and no
         // other; a client of the `key` authenticator signs the request over its body's digest.
-        if self.settings.verify.is_some() || self.settings.signs {
+        // A join carries a nonce whatever the binding, which its offer is kept for (docs/adr/0113,
+        // D4).
+        if self.settings.verify.is_some() || self.settings.signs || asked == Asked::Join {
             self.lane(lane).phase = Phase::Drawing(exchange, request);
             effects.push(Effect::Ask(lane, Task::Draw));
         } else {
@@ -475,6 +568,12 @@ impl ClientCore {
             let failure = HttpsFailure::Other("the random source could not be read".to_string());
             self.settle(lane, exchange, Err(failure), effects);
             return;
+        };
+        // docs/adr/0113, D4: a join repeated carries the nonce of the first, so that an answer lost
+        // and asked for again is the same offer.
+        let nonce = match (exchange.sent.asked, self.membership.as_mut()) {
+            (Asked::Join, Some(membership)) => membership.nonce.get_or_insert(nonce).clone(),
+            _ => nonce,
         };
         request
             .headers
@@ -569,6 +668,13 @@ impl ClientCore {
             Ok(response) => ExchangeOutcome::of_status(response.status),
             Err(_) => ExchangeOutcome::NoResponse,
         }));
+        // docs/adr/0113, D4: what an exchange under an incarnation the instance has left carried
+        // was reported by the fence that ended it, and is the core's no more.
+        let carried = if self.left(sent.asked) {
+            Vec::new()
+        } else {
+            carried
+        };
         if self.stopped {
             // The client stopped while the exchange was in flight: it has told the host its server
             // is lost, and takes nothing more in. What the mailbox sent stays there,
@@ -577,6 +683,10 @@ impl ClientCore {
             return Then::Stop;
         }
         match outcome {
+            // docs/adr/0113, D4: the answer to a join.
+            Ok(response) if response.status == 200 && sent.asked == Asked::Join => {
+                self.take_offer(lane, &sent, &response, effects)
+            }
             Ok(response) if response.status == 200 => {
                 // §mesh-22.9: a `200` that did not verify proves nothing of the server.
                 if let Some(why) = self.unverified(&sent, &response, verify_response) {
@@ -584,6 +694,13 @@ impl ClientCore {
                 }
                 self.lane(lane).failures = 0;
                 self.unauthenticated = false;
+                // docs/adr/0113, D5: a `200` the client took covers what its exchange carried,
+                // which the server keeps the answer to, so the low-water mark may pass it.
+                if let Some(membership) = self.membership.as_mut() {
+                    membership
+                        .uncovered
+                        .retain(|envelope| !carried.contains(envelope));
+                }
                 // docs/adr/0117, D4: the present value of the freshness step, which the next
                 // request signs.
                 if self.settings.signs {
@@ -629,6 +746,10 @@ impl ClientCore {
                         RetryAfter::Date(moment) => Wait::Until(moment),
                     });
                 Then::Wait(asked.unwrap_or(backed_off))
+            }
+            // docs/adr/0113, D4: the fence of an exchange made under an incarnation.
+            Ok(response) if response.status == 412 && matches!(sent.asked, Asked::Under(_)) => {
+                self.take_fence(lane, carried, &sent, &response, effects)
             }
             // A status the binding does not take in: the server answered, so the client stays as
             // ready as it was, and what the request carried was not taken (§mesh-22.4).
@@ -803,6 +924,120 @@ impl ClientCore {
         }
     }
 
+    /// An instance's exchange under its incarnation carries `carried` (docs/adr/0113, D5), each
+    /// uncovered from now until a `200` the client takes answers it. Answers the low-water mark
+    /// the exchange carries: the lowest number of what is uncovered or waits in the outbox, and
+    /// one past the highest number carried when nothing is (`Mark(i)` of
+    /// docs/formal/OpenInstances.tla). What the exchange carries is among the uncovered, so it
+    /// carries no number below its own mark; and since a `200` covers only what the server took
+    /// in, whose answer it keeps, the mark passes nothing whose answer is lost.
+    fn carrying(&mut self, carried: &[Vec<u8>]) -> u64 {
+        let Some(membership) = self.membership.as_mut() else {
+            return 1;
+        };
+        for envelope in carried {
+            if let Some(number) = number_of(envelope) {
+                membership.next = membership.next.max(number.saturating_add(1));
+            }
+            if !membership.uncovered.contains(envelope) {
+                membership.uncovered.push(envelope.clone());
+            }
+        }
+        membership
+            .uncovered
+            .iter()
+            .chain(self.outbox.iter())
+            .map(Vec::as_slice)
+            .filter_map(number_of)
+            .min()
+            .unwrap_or(membership.next)
+    }
+
+    /// Whether `asked` names an incarnation the instance holds no more: a fence ended it.
+    fn left(&self, asked: Asked) -> bool {
+        match (asked, &self.membership) {
+            (Asked::Under(under), Some(membership)) => membership.incarnation != Some(under),
+            _ => false,
+        }
+    }
+
+    /// docs/adr/0113, D4: the server answered the join the poll lane waited on `200`. One that
+    /// does not verify is distrusted as any `200` is; the incarnation one offers (`ETag`) is
+    /// taken while the instance holds none, and the lane goes on at once with the exchange that
+    /// confirms it, the send lane with what waits to be carried. A `200` that offers none takes
+    /// nothing, and the join is made again on the lane's backoff, with its nonce.
+    fn take_offer(
+        &mut self,
+        lane: Lane,
+        sent: &Sent,
+        response: &HttpsResponse,
+        effects: &mut Vec<Effect>,
+    ) -> Then {
+        if let Some(why) = self.unverified(sent, response, verify_response) {
+            return self.distrust(lane, Vec::new(), why, effects);
+        }
+        let Some(offered) = response.header(ETAG_HEADER).and_then(incarnation_of) else {
+            return Then::Wait(self.back_off(lane));
+        };
+        self.lane(lane).failures = 0;
+        self.unauthenticated = false;
+        if let Some(membership) = self.membership.as_mut() {
+            if membership.incarnation.is_none() {
+                membership.incarnation = Some(offered);
+                membership.nonce = None;
+            }
+        }
+        if !self.outbox.is_empty() && matches!(self.send.phase, Phase::Idle) {
+            self.wait(Lane::Send, Wait::For(Duration::ZERO), effects);
+        }
+        Then::Continue
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `CFenced`: the server answered an
+    /// exchange made under an incarnation `412`. A fence that does not verify is distrusted as a
+    /// `200` that does not verify is (SCE_MESH.md section 22.9: it may be an intermediary's). One
+    /// of the incarnation the instance holds ends it: what the instance holds that its server had
+    /// not acknowledged, what exchanges carried under it and what waits in the outbox, is told the
+    /// host as of unknown outcome ([`LinkEvent::Fenced`]), none of it is carried again, and the
+    /// lane goes on at once, the poll lane with a join under a nonce of its own. One of an
+    /// incarnation the instance left was told with the fence that ended it, and changes nothing.
+    fn take_fence(
+        &mut self,
+        lane: Lane,
+        carried: Vec<Vec<u8>>,
+        sent: &Sent,
+        response: &HttpsResponse,
+        effects: &mut Vec<Effect>,
+    ) -> Then {
+        if let Some(why) = self.unverified(sent, response, verify_response) {
+            return self.distrust(lane, carried, why, effects);
+        }
+        let holds = self
+            .membership
+            .as_ref()
+            .and_then(|membership| membership.incarnation);
+        if holds.map(Asked::Under) != Some(sent.asked) {
+            return Then::Continue;
+        }
+        let Some(membership) = self.membership.as_mut() else {
+            return Then::Continue;
+        };
+        membership.incarnation = None;
+        membership.nonce = None;
+        let mut unknown = mem::take(&mut membership.uncovered);
+        for envelope in carried.into_iter().chain(self.outbox.drain(..)) {
+            if !unknown.contains(&envelope) {
+                unknown.push(envelope);
+            }
+        }
+        self.lane(lane).failures = 0;
+        effects.push(Effect::Tell(LinkEvent::Fenced(
+            self.settings.server.clone(),
+            unknown,
+        )));
+        Then::Continue
+    }
+
     /// The envelopes were not sent: hand them back, oldest first.
     fn hand_back(&self, envelopes: Vec<Vec<u8>>, effects: &mut Vec<Effect>) {
         for envelope in envelopes {
@@ -894,6 +1129,7 @@ mod tests {
                 jitter: false,
             },
             durable: false,
+            instance: false,
         }
     }
 
@@ -2068,6 +2304,298 @@ mod tests {
         assert_eq!(
             signs(&signed_with(&mut core, Lane::Poll, "n3")),
             Some(fresh(5))
+        );
+    }
+
+    // ── docs/adr/0113, D4 and D5: an instance of an open machine ──
+
+    /// The settings of an instance of an open machine.
+    fn instance() -> CoreSettings {
+        CoreSettings {
+            instance: true,
+            ..settings()
+        }
+    }
+
+    /// An envelope of the instance `a1` of `phone`, numbered `number` in its stream.
+    fn numbered(number: u8) -> Vec<u8> {
+        use crate::generated::pattern_kind::PatternKind;
+        use crate::generated::payload_codec::PayloadCodec;
+        use crate::router::within;
+        Envelope {
+            id: (&[number; 16]).into(),
+            source: within("phone").unwrap(),
+            instance: Some(within("a1").unwrap()),
+            event_type: within("note").unwrap(),
+            pattern: PatternKind::FireForget,
+            datacontenttype: PayloadCodec::None,
+            sequence_no: Some(u64::from(number)),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    /// A join of an instance that carries `nonce`, acknowledging `ack` of the mailbox `epoch`.
+    fn join(nonce: &str, ack: u64, epoch: Option<&str>) -> HttpsRequest {
+        let mut asked = request(ack, epoch, 0, &[]);
+        asked
+            .headers
+            .push((NONCE_HEADER.to_string(), nonce.to_string()));
+        asked
+    }
+
+    /// The request of an instance under `incarnation` with the low-water mark `mark`.
+    fn under(
+        incarnation: u64,
+        mark: u64,
+        epoch: Option<&str>,
+        hold_ms: u64,
+        body: &[u8],
+    ) -> HttpsRequest {
+        let mut asked = request(0, epoch, hold_ms, body);
+        let authorization = asked.headers.pop().expect("the credential, last");
+        asked
+            .headers
+            .push((IF_MATCH_HEADER.to_string(), entity_tag(incarnation)));
+        asked
+            .headers
+            .push((MARK_HEADER.to_string(), mark.to_string()));
+        asked.headers.push(authorization);
+        asked
+    }
+
+    /// The server's answer to a join: a `200` that offers `incarnation`.
+    fn offer(incarnation: u64) -> HttpsResponse {
+        HttpsResponse {
+            status: 200,
+            headers: alloc::vec![(ETAG_HEADER.to_string(), entity_tag(incarnation))],
+            body: Vec::new(),
+        }
+    }
+
+    fn fenced() -> Effect {
+        counted(ExchangeOutcome::of_status(412))
+    }
+
+    /// An instance that joined with the nonce `j1` and took the incarnation 7: the poll that
+    /// confirms it is in flight.
+    fn joined() -> ClientCore {
+        let mut core = ClientCore::new(instance());
+        core.step(Input::Started);
+        core.step(Input::Woken(Lane::Poll));
+        core.step(drawn(Lane::Poll, "j1"));
+        assert_eq!(
+            core.step(answered(Lane::Poll, offer(7))),
+            [
+                counted(ExchangeOutcome::Ok),
+                carry(Lane::Poll, under(7, 1, None, 500, &[])),
+            ]
+        );
+        core
+    }
+
+    /// docs/adr/0113, D4 and D5, and docs/formal/OpenInstances.tla, `CJoin`, `COffer` and
+    /// `CSend`: an instance joins first, with a nonce whatever the binding, carrying nothing and
+    /// asking for no hold, while what it transmits waits; it takes the incarnation the join is
+    /// offered, confirms it with its next exchange, and makes every exchange under it with its
+    /// low-water mark, the lowest number whose answer it has not, which passes a number once a
+    /// `200` covered it. Red if `begin` carries before the join, names no incarnation or mark,
+    /// or `carrying` holds the mark below what a `200` covered or above what it carries.
+    #[test]
+    fn an_instance_joins_takes_its_offer_and_carries_under_it_with_its_mark() {
+        let mut core = ClientCore::new(instance());
+        assert_eq!(core.step(Input::Started), [wait_ms(Lane::Poll, 0)]);
+        assert_eq!(
+            core.step(Input::Woken(Lane::Poll)),
+            [Effect::Ask(Lane::Poll, Task::Draw)],
+            "a join carries a nonce"
+        );
+        let five = numbered(5);
+        assert_eq!(
+            core.step(Input::Transmitted(five.clone())),
+            [wait_ms(Lane::Send, 0)]
+        );
+        assert_eq!(
+            core.step(Input::Woken(Lane::Send)),
+            NOTHING,
+            "nothing is carried before the join"
+        );
+        assert_eq!(
+            core.step(drawn(Lane::Poll, "j1")),
+            [carry(Lane::Poll, join("j1", 0, None))]
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, offer(7))),
+            [
+                counted(ExchangeOutcome::Ok),
+                wait_ms(Lane::Send, 0),
+                carry(Lane::Poll, under(7, 5, None, 500, &[])),
+            ],
+            "the mark is the lowest number waiting to be carried"
+        );
+        assert_eq!(
+            core.step(Input::Woken(Lane::Send)),
+            [carry(Lane::Send, under(7, 5, None, 0, &five))]
+        );
+        assert_eq!(
+            core.step(answered(Lane::Send, ok(None, &[]))),
+            [
+                counted(ExchangeOutcome::Ok),
+                told(LinkEvent::Ready("cloud".to_string())),
+            ]
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, ok(None, &[]))),
+            [
+                counted(ExchangeOutcome::Ok),
+                carry(Lane::Poll, under(7, 6, Some(EPOCH), 500, &[])),
+            ],
+            "a 200 covered 5: the mark passes it"
+        );
+    }
+
+    /// docs/adr/0113, D4: a join repeated after its answer was lost carries the nonce of the first,
+    /// so that the server offers the same incarnation. Red if `take_drawn` gives a repeated join
+    /// the nonce drawn for it.
+    #[test]
+    fn a_join_repeated_carries_the_nonce_of_the_first() {
+        let mut core = begun(instance());
+        core.step(drawn(Lane::Poll, "j1"));
+        assert_eq!(
+            core.step(failed(Lane::Poll)),
+            [
+                counted(ExchangeOutcome::NoResponse),
+                wait_ms(Lane::Poll, 250)
+            ]
+        );
+        assert_eq!(
+            core.step(Input::Woken(Lane::Poll)),
+            [Effect::Ask(Lane::Poll, Task::Draw)]
+        );
+        assert_eq!(
+            core.step(drawn(Lane::Poll, "j2")),
+            [carry(Lane::Poll, join("j1", 0, None))]
+        );
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `CFenced`: a fence of the incarnation
+    /// the instance holds tells the host every envelope its server had not acknowledged, what
+    /// exchanges carried and what waits alike, carries none of it again, and joins anew under a
+    /// nonce of its own; the fence of the other lane's exchange under the same incarnation
+    /// changes nothing more. Red if `take_fence` keeps the incarnation, hands what was carried
+    /// back to be carried again, or tells a fence twice.
+    #[test]
+    fn a_fence_tells_what_was_not_acknowledged_and_the_instance_joins_anew() {
+        let mut core = joined();
+        let (five, six, seven) = (numbered(5), numbered(6), numbered(7));
+        core.step(Input::Transmitted(five.clone()));
+        assert_eq!(
+            core.step(Input::Woken(Lane::Send)),
+            [carry(Lane::Send, under(7, 5, None, 0, &five))]
+        );
+        assert_eq!(core.step(Input::Transmitted(six.clone())), NOTHING);
+        assert_eq!(
+            core.step(answered(Lane::Send, status(412, &[]))),
+            [
+                fenced(),
+                told(LinkEvent::Fenced(
+                    "cloud".to_string(),
+                    alloc::vec![five, six]
+                )),
+            ]
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, status(412, &[]))),
+            [fenced(), Effect::Ask(Lane::Poll, Task::Draw)],
+            "told once; the poll lane joins"
+        );
+        assert_eq!(
+            core.step(drawn(Lane::Poll, "j2")),
+            [carry(Lane::Poll, join("j2", 0, None))]
+        );
+        assert_eq!(
+            core.step(Input::Transmitted(seven.clone())),
+            [wait_ms(Lane::Send, 0)]
+        );
+        assert_eq!(core.step(Input::Woken(Lane::Send)), NOTHING);
+        assert_eq!(
+            core.step(answered(Lane::Poll, offer(8))),
+            [
+                counted(ExchangeOutcome::Ok),
+                wait_ms(Lane::Send, 0),
+                carry(Lane::Poll, under(8, 7, None, 500, &[])),
+            ]
+        );
+        assert_eq!(
+            core.step(Input::Woken(Lane::Send)),
+            [carry(Lane::Send, under(8, 7, None, 0, &seven))],
+            "only what the next incarnation's instance transmitted"
+        );
+    }
+
+    /// docs/adr/0113, D4 and SCE_MESH.md section 22.9: under `verify:` a join's offer is taken
+    /// only signed for the join, and a fence that does not verify proves nothing: it is told as
+    /// row 19 once, and the incarnation stands. Red if `take_fence` reads a fence before it
+    /// verifies it.
+    #[test]
+    fn a_fence_that_does_not_verify_ends_nothing() {
+        let mut core = begun(CoreSettings {
+            verify: Some(alloc::vec![TrustedKey {
+                id: "server-2026".to_string(),
+                public_key: KeyPair::from_seed(&[3u8; 32]).public_key(),
+            }]),
+            ..instance()
+        });
+        core.step(drawn(Lane::Poll, "j1"));
+        let answered_join = Answered {
+            target_uri: URL.to_string(),
+            ack: "0".to_string(),
+            nonce: "j1".to_string(),
+            if_match: None,
+        };
+        let mut headers = alloc::vec![
+            (CONTENT_DIGEST_HEADER.to_string(), content_digest(&[])),
+            (ETAG_HEADER.to_string(), entity_tag(7)),
+        ];
+        let signature = signer()
+            .sign_answer(200, &headers, &answered_join)
+            .expect("an offer is signed");
+        headers.extend(signature);
+        let offered = HttpsResponse {
+            status: 200,
+            headers,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            core.step(answered(Lane::Poll, offered)),
+            [
+                counted(ExchangeOutcome::Ok),
+                Effect::Ask(Lane::Poll, Task::Draw)
+            ]
+        );
+        let asked = carried(&core.step(drawn(Lane::Poll, "n2")));
+        assert_eq!(
+            field_value(&asked.headers, IF_MATCH_HEADER),
+            Some(entity_tag(7))
+        );
+        let effects = core.step(answered(Lane::Poll, status(412, &[])));
+        assert!(
+            matches!(
+                effects.as_slice(),
+                [
+                    _,
+                    Effect::Tell(LinkEvent::Unauthenticated(..)),
+                    Effect::Ask(Lane::Poll, Task::Wake(_))
+                ]
+            ),
+            "{effects:?}"
+        );
+        core.step(Input::Woken(Lane::Poll));
+        let again = carried(&core.step(drawn(Lane::Poll, "n3")));
+        assert_eq!(
+            field_value(&again.headers, IF_MATCH_HEADER),
+            Some(entity_tag(7)),
+            "the incarnation stands"
         );
     }
 }
