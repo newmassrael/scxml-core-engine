@@ -8,18 +8,16 @@
 (* receiver (arrived) may come late, twice, out of order or not at all.    *)
 (* The machine is given envelopes (delivered) in increasing number, so     *)
 (* each at most once. A number may instead be told lost (told), and never  *)
-(* both. From the first number the machine is given up to the last it was  *)
-(* given or told, every number is one or the other: nothing is passed over *)
-(* silently. A number is told lost only when it had not arrived by then,   *)
-(* so an envelope that reached the receiver is never given up for one that *)
-(* came after it. A number below the first the machine is given is         *)
-(* neither: the receiver joined the stream there, at the first envelope    *)
-(* that reached it.                                                        *)
+(* both. Every number from the first the sender sends up to the last the   *)
+(* machine was given or told is one or the other: nothing is passed over   *)
+(* silently, the first numbers of the stream included, whatever arrives    *)
+(* first and whenever the receiver came to listen. A number is told lost   *)
+(* only when it had not arrived by then, so an envelope that reached the   *)
+(* receiver is never given up for one that came after it.                  *)
 (*                                                                         *)
 (* Where the stream is durable (Durable, SCE_MESH.md section 10.11) the    *)
 (* sender keeps what it sent until it is received, so nothing is told      *)
-(* lost and the first number the machine is given is the first the sender  *)
-(* sent.                                                                   *)
+(* lost.                                                                   *)
 (*                                                                         *)
 (* Taken as given:                                                         *)
 (*   Nothing: it is what a user may rely on, and names no mechanism.       *)
@@ -53,28 +51,20 @@ vars == <<sent, arrived, delivered, told>>
 \* @type: (Seq(Int)) => Set(Int);
 Elems(s) == {s[k] : k \in DOMAIN s}
 
-\* @type: (Set(Int)) => Int;
-Max(s) == CHOOSE n \in s : \A m \in s : m <= n
-
 \* @type: (Seq(Int), Seq(Int)) => Bool;
 Prefix(a, b) == Len(a) <= Len(b) /\ SubSeq(b, 1, Len(a)) = a
 
 \* What the machine was given and told, d and t, as the stream allows it: in increasing number,
-\* nothing both, every number from the first given to the last accounted for, and, on a durable
-\* stream, nothing told and the first number the first given.
+\* nothing both, every number from the first the sender sends to the last accounted for, and, on a
+\* durable stream, nothing told.
 \* @type: (Seq(Int), Set(Int)) => Bool;
 Ordered(d, t) ==
     LET accounted == Elems(d) \cup t IN
     /\ \A i, j \in DOMAIN d : i < j => d[i] < d[j]
     /\ Elems(d) \cap t = {}
     /\ accounted \subseteq 1..sent
-    /\ accounted # {} =>
-           /\ d # <<>>
-           /\ \A n \in accounted : d[1] <= n
-           /\ \A n \in d[1]..Max(accounted) : n \in accounted
-    /\ Durable =>
-           /\ t = {}
-           /\ d # <<>> => d[1] = 1
+    /\ \A n \in accounted : 1..n \subseteq accounted
+    /\ Durable => t = {}
 
 Init ==
     /\ sent = 0
