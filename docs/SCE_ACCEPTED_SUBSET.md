@@ -2582,6 +2582,29 @@ not say which file a node is in.
 `sce-build/tests/a_design_of_several_documents_is_measured_together.rs`
 holds each of these.
 
+With `--with-imports` the design is the documents named and every document
+they reach, found by the walk `generate --with-imports` makes: what an
+`<sce:import>` names, transitively, the element a collection names, and a
+statechart a statechart starts. A standard-library document the walk reaches
+is not part of it: it has no file an acceptance could pin and is not where an
+owner's requirements are claimed. `acceptance-report`, `accept` and
+`acceptance-check` take the same set as `requirements`, read by one reader
+(`sce_build::design_set`). The report credits a requirement wherever in the
+set it is claimed, a requirement claimed in an imported algorithm among them,
+and shows its evidence document by document (`evidence in
+algorithm_outer.scxml:`), each open matter led by its document. The
+acceptance record names the documents (`documents`, when more than one was
+named, the entry first) and the reach (`with_imports`), pins every file any
+of them reads, and is checked by reading the same set again, so a change to
+any input of it lapses the acceptance and a document of the set that is gone
+is a lapse. `acceptance-delta` compares such a record with its own documents
+and refuses a `--design` draft of one document against it. A document named
+alone, without `--with-imports`, is the design it always was: its page, its
+record and its classification are unchanged, and a claim made in what it
+imports is not credited to it.
+`sce-build/tests/an_acceptance_answers_for_a_design_of_several_documents.rs`
+holds each of these.
+
 ⚠ "Opaque" is checked, not merely promised:
 `sce-build/tests/requirement_id_opacity.rs` drives ten id
 spellings through the parser — a leading digit, a bare number,

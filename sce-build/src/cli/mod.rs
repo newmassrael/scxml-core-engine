@@ -3257,9 +3257,24 @@ enum Commands {
     /// Writes an acceptance record: the manifest's revision and bytes, the
     /// variant, and every file the parse read, each by sha256, named
     /// relative to `--root`. `acceptance-check` re-checks it.
+    ///
+    /// Several documents, or one with `--with-imports`, are one design, accepted
+    /// once: the record names them, every file any of them reads is pinned, and
+    /// a re-check reads the same set again, so a change to any input of it lapses
+    /// the acceptance.
     Accept {
-        /// SCXML file path — the entry document of the accepted design
-        scxml: String,
+        /// SCXML file path — the entry document of the accepted design, then
+        /// any other document of it.
+        #[arg(required = true, num_args = 1..)]
+        scxml: Vec<String>,
+        /// Read the design as the documents named and every document they
+        /// reach: what an `<sce:import>` names, transitively, the element a
+        /// collection names, and a statechart a statechart starts (the set
+        /// `generate --with-imports` generates), so a requirement claimed in an
+        /// imported algorithm is claimed by the design, and every document
+        /// reached is pinned. A standard document is not part of it.
+        #[arg(long)]
+        with_imports: bool,
         /// Closed requirement set the acceptance was measured against.
         #[arg(long)]
         manifest: String,
@@ -3424,7 +3439,9 @@ enum Commands {
         #[arg(long)]
         root: String,
         /// The design to compare with, when not the record's own document: another
-        /// draft of the same design.
+        /// draft of the same design. A draft is one document read alone, so a
+        /// record of several documents, or of one read with its imports, is
+        /// compared with its own documents only.
         #[arg(long, value_name = "SCXML")]
         design: Option<String>,
     },
@@ -4766,6 +4783,7 @@ pub fn main() {
         ),
         Commands::Accept {
             scxml,
+            with_imports,
             manifest,
             sidecar,
             variant,
@@ -4780,6 +4798,7 @@ pub fn main() {
         } => cmd_accept(
             &AcceptRequest {
                 scxml: &scxml,
+                with_imports,
                 manifest: &manifest,
                 sidecar: sidecar.as_deref(),
                 variant: &variant,
@@ -13219,7 +13238,10 @@ fn check_scenario_set(sources: &[(crate::acceptance_record::SourceRole, PathBuf)
 
 /// What `accept` is asked to pin, and where it writes the record.
 struct AcceptRequest<'a> {
-    scxml: &'a str,
+    /// The documents of the design, the entry first.
+    scxml: &'a [String],
+    /// Whether what they reach is part of the design ([`crate::design_set`]).
+    with_imports: bool,
     manifest: &'a str,
     /// The manifest's sidecar, whose digest is pinned beside the manifest's.
     sidecar: Option<&'a str>,
@@ -13239,6 +13261,7 @@ fn cmd_accept(
 ) {
     let AcceptRequest {
         scxml,
+        with_imports,
         manifest,
         sidecar,
         variant,
@@ -13252,7 +13275,7 @@ fn cmd_accept(
     // load reports the loader's refusal. Taking the record would refuse both
     // as one opaque failure to pin a design, which tells the caller which
     // command failed and nothing about why.
-    let design = read_design(scxml, error_format);
+    let designs = read_design_set(scxml, with_imports, error_format);
     let loaded_manifest = load_requirement_manifest(manifest);
     if let Some(sidecar) = sidecar {
         let _ = load_requirement_sidecar(sidecar, &loaded_manifest);
@@ -13262,35 +13285,39 @@ fn cmd_accept(
     // A design is accepted under the profile it is held to. The profile is
     // read through its own door, and a document that departs from it is
     // refused here: the record would say the owner accepted a design under a
-    // profile that design breaks. A forge document the profile does not reach
-    // is judged by nothing, and is pinned all the same, so the record still
-    // answers for this profile and no other.
+    // profile that design breaks. Every document of the design is judged,
+    // and every finding of every one reported. A forge document the profile
+    // does not reach is judged by nothing, and is pinned all the same, so the
+    // record still answers for this profile and no other.
     let profile_path = sources
         .iter()
         .find(|(role, _)| *role == crate::acceptance_record::SourceRole::Profile)
         .map(|(_, path)| path.to_string_lossy().into_owned());
     if let Some(profile) = load_profile(profile_path.as_deref()) {
-        let judged = match &design {
-            Design::Statechart(model) => Judged::Statechart(model.as_ref(), scxml),
-            Design::Forge(parsed) => Judged::Forge(parsed.as_ref(), scxml),
-        };
-        judge_under_profile(&profile, &[judged], error_format);
+        let judged: Vec<Judged<'_>> = designs
+            .iter()
+            .map(|(document, design)| match design {
+                Design::Statechart(model) => Judged::Statechart(model.as_ref(), document),
+                Design::Forge(parsed) => Judged::Forge(parsed.as_ref(), document),
+            })
+            .collect();
+        judge_under_profile(&profile, &judged, error_format);
     }
 
     let sources: Vec<_> = sources
         .iter()
         .map(|(role, path)| (*role, path.as_path()))
         .collect();
-    let record = crate::acceptance_record::AcceptanceRecord::take_authored(
+    let record = crate::acceptance_record::AcceptanceRecord::take_design(
         Path::new(root),
-        Path::new(scxml),
+        &design_of(scxml, with_imports),
         Path::new(manifest),
         variant,
         &sources,
     )
     .unwrap_or_else(|e| {
         cli_exit(CliError::ClosureInputUnusable {
-            path: scxml.to_string(),
+            path: scxml.join(" "),
             what: "acceptance record",
             kind: e.kind(),
             detail: e.to_string(),
@@ -13635,11 +13662,17 @@ fn cmd_acceptance_delta(record: &str, root: &str, design: Option<&str>) {
     });
     let loaded = AcceptanceRecord::from_json(&text)
         .unwrap_or_else(|e| unusable(record, "acceptance record", e.kind(), e.to_string()));
-    let document = match design {
-        Some(path) => PathBuf::from(path),
-        None => Path::new(root).join(&loaded.document),
+    // The record's own design is read as the record names it, a set read as a
+    // set; a draft names one document, and is compared only with a record of
+    // one document read alone.
+    let (document, compared) = match design {
+        Some(path) => (PathBuf::from(path), loaded.evidence_delta(Path::new(path))),
+        None => (
+            Path::new(root).join(&loaded.document),
+            loaded.evidence_delta_at(Path::new(root)),
+        ),
     };
-    let delta = loaded.evidence_delta(&document).unwrap_or_else(|e| {
+    let delta = compared.unwrap_or_else(|e| {
         unusable(
             &document.display().to_string(),
             "design to compare",

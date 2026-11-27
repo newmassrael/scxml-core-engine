@@ -191,6 +191,37 @@
 //! closure does not follow is not in them. Optional and omitted when empty, so a
 //! record taken before they existed keeps its bytes.
 //!
+//! # A design of several documents
+//!
+//! ```text
+//!   documents      every document the caller     the design is a set: a claim made
+//!                  named, `document` first,       in an imported algorithm or in a
+//!                  when there is more than one    second statechart is the design's
+//!   with_imports   true when the set also holds   the set a build of it generates,
+//!                  every document they reach      re-walked on every re-check
+//! ```
+//!
+//! A design is often more than one document ([`crate::design_set`]), and an
+//! acceptance of it is taken once, over the same set `requirements` measures
+//! and `acceptance-report` shows: the claims of every document are credited,
+//! every file any of them reads is in `inputs`, and a re-check reads the SAME
+//! set again, so an edit to any input of the set lapses the acceptance, and a
+//! document the set reaches now and did not then is `added`.
+//!
+//! With several documents, each row's place in `evidence` and `unclaimed`
+//! names its document, as a node path of `requirements` does
+//! (`front.scxml#states.idle`): the digest of such a row is taken over the
+//! document's path, relative to the root, and the row's own digest, since
+//! `states.idle` is a place in every statechart and the same row in two
+//! documents is two rows. The open matters are led by their document for the
+//! same reason. A set that turns out to hold one document is that document
+//! alone, row for row.
+//!
+//! ⚠ Both fields are optional and omitted for a design of one document read
+//! alone, so a record of one document keeps the bytes it always had, and means
+//! what it always meant: the imports of its document are pinned as inputs, and
+//! a claim made in one of them is not credited, as it never was.
+//!
 //! # Deliberately not `Deserialize`
 //!
 //! [`AcceptanceRecord`] is obtained from [`AcceptanceRecord::take`] or
@@ -204,6 +235,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::design_set::DesignSet;
 use crate::generator_witness::{hex_encode, sha256_bytes};
 use crate::parser::SCXMLParser;
 use crate::requirement_manifest::{ManifestError, RequirementManifest};
@@ -425,11 +457,19 @@ pub struct EvidenceDelta {
 pub struct AcceptanceRecord {
     /// The name the acceptance was given for. Compared verbatim.
     pub variant: String,
-    /// The entry document, relative to the root.
+    /// The entry document, relative to the root: the first the caller named.
     pub document: String,
+    /// Every document the caller named, relative to the root, in the order
+    /// named, `document` first. Empty when the caller named one document, which
+    /// is then `document` alone. See "A design of several documents" in the
+    /// module docs.
+    pub documents: Vec<String>,
+    /// Whether the design is the named documents and every document they reach
+    /// ([`crate::design_set`]), read again so on every re-check.
+    pub with_imports: bool,
     pub manifest: ManifestPin,
-    /// Every file the parse read, the entry document included, sorted by
-    /// path.
+    /// Every file the parse of each document of the design read, every document
+    /// itself included, sorted by path.
     pub inputs: Vec<InputPin>,
     /// The specification, the decision record and the authoring profile the
     /// design was authored from and held to, sorted by role and path. Empty when the record was taken
@@ -497,6 +537,10 @@ struct RecordWire {
     v: u32,
     variant: String,
     document: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    documents: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    with_imports: bool,
     manifest: ManifestPin,
     inputs: Vec<InputPin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -548,8 +592,8 @@ pub enum Lapse {
     },
     /// The parse now reads a file the acceptance never saw.
     Added { path: String },
-    /// The entry document no longer parses, so which files make up the
-    /// design cannot be said.
+    /// A document of the design no longer parses, or names a document that
+    /// cannot be read, so which files make up the design cannot be said.
     Unparseable { path: String, detail: String },
     /// A file the design was authored from is gone (`current_sha256` is
     /// `None`) or its bytes moved: the specification or the owner's answers
@@ -724,6 +768,12 @@ pub enum RecordError {
     /// manifest's own, or cannot be read. The sidecar loader's refusal,
     /// unchanged, so the same sidecar is one diagnostic whichever door read it.
     Words(SidecarError),
+    /// A draft of one document was offered for comparison with a record of a
+    /// design of several, or of one read with what it imports: the draft is
+    /// not the design the record names.
+    OfSeveralDocuments {
+        document: String,
+    },
 }
 
 impl fmt::Display for RecordError {
@@ -749,6 +799,13 @@ impl fmt::Display for RecordError {
             }
             RecordError::Source { detail } => write!(f, "{detail}"),
             RecordError::Words(inner) => write!(f, "{inner}"),
+            RecordError::OfSeveralDocuments { document } => write!(
+                f,
+                "the record is of a design read as a set, `{document}` first (several \
+                 documents, or one with what it imports), and a draft of one document read \
+                 alone is not that design; compare the record with its own documents under \
+                 the root"
+            ),
         }
     }
 }
@@ -770,6 +827,7 @@ impl RecordError {
             RecordError::Format { .. } => "format",
             RecordError::Source { .. } => "source",
             RecordError::Words(inner) => inner.kind(),
+            RecordError::OfSeveralDocuments { .. } => "design-of-several-documents",
         }
     }
 }
@@ -798,6 +856,29 @@ impl AcceptanceRecord {
         variant: &str,
         sources: &[(SourceRole, &Path)],
     ) -> Result<Self, RecordError> {
+        Self::take_design(
+            root,
+            &DesignSet::one(document.display().to_string()),
+            manifest,
+            variant,
+            sources,
+        )
+    }
+
+    /// [`Self::take_authored`] for a design of one document or several
+    /// ([`crate::design_set`]): every document of `design` is read, a claim is
+    /// credited wherever in it it is made, and every file any of them reads is
+    /// pinned. See "A design of several documents" in the module docs.
+    ///
+    /// [`DesignSet::one`] is the design `take_authored` takes, and the record of
+    /// it is the record `take_authored` writes, byte for byte.
+    pub fn take_design(
+        root: &Path,
+        design: &DesignSet,
+        manifest: &Path,
+        variant: &str,
+        sources: &[(SourceRole, &Path)],
+    ) -> Result<Self, RecordError> {
         check_variant(variant)?;
         let root = canonical(root)?;
         let loaded = RequirementManifest::load(manifest).map_err(RecordError::Manifest)?;
@@ -808,15 +889,25 @@ impl AcceptanceRecord {
             sha256: file_sha256(manifest)?,
             sidecar_sha256: None,
         };
-        let document_path = canonical(document)?;
+        // Each named document once, in the order named: a document named twice
+        // is one member of the design.
+        let mut named: Vec<PathBuf> = Vec::with_capacity(design.named().len());
+        for document in design.named() {
+            let path = canonical(Path::new(document))?;
+            if !named.contains(&path) {
+                named.push(path);
+            }
+        }
         // A design accepted under a profile says what it left open the way a
         // run under that profile does: an `sce:assumed` that cites one of its
         // house rules is the owner's standing answer, not a value chosen
         // without one.
         let house_rules = house_rules_of(sources)?;
         let house_rule_ids: Vec<&str> = house_rules.iter().map(|rule| rule.id.as_str()).collect();
-        let (inputs, reading) = read_design(&root, &document_path, &house_rule_ids)
-            .map_err(|failure| failure.into_take_error(document))?;
+        let read = read_members(&root, &named, design.with_imports(), &house_rule_ids)
+            .map_err(DesignFailure::into_take_error)?;
+        let inputs = pin_inputs(&root, &read.files)?;
+        let reading = read.reading;
         let applied_rules = applied_rules_of(&house_rules, &reading.cited);
         let open_at_acceptance = reading.open;
         let (evidence, unclaimed) = reading.evidence.digests();
@@ -832,9 +923,24 @@ impl AcceptanceRecord {
         }
         authored_from.sort();
         check_sources(&authored_from)?;
+        let mut documents = Vec::with_capacity(named.len());
+        for path in &named {
+            documents.push(relative(&root, path)?);
+        }
+        let document = documents
+            .first()
+            .cloned()
+            .ok_or_else(|| RecordError::Format {
+                detail: "a design is read from at least one document".to_string(),
+            })?;
+        if documents.len() == 1 {
+            documents.clear();
+        }
         Ok(AcceptanceRecord {
             variant: variant.to_string(),
-            document: relative(&root, &document_path)?,
+            document,
+            documents,
+            with_imports: design.with_imports(),
             manifest: manifest_pin,
             inputs,
             authored_from,
@@ -846,6 +952,22 @@ impl AcceptanceRecord {
             succeeds: None,
             channel: None,
         })
+    }
+
+    /// The documents the caller named, relative to the root, `document` first:
+    /// `document` alone for a record of one.
+    pub fn named_documents(&self) -> &[String] {
+        if self.documents.is_empty() {
+            std::slice::from_ref(&self.document)
+        } else {
+            &self.documents
+        }
+    }
+
+    /// Whether the record is of a design other than one document read alone:
+    /// several named, or one read with what it reaches.
+    pub fn is_of_a_set(&self) -> bool {
+        !self.documents.is_empty() || self.with_imports
     }
 
     /// The same record, also pinning the sentences behind the manifest's ids.
@@ -920,11 +1042,39 @@ impl AcceptanceRecord {
     /// ⚠ Refused for a record that states no evidence at all against a design that
     /// has rows: it was taken before records kept them, and reading it as "every
     /// requirement is new" would call the whole design changed.
+    ///
+    /// ⚠ Refused for a record of a set ([`Self::is_of_a_set`]): a draft of one
+    /// document read alone is not the design that record names, and comparing
+    /// the two would call every claim made elsewhere in the set dropped. Such a
+    /// record is compared with its own documents by [`Self::evidence_delta_at`].
     pub fn evidence_delta(&self, document: &Path) -> Result<EvidenceDelta, RecordError> {
+        if self.is_of_a_set() {
+            return Err(RecordError::OfSeveralDocuments {
+                document: self.document.clone(),
+            });
+        }
         let document = canonical(document)?;
-        let (_, reading) =
-            design_inputs(&document, &[]).map_err(|failure| failure.into_take_error(&document))?;
-        let now = reading.evidence;
+        let (_, reading) = design_inputs(&document, &[]).map_err(DesignFailure::into_take_error)?;
+        self.delta_against(reading.evidence)
+    }
+
+    /// [`Self::evidence_delta`] against the record's own design as it is now
+    /// under `root`: its documents, and what they reach when it was taken with
+    /// its imports, read as a re-check reads them. For a record of one document
+    /// read alone it is `evidence_delta` of that document under `root`.
+    pub fn evidence_delta_at(&self, root: &Path) -> Result<EvidenceDelta, RecordError> {
+        let root = canonical(root)?;
+        let mut named = Vec::with_capacity(self.named_documents().len());
+        for document in self.named_documents() {
+            named.push(canonical(&root.join(document))?);
+        }
+        let read = read_members(&root, &named, self.with_imports, &[])
+            .map_err(DesignFailure::into_take_error)?;
+        self.delta_against(read.reading.evidence)
+    }
+
+    /// The record's evidence against `now`, the evidence of the design as it is.
+    fn delta_against(&self, now: Evidence) -> Result<EvidenceDelta, RecordError> {
         if self.evidence.is_empty()
             && self.unclaimed.is_empty()
             && (!now.by_requirement.is_empty() || !now.unclaimed.is_empty())
@@ -1098,22 +1248,39 @@ impl AcceptanceRecord {
             }
         }
 
-        let document_path = root.join(&self.document);
-        if !document_path.is_file() {
-            lapses.push(Lapse::Missing {
-                path: self.document.clone(),
-            });
+        // Every document the caller named is read again. One that is gone leaves
+        // no design to read, and is said with the rest of what moved.
+        let mut named = Vec::with_capacity(self.named_documents().len());
+        let mut gone = false;
+        for document in self.named_documents() {
+            let path = root.join(document);
+            if path.is_file() {
+                named.push(canonical(&path)?);
+            } else {
+                lapses.push(Lapse::Missing {
+                    path: document.clone(),
+                });
+                gone = true;
+            }
+        }
+        if gone {
             return Ok(lapses);
         }
         // What was open is a fact about the moment of acceptance and not a
         // thing to re-judge: a design that changed is a lapse by its bytes.
-        let current = match read_design(&root, &canonical(&document_path)?, &[]) {
-            Ok((inputs, _reading)) => inputs,
-            Err(DesignFailure::Parse(detail)) => {
-                lapses.push(Lapse::Unparseable {
-                    path: self.document.clone(),
-                    detail,
-                });
+        let current = match read_members(&root, &named, self.with_imports, &[]) {
+            Ok(read) => pin_inputs(&root, &read.files)?,
+            Err(DesignFailure::Parse { path, detail }) => {
+                // A document the record names is said as the record names it.
+                let path = named
+                    .iter()
+                    .zip(self.named_documents())
+                    .find(|(read, _)| **read == path)
+                    .map_or_else(
+                        || relative(&root, &path).unwrap_or_else(|_| path.display().to_string()),
+                        |(_, recorded)| recorded.clone(),
+                    );
+                lapses.push(Lapse::Unparseable { path, detail });
                 return Ok(lapses);
             }
             Err(DesignFailure::Record(error)) => return Err(error),
@@ -1188,6 +1355,8 @@ impl AcceptanceRecord {
             v: RECORD_VERSION,
             variant: self.variant.clone(),
             document: self.document.clone(),
+            documents: self.documents.clone(),
+            with_imports: self.with_imports,
             manifest: self.manifest.clone(),
             inputs: self.inputs.clone(),
             authored_from: self.authored_from.clone(),
@@ -1223,6 +1392,7 @@ impl AcceptanceRecord {
         }
         check_variant(&wire.variant)?;
         for path in std::iter::once(&wire.document)
+            .chain(wire.documents.iter())
             .chain(std::iter::once(&wire.manifest.path))
             .chain(wire.inputs.iter().map(|pin| &pin.path))
             .chain(wire.authored_from.iter().map(|pin| &pin.path))
@@ -1255,6 +1425,7 @@ impl AcceptanceRecord {
                 detail: format!("the inputs do not pin the document `{}`", wire.document),
             });
         }
+        check_documents(&wire.document, &wire.documents, &wire.inputs)?;
         let mut inputs = wire.inputs;
         let before = inputs.len();
         inputs.sort();
@@ -1298,6 +1469,8 @@ impl AcceptanceRecord {
         Ok(AcceptanceRecord {
             variant: wire.variant,
             document: wire.document,
+            documents: wire.documents,
+            with_imports: wire.with_imports,
             manifest: wire.manifest,
             inputs,
             authored_from,
@@ -1310,6 +1483,48 @@ impl AcceptanceRecord {
             channel: wire.channel,
         })
     }
+}
+
+/// The documents a record names, as read back: none beyond `document` for a
+/// design of one, and otherwise at least two, `document` first, none twice,
+/// each pinned among the inputs. Refuses what `take_design` would not write.
+fn check_documents(
+    document: &str,
+    documents: &[String],
+    inputs: &[InputPin],
+) -> Result<(), RecordError> {
+    if documents.is_empty() {
+        return Ok(());
+    }
+    if documents.len() == 1 {
+        return Err(RecordError::Format {
+            detail: "`documents` names one document; a design of one names it as `document` \
+                     alone"
+                .to_string(),
+        });
+    }
+    if documents[0] != document {
+        return Err(RecordError::Format {
+            detail: format!(
+                "`documents` begins with `{}`, and the record's `document` is `{document}`",
+                documents[0]
+            ),
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for named in documents {
+        if !seen.insert(named.as_str()) {
+            return Err(RecordError::Format {
+                detail: format!("`{named}` is named twice among the documents"),
+            });
+        }
+        if !inputs.iter().any(|pin| pin.path == *named) {
+            return Err(RecordError::Format {
+                detail: format!("the inputs do not pin the document `{named}`"),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// The rules an `authored_from` list keeps, sorted: no path twice, and one
@@ -1353,17 +1568,21 @@ fn check_sources(sorted: &[SourcePin]) -> Result<(), RecordError> {
 
 /// Why the design's files could not be read.
 enum DesignFailure {
-    /// The document does not parse. A lapse when re-checking, a refusal
-    /// when taking.
-    Parse(String),
+    /// A document of the design does not parse, or names a document that
+    /// cannot be read: `path` is the document. A lapse when re-checking, a
+    /// refusal when taking.
+    Parse {
+        path: PathBuf,
+        detail: String,
+    },
     Record(RecordError),
 }
 
 impl DesignFailure {
-    fn into_take_error(self, document: &Path) -> RecordError {
+    fn into_take_error(self) -> RecordError {
         match self {
-            DesignFailure::Parse(detail) => RecordError::Parse {
-                path: document.display().to_string(),
+            DesignFailure::Parse { path, detail } => RecordError::Parse {
+                path: path.display().to_string(),
                 detail,
             },
             DesignFailure::Record(error) => error,
@@ -1427,10 +1646,33 @@ fn applied_rules_of(
 /// What reading a design says besides the files it read: what it leaves to a
 /// person ([`crate::open_matters`]) and how many places cite each house rule of
 /// the profile it is read under.
+#[derive(Default)]
 struct DesignReading {
     open: Vec<crate::open_matters::OpenMatter>,
     cited: Vec<(String, usize)>,
     evidence: Evidence,
+}
+
+impl DesignReading {
+    /// What reading one document of a design said, pooled into what reading
+    /// the design says. `document` is the document's path relative to the root
+    /// when the design is of several documents, and `None` when it is of this
+    /// one alone, whose reading is then taken as it is.
+    fn absorb(&mut self, one: DesignReading, document: Option<&str>) {
+        match document {
+            Some(document) => self
+                .open
+                .extend(crate::open_matters::in_document(document, one.open)),
+            None => self.open.extend(one.open),
+        }
+        for (id, places) in one.cited {
+            match self.cited.iter_mut().find(|(known, _)| *known == id) {
+                Some((_, total)) => *total += places,
+                None => self.cited.push((id, places)),
+            }
+        }
+        self.evidence.absorb(one.evidence, document);
+    }
 }
 
 /// One row of the review table as a record sees it: its digest, and where it
@@ -1453,6 +1695,22 @@ struct Evidence {
 }
 
 impl Evidence {
+    /// One document's evidence pooled into the design's, each row placed in
+    /// its document when `document` is given ([`placed_in`]).
+    fn absorb(&mut self, one: Evidence, document: Option<&str>) {
+        for (id, rows) in one.by_requirement {
+            let pooled = self.by_requirement.entry(id).or_default();
+            pooled.extend(rows.into_iter().map(|row| placed_in(row, document)));
+            pooled.sort();
+        }
+        self.unclaimed.extend(
+            one.unclaimed
+                .into_iter()
+                .map(|row| placed_in(row, document)),
+        );
+        self.unclaimed.sort();
+    }
+
     /// The record's form: digests only, in order.
     fn digests(&self) -> (BTreeMap<String, Vec<String>>, Vec<String>) {
         let digests = |rows: &[EvidenceRow]| rows.iter().map(|row| row.digest.clone()).collect();
@@ -1472,6 +1730,21 @@ impl Evidence {
 fn row_digest(cells: &[&str]) -> String {
     let text = serde_json::to_string(cells).expect("a list of strings always serialises");
     hex_encode(&sha256_bytes(text.as_bytes()))
+}
+
+/// A row of one document of a design of several, placed in its document: its
+/// place led by the document (`front.scxml#states.idle`, the spelling a node
+/// path of `requirements` takes), and its digest taken over the document's
+/// path and the row's own digest, so the same row in two documents is two rows.
+/// A row of a design of one document (`None`) is left as it is.
+fn placed_in(row: EvidenceRow, document: Option<&str>) -> EvidenceRow {
+    let Some(document) = document else {
+        return row;
+    };
+    EvidenceRow {
+        digest: row_digest(&["document", document, &row.digest]),
+        at: format!("{document}#{}", row.at),
+    }
 }
 
 fn statechart_row_digest(row: &crate::transition_table::TransitionRow) -> String {
@@ -1641,24 +1914,77 @@ fn check_evidence(
     Ok(())
 }
 
-/// Every file a parse of `document` reads, pinned relative to `root`, and what
-/// reading it said ([`DesignReading`]).
-fn read_design(
+/// What reading the documents of a design gave: every file they read, each
+/// document itself included, canonical and in the order read, and what reading
+/// them said, pooled ([`DesignReading::absorb`]).
+struct SetReading {
+    files: Vec<PathBuf>,
+    reading: DesignReading,
+}
+
+/// Read every document of the design `named` (canonical paths, never empty)
+/// makes, with what they reach when `with_imports` ([`DesignSet::members`]).
+///
+/// One reader for taking a record, re-checking it and comparing it with the
+/// design now, so the three cannot read one record as two designs. A walk that
+/// is refused is a document that cannot be read: a lapse when re-checking
+/// (`path` the first named document, since the reference is somewhere in the
+/// design it is the entry of), a refusal when taking.
+fn read_members(
     root: &Path,
-    document: &Path,
+    named: &[PathBuf],
+    with_imports: bool,
     house_rule_ids: &[&str],
-) -> Result<(Vec<InputPin>, DesignReading), DesignFailure> {
+) -> Result<SetReading, DesignFailure> {
+    let entry = named.first().cloned().unwrap_or_default();
+    let design = DesignSet::new(
+        named
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
+        with_imports,
+    )
+    .ok_or_else(|| RecordError::Format {
+        detail: "a design is read from at least one document".to_string(),
+    })?;
+    let members = design.members().map_err(|refusal| {
+        let refused = refusal.into_located();
+        DesignFailure::Parse {
+            path: entry,
+            detail: format!("{}: {}", refused.location.file, refused.error),
+        }
+    })?;
+    // One document is the design alone, read as it always was; several are
+    // told apart by their paths relative to the root.
+    let several = members.len() > 1;
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut reading = DesignReading::default();
+    for member in &members {
+        let document = canonical(Path::new(&member.document))?;
+        let (read, one) = design_inputs(&document, house_rule_ids)?;
+        files.push(document.clone());
+        files.extend(read);
+        let place = if several {
+            Some(relative(root, &document)?)
+        } else {
+            None
+        };
+        reading.absorb(one, place.as_deref());
+    }
+    Ok(SetReading { files, reading })
+}
+
+/// Every file of `files` pinned relative to `root`, each once, sorted by path.
+fn pin_inputs(root: &Path, files: &[PathBuf]) -> Result<Vec<InputPin>, RecordError> {
     let mut pins: BTreeMap<String, String> = BTreeMap::new();
-    let (files, reading) = design_inputs(document, house_rule_ids)?;
-    for path in std::iter::once(document.to_path_buf()).chain(files) {
-        let path = canonical(&path)?;
+    for path in files {
+        let path = canonical(path)?;
         pins.insert(relative(root, &path)?, file_sha256(&path)?);
     }
-    let inputs = pins
+    Ok(pins
         .into_iter()
         .map(|(path, sha256)| InputPin { path, sha256 })
-        .collect();
-    Ok((inputs, reading))
+        .collect())
 }
 
 /// The files other than `document` that its parse reads, for either
@@ -1684,7 +2010,10 @@ fn design_inputs(
             source,
         })
     })?;
-    let unparseable = |error: String| DesignFailure::Parse(error);
+    let unparseable = |detail: String| DesignFailure::Parse {
+        path: document.to_path_buf(),
+        detail,
+    };
     let base_dir = document.parent().unwrap_or_else(|| Path::new("."));
     match crate::classify_document(&text) {
         crate::Pipeline::Scxml => {
@@ -1879,6 +2208,36 @@ mod tests {
         );
     }
 
+    /// A record of a set names its documents and its reach, and writes them back
+    /// as it read them; a record of one document read alone writes neither.
+    #[test]
+    fn a_record_of_a_set_keeps_its_documents_and_one_of_a_document_names_none() {
+        let set = AcceptanceRecord::from_json(&wire(|v| {
+            v["inputs"] = serde_json::json!([
+                {"path": "machine.scxml", "sha256": SHA},
+                {"path": "other.scxml", "sha256": SHA},
+            ]);
+            v["documents"] = serde_json::json!(["machine.scxml", "other.scxml"]);
+            v["with_imports"] = true.into();
+        }))
+        .expect("loads");
+        assert_eq!(set.named_documents(), ["machine.scxml", "other.scxml"]);
+        assert!(set.with_imports && set.is_of_a_set());
+        assert_eq!(
+            AcceptanceRecord::from_json(&set.to_json()).expect("round-trips"),
+            set
+        );
+
+        let one = AcceptanceRecord::from_json(&wire(|_| {})).expect("loads");
+        assert_eq!(one.named_documents(), ["machine.scxml"]);
+        assert!(!one.is_of_a_set());
+        let written = one.to_json();
+        assert!(
+            !written.contains("documents") && !written.contains("with_imports"),
+            "{written}"
+        );
+    }
+
     #[test]
     fn bytes_this_module_would_not_write_are_refused() {
         let cases: Vec<(&str, String)> = vec![
@@ -1932,6 +2291,49 @@ mod tests {
             (
                 "an evidence rule where no evidence is stated",
                 wire(|v| v["evidence_rule"] = EVIDENCE_RULE.into()),
+            ),
+            (
+                "documents that name one document",
+                wire(|v| v["documents"] = serde_json::json!(["machine.scxml"])),
+            ),
+            (
+                "documents that do not begin with the document",
+                wire(|v| {
+                    v["inputs"] = serde_json::json!([
+                        {"path": "machine.scxml", "sha256": SHA},
+                        {"path": "other.scxml", "sha256": SHA},
+                    ]);
+                    v["documents"] = serde_json::json!(["other.scxml", "machine.scxml"]);
+                }),
+            ),
+            (
+                "a document named twice",
+                wire(|v| {
+                    v["inputs"] = serde_json::json!([
+                        {"path": "machine.scxml", "sha256": SHA},
+                        {"path": "other.scxml", "sha256": SHA},
+                    ]);
+                    v["documents"] =
+                        serde_json::json!(["machine.scxml", "other.scxml", "other.scxml"]);
+                }),
+            ),
+            (
+                "a named document the inputs do not pin",
+                wire(|v| v["documents"] = serde_json::json!(["machine.scxml", "other.scxml"])),
+            ),
+            (
+                "a path among the documents that climbs",
+                wire(|v| {
+                    v["inputs"] = serde_json::json!([
+                        {"path": "machine.scxml", "sha256": SHA},
+                        {"path": "../other.scxml", "sha256": SHA},
+                    ]);
+                    v["documents"] = serde_json::json!(["machine.scxml", "../other.scxml"]);
+                }),
+            ),
+            (
+                "with_imports that is not a boolean",
+                wire(|v| v["with_imports"] = "yes".into()),
             ),
             (
                 "an evidence rule that is not a number",
