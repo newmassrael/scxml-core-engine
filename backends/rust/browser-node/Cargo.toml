@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-browser-node"
+version.workspace = true
+edition.workspace = true
+# The Mesh host core it wraps (`sce-rust-mesh`) declares 1.87.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The WebAssembly module of a browser node: the HTTPS binding's client core, stepped by the page's script (docs/adr/0117)"
+publish = false
+
+# A browser is a node (docs/adr/0117): the page holds a module of the Rust lane on
+# wasm32-unknown-unknown, and a script (`js/`) of the platform's own parts around it. This crate
+# is the module: the binding's client core, the one the native shell steps (`sce-rust-mesh`,
+# `https::client`), behind the half of the browser shell that runs in it (`https::browser`),
+# exported to the page with wasm-bindgen. It holds no decision and no rule of its own.
+#
+# The kit (`kit/`) holds the shell, in Node and in headless Chrome and Firefox, to the binding's
+# own server; `scripts/gate wasm32-scenarios` builds and runs it.
+
+# The wasm32 build is a cdylib the page loads; every other target builds the rlib, which is empty
+# there (`src/lib.rs`).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sce-rust-mesh = { path = "../mesh", default-features = false, features = ["alloc", "browser"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The version `Cargo.lock` holds is the one `wasm-bindgen-cli` must be: the generated glue and the
+# module are only compatible at the same version.
+wasm-bindgen = "0.2"
+# The random source of the host's cryptography (`sce-rust-crypto`) on this target is the page's,
+# through wasm-bindgen; without the feature the crate refuses to build for wasm32-unknown-unknown.
+# The node's own draws are the page's (`crypto.getRandomValues`), handed to the module.
+getrandom = { version = "0.2", features = ["js"] }
+
+[lints]
+workspace = true

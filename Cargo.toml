@@ -22,6 +22,8 @@ members = [
     "backends/rust/feature-conformance",
     "backends/rust/link-runtime",
     "backends/rust/mesh",
+    # The browser node's module (docs/adr/0117): the HTTPS binding's client core for wasm32.
+    "backends/rust/browser-node",
     "backends/rust/scenarios",
     "backends/rust/host-features",
     # The network transport of the host features' HTTP operation, with its destination policy
