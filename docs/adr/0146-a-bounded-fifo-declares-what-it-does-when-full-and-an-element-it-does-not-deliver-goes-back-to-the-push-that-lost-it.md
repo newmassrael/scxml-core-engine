@@ -58,8 +58,9 @@ The first reason is true of the two rows and not of the cell. A bounded buffer u
 textbook bounded buffer does (Hoare 1974), at `blocking` progress and with nothing to argue beyond D1's table (D3, "The
 locked ring"). ADR 0062 refused the abstract data type because the two lock-free algorithms it had could not serve it,
 which is a reason to serve it by another algorithm and not a reason to refuse it. Whether a lock-free algorithm serves
-it is a separate claim: the literature gives none for this cell (D3, "Why a lock for one producer too"), and the one
-this record proposes is a candidate that a machine check promotes or does not (D3, "Candidates"; D5).
+it is a separate claim: the nearest published algorithm, BBQ's drop-old mode, discards what it overwrites, so it does
+not keep Conservation (D3, "Why a lock for one producer too"), and both its variant with a hand-back and the algorithm
+this record proposes are candidates that a machine check promotes or does not (D3, "Candidates"; D5).
 
 The second reason fails where an element owns something. Each row above holds elements that are resources: an owned
 sample the queue must release exactly once, by the caller's function, when it is evicted, and hand over exactly once
@@ -104,13 +105,14 @@ it is reopened here with this consumer's reason.
 | crossbeam-queue `ArrayQueue::force_push` (checked 2026-11-26 in crossbeam-queue 0.3.14, `src/array_queue.rs:293`) | The cell in a widely used library: a push into a full bounded MPMC queue moves the head by a compare-and-swap and *returns the element it replaced* (`Option<T>`), so the caller, not the queue, disposes of it. That is D1's hand-back. Its ring is Vyukov's bounded MPMC queue, in which a producer stalled between its claim and its stamp store stalls the consumers at that slot, so its progress is `blocking` (Alternatives rejected, 7) |
 | crossbeam-channel's bounded flavour (checked 2026-11-28 in crossbeam-channel 0.5.17, `src/flavors/array.rs`) | A close that is part of the queue's state: `disconnect` sets a mark bit in `tail` by `fetch_or` (:498-499), so a send that claims `tail` meets the close in the same word and hands its message back (`TrySendError::Disconnected(msg)`). And the order a waiting receiver keeps: it registers (:442), then checks the channel again (:445), and a write notifies the receivers (:245) |
 | The Linux kernel's tracing ring buffer (`kernel/trace/ring_buffer.c`, its design in `Documentation/trace/ring-buffer-design.rst`) and LTTng's (Desnoyers and Dagenais, "Lockless multi-core high-throughput buffering scheme for kernel tracing", ACM SIGOPS OSR 46(3), 2012) | The published lock-free buffers that overwrite their oldest data: one writer per CPU overwrites a whole page or sub-buffer, the reader takes a page by exchanging it, and what is overwritten is bytes counted as an overrun. Neither evicts one element or hands it to anyone, so neither serves the cell (D3, "Why a lock for one producer too") |
-| The bounded lock-free FIFOs: Tsigas and Zhang (SPAA 2001), Morrison and Afek's CRQ (PPoPP 2013), Feldman and Dechev's ring buffer (ACM SIGAPP ACR 15(3), 2015), Nikolaev's SCQ | Each refuses, or closes its ring, when full; none moves the head from the producer's side. With crossbeam's `force_push` and the tracing buffers, the audit of 2026-11-28 found no published lock-free algorithm for a bounded FIFO that evicts its oldest element, one at a time, to the push that displaced it |
+| The bounded lock-free FIFOs: Tsigas and Zhang (SPAA 2001), Morrison and Afek's CRQ (PPoPP 2013), Feldman and Dechev's ring buffer (ACM SIGAPP ACR 15(3), 2015), Nikolaev's SCQ | Each refuses, or closes its ring, when full; none moves the head from the producer's side |
+| Wang et al., "BBQ: A Block-based Bounded Queue for Exchanging Data and Profiling", USENIX ATC 2022 | The nearest published algorithm to the cell. Its drop-old mode "is a lossy/overwrite mode for profiling/tracing ... in which producers may overwrite unconsumed data if the buffer is full", for one or several producers and consumers. It overwrites by block, discards what it overwrites, has a `BUSY` outcome, and states its criterion as FIFO "except that some data might be lost". Its verification (its section 5) model-checks small hand-made tests with VSync, a GenMC extension, and found "three concurrency bugs in an earlier version of the drop-old mode" that stress testing had not. Not a row, and its variant with a hand-back is a candidate (D3, "Why a lock for one producer too") |
 | Lamport, "Specifying concurrent program modules", TOPLAS 5(2), 1983 | The ring of one producer and one consumer on loads and stores, with its proof: the Lamport row, which serves `refuse` as published (D2) |
 | Michael and Scott, "Correction of a memory management method for lock-free data structures", TR 599, University of Rochester, 1995 | A lock-free queue published with an argument by hand (Valois's) and a race in it found afterwards: the reason an algorithm argued by hand is a candidate and not a row (D3, "What a row is") |
 | Abadi and Lamport, "The existence of refinement mappings", TCS 82(2), 1991; Lahav et al., "Repairing sequential consistency in C/C++11", PLDI 2017; Kokologiannakis and Vafeiadis, "GenMC: a model checker for weak memory models", CAV 2021 | What promotes a candidate (D5 item 6): a refinement mapping to D1's table, with an auxiliary variable where a linearization point is not one of the operation's own steps, checked whole at small sizes and proved for every size; and every execution of the code under RC11 |
 | Liskov and Wing, "A behavioral notion of subtyping", TOPLAS 16(6), 1994; Hoare, "Communicating sequential processes", CACM 21(8), 1978 | A queue that can be closed and one that cannot are two types, neither a subtype of the other; CSP's channel ends with the process at its other end, while a monitor's bounded buffer has no end (D2, `<sce:closable/>`) |
 | zenoh-pico `_z_ring_push_force_drop` and `_z_fifo_push_drop`, and the consumer's port of them | The three policies as one implementation with a discriminant, and the rule that the evicted element is released *after* the lock is dropped, because the release is caller code that may re-enter the library. D1 makes that rule structural: the queue never runs element code |
-| Nikolaev, "A scalable, portable, and memory-efficient lock-free FIFO queue", DISC 2019 | LSCQ closes a ring by a *finalize* bit in its `Tail`, which an enqueuer's fetch-and-add reads in the same step: the close of the SCQ candidates, whose proof for a queue that stays closed is still owed (D3, "Candidates") |
+| Nikolaev, "A scalable, portable, and memory-efficient lock-free FIFO queue", DISC 2019 | SCQ, whose lock-freedom the paper proves as theorems and whose linearizability it argues from CRQ's ("SCQ's linearizability follows from the arguments we make in Sections 5.1 and 5.2, as well as from the corresponding CRQ linearizability derivations", its section 6). LSCQ's *finalize* is the list's own close of a full ring, taken from CRQ: "When a ring buffer is full, we need to additionally 'finalize' it, so that no new entries are inserted by the concurrent threads. As in CRQ, we reserve one bit in Tail", and enqueue "fails when FAA on Tail returns a value with the 'finalized' bit set". A close the user calls is an extension of it (D3, "SCQ and LSCQ, extended") |
 | Hoare, "Monitors: an operating system structuring concept", CACM 17(10), 1974 | The bounded buffer under one lock with two conditions: the locked ring, which serves every cell no published lock-free algorithm serves (D3), and its waiting |
 | Reed and Kanodia, "Synchronization with eventcounts and sequencers", CACM 22(2), 1979 | The eventcount: a waiter reads a count, checks its condition, and waits only while the count is unchanged, so a notification between its check and its wait is not lost (D3, "Waiting") |
 | Herlihy, "Wait-free synchronization", TOPLAS 13(1), 1991 | Loads and stores cannot solve consensus between two parties wait-free; deciding whether the producer or a consumer owns the oldest element is such a consensus, which is why a core without compare-and-swap takes a critical section (D3) |
@@ -253,16 +255,18 @@ serves only a queue that does not close.
 ### D3. The rows: a ring under one lock and a ring in one context; the candidates a machine check promotes
 
 **What a row is.** A row of the selection table is an algorithm that the literature publishes with its proof (Lamport
-1983 for the ring of one producer and one consumer, Nikolaev 2019 for SCQ and LSCQ, the Vyukov list as ADR 0088 records
-it), used as published, or an algorithm whose verification D5 has passed in this repository; the rows that exist today
-are taken as the RFC accepted them, and this record judges what it adds. An algorithm argued only by hand, a published
-one with a step changed among them, is a **candidate**: it is specified here, its verification is planned (D5 item 6),
-and it serves no document until an amendment of this record promotes it on those runs. Lock-free algorithms published
-with arguments by hand have been found wrong afterwards (Valois's queue, corrected by Michael and Scott 1995), and this
-record's own claimed-head ring was not linearizable in its first draft nor, as the owner's audit found, in the form it
-was accepted in (below); the rule is ADR 0115's standing rule applied to concurrent objects, whose interleavings a model
-checker exhausts and an argument by hand samples. Meanwhile the locked ring serves every cell a candidate would, with
-the same outcomes and `blocking` progress.
+1983 for the ring of one producer and one consumer, Nikolaev 2019 for SCQ and LSCQ, which proves their lock-freedom and
+argues their linearizability from CRQ's, the Vyukov list as ADR 0088 records it), used as published, or an algorithm
+whose verification D5 has passed in this repository; the rows that exist today are taken as the RFC accepted them, and
+this record judges what it adds. An algorithm argued only by hand, a published one with a step changed among them, is a
+**candidate**: it is specified here, its verification is planned (D5 item 6), and it serves no document until an
+amendment of this record promotes it on those runs. Lock-free algorithms published with arguments by hand have been
+found wrong afterwards (Valois's queue, corrected by Michael and Scott 1995; the three bugs that model checking found in
+an earlier version of BBQ's drop-old mode, which stress testing had not), and this record's own claimed-head ring was
+not linearizable in its first draft nor, as the owner's audit found, in the form it was accepted in (below); the rule is
+ADR 0115's standing rule applied to concurrent objects, whose interleavings a model checker exhausts and an argument by
+hand samples. Meanwhile the locked ring serves every cell a candidate would, with the same outcomes and `blocking`
+progress.
 
 #### The locked ring: any producers and consumers, any policy
 
@@ -282,17 +286,33 @@ step.
 - **Progress** is `blocking` on both sides: a holder preempted inside the section stops the others. It is the
   bounded buffer of Hoare's monitor, and the consumer's channels are this row today.
 - **Why a lock and not a lock-free algorithm for several producers.** With several producers a tail is claimed and
-  published in two steps, and a remover that meets a claimed, unpublished slot either waits for a producer that may
-  be stopped or skips it and breaks FIFO order. The textbook algorithm that does not skip, Vyukov's bounded MPMC
-  queue as crossbeam's `force_push` runs it, therefore has `blocking` progress too (Alternatives rejected, 7).
+  published in two steps, and a remover that meets a claimed, unpublished slot either waits for a producer that may be
+  stopped or skips it and breaks FIFO order. The textbook algorithm that does not skip, Vyukov's bounded MPMC queue as
+  crossbeam's `force_push` runs it, therefore has `blocking` progress too (Alternatives rejected, 7). BBQ's drop-old
+  mode keeps FIFO order with several producers and pays the same price in another form: a push answers `BUSY` while the
+  next block is "still not fully committed in the previous round", and served as D1, which has no such arm, that push
+  retries until the other producer commits.
 - **Why a lock for one producer too.** One producer evicting from a ring that its consumers remove from is the cell ADR
-  0062 refused, and no published algorithm serves it lock-free one element at a time. Crossbeam's `force_push` runs on
-  Vyukov's ring and is `blocking`; the tracing buffers of the Linux kernel and of LTTng overwrite from one writer
-  without a lock, but by the page, take pages from their reader by exchange, and count what they overwrite as bytes,
-  handing nothing back; and the bounded lock-free FIFOs (Tsigas and Zhang, CRQ, Feldman and Dechev, SCQ) refuse or close
-  when full. The claimed-head ring below is this record's own algorithm, so it is a candidate, and until it is promoted
-  the lock is what the cell has. A search that finds nothing does not show that nothing exists: a published algorithm
-  found later, whose proof covers D1's table, is taken in place of the candidate.
+  0062 refused. Crossbeam's `force_push` runs on Vyukov's ring and is `blocking`; the tracing buffers of the Linux
+  kernel and of LTTng overwrite from one writer without a lock, but by the page, take pages from their reader by
+  exchange, and count what they overwrite as bytes; the bounded lock-free FIFOs (Tsigas and Zhang, CRQ, Feldman and
+  Dechev, SCQ) refuse or close when full. The nearest published algorithm is BBQ's drop-old mode (Wang et al., USENIX
+  ATC 2022), and it is not D1's `evict-oldest` in four ways, each in its authors' words. It overwrites by block: in
+  drop-old mode "producers continue to write even if the data is not yet consumed", and a producer that advances into
+  the next block resets its cursors, so the unconsumed entries of a whole block are lost at once, one element only where
+  a block holds one entry. It discards what it overwrites: "The consumer first reads the data and then checks whether it
+  has been overwritten. If so, it discards the data", and no party receives the overwritten entry, so an element that
+  owns something has no owner afterwards, which is Conservation, the reason ADR 0062's refusal was reopened. Its
+  criterion is not a sequential specification of which element is lost: "The FIFO property still holds, except that some
+  data might be lost. In other words, entries are consumed in the order in which they were allocated, but some committed
+  entries may not be consumed", where D1 names the oldest, exactly one, and hands it to the push. And its push has an
+  outcome D1 has no arm for: "producers avoid advancing to blocks that are still not fully committed in the previous
+  round, returning BUSY". Its verification (its section 5) runs "a series of small hand-crafted tests" for full and
+  empty, FIFO, wrap-around and termination through VSync, a GenMC extension, which judges its own properties at the
+  sizes of those tests, not D1's table. So BBQ is not a row; a variant with one entry per block, the overwritten entry
+  handed back to the push and counted in `lost`, and no `BUSY` is a changed algorithm and so a candidate (D3,
+  "Candidates"), as is the claimed-head ring, this record's own. Until one is promoted the lock is what the cell has. A
+  published algorithm found later whose proof covers D1's table is taken in place of the candidates.
 
 #### The sequential ring: `<sce:sharing>owner</sce:sharing>`
 
@@ -396,6 +416,7 @@ stronger progress.
 | Candidate | Serves | Producer | Consumer | Fullness | Close | Changed against the literature |
 |---|---|---|---|---|---|---|
 | claimed-head ring | `bounded`, `shared`, one producer, any consumers, any policy | wait-free | lock-free; wait-free for one consumer under `refuse` or `drop-newest` | exact | the mark in the control word | the whole algorithm |
+| BBQ drop-old with a hand-back | `bounded`, `shared`, one producer, any consumers, `evict-oldest` | to be established by D5 | to be established by D5 | exact | none in BBQ; a mark is a further change | one entry per block; the overwritten entry handed back to the push instead of discarded; `lost` counted in the step that overwrites; no `BUSY` arm |
 | SCQ with a loss count and a close | `bounded`, `shared`, the other counts, `refuse` or `drop-newest` | lock-free | lock-free | at rest | the finalize bit in `Tail` | `lost` changes in the access that decides a refusal; the finalize bit closes the whole queue |
 | linked rings, LSCQ | `segmented`, the counts of their rows, `refuse` or `drop-newest` | as their rows | as their rows | as their rows | the mark of the ring the producer writes; the finalize bit | the changes of the two rows above, on each ring |
 
@@ -465,11 +486,17 @@ linearization point is one access of one word, and D1's state is read off the wo
 ##### SCQ and LSCQ, extended
 
 A refused enqueue's linearization point is the access that tells it the free-index queue is empty, so `lost` must change
-in that access's word; and a close by the finalize bit must resolve an enqueue that took its index before the mark. The
-published arguments (Nikolaev 2019) cover SCQ's refusal as it is and LSCQ's finalize as a ring its enqueuers leave for
-the next one, not a queue that stays closed. The design of each change is its promotion record's, held to the same
-checks; the audit's finding on the claimed-head ring's two words is the reason a close is not taken on an argument by
-hand.
+in that access's word. The close is the larger change. LSCQ's finalize is the list's own close of a full ring, inherited
+from CRQ: "When a ring buffer is full, we need to additionally 'finalize' it, so that no new entries are inserted by the
+concurrent threads. As in CRQ, we reserve one bit in Tail", and enqueue "fails when FAA on Tail returns a value with the
+'finalized' bit set", after which the enqueuer puts its index back and moves to the next ring. No dequeue answers that
+the queue is closed: a dequeuer that finds a finalized ring empty moves to the next ring, or returns empty when there is
+none, and the paper notes that "Pending enqueuers may still access it". A close the user calls, under which a pop
+answers `Closed` once nothing is held and from then on nothing else, is therefore an extension the paper's arguments do
+not cover, and it must resolve an enqueue that took its index before the mark. The paper's own linearizability is argued
+from CRQ's derivations rather than proved (its section 6), and its lock-freedom is proved. The design of each change is
+its promotion record's, held to the same checks; the audit's finding on the claimed-head ring's two words is the reason
+a close is not taken on an argument by hand.
 
 ### D4. A statechart's append declares its full policy, may take a run-time limit, and may write its outcome
 
@@ -576,8 +603,9 @@ hand.
 
 - A `shared` queue that drops, evicts or closes at `lock-free` or better: until a candidate that serves it is promoted
   (D3, "Candidates"; D5 item 6). Revisited by each promotion.
-- `evict-oldest` with several producers at `lock-free` or better: there is no candidate, since no published algorithm
-  reaches it without breaking FIFO order (D3). Revisited when one does.
+- `evict-oldest` with several producers at `lock-free` or better: there is no candidate, since the published algorithms
+  that keep FIFO order with several producers (Vyukov's ring, BBQ's drop-old mode) make a push wait, or answer `BUSY`,
+  while another producer has claimed a slot and not yet committed it (D3). Revisited when one does not.
 - `evict-oldest` on `<sce:segmented>`: an LSCQ's oldest element sits in the oldest ring of a list whose rings are
   retired by their consumers; claiming it from the producer side is a second algorithm. Revisited when a consumer needs
   an evicting queue larger than one ring.
@@ -701,6 +729,6 @@ foundations, cost ignored (ADR 0115's standing rule). Three answers changed it:
 
 | Question | Finding | Where |
 |---|---|---|
-| Is an algorithm argued by hand a row? | No. The claimed-head ring is not in the literature and its first draft was not linearizable; the audit found the accepted form not linearizable either, on a closable queue (a close in the window between its publish and its claim), and its proposed refinement mapping no mapping at all (`c + 1` elements shown). It is restated with its whole state in one word and becomes a candidate, promoted by D5's machine checks, while the locked ring serves its cell. No published lock-free algorithm evicts one element at a time to the displacing push: crossbeam's `force_push` is blocking, and the kernel's and LTTng's tracing buffers overwrite pages and hand nothing back. The same rule makes a candidate of every published row whose steps this record changes, so the Lamport ring and SCQ serve only `refuse` without a close until their cells' candidates are promoted | D3 "What a row is", "Why a lock for one producer too", "Candidates"; D2's table, codes and last bullet; D5 items 2, 5 and 6; D6; Consequences; Alternatives rejected, 12 |
+| Is an algorithm argued by hand a row? | No. The claimed-head ring is not in the literature and its first draft was not linearizable; the audit found the accepted form not linearizable either, on a closable queue (a close in the window between its publish and its claim), and its proposed refinement mapping no mapping at all (`c + 1` elements shown). It is restated with its whole state in one word and becomes a candidate, promoted by D5's machine checks, while the locked ring serves its cell. The nearest published algorithm, which the accepted text missed, is BBQ's drop-old mode (USENIX ATC 2022): it overwrites by block, discards what it overwrites, answers `BUSY`, and states its criterion as FIFO "except that some data might be lost", so it is not D1's `evict-oldest` and its variant with a hand-back is a candidate too; crossbeam's `force_push` is blocking, and the kernel's and LTTng's tracing buffers overwrite pages. Nikolaev's finalize is LSCQ's internal close of a full ring, from CRQ, so a user's close on SCQ is an extension. The same rule makes a candidate of every published row whose steps this record changes, so the Lamport ring and SCQ serve only `refuse` without a close until their cells' candidates are promoted | D3 "What a row is", "Why a lock for one producer too", "Candidates"; D2's table, codes and last bullet; D5 items 2, 5 and 6; D6; Consequences; Alternatives rejected, 12 |
 | Is `lost` as strong as it can be? | Not as accepted: quiescent consistency rested on cost and on one consumer's present use. A linearizable `lost` takes no guarantee from any row (a field under the lock or in one context; on the candidates, a word the losing step already writes), so `lost()` is an operation of D1's table | D1; D2 `drop-newest`; D3 "Candidates"; D5 items 1, 5 and 6; Alternatives rejected, 5 |
 | Is a declared close the textbook structure? | Yes, on type precision alone: a closable queue and one that is not are two types, neither a subtype of the other, and no caller is handed an arm its type cannot produce. The reason that existing queues stay byte for byte is withdrawn, from the close and from `refuse` as the default: a contract before 1.0 is not shaped by what exists | D1 "A close is part of the queue's state"; D2 `<sce:on-full>` and `<sce:closable/>`; Alternatives rejected, 13 |
