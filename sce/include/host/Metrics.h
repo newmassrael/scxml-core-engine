@@ -43,6 +43,7 @@ enum class ExchangeOutcome : std::uint8_t {
     NotFound,
     MethodNotAllowed,
     RequestTimeout,
+    PreconditionFailed,
     PayloadTooLarge,
     UnsupportedMediaType,
     TooManyRequests,
@@ -52,13 +53,14 @@ enum class ExchangeOutcome : std::uint8_t {
 };
 
 /// Every exchange outcome, in the order of the enum.
-inline constexpr std::array<ExchangeOutcome, 12> kExchangeOutcomes = {
+inline constexpr std::array<ExchangeOutcome, 13> kExchangeOutcomes = {
     ExchangeOutcome::Ok,
     ExchangeOutcome::BadRequest,
     ExchangeOutcome::Unauthorized,
     ExchangeOutcome::NotFound,
     ExchangeOutcome::MethodNotAllowed,
     ExchangeOutcome::RequestTimeout,
+    ExchangeOutcome::PreconditionFailed,
     ExchangeOutcome::PayloadTooLarge,
     ExchangeOutcome::UnsupportedMediaType,
     ExchangeOutcome::TooManyRequests,
@@ -82,6 +84,8 @@ constexpr const char *value(ExchangeOutcome outcome) {
         return "405";
     case ExchangeOutcome::RequestTimeout:
         return "408";
+    case ExchangeOutcome::PreconditionFailed:
+        return "412";
     case ExchangeOutcome::PayloadTooLarge:
         return "413";
     case ExchangeOutcome::UnsupportedMediaType:
@@ -113,6 +117,8 @@ constexpr ExchangeOutcome exchangeOutcomeOf(std::uint16_t code) {
         return ExchangeOutcome::MethodNotAllowed;
     case 408:
         return ExchangeOutcome::RequestTimeout;
+    case 412:
+        return ExchangeOutcome::PreconditionFailed;
     case 413:
         return ExchangeOutcome::PayloadTooLarge;
     case 415:
