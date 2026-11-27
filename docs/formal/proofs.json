@@ -106,7 +106,7 @@
       "file": "backends/rust/runtime/src/inbox/drain.rs",
       "compiled_by": "backends/rust/runtime/src/inbox.rs",
       "decision": "docs/adr/0147",
-      "verified": 16,
+      "verified": 17,
       "mutants": [
         {
           "breaks": "a drain begins inside a drain, out of the order the inbox took its inputs in",
