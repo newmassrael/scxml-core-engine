@@ -50,7 +50,7 @@ fn person(subject: &str) -> Principal {
 fn said_for(person: Option<Principal>) -> EventMetadata {
     EventMetadata {
         event_type: EventType::External,
-        principal: person,
+        principal: person.map(Box::new),
         ..EventMetadata::default()
     }
 }
@@ -136,13 +136,16 @@ fn a_transition_that_requires_a_person_is_not_selected_without_one() {
 /// the copy.
 #[test]
 fn a_child_is_told_a_forwarded_event_as_said_for_nobody() {
+    // A machine that invokes a child is driven by `tick`, which runs the child's turn
+    // as well as its own; `step` drives no child (`Engine::step`).
     let mut e = Engine::new(Forwarding::new());
     let Ok(()) = e.initialize();
-    e.step();
+    e.tick();
     e.raise_external_by_name_with_meta("ping", &said_for(Some(person("alice"))));
-    // The parent runs `ping` and forwards it; the child's answer is the parent's next event.
-    for _ in 0..3 {
-        e.step();
+    // The parent runs `ping` and forwards it, the child runs it on the next tick, and its
+    // answer is the parent's event after that.
+    for _ in 0..4 {
+        e.tick();
     }
     let policy = e.policy();
     assert_eq!(

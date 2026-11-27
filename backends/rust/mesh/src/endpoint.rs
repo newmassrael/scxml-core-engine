@@ -151,8 +151,9 @@ pub(crate) enum Told {
         invoke_id: String,
         /// The person the instance `source` acted for when its edge took the event in
         /// (`_x.principal`, docs/adr/0116, D3; [`Endpoint::receive_member_for`]), `None` for
-        /// every other event. A checkpoint holds none ([`Endpoint::seal`]).
-        principal: Option<Principal>,
+        /// every other event. A checkpoint holds none ([`Endpoint::seal`]). Boxed as
+        /// [`EventMetadata::principal`] is, into which it moves.
+        principal: Option<Box<Principal>>,
     },
     /// The end of the start `token` of the Mesh request `invoke_id`.
     End {
@@ -501,7 +502,7 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     ) {
         let from = self.to_engine.len();
         self.receive_member(peer, made_under, standing, bytes);
-        let Some(person) = acting else {
+        let Some(person) = acting.map(Box::new) else {
             return;
         };
         for told in &mut self.to_engine[from..] {
@@ -1929,7 +1930,7 @@ mod tests {
         let events = raised(&mut cloud);
         let people: Vec<(&str, Option<&Principal>)> = events
             .iter()
-            .map(|event| (event.name.as_str(), event.metadata.principal.as_ref()))
+            .map(|event| (event.name.as_str(), event.metadata.principal.as_deref()))
             .collect();
         assert_eq!(
             people,

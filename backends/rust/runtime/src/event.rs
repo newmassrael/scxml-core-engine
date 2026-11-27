@@ -212,9 +212,11 @@ pub struct EventMetadata {
     /// internal event, a timer, a completion and a machine's own send among them
     /// (D4: nothing passes on by itself). A saved state holds no person, so a
     /// queued event that carries one refuses the save
-    /// ([`crate::saved_state::save`]).
+    /// ([`crate::saved_state::save`]). Boxed: every event carries the field and
+    /// few carry a person, so an event without one costs a pointer, not the five
+    /// fields, wherever events are queued or handed on.
     #[cfg(feature = "std")]
-    pub principal: Option<Principal>,
+    pub principal: Option<Box<Principal>>,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
     #[cfg(feature = "std")]
     pub invoke_id: SceString,
