@@ -29,6 +29,9 @@
 #                            differ in RUSTFLAGS and in `-Z build-std` sharing
 #                            one would each rebuild the other's artifact on
 #                            every build.
+#   SCE_LOWERING_RUST_RELEASE the release rust-toolchain.toml pins, named to a
+#                            rustup proxy so that it runs that release
+#                            wherever it is started.
 #   SCE_LOWERING_NIGHTLY_BIN the `bin/` of the pinned nightly toolchain;
 #                            non-empty builds with its cargo, its `bin/` first
 #                            on PATH so that rustc is its own too, and rebuilds
@@ -66,6 +69,21 @@ if(SCE_LOWERING_NIGHTLY_BIN)
         "PATH=${SCE_LOWERING_NIGHTLY_BIN}:$ENV{PATH}"
         "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals $ENV{CARGO_BUILD_RUSTFLAGS}")
     list(APPEND _cargo_args -Z build-std=std,panic_abort)
+endif()
+# The rustc is the release of the cargo the including module found, named by
+# its path, never the `rustc` a search finds. A wrapper (sccache, which a build
+# machine's run sets as RUSTC_WRAPPER) runs the compiler from its own server,
+# outside this directory: a rustup proxy run there does not read
+# rust-toolchain.toml and takes the account's default release, which built
+# into this target/ beside the pinned one until each refused the other's
+# crates (E0514, 2026-11-27). The release is named to a rustup proxy as well,
+# for a cargo that is one.
+get_filename_component(_cargo_bin "${SCE_CARGO}" DIRECTORY)
+if(EXISTS "${_cargo_bin}/rustc")
+    list(APPEND _cargo_env "RUSTC=${_cargo_bin}/rustc")
+endif()
+if(SCE_LOWERING_RUST_RELEASE AND NOT SCE_LOWERING_NIGHTLY_BIN)
+    list(APPEND _cargo_env "RUSTUP_TOOLCHAIN=${SCE_LOWERING_RUST_RELEASE}")
 endif()
 
 execute_process(

@@ -183,6 +183,7 @@ execute_process(
             -DSCE_LOWERING_TARGET=${_SCE_LOWERING_TARGET}
             -DSCE_LOWERING_TARGET_DIR=${_SCE_LOWERING_TARGET_DIR}
             -DSCE_LOWERING_NIGHTLY_BIN=${_SCE_LOWERING_NIGHTLY_BIN}
+            -DSCE_LOWERING_RUST_RELEASE=${_sce_rust_release}
             -P "${CMAKE_CURRENT_LIST_DIR}/SCEBuildLoweringRun.cmake"
     RESULT_VARIABLE _sce_lowering_rc
 )
