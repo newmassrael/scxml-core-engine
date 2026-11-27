@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "lane": "swift",
+  "steps": [
+    {"kind": "start", "entered": ["locked"], "configuration": ["locked"]},
+    {"kind": "external", "event": "coin", "fired": [{"source": "locked", "index": 0}], "exited": ["locked"], "entered": ["unlocked"], "configuration": ["unlocked"]}
+  ]
+}
