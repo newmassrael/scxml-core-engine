@@ -2280,6 +2280,12 @@ struct GenerateArgs {
     /// are refused, never completed. A document that carries feature
     /// conditions is refused without this flag, since generating it as written
     /// would choose the variant with every feature on for the build.
+    ///
+    /// With `--with-imports` the selection is the set's: each document the
+    /// run generates that imports a feature model is generated as the variant
+    /// it denotes, the selection held to its own model, and every other, the
+    /// feature model itself among them, as written. A selection no document of
+    /// the set reads is refused.
     #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
     features: Option<Vec<String>>,
     /// Declare an Event I/O Processor `type` this build's host serves
@@ -2895,16 +2901,11 @@ struct CheckArgs {
     /// `generate --features` (ADR 0057 §6). Without it `check` judges the
     /// document as written, with every variant held to its references.
     ///
-    /// Single-document runs only, as `--no-std` is: the document-set route
-    /// compiles through the multi-document entry point, which reads each
-    /// document as written.
-    #[arg(
-        long,
-        value_delimiter = ',',
-        num_args = 0..,
-        value_name = "FEATURE",
-        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
-    )]
+    /// On a document set it mirrors `orchestrate --features`: the selection is
+    /// the set's, each statechart of the set written against a feature model
+    /// is judged as the variant it denotes, every other document as written,
+    /// and a selection no statechart of the set reads is refused.
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
     features: Option<Vec<String>>,
     /// Declare an Event I/O Processor `type` this build's host serves,
     /// mirroring `generate --host-processor`. Repeatable.
@@ -4530,6 +4531,23 @@ struct OrchestrateArgs {
     /// capability as running a process with a lifecycle.
     #[arg(long = "host-invoker", value_name = "TYPE")]
     host_invoker: Vec<String>,
+    /// Generate the variant these features denote of every statechart of the
+    /// set written against a feature model, mirroring `generate --features`
+    /// (ADR 0057 §6): comma-separated, `--features` alone for the variant with
+    /// no feature on.
+    ///
+    /// The selection is the set's, one configuration of the build the set is
+    /// generated for. Each statechart that imports a feature model reads the
+    /// variant it denotes, the selection held to that statechart's own model
+    /// (a name it does not declare and a feature without one it requires are
+    /// refused, never completed), and every other document of the set, the
+    /// feature model itself among them, is generated as written. A selection
+    /// that no statechart of the set reads is refused
+    /// (`validation/feature-selection-without-model`). A statechart that
+    /// carries feature conditions is refused without this flag, on every
+    /// backend: a set writes one variant of it.
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
+    features: Option<Vec<String>>,
     /// Refuse the set when any member carries an `<sce:unresolved>`
     /// placeholder, mirroring `generate --strict-unresolved` and taken by
     /// `check` on its document-set route.
@@ -5199,6 +5217,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         const_fold_budget,
         host_processor,
         host_invoker,
+        features,
         strict_unresolved,
         lint,
         lexicon,
@@ -5303,6 +5322,9 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         host_processor_types: host_processor,
         host_invoker_types: host_invoker,
         target_machine,
+        // ADR 0057 §6: the set's selection, read by every statechart of the
+        // set written against a feature model.
+        features: selected_features(features),
         source_hash: Some(drift_ctx.header.source_hex()),
         ..Default::default()
     };
@@ -6476,9 +6498,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std: _,
-        // Declared to conflict with every argument that reaches this route,
-        // as `--no-std` is: a set is compiled as written.
-        features: _,
+        features,
         host_processor,
         host_invoker,
         with_imports,
@@ -6595,6 +6615,9 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // refused against that machine's atomics is a verdict this check has
         // to reach too.
         target_machine,
+        // The selection `orchestrate --features` is given, read by the same
+        // compile, so each statechart is judged as the variant it generates.
+        features: selected_features(features),
         source_hash,
         ..Default::default()
     };
@@ -7585,6 +7608,19 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         args.input_root.as_deref(),
         error_format,
     );
+    // ADR 0057 §6: the selection is the set's. Each document written against
+    // a feature model is generated as the variant it denotes, and every other,
+    // the feature model itself among them, as written; a selection no
+    // document of the set reads is refused before anything is generated. The
+    // judgement is the one `orchestrate` and `check` make of a set's members.
+    let members: Vec<&Path> = units.iter().map(|unit| Path::new(&unit.document)).collect();
+    let selections = crate::member_selections(
+        &members,
+        &include_dirs,
+        selected_features(args.features.clone()).as_deref(),
+        args.scxml.first().map(String::as_str).unwrap_or_default(),
+    )
+    .unwrap_or_else(|refusal| error_format.emit_forge_and_exit(&refusal));
 
     // What the set reads of each codec's body is the set's, counted once over
     // every document it generates and handed to each (docs/adr/0137). The
@@ -7616,7 +7652,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     // every language but Kotlin and Go — is the same file twice; it is
     // generated once.
     let mut generated: BTreeSet<(String, PathBuf)> = BTreeSet::new();
-    for unit in &units {
+    for (unit, selection) in units.iter().zip(selections) {
         let directory = root.join(unit.directory(lang, args.kotlin_package_prefix.as_deref()));
         if !generated.insert((unit.identity.clone(), directory.clone())) {
             continue;
@@ -7624,6 +7660,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         let mut one = args.clone();
         one.with_imports = false;
         one.scxml = vec![unit.document.clone()];
+        one.features = selection;
         one.output_dir = directory.display().to_string();
         // The caller's root describes the caller's documents; a standard
         // document's source set is the library's, as when it is generated

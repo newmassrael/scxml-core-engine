@@ -621,8 +621,18 @@ pub(crate) struct ParsedSCXML {
 /// have an output struct to populate) is legal but consumers that
 /// drive Cargo / depfile sinks MUST forward them — see
 /// [`generator::GeneratedOutput::deps`] for the canonical surface.
-fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
-    let mut parser = parser::SCXMLParser::new();
+///
+/// `features` is the selection the document is read through (ADR 0057 §6):
+/// the parse reads the variant it denotes. `None` reads the document as
+/// written.
+fn compile_model(
+    scxml_path: &str,
+    features: Option<&[String]>,
+) -> Result<ParsedSCXML, CompileError> {
+    let mut parser = match features {
+        Some(features) => parser::SCXMLParser::new().with_features(features.to_vec()),
+        None => parser::SCXMLParser::new(),
+    };
     let mut model = parser.parse_file(scxml_path)?;
     judge_statechart(&mut model, scxml_path, scxml_path, true)?;
     // No provenance root: the library entry points record the path their
@@ -757,6 +767,77 @@ pub fn check_every_variant(
         return Err(refusal);
     }
     Ok(())
+}
+
+/// Whether the document at `path` is written against a feature model (ADR
+/// 0057 §2): whether the document its parse reads, its preprocessors expanded
+/// with `include_dirs`, imports one
+/// ([`product_line::imports_a_feature_model`]). A standard document
+/// (`sce:std/...`) is read from the library this generator embeds.
+///
+/// The one judgement every run over a set of documents makes of a member
+/// before it hands the member the set's selection of features
+/// ([`member_selections`]): `generate --with-imports`, `orchestrate` and
+/// `check` over a set all ask it here. A document that cannot be read or
+/// expanded is refused here, with the refusal its read gives it.
+pub fn written_against_a_feature_model(
+    path: &Path,
+    include_dirs: &[PathBuf],
+) -> Result<bool, CompileError> {
+    let loaded = load_forge_source(path, include_dirs)?;
+    Ok(product_line::imports_a_feature_model(loaded.text()))
+}
+
+/// The selection of features a set of documents is given (`--features`, ADR
+/// 0057 §6), as each of `members` reads it: the selection itself for a member
+/// written against a feature model ([`written_against_a_feature_model`]), and
+/// `None` for every other, which is read as written: the feature model
+/// itself, a forge document, a statechart that imports no model. One entry per
+/// member, in order; every entry is `None` when `features` is.
+///
+/// The selection is the set's, and it names one configuration of the one build
+/// the set is generated for (§2: a build's features are the product line's).
+/// So a member written against a model holds the whole selection to its own
+/// model, as `generate --features` holds it for that member alone: a name its
+/// model does not declare is refused there
+/// (`validation/feature-selection-undeclared`), never dropped for that
+/// member. Two members written against two models are generated together
+/// only under a selection both models admit, and each member's variant is the
+/// one it has when it is generated alone with the same flags, whatever else
+/// the set holds.
+///
+/// A selection that no member reads selects nothing, which is the author's
+/// mistake and not a build: it is refused,
+/// `validation/feature-selection-without-model`, located at `set`, the
+/// document the set is named by.
+pub fn member_selections(
+    members: &[&Path],
+    include_dirs: &[PathBuf],
+    features: Option<&[String]>,
+    set: &str,
+) -> Result<Vec<Option<Vec<String>>>, CompileError> {
+    let Some(features) = features else {
+        return Ok(vec![None; members.len()]);
+    };
+    let selections = members
+        .iter()
+        .map(|member| {
+            written_against_a_feature_model(member, include_dirs)
+                .map(|written| written.then(|| features.to_vec()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if selections.iter().all(Option::is_none) {
+        return Err(forge::error::Located::new(
+            forge::error::ValidationError::FeatureSelectionWithoutModel {
+                features: features.to_vec(),
+            }
+            .into(),
+            set,
+            None,
+            None,
+        ));
+    }
+    Ok(selections)
 }
 
 /// Typed error channel for the two `compile_model*` helpers.
@@ -1584,7 +1665,7 @@ pub fn compile_scxml_to_string_typed(
     // (`compile_scxml`, `sce-codegen --write-deps`) must route through
     // an entry that returns [`generator::GeneratedOutput`] so the dep
     // set survives to the depfile sink.
-    let ParsedSCXML { model, .. } = compile_model(scxml_path)?;
+    let ParsedSCXML { model, .. } = compile_model(scxml_path, None)?;
     refuse_unbound_digest_outputs(&model, scxml_path, FILE_ENTRY_POINTS)?;
     refuse_carried_children(
         &model,
@@ -1888,6 +1969,7 @@ pub fn compile_scxml_lang_typed_with_section(
             section_class,
             options,
             forge: None,
+            features: None,
             digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
         },
         |_| Ok(()),
@@ -1923,6 +2005,7 @@ pub fn compile_scxml_lang_with_deploy(
             section_class: None,
             options: &generator::StatechartCodegenOptions::default(),
             forge: None,
+            features: None,
             digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
         },
         |model| {
@@ -1959,6 +2042,9 @@ struct StatechartRun<'a> {
     /// imports the packages it calls by, and what a kind declared inside a
     /// machine is compiled with. `None` for an entry that takes none.
     forge: Option<&'a ForgeCompileOptions>,
+    /// The selection of features the document is read through (ADR 0057 §6),
+    /// the variant it denotes; `None` reads the document as written.
+    features: Option<&'a [String]>,
     /// The digest the files are written under, or the route that has none.
     digest: RunDigest<'a>,
 }
@@ -1985,12 +2071,13 @@ fn compile_scxml_lang_typed_mutated(
         section_class,
         options,
         forge,
+        features,
         digest,
     } = *run;
     let ParsedSCXML {
         mut model,
         preprocessor_deps,
-    } = compile_model(scxml_path)?;
+    } = compile_model(scxml_path, features)?;
     // §scxml-6.2.5: applied here rather than inside `compile_model`
     // because this is the entry point that has the caller's options —
     // and applied before `mutate` and before any generator arm, so the
@@ -4735,6 +4822,17 @@ pub struct ForgeCompileOptions {
     /// ([`compile_forge_with_deploy`], the command line's
     /// `generate --deploy --target-machine`) and leave this `None`.
     pub target_machine: Option<String>,
+    /// ADR 0057 §6: the selection of features a document set is compiled
+    /// under (`orchestrate --features`, and `check --features` over a set),
+    /// `None` for none. The selection is the set's: each statechart of the set
+    /// written against a feature model ([`written_against_a_feature_model`])
+    /// reads the variant it denotes, held to that statechart's own model as
+    /// `generate --features` holds it for the statechart alone, and every
+    /// other document of the set is read as written. A selection no statechart
+    /// of the set reads is refused ([`member_selections`]). Read by
+    /// [`compile_scxml_with_imports`] alone: a forge document is never written
+    /// against a feature model.
+    pub features: Option<Vec<String>>,
     /// SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + §synth-5-M lines 2771-2828
     /// (item C10) — sorted set of `<sce:link>` doc names whose
     /// orchestrator-resolved (deploy `domain_attrs.trust_class:
@@ -6007,8 +6105,25 @@ fn compile_document_set(
     // validators against the shared registries. The on-sample wire-up
     // here is the production-side closure for the pre-Atomic-A silently
     // broken hook (`feedback_silently_broken_hooks.md`).
+    //
+    // ADR 0057 §6: the set's selection of features, as each statechart reads
+    // it: the variant it denotes for one written against a feature model, the
+    // document as written for any other. Decided once, here, so the
+    // validators below and the codegen of pass 3 read one variant of each.
+    let set_label = scxml_files
+        .iter()
+        .chain(forge_files)
+        .next()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    let selections = member_selections(
+        scxml_files,
+        &options.include_dirs,
+        options.features.as_deref(),
+        &set_label,
+    )?;
     let mut scxml_models: Vec<(std::path::PathBuf, SCXMLModel)> = Vec::new();
-    for scxml_path in scxml_files {
+    for (scxml_path, selection) in scxml_files.iter().zip(&selections) {
         let path_str = scxml_path.to_str().unwrap_or("");
         // Pass-2 only consumes the model for cross-doc validators
         // (`validate_on_sample_link_references`, `resolve_listener_links`,
@@ -6016,7 +6131,7 @@ fn compile_document_set(
         // re-collected in pass-3 by `compile_scxml_lang_typed_with_section`
         // and attached to each per-doc `GeneratedOutput.deps` — so
         // dropping them here is intentional, not a leak.
-        let ParsedSCXML { model, .. } = compile_model(path_str)?;
+        let ParsedSCXML { model, .. } = compile_model(path_str, selection.as_deref())?;
         // A statechart's name is its file stem — `SCXMLModel::name` is the
         // label's identifier, never the `name` attribute — so every
         // statechart registers, and an outbox ref `<owner>.inbox` names
@@ -6643,7 +6758,7 @@ fn compile_document_set(
         }
     }
 
-    for scxml_path in scxml_files {
+    for (scxml_path, selection) in scxml_files.iter().zip(&selections) {
         let path_str = scxml_path.to_str().unwrap_or("");
         let basename = scxml_path
             .file_name()
@@ -6679,6 +6794,8 @@ fn compile_document_set(
                 driver_root: deploy_driver_root.as_deref(),
                 section_class: deploy_section_class.as_deref(),
                 options: &codegen_options,
+                // The variant pass 2 read and validated, as the set selects it.
+                features: selection.as_deref(),
                 // The set's own options reach each statechart and every child
                 // it carries, as they reach each forge document of the set and
                 // as `generate` gives its one document its own: the Go module

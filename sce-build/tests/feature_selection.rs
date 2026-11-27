@@ -4,7 +4,11 @@
 //! A selection of features (ADR 0057 §6): `generate --features` generates the
 //! variant it denotes, `check --features` judges it, `project` prints it, a
 //! selection the model does not admit is refused, and a gated document is not
-//! generated without one.
+//! generated without one. Over a set of documents (`generate --with-imports`,
+//! `orchestrate`, `check` over a set) the selection is the set's: each
+//! statechart written against a model reads the variant, held to its own
+//! model, every other document is read as written, and a selection no
+//! document of the set reads is refused.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -448,4 +452,363 @@ fn a_selection_for_a_document_without_a_model_is_refused() {
         first_code(&run),
         "validation/feature-selection-without-model"
     );
+}
+
+/// A statechart that imports no feature model.
+const PLAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" name="plain">
+  <state id="running">
+    <transition event="stop" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+/// A second feature model: one feature the first declares, and one it does not.
+const OTHER_FEATURES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="feature-model" name="other_features">
+  <sce:feature name="session-unicast"/>
+  <sce:feature name="telemetry"/>
+</scxml>
+"#;
+
+/// A statechart written against the second model.
+const OTHER_MACHINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="quiet" name="other">
+  <sce:import kind="feature-model" src="other_features.scxml" as="features"/>
+  <state id="quiet">
+    <transition event="report" target="reporting" sce:requires="telemetry"/>
+  </state>
+  <state id="reporting" sce:requires="telemetry"/>
+</scxml>
+"#;
+
+/// A deploy whose one machine is the product line's statechart.
+const DEPLOY: &str = r#"
+version: "1.0"
+topology:
+  host:
+    machines:
+      machine:
+        source: machine.scxml
+"#;
+
+/// A directory holding the product line (`features.scxml`, `machine.scxml`), a
+/// statechart that imports no model (`plain.scxml`), a second product line
+/// over a second model (`other_features.scxml`, `other.scxml`) and a deploy
+/// of the first machine (`deploy.yaml`).
+fn set_of_documents() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for (file, text) in [
+        ("features.scxml", FEATURES),
+        ("machine.scxml", MACHINE),
+        ("plain.scxml", PLAIN),
+        ("other_features.scxml", OTHER_FEATURES),
+        ("other.scxml", OTHER_MACHINE),
+        ("deploy.yaml", DEPLOY),
+    ] {
+        std::fs::write(dir.path().join(file), text).unwrap();
+    }
+    dir
+}
+
+/// `generate --with-imports --features`: the statechart written against the
+/// model is generated as the variant the selection denotes, and the model the
+/// run reaches and a statechart that imports no model are generated as
+/// written, though each named alone with the selection refuses it.
+#[test]
+fn a_set_generates_the_variant_of_each_statechart_written_against_a_model() {
+    let dir = set_of_documents();
+    let machine = dir.path().join("machine.scxml");
+    let plain = dir.path().join("plain.scxml");
+    let generate = |language: &str, out: &Path| {
+        sce_codegen(&[
+            "--error-format",
+            "json",
+            "generate",
+            path(&machine),
+            path(&plain),
+            "--with-imports",
+            "-l",
+            language,
+            "-o",
+            path(out),
+            "--features",
+            "session-unicast",
+        ])
+    };
+
+    let out = dir.path().join("rust");
+    let run = generate("rust", &out);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let code = std::fs::read_to_string(out.join("machine_sm.rs")).expect("the machine");
+    assert!(code.contains("Open"), "the variant keeps `open`");
+    assert!(
+        !code.contains("Accepting"),
+        "the variant has no `accepting`"
+    );
+    assert!(
+        !code.contains("feature = \"session-unicast"),
+        "one variant was written, not the machine for every build"
+    );
+    assert!(
+        out.join("plain_sm.rs").is_file(),
+        "the statechart that imports no model was not generated"
+    );
+
+    // C11 keeps the variability, so without a selection it writes the machine
+    // for every build; with one it writes the variant, as Rust does.
+    let out = dir.path().join("c11");
+    let run = generate("c11", &out);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let source = std::fs::read_to_string(out.join("machine_sm.c")).expect("the machine");
+    assert!(
+        !source.contains("SCE_FEATURE_SESSION_UNICAST"),
+        "one variant was written, not the machine for every build"
+    );
+}
+
+/// `sce-codegen --error-format json <command> --document <machine>
+/// --with-imports --deploy <deploy> -l rust`, then `extra`.
+fn over_the_deployed_set(dir: &Path, command: &str, extra: &[&str]) -> Output {
+    let machine = dir.join("machine.scxml");
+    let deploy = dir.join("deploy.yaml");
+    let mut args = vec![
+        "--error-format",
+        "json",
+        command,
+        "--document",
+        path(&machine),
+        "--with-imports",
+        "--deploy",
+        path(&deploy),
+        "-l",
+        "rust",
+    ];
+    args.extend_from_slice(extra);
+    sce_codegen(&args)
+}
+
+/// `orchestrate --deploy --with-imports` generates a set holding a gated
+/// statechart only under a selection, and with one writes the variant;
+/// `check` over the same set reaches the same verdict both ways.
+#[test]
+fn a_deployed_set_is_generated_and_checked_under_its_selection() {
+    let dir = set_of_documents();
+
+    let out = dir.path().join("unselected");
+    let orchestrated = over_the_deployed_set(dir.path(), "orchestrate", &["-o", path(&out)]);
+    assert!(
+        !orchestrated.status.success(),
+        "a set holding a gated statechart was generated with no selection"
+    );
+    assert_eq!(
+        first_code(&orchestrated),
+        "codegen/feature-selection-required"
+    );
+    let checked = over_the_deployed_set(dir.path(), "check", &[]);
+    assert!(
+        !checked.status.success(),
+        "check disagreed with orchestrate"
+    );
+    assert_eq!(first_code(&checked), "codegen/feature-selection-required");
+
+    let out = dir.path().join("selected");
+    let orchestrated = over_the_deployed_set(
+        dir.path(),
+        "orchestrate",
+        &["-o", path(&out), "--features", "session-unicast"],
+    );
+    assert!(
+        orchestrated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&orchestrated.stderr)
+    );
+    let code = std::fs::read_to_string(out.join("machine_sm.rs")).expect("the machine");
+    assert!(code.contains("Open"), "the variant keeps `open`");
+    assert!(
+        !code.contains("Accepting"),
+        "the variant has no `accepting`"
+    );
+    let checked = over_the_deployed_set(dir.path(), "check", &["--features", "session-unicast"]);
+    assert!(
+        checked.status.success(),
+        "check disagreed with orchestrate: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+}
+
+/// A selection that no document of the set reads selects nothing and is
+/// refused, on every route over a set, before anything is written.
+#[test]
+fn a_selection_no_document_of_a_set_reads_is_refused() {
+    let dir = set_of_documents();
+    let plain = dir.path().join("plain.scxml");
+    let model = dir.path().join("features.scxml");
+    let out = dir.path().join("out");
+    let runs = [
+        (
+            "generate --with-imports",
+            sce_codegen(&[
+                "--error-format",
+                "json",
+                "generate",
+                path(&plain),
+                "--with-imports",
+                "-l",
+                "rust",
+                "-o",
+                path(&out),
+                "--features",
+                "session-unicast",
+            ]),
+        ),
+        // The model itself is no document written against a model.
+        (
+            "generate --with-imports of the model",
+            sce_codegen(&[
+                "--error-format",
+                "json",
+                "generate",
+                path(&model),
+                "--with-imports",
+                "-l",
+                "rust",
+                "-o",
+                path(&out),
+                "--features",
+                "session-unicast",
+            ]),
+        ),
+        (
+            "orchestrate",
+            sce_codegen(&[
+                "--error-format",
+                "json",
+                "orchestrate",
+                "--document",
+                path(&plain),
+                "-l",
+                "rust",
+                "-o",
+                path(&out),
+                "--features",
+                "session-unicast",
+            ]),
+        ),
+        (
+            "check",
+            sce_codegen(&[
+                "--error-format",
+                "json",
+                "check",
+                "--document",
+                path(&plain),
+                "-l",
+                "rust",
+                "--features",
+                "session-unicast",
+            ]),
+        ),
+    ];
+    for (command, run) in &runs {
+        assert!(
+            !run.status.success(),
+            "{command}: a selection that selects nothing was accepted"
+        );
+        assert_eq!(
+            first_code(run),
+            "validation/feature-selection-without-model",
+            "{command}"
+        );
+    }
+    assert!(!out.exists(), "a refused run wrote");
+}
+
+/// The selection is one configuration of the build the set is generated for:
+/// each statechart holds the whole of it to its own model. Two statecharts
+/// written against two models are generated together under a selection both
+/// models admit, and a name one model does not declare is refused for the
+/// statechart written against it, never dropped for it.
+#[test]
+fn each_statechart_of_a_set_holds_the_selection_to_its_own_model() {
+    let dir = set_of_documents();
+    let machine = dir.path().join("machine.scxml");
+    let other = dir.path().join("other.scxml");
+    let generate = |features: &str, out: &Path| {
+        sce_codegen(&[
+            "--error-format",
+            "json",
+            "generate",
+            path(&machine),
+            path(&other),
+            "--with-imports",
+            "-l",
+            "rust",
+            "-o",
+            path(out),
+            "--features",
+            features,
+        ])
+    };
+
+    let out = dir.path().join("admitted");
+    let run = generate("session-unicast", &out);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let code = std::fs::read_to_string(out.join("other_sm.rs")).expect("the other machine");
+    assert!(code.contains("Quiet"), "the variant keeps `quiet`");
+    assert!(
+        !code.contains("Reporting"),
+        "the variant has no `reporting`"
+    );
+
+    // `telemetry` is a feature of the second model and not of the first.
+    let out = dir.path().join("refused");
+    let run = generate("session-unicast,telemetry", &out);
+    assert!(
+        !run.status.success(),
+        "a name the first model does not declare was dropped for its statechart"
+    );
+    assert_eq!(first_code(&run), "validation/feature-selection-undeclared");
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("telemetry"),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+/// Whether a document is written against a feature model is read off its root,
+/// once, for every route over a set: the product line's statechart is, and the
+/// model itself, a statechart that imports none and a text that is not XML are
+/// not.
+#[test]
+fn a_document_is_written_against_a_model_when_its_root_imports_one() {
+    use sce_build::product_line::imports_a_feature_model;
+    assert!(imports_a_feature_model(MACHINE));
+    assert!(!imports_a_feature_model(FEATURES));
+    assert!(!imports_a_feature_model(PLAIN));
+    assert!(!imports_a_feature_model("<scxml"));
+
+    let dir = set_of_documents();
+    let written = |file: &str| {
+        sce_build::written_against_a_feature_model(&dir.path().join(file), &[])
+            .expect("the document is read")
+    };
+    assert!(written("machine.scxml"));
+    assert!(!written("features.scxml"));
+    assert!(!written("plain.scxml"));
 }

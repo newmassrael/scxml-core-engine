@@ -84,18 +84,42 @@ pub struct ProductLine {
     references: Vec<Reference>,
 }
 
+/// Whether `node` is an `<sce:import kind="feature-model">`: the one reading of
+/// a feature-model import, for the parse of a document and for the question
+/// whether a document is written against a model at all
+/// ([`imports_a_feature_model`]).
+fn is_feature_model_import(node: &roxmltree::Node<'_, '_>) -> bool {
+    node.is_element()
+        && node.tag_name().namespace() == Some(SCE_NAMESPACE)
+        && node.tag_name().name() == "import"
+        && node.attribute("kind") == Some("feature-model")
+}
+
+/// Whether the document `text` is written against a feature model: whether its
+/// root imports one (§2). `text` is the document as its parse reads it, its
+/// preprocessors expanded, so the answer is the one the parse gives: a
+/// document that imports a model reads a selection of features as the variant
+/// it denotes (§6), and any other document refuses one.
+///
+/// A text that is not XML imports none; its parse refuses it in its own words.
+/// Two imports are a document written against a model, whose parse refuses
+/// the second ([`feature_model_import`]).
+pub fn imports_a_feature_model(text: &str) -> bool {
+    roxmltree::Document::parse(text).is_ok_and(|document| {
+        document
+            .root_element()
+            .children()
+            .any(|child| is_feature_model_import(&child))
+    })
+}
+
 /// The `<sce:import kind="feature-model">` of `root`, if it has one; two are
 /// refused, at the second, since a statechart is written against one model.
 pub fn feature_model_import<'a, 'input>(
     root: &roxmltree::Node<'a, 'input>,
     source_name: &str,
 ) -> Result<Option<roxmltree::Node<'a, 'input>>, Located<ForgeError>> {
-    let mut imports = root.children().filter(|child| {
-        child.is_element()
-            && child.tag_name().namespace() == Some(SCE_NAMESPACE)
-            && child.tag_name().name() == "import"
-            && child.attribute("kind") == Some("feature-model")
-    });
+    let mut imports = root.children().filter(is_feature_model_import);
     let first = imports.next();
     if let (Some(first), Some(second)) = (first, imports.next()) {
         return Err(at(
