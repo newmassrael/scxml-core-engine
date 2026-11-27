@@ -148,6 +148,7 @@ macro_rules! pool_runner {
                 let mut held: Vec<Option<Held>> = (0..8).map(|_| None).collect();
                 let mut indices: Vec<Option<SlotIndex>> = vec![None; 8];
                 let mut sent: Vec<u8> = Vec::new();
+                let absent = Value::Null;
                 for (n, step) in steps.iter().enumerate() {
                     let context = format!("{id} step {n}");
                     let context = context.as_str();
@@ -155,7 +156,13 @@ macro_rules! pool_runner {
                     let slot_reg = || number(step, "slot", context);
                     let index_reg = || number(step, "index", context);
                     let out_reg = || number(step, "out", context);
-                    let expect = field(step, "expect", context);
+                    // A step that only moves bytes or names an index answers
+                    // nothing, and the contract gives it no `expect`; every other
+                    // step must give one.
+                    let expect = match op {
+                        "write" | "read" | "sent" | "index" | "into_index" => &absent,
+                        _ => field(step, "expect", context),
+                    };
                     let index_at = |indices: &[Option<SlotIndex>]| {
                         indices[index_reg()]
                             .unwrap_or_else(|| panic!("{context}: the index register is empty"))
