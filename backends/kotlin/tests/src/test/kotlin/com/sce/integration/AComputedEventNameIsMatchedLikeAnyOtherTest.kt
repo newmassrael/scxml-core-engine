@@ -22,6 +22,9 @@ package com.sce.integration
 import com.sce.integration.a_computed_event_name_is_matched_like_any_other.AComputedEventNameIsMatchedLikeAnyOtherState
 import com.sce.integration.a_computed_event_name_is_matched_like_any_other.AComputedEventNameIsMatchedLikeAnyOtherStateMachine
 import com.sce.integration.a_computed_event_name_is_matched_like_any_other.AComputedEventNameIsMatchedLikeAnyOtherTransitions
+import com.sce.runtime.TraceFired
+import com.sce.runtime.TraceStep
+import com.sce.runtime.TraceStepKind
 import com.sce.runtime.TransitionTaken
 import com.sce.w3c.W3CTestBase
 import com.sce.w3c.driveOnVirtualTime
@@ -98,5 +101,61 @@ class AComputedEventNameIsMatchedLikeAnyOtherTest {
 
         assertEquals(AComputedEventNameIsMatchedLikeAnyOtherState.Pass, sm.terminalState)
         assertTrue(seen.isEmpty(), "a cleared observer was told $seen")
+    }
+
+    /**
+     * The trace port (docs/adr/0115, D4 and D8) names each event step's event by
+     * the name `_event.name` holds while it is taken, which the run trace format
+     * defines the field as: the whole name it was sent under, and not the event
+     * of the document it matched (`request`, or the wildcard). The run is a
+     * start, six event steps, each off the queue its event came by and taking
+     * one transition from s1 to s6 in turn, and a stop that exits `pass` and
+     * names it the outcome; the transitions the steps took are the ones the
+     * transition observer is told. The C11 lane's `c11_integration_trace_port`
+     * and the Rust lane's `an_event_step_names_the_event_by_the_name_it_was_sent_under`
+     * hold the same of this document.
+     */
+    @Test
+    fun aTracedRunNamesEachEventByTheNameItWasSentUnder() {
+        val told = mutableListOf<TraceStep>()
+        val observed = mutableListOf<TransitionTaken<AComputedEventNameIsMatchedLikeAnyOtherState>>()
+        val sm = AComputedEventNameIsMatchedLikeAnyOtherStateMachine(W3CTestBase.createEngine())
+        sm.tracePort = { step -> told.add(step) }
+        sm.transitionObserver = { taken -> observed.add(taken) }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
+
+        assertEquals(AComputedEventNameIsMatchedLikeAnyOtherState.Pass, sm.terminalState)
+        val events = listOf(
+            Triple(TraceStepKind.EXTERNAL, "request.new", "s1" to "s2"),
+            Triple(TraceStepKind.EXTERNAL, "other.thing", "s2" to "s3"),
+            Triple(TraceStepKind.INTERNAL, "request.again", "s3" to "s4"),
+            Triple(TraceStepKind.INTERNAL, "last.one", "s4" to "s5"),
+            Triple(TraceStepKind.INTERNAL, "request.third", "s5" to "s6"),
+            Triple(TraceStepKind.EXTERNAL, "last.two", "s6" to "pass"),
+        )
+        val expected = buildList {
+            add(TraceStep(TraceStepKind.START, entered = listOf("s1"), configuration = listOf("s1")))
+            for ((kind, event, move) in events) {
+                val (source, target) = move
+                add(
+                    TraceStep(
+                        kind,
+                        event = event,
+                        fired = listOf(TraceFired(source, 0)),
+                        exited = listOf(source),
+                        entered = listOf(target),
+                        configuration = listOf(target),
+                    )
+                )
+            }
+            add(TraceStep(TraceStepKind.STOP, exited = listOf("pass"), outcome = "pass"))
+        }
+        assertEquals(expected, told, "the steps the trace port was told, in the order the run took them")
+        assertEquals(
+            observed.map { taken -> TraceFired(sm.nameOfState(taken.source), taken.index) },
+            told.flatMap { step -> step.fired },
+            "the transitions the steps took are the ones the observer is told"
+        )
     }
 }

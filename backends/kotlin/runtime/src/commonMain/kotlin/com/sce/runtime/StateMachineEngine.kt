@@ -807,6 +807,36 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     var transitionObserver: ((TransitionTaken<S>) -> Unit)? = null
 
+    /**
+     * Told each step of Appendix D this engine takes, as the run trace format
+     * says it; `null` tells nothing (docs/adr/0115, D4 and D8).
+     *
+     * A step is the entry into the initial configuration, each microstep on
+     * eventless transitions, each event taken off the internal or the external
+     * queue with the microstep it selects (none when it selects nothing), or the
+     * exit of the interpreter, each with the transitions it took by their rows
+     * of the emitted transition table, the states it exited and entered in the
+     * order it exited and entered them, and the configuration it left
+     * ([TraceStep]). Each is told once it is over. [RunTrace] keeps what it is
+     * told and writes the file `sce-codegen formal traces` judges against the
+     * document's model.
+     *
+     * It reads and is asked nothing, so a machine with one set takes the steps
+     * one without takes, and with none set each place a step is told asks one
+     * `null` check. It runs on the thread that drives the engine, inside the
+     * macrostep, and must not call back into the engine; an exception it throws
+     * is not caught. Set it before `initialize` to be told the start. Setting it
+     * drops a step half told to the port it replaces.
+     */
+    var tracePort: ((TraceStep) -> Unit)?
+        get() = trace.port
+        set(value) {
+            trace.set(value)
+        }
+
+    /** What [tracePort] set, and the step being told. */
+    private val trace = TraceRecorder()
+
     // --- Event Queue ---
 
     // --- Event Metadata (§scxml-5.10) ---
@@ -3184,7 +3214,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun enterInitialConfiguration() {
         declareDatamodelOfStart()
+        // docs/adr/0115, D4: the entry into the initial configuration is the
+        // run's first step.
+        traceBegin(TraceStepKind.START, null)
         Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))
+        traceEnd()
     }
 
     /**
@@ -5272,9 +5306,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
             return
         }
         if (taken !== queued) {
+            // docs/adr/0115, D4: what the external step takes is the
+            // `error.execution` taken in the delivery's place, under its own name.
+            traceBegin(TraceStepKind.EXTERNAL, taken.event)
             answerInternal(taken.event)
+            traceEnd()
             return
         }
+        // docs/adr/0115, D4: the event taken off the external queue is a step,
+        // with the microstep it selects or none.
+        traceBegin(TraceStepKind.EXTERNAL, queued.event)
         executeFinalizeForChildEvent(queued.event)
         autoForwardEvent(queued.event, queued.metadata)
         // §scxml-3.1.2: discarding an event no transition matched is the rule;
@@ -5288,6 +5329,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             discardedExternalEventCount++
             lastDiscarded = queued.event
         }
+        traceEnd()
     }
 
     /**
@@ -6566,10 +6608,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun exitInterpreter() {
         val configurationBeforeExit = configuration.toList()
+        // docs/adr/0115, D4: the step whose microstep ended the run is over
+        // before the exit that follows it, and the exit is a step of the run
+        // once, while the run holds a configuration. A call after it, which
+        // exits nothing, is no step of Appendix D.
+        traceEnd()
+        if (configurationBeforeExit.isNotEmpty()) traceBegin(TraceStepKind.STOP, null)
         // `configuration.toList().sort(exitOrder)` — reverse document order.
         for (state in configurationBeforeExit.sortedByDescending { documentOrderOf(it) }) {
             run.exitState(state, configurationBeforeExit)
         }
+        traceEnd()
     }
 
     private fun flushPendingFinalState() {
@@ -6677,6 +6726,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // generated `onExit`) run while the state is still in the
             // configuration, so `In(state)` inside its own handler is true;
             // configuration.delete(s) is the last step.
+            //
+            // docs/adr/0115, D4: the step being told exits it, in this order.
+            if (trace.isOpen) trace.exited(stateIdOf(state))
             onExit(state)
             this@StateMachineEngine.configuration.remove(state)
         }
@@ -6691,6 +6743,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         override fun enterState(state: S, isDefaultEntry: Boolean) {
             this@StateMachineEngine.configuration.add(state)
+            // docs/adr/0115, D4: the step being told enters it, in this order.
+            if (trace.isOpen) trace.entered(stateIdOf(state))
             onEntry(state, isDefaultEntry)
         }
 
@@ -6725,6 +6779,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
         transitionObserver?.let { observer ->
             for (transition in transitions) {
                 observer(TransitionTaken(transition.source, transition.transitionIndex))
+            }
+        }
+        // docs/adr/0115, D4: the rows the step being told takes, in selection
+        // order, by the same pairs the transition observer is told.
+        if (trace.isOpen) {
+            for (transition in transitions) {
+                trace.fired(stateIdOf(transition.source), transition.transitionIndex)
             }
         }
         Microstep.microstep(run, transitions)
@@ -6801,7 +6862,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     recordTruncatedMacrostep(eventless[0].source)
                     break
                 }
+                // docs/adr/0115, D4: a microstep on eventless transitions is a step.
+                traceBegin(TraceStepKind.EVENTLESS, null)
                 microstep(eventless, null)
+                traceEnd()
                 macrostepMicrostepsTaken++
                 continue
             }
@@ -6832,7 +6896,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // is found that matches them". Ignoring them is the clause;
                 // staying silent about it is not, and [answerInternal] counts
                 // one no transition matched.
+                //
+                // docs/adr/0115, D4: the event taken off the internal queue is a
+                // step, with the microstep it selects or none.
+                traceBegin(TraceStepKind.INTERNAL, taken.event)
                 answerInternal(taken.event)
+                traceEnd()
                 continue
             }
 
@@ -6842,6 +6911,32 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // the count of what was refused stays where the host reads it.
             errorCascadeDepth = 0
             break
+        }
+    }
+
+    /**
+     * Begin a step of the run's trace (docs/adr/0115, D4), which took [event]
+     * when it is an event step, named by the name `_event.name` holds while it
+     * is taken: the name it arrived under when a door resolved it to a shorter
+     * member ([EventMetadata.name]), else its member's own. Nothing when no
+     * trace port is set.
+     */
+    private fun traceBegin(kind: TraceStepKind, event: E?) {
+        if (!trace.isSet) return
+        trace.begin(kind, event?.let { currentEventMetadata.name.ifEmpty { eventNameOf(it) ?: "" } })
+    }
+
+    /**
+     * The step being traced is over: tell the trace port it, with the
+     * configuration it left in document order, or, for a stop, the top-level
+     * `<final>` the run ended in. Nothing when no step is being told.
+     */
+    private fun traceEnd() {
+        if (!trace.isOpen) return
+        if (trace.isStop) {
+            trace.end(emptyList(), terminalState?.let { stateIdOf(it) })
+        } else {
+            trace.end(configuration.sortedBy { documentOrderOf(it) }.map { stateIdOf(it) }, null)
         }
     }
 
