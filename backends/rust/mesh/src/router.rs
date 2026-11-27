@@ -449,6 +449,14 @@ impl Router {
         Ok(())
     }
 
+    /// Whether what arrives on `peer`'s link is judged by its instance's completion records: `peer`
+    /// is an instance of an open machine whose binding receives durably (docs/adr/0113, D5;
+    /// [`Self::receive_durably`]). The envelopes of an instance of any other open machine are
+    /// judged by the section 10.5 window, as a `transport` receipt's are.
+    pub fn judges_by_records(&self, peer: &str) -> bool {
+        self.open_of(peer).is_some_and(|open| open.durable)
+    }
+
     /// The open machine `peer` names an instance of, when it names one.
     fn open_of(&self, peer: &str) -> Option<&OpenMachine> {
         let (machine, _) = instance_of(peer)?;

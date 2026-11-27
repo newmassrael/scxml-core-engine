@@ -465,6 +465,12 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         }
     }
 
+    /// Whether what arrives on `peer`'s link is judged by its instance's completion records (see
+    /// [`Router::judges_by_records`]).
+    pub fn judges_by_records(&self, peer: &str) -> bool {
+        self.router.judges_by_records(peer)
+    }
+
     /// The instances of open machines the endpoint's router bound since the host last asked (see
     /// [`Router::take_bound`]).
     pub fn take_bound(&mut self) -> Vec<String> {

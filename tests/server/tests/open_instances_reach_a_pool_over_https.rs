@@ -67,7 +67,9 @@ fn open_ledger(members: Members) -> Machine {
                 responders: Responders::Instance,
                 ..base.peers[0].config
             },
-            link: HTTPS.link,
+            // docs/adr/0113, D5: the instances send under `receipt: durable`, whose guarantee is
+            // the completion records a repeat is answered from.
+            link: ledger::durable_https(1_024, 600_000).link,
         },
         members,
     }]));

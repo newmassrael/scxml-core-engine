@@ -2284,37 +2284,43 @@ where
                 let mut endpoint = lock(&session.endpoint);
                 let mut followed = None;
                 match input {
-                    Input::Envelope {
-                        peer,
-                        bytes,
-                        receipt,
-                        judged: None,
-                    } => {
-                        endpoint.receive(&peer, bytes);
-                        session.unsaved.push(receipt);
-                    }
+                    // docs/adr/0113, D5: an instance whose binding receives durably is judged by
+                    // its completion records under the incarnation its edge took it in under;
+                    // every other envelope, an instance's under a `transport` receipt among them,
+                    // by the section 10.5 window.
                     Input::Envelope {
                         peer,
                         bytes,
                         receipt,
                         judged: Some((made_under, standing)),
-                    } => match endpoint.receive_member(&peer, made_under, standing, bytes) {
-                        Ok(()) => session.unsaved.push(receipt),
-                        // docs/adr/0113, D5: judged again as it runs, it names an incarnation
-                        // its member no longer stands under, and nothing of it was taken in.
-                        Err(RouterError::Fenced { current, .. }) => {
-                            receipt.settle(Fate::Fenced { current });
+                    } if endpoint.judges_by_records(&peer) => {
+                        match endpoint.receive_member(&peer, made_under, standing, bytes) {
+                            Ok(()) => session.unsaved.push(receipt),
+                            // docs/adr/0113, D5: judged again as it runs, it names an incarnation
+                            // its member no longer stands under, and nothing of it was taken in.
+                            Err(RouterError::Fenced { current, .. }) => {
+                                receipt.settle(Fate::Fenced { current });
+                            }
+                            // D6: the session binds as many instances as the deployment allows, and
+                            // none is put out for this one: it is shed, and carried again.
+                            Err(refused) => {
+                                receipt.settle(Fate::Lost);
+                                self.error(PoolError::Endpoint {
+                                    key: key.to_string(),
+                                    error: refused,
+                                });
+                            }
                         }
-                        // D6: the session binds as many instances as the deployment allows, and
-                        // none is put out for this one: it is shed, and carried again.
-                        Err(refused) => {
-                            receipt.settle(Fate::Lost);
-                            self.error(PoolError::Endpoint {
-                                key: key.to_string(),
-                                error: refused,
-                            });
-                        }
-                    },
+                    }
+                    Input::Envelope {
+                        peer,
+                        bytes,
+                        receipt,
+                        ..
+                    } => {
+                        endpoint.receive(&peer, bytes);
+                        session.unsaved.push(receipt);
+                    }
                     Input::Stand(peer, standing) => endpoint.stand(&peer, standing),
                     Input::EndMember(peer) => endpoint.remove_peer(&peer),
                     Input::Ready(peer) => endpoint.peer_ready(&peer),
@@ -3074,7 +3080,7 @@ mod tests {
     use super::*;
     use crate::endpoint::{MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE};
     use crate::inbound::Delivery;
-    use crate::peers::{Instances, Peer, PeerLink};
+    use crate::peers::{Instances, OpenPeer, Peer, PeerLink};
     use crate::router::{PeerConfig, Responders};
     use crate::rpc::MESH_EVENT_PARAM;
     use alloc::vec;
@@ -5968,5 +5974,69 @@ mod tests {
             refused,
             Err(PoolConfigError::NoMembers { machine }) if machine == "rooms"
         ));
+    }
+
+    /// docs/adr/0113, D5: an instance whose binding takes a `transport` receipt is admitted by its
+    /// edge and taken in by the section 10.5 window, whose guarantee it has; completion records
+    /// are a `durable` receipt's. Red if the pool hands such an envelope to the records: the
+    /// router refuses it as not durable, nothing is taken in, and the room stays empty though its
+    /// envelope is settled.
+    #[test]
+    fn an_instance_under_a_transport_receipt_is_taken_in_by_the_window() {
+        const TRANSPORT_ROOMS: Machine = Machine {
+            open_peers: &[OpenPeer {
+                peer: Peer {
+                    link: PeerLink::HttpsAccept {
+                        listen: "0.0.0.0:8443",
+                        authenticator: crate::peers::HttpsAuthenticator::Key,
+                        max_hold_ms: 30_000,
+                        max_body_bytes: 1_048_576,
+                        absence_ms: 120_000,
+                        mailbox: 1024,
+                        max_clients: 100_000,
+                        max_response_bytes: 1_048_576,
+                        rate: crate::peers::EdgeRates::DEFAULT,
+                        trusted_proxies: &[],
+                        sign: None,
+                        max_skew_ms: 300_000,
+                        fresh_ms: None,
+                        receipt: crate::peers::Receipt::Transport,
+                        retain_ms: 60_000,
+                    },
+                    ..PHONE.peer
+                },
+                ..PHONE
+            }],
+            ..ROOMS
+        };
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let pool = Pool::with_members(
+            TRANSPORT_ROOMS,
+            PoolConfig {
+                owner: "p1".to_string(),
+                lease_ttl_ms: LEASE_TTL_MS,
+                renew_every_ms: 3_000,
+            },
+            Rooms {
+                probe: Arc::clone(&probe),
+            },
+            Arc::new(store.clone()),
+            Wire::default(),
+            clock.clone(),
+        )
+        .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+        let incarnation = joined(&store, "phone/a1", "n1", &clock);
+        let (key, taken) = pool.receive_member(
+            "phone/a1",
+            incarnation,
+            Standing {
+                incarnation,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 1),
+        );
+        pool.run(key.as_deref().expect("placed"));
+        assert_eq!(taken.fate(), Fate::Settled);
+        assert_eq!(stored_members(&store, "r1"), 1, "{:?}", pool.take_errors());
     }
 }
