@@ -393,14 +393,16 @@ pub struct ImportContext {
     pub ret_type: Option<SceType>,
 
     /// For an imported algorithm whose signature takes or returns a
-    /// `list<T>`: why it cannot be called from another algorithm (e.g.
-    /// "returns list<int64>"). `None` for every other import.
+    /// `list<T>`: why a caller that is handed no list slot cannot call it (e.g.
+    /// "returns list<int64>"). `None` for every other import. Where the backend
+    /// hands a list from one algorithm to another, the slots ride in
+    /// [`Self::record_slots`], which another algorithm's body calls it through
+    /// (SCE_FORGE.md §4.12, "Where a list crosses").
     ///
     /// ⚠ The list slot is deliberately NOT in `param_types` / `ret_type`: an
     /// `InferredType::Unknown` there reads as "not judged" and the call would
     /// pass unchecked, and an emptied parameter list reads as zero-arity. A
-    /// caller refuses from this reason instead (v1: a list-signature
-    /// algorithm is callable only from a host — SCE_FORGE.md §4.12).
+    /// caller refuses from this reason instead.
     #[serde(skip)]
     pub host_only: Option<String>,
 
@@ -967,14 +969,17 @@ pub struct ImportContext {
     pub record_type: Option<crate::forge::value_type::ScopedRecord>,
     /// For an imported `sce:kind="event-schema"` whose field is a list, a
     /// record or an optional over either: the sentence an algorithm that names
-    /// the record is refused by, since no algorithm holds such a record yet
-    /// (docs/adr/0086, section 7.3). `None` for every other import.
+    /// the record is refused by, since no algorithm of this backend holds such
+    /// a record yet (docs/adr/0086, section 7.3). `None` for every other import,
+    /// and for a schema whose lists are of numbers or `bool`s on a backend that
+    /// holds one ([`RecordImport::lists`]).
     #[serde(skip)]
     pub record_composed: Option<String>,
 
-    /// For an imported algorithm whose signature has a record slot or an
-    /// optional slot (docs/adr/0055) and no list slot: the whole signature,
-    /// those slots included. Another algorithm's body calls it through these
+    /// For an imported algorithm whose signature has a record slot, an
+    /// optional slot (docs/adr/0055), a union parameter, or, on a backend that
+    /// hands a list across, a list slot: the whole signature, those slots
+    /// included. Another algorithm's body calls it through these
     /// (SCE_FORGE.md §4.12 — a record crosses between algorithms that name the
     /// same schema); `host_only` still says why every other caller may not.
     /// `None` for every other import.
@@ -1116,6 +1121,28 @@ pub struct RecordImport {
     /// Which schema this is, by its document's identity — what a call
     /// compares when it passes this record to another algorithm.
     pub id: crate::forge::types::RecordId,
+    /// Each field that holds a list of numbers or `bool`s, in declaration
+    /// order, beside [`Self::fields`], which holds every field of one entry
+    /// (docs/adr/0086, section 7.3). Empty for a schema of entries. A schema
+    /// with one is a record a backend holds in an algorithm only where it lowers
+    /// one ([`crate::forge::codegen_matrix::ALGORITHM_LISTED_RECORD_BACKENDS`]),
+    /// and then only as a parameter, which the algorithm reads and does not
+    /// write ([`resolve_record_param`]).
+    pub lists: Vec<RecordListField>,
+}
+
+/// A field of an imported event-schema that holds a list of numbers or
+/// `bool`s, as an algorithm's record parameter holds it ([`RecordImport::lists`]):
+/// read by `len(r.f)`, `r.f[i]` and a `<sce:foreach in="r.f">`, and lent whole
+/// to another algorithm's list parameter.
+#[derive(Debug, Clone)]
+pub struct RecordListField {
+    pub id: String,
+    /// The element, a fixed-width number or a `bool`.
+    pub elem: SceType,
+    /// The field's type, its bound stated: what an argument it is lent as is
+    /// held to ([`crate::forge::types::TypeCtx::held_lists`]).
+    pub ty: crate::forge::value_type::ValueType,
 }
 
 /// One field of an imported event-schema, as an algorithm's record holds it.
@@ -1149,6 +1176,11 @@ impl RecordField {
 }
 
 impl RecordImport {
+    /// The list field named `id` ([`Self::lists`]).
+    pub fn list_field(&self, id: &str) -> Option<&RecordListField> {
+        self.lists.iter().find(|f| f.id == id)
+    }
+
     /// The field named `id`.
     pub fn field(&self, id: &str) -> Option<&RecordField> {
         self.fields.iter().find(|f| f.id == id)
@@ -1292,6 +1324,12 @@ pub enum CalleeSlot {
     /// union it holds of the document the slot names. A return is never one: no
     /// place of an algorithm takes whole a union a call answers.
     Union(crate::forge::types::UnionParam),
+    /// A parameter or the return of `list<T>`, on a backend that hands a list
+    /// from one algorithm to another
+    /// ([`crate::forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]): the
+    /// caller lends a parameter a list it holds that fits the slot's type, and
+    /// takes a returned list whole into a list local whose type it fits.
+    List(crate::forge::types::ListParam),
 }
 
 impl CalleeSlot {
@@ -1305,7 +1343,19 @@ impl CalleeSlot {
             Self::Record { id, .. } => InferredType::Record(*id),
             Self::Optional(elem) => InferredType::Optional(OptionalElem::of(elem)),
             Self::OptionalRecord { .. } => InferredType::Optional(OptionalElem::Record),
-            Self::Union(_) => InferredType::Unknown,
+            Self::Union(_) | Self::List(_) => InferredType::Unknown,
+        }
+    }
+
+    /// The list this slot takes or returns, when it is a list.
+    pub fn list(&self) -> Option<&crate::forge::types::ListParam> {
+        match self {
+            Self::List(param) => Some(param),
+            Self::Scalar(_)
+            | Self::Record { .. }
+            | Self::Optional(_)
+            | Self::OptionalRecord { .. }
+            | Self::Union(_) => None,
         }
     }
 
@@ -1316,7 +1366,8 @@ impl CalleeSlot {
             Self::Scalar(_)
             | Self::Record { .. }
             | Self::Optional(_)
-            | Self::OptionalRecord { .. } => None,
+            | Self::OptionalRecord { .. }
+            | Self::List(_) => None,
         }
     }
 }
@@ -42867,6 +42918,36 @@ fn resolve_record<'i>(
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
     element: &str,
 ) -> Result<&'i RecordImport, ForgeError> {
+    let record = resolve_record_param(imports, alias, spelling, element)?;
+    // A record that holds a list is read where it is handed in and not written
+    // or built (docs/adr/0086, section 7.3): a local, a return, an element of a
+    // list, an optional value and a part of a map would each hold or build one.
+    if let Some(field) = record.lists.first() {
+        return Err(
+            crate::forge::expression_site::WrittenAt::value(spelling).place_reporting(
+                GenerateError::unsupported(format!(
+                    "{element}: `record:{alias}` holds the list field `{}` ({}), and an \
+                     algorithm holds a record that holds a list as a parameter alone, which \
+                     it reads and does not write (docs/adr/0086, section 7.3)",
+                    field.id, field.ty
+                ))
+                .into(),
+            ),
+        );
+    }
+    Ok(record)
+}
+
+/// [`resolve_record`] where the record is an algorithm's parameter: a record
+/// whose schema holds a list of numbers or `bool`s is one too, on a backend
+/// that lowers one ([`RecordImport::lists`]), lent by reference and read, never
+/// written.
+fn resolve_record_param<'i>(
+    imports: &'i [ImportContext],
+    alias: &str,
+    spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+    element: &str,
+) -> Result<&'i RecordImport, ForgeError> {
     use crate::forge::error::ValidationError;
     use crate::forge::expression_site::WrittenAt;
     use crate::forge::model::AlgorithmValueType;
@@ -42894,7 +42975,7 @@ fn resolve_record<'i>(
     // A schema with no field is a contract about an event that carries no
     // data (or nothing settled), and no backend emits a payload struct for
     // it — there is no record for this type to name.
-    if record.fields.is_empty() {
+    if record.fields.is_empty() && record.lists.is_empty() {
         return Err(refuse(format!(
             "a schema that declares a field — `{alias}` declares none, so the event it names \
              carries no payload and no record type is generated for it"
@@ -43052,6 +43133,20 @@ fn statement_terminator(lang: crate::generator::Language) -> &'static str {
     match lang {
         Language::Kotlin | Language::Python | Language::Swift => "",
         Language::Rust | Language::Cpp | Language::Go | Language::C11 => ";",
+    }
+}
+
+/// The type a record parameter of `record`'s schema is declared in on `lang`:
+/// the schema's payload type, by value, or, for a record that holds a list
+/// ([`RecordImport::lists`]), a shared reference to it on Rust, the one backend
+/// that holds such a record
+/// ([`crate::forge::codegen_matrix::ALGORITHM_LISTED_RECORD_BACKENDS`]): the
+/// list is the caller's, read and not copied (docs/adr/0086, section 7.3).
+fn record_param_type(lang: crate::generator::Language, record: &RecordImport) -> String {
+    if matches!(lang, crate::generator::Language::Rust) && !record.lists.is_empty() {
+        format!("&{}", record.qualified_type)
+    } else {
+        record.qualified_type.clone()
     }
 }
 
@@ -46186,6 +46281,24 @@ fn lower_algorithm_stmt(
             expr: rhs,
             expr_spelling,
         } => {
+            // A list local takes whole the list an imported algorithm returns
+            // (SCE_FORGE.md §4.12), on a backend that hands a list from one
+            // algorithm to another ([`whole_list_call`]).
+            if let Some(call) = append_buffers
+                .get(target.trim())
+                .filter(|decl| decl.ty.list_elem().is_some())
+                .and_then(|_| whole_list_call(rhs, imports))
+            {
+                out.push_str(&lower_whole_list_call(
+                    ctx,
+                    type_ctx,
+                    &call,
+                    target,
+                    (rhs.as_str(), expr_spelling.as_ref()),
+                    pad,
+                )?);
+                return Ok(());
+            }
             // A field of the present value of an optional record parameter or local
             // (`x.value.f`), written where a test proves the record present
             // (docs/adr/0055, step 9).
@@ -47647,7 +47760,20 @@ fn lower_algorithm_stmt(
                     let site = ExpressionSite::new(&arg.expr, arg.spelling.as_ref());
                     // A union is handed by the name that holds it, as the
                     // expression form hands it (docs/adr/0092, "Decided while
-                    // handing a union from one algorithm to another").
+                    // handing a union from one algorithm to another"), and a
+                    // list by the place that holds it, lent as the expression
+                    // form lends it.
+                    if let Some(param) = callee.list_parameter(i) {
+                        return expr::transpile_list_argument(
+                            &arg.expr,
+                            l.expr_target(),
+                            type_ctx,
+                            renames,
+                            target.trim(),
+                            param,
+                        )
+                        .map_err(|refusal| site.place(refusal));
+                    }
                     match callee.union_parameter(i) {
                         Some(param) => expr::transpile_union_argument(
                             &arg.expr,
@@ -47774,6 +47900,16 @@ impl CallTarget<'_> {
             Self::CollectionMethod { .. } => None,
         }
     }
+
+    /// The list argument `i` is lent to, when the call reaches an imported
+    /// algorithm whose parameter `i` takes one
+    /// ([`crate::forge::types::FuncSig::lists`]).
+    fn list_parameter(&self, i: usize) -> Option<&crate::forge::types::ListParam> {
+        match self {
+            Self::Algorithm(imp) => imp.record_slots.as_ref()?.params.get(i)?.list(),
+            Self::CollectionMethod { .. } => None,
+        }
+    }
 }
 
 /// A bounded collection's read-only methods and how many arguments each
@@ -47884,10 +48020,10 @@ fn resolve_call_target<'a>(
 }
 
 /// An imported algorithm as a `<sce:call>` target, under either spelling
-/// (`eq` or `eq.bytes_equal`) — refused when its signature has a `list<T>`
-/// slot. SCE_FORGE.md §4.12: in v1 a list crosses only the host boundary,
-/// so an algorithm that takes or returns one is called by a host and never
-/// by another algorithm. Refused too when it declares `may-fail` and the
+/// (`eq` or `eq.bytes_equal`) — refused when its signature has a slot no
+/// algorithm of this backend fills (SCE_FORGE.md §4.12, "Where a list
+/// crosses"), and when it returns a list, which only an `<sce:assign>` to a
+/// list local takes ([`whole_list_call`]). Refused too when it declares `may-fail` and the
 /// calling body does not (SCE_FORGE.md §3.4.1), which would have nowhere to
 /// pass the failure on. The refusal is placed at the whole target as
 /// written.
@@ -47904,14 +48040,217 @@ fn algorithm_call_target<'a>(
         .host_only
         .as_ref()
         .filter(|_| imp.record_slots.is_none());
+    // A list the callee returns is taken whole by an `<sce:assign>` to a list
+    // local ([`whole_list_call`]); a statement that calls it keeps no value, and
+    // the list would be built into storage nothing reads.
+    let returned_list = imp
+        .record_slots
+        .as_ref()
+        .and_then(|slots| slots.ret.as_ref())
+        .and_then(CalleeSlot::list);
     let refusal: ForgeError = if let Some(slot) = host_only {
         expr::host_only_call(trimmed, slot, at.observed()).into()
+    } else if let Some(list) = returned_list {
+        crate::forge::error::ExprError::UnsupportedConstruct {
+            construct: format!(
+                "a <sce:call> of algorithm `{trimmed}`, which returns {} (a returned list is \
+                 taken whole by an <sce:assign> to a list local whose type it fits, \
+                 `<sce:assign target=\"xs\" expr=\"{trimmed}(...)\"/>`)",
+                list.written
+            ),
+            observed: at.observed(),
+        }
+        .into()
     } else if imp.may_fail && !receives_failures {
         expr::unreceived_failure_call(trimmed, at.observed()).into()
     } else {
         return Ok(CallTarget::Algorithm(imp));
     };
     Err(at.place(refusal))
+}
+
+/// A call of an imported algorithm that returns a list, written as the whole
+/// value of an `<sce:assign>` to a list local
+/// (`<sce:assign target="xs" expr="Tail(given)"/>`): the callee, the list it
+/// returns, and each argument as written.
+struct WholeListCall<'i> {
+    imp: &'i ImportContext,
+    returned: &'i crate::forge::types::ListParam,
+    args: Vec<String>,
+}
+
+/// The call the expression `expr` is, when it is, whole, a call of an imported
+/// algorithm that returns a list, on a backend that hands one from one
+/// algorithm to another ([`CalleeSlot::List`]); `None` for any other
+/// expression, which the assignment lowers as it lowers any value.
+fn whole_list_call<'i>(expr: &str, imports: &'i [ImportContext]) -> Option<WholeListCall<'i>> {
+    let written = expr.trim();
+    let ast = expr::parse_to_ast(written).ok()?;
+    let expr::ExprKind::Call { callee, args, .. } = &ast.kind else {
+        return None;
+    };
+    let expr::ExprKind::Ident(alias) = &callee.kind else {
+        return None;
+    };
+    let imp = imports
+        .iter()
+        .find(|imp| imp.alias == *alias && imp.is_callable_algorithm())?;
+    let returned = imp.record_slots.as_ref()?.ret.as_ref()?.list()?;
+    let args = args
+        .iter()
+        .map(|arg| {
+            arg.span
+                .clone()
+                .and_then(|span| written.get(span))
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    Some(WholeListCall {
+        imp,
+        returned,
+        args,
+    })
+}
+
+/// The list local `target` taking whole the list the call `call` returns
+/// (SCE_FORGE.md §4.12; docs/adr/0082). The callee writes its list into a
+/// destination this body holds for the call, its own type, and the local is
+/// emptied and takes each element of it. The returned list fits the local's
+/// type (docs/adr/0086, section 5.1), its element the local's and its bound at
+/// most the local's, so the copy cannot pass the local's bound; one that does
+/// not fit is refused at the build. The callee declares `may-fail`, the one
+/// shape in which a list that cannot be built is returned, and the body
+/// receives the failure and passes it on, so the call stands only in a body
+/// that declares `may-fail` itself. Each argument is lowered as a
+/// `<sce:call>`'s is. Rust alone hands a list across
+/// ([`crate::forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]).
+fn lower_whole_list_call(
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    call: &WholeListCall<'_>,
+    target: &str,
+    rhs: (&str, Option<&crate::attribute_spelling::AttributeSpelling>),
+    pad: &str,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let (rhs, rhs_spelling) = rhs;
+    let name = target.trim();
+    let whole = rhs.trim();
+    let alias = call.imp.alias.as_str();
+    let site = ExpressionSite::new(rhs, rhs_spelling);
+    let refuse = |construct: String| -> ForgeError {
+        let at = site.locate(Some(0..whole.len()));
+        let refusal: ForgeError = crate::forge::error::ExprError::UnsupportedConstruct {
+            construct,
+            observed: at.observed(),
+        }
+        .into();
+        at.place(refusal)
+    };
+    let pipeline = |what: String| -> ForgeError { GenerateError::InvalidConfig(what).into() };
+    if ctx.lang != Language::Rust {
+        return Err(pipeline(format!(
+            "`{whole}`, a list taken whole from a call, reached a backend that hands no list \
+             from one algorithm to another"
+        )));
+    }
+    if !call.imp.may_fail {
+        return Err(refuse(format!(
+            "`{whole}`, the list `{alias}` returns, taken whole into `{name}`, where `{alias}` \
+             does not declare may-fail on its <sce:return> (an algorithm returns a list to \
+             another in the one shape that says it could not build it, which only one that \
+             declares may-fail=\"true\" has)"
+        )));
+    }
+    if !type_ctx.receives_failures {
+        return Err(refuse(format!(
+            "`{whole}`, the list `{alias}` returns, taken whole into `{name}` in an algorithm \
+             that does not declare may-fail (the call fails where `{alias}` cannot build its \
+             list, which only a body that declares may-fail receives and passes on)"
+        )));
+    }
+    let slots = call
+        .imp
+        .record_slots
+        .as_ref()
+        .ok_or_else(|| pipeline(format!("`{alias}` returns a list and has no signature")))?;
+    if call.args.len() != slots.params.len() {
+        let refusal: ForgeError =
+            crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                target: alias.to_string(),
+                actual: call.args.len(),
+                expected: slots.params.len(),
+            }
+            .into();
+        return Err(
+            crate::forge::expression_site::WrittenAt::attribute(rhs_spelling).place(refusal),
+        );
+    }
+    let decl = ctx
+        .append_buffers
+        .get(name)
+        .ok_or_else(|| pipeline(format!("`{name}` is no list local the body declares")))?;
+    let held = algorithm_map_place(&decl.ty)
+        .ok_or_else(|| pipeline(format!("the list local `{name}` states no bound")))?;
+    let names = crate::forge::static_datamodel::ScopedNames {
+        from: Some(&call.returned.scope),
+        to: type_ctx.list_scope,
+    };
+    if let Err(misfit) = crate::forge::value_type::fits(&call.returned.ty, &held, &names) {
+        return Err(refuse(format!(
+            "{}: the list `{alias}` returns, {}, taken whole into `{name}`, a {} (a returned \
+             list is taken whole into a list local whose type it fits)",
+            misfit.sentence(whole),
+            call.returned.written,
+            decl.ty.as_attr()
+        )));
+    }
+    let l = ctx.l;
+    let mut lowered = Vec::with_capacity(call.args.len() + 1);
+    for (arg, slot) in call.args.iter().zip(&slots.params) {
+        let argument = match (slot.list(), slot.union()) {
+            (Some(param), _) => expr::transpile_list_argument(
+                arg,
+                l.expr_target(),
+                type_ctx,
+                ctx.renames,
+                alias,
+                param,
+            ),
+            (None, Some(param)) => {
+                expr::transpile_union_argument(arg, l.expr_target(), type_ctx, alias, param)
+            }
+            (None, None) => expr::transpile_expecting(
+                arg,
+                l.expr_target(),
+                type_ctx,
+                ctx.renames,
+                expr::Expected::Slot(slot.inferred()),
+            ),
+        }
+        .map_err(|refusal| site.place(refusal))?;
+        lowered.push(argument);
+    }
+    // docs/adr/0108, D8: a callee that takes its caller's seed is handed the
+    // one this body derives for it, as every other call of it is.
+    lowered.extend(type_ctx.seeded_calls.get(alias).cloned());
+    let dest = "sce_dest";
+    lowered.push(format!("&mut {dest}"));
+    let local = l.local_id(name);
+    let taken = format!("sce_taken_{local}");
+    Ok(format!(
+        "{pad}let {taken} = {{\n\
+         {pad}    let mut {dest} = {};\n\
+         {pad}    {}({})?;\n\
+         {pad}    {dest}\n\
+         {pad}}};\n\
+         {pad}{local}.clear();\n\
+         {pad}{local}.extend_from_slice(&{taken})?;\n",
+        expr::RUST_LIST_DESTINATION,
+        call.imp.qualified_call,
+        lowered.join(", ")
+    ))
 }
 
 /// A bounded collection's read-only `method` called on the collection the
@@ -49242,6 +49581,14 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
     list_params: Vec<(String, AlgorithmValueType)>,
+    /// Every list the body holds — a list parameter, a list local and the list
+    /// field of a record parameter — by its place, with its type
+    /// ([`crate::forge::types::TypeCtx::held_lists`]).
+    list_types: Vec<(String, crate::forge::value_type::ValueType)>,
+    /// Every list field of a record parameter (docs/adr/0086, section 7.3): its
+    /// place (`order.lines`), the place of its element (`order.lines[]`) and
+    /// the element, read as a list parameter's is.
+    record_lists: Vec<(String, String, SceType)>,
     /// Every `list<T>` local of a scalar element — a buffer the body builds
     /// by `<sce:append>` and may read back by `len(xs)` and `xs[i]`, e.g. a
     /// breadth-first walk's queue (SCE_FORGE.md §4.12) — with its element.
@@ -49310,11 +49657,36 @@ pub(crate) struct AlgorithmTypes<'a> {
     pub(crate) scope: crate::forge::value_type::TypeScope,
 }
 
+/// The field of a record parameter of `m` that holds a list of numbers or
+/// `bool`s, read at `path` (`order.lines`), when `path` names one
+/// ([`RecordImport::lists`]); `None` for any other path.
+fn record_param_list_field<'i>(
+    m: &AlgorithmModel,
+    imports: &'i [ImportContext],
+    path: &str,
+) -> Option<&'i RecordListField> {
+    let (root, field) = path.trim().split_once('.')?;
+    let alias = m
+        .signature
+        .params
+        .iter()
+        .find(|p| p.name == root.trim())?
+        .sce_type
+        .record_alias()?;
+    imports
+        .iter()
+        .find(|imp| imp.alias == alias)?
+        .record
+        .as_ref()?
+        .list_field(field.trim())
+}
+
 /// The place an algorithm's map or set slot of `ty` is read as
 /// (docs/adr/0108, D5): its type with every bound inside it, its outermost the
 /// one it states, or, for a parameter, which views its argument's and states
 /// none, the most any map holds — what no read of it consults. `None` for a
-/// type no place holds.
+/// type no place holds. A list slot is held so too, its bound what a list lent
+/// to another algorithm is held to ([`AlgorithmTypes::list_types`]).
 fn algorithm_map_place(ty: &AlgorithmValueType) -> Option<crate::forge::value_type::ValueType> {
     let held = if ty.stated_outer_bound().is_some() {
         ty.clone()
@@ -49437,6 +49809,17 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .filter_map(|p| p.sce_type.list_elem().map(|t| (p.name.clone(), t.clone())))
             .collect();
+        // Each list the body holds, by its place, with its type: what a list
+        // lent to another algorithm's list parameter is held to
+        // ([`crate::forge::types::TypeCtx::held_lists`]). A parameter that
+        // states no bound views a list of any length.
+        let mut list_types: Vec<(String, crate::forge::value_type::ValueType)> = m
+            .signature
+            .params
+            .iter()
+            .filter(|p| p.sce_type.list_elem().is_some())
+            .filter_map(|p| Some((p.name.clone(), algorithm_map_place(&p.sce_type)?)))
+            .collect();
         // An optional parameter is a value that may be absent, read as one.
         let mut optionals: Vec<(String, crate::forge::types::OptionalElem)> = m
             .signature
@@ -49540,6 +49923,11 @@ impl<'a> AlgorithmTypes<'a> {
                         }
                         Some(t) => t.clone(),
                         None => {
+                            if sce_type.list_elem().is_some() {
+                                if let Some(ty) = algorithm_map_place(sce_type) {
+                                    list_types.push((name.to_string(), ty));
+                                }
+                            }
                             match sce_type.list_elem() {
                                 Some(AlgorithmValueType::Scalar(elem)) => {
                                     list_buffers.push((name.to_string(), elem.clone()));
@@ -49615,6 +50003,13 @@ impl<'a> AlgorithmTypes<'a> {
                         record_items.push((name, shape));
                         continue;
                     }
+                    // An item over the list field of a record parameter is an
+                    // element of it, a number or a `bool` (docs/adr/0086,
+                    // section 7.3).
+                    if let Some(field) = record_param_list_field(m, imports, source) {
+                        env.push((name.to_string(), field.elem.clone()));
+                        continue;
+                    }
                     // An item over a `list<T>` parameter or list buffer is an
                     // element; over `bytes`, a byte.
                     let elem = m
@@ -49681,6 +50076,8 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .map(|(name, _, _)| (*name).to_string())
             .collect();
+        // A parameter is the one place a record whose schema holds a list
+        // stands ([`resolve_record_param`]).
         let bindings = m
             .signature
             .params
@@ -49692,6 +50089,7 @@ impl<'a> AlgorithmTypes<'a> {
                         alias,
                         p.type_spelling.as_ref(),
                         format!("<sce:param name=\"{}\">", p.name),
+                        true,
                     )
                 })
             })
@@ -49699,20 +50097,43 @@ impl<'a> AlgorithmTypes<'a> {
                 record_locals(&m.body)
                     .into_iter()
                     .map(|(name, alias, spelling)| {
-                        (name, alias, spelling, format!("<sce:var name=\"{name}\">"))
+                        (
+                            name,
+                            alias,
+                            spelling,
+                            format!("<sce:var name=\"{name}\">"),
+                            false,
+                        )
                     }),
             )
             .chain(
                 record_list_items
                     .into_iter()
-                    .map(|(name, alias, element)| (name, alias, None, element)),
+                    .map(|(name, alias, element)| (name, alias, None, element, false)),
             )
             .collect::<Vec<_>>();
         let mut records = Vec::new();
         let mut text_members = Vec::new();
         let mut record_members = Vec::new();
-        for (name, alias, spelling, element) in &bindings {
-            let record = resolve_record(imports, alias, *spelling, element)?;
+        let mut record_lists = Vec::new();
+        for (name, alias, spelling, element, param) in &bindings {
+            let record = if *param {
+                resolve_record_param(imports, alias, *spelling, element)?
+            } else {
+                resolve_record(imports, alias, *spelling, element)?
+            };
+            // Each list field is a list the body reads by `len`, an index and a
+            // `<sce:foreach>`, and lends whole to another algorithm's list
+            // parameter (docs/adr/0086, section 7.3).
+            for field in &record.lists {
+                let path = format!("{name}.{}", field.id);
+                list_types.push((path.clone(), field.ty.clone()));
+                record_lists.push((
+                    path.clone(),
+                    format!("{path}{}", crate::forge::value_path::ELEMENT),
+                    field.elem.clone(),
+                ));
+            }
             for field in &record.fields {
                 let path = format!("{name}.{}", field.id);
                 if matches!(field.ty, EntryType::Scalar(SceType::String)) {
@@ -49807,6 +50228,8 @@ impl<'a> AlgorithmTypes<'a> {
             optionals,
             optional_enums,
             list_params,
+            list_types,
+            record_lists,
             list_buffers,
             record_list_buffers,
             bytes_buffers,
@@ -50046,6 +50469,23 @@ impl<'a> AlgorithmTypes<'a> {
         for name in &self.bytes_buffers {
             type_ctx.insert_var(name.as_str(), InferredType::BytesBuffer);
         }
+        // The list field of a record parameter reads as a list parameter does
+        // (docs/adr/0086, section 7.3): a list as a value (`len(r.f)`, a
+        // foreach source) and its element under an index (`r.f[i]`).
+        for (path, element, elem) in &self.record_lists {
+            if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
+                type_ctx.insert_var(path.as_str(), InferredType::List(list_elem));
+            }
+            type_ctx.insert_var(element.as_str(), InferredType::from_sce_type(elem));
+        }
+        // Each list the body holds, in the scope its imports name types in:
+        // what a list lent to another algorithm's list parameter is held to.
+        for (path, ty) in &self.list_types {
+            type_ctx.held_lists.insert(path.as_str(), ty.clone());
+        }
+        if !self.list_types.is_empty() {
+            type_ctx.list_scope = Some(&self.scope);
+        }
         for &(name, shape) in &self.record_items {
             type_ctx.insert_record(name, shape);
         }
@@ -50186,6 +50626,20 @@ impl<'a> AlgorithmTypes<'a> {
                 // (docs/adr/0092, "Decided while handing a union from one
                 // algorithm to another").
                 if let Some(slots) = &imp.record_slots {
+                    // A list the callee returns is taken whole by an
+                    // `<sce:assign>` to a list local alone ([`whole_list_call`]),
+                    // which reads the callee's slots and not this signature: an
+                    // expression that calls it anywhere else is refused naming
+                    // the return.
+                    if let Some(list) = slots.ret.as_ref().and_then(CalleeSlot::list) {
+                        type_ctx.insert_func(
+                            imp.alias.as_str(),
+                            FuncSig::host_only(format!("returns {}", list.written)),
+                        );
+                        continue;
+                    }
+                    // A list parameter is lent a list the body holds, by the
+                    // place that holds it ([`crate::forge::types::FuncSig::lists`]).
                     type_ctx.insert_func(
                         imp.alias.as_str(),
                         FuncSig {
@@ -50194,6 +50648,11 @@ impl<'a> AlgorithmTypes<'a> {
                                 .params
                                 .iter()
                                 .map(|slot| slot.union().cloned())
+                                .collect(),
+                            lists: slots
+                                .params
+                                .iter()
+                                .map(|slot| slot.list().cloned())
                                 .collect(),
                             ..FuncSig::new(
                                 slots.params.iter().map(CalleeSlot::inferred).collect(),
@@ -50206,8 +50665,9 @@ impl<'a> AlgorithmTypes<'a> {
                     );
                     continue;
                 }
-                // A `list<T>` slot has no signature to register: the alias is
-                // registered as callable only by a host (SCE_FORGE.md §4.12).
+                // A slot no algorithm of this backend fills has no signature to
+                // register: the alias is registered as callable only by a host
+                // (SCE_FORGE.md §4.12, "Where a list crosses").
                 // A `may-fail` callee registers as one, and its call is judged
                 // by whether this body receives failures (§3.4.1).
                 if let Some(slot) = &imp.host_only {
@@ -50335,6 +50795,14 @@ fn render_algorithm(
     let mut record_renames: Vec<(String, String)> = Vec::new();
     for &(name, _, record) in &types.records {
         let local = l.local_id(name);
+        // A list field is read where the record holds it, as a list parameter
+        // is read where its caller holds it (docs/adr/0086, section 7.3).
+        for field in &record.lists {
+            record_renames.push((
+                format!("{name}.{}", field.id),
+                format!("{local}.{}", event_schema_field_ident(&field.id, lang)),
+            ));
+        }
         for field in &record.fields {
             let member = format!("{local}.{}", event_schema_field_ident(&field.id, lang));
             record_renames.push((
@@ -50353,9 +50821,15 @@ fn render_algorithm(
         // takes its argument by value, and the body reads the record again.
         // (A member access looks its whole path up first, so this never
         // shadows one.)
+        // A record that holds a list is lent by reference already
+        // ([`record_param_type`]), and is handed on as the reference it is.
         record_renames.push((
             name.to_string(),
-            owned_record(lang, &local, record.holds_text()),
+            if record.lists.is_empty() {
+                owned_record(lang, &local, record.holds_text())
+            } else {
+                local.clone()
+            },
         ));
     }
     // The fields of an optional record's present value, read as
@@ -50601,15 +51075,18 @@ fn render_algorithm(
         .iter()
         .map(|p| {
             // A record is passed by value: its fields are fixed-width, so the
-            // struct is plain data on every backend (SCE_FORGE.md §4.12).
+            // struct is plain data on every backend (SCE_FORGE.md §4.12). One
+            // that holds a list is lent by reference in the type its schema's
+            // unit declares, which the body reads and does not write
+            // (docs/adr/0086, section 7.3).
             if let Some(alias) = p.sce_type.record_alias() {
-                let record = resolve_record(
+                let record = resolve_record_param(
                     imports,
                     alias,
                     p.type_spelling.as_ref(),
                     &format!("<sce:param name=\"{}\">", p.name),
                 )?;
-                return Ok(l.place_param(&p.name, &record.qualified_type));
+                return Ok(l.place_param(&p.name, &record_param_type(lang, record)));
             }
             // A union is passed by value, as a record is: the type its own unit
             // declares (docs/adr/0092, Landing order step 5).

@@ -584,7 +584,18 @@ impl Analysis<'_, '_> {
                     .filter(|sig| sig.host_only.is_none())
                     .map(|sig| sig.params.clone())
                     .unwrap_or_default();
+                // A list lent to a parameter that takes one holds no integer,
+                // and is judged where the call is lowered.
+                let lent: Vec<bool> = self
+                    .ctx
+                    .funcs
+                    .get(target.trim())
+                    .map(|sig| sig.lists.iter().map(Option::is_some).collect())
+                    .unwrap_or_default();
                 for (i, arg) in args.iter().enumerate() {
+                    if lent.get(i).copied().unwrap_or(false) {
+                        continue;
+                    }
                     let place = params.get(i).copied();
                     self.stored(&arg.expr, arg.spelling.as_ref(), env, place);
                 }

@@ -460,6 +460,27 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
     Language::C11,
 ];
 
+/// The backends on which an algorithm calls another algorithm that takes or
+/// returns a list (SCE_FORGE.md section 4.12): a list parameter of the callee is
+/// lent a list the caller holds, by the place that holds it (a list parameter, a
+/// list local, the list field of a record parameter), which fits the type the
+/// parameter declares, its bound included (docs/adr/0086, section 5.1); and a
+/// list the callee returns is taken whole by an `<sce:assign>` to a list local
+/// whose type it fits, in a body that receives the failure of a callee that
+/// declares `may-fail`. A backend joins this list in the change that gives it
+/// those spellings. On a backend not listed, such a call is refused where it is
+/// written, naming the list slot (`expression/unsupported-construct`).
+pub const ALGORITHM_LIST_CALL_BACKENDS: &[Language] = &[Language::Rust];
+
+/// The backends on which an algorithm takes a record whose schema holds a list
+/// of numbers or `bool`s (docs/adr/0086, section 7.3), as a parameter it reads
+/// and does not write, lent by reference in the type the schema's unit declares
+/// (Rust: `&Payload`, its list a `BoundedList<T, N>`): read by `len`, an index
+/// and a `<sce:foreach>`, and lent whole to another algorithm's list parameter.
+/// A backend not listed refuses such a record by name
+/// (`generate/unsupported-feature`), naming the schema and the field.
+pub const ALGORITHM_LISTED_RECORD_BACKENDS: &[Language] = &[Language::Rust];
+
 /// The backends that lower an algorithm over a map or a set (docs/adr/0108,
 /// D5, D6 and "Order of work" step 7): a parameter that views the caller's map
 /// with no copy, one declared `inout` and written in place, a local and a

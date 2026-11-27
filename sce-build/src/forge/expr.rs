@@ -968,6 +968,9 @@ fn resolve_then_rename(
     // another": a union handed whole to another algorithm's parameter, judged
     // above, spelled as the target hands a value it keeps.
     lower_union_arguments(ast, ctx, target);
+    // A list handed whole to another algorithm's parameter, judged above,
+    // spelled as the target lends a list it holds.
+    lower_list_arguments(ast, ctx, target, renames);
     lower_call_crossings(ast, ctx, target);
     append_map_seeds(ast, ctx);
     lower_call_readings(ast, ctx, target);
@@ -1046,12 +1049,13 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, ctx, source, RecordPlace::Whole)?;
     reject_record_text_misuse(ast, ctx, source, false)?;
-    reject_buffers_as_values(ast, source)?;
+    reject_buffers_as_values(ast, ctx, source)?;
     reject_optional_misuse(ast, &ctx.proven, source)?;
     reject_unproven_union_reads(ast, ctx, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     reject_ill_typed_total_operations(ast, source)?;
     reject_union_arguments(ast, ctx, source)?;
+    reject_list_arguments(ast, ctx, source)?;
     reject_composed_operands(ast, ctx, source, ReadThrough::Whole)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
@@ -1116,12 +1120,20 @@ fn reject_composed_operands(
     };
     // An argument of a parameter that takes a union whole stands as the union
     // the caller hands by name, judged by the rule of a union argument
-    // ([`reject_union_arguments`]) and by no rule of an operand.
+    // ([`reject_union_arguments`]) and by no rule of an operand; an argument of
+    // a parameter that takes a list, as the list the caller hands by the place
+    // that holds it ([`reject_list_arguments`]).
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
-        if let Some(unions) = union_parameters(callee, ctx) {
+        let unions = union_parameters(callee, ctx);
+        let lists = list_parameters(callee, ctx);
+        if unions.is_some() || lists.is_some() {
             reject_composed_operands(callee, ctx, source, ReadThrough::Operand)?;
             for (index, arg) in args.iter().enumerate() {
-                if unions.get(index).is_some_and(Option::is_some) {
+                let union_taken =
+                    unions.is_some_and(|unions| unions.get(index).is_some_and(Option::is_some));
+                let list_taken =
+                    lists.is_some_and(|lists| lists.get(index).is_some_and(Option::is_some));
+                if union_taken || list_taken {
                     continue;
                 }
                 reject_composed_operands(arg, ctx, source, ReadThrough::Operand)?;
@@ -1420,6 +1432,219 @@ fn lower_union_arguments(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTa
             _ => continue,
         };
         arg.kind = ExprKind::Raw(handed);
+    }
+}
+
+/// The list each parameter of the function `callee` names takes
+/// ([`crate::forge::types::FuncSig::lists`]), when `callee` is the name of a
+/// function that takes one: an imported algorithm with a parameter of
+/// `list<T>`, on a backend that hands a list from one algorithm to another
+/// ([`crate::forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]). `None`
+/// for every other callee.
+fn list_parameters<'c>(
+    callee: &TypedExpr,
+    ctx: &'c TypeCtx<'_>,
+) -> Option<&'c [Option<crate::forge::types::ListParam>]> {
+    let ExprKind::Ident(name) = &callee.kind else {
+        return None;
+    };
+    let signature = ctx.lookup_func(name)?;
+    signature
+        .lists
+        .iter()
+        .any(Option::is_some)
+        .then_some(signature.lists.as_slice())
+}
+
+/// Refuse every argument handed to a parameter that takes a list which is not
+/// a list the caller holds that fits the parameter's ([`judge_list_argument`]),
+/// at any depth of `expr`. The one rule of a list argument, read by the judge
+/// of an algorithm's body before any backend and by every lowering
+/// ([`resolve_names`]).
+fn reject_list_arguments(expr: &TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
+        if let (ExprKind::Ident(name), Some(lists)) = (&callee.kind, list_parameters(callee, ctx)) {
+            for (arg, param) in args.iter().zip(lists) {
+                if let Some(param) = param {
+                    judge_list_argument(arg, name, param, ctx, source)?;
+                }
+            }
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_list_arguments(child, ctx, source))
+}
+
+/// The place of the list `arg` hands to the parameter of `callee` that takes
+/// the list `param`, or its refusal. A list stands there by the place that holds
+/// it, which the parameter reads and does not write: a list parameter or a list
+/// local of the caller, or the list field of a record parameter it holds
+/// (`order.lines`), each a list of its type ([`TypeCtx::held_lists`]). It is
+/// held to the parameter's type by the relation "fits" (docs/adr/0086, section
+/// 5.1): its element the parameter's, a record of the same schema document, an
+/// enum of the same values and a union of the same document, and its bound at
+/// most the parameter's, so a list the parameter cannot hold is refused at the
+/// build, not at the call. Anything else (a call that answers a list, an
+/// element, a number) is refused naming the type the parameter takes.
+fn judge_list_argument(
+    arg: &TypedExpr,
+    callee: &str,
+    param: &crate::forge::types::ListParam,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<String, Refusal> {
+    let observed = arg
+        .span
+        .clone()
+        .and_then(|span| source.get(span))
+        .unwrap_or(source)
+        .trim()
+        .to_string();
+    let held = place_path(arg)
+        .filter(|_| matches!(arg.ty, InferredType::List(_) | InferredType::ListBuffer(_)))
+        .and_then(|path| {
+            let ty = ctx.held_lists.get(path.as_str())?.clone();
+            Some((path, ty))
+        });
+    let construct = match held {
+        Some((path, ty)) => {
+            let names = crate::forge::static_datamodel::ScopedNames {
+                from: ctx.list_scope,
+                to: Some(&param.scope),
+            };
+            match crate::forge::value_type::fits(&ty, &param.ty, &names) {
+                Ok(()) => return Ok(path),
+                Err(misfit) => format!(
+                    "{} handed to `{callee}`, whose parameter takes {} (a list is handed only \
+                     to a parameter whose type it fits)",
+                    misfit.sentence(&observed),
+                    param.written
+                ),
+            }
+        }
+        None => list_argument_unnamed(&observed, callee, param),
+    };
+    Err(ExprError::UnsupportedConstruct {
+        construct,
+        observed: Some(observed),
+    }
+    .at(arg.span.clone()))
+}
+
+/// What a refusal of `observed`, no list the caller holds, handed to the
+/// parameter of `callee` that takes the list `param`, says
+/// ([`judge_list_argument`]).
+fn list_argument_unnamed(
+    observed: &str,
+    callee: &str,
+    param: &crate::forge::types::ListParam,
+) -> String {
+    format!(
+        "`{observed}` handed to `{callee}`, whose parameter takes {} (an algorithm hands a \
+         list by the name of the list parameter or the list local that holds it, or as the \
+         list field of a record parameter, `record.field`)",
+        param.written
+    )
+}
+
+/// [`judge_list_argument`] of the argument written `written`, as a
+/// `<sce:call args>` lists it, where `ctx` holds: what the judge of an
+/// algorithm's body holds each argument of a `<sce:call>` to whose parameter
+/// takes a list, before any backend.
+pub(crate) fn judge_list_argument_written(
+    written: &str,
+    callee: &str,
+    param: &crate::forge::types::ListParam,
+    ctx: &TypeCtx<'_>,
+) -> Result<(), Refusal> {
+    let written = written.trim();
+    let mut ast = parse_to_ast(written)?;
+    infer_types(&mut ast, ctx);
+    judge_list_argument(&ast, callee, param, ctx, written).map(|_| ())
+}
+
+/// The argument written `written`, as a `<sce:call args>` lists it, handed to
+/// the parameter of `callee` that takes the list `param`, judged as an
+/// expression's argument is ([`judge_list_argument`]) and spelled as `target`
+/// lends a list it holds ([`handed_list`]).
+pub(crate) fn transpile_list_argument(
+    written: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    callee: &str,
+    param: &crate::forge::types::ListParam,
+) -> Result<String, Refusal> {
+    let written = written.trim();
+    let mut ast = parse_to_ast(written)?;
+    infer_types(&mut ast, ctx);
+    let path = judge_list_argument(&ast, callee, param, ctx, written)?;
+    Ok(handed_list(target, &path, ast.ty, renames))
+}
+
+/// How `target` lends the list a caller holds at `path`, typed `ty`, to a
+/// parameter of another algorithm that takes a list, which reads it and does
+/// not write it. A Rust list parameter is a slice already and is handed as it
+/// is; a list local (`SceOwnedList<T, N>`) and the list field of a record
+/// (`BoundedList<T, N>`) are lent as the slice of the elements they hold, the
+/// one type a list parameter is on every Rust slot. A record's field is spelled
+/// as the body reads it ([`rename_identifiers`]), every other place as its
+/// local. Only Rust hands a list from one algorithm to another
+/// ([`crate::forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]); every
+/// other target names the place as it holds it.
+pub(crate) fn handed_list(
+    target: ExprTarget,
+    path: &str,
+    ty: InferredType,
+    renames: &HashMap<&str, &str>,
+) -> String {
+    let held = renames.get(path).map_or_else(
+        || target.local_spelling(path),
+        |spelled| (*spelled).to_string(),
+    );
+    let viewed = matches!(ty, InferredType::List(_)) && !path.contains('.');
+    match target {
+        ExprTarget::Rust if viewed => held,
+        ExprTarget::Rust => format!("{held}.as_slice()"),
+        ExprTarget::Cpp
+        | ExprTarget::Kotlin
+        | ExprTarget::Go
+        | ExprTarget::Python
+        | ExprTarget::C
+        | ExprTarget::Swift
+        | ExprTarget::Js => held,
+    }
+}
+
+/// Each list an expression hands whole to a parameter that takes one
+/// ([`reject_list_arguments`] admitted it: a place of a list the caller
+/// holds), spelled as `target` lends it ([`handed_list`]), before the places
+/// are renamed: a record's field is looked up in `renames` by the path the
+/// author wrote.
+fn lower_list_arguments(
+    expr: &mut TypedExpr,
+    ctx: &TypeCtx<'_>,
+    target: ExprTarget,
+    renames: &HashMap<&str, &str>,
+) {
+    for child in expr.children_mut() {
+        lower_list_arguments(child, ctx, target, renames);
+    }
+    let ExprKind::Call { callee, args, .. } = &mut expr.kind else {
+        return;
+    };
+    let Some(lists) = list_parameters(callee, ctx) else {
+        return;
+    };
+    for (arg, param) in args.iter_mut().zip(lists) {
+        if param.is_none() {
+            continue;
+        }
+        let Some(path) = place_path(arg) else {
+            continue;
+        };
+        arg.kind = ExprKind::Raw(handed_list(target, &path, arg.ty, renames));
     }
 }
 
@@ -2187,7 +2412,11 @@ fn reject_record_text_misuse(
 /// is the algorithm's own storage — a result struct in C11, a growable
 /// buffer class in Kotlin — not the view a `bytes` or `list<T>` value is,
 /// so no backend can pass, compare or combine it as one.
-fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+fn reject_buffers_as_values(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
     let is_buffer = |node: &TypedExpr| {
         matches!(
             node.ty,
@@ -2196,7 +2425,21 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
     };
     match &expr.kind {
         ExprKind::Index { object, index } if is_buffer(object) => {
-            reject_buffers_as_values(index, source)
+            reject_buffers_as_values(index, ctx, source)
+        }
+        // A list buffer handed to another algorithm's parameter that takes a
+        // list is lent as the list it holds, judged by the rule of a list
+        // argument ([`reject_list_arguments`]).
+        ExprKind::Call { callee, args, .. } if list_parameters(callee, ctx).is_some() => {
+            let lists = list_parameters(callee, ctx).unwrap_or_default();
+            reject_buffers_as_values(callee, ctx, source)?;
+            args.iter().enumerate().try_for_each(|(index, arg)| {
+                if lists.get(index).is_some_and(Option::is_some) {
+                    Ok(())
+                } else {
+                    reject_buffers_as_values(arg, ctx, source)
+                }
+            })
         }
         ExprKind::Call { callee, args, .. }
             if is_len_builtin(callee, args) && is_buffer(&args[0]) =>
@@ -2217,7 +2460,7 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
         _ => expr
             .children()
             .into_iter()
-            .try_for_each(|child| reject_buffers_as_values(child, source)),
+            .try_for_each(|child| reject_buffers_as_values(child, ctx, source)),
     }
 }
 
@@ -2760,8 +3003,10 @@ pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>)
     ExprError::UnsupportedConstruct {
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
-             (a host calls such an algorithm, and another algorithm when no \
-             slot of it is a list and its return is no union)"
+             (a host calls such an algorithm; another algorithm calls one that takes \
+             a list on Rust alone, one that returns a list there only as the whole \
+             value an <sce:assign> to a list local takes, and none that returns a \
+             union)"
         ),
         observed,
     }

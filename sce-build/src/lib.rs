@@ -8038,16 +8038,34 @@ fn validate_and_enrich_imports(
                     &parsed.imports,
                     schema_base,
                 ));
-                // An algorithm holds a record one entry per field: a schema whose
-                // field is a list, a record or an optional over either is named
-                // here and refused by name where an algorithm names it
-                // (docs/adr/0086, section 7.3).
+                // An algorithm holds a record one entry per field, and, on a
+                // backend that lowers one, a field that holds a list of numbers
+                // or `bool`s beside them, as a parameter it reads (docs/adr/0086,
+                // section 7.3). Any other schema whose field is a list, a record
+                // or an optional over either is named here and refused by name
+                // where an algorithm names it.
+                let mut lists = Vec::new();
                 let sm = match full.entry_schema() {
                     Ok(sm) => Some(sm),
-                    Err(composed) => {
-                        ctx.record_composed = Some(composed.sentence(&full.name, "an algorithm"));
-                        None
-                    }
+                    Err(composed) => match listed_record_fields(full) {
+                        Some(listed)
+                            if forge::codegen_matrix::ALGORITHM_LISTED_RECORD_BACKENDS
+                                .contains(language) =>
+                        {
+                            lists = listed;
+                            Some(full.given_fields())
+                        }
+                        Some(listed) => {
+                            ctx.record_composed =
+                                Some(listed_record_unlowered(&full.name, &listed, *language));
+                            None
+                        }
+                        None => {
+                            ctx.record_composed =
+                                Some(composed.sentence(&full.name, "an algorithm"));
+                            None
+                        }
+                    },
                 };
                 ctx.record = sm.map(|sm| forge::generator::RecordImport {
                     qualified_type: forge::generator::event_schema_payload_type(
@@ -8103,11 +8121,13 @@ fn validate_and_enrich_imports(
                         &forge::stdlib::identity(&source.path),
                         &sm.name,
                     ),
+                    lists: std::mem::take(&mut lists),
                 });
             }
-            // An algorithm with a record, an optional or a union slot (and no
-            // list slot, and no union return) is callable from another
-            // algorithm's body, so its whole signature rides along, each record
+            // An algorithm with a record, an optional or a union slot, or a list
+            // slot on a backend that hands a list across (and no union return),
+            // is callable from another algorithm's body, so its whole signature
+            // rides along, each record
             // slot named by the schema the CALLEE imported and each union slot
             // by the union document — resolved from the callee's own directory,
             // the way the callee itself resolves it. One another algorithm
@@ -9847,7 +9867,9 @@ fn validate_worker_inbox_queue(
 /// scalar signature carries. `Err` names the first slot another algorithm
 /// cannot fill, in the words of [`discover_stateless_signature`]'s host-only
 /// reason ("takes list<int64> `xs`", "returns union:Shape"), which then
-/// refuses its call: a list slot, which only a host fills; a union return,
+/// refuses its call: a list slot on a backend that hands no list from one
+/// algorithm to another ([`forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]),
+/// where only a host fills it; a union return,
 /// which no place of an algorithm takes whole; and a record or a union whose
 /// document the callee cannot resolve (the callee's own compilation reports
 /// that).
@@ -9891,6 +9913,50 @@ fn algorithm_record_slots(
             document: um.name.clone(),
         })
     };
+    // A list slot, on a backend that hands a list from one algorithm to another
+    // ([`forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]): its type, every
+    // bound stated (a parameter that states none views a list of any length, a
+    // return holds its `returns-max-size`), read in the callee's own scope, which
+    // a list the caller lends or takes is held to. Read once, for a callee with a
+    // list slot.
+    let lists_cross = forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS.contains(&language);
+    let has_list = am
+        .signature
+        .params
+        .iter()
+        .map(|p| &p.sce_type)
+        .chain(am.signature.return_type.as_ref())
+        .any(|t| t.list_elem().is_some());
+    let list_scope = (lists_cross && has_list)
+        .then(|| forge::import_source::type_scope(callee_imports, callee_base));
+    let list = |ty: &AlgorithmValueType, param: bool| -> Option<forge::types::ListParam> {
+        let scope = list_scope.as_ref()?;
+        let stated = if ty.stated_outer_bound().is_some() {
+            ty.clone()
+        } else {
+            let max = if param {
+                u32::MAX
+            } else {
+                am.signature.returns_max_size()?
+            };
+            ty.clone()
+                .with_outer_bound(forge::value_type::Bound {
+                    max,
+                    limit: None,
+                    min: 0,
+                })
+                .ok()?
+        };
+        Some(forge::types::ListParam {
+            written: if param {
+                ty.as_attr()
+            } else {
+                stated.as_attr()
+            },
+            ty: stated.bounded().ok()?,
+            scope: scope.clone(),
+        })
+    };
     // The slot `ty` is to another algorithm's call, a parameter when `param`;
     // `None` for one no such call fills.
     let slot = |ty: &AlgorithmValueType, param: bool| -> Option<CalleeSlot> {
@@ -9914,10 +9980,13 @@ fn algorithm_record_slots(
             // no slot of such a call: no place of an algorithm takes whole a
             // union a call answers, so the callee is called by a host alone.
             AlgorithmValueType::Union { alias } if param => union(alias).map(CalleeSlot::Union),
+            // A list is lent to a parameter and taken whole from a return on a
+            // backend that hands one across; on every other backend only a
+            // host fills it.
+            AlgorithmValueType::List { .. } => list(ty, param).map(CalleeSlot::List),
             // No algorithm's slot holds a map yet (docs/adr/0108, D10): the
             // callee's own document is refused where its slot is read.
-            AlgorithmValueType::List { .. }
-            | AlgorithmValueType::Union { .. }
+            AlgorithmValueType::Union { .. }
             | AlgorithmValueType::Map { .. }
             | AlgorithmValueType::Set { .. } => None,
             AlgorithmValueType::Record { alias } => {
@@ -9953,6 +10022,62 @@ fn algorithm_record_slots(
         .map(|t| slot(t, false).ok_or_else(|| format!("returns {}", t.as_attr())))
         .transpose()?;
     Ok(Some(AlgorithmSlots { params, ret }))
+}
+
+/// The fields of the schema `full` that hold a list of numbers or `bool`s, each
+/// as an algorithm's record parameter holds it, when every other field is one
+/// entry ([`forge::generator::RecordListField`], docs/adr/0086, section 7.3).
+/// `None` for a schema with no such field, and for one with a field that is
+/// neither, which no algorithm holds in a record yet.
+fn listed_record_fields(
+    full: &forge::model::EventSchemaModel,
+) -> Option<Vec<forge::generator::RecordListField>> {
+    use forge::value_type::ValueType;
+    let mut lists = Vec::new();
+    for field in &full.fields {
+        if field.entry_field().is_ok() {
+            continue;
+        }
+        let ValueType::List { elem, .. } = &field.sce_type else {
+            return None;
+        };
+        let ValueType::Scalar(scalar) = &**elem else {
+            return None;
+        };
+        if !forge::model::AlgorithmValueType::list_elem_admitted(scalar) {
+            return None;
+        }
+        lists.push(forge::generator::RecordListField {
+            id: field.id.clone(),
+            elem: scalar.clone(),
+            ty: field.sce_type.clone(),
+        });
+    }
+    (!lists.is_empty()).then_some(lists)
+}
+
+/// The refusal of a record whose schema `schema` holds the list fields
+/// `listed` by an algorithm of `language`, a backend that holds no such record
+/// yet ([`forge::codegen_matrix::ALGORITHM_LISTED_RECORD_BACKENDS`]): the
+/// field and its type, and the backends that hold one.
+fn listed_record_unlowered(
+    schema: &str,
+    listed: &[forge::generator::RecordListField],
+    language: generator::Language,
+) -> String {
+    let lowered: Vec<&str> = forge::codegen_matrix::ALGORITHM_LISTED_RECORD_BACKENDS
+        .iter()
+        .map(|backend| backend.canonical_name())
+        .collect();
+    let field = listed.first().map_or_else(String::new, |field| {
+        format!(" `{}` ({})", field.id, field.ty)
+    });
+    format!(
+        "{schema}: the field{field} holds a list, and an algorithm holds a record that holds \
+         a list on {} alone; no {} algorithm holds one yet (docs/adr/0086, section 7.3)",
+        lowered.join(", "),
+        language.canonical_name()
+    )
 }
 
 /// The identity of the enum document the document `owner` names `alias`, read from
@@ -10124,7 +10249,9 @@ pub(crate) fn discover_stateless_signature(
         // the whole signature is withheld and `host_only` names why, so a
         // caller refuses from that reason instead of judging a call against
         // an emptied parameter list or an `Unknown` return (SCE_FORGE.md
-        // §4.12 — in v1 only a host calls a list-signature algorithm).
+        // §4.12): a statechart calls it through its own value signature, and
+        // another algorithm, where a backend hands a list across, through
+        // the slots `algorithm_record_slots` reads.
         //
         // A `may-fail` algorithm keeps its signature and says it may fail
         // (SCE_FORGE.md §3.4.1): a `may-fail` caller passes the failure on,

@@ -1272,6 +1272,28 @@ pub struct UnionParam {
     pub document: String,
 }
 
+/// A list an imported algorithm takes as a parameter or returns, as its own
+/// document declares it (docs/adr/0086, section 1): the list's type, its bound
+/// part of it, and the scope the callee names the records, enums and unions of
+/// its element in. A list is typed by no operand type in the expression
+/// pipeline, so which list a slot takes is said here, beside the slot's type
+/// ([`FuncSig::lists`]), and an argument is held to it by the relation "fits"
+/// (docs/adr/0086, section 5.1), each record, enum and union of the argument
+/// read in the caller's scope and each of the slot in this one.
+///
+/// A parameter that states no bound views a list of any length, and is held
+/// here at the most elements any list holds; a returned list is held at its
+/// `returns-max-size`.
+#[derive(Debug, Clone)]
+pub struct ListParam {
+    /// The list type, every bound in it stated.
+    pub ty: ValueType,
+    /// The type as the callee's document spells it, which a refusal names.
+    pub written: String,
+    /// The scope the callee's document names the types of [`Self::ty`] in.
+    pub scope: crate::forge::value_type::TypeScope,
+}
+
 /// Signature of a function that may appear in a SCXML expression as
 /// `callee(args...)`. Used to type `Call` nodes where the callee is a
 /// cross-file import or a built-in intrinsic.
@@ -1284,8 +1306,9 @@ pub struct FuncSig {
     /// Why no expression may call this function whatever its arguments —
     /// `None` for every callable one. Set for an imported algorithm whose
     /// signature takes or returns a `list<T>` (the text names the slot,
-    /// e.g. "returns list<int64>"): in v1 only a host calls it
-    /// (SCE_FORGE.md §4.12). Built by [`FuncSig::host_only`].
+    /// e.g. "returns list<int64>") where the caller is handed no such slot
+    /// (SCE_FORGE.md §4.12, "Where a list crosses"). Built by
+    /// [`FuncSig::host_only`].
     ///
     /// ⚠ `params` and `ret` are empty then and say nothing. The refusal
     /// comes from this reason, never from an arity or kind check against a
@@ -1322,6 +1345,13 @@ pub struct FuncSig {
     /// the same document, judged and spelled where the call is lowered
     /// ([`crate::forge::expr`]). Empty for a function that takes no union.
     pub unions: Vec<Option<UnionParam>>,
+    /// The list each parameter takes, by position, `None` at a parameter that
+    /// takes none: an imported algorithm's parameter of `list<T>`
+    /// ([`ListParam`]). Its argument is the name of a list the caller holds, or
+    /// the list field of a record it holds, judged and spelled where the call
+    /// is lowered ([`crate::forge::expr`]). Empty for a function that takes no
+    /// list.
+    pub lists: Vec<Option<ListParam>>,
 }
 
 /// How the value of a call is read from what the called function answers, where
@@ -1361,6 +1391,7 @@ impl FuncSig {
             storage: None,
             ret_bound: None,
             unions: Vec::new(),
+            lists: Vec::new(),
         }
     }
 
@@ -1615,6 +1646,20 @@ pub struct TypeCtx<'a> {
     /// The scope the records of [`TypeCtx::values`] are read in, the
     /// statechart's own ([`crate::forge::value_path::statechart_scope`]).
     pub value_scope: Option<&'a crate::forge::value_type::TypeScope>,
+    /// Each list an algorithm's body holds, by the place it is read at, with
+    /// its type in the scope of [`TypeCtx::list_scope`]: a list parameter, its
+    /// bound the one it states or the most any list holds where it states none;
+    /// a list local, its bound its capacity; and the list field of a record
+    /// parameter, its bound the schema's (`<record>.<field>`). What an argument
+    /// handed to an imported algorithm's list parameter is held to
+    /// ([`FuncSig::lists`]).
+    ///
+    /// Empty everywhere but an algorithm's body.
+    pub held_lists: HashMap<&'a str, ValueType>,
+    /// The scope the types of [`TypeCtx::held_lists`] name their records, enums
+    /// and unions in: the algorithm's own imports. `None` wherever
+    /// [`TypeCtx::held_lists`] is empty.
+    pub list_scope: Option<&'a crate::forge::value_type::TypeScope>,
     /// Each name of [`TypeCtx::values`] that is the item of a `<foreach>` over a
     /// list a place holds, the payload or an enclosing loop's item, rather than
     /// a list variable (docs/adr/0086, section 6.1): a part of a composed value,
@@ -1845,6 +1890,8 @@ impl<'a> TypeCtx<'a> {
             proven: crate::forge::narrowing::Facts::none(),
             values: HashMap::new(),
             value_scope: None,
+            held_lists: HashMap::new(),
+            list_scope: None,
             place_items: std::collections::HashSet::new(),
             unit_unions: HashMap::new(),
             payload_key_feed: None,

@@ -341,7 +341,8 @@ fn optional_record_id(slot: &CalleeSlot) -> Option<RecordId> {
         CalleeSlot::Scalar(_)
         | CalleeSlot::Record { .. }
         | CalleeSlot::Optional(_)
-        | CalleeSlot::Union(_) => None,
+        | CalleeSlot::Union(_)
+        | CalleeSlot::List(_) => None,
     }
 }
 

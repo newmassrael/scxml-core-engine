@@ -1065,6 +1065,13 @@ impl AlgorithmWalk<'_, '_> {
                     self.optional_record_alias(target),
                 )?;
                 let slot = self.ctx.lookup_var(target);
+                // A list local takes whole the list a call returns, which the
+                // lowering of the assignment judges with its arguments
+                // (`whole_list_call` in `crate::forge::generator`), as a
+                // `<sce:call>` of a callee only a host calls is judged there.
+                if matches!(slot, InferredType::ListBuffer(_)) && self.calls_host_only(expr) {
+                    return Ok(());
+                }
                 self.judge(expr, expr_spelling.as_ref(), Expected::Slot(slot), proven)
             }
             // A union is appended whole by the name that holds it, to a list of
@@ -1181,7 +1188,22 @@ impl AlgorithmWalk<'_, '_> {
                 let unions = signature
                     .map(|signature| signature.unions.as_slice())
                     .unwrap_or_default();
+                let lists = signature
+                    .map(|signature| signature.lists.as_slice())
+                    .unwrap_or_default();
                 for (index, arg) in args.iter().enumerate() {
+                    // A list is lent by the place that holds it, held to the
+                    // list the parameter takes.
+                    if let Some(param) = lists.get(index).and_then(Option::as_ref) {
+                        let ctx = self.ctx.proving(proven.clone());
+                        crate::forge::expr::judge_list_argument_written(
+                            &arg.expr, target, param, &ctx,
+                        )
+                        .map_err(|refusal| {
+                            ExpressionSite::new(&arg.expr, arg.spelling.as_ref()).place(refusal)
+                        })?;
+                        continue;
+                    }
                     match unions.get(index).and_then(Option::as_ref) {
                         Some(param) => {
                             let ctx = self.ctx.proving(proven.clone());
@@ -1206,6 +1228,26 @@ impl AlgorithmWalk<'_, '_> {
                 Expected::Slot(InferredType::Bool),
                 proven,
             ),
+        }
+    }
+
+    /// Whether `expr` is, whole, a call of a function only a host calls
+    /// ([`crate::forge::types::FuncSig::host_only`]): one whose callee the
+    /// lowering of its statement refuses or admits by its own rule, naming its
+    /// slot.
+    fn calls_host_only(&self, expr: &str) -> bool {
+        let Ok(ast) = parse_to_ast(expr.trim()) else {
+            return false;
+        };
+        match &ast.kind {
+            ExprKind::Call { callee, .. } => match &callee.kind {
+                ExprKind::Ident(name) => self
+                    .ctx
+                    .lookup_func(name)
+                    .is_some_and(|signature| signature.host_only.is_some()),
+                _ => false,
+            },
+            _ => false,
         }
     }
 
