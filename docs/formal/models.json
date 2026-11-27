@@ -860,11 +860,13 @@
       "runs": [
         {
           "config": "W3CTest388.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 17
         },
         {
           "config": "W3CTest388_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 17
         },
         {
           "config": "W3CTest388_live_without_fairness.cfg",
@@ -937,11 +939,13 @@
       "runs": [
         {
           "config": "W3CTest570.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 19
         },
         {
           "config": "W3CTest570_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 19
         },
         {
           "config": "W3CTest570_live_without_fairness.cfg",
@@ -1012,11 +1016,13 @@
       "runs": [
         {
           "config": "W3CTest403c.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 13
         },
         {
           "config": "W3CTest403c_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 13
         },
         {
           "config": "W3CTest403c_live_without_fairness.cfg",
