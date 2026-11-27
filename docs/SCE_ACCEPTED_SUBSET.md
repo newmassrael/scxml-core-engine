@@ -899,6 +899,27 @@ triple, are refused (`generate/invalid-config`), and so is an element whose larg
 encoding does not fit the narrow row's 32-bit length word. The other languages keep
 one row each and judge none of them.
 
+`buffer-pool` is MCU-class (Rust and C11, RFC §synth-5-E): `<sce:slot-count>`,
+`<sce:slot-size>`, `<sce:section>`, `<sce:alignment>`, an optional
+`<sce:dma-channel>`, `<sce:cache-policy>`, an optional
+`<sce:variant>reassembly</sce:variant>` with its three fields, and an optional
+`<sce:sharing>`, `owner` (the default) or `shared`; any other sharing is refused
+by the grammar. Amended by: ADR 0111 (D4): the slot count and the slot size are
+the bounds the pool reserves at build. A pool is made with a run-time count up to
+the first, over its own storage or over a span the caller holds cut into slots of
+a run-time length up to the second (Rust `with_count` and `over`, C11
+`<pool>_init` and `<pool>_init_over`); each lending names its length and a
+headroom kept in front of the frame for a link's prefix, and a count, a length or
+a span out of range is refused (`Err`; `false`). A lent slot crosses an interface
+as its index, its number and the generation of the lending, which rebuilds its
+handle once and is refused, counted as an ownership violation, when stale or
+forged; a received slot is lent to the events of its frame and returns with its
+last holder. An `owner` pool's book is plain cells moved by whoever holds the
+drive; a `shared` one's is atomic words, each transition a compare-and-swap, or
+the deployment's critical section on a target with none (`critical-section` in
+Rust, `_sce_critical_enter` and `_sce_critical_exit` in C11). An empty pool is
+all zero.
+
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and
 what each requires, and it emits nothing on any backend. A statechart reads
