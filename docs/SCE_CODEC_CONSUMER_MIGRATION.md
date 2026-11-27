@@ -4222,3 +4222,24 @@ that says no fact.
   `record-cbor` feature. `sce_rust_metrics::HostOperation` has `JournalRead`, and so does the C++
   `SCE::Metrics::HostOperation` (`tests/metrics/metric_names.json` lists it). A generated machine that reads a
   page calls `sce_rust_runtime::journal::open_page` (feature `record-cbor`).
+
+## A request of an instance under `key` signs a value of the freshness step its server gave it (ADR 0117 D4)
+
+Landing: the commits that add this section (ADR 0117 step 3). A consumer regenerates its Rust peer tables, whose
+`https` accepting links gain `fresh_ms`; no committed generated tree holds one, and no generated machine's behaviour
+changes.
+
+- deploy.yaml takes `fresh_ms` on the accepting side of an `https` binding beside `authenticator: key`, required on
+  the binding of an open machine and refused on any other (`mesh/deploy-invalid-instances`,
+  `mesh/topology-invalid-binding-field`); SCE_MESH.md section 22.9 gives its meaning.
+- Rust `PeerLink::HttpsAccept` has `fresh_ms: Option<u32>`. A generated table has it; one written by hand adds
+  `fresh_ms: None`, and a pattern that names every field names it.
+- The Rust https server's `ServerSettings` has `fresh: Option<Duration>`, `None` from `Default`; a literal that names
+  every field adds `fresh: None`. Under `Authenticator::Key` and a step, every answer carries `Sce-Mesh-Fresh`, and a
+  request that signs no value of the present step or the one before is answered `401` with
+  `WWW-Authenticate: SCE-Signature error="use_fresh"`.
+- `ResponseSigner::sign(digest, epoch, first, fresh, answered)` takes the value a `200` gives (`None` for none) before
+  the request it answers, and `ResponseSigner::sign_refusal` and `signature::verify_refusal` sign and verify the
+  refusal. A request signature covers `sce-mesh-fresh` when the request carries one; one that carries none signs the
+  bytes it signed before, so the C++ client and the vector of `tests/mesh/https_signature_cross_language.json` are
+  unchanged. `sce_rust_mesh::https::freshness` holds the server's `Freshness` and the header's name.

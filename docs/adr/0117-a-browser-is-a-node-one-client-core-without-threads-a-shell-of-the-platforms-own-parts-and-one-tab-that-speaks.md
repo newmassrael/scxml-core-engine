@@ -183,7 +183,12 @@ Each step lands with a test that fails without it.
    0115 D4, D13). Landed 2026-11-23: the core (`https/client_core.rs`), whose inputs and effects are the trace, and the
    proof of its numbers (`https/client_mailbox.rs`). Needs nothing of ADR 0116.
 2. (2026-11-23) This record's model (D10), checked, with its failing configurations.
-3. The freshness step (D4), server and native client.
+3. The freshness step (D4), server and native client. Landed 2026-11-28: the server's values and their key
+   (`https/freshness.rs`), the server's refusal and the value every answer gives (`https/server.rs`), the value as one
+   more component of each signature that carries it (`https/signature.rs`), the client core's input (a refusal that
+   gives a value) and effect (the request signed again at once, or after its backoff) in `https/client_core.rs`, and
+   the rules over their numbers proved by Verus (`https/fresh_step.rs`, ADR 0115 D13). deploy.yaml's `fresh_ms`
+   reaches the peer table; the server reads it where it serves an open machine's binding, which is ADR 0113 step 5.
 4. The browser shell: `fetch`, the key, the store, the lock; the kit in Node and two engines.
 5. The generated surface, with the test that must not compile.
 

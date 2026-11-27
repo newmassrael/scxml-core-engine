@@ -152,6 +152,7 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | server | `trusted_proxies` | the proxies whose `Forwarded` header names the client's address | none | a list of CIDR blocks (`10.0.0.0/8`, `2001:db8::/32`, or a bare address) |
 | server | `sign` | the `sign` key of the server's key ring every `200` is signed with (section 5, "Message signatures") | none: nothing is signed | a key's id, 1 to 64 bytes |
 | server | `max_skew_ms` | how far a signed request's `created` may lie from the server's clock | 300000 | a positive integer that fits 32 bits, beside `authenticator: key` only |
+| server | `fresh_ms` | the freshness step a signed request of an instance signs a value of (SCE_MESH.md section 22.9) | none: required on the binding of an open machine under `authenticator: key` | a positive integer that fits 32 bits, beside `authenticator: key` only, on the binding of an open machine only |
 | both | `receipt` | `durable` keeps each client's mailbox as an outbox in the session store (section 3), and a client acknowledges only what a checkpoint of its own holds | `transport` | `transport`, `durable`; `durable` needs both machines checkpointed (section 2.3) |
 | server | `retain_ms` | how long an outbox entry is kept unless its client acknowledges it | 2592000000 (thirty days) | a positive integer, at least `absence_ms`, beside `receipt: durable` only |
 | client | `url` | `https://<host>[:<port>][<base>]`, before the binding's path, with no query or fragment; `http://` only to a loopback host | required | as said |
@@ -161,9 +162,10 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | client | the retry keys every binding spells | SCE_MESH.md section 10.10; a request that failed at the transport is sent again under them | none | as section 10.10 says |
 
 A value outside the last column is refused when the deployment is read, as `mesh/topology-invalid-binding-field`
-naming the key and why; so is `max_skew_ms` beside another authenticator and `retain_ms` under `receipt: transport`
-or below `absence_ms`. A key no side of the binding reads is `mesh/deploy-unknown-binding-field`, with the nearest
-key it may have meant.
+naming the key and why; so is `max_skew_ms` or `fresh_ms` beside another authenticator, `fresh_ms` on the binding of a
+machine that runs once, and `retain_ms` under `receipt: transport` or below `absence_ms`. The binding of an open machine
+under `authenticator: key` that names no `fresh_ms` is `mesh/deploy-invalid-instances`. A key no side of the binding
+reads is `mesh/deploy-unknown-binding-field`, with the nearest key it may have meant.
 
 What these mean for an operator:
 

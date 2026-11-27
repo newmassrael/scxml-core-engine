@@ -1542,7 +1542,12 @@ client's host, every `200` verified under it); and `authenticator` takes
 `key`. Each name is 1 to 64 bytes and the skew a positive integer that
 fits 32 bits, each checked by value and by side
 (`mesh/topology-invalid-binding-field`). SCE_MESH.md section 22.9 gives
-their meaning.
+their meaning. Beside `authenticator: key` the accepting side takes
+`fresh_ms` too (amended by ADR 0117, decision D4), the freshness step a
+request signs a value of: a positive integer that fits 32 bits, read on
+the binding of an open machine alone, where it is required
+(`mesh/deploy-invalid-instances`) and with no default, and refused on
+any other binding (`mesh/topology-invalid-binding-field`).
 
 What a deployment keeps across a crash is declared by the keys of
 SCE_MESH.md section 10.11 (amended by ADR 0109, decision D10): a
