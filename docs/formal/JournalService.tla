@@ -14,20 +14,31 @@
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
-CONSTANTS Streams, MaxEntry
+CONSTANTS
+    \* @type: Set(Int);
+    Streams,
+    \* @type: Int;
+    MaxEntry
 
-VARIABLES journal,   \* the entries, as <<stream, number>>
-          taken,     \* how many of them the reader has taken
-          did        \* did[e]: how many times entry e took effect in the reader
+VARIABLES
+    \* @type: Seq(<<Int, Int>>);
+    journal,   \* the entries, as <<stream, number>>
+    \* @type: Int;
+    taken,     \* how many of them the reader has taken
+    \* @type: <<Int, Int>> -> Int;
+    did        \* did[e]: how many times entry e took effect in the reader
 
 vars == <<journal, taken, did>>
 
 Entry == Streams \X (1..MaxEntry)
 
+\* @type: (Seq(<<Int, Int>>), Seq(<<Int, Int>>)) => Bool;
 Grows(old, new) == Len(old) <= Len(new) /\ SubSeq(new, 1, Len(old)) = old
 
+\* @type: (Seq(<<Int, Int>>)) => Bool;
 Distinct(s) == \A i, j \in 1..Len(s) : s[i] = s[j] => i = j
 
+\* @type: (Seq(<<Int, Int>>)) => Bool;
 InOrder(s) == \A i, j \in 1..Len(s) : (i < j /\ s[i][1] = s[j][1]) => s[i][2] < s[j][2]
 
 Init == journal = <<>> /\ taken = 0 /\ did = [e \in Entry |-> 0]

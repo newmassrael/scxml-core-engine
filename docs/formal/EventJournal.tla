@@ -126,6 +126,7 @@ Begin(p, s) ==
     /\ nextpos' = nextpos + 1
     /\ UNCHANGED <<fence, hold, mem, st, log, clock, pend, cursor, applied, staged, asked, crashes>>
 
+\* @type: ({p: Int, s: Int, n: Int, pos: Int, f: Int, at: Int}) => {pos: Int, s: Int, n: Int, at: Int};
 Entry(t) == [pos |-> t.pos, s |-> t.s, n |-> t.n, at |-> t.at]
 
 \* It commits or, its fence being another's now, writes nothing.
@@ -234,9 +235,12 @@ Visible == {e \in log : e.pos <= Limit}
 
 \* The i-th entry by position is the one with i - 1 below it: a sequence, as JournalService reads
 \* it. MkSeq types it as one for Apalache, and TLC computes the function it was.
+\* @type: (Set({pos: Int, s: Int, n: Int, at: Int})) => Seq(<<Int, Int>>);
 ByPos(es) == MkSeq(Cardinality(es), LAMBDA i :
     LET e == CHOOSE x \in es : Cardinality({y \in es : y.pos < x.pos}) = i - 1
-    IN <<e.s, e.n>>)
+        \* @type: <<Int, Int>>;
+        item == <<e.s, e.n>>
+    IN item)
 
 Service == INSTANCE JournalService WITH
     Streams <- Sess,
