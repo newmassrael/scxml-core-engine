@@ -45,7 +45,11 @@
               # and templates over a union they import, and the unions.
               "sce-build/tests/fixtures/ttcn3_export/**",
               "sce-build/tests/fixtures/test_profile/imports/**",
-              "sce-build/tests/fixtures/union/**"],
+              "sce-build/tests/fixtures/union/**",
+              # The recorded runs of the Python lane and the Rust lane's they
+              # are held to, which `backends/python/tests/trace_port/` reads
+              # at run time (docs/adr/0115, D4 and D8).
+              "docs/formal/traces/**"],
     "deps": ["codegen-build"],
     "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                "every push.",

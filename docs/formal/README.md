@@ -132,13 +132,21 @@ that holds the run as a sequence and constrains the model's next-state relation 
 accepts the run or names the first step no behaviour explains. The environment's steps, an event from outside and a
 delayed send that comes due, are not in a run and may come between any two steps. Every kind of step a run holds has an
 altered run, one field given another value, which must be refused at that step: a trace that says too little is
-accepted though the run was wrong. The Rust lane records the runs with
-`UPDATE_EXPECT=1 cargo test -p sce-rust-tests --test a_run_is_a_behaviour_of_its_model`, and the C11 lane with
-`UPDATE_EXPECT=1 ctest -R c11_a_run_of_test_` (the machine's trace port, `sce/trace_port.h`, on by `SCE_TRACE_PORT=1`),
-and the Kotlin lane with `UPDATE_EXPECT=1 ./gradlew :sce-kotlin-w3c:test --tests 'com.sce.formal.*'` (the engine's
-`tracePort`, written by `RunTrace`); the same tests hold each run to its recorded file. A lane's run of a document is
-judged against the one model of that document, and these documents leave a run's steps no choice, so the lanes' runs of
-one document differ only in their lane.
+accepted though the run was wrong.
+
+Each lane records its runs with the command below, and the same tests hold each run to its recorded file:
+
+- Rust: `UPDATE_EXPECT=1 cargo test -p sce-rust-tests --test a_run_is_a_behaviour_of_its_model` (the runtime's
+  `trace-port` feature, `trace_port::RunTrace`).
+- C11: `UPDATE_EXPECT=1 ctest -R c11_a_run_of_test_` (the machine's trace port, `sce/trace_port.h`, on by
+  `SCE_TRACE_PORT=1`).
+- Kotlin: `UPDATE_EXPECT=1 ./gradlew :sce-kotlin-w3c:test --tests 'com.sce.formal.*'` (the engine's `tracePort`,
+  written by `RunTrace`).
+- Python: `UPDATE_EXPECT=1 python -m pytest backends/python/tests/trace_port/` (`Engine.set_trace_port`, written by
+  `sce_runtime.trace_port`).
+
+A lane's run of a document is judged against the one model of that document, and these documents leave a run's steps
+no choice, so the lanes' runs of one document differ only in their lane.
 
 ## What all of this stands on
 
