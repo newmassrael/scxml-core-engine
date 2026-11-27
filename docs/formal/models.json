@@ -1336,11 +1336,13 @@
       "runs": [
         {
           "config": "SessionPool.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 20701
         },
         {
           "config": "SessionPool_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 20701
         },
         {
           "config": "SessionPool_live_without_fairness.cfg",
