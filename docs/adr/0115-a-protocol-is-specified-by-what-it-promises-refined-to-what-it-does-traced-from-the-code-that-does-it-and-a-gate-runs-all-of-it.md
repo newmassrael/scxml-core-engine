@@ -357,6 +357,23 @@ assumed. Its checker considers one single-threaded program, which the split belo
   `Sce-Mesh-First` of the last number there is made the client panic in a build that checks overflow. The suites are
   what still say that the core asks these rules (`client_core.rs`, the kit); they do not prove it. `outbound.rs` and
   `rate.rs` are next.
+- **The second and third (2026-11-27): `outbound/gate.rs` and `https/rate/limits.rs`**, the decisions of `outbound.rs`
+  and `https/rate.rs` taken out of them as the client's were, each declared in `proofs.json` with one refused change per
+  guarantee. Neither protocol has a model of D2, so what each must guarantee is stated in its file from the document it
+  serves. Of a target's outbound side (SCE_MESH.md section 10.10): no envelope is sent ahead of one admitted before it
+  that still waits; an admit queues only below the bound and drops, told, only at it; every envelope admitted is sent,
+  waits or is told; losing readiness is told once per edge; the count of an envelope's sends never wraps. Of the edge
+  (ADR 0109, D2): a refused request spends nothing and one the rule could not judge is refused; a table never tracks
+  more keys than its bound; a fresh key that is dropped is judged after as if it had been kept; an exchange is refused
+  while either failure limiter refuses it, with the longer wait; `Retry-After` is the wait rounded up to a second; the
+  client behind a trusted proxy is the rightmost address that is not one. A rule of `sce:std/mesh` or `sce:std/rate`
+  stays the one definition of its decision: its verdict is an argument of the core, a proof takes of it what its
+  document computes, and its own contract is D10's. Reading the code for these found two faults the suites had not:
+  the depth the rules read was the queue's length cut to 32 bits, so a queue a checkpoint put back past that length
+  would read as empty and the next envelope would overtake it; and the count of sends was taken one past `u32::MAX`
+  under a policy of that many retries. Both now stop at the edge (a full queue; the envelope given up), each with a
+  test. Restated for Verus: the seconds of `Retry-After` without `div_ceil` and `Duration`, and two conversions
+  without `try_from`, as arithmetic of the same values. The suites see the same answers but at those two edges.
 
 ### D14. What stays assumed, and of what kind
 

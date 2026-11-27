@@ -15,7 +15,7 @@ this file says what is here and how to read it.
 | 3. Theorem for every size (D3) | | no |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus written as the generator will write them | the semantics and three documents, by hand; no generator, and no trace read against it |
 | 5. A run read against a model (D4) | | no |
-| 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, and the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), by Verus | yes, for two modules |
+| 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
 
 ## The models
 
