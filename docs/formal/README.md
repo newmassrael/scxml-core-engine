@@ -103,17 +103,20 @@ generator (`document_model::SEMANTICS_TEXT`), so the judge stages the semantics 
   writes each as `<req>.scenario.json` (`macrosteps.scenario.json` for a macrostep that does not end).
 - **Every lane replays it.** A lane's harness gives the machine a scenario's inputs, on a manual clock, with its trace
   port on, and records the run the port is told as `<req>.<lane>.json` beside it; `sce-build/src/formal/replay.rs`
-  judges each such run to be the scenario's, step for step, the configurations as sets. The Rust lane
-  (`backends/rust/tests/tests/a_scenario_of_the_turnstile_is_its_run.rs`) and the C11 lane
-  (`backends/c/tests/integration/test_a_scenario_of_the_turnstile_is_its_run.c`) replay the fixture's scenarios, and
-  `sce-build/tests/a_scenario_is_the_run_of_every_lane.rs` holds both to them without TLC. A harness gives an input
-  once the machine has taken every step it can, so a scenario whose environment put an event on the queue in the middle
-  of a macrostep that also sends to its own external queue, or whose model made a later delayed send due before an
-  earlier one, is one no harness replays as the model ran it, and the judge finds the runs part.
-  Each other lane needs what these two have: its trace port (C++, Go, Kotlin, Python and Swift each have one, D8), the
-  fixture's machine generated in its test tree, and a harness that reads a scenario's `inputs`, gives each event by
-  name and moves a clock the harness owns to the next deadline, recording its runs beside the scenarios; the judge's
-  list of lanes then names it.
+  judges each such run to be the scenario's, step for step, the configurations as sets. Every lane replays the
+  fixture's scenarios, each with the fixture's machine generated in its test tree and its trace port on (D8), and
+  `sce-build/tests/a_scenario_is_the_run_of_every_lane.rs` holds each lane's runs to them without TLC:
+  Rust (`backends/rust/tests/tests/a_scenario_of_the_turnstile_is_its_run.rs`), C11
+  (`backends/c/tests/integration/test_a_scenario_of_the_turnstile_is_its_run.c`), C++
+  (`tests/w3c/run_traces/AScenarioOfTheTurnstileIsItsRunTest.cpp`), Go
+  (`backends/go/tests/run_trace/a_scenario_of_the_turnstile_is_its_run_test.go`), Kotlin
+  (`backends/kotlin/tests/src/test/kotlin/com/sce/formal/AScenarioOfTheTurnstileIsItsRunTest.kt`), Python
+  (`backends/python/tests/trace_port/test_a_scenario_of_the_turnstile_is_its_run.py`) and Swift
+  (`backends/swift/tests/Tests/EcmaScriptMachinesTests/AScenarioOfTheTurnstileIsItsRunTests.swift`). Each harness
+  reads a scenario's `inputs`, gives each event by name and moves a clock it owns to the next deadline. It gives an
+  input once the machine has taken every step it can, so a scenario whose environment put an event on the queue in the
+  middle of a macrostep that also sends to its own external queue, or whose model made a later delayed send due before
+  an earlier one, is one no harness replays as the model ran it, and the judge finds the runs part.
 - **Coverage.** `--coverage` alters the machine in each way of a closed list (`sce-build/src/formal/coverage.rs`: a
   transition's condition made false, which takes it out, or made true; an action taken out; the event an action sends
   or raises changed to one no transition names; the value an `<assign>` writes changed, an integer by one more and a
