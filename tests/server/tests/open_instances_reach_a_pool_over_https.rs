@@ -16,18 +16,19 @@
 //! instance's dialing side does: a join with its nonce, then each request under `If-Match` with
 //! its low-water mark.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::sync::{mpsc, Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use sce_forge_runtime::codec::Bounded;
-use sce_rust_mesh::endpoint::EngineCall;
+use sce_rust_mesh::endpoint::{Endpoint, EngineCall, MESH_RPC_INVOKE_TYPE};
 use sce_rust_mesh::generated::envelope::Envelope;
 use sce_rust_mesh::generated::pattern_kind::PatternKind;
 use sce_rust_mesh::generated::payload_codec::PayloadCodec;
 use sce_rust_mesh::https::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
+use sce_rust_mesh::https::client::{ClientSettings, HttpsClient, HttpsClientTransport};
 use sce_rust_mesh::https::principal::{Challenge, Login, Offering};
 use sce_rust_mesh::https::principal_conformance::TestProof;
 use sce_rust_mesh::https::server::{
@@ -41,15 +42,19 @@ use sce_rust_mesh::https::{
     entity_tag, incarnation_of, split_sequence, HttpsRequest, HttpsResponse, HttpsTransport,
     ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, ETAG_HEADER, HOLD_HEADER, IF_MATCH_HEADER, MARK_HEADER,
 };
-use sce_rust_mesh::https::{JOINING_HEADER, JOINING_PROOF};
-use sce_rust_mesh::link::LinkEvent;
+use sce_rust_mesh::https::{Credential, HttpsFailure, JOINING_HEADER, JOINING_PROOF};
+use sce_rust_mesh::inbound::Delivery;
+use sce_rust_mesh::link::{deliver, LinkEvent};
 use sce_rust_mesh::peers::{Machine, Members, OpenPeer, Peer};
 use sce_rust_mesh::pool::{
     Fate, Pool, PoolConfig, SessionEndpoint, SessionFactory, SessionMachine,
 };
-use sce_rust_mesh::router::{PeerConfig, Responders};
+use sce_rust_mesh::reconnect::Backoff;
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
+use sce_rust_mesh::rpc::MESH_EVENT_PARAM;
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
-use sce_rust_session_store::{MembershipStore, SqliteStore};
+use sce_rust_runtime::HostInvokeRequest;
+use sce_rust_session_store::{MembershipStore, Revocation, SqliteStore};
 use sce_server_suite::clock::WallClock;
 use sce_server_suite::ledger::{self, take_data, taken_by_key, Ledgers, HTTPS, TAKE, TAKEN};
 use sce_server_suite::scratch::Scratch;
@@ -180,14 +185,25 @@ struct Served {
     store: Arc<SqliteStore>,
     received: Arc<AtomicUsize>,
     port: HyperTransport,
-    // Last, so that the store's directory is removed after everything that holds the store.
-    _scratch: Scratch,
+    // Last, so that the store's directory is removed after everything that holds the store; none
+    // for a server started on a store a test holds the directory of.
+    _scratch: Option<Scratch>,
 }
 
 impl Served {
     fn start(name: &str, members: Members) -> Served {
         let scratch = Scratch::new(name);
-        let store = Arc::new(SqliteStore::open(scratch.store()).expect("the reference store"));
+        let served = Served::on(&scratch.store(), members);
+        Served {
+            _scratch: Some(scratch),
+            ..served
+        }
+    }
+
+    /// A server whose store is the reference store at `path`: one that started there before and
+    /// was killed leaves the store as it left it.
+    fn on(path: &std::path::Path, members: Members) -> Served {
+        let store = Arc::new(SqliteStore::open(path).expect("the reference store"));
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
             .enable_all()
@@ -257,7 +273,7 @@ impl Served {
             store,
             received,
             port,
-            _scratch: scratch,
+            _scratch: None,
         }
     }
 
@@ -726,4 +742,264 @@ fn an_instance_acts_for_the_person_its_proof_bound_in_the_pools_session() {
         .map(|(_, person)| person)
         .collect();
     assert_eq!(taken, [&Some("alice".to_string())], "{seen:?}");
+}
+
+/// docs/adr/0113, D4 and D5, and docs/formal/OpenInstances.tla, `SCrash`: a server killed after
+/// it ran an instance's request and before the instance read the response, then started again on
+/// its store, holds the member under its incarnation, the request's completion record and the
+/// reply in the instance's outbox. The request asked again under the same incarnation is answered
+/// from what the store kept and is not run again, and the instance's next request is taken. Red
+/// if the membership, the records or the outbox are kept only in the process: the incarnation is
+/// then fenced, or the request runs twice.
+#[test]
+fn an_instance_asks_again_of_a_killed_server_and_is_answered_once() {
+    let scratch = Scratch::new("open-instances-killed");
+    let members = Members {
+        lease_ms: 600_000,
+        provisional_ms: 600_000,
+        max_instances: 8,
+    };
+    let (asked, wire_id) = take("a1", 1, "k", "once", 1);
+    let incarnation = {
+        let served = Served::on(&scratch.store(), members);
+        let incarnation = served.join("a1", "join");
+        // The response is lost with the server, which is killed before the instance reads it:
+        // its runtime is dropped with every task on it, and nothing is stopped in order.
+        let _lost = served.exchange("a1", asked.clone(), "n1", Some((incarnation, 1)), 0, None);
+        incarnation
+    };
+    let served = Served::on(&scratch.store(), members);
+    let again = served.exchange("a1", asked, "again", Some((incarnation, 1)), 0, None);
+    assert_eq!(
+        again.status, 200,
+        "the incarnation stands across the restart"
+    );
+    assert!(
+        replies_to(&again, wire_id) >= 1,
+        "answered from what the store kept"
+    );
+    let (next, next_id) = take("a1", 2, "k", "next", 2);
+    let answered = served.exchange("a1", next, "n2", Some((incarnation, 1)), 0, None);
+    assert_eq!(answered.status, 200);
+    assert!(replies_to(&answered, next_id) >= 1);
+    assert_eq!(
+        served.taken(&["k".to_string()])["k"],
+        vec!["once".to_string(), "next".to_string()],
+        "each request took effect once"
+    );
+}
+
+/// A port that, once armed, ends the incarnation of the instance `member` in the store just
+/// before it carries the next exchange that carries envelopes, as a lease that runs out between
+/// two exchanges ends it (docs/adr/0113, D4), so that the instance is fenced with that request in
+/// flight, whichever of its lanes the server answers first.
+struct EndingBeforeASend {
+    inner: HyperTransport,
+    store: Arc<SqliteStore>,
+    member: &'static str,
+    armed: std::sync::atomic::AtomicBool,
+}
+
+impl HttpsTransport for EndingBeforeASend {
+    fn exchange(&self, request: HttpsRequest) -> Result<HttpsResponse, HttpsFailure> {
+        if !request.body.is_empty() && self.armed.swap(false, Ordering::SeqCst) {
+            self.store
+                .end_revoked(Revocation::Instance(self.member))
+                .expect("the store ends the incarnation");
+        }
+        self.inner.exchange(request)
+    }
+}
+
+/// The instance `a1` of [`PHONE`]: a machine's endpoint, speaking as the instance, on the
+/// binding's client, asking the ledger with `<invoke type="sce:mesh-rpc">`.
+struct Instance {
+    endpoint: Endpoint<HttpsClientTransport, WallClock>,
+    client: HttpsClient,
+    events: mpsc::Receiver<LinkEvent>,
+    ready: bool,
+    /// Each request that ended, by the invoke id the document gave it, and whether it failed.
+    ended: Vec<(String, bool)>,
+    /// Each `error.communication` the machine was told, as its `_event.data`.
+    raised: Vec<String>,
+    token: u64,
+}
+
+impl Instance {
+    fn start(served: &Served, port: Arc<dyn HttpsTransport>) -> Instance {
+        let (tx, events) = mpsc::channel();
+        let settings = ClientSettings {
+            hold: Duration::from_millis(500),
+            exchange_timeout: Duration::from_secs(5),
+            backoff: Backoff {
+                initial: Duration::from_millis(50),
+                max: Duration::from_millis(500),
+                factor: 2,
+                jitter: false,
+            },
+            instance: Some("a1".to_string()),
+            ..ClientSettings::new(
+                format!("http://{}", served.address),
+                PHONE,
+                ledger::MACHINE_NAME,
+                Credential::Bearer(TOKEN.to_string()),
+            )
+        };
+        let client = HttpsClient::start(settings, port, move |event| {
+            let _ = tx.send(event);
+        })
+        .expect("a client of an instance");
+        let mut router = Router::new(PHONE, 64, 50).expect("a router");
+        router.speak_as_instance("a1").expect("an instance id");
+        router.add_peer(
+            ledger::MACHINE_NAME,
+            PeerConfig {
+                transport: "https",
+                buffer: None,
+                retry: None,
+                // The server judges an instance's requests by their numbers (docs/adr/0113, D5).
+                stamp_sequence: true,
+                delivery: Delivery {
+                    dedup: true,
+                    ordered: false,
+                },
+                responders: Responders::Named(&[ledger::MACHINE_NAME]),
+                deadline_ms: None,
+                reply_events: &[],
+                causal: None,
+            },
+        );
+        let endpoint = Endpoint::new(router, client.transport(), WallClock::default());
+        Instance {
+            endpoint,
+            client,
+            events,
+            ready: false,
+            ended: Vec::new(),
+            raised: Vec::new(),
+            token: 0,
+        }
+    }
+
+    /// Ask the session `key` to take `tag`, under the invoke id `tag`.
+    fn ask(&mut self, key: &str, tag: &str) {
+        self.token += 1;
+        let mut params = HashMap::new();
+        params.insert(MESH_EVENT_PARAM.to_string(), vec![TAKE.to_string()]);
+        let started = self.endpoint.invoke(&HostInvokeRequest {
+            processor_type: MESH_RPC_INVOKE_TYPE.to_string(),
+            invoke_id: tag.to_string(),
+            src: format!("#{}", ledger::MACHINE_NAME),
+            params,
+            event_data: take_data(key, tag, &[]),
+            token: self.token,
+            ..HostInvokeRequest::default()
+        });
+        assert!(started.refusal.is_none(), "{started:?}");
+    }
+
+    /// Drive the machine (its link's events, its ticks) until `done` holds of it, or panic with
+    /// `what` after thirty seconds.
+    fn until(&mut self, what: &str, done: impl Fn(&Instance) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !done(self) {
+            assert!(
+                Instant::now() < deadline,
+                "waited too long for {what}; told {:?}, host errors {:?}",
+                self.raised,
+                self.endpoint.take_host_errors()
+            );
+            if let Ok(event) = self.events.recv_timeout(Duration::from_millis(20)) {
+                if matches!(event, LinkEvent::Ready(_)) {
+                    self.ready = true;
+                }
+                deliver(&mut self.endpoint, event);
+            }
+            self.endpoint.tick();
+            for call in self.endpoint.take_calls() {
+                match call {
+                    EngineCall::EndInvoke {
+                        invoke_id, failed, ..
+                    } => self.ended.push((invoke_id, failed)),
+                    EngineCall::Raise(event) => self.raised.push(event.metadata.data.clone()),
+                }
+            }
+        }
+    }
+
+    fn ended(&self, tag: &str) -> bool {
+        self.ended.iter().any(|(invoke_id, _)| invoke_id == tag)
+    }
+}
+
+/// docs/adr/0113, D4, end to end: an instance on the binding's client joins, confirms its
+/// incarnation and is answered; when its incarnation ends with a request in flight, the server
+/// fences the exchange `412`, the client tells its machine that what it waited on has an
+/// unknown outcome (SCE_MESH.md section 16.7 row 20) and never ends that request with an answer,
+/// joins anew, and its next request is answered under the next incarnation. Red if the client
+/// carries the fenced request again under the next incarnation (the store then holds its tag), or
+/// leaves the machine waiting on it untold.
+#[test]
+fn an_instance_is_told_the_outcome_of_a_fenced_request_is_unknown_and_joins_anew() {
+    let served = Served::start(
+        "open-instances-unknown-outcome",
+        Members {
+            lease_ms: 600_000,
+            provisional_ms: 600_000,
+            max_instances: 8,
+        },
+    );
+    let port = Arc::new(EndingBeforeASend {
+        inner: HyperTransport::new(AdapterSettings {
+            proxy: ProxyPolicy::Direct,
+            ..AdapterSettings::default()
+        })
+        .expect("the reference adapter"),
+        store: Arc::clone(&served.store),
+        member: "phone/a1",
+        armed: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut instance = Instance::start(&served, Arc::clone(&port) as Arc<dyn HttpsTransport>);
+    instance.until("the instance to join and be ready", |instance| {
+        instance.ready
+    });
+    instance.ask("k", "before");
+    instance.until("the first answer", |instance| instance.ended("before"));
+
+    port.armed.store(true, Ordering::SeqCst);
+    instance.ask("k", "fenced");
+    instance.until("the unknown outcome", |instance| {
+        instance
+            .raised
+            .iter()
+            .any(|data| data.contains("\"reason\":\"outcomeUnknown\""))
+    });
+    let unknown: Vec<&String> = instance
+        .raised
+        .iter()
+        .filter(|data| data.contains("outcomeUnknown"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "told once: {unknown:?}");
+    assert!(
+        unknown[0].contains("\"invoke_id\"") && unknown[0].contains("\"target\":\"ledger\""),
+        "{}",
+        unknown[0]
+    );
+
+    instance.ask("k", "after");
+    instance.until("the answer under the next incarnation", |instance| {
+        instance.ended("after")
+    });
+    assert!(!instance.ended("fenced"), "no answer ends what was fenced");
+    assert!(
+        instance.ended.iter().all(|(_, failed)| !failed),
+        "{:?}",
+        instance.ended
+    );
+    instance.client.stop();
+    assert_eq!(
+        served.taken(&["k".to_string()])["k"],
+        vec!["before".to_string(), "after".to_string()],
+        "the fenced request took no effect, and was not carried again"
+    );
 }
