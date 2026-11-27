@@ -196,6 +196,14 @@ public final class Engine<Policy: StatePolicy> {
     /// (`setTransitionObserver`, docs/adr/0089); nil until a host sets one.
     private var transitionObserver: ((TransitionTaken<State>) -> Void)?
 
+    #if SCE_TRACE_PORT
+    /// What `setTracePort` set, told each step of Appendix D the engine takes, and the step being
+    /// told (docs/adr/0115, D4 and D8); no port until a test sets one. Fileprivate, because
+    /// `EngineHost` adds the states each step exits and enters as the procedures exit and enter
+    /// them.
+    fileprivate var trace = TraceRecorder()
+    #endif
+
     /// The §scxml-C-2 HTTP send dispatch callback. Returns the response when real
     /// HTTP is used; nil for fire-and-forget.
     private var onHTTPSend: ((HttpSendRequest) throws -> HttpSendResponse?)?
@@ -420,7 +428,14 @@ public final class Engine<Policy: StatePolicy> {
         // initial transition, whose source is the <scxml> element, entered by the same
         // procedure every microstep enters by. It may name several states and a
         // <history>, so it is a target list, not a leaf to walk down to.
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the entry into the initial configuration is the run's first step.
+        traceBegin(.start)
+        #endif
         enterStates([EntryTransition(source: nil, targets: policy.getDocumentInitialTargets())])
+        #if SCE_TRACE_PORT
+        traceEnd()
+        #endif
 
         // W3C SCXML Appendix D: hand over to the outer loop. The macrostep completes
         // on eventless transitions and internal events, then the invokes for the
@@ -683,6 +698,11 @@ public final class Engine<Policy: StatePolicy> {
         if configurationEmpty {
             return
         }
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the exit is a step of the run, once: a call after it exits nothing and
+        // returned above.
+        traceBegin(.stop)
+        #endif
         let configuration = getActiveStates()
         // configuration.toList().sort(exitOrder): reverse document order.
         let statesToExit = configuration.enumerated()
@@ -690,10 +710,16 @@ public final class Engine<Policy: StatePolicy> {
             .sorted { ($0.order, $1.offset) > ($1.order, $0.offset) }
             .map(\.state)
         for state in statesToExit {
+            #if SCE_TRACE_PORT
+            trace.exited(policy.getStateName(state))
+            #endif
             policy.executeExitActions(state, engine: self, configurationBeforeExit: configuration)
         }
         configurationEmpty = true
         isRunning = false
+        #if SCE_TRACE_PORT
+        traceEnd()
+        #endif
     }
 
     /// The current active (leaf) state.
@@ -1776,6 +1802,30 @@ public final class Engine<Policy: StatePolicy> {
         transitionObserver = observer
     }
 
+    #if SCE_TRACE_PORT
+    /// Tells `port` each step this engine takes from now on, as the run trace format says it
+    /// (docs/adr/0115, D4 and D8): the start, each microstep on eventless transitions, each event
+    /// taken off the internal or the external queue with the microstep it selects, and the exit of
+    /// the interpreter, each with the transitions it took by their rows, the states it exited and
+    /// entered in the order it exited and entered them, and the configuration it left (`TraceStep`).
+    ///
+    /// Each step is told once it is over, on the thread that drives the engine, inside the call that
+    /// drove it. The port reads and is asked nothing: a machine with one set takes the steps one
+    /// without takes. It must not call back into the engine. Set it before `initialize` to be told
+    /// the start. A test sets one; `RunTrace` keeps what it is told and writes the file
+    /// `sce-codegen formal traces` judges. Only in a build that asks for the `TracePort` trait of
+    /// this package.
+    public func setTracePort(_ port: @escaping (TraceStep) -> Void) {
+        trace.set(port)
+    }
+
+    /// Tells no trace port anything; the engine is then as it was before one was set (docs/adr/0115,
+    /// D4).
+    public func clearTracePort() {
+        trace.clear()
+    }
+    #endif
+
     /// Registers an HTTP send dispatcher callback (§scxml-C-2).
     ///
     /// The callback returns the response when real HTTP is used. The engine injects the
@@ -2041,7 +2091,14 @@ public final class Engine<Policy: StatePolicy> {
                     return
                 }
                 macrostepMicrostepsTaken += 1
+                #if SCE_TRACE_PORT
+                // docs/adr/0115, D4: a microstep on eventless transitions is a step.
+                traceBegin(.eventless)
+                #endif
                 microstep(enabled)
+                #if SCE_TRACE_PORT
+                traceEnd()
+                #endif
                 continue
             }
 
@@ -2099,7 +2156,15 @@ public final class Engine<Policy: StatePolicy> {
         guard let admitted = liftPayload(eventWithMeta, fromExternalQueue: false) else {
             return
         }
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the event taken off the internal queue is a step, with the microstep
+        // it selects or none.
+        traceBegin(.internal, event: admitted.taken)
+        #endif
         answer(admitted.taken)
+        #if SCE_TRACE_PORT
+        traceEnd()
+        #endif
     }
 
     /// Selects for an event bound as `_event` that came off the internal queue or that
@@ -2197,7 +2262,15 @@ public final class Engine<Policy: StatePolicy> {
             return true
         }
         if admitted.inPlace {
+            #if SCE_TRACE_PORT
+            // docs/adr/0115, D4: the error.execution a door took in the delivery's place is the
+            // event this external step takes, named by its own name.
+            traceBegin(.external, event: admitted.taken)
+            #endif
             answer(admitted.taken)
+            #if SCE_TRACE_PORT
+            traceEnd()
+            #endif
             return true
         }
 
@@ -2237,6 +2310,11 @@ public final class Engine<Policy: StatePolicy> {
             }
             policy.forwardToAutoforwardChildren(eventName: name, metadata: eventWithMeta.metadata, engine: self)
         }
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the event taken off the external queue is a step, with the microstep
+        // it selects or none.
+        traceBegin(.external, event: eventWithMeta)
+        #endif
         // §scxml-3.1.2: "If no transition matches in any state, the event is
         // discarded." Discarding it is the rule; being unable to say so is not part of
         // the rule. The host that put this event on the queue is the one party that
@@ -2244,7 +2322,11 @@ public final class Engine<Policy: StatePolicy> {
         // transition does) and it is the party that got the event wrong. Recorded for
         // the external queue only: an internal <raise> that matches nothing is the
         // document's own business, and both ends of it are in the document.
-        if takeEvent(eventWithMeta.event) == .discarded {
+        let outcome = takeEvent(eventWithMeta.event)
+        #if SCE_TRACE_PORT
+        traceEnd()
+        #endif
+        if outcome == .discarded {
             discardedExternalEvents += 1
             lastDiscardedEvent = eventWithMeta.event
         }
@@ -2301,9 +2383,47 @@ public final class Engine<Policy: StatePolicy> {
                 transitionObserver(TransitionTaken(source: transition.source, index: transition.transitionIndex))
             }
         }
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the rows the step being traced takes, in selection order, by the pairs
+        // the transition observer is told.
+        if trace.isOpen {
+            for transition in transitions {
+                trace.fired(source: policy.getStateName(transition.source), index: transition.transitionIndex)
+            }
+        }
+        #endif
         let entry = SceRuntime.microstep(EngineHost(engine: self), transitions: transitions)
         settleCurrentState(targets: transitions.map(\.targets), entered: entry.statesToEnter)
     }
+
+    #if SCE_TRACE_PORT
+    /// Begins a step of the run's trace (docs/adr/0115, D4), which took `event` when it is an event
+    /// step: named by the name `_event.name` holds while it is taken (§scxml-5.10.1), the name it
+    /// arrived under when a door resolved a longer one to its event, the event's own otherwise.
+    /// Nothing when no trace port is set.
+    private func traceBegin(_ kind: TraceStepKind, event: EventWithMetadata<Event>? = nil) {
+        trace.begin(kind, event: event.map { taken in
+            taken.metadata.name.isEmpty ? policy.getEventName(taken.event) : taken.metadata.name
+        })
+    }
+
+    /// The step being traced is over: tells the trace port it, with the configuration it left in
+    /// document order, or, for a stop, the top-level `<final>` the run ended in.
+    private func traceEnd() {
+        guard trace.isOpen else {
+            return
+        }
+        let told = trace.close(
+            configuration: getActiveStates()
+                .sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
+                .map { policy.getStateName($0) },
+            outcome: terminalState.map { policy.getStateName($0) }
+        )
+        if let told {
+            told.port(told.step)
+        }
+    }
+    #endif
 
     /// Appendix D's `enterStates`: for the document's initial transition, the whole of
     /// §scxml-D-interpret's entry into the initial configuration.
@@ -2434,6 +2554,10 @@ private final class EngineHost<Policy: StatePolicy>: Run {
     }
 
     func exitState(_ state: State, configurationBeforeExit: [State]) {
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the step being traced exits it, in this order.
+        engine.trace.exited(engine.policy.getStateName(state))
+        #endif
         engine.policy.executeExitActions(state, engine: engine, configurationBeforeExit: configurationBeforeExit)
     }
 
@@ -2454,6 +2578,10 @@ private final class EngineHost<Policy: StatePolicy>: Run {
     }
 
     func enterState(_ state: State, isDefaultEntry: Bool) {
+        #if SCE_TRACE_PORT
+        // docs/adr/0115, D4: the step being traced enters it, in this order.
+        engine.trace.entered(engine.policy.getStateName(state))
+        #endif
         engine.policy.executeEntryActions(state, engine: engine, isDefaultEntry: isDefaultEntry)
         // §scxml-D-enterStates: a top-level <final> ends the run, and entering one is
         // where the run's terminal state is recorded.

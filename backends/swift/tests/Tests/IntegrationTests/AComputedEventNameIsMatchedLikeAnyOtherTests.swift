@@ -61,4 +61,54 @@ import Testing
         #expect(engine.terminalState == .pass)
         #expect(seen.isEmpty, "a cleared observer was told \(seen)")
     }
+
+    /// An event step of the trace port names its event by the name `_event.name` holds while it is
+    /// taken, which the run trace format defines the field as (docs/adr/0115, D4): the whole name it
+    /// was sent under, and not the event of the document a door resolved it to (`request`, or the
+    /// wildcard). The document sends six events whose names it computes, three to its external queue
+    /// and three to its internal one, as the Rust lane's
+    /// `an_event_step_names_the_event_by_the_name_it_was_sent_under` holds of the same document.
+    @Test func anEventStepNamesTheEventByTheNameItWasSentUnder() throws {
+        var trace = RunTrace()
+        let engine = Engine(policy: AComputedEventNameIsMatchedLikeAnyOtherPolicy())
+        engine.setClock(ManualClock())
+        engine.setTracePort { trace.push($0) }
+        try engine.initialize()
+        _ = driveOnVirtualTime(engine)
+
+        #expect(engine.terminalState == .pass)
+        #expect(trace.steps.first?.kind == .start, "the run begins with its start")
+        #expect(trace.steps.last?.kind == .stop, "the run ends with the exit of the interpreter")
+        #expect(trace.steps.last?.exited == ["pass"])
+        #expect(trace.steps.last?.outcome == "pass")
+        let events = trace.steps
+            .filter { $0.kind == .internal || $0.kind == .external }
+            .map { "\($0.kind.name) \($0.event ?? "")" }
+        #expect(
+            events == [
+                "external request.new",
+                "external other.thing",
+                "internal request.again",
+                "internal last.one",
+                "internal request.third",
+                "external last.two",
+            ],
+            "each event step names the name its event was sent under: \(events)"
+        )
+    }
+
+    /// A trace port set and then cleared is told nothing, and the run still reaches `pass`, as one
+    /// that never had a port does (docs/adr/0115, D4).
+    @Test func aClearedTracePortIsToldNothingAndTheRunIsTheSame() throws {
+        var told: [TraceStep] = []
+        let engine = Engine(policy: AComputedEventNameIsMatchedLikeAnyOtherPolicy())
+        engine.setClock(ManualClock())
+        engine.setTracePort { told.append($0) }
+        engine.clearTracePort()
+        try engine.initialize()
+        _ = driveOnVirtualTime(engine)
+
+        #expect(engine.terminalState == .pass)
+        #expect(told.isEmpty, "a cleared trace port was told \(told)")
+    }
 }

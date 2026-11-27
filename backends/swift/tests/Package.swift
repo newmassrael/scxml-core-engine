@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.1
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
@@ -70,8 +70,13 @@ let w3cTargets: [Target] =
 let package = Package(
     name: "SceSwiftTests",
     platforms: [.macOS(.v15), .iOS(.v18)],
+    // The runtime with its trace port (the `TracePort` trait, docs/adr/0115, D4 and D8), for the
+    // tests that record a run of a W3C document `docs/formal` has a model of and the integration
+    // drivers that hold what the port names. A trait
+    // is asked for from tools version 6.1 on. Every machine of the package is compiled against that
+    // runtime, and one no port is set on asks one optional a step.
     dependencies: [
-        .package(path: "../runtime"),
+        .package(path: "../runtime", traits: ["TracePort"]),
         .package(path: "../forge-runtime"),
         .package(path: "../host-features"),
         .package(path: "../mesh"),

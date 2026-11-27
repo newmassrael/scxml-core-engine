@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.1
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
@@ -19,6 +19,15 @@ import PackageDescription
 // compiles the Lua 5.4 sources of `third_party/lua` (reached through the `lua` link under
 // `Sources/CLua`, because a SwiftPM target cannot name a path outside its package) and exports only
 // the shim in `include/CLua.h`.
+//
+// `TracePort` is the trait of the trace port (docs/adr/0115, D4 and D8): `Engine.setTracePort`, which
+// tells a test each step of Appendix D the engine takes, as the run trace format `sce-codegen formal
+// traces` judges says it. No default asks for it, and without it `SceRuntime` is compiled without the
+// condition `SCE_TRACE_PORT`, so the engine holds no field, makes no call and has no code of the port,
+// as a C11 machine built without `SCE_TRACE_PORT` has none. The steps and their writer
+// (`TracePort.swift`) are compiled either way. The trait is the reason for the tools version: a trait
+// is declared and asked for from 6.1 on. The tests package asks for it, for the tests that record a
+// run of a W3C document.
 let package = Package(
     name: "SceRuntime",
     platforms: [.macOS(.v15), .iOS(.v18)],
@@ -27,8 +36,16 @@ let package = Package(
         .library(name: "SceTestProfile", targets: ["SceTestProfile"]),
         .library(name: "SceLua", targets: ["SceLua"]),
     ],
+    traits: [
+        "TracePort"
+    ],
     targets: [
-        .target(name: "SceRuntime"),
+        .target(
+            name: "SceRuntime",
+            swiftSettings: [
+                .define("SCE_TRACE_PORT", .when(traits: ["TracePort"]))
+            ]
+        ),
         .testTarget(name: "SceRuntimeTests", dependencies: ["SceRuntime"]),
         .target(name: "SceTestProfile", dependencies: ["SceRuntime"]),
         .testTarget(name: "SceTestProfileTests", dependencies: ["SceTestProfile", "SceRuntime"]),
