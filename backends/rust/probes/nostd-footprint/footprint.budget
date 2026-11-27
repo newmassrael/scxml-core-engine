@@ -219,7 +219,14 @@ ROW_WALK_PATTERN="sce_rust_runtime::helpers::microstep::(${ROW_WALK_PROCEDURES//
 # and the first policy's run_turn 926 B swapped places); the second machine is also the first
 # document of the static class, so it links the class walker's selection,
 # select_transition_from_rows (252 B), once for the program.
-MACHINE_BYTES=1696
+#
+# 1696 -> 1736 (2026-11-27, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, the thumbv6m step included): a machine's process_event, lend_event,
+# process_event_with_meta and initialize are one body each, out of line, where they were
+# inlined into each call. This probe calls each from one place, so the call is its cost;
+# a host that tells its machine events from many places carries one copy instead of one
+# per place (the consumer's pico image: -5,692 bytes of text, receive instructions flat).
+MACHINE_BYTES=1736
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -300,7 +307,14 @@ MACHINE_BYTES=1696
 # and the first policy's run_turn 926 B swapped places); the second machine is also the first
 # document of the static class, so it links the class walker's selection,
 # select_transition_from_rows (252 B), once for the program.
-MACHINE_BYTES_NO_DIAGNOSTICS=1688
+#
+# 1688 -> 1728 (2026-11-27, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, the thumbv6m step included): a machine's process_event, lend_event,
+# process_event_with_meta and initialize are one body each, out of line, where they were
+# inlined into each call. This probe calls each from one place, so the call is its cost;
+# a host that tells its machine events from many places carries one copy instead of one
+# per place (the consumer's pico image: -5,692 bytes of text, receive instructions flat).
+MACHINE_BYTES_NO_DIAGNOSTICS=1728
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -519,7 +533,14 @@ CORE_BYTES_NO_DIAGNOSTICS=8654
 # own arguments, past the thumbv6m step): every machine runs one Turn body
 # (docs/adr/0135). A plain document is the static class: its selection reads candidate rows, and the core loses the
 # per-form main loop.
-MACHINE_BYTES_PLAIN=908
+#
+# 908 -> 948 (2026-11-27, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, the thumbv6m step included): a machine's process_event, lend_event,
+# process_event_with_meta and initialize are one body each, out of line, where they were
+# inlined into each call. This probe calls each from one place, so the call is its cost;
+# a host that tells its machine events from many places carries one copy instead of one
+# per place (the consumer's pico image: -5,692 bytes of text, receive instructions flat).
+MACHINE_BYTES_PLAIN=948
 CORE_BYTES_PLAIN=2664
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
@@ -678,7 +699,14 @@ STACK_MIN_FUNCTIONS=200
 # own arguments, past the thumbv6m step): every machine runs one Turn body
 # (docs/adr/0135). The main loop is called through its one body and not inlined into a machine, so its frame
 # stands under the hooks.
-STACK_BYTES=1104
+#
+# 1104 -> 1136 (2026-11-27, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, the thumbv6m step included): a machine's process_event, lend_event,
+# process_event_with_meta and initialize are one body each, out of line, where they were
+# inlined into each call. This probe calls each from one place, so the call is its cost;
+# a host that tells its machine events from many places carries one copy instead of one
+# per place (the consumer's pico image: -5,692 bytes of text, receive instructions flat).
+STACK_BYTES=1136
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -730,5 +758,12 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 # 576 -> 544 (2026-11-26, rustc 1.100.0, measured on a build machine with the gate's
 # own arguments, past the thumbv6m step): every machine runs one Turn body
 # (docs/adr/0135). The class walker selects from candidate rows.
-STACK_BYTES_PLAIN=544
+#
+# 544 -> 576 (2026-11-27, rustc 1.100.0, measured on a build machine with the gate's
+# own arguments, the thumbv6m step included): a machine's process_event, lend_event,
+# process_event_with_meta and initialize are one body each, out of line, where they were
+# inlined into each call. This probe calls each from one place, so the call is its cost;
+# a host that tells its machine events from many places carries one copy instead of one
+# per place (the consumer's pico image: -5,692 bytes of text, receive instructions flat).
+STACK_BYTES_PLAIN=576
 STACK_TOLERANCE_BYTES=256

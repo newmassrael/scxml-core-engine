@@ -1721,7 +1721,12 @@ impl<P: StatePolicy> Engine<P> {
     /// [`StartFailure`](StatePolicy::StartFailure), so its start cannot fail
     /// and a host writes `engine.initialize().unwrap_or_else(|never| match never {})`
     /// (`let Ok(()) = …` says the same from Rust 1.82; this crate claims 1.75).
+    ///
+    /// One body per machine, out of line: a host starts a machine from more
+    /// than one place, and each place is a call rather than a copy of the
+    /// turn's opening and closing around the start.
     #[must_use = "a start refused for its script session entered nothing, and the machine is not running"]
+    #[inline(never)]
     pub fn initialize(&mut self) -> Result<(), P::StartFailure> {
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
@@ -2204,6 +2209,13 @@ impl<P: StatePolicy> Engine<P> {
     /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
     ///
     /// Matches C++ `processEvent(Event)`.
+    ///
+    /// One body per machine, out of line: a host tells its machine events from
+    /// many places (a refusal, a decided handshake event, a timer that fell
+    /// due), and each place is a call rather than a copy of the queue's push and
+    /// the turn around the step. No sample's path tells a machine an event, so
+    /// the call costs a receive nothing.
+    #[inline(never)]
     pub fn process_event(&mut self, event: P::Event) {
         if !self.state.core.main_loop.is_running {
             // Refused rather than queued, so the drain in `Turn::end_run`
@@ -2260,7 +2272,8 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// The one body of [`process_event_with`](Self::process_event_with) and
-    /// its wire twin.
+    /// its wire twin, out of line as [`process_event`](Self::process_event) is.
+    #[inline(never)]
     fn lend_event(&mut self, event: P::Event, event_data: P::EventData<'_>, wire: &str) {
         if !self.state.core.main_loop.is_running {
             // Refused as `process_event` refuses it, and counted the same way.
@@ -2289,7 +2302,9 @@ impl<P: StatePolicy> Engine<P> {
 
     /// §scxml-5.10: Process an external event with metadata.
     ///
-    /// Matches C++ `processEvent(Event, const EventMetadata&)`.
+    /// Matches C++ `processEvent(Event, const EventMetadata&)`. Out of line as
+    /// [`process_event`](Self::process_event) is.
+    #[inline(never)]
     pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
         if !self.state.core.main_loop.is_running {
             // Same refusal as `process_event`, same reason it is counted here.
