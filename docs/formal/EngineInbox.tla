@@ -27,13 +27,62 @@
 (* of the bounded ones by GenMC, D5); the owner runs one macrostep at a    *)
 (* time, which the language or the runtime confines (ADR 0084, D1).        *)
 (***************************************************************************)
-EXTENDS Sequences, Naturals
+EXTENDS Sequences, Naturals, FiniteSets, Apalache
 
 CONSTANTS
-    Root, Child, RootInputs, ChildInputs, RootOwn, ChildOwn, Closes,
-    DrainBeforeOwn, AddressAtPost, OneDrain, TakeOut, ApplyAtEnd, Wake
+    \* the tree as the promise names it: its two sessions
+    \* @type: Str;
+    Root,
+    \* @type: Str;
+    Child,
+    \* the inputs posted to each, and the events each puts on its own queue
+    \* @type: Set(Str);
+    RootInputs,
+    \* @type: Set(Str);
+    ChildInputs,
+    \* @type: Set(Str);
+    RootOwn,
+    \* @type: Set(Str);
+    ChildOwn,
+    \* whether the runtime refuses a post after the end
+    \* @type: Bool;
+    Closes,
+    \* the parts
+    \* @type: Bool;
+    DrainBeforeOwn,
+    \* @type: Bool;
+    AddressAtPost,
+    \* @type: Bool;
+    OneDrain,
+    \* @type: Bool;
+    TakeOut,
+    \* @type: Bool;
+    ApplyAtEnd,
+    \* @type: Bool;
+    Wake
 
-VARIABLES inbox, extq, status, ownUnsent, ended, awake, lin
+VARIABLES
+    \* each session's inbox, the inputs posted to it in order
+    \* @type: Str -> Seq(Str);
+    inbox,
+    \* each session's external queue
+    \* @type: Str -> Seq(Str);
+    extq,
+    \* each input: none, taken or refused
+    \* @type: Str -> Str;
+    status,
+    \* the events of the owner not yet put on a queue
+    \* @type: Set(Str);
+    ownUnsent,
+    \* whether each session has ended
+    \* @type: Str -> Bool;
+    ended,
+    \* whether the owner is woken
+    \* @type: Bool;
+    awake,
+    \* the history variable: the order each session linearized
+    \* @type: Str -> Seq(Str);
+    lin
 
 vars == <<inbox, extq, status, ownUnsent, ended, awake, lin>>
 
@@ -43,9 +92,9 @@ Sessions == Tree!Sessions
 Inputs == Tree!Inputs
 OwnEvents == Tree!OwnEvents
 
-\* What the inbox holds of the inputs posted for session t.
-ItemsTo(es, t) ==
-    LET f == SelectSeq(es, LAMBDA x : x.to = t) IN [k \in 1..Len(f) |-> f[k].item]
+\* What the inbox holds of the inputs posted for session t: an input names its
+\* session, so an inbox holds the inputs alone.
+ItemsTo(es, t) == SelectSeq(es, LAMBDA x : Tree!Target(x) = t)
 
 \* The order a drain applies what an inbox holds: in order, or, when a drain
 \* inside the drain applies, the rest before the head.
@@ -73,7 +122,7 @@ Post(i) ==
          THEN /\ status' = [status EXCEPT ![i] = "refused"]
               /\ UNCHANGED <<inbox, awake, lin>>
          ELSE /\ status' = [status EXCEPT ![i] = "taken"]
-              /\ inbox' = [inbox EXCEPT ![at] = Append(@, [item |-> i, to |-> s])]
+              /\ inbox' = [inbox EXCEPT ![at] = Append(@, i)]
               /\ awake' = (awake \/ Wake)
               /\ lin' = [lin EXCEPT ![s] = Append(@, i)]
     /\ UNCHANGED <<extq, ownUnsent, ended>>
@@ -168,4 +217,47 @@ Arrived(t) ==
 
 Promise == INSTANCE InboxService WITH arrivals <- [t \in Sessions |-> Arrived(t)]
 Refines == Promise!Spec
+-----------------------------------------------------------------------------
+\* InOrder, AtMostOnce and NoLoss for every length of execution (docs/adr/0115, D3; docs/adr/0147,
+\* D2): an inductive invariant that implies the three, checked by Apalache at the parameters of a
+\* configuration (models.json), over every state it allows and not only the reachable ones.
+\*
+\* Why: what a session linearized is what its queue took followed by what its inbox holds, and an
+\* inbox holds only inputs that name its session, so a drain moves the inbox's inputs to the end of
+\* that session's queue and nowhere else (InOrder); every input and own event is linearized once,
+\* an input when it is taken and an own event when it leaves ownUnsent (AtMostOnce); and an input
+\* taken is linearized, so it is in the queue or the inbox of its session (NoLoss).
+
+\* The most a queue can hold: every input and every own event, once. Apalache generates each
+\* sequence up to it (Gen), and the invariant implies no sequence is longer, so the states it starts
+\* from are every state the invariant allows.
+Capacity ==
+    Cardinality(RootInputs) + Cardinality(ChildInputs) + Cardinality(RootOwn) + Cardinality(ChildOwn)
+
+\* Each variable a value of its type, for Apalache to start the step from, conjoined with the
+\* invariant (the types of models.json): a sequence is given one only by Gen. It narrows nothing
+\* the invariant does not.
+Typed ==
+    /\ inbox = [s \in Sessions |-> Gen(Capacity)]
+    /\ extq = [s \in Sessions |-> Gen(Capacity)]
+    /\ status \in [Inputs -> {"none", "taken", "refused"}]
+    /\ ownUnsent \in SUBSET OwnEvents
+    /\ ended \in [Sessions -> BOOLEAN]
+    /\ awake \in BOOLEAN
+    /\ lin = [s \in Sessions |-> Gen(Capacity)]
+
+QueueInductive ==
+    /\ status \in [Inputs -> {"none", "taken", "refused"}]
+    /\ ownUnsent \subseteq OwnEvents
+    /\ Inputs \cap OwnEvents = {}
+    \* What a session linearized is its queue, then its inbox.
+    /\ \A t \in Sessions : lin[t] = extq[t] \o inbox[t]
+    /\ \A s \in Sessions : \A k \in DOMAIN inbox[s] : Tree!Target(inbox[s][k]) = s
+    \* Each is linearized once, and only once it is taken or sent.
+    /\ \A t \in Sessions : \A k \in DOMAIN lin[t] :
+           /\ lin[t][k] \in Inputs \cup OwnEvents
+           /\ lin[t][k] \in Inputs => status[lin[t][k]] = "taken"
+           /\ lin[t][k] \in OwnEvents => lin[t][k] \notin ownUnsent
+    /\ \A t \in Sessions : \A j, k \in DOMAIN lin[t] : j # k => lin[t][j] # lin[t][k]
+    /\ \A i \in Inputs : status[i] = "taken" => InSeq(i, lin[Tree!Target(i)])
 ====

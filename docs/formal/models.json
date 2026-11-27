@@ -859,6 +859,39 @@
           "promise": "kept",
           "why": "the waker is what progress stands on: without it what reaches each queue is still in order, once, and never lost, and an input waits in an inbox nobody drains"
         }
+      ],
+      "inductive": [
+        {
+          "invariant": "QueueInductive",
+          "types": "Typed",
+          "implies": [
+            "InOrder",
+            "AtMostOnce",
+            "NoLoss"
+          ],
+          "runs": [
+            {
+              "config": "EngineInbox.cfg",
+              "expect": "holds"
+            },
+            {
+              "config": "EngineInbox_never_closes.cfg",
+              "expect": "holds"
+            },
+            {
+              "config": "EngineInbox_without_take_out.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "TakeOut"
+            },
+            {
+              "config": "EngineInbox_without_address_at_post.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "AddressAtPost"
+            }
+          ]
+        }
       ]
     },
     {
