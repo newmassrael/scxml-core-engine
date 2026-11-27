@@ -29,3 +29,13 @@ each = { list = [
 arguments = ["generate", "{document}", "-l", "swift", "-o", "{out}"]
 place = "backends/swift/tests/Sources/EcmaScriptMachines"
 keep = ["*_sm.swift"]
+
+# The turnstile of the properties judge's fixture (docs/adr/0115, D15), a
+# document of `datamodel="ecmascript"` read where it lives: each scenario TLC
+# gives of it, a violation or a witness, is replayed through this machine by
+# EcmaScriptMachinesTests/AScenarioOfTheTurnstileIsItsRunTests.swift, the twin of
+# the Rust and C11 lanes' tests of the same name.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/formal_properties/turnstile.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/EcmaScriptMachines"
+keep = ["*_sm.swift"]
