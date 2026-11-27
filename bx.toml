@@ -823,7 +823,7 @@ run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ct
 #     the Rust, Go and Kotlin halves are now generations of those languages' integration manifests.
 #   Every other step owns one tree alone: each runtime's engine documents (Rust, Kotlin, Go, Python,
 #   Swift, C11), the Kotlin method-size module, the forge round-trip Go tree, each Mesh tree, the specs
-#   machines, the forge goldens and the embed manifest.
+#   machines, the forge goldens, the embed manifest and the models of docs/formal.
 #
 # WHAT LOOKS LIKE A READ-AFTER-WRITE AND IS NOT ONE:
 #   - The forge goldens (`UPDATE_GOLDEN=1 cargo test --test forge_conformance`) compile against the
@@ -2286,6 +2286,74 @@ outputs = [
     "sce/include/generated/**",
     "embed/MANIFEST.json",
     "embed/MANIFEST.inputs",
+]
+
+# The models of three W3C documents over Appendix D (docs/adr/0115, D7), which the step writes
+# beside the modules of docs/formal written by hand: its outputs name the three files, and its
+# inputs the generator's block and the documents' directories of resources/.
+[actions.regen-formal-models]
+run = 'scripts/regen_all_committed_trees.sh formal-models'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-ttcn3-validator/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/*.h",
+    "sce/include/actions/**",
+    "sce/include/backends/**",
+    "sce/include/common/**",
+    "sce/include/core/**",
+    "sce/include/dispatchers/**",
+    "sce/include/events/**",
+    "sce/include/factory/**",
+    "sce/include/host/**",
+    "sce/include/mesh/**",
+    "sce/include/model/**",
+    "sce/include/parsing/**",
+    "sce/include/runtime/**",
+    "sce/include/saved/**",
+    "sce/include/scripting/**",
+    "sce/include/static/**",
+    "sce/include/test/**",
+    "sce/include/wrappers/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/src/**",
+    "backends/python/runtime/pyproject.toml",
+    "backends/python/runtime/sce_runtime/*.py",
+    "backends/python/runtime/sce_runtime/scripting/**",
+    "backends/python/runtime/sce_runtime/testprofile/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/test-harness/src/main/**",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "resources/388/**",
+    "resources/570/**",
+    "resources/403/**",
+]
+outputs = [
+    "docs/formal/W3CTest388.tla",
+    "docs/formal/W3CTest570.tla",
+    "docs/formal/W3CTest403c.tla",
 ]
 
 # THE CBOR PIN (docs/adr/0101, Landing order step 0 and section 8.3), the one action that is no step

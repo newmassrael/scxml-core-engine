@@ -373,6 +373,41 @@ step_embed_manifest() {
     rm -rf "$scratch"
 }
 
+# ── formal-models: the models of three W3C documents over Appendix D ───
+#
+# Each a module of docs/formal that extends AppendixD.tla, written by
+# `sce-codegen model` from its document of the W3C corpus with the corpus's
+# verdict as two properties (docs/adr/0115, D7). The configurations that run
+# them and their entries in docs/formal/models.json are written by hand. The
+# step owns no tree, as the forge goldens own none: docs/formal holds the
+# modules written by hand beside these three files, so the step writes the
+# files it names and sets nothing aside.
+FORMAL_MODELS=(
+    "W3CTest388 resources/388/test388.scxml"
+    "W3CTest570 resources/570/test570.scxml"
+    "W3CTest403c resources/403/test403c.scxml"
+)
+
+step_formal_models() {
+    require_codegen
+
+    stage "Models of the W3C documents over Appendix D"
+    local entry module document written
+    for entry in "${FORMAL_MODELS[@]}"; do
+        read -r module document <<<"$entry"
+        # Into a file outside the tree first: a refused document leaves the
+        # committed module as it was rather than an empty one.
+        written="$(mktemp)"
+        if ! "$CODEGEN" model "$document" --module "$module" --w3c-verdict >"$written"; then
+            rm -f "$written"
+            echo "regen_all_committed_trees.sh: sce-codegen model refused $document" >&2
+            return 1
+        fi
+        cp "$written" "docs/formal/$module.tla"
+        rm -f "$written"
+    done
+}
+
 # The function that does the work of STEP.
 step_function() {
     printf 'step_%s\n' "${1//-/_}"

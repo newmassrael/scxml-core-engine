@@ -170,15 +170,17 @@ sce_regen_steps() {
         mesh-swift-wss \
         specs \
         forge-goldens \
-        embed-manifest
+        embed-manifest \
+        formal-models
 }
 
 # The trees STEP regenerates whole, relative to the repository root, one per
 # line; with no STEP, the trees of every step. Every generated file under them
 # is set aside when the step starts and has to be written again by that step,
 # so a tree belongs to a step only when every file of it that is generated is
-# written by that step. A step that writes none whole (the forge goldens) has
-# no tree here. The embed manifest's step writes the C++ engines' standard
+# written by that step. A step that writes none whole (the forge goldens, and
+# the models of docs/formal, which share their directory with modules written
+# by hand) has no tree here. The embed manifest's step writes the C++ engines' standard
 # engine tree before it emits: the tree is a public header directory, so the
 # manifest reads it, and a step reads nothing another step writes.
 #
@@ -282,7 +284,7 @@ sce_generated_trees() {
             # public header directory the manifest reads.
             printf '%s\n' sce/include/generated
             ;;
-        runtime-rust | python-integration | forge-goldens)
+        runtime-rust | python-integration | forge-goldens | formal-models)
             ;;
         *)
             echo "sce_generated_trees: no step named '$1'" >&2

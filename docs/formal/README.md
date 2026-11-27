@@ -13,7 +13,7 @@ this file says what is here and how to read it.
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | | no |
-| 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus written as the generator will write them | the semantics and three documents, by hand; no generator, and no trace read against it |
+| 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models; no trace read against them |
 | 5. A run read against a model (D4) | | no |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
 
@@ -35,6 +35,14 @@ this file says what is here and how to read it.
 document's module extends it with its tables and promises Appendix D with every part in (`Refines`). Its holding runs
 keep that promise by construction; what shows a part is the run that takes it out, which must break an invariant of the
 document and the promise both.
+
+The three W3C modules are generated: `sce-codegen model <document> --module <name> --w3c-verdict` writes each from the
+tables the generated code is printed from, row `r` of `DocTransitions` being the transition the code numbers `r - 1`,
+with the corpus's verdict (`NeverFails`, `Passes`) as properties. Their configurations and their entries in
+`models.json` are written by hand. Regenerate them with `scripts/regen_all_committed_trees.sh formal-models`, never edit
+them; `regen-reproduces` holds them to their documents. A document carrying a construct the generator has no translation
+for (an `<invoke>`, a `<log>`, a string, `In()`, ...: `Construct` in `sce-build/src/formal/document_model.rs` is the
+list) is refused by name with `formal/no-translation` and has no model, never a model of part of it.
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
@@ -74,8 +82,9 @@ After a change that moves a count on purpose, `--record` writes the counts TLC f
 - **TLC**, the release the judge pins, and the Java that runs it.
 - **Verus**, the pinned release, its Z3 and the Rust release it runs on; that its reading of Rust is the compiler's.
 - **The bounds** of a configuration: an error past them is not found. A theorem (level 3) is what would say so.
-- **That the model is of the code.** No model reads the code; levels 4 and 5 are what will. A proof (level 6) is of the
-  code it is written on, and the model its preconditions name is read by a person.
+- **That the model is of the code.** No model reads the code. A generated model (level 4) is read from the tables the
+  code is printed from, and that the code runs them as the model does is level 5's to show (D8). A proof (level 6) is of
+  the code it is written on, and the model its preconditions name is read by a person.
 - **That the promise is what was meant.** It is read by a person.
 - **That `AppendixD.tla` is the recommendation's algorithm.** It is read by a person against the text, until the W3C
   corpus run by the Interpreter is accepted by it (ADR 0115, D8).
