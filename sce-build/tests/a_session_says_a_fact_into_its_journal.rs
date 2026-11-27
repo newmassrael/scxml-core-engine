@@ -553,6 +553,27 @@ fn a_follower_is_told_the_record_each_entry_it_follows_is_read_by() {
     );
 }
 
+/// docs/adr/0114, D4: a session keeps the position it took in of each journal it
+/// follows in its checkpoint, which a session that ends takes with it, so a document
+/// that follows a journal and reaches a top-level final state is refused, placed on
+/// that state. Red if a follower's document may end its session.
+#[test]
+fn a_follower_whose_document_ends_is_refused() {
+    let rooms = statechart("sce-static", SAYS);
+    let ending =
+        statechart("sce-static", "").replace("</scxml>", "  <final id=\"closed\"/>\n</scxml>");
+    let (ok, out) = generate_deployed(
+        &ending,
+        &pooled("        follows: [rooms]\n"),
+        &[("rooms.scxml", rooms.as_str())],
+    );
+    assert!(
+        !ok && out.contains("\"code\":\"mesh/codegen-journal-mismatch\"")
+            && out.contains("top-level final state 'closed'"),
+        "a follower that ends is refused:\n{out}"
+    );
+}
+
 /// Run `sce-codegen <args...> probe.scxml` with JSON diagnostics, [`BOOKED`] and
 /// `others` beside the document; return `(exit_ok, output)`.
 fn check_beside(args: &[&str], doc: &str, others: &[(&str, &str)]) -> (bool, String) {

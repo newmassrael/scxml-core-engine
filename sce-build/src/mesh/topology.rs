@@ -4696,6 +4696,30 @@ pub fn check_journal(
         }
         _ => {}
     }
+    // docs/adr/0114, D4: a session keeps the position it took in of each journal
+    // it follows in its checkpoint, which a session that ends takes with it: an
+    // entry handed again after its end would start its key's session anew and
+    // take effect twice. A follower's document runs while the journal does.
+    if !followed.is_empty() {
+        let mut finals: Vec<_> = model
+            .states
+            .values()
+            .filter(|state| state.is_final && state.parent.is_none())
+            .collect();
+        finals.sort_by_key(|state| state.document_order);
+        if let Some(state) = finals.first() {
+            return Err(crate::mesh::error::CodegenError::JournalMismatch {
+                machine: machine.to_string(),
+                reason: format!(
+                    "the machine follows journals, and its document ends in the top-level final \
+                     state '{}', which takes the position each session took in of a journal \
+                     with it, so an entry handed again after it would take effect twice",
+                    state.id
+                ),
+                at: state.source_location.clone(),
+            });
+        }
+    }
     // docs/adr/0114, D4: an entry the machine follows is read into the data its
     // event carries by its record's deterministic CBOR, so each one the document
     // imports has one. One it does not import is the keyed pool's to refuse.

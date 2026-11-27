@@ -1618,8 +1618,13 @@ pool, which only the Rust host core serves
 deployment, the documents are read: a document that says facts on a machine that
 declares no `journal: true`, `journal: true` on one whose document says none, and
 a value held to the journal's facts written on an event that is no entry the
-machine says or follows are refused (`mesh/codegen-journal-mismatch`), the last placed
-on the transition in the machine's document; the events
+machine says or follows, a machine that follows a journal whose document has a
+top-level `<final>` (a session keeps the position it took in of each journal in its
+checkpoint, which a session that ends takes with it, so an entry handed again after
+its end would take effect twice), and a followed entry whose record has no
+deterministic CBOR are refused (`mesh/codegen-journal-mismatch`), the held value
+placed on the transition and the ending on the `<final>` in the machine's
+document; the events
 of the entries a machine follows (a followed machine's facts, the events of a
 stream's schemas, each of which must be an event schema,
 `mesh/topology-receiver-source-parse` otherwise) key its sessions as its requests
