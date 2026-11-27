@@ -48,14 +48,17 @@ PY
 # is reported as an event that went nowhere. The loop's external arm is where
 # the outcome is decided, so the mutant compares the run store's configuration
 # before and after the event there and hands that verdict to
-# `end_external_event` in place of the selection's.
+# `end_external_event` in place of the selection's. The anchor reaches past the
+# trace port's step end, which the arm closes between the two, so the mutant
+# keeps it where it stands.
 
 mutation_case "the count is keyed off whether the configuration changed" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                ExternalEvent::Taken(event) => {
-                    let outcome = self.take_event(event.event);""",
-     """                ExternalEvent::Taken(event) => {
-                    let configuration_before =
+     """                    let outcome = self.take_event(event.event);
+                    #[cfg(feature = "trace-port")]
+                    self.host.trace_end();
+                    self.end_external_event(event, outcome);""",
+     """                    let configuration_before =
                         self.host.behaviour().store().as_ref().configuration().words().to_vec();
                     self.take_event(event.event);
                     let outcome = if self.host.behaviour().store().as_ref().configuration().words()
@@ -64,7 +67,10 @@ edit("backends/rust/runtime/src/engine.rs",
                         EventOutcome::Discarded
                     } else {
                         EventOutcome::Taken
-                    };""")
+                    };
+                    #[cfg(feature = "trace-port")]
+                    self.host.trace_end();
+                    self.end_external_event(event, outcome);""")
 PY
 
 # ── An always-true count ───────────────────────────────────────────

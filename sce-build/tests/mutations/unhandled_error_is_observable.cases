@@ -162,16 +162,22 @@ PY
 # `take_event` for every event that is not an error, so nothing in the
 # document runs. The fixture's `<assign>` counters are what notice. The
 # selection is the main loop's, on the internal event
-# `Turn::take_internal_event` took and bound.
+# `Turn::take_internal_event` took and bound; the trace port closes its step
+# between the selection and the test of its outcome, and the mutant keeps it
+# there.
 
 mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            let outcome = self.take_event(event.event);
+            #[cfg(feature = "trace-port")]
+            self.host.trace_end();
             if outcome == EventOutcome::Taken {""",
      """            let outcome = if event.is_error {
                 self.take_event(event.event)
             } else {
                 EventOutcome::Taken
             };
+            #[cfg(feature = "trace-port")]
+            self.host.trace_end();
             if outcome == EventOutcome::Taken {""")
 PY
