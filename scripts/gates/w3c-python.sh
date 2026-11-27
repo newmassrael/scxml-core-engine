@@ -116,8 +116,18 @@ status=0
 # W3C documents `docs/formal` has models of, which it drives from the machines
 # the generation above writes, to the recorded runs `docs/formal/traces.json`
 # declares. It is no fixture stem either.
+#
+# The inbox's recorded runs (docs/adr/0147, D3) write their histories into the
+# directory SCE_INBOX_HISTORY_DIR names, emptied first, and the command every
+# runtime's inbox histories are judged by judges them once the suite passed
+# (`sce_gate_judge_inbox_histories`): `_HISTORY_RUNS` of them, four, in
+# integration/engine_inbox/.
+INBOX_HISTORIES="$SCE_REPO_ROOT/target/inbox-histories/python"
+rm -rf "$INBOX_HISTORIES"
+mkdir -p "$INBOX_HISTORIES"
 sce_gate_tested --log "$LOG/pytest.log" \
     -- env PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
+    SCE_INBOX_HISTORY_DIR="$INBOX_HISTORIES" \
     "$SCE_GATE_PYTHON" -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
@@ -143,6 +153,8 @@ if (( passed < 200 )); then
 fi
 
 sce_gate_step "$passed Python case(s) passed"
+
+sce_gate_judge_inbox_histories "$INBOX_HISTORIES" 4 "Python"
 
 # The same generator, asked for a tree of the caller's own.
 #

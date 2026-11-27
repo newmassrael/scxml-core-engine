@@ -24,7 +24,15 @@ the rule:
   has ended, and what the inbox holds then is applied as a direct call would be;
 * an ending posted for a child session is on that session's queue from the
   moment it is posted, so the child takes it before an event its parent sends it
-  later in the same macrostep (docs/adr/0084, D2 as amended at step 10).
+  later in the same macrostep (docs/adr/0084, D2 as amended at step 10);
+* each run of the inbox under posters on several threads is recorded as an
+  inbox history (docs/adr/0147, D3): every post with what the inbox answered,
+  every item the owner put on the external queue as the engine's inbox port
+  tells it, and the end of the run, against one clock. Each history is held
+  here to the arrival order the drain before an event of the owner's own keeps,
+  and written where SCE_INBOX_HISTORY_DIR names, for
+  `sce-codegen check-inbox-history` to judge linearizable to
+  docs/formal/InboxService.tla (scripts/gates/w3c-python.sh runs it).
 
 The last case drives `static_invoke_ending_order.scxml`, the machine
 `scripts/materialize.sh python-static-datamodel` generates from
@@ -45,12 +53,14 @@ under `integration/` so the Python lane's run of that directory collects it.
 from __future__ import annotations
 
 import importlib
+import json
+import os
 import sys
 import threading
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
 
 import pytest
 
@@ -711,3 +721,349 @@ def test_an_ending_posted_for_a_child_wakes_the_roots_owner_and_its_next_drive_a
     engine.advance_time(0)
     assert engine.policy.v_heard == 1, "an ending of a start already ended was taken"
     assert engine.inbox.refused_posts() == 0
+
+
+# ── each run of the inbox, as an inbox history (docs/adr/0147, D3) ──────────
+
+#: The number the history names the probe's one session by, and the session the
+#: tree does not hold; the id a post naming that session gives.
+_HISTORY_SESSION = 0
+_HISTORY_ABSENT = 1
+_HISTORY_ABSENT_ID = "inbox-history-absent"
+#: Threads that post in a recorded run, beside the owner, and the posts each makes.
+_HISTORY_POSTERS = 4
+_HISTORY_PER_POSTER = 120
+#: Own events the owner raises at most in a recorded run, and the first one's
+#: value, past every input a poster posts.
+_HISTORY_OWN_PER_RUN = 40
+_HISTORY_OWN_BASE = 1_000_000
+#: The input of the first post made once the run has ended, past every other input.
+_HISTORY_LATE_INPUT = 900_000
+#: Runs recorded, each written as one history: the schedules that matter are a
+#: small fraction of those a machine gives.
+_HISTORY_RUNS = 4
+
+_T = TypeVar("_T")
+
+
+class _HistoryClock:
+    """The one clock every thread of a recorded run reads, immediately before
+    and immediately after each operation it records: a read-modify-write chain
+    on one lock orders the readings with the calls between them, so "returned
+    before invoked" in the record means it in the run, and no two readings are
+    equal."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._ticks = 0
+
+    def tick(self) -> int:
+        with self._lock:
+            self._ticks += 1
+            return self._ticks
+
+
+class _RecordedPost:
+    """One post a poster observed: through the tree's directory (`addressed`)
+    or the session's own handle, taken or refused."""
+
+    __slots__ = ("session", "input", "addressed", "taken", "invoked", "returned")
+
+    def __init__(
+        self, session: int, value: int, addressed: bool, taken: bool, invoked: int, returned: int
+    ) -> None:
+        self.session = session
+        self.input = value
+        self.addressed = addressed
+        self.taken = taken
+        self.invoked = invoked
+        self.returned = returned
+
+    @property
+    def reason(self) -> Optional[str]:
+        """Why a refused post was refused. The inbox answers whether it took a
+        post, not why, so the reason is the one a post of its kind can have:
+        `unknown` for one naming the session the tree does not hold, and
+        `ended` for one reaching the session the tree holds, whose inbox closes
+        with its run. The checker holds the refusal to the place the post
+        linearized at, so a post refused while the session ran is not
+        linearizable as `ended`."""
+        if self.taken:
+            return None
+        return "unknown" if self.session == _HISTORY_ABSENT else "ended"
+
+    def document(self) -> Dict[str, Any]:
+        """The post in the inbox history's form."""
+        posted: Dict[str, Any] = {
+            "call": "post",
+            "session": self.session,
+            "input": self.input,
+            "door": "addressed" if self.addressed else "handle",
+            "outcome": "taken" if self.taken else "refused",
+        }
+        if self.reason is not None:
+            posted["reason"] = self.reason
+        posted["invoked"] = self.invoked
+        posted["returned"] = self.returned
+        return posted
+
+
+class _OwnerRecorder:
+    """What the owner of a recorded run did, as its engine's inbox port
+    (`sce_runtime.InboxPort`) tells it: each item it put on the external queue,
+    read from the run's clock around it, and the end of the run, read around the
+    close of the inbox, from which every post is refused. An event of the
+    owner's own is invoked where the port is first told it, before the drain it
+    begins with, and the inputs that drain applies lie within it. Told on the
+    owner only."""
+
+    def __init__(self, clock: _HistoryClock) -> None:
+        self._clock = clock
+        self.operations: List[Dict[str, Any]] = []
+        self._own_invoked = 0
+        self._posted_invoked = 0
+        self._close_invoked = 0
+
+    def enqueue_begins(self, event: Any, metadata: EventMetadata, posted: bool) -> None:
+        now = self._clock.tick()
+        if posted:
+            self._posted_invoked = now
+        else:
+            self._own_invoked = now
+
+    def enqueue_ends(self, event: Any, metadata: EventMetadata, posted: bool) -> None:
+        self.operations.append(
+            {
+                "call": "enqueue",
+                "session": _HISTORY_SESSION,
+                "item": int(metadata.data),
+                "source": "posted" if posted else "own",
+                "invoked": self._posted_invoked if posted else self._own_invoked,
+                "returned": self._clock.tick(),
+            }
+        )
+
+    def close_begins(self) -> None:
+        self._close_invoked = self._clock.tick()
+
+    def close_ends(self) -> None:
+        self.operations.append(
+            {
+                "call": "end",
+                "session": _HISTORY_SESSION,
+                "invoked": self._close_invoked,
+                "returned": self._clock.tick(),
+            }
+        )
+
+
+def _history_ping_naming(session_id: str, value: int) -> InboxMeshDelivery:
+    """`ping` carrying `value`, for the tree's directory to post to the session
+    `session_id` names."""
+    return InboxMeshDelivery(MeshRaise("ping", EventMetadata(data=str(value))), session_id=session_id)
+
+
+def _record_post(
+    clock: _HistoryClock, engine: "Engine[_State, _Event]", session: int, value: int, posted_input: InboxInput
+) -> _RecordedPost:
+    """Post `posted_input`, input `value` of `session`, to `engine`'s inbox,
+    recorded with `clock` read immediately around the post. An input that names
+    a session goes through the tree's directory, and any other through the
+    session's own handle."""
+    invoked = clock.tick()
+    taken = engine.inbox.post(posted_input)
+    returned = clock.tick()
+    addressed = isinstance(posted_input, InboxMeshDelivery)
+    return _RecordedPost(session, value, addressed, taken, invoked, returned)
+
+
+def _on_another_thread(work: Callable[[], _T]) -> _T:
+    """Run `work` on a thread of its own, join it, and answer what it answered."""
+    answers: List[_T] = []
+    thread = threading.Thread(target=lambda: answers.append(work()))
+    thread.start()
+    thread.join(_BOUND_SECONDS)
+    assert not thread.is_alive(), "the work on another thread never finished"
+    assert len(answers) == 1, "the work on another thread raised"
+    return answers[0]
+
+
+def _raise_own(engine: "Engine[_State, _Event]", value: int) -> None:
+    """Raise the own event `value` on the owner, as the host's own raise does."""
+    engine.send_event(_Event.PING, EventMetadata(data=str(value)))
+
+
+def _record_inbox_run() -> Tuple[List[Dict[str, Any]], List[List[_RecordedPost]]]:
+    """One recorded run: the owner's operations and each poster's posts, each in
+    program order.
+
+    A post is taken and returns before the owner raises an event of its own, so
+    every run holds that order. Then `_HISTORY_POSTERS` threads post through the
+    session's own handle and, every fifth post, through the tree's directory,
+    naming the session the tree does not hold while the run goes on and the
+    probe's own session once it has ended, while the owner drives the machine,
+    raises events of its own and stops the run once half the posts are made. A
+    post through each door once the run has ended closes the record."""
+    clock = _HistoryClock()
+    recorder = _OwnerRecorder(clock)
+    engine, _policy, _log = _probe()
+    engine.set_inbox_port(recorder)
+    engine.initialize()
+    posters: List[List[_RecordedPost]] = [
+        [_on_another_thread(lambda: _record_post(clock, engine, _HISTORY_SESSION, 1, _ping("1")))]
+    ]
+    _raise_own(engine, _HISTORY_OWN_BASE)
+
+    lock = threading.Lock()
+    made = [0]
+    running = [_HISTORY_POSTERS]
+    stopped = threading.Event()
+    total = _HISTORY_POSTERS * _HISTORY_PER_POSTER
+    recorded: List[List[_RecordedPost]] = [[] for _ in range(_HISTORY_POSTERS)]
+
+    def post(poster: int) -> None:
+        try:
+            for k in range(_HISTORY_PER_POSTER):
+                value = 2 + poster * _HISTORY_PER_POSTER + k
+                if k % 5 != 4:
+                    made_post = _record_post(clock, engine, _HISTORY_SESSION, value, _ping(str(value)))
+                elif stopped.is_set():
+                    made_post = _record_post(
+                        clock, engine, _HISTORY_SESSION, value, _history_ping_naming(_SESSION, value)
+                    )
+                else:
+                    made_post = _record_post(
+                        clock, engine, _HISTORY_ABSENT, value, _history_ping_naming(_HISTORY_ABSENT_ID, value)
+                    )
+                recorded[poster].append(made_post)
+                with lock:
+                    made[0] += 1
+                time.sleep(0)
+        finally:
+            with lock:
+                running[0] -= 1
+
+    threads = [
+        threading.Thread(target=post, args=(poster,), name=f"inbox-history-poster-{poster}")
+        for poster in range(_HISTORY_POSTERS)
+    ]
+    for thread in threads:
+        thread.start()
+
+    def any_running() -> bool:
+        with lock:
+            return running[0] > 0
+
+    def half_made() -> bool:
+        with lock:
+            return made[0] * 2 >= total
+
+    own = _HISTORY_OWN_BASE + 1
+    round_ = 0
+    while any_running():
+        if not stopped.is_set():
+            engine.advance_time(0)
+            round_ += 1
+            if round_ % 3 == 0 and own < _HISTORY_OWN_BASE + _HISTORY_OWN_PER_RUN:
+                _raise_own(engine, own)
+                own += 1
+            if half_made():
+                engine.stop()
+                stopped.set()
+        time.sleep(0)
+    for thread in threads:
+        thread.join(_BOUND_SECONDS)
+        assert not thread.is_alive(), f"{thread.name} never finished posting"
+    if not stopped.is_set():
+        engine.advance_time(0)
+        engine.stop()
+        stopped.set()
+    posters += recorded
+    posters.append(
+        _on_another_thread(
+            lambda: [
+                _record_post(clock, engine, _HISTORY_SESSION, _HISTORY_LATE_INPUT, _ping(str(_HISTORY_LATE_INPUT))),
+                _record_post(
+                    clock,
+                    engine,
+                    _HISTORY_SESSION,
+                    _HISTORY_LATE_INPUT + 1,
+                    _history_ping_naming(_SESSION, _HISTORY_LATE_INPUT + 1),
+                ),
+            ]
+        )
+    )
+    return list(recorder.operations), posters
+
+
+def _history_document(owner: List[Dict[str, Any]], posters: List[List[_RecordedPost]]) -> Dict[str, Any]:
+    """A recorded run as an inbox history
+    (tests/forge/conformance/inbox_history.schema.json): one session, whose
+    inbox closes with its run and has no bound."""
+    return {
+        "version": 2,
+        "sessions": [_HISTORY_SESSION],
+        "closes": True,
+        "owner": owner,
+        "posters": [[made_post.document() for made_post in posts] for posts in posters],
+    }
+
+
+def _assert_run_keeps_the_doors_order(
+    what: str, owner: List[Dict[str, Any]], posters: List[List[_RecordedPost]]
+) -> None:
+    """Hold a recorded run to what it was meant to exercise and to the order the
+    door keeps, as far as one run's record says it: posts taken, refused as
+    unknown and as ended, through both doors; own events entered and the run
+    ended once; every input a post took entered once; and an event of the
+    owner's own entered behind every input whose post returned before the
+    event's enqueue began (docs/adr/0084, D2 as amended at step 9). Whether the
+    whole record is linearizable is `sce-codegen check-inbox-history`'s to
+    judge."""
+    posts = [made_post for made in posters for made_post in made]
+    assert any(made_post.taken for made_post in posts), f"{what}: no post was taken"
+    assert any(made_post.reason == "unknown" for made_post in posts), f"{what}: no post was refused as unknown"
+    assert any(made_post.reason == "ended" for made_post in posts), f"{what}: no post was refused as ended"
+    assert any(made_post.addressed for made_post in posts) and any(
+        not made_post.addressed for made_post in posts
+    ), f"{what}: a door went unused"
+    assert any(
+        op["call"] == "enqueue" and op["source"] == "own" for op in owner
+    ), f"{what}: the owner put no event of its own on the queue"
+    assert sum(1 for op in owner if op["call"] == "end") == 1, f"{what}: the run did not end once"
+
+    entered_at = {
+        op["item"]: at for at, op in enumerate(owner) if op["call"] == "enqueue" and op["source"] == "posted"
+    }
+    taken = sorted(made_post.input for made_post in posts if made_post.taken)
+    entered = sorted(op["item"] for op in owner if op["call"] == "enqueue" and op["source"] == "posted")
+    assert entered == taken, f"{what}: the inputs that entered the queue are not the inputs the posts took"
+
+    for at, op in enumerate(owner):
+        if op["call"] != "enqueue" or op["source"] != "own":
+            continue
+        for made_post in posts:
+            if not made_post.taken or made_post.returned >= op["invoked"]:
+                continue
+            assert entered_at[made_post.input] < at, (
+                f"{what}: own event {op['item']} entered ahead of input {made_post.input}, whose post "
+                "returned before the event's enqueue began"
+            )
+
+
+def test_each_run_of_the_inbox_is_recorded_as_a_history_that_keeps_the_doors_order() -> None:
+    # Written where SCE_INBOX_HISTORY_DIR names, one file a run, for
+    # `sce-codegen check-inbox-history` to judge; unset, the runs are held here
+    # and written nowhere.
+    named = os.environ.get("SCE_INBOX_HISTORY_DIR")
+    directory = Path(named) if named else None
+    if directory is not None:
+        directory.mkdir(parents=True, exist_ok=True)
+    for run in range(_HISTORY_RUNS):
+        owner, posters = _record_inbox_run()
+        _assert_run_keeps_the_doors_order(f"run {run}", owner, posters)
+        if directory is not None:
+            document = _history_document(owner, posters)
+            (directory / f"python_inbox_run_{run}.json").write_text(
+                json.dumps(document, separators=(",", ":")) + "\n"
+            )
