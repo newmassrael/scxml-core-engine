@@ -252,6 +252,13 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Installation,
         &[("descriptor_is_open", 1)],
     ),
+    // The traces manifest the operator names, the recorded runs and the models it declares
+    // beside it.
+    (
+        "src/formal/traces.rs",
+        Why::Operator,
+        &[("declared", 3), ("check", 3)],
+    ),
     // The command-line program: what it is given to read, what it writes, and where it is run.
     (
         "src/cli/mod.rs",

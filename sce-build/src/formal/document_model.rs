@@ -101,6 +101,10 @@ const TLA_WORDS: [&str; 52] = [
     "UNION",
 ];
 
+/// The `<history>` children of each state, by the state's number in the tables:
+/// where each is written in the document (row and column), and its id.
+type HistoriesByState = BTreeMap<u16, Vec<((u32, u32), String)>>;
+
 /// What [`write`] is asked for beside the document.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Options<'a> {
@@ -898,7 +902,7 @@ impl<'m> Writer<'m> {
     /// order the tables number them, and each `<history>` among the children
     /// of its state where it is written.
     fn document_order(&self) -> Vec<String> {
-        let mut histories: BTreeMap<u16, Vec<((u32, u32), String)>> = BTreeMap::new();
+        let mut histories: HistoriesByState = BTreeMap::new();
         for row in &self.tables.histories {
             let at = self
                 .model
@@ -924,12 +928,7 @@ impl<'m> Writer<'m> {
         order
     }
 
-    fn visit(
-        &self,
-        number: u16,
-        histories: &BTreeMap<u16, Vec<((u32, u32), String)>>,
-        order: &mut Vec<String>,
-    ) {
+    fn visit(&self, number: u16, histories: &HistoriesByState, order: &mut Vec<String>) {
         let id = &self.tables.states[usize::from(number)].id;
         order.push(id.clone());
         let mut own = histories
