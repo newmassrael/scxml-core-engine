@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A pool a driver context moves too (<sce:sharing>shared</sce:sharing>): its
+  book is atomic words, each transition a compare-and-swap.
+  The scenarios of pool_contract.json run against it in the Rust and the C11
+  arm alike (docs/adr/0111 D4): four slots of at most 64 bytes, on a 16-byte
+  boundary, CPU-managed, so no cache maintenance is generated.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="pool_conformance_shared" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:sharing>shared</sce:sharing>
+</scxml>
