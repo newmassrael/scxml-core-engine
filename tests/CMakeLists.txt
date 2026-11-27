@@ -3533,6 +3533,67 @@ sce_add_state_machine(
     HOST_INVOKER x-sce-host
 )
 
+# docs/adr/0147, D3: the same machine's inbox, each run written as its history and
+# judged by `sce-codegen check-inbox-history` against docs/formal/InboxService.tla,
+# as every runtime's inbox history is, through the script the C11 machine's runs
+# are judged by. Built with the machine's inbox port on (SCE_INBOX_PORT=1), so the
+# engine tells the recorder each event it puts on the machine's external queue and
+# whether its inbox held it. Its own program, for the trace port's reason above:
+# the switch changes the machine's engine, so the machine is compiled with it on in
+# no program that also compiles it with it off. The record is a fixture its checks
+# require; the first run written again with an own event read at its push, after a
+# post its drain did not read returned, must be refused, so a check that could only
+# pass, or a recorder rule that made no difference, would show here.
+add_executable(integration_inbox_history_recorder integration/inbox_history_recorder.cpp)
+sce_add_state_machine(
+    TARGET integration_inbox_history_recorder
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/inbox_probe.scxml
+    HOST_INVOKER x-sce-host
+)
+target_include_directories(integration_inbox_history_recorder
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+)
+target_compile_definitions(integration_inbox_history_recorder PRIVATE SCE_INBOX_PORT=1)
+target_link_libraries(integration_inbox_history_recorder
+    PRIVATE
+        sce_runtime
+        Threads::Threads
+)
+apply_sce_test_policies(integration_inbox_history_recorder)
+set(_sce_cpp_inbox_histories "${CMAKE_CURRENT_BINARY_DIR}/inbox_histories_cpp")
+add_test(NAME cpp_inbox_history_record
+    COMMAND integration_inbox_history_recorder "${_sce_cpp_inbox_histories}"
+)
+set_tests_properties(cpp_inbox_history_record PROPERTIES
+    FIXTURES_SETUP cpp_inbox_histories
+    TIMEOUT 120
+)
+add_test(NAME cpp_inbox_history_check
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${_sce_cpp_inbox_histories}/runs"
+            -DMINIMUM=8
+            -P "${CMAKE_SOURCE_DIR}/tests/forge/conformance/check_inbox_histories.cmake"
+)
+set_tests_properties(cpp_inbox_history_check PROPERTIES
+    FIXTURES_REQUIRED cpp_inbox_histories
+    TIMEOUT 300
+)
+add_test(NAME cpp_inbox_history_check_at_the_push
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${_sce_cpp_inbox_histories}/at_the_push"
+            -DMINIMUM=1
+            -P "${CMAKE_SOURCE_DIR}/tests/forge/conformance/check_inbox_histories.cmake"
+)
+set_tests_properties(cpp_inbox_history_check_at_the_push PROPERTIES
+    FIXTURES_REQUIRED cpp_inbox_histories
+    PASS_REGULAR_EXPRESSION "inbox histories refused"
+    TIMEOUT 300
+)
+
 # docs/adr/0084, D2 as amended at step 10: the tree whose host posts a child's
 # ending from inside the parent's macrostep, which the same driver posts to. No
 # scenario replays it, since a scenario has no step for such a post. Its `clock`
