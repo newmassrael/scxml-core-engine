@@ -22,7 +22,8 @@ name: Rust engine on wasm32
 # `scripts/install_chrome.sh` names, the browser the build machines replay in
 # when they judge an update to main, so the two judge the module in one
 # browser, and the pinned Firefox `scripts/install_firefox.sh` names, the
-# kit's second engine. The target's standard library is the selected Rust's,
+# kit's second engine, and the pinned TypeScript `scripts/install_typescript.sh`
+# names, which compiles the pages written against the page surface. The target's standard library is the selected Rust's,
 # which the runner hands the image.
 #
 # The triggers are what the module is made of: the engine, the forge runtime it
@@ -61,6 +62,7 @@ on:
       - 'Cargo.lock'
       - 'scripts/install_chrome.sh'
       - 'scripts/install_firefox.sh'
+      - 'scripts/install_typescript.sh'
       - 'scripts/install_wasm_bindgen.sh'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'
@@ -99,6 +101,7 @@ on:
       - 'Cargo.lock'
       - 'scripts/install_chrome.sh'
       - 'scripts/install_firefox.sh'
+      - 'scripts/install_typescript.sh'
       - 'scripts/install_wasm_bindgen.sh'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'

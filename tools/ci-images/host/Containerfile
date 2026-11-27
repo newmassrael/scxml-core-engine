@@ -61,6 +61,7 @@
 # toolchain to scripts/install_arm_gnu_toolchain.sh, emsdk to
 # scripts/install_emsdk.sh, GenMC to scripts/install_genmc.sh, Chrome to
 # scripts/install_chrome.sh, Firefox to scripts/install_firefox.sh,
+# TypeScript to scripts/install_typescript.sh,
 # wasm-bindgen to scripts/install_wasm_bindgen.sh,
 # Bazel to scripts/install_bazel.sh, the mesh SDKs to
 # scripts/install_mesh_transports.sh, and the Python packages to
@@ -338,6 +339,22 @@ RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/firefox.tar.xz \
     && rm /tmp/firefox.tar.xz \
     && /opt/firefox/firefox/firefox --version | grep -F " ${FIREFOX_REV}" >/dev/null
 
+# TypeScript, the compiler wasm32-scenarios holds the page surface's
+# declaration to (docs/adr/0117, D7), at the release
+# scripts/install_typescript.sh pins and with the SHA-256 that script records
+# for its archive on the npm registry, unpacked at TYPESCRIPT_ROOT below as
+# that script unpacks it. It runs on the Node above.
+ARG TYPESCRIPT_REV=5.9.3
+ARG TYPESCRIPT_SHA256=10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/typescript.tgz \
+        "https://registry.npmjs.org/typescript/-/typescript-${TYPESCRIPT_REV}.tgz" \
+    && echo "${TYPESCRIPT_SHA256}  /tmp/typescript.tgz" | sha256sum --check --strict - \
+    && mkdir -p /opt/typescript \
+    && tar -xzf /tmp/typescript.tgz -C /opt/typescript \
+    && rm /tmp/typescript.tgz \
+    && chmod 0755 /opt/typescript/package/bin/tsc \
+    && [[ "$(/opt/node/bin/node /opt/typescript/package/bin/tsc --version)" == "Version ${TYPESCRIPT_REV}" ]]
+
 # wasm-bindgen, the tool wasm32-scenarios binds the module with, at the release
 # scripts/install_wasm_bindgen.sh pins (the version Cargo.lock holds, which the
 # gate refuses any other than). The script builds it from source, which needs a
@@ -415,6 +432,7 @@ ENV PATH=/opt/sce-python/bin:/opt/arm-gnu-toolchain/bin:/opt/node/bin:/opt/jdk-1
     CHROME_BIN=/opt/chrome-for-testing/chrome-linux64/chrome \
     FIREFOX_ROOT=/opt/firefox \
     FIREFOX_BIN=/opt/firefox/firefox/firefox \
+    TYPESCRIPT_ROOT=/opt/typescript \
     WASM_BINDGEN_ROOT=/opt/wasm-bindgen \
     BAZEL_ROOT=/opt/bazel \
     CMAKE_PREFIX_PATH=/opt/sce-mesh-transports \

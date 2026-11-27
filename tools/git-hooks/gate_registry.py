@@ -1022,6 +1022,11 @@ def image_release_failures(repo_root: Path) -> list[str]:
          "scripts/install_firefox.sh")
     held(host, args, "FIREFOX_SHA256", first(r'^FIREFOX_SHA256="([0-9a-f]{64})"', firefox),
          "scripts/install_firefox.sh")
+    typescript = read("scripts/install_typescript.sh")
+    held(host, args, "TYPESCRIPT_REV", first(r'^TYPESCRIPT_REV="([^"]+)"', typescript),
+         "scripts/install_typescript.sh")
+    held(host, args, "TYPESCRIPT_SHA256", first(r'^TYPESCRIPT_SHA256="([0-9a-f]{64})"', typescript),
+         "scripts/install_typescript.sh")
     held(host, args, "WASM_BINDGEN_REV",
          first(r'^WASM_BINDGEN_REV="([^"]+)"', read("scripts/install_wasm_bindgen.sh")),
          "scripts/install_wasm_bindgen.sh")

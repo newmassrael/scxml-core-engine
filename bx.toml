@@ -567,6 +567,22 @@ install = "FIREFOX_ROOT={prefix} bash scripts/install_firefox.sh"
 install_inputs = ["scripts/install_firefox.sh"]
 needed_by = ["wasm32-scenarios"]
 
+# TypeScript, the compiler the page surface's declaration is held to (docs/adr/0117, D7): a page
+# that raises an event its machine does not take must not compile, and which compiler says so is
+# part of the verdict. Pinned as a release of the npm registry (`scripts/install_typescript.sh`,
+# which says why 5.9 and how it is checked). `prefix_link` makes the unpacked archive the store
+# entry, because the compiler loads the files beside it. `tsc --version` prints `Version
+# <version>`; it runs on the Node the gate runs on.
+[platform.linux.tools.typescript]
+version_file = "scripts/install_typescript.sh"
+version_pattern = '^TYPESCRIPT_REV="([0-9.]+)"'
+path = "~/.local/share/typescript/{version}/package/bin/tsc"
+check = "Version {version}"
+prefix_link = "~/.local/share/typescript/{version}"
+install = "TYPESCRIPT_ROOT={prefix} bash scripts/install_typescript.sh"
+install_inputs = ["scripts/install_typescript.sh"]
+needed_by = ["wasm32-scenarios"]
+
 # THE PYTHON THE PYTHON SUITES RUN IN: a virtual environment holding the Python runtime's
 # dependencies as `backends/python/runtime/pyproject.toml` pins them (`lupa>=2.0`), and pytest and
 # the packages tools/authoring and tools/targets import. The runtime imports `lupa.lua54`, which
