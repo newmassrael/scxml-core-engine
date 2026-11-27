@@ -8,8 +8,16 @@
 //! What differs between stores is where the records live and how a transaction is made; whether a
 //! write is fenced out, a lease is held or a renewal comes too late is decided here, so that no
 //! two stores can answer the same history differently.
+//!
+//! What they decide of a key's lease and of a write under it is the module `lease`'s, over the
+//! numbers alone, proved by Verus to refine the store's actions of `EventJournal`
+//! (docs/adr/0115, D13). Here it is read off what a store holds and answered as the contract's
+//! refusals.
+
+mod lease;
 
 use crate::{moment, Conflict, Held, Lost};
+use lease::{Commit, Grant, Renewal};
 
 /// The lease a store holds on a key: whose it is, its fence, and when it runs out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,19 +37,17 @@ pub(crate) fn admit_write(
     expected_version: u64,
 ) -> Result<(), Conflict> {
     let current = holding.map(|held| held.fence);
-    if current != Some(fence) {
-        return Err(Conflict::Fence {
+    match lease::commit(current, fence, current_version, expected_version) {
+        Commit::Made => Ok(()),
+        Commit::Fenced => Err(Conflict::Fence {
             presented: fence,
             current,
-        });
-    }
-    if current_version != expected_version {
-        return Err(Conflict::Version {
+        }),
+        Commit::Stale => Err(Conflict::Version {
             expected: expected_version,
             current: current_version,
-        });
+        }),
     }
-    Ok(())
 }
 
 /// Whether `owner` may be granted a lease at `now_ms` over a key whose lease is `holding`: unless
@@ -52,33 +58,39 @@ pub(crate) fn admit_acquire(
     now_ms: u64,
 ) -> Result<(), Held> {
     match holding {
-        Some(held) if held.owner != owner && now_ms < held.expires_ms => Err(Held {
-            owner: held.owner.clone(),
-            expires_ms: held.expires_ms,
-        }),
+        Some(held) if !lease::takes_over(held.expires_ms, held.owner == owner, now_ms) => {
+            Err(Held {
+                owner: held.owner.clone(),
+                expires_ms: held.expires_ms,
+            })
+        }
         _ => Ok(()),
     }
 }
 
 /// Whether the lease of fence `fence` is the one `holding` records, which a release needs.
 pub(crate) fn admit_release(holding: Option<&Holding>, fence: u64) -> Result<(), Lost> {
-    match holding {
-        Some(held) if held.fence == fence => Ok(()),
-        _ => Err(Lost::Superseded {
-            current: holding.map(|held| held.fence),
-        }),
+    let current = holding.map(|held| held.fence);
+    if lease::is_held(current, fence) {
+        Ok(())
+    } else {
+        Err(Lost::Superseded { current })
     }
 }
 
 /// Whether the lease of fence `fence` may be renewed at `now_ms`: it is the one held, and it has
 /// not run out.
 pub(crate) fn admit_renew(holding: Option<&Holding>, fence: u64, now_ms: u64) -> Result<(), Lost> {
-    admit_release(holding, fence)?;
-    match holding {
-        Some(held) if now_ms >= held.expires_ms => Err(Lost::Expired {
-            expires_ms: held.expires_ms,
+    let held = holding.map(|held| Grant {
+        fence: held.fence,
+        expires_ms: held.expires_ms,
+    });
+    match lease::renewal(held, fence, now_ms) {
+        Renewal::Renewed => Ok(()),
+        Renewal::Superseded => Err(Lost::Superseded {
+            current: holding.map(|held| held.fence),
         }),
-        _ => Ok(()),
+        Renewal::Expired(expires_ms) => Err(Lost::Expired { expires_ms }),
     }
 }
 

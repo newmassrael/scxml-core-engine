@@ -255,6 +255,49 @@
           "to": "            } else {\n                Hop::Passes(address)\n"
         }
       ]
+    },
+    {
+      "file": "backends/rust/session-store/src/rules/lease.rs",
+      "compiled_by": "backends/rust/session-store/src/rules.rs",
+      "decision": "docs/adr/0115",
+      "verified": 11,
+      "mutants": [
+        {
+          "breaks": "a write under a fence another grant replaced is made, so a holder fenced out writes over the one that took the key",
+          "from": "if held != Some(fence) {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a write from a version another write moved is made, so it does not continue the state the store holds",
+          "from": "if current != expected {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a lease another owner holds is taken over before it runs out",
+          "from": "        return true;\n    }\n    now_ms >= expires_ms\n",
+          "to": "        return true;\n    }\n    true\n"
+        },
+        {
+          "breaks": "an owner that asks again for the lease it holds waits for it to run out, so a process that started again cannot fence out its previous life",
+          "from": "    if same_owner {\n        return true;\n    }\n",
+          "to": ""
+        },
+        {
+          "breaks": "a release by a holder fenced out removes the lease of the one that replaced it",
+          "from": "    held == Some(fence)\n}",
+          "to": "    held.is_some()\n}"
+        },
+        {
+          "breaks": "a renewal by a holder fenced out extends the lease of the one that replaced it",
+          "from": "if grant.fence != fence {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a lease that ran out is renewed, so its holder goes on as if it had held the key throughout",
+          "from": "} else if now_ms >= grant.expires_ms {",
+          "to": "} else if false {"
+        }
+      ]
     }
   ]
 }
