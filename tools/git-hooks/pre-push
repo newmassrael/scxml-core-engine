@@ -145,24 +145,12 @@ if (( guide_push_failed )); then
 fi
 
 # What a formal check says is changed by a commit of its own, with its reason
-# (docs/adr/0115, D11), so that no check is made to pass by changing the check.
-# shellcheck source=tools/git-hooks/spec-isolation-gate.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spec-isolation-gate.sh"
-spec_push_failed=0
-while read -r _sref slocal _srref sremote; do
-    [[ -z "${slocal:-}" ]] && continue
-    [[ "$slocal" =~ ^0+$ ]] && continue   # a deletion publishes nothing
-    if [[ -z "${sremote:-}" || "$sremote" =~ ^0+$ ]]; then
-        sbase="$(git merge-base "$slocal" origin/HEAD 2>/dev/null || true)"
-        [[ -z "$sbase" ]] && continue      # no base to compare a new ref with
-    else
-        sbase="$sremote"
-    fi
-    spec_isolation_gate_range "${sbase}..${slocal}" || spec_push_failed=1
-done <<<"$PUBLISHED_REFS"
-if (( spec_push_failed )); then
-    exit 1
-fi
+# (docs/adr/0115, D11), is not judged here: its judge is the generator
+# (`sce-codegen formal isolation`, docs/adr/0146), which this hook cannot run
+# before a gate has built it. It is the gate `formal-isolation`, selected by
+# what the push changes like any other, and handed the push's ranges below
+# (`--changed-in`, which its unit receives as `--change-set`), so the push,
+# the landing queue and the lane judge the same commits by one command.
 
 RUNNER="$REPO_ROOT/scripts/gate"
 [[ -x "$RUNNER" ]] || {

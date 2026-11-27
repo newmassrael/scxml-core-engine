@@ -26,10 +26,6 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# What `pre-push` judges the commits of a push by (docs/adr/0115, D11); its tests run here.
-python3 tools/git-hooks/spec_isolation.py --self-test \
-    || sce_gate_fail "the judge of what changes a check is wrong (tools/git-hooks/spec_isolation.py --self-test)"
-
 # `target/debug/sce-codegen` is built by `codegen-build`, which the registry
 # names as this gate's dependency.
 # In parts (ADR 0120, D3): when SCE_FORMAL_MODELS_SHARD names `k/N`, as the

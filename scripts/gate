@@ -49,10 +49,12 @@
 # makes a skip a refusal: a gate that would skip and exit 0 for want of a
 # tool ends with 3, could not run, instead.
 #
-# `--change-set` is how a plan's unit hands a gate that works per changed path
+# `--change-set` is how a plan's unit hands a gate that reads the change set
 # (`commits: ["CHANGES"]` in the registry) the push's ranges. It selects
 # nothing, unlike `--changed-in`: the plan already chose the gate, and the
-# ranges are only what the gate reads (`SCE_GATE_CHANGED_FILE`).
+# ranges are only what the gate reads: the paths they change
+# (`SCE_GATE_CHANGED_FILE`), and the ranges themselves
+# (`SCE_GATE_CHANGE_RANGES`, for a gate whose unit is the commit).
 #
 # `--unit` is how a plan's unit runs (`plan_units` puts it in every argv). The
 # plan ran the registry's self-test over the same tree before it named the
@@ -436,6 +438,13 @@ PYEOF
         # changed" from "no range was resolved", because those call for
         # opposite behaviour.
         export SCE_GATE_CHANGED_FILE="$CHANGED_FILE"
+        # The ranges themselves, when the set was named by commits, for a gate
+        # whose unit is the commit and not the path (`formal-isolation`):
+        # space-separated `<base>..<tip>`, and absent when the set came as a
+        # file of paths, which names no commit.
+        if (( ${#RANGES[@]} )); then
+            export SCE_GATE_CHANGE_RANGES="${RANGES[*]}"
+        fi
         ;;
     named)
         # Named gates still get their dependency closure and the derived
@@ -472,6 +481,7 @@ PYEOF
         # its paths, as the `changed` branch above hands its gates theirs.
         if (( ${#CHANGE_SET_RANGES[@]} )); then
             export SCE_GATE_CHANGED_FILE="$CHANGED_FILE"
+            export SCE_GATE_CHANGE_RANGES="${CHANGE_SET_RANGES[*]}"
         fi
         ;;
     *)
@@ -808,9 +818,12 @@ gate_in_container() {
     if [[ -n "$AT_WANT" ]]; then
         inner+=(--at "$AT_WANT")
     fi
-    # The ranges a unit was handed mean the same inside: the checkout and its
-    # git directory are mounted at their own paths.
-    for range in ${CHANGE_SET_RANGES[@]+"${CHANGE_SET_RANGES[@]}"}; do
+    # The ranges this run's gates read mean the same inside: the checkout and
+    # its git directory are mounted at their own paths. They go in as
+    # `--change-set` whether this run was handed them so (a plan's unit) or
+    # selected by them (`--changed-in`, the push hook's run in place), since
+    # the run inside names its gate and selects nothing.
+    for range in ${RANGES[@]+"${RANGES[@]}"}; do
         inner+=(--change-set "$range")
     done
     if [[ -n "$SHARD_WANT" ]]; then

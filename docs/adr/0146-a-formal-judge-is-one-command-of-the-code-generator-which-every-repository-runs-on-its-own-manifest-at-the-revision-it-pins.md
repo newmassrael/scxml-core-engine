@@ -192,6 +192,10 @@ Each step lands with a test that fails without it.
 3. `formal proofs`, the same way, with `proofs.py`.
 4. The consumer fixture of D6, judged by the gate.
 5. D11's judge (`tools/git-hooks/spec_isolation.py`) moved to `formal isolation`, which `pre-push` calls.
+   As landed (2026-11-27): `pre-push` cannot run the generator before a gate has built it, so the judge is the gate
+   `formal-isolation`, whose unit the push's plan hands the push's ranges (`commits: ["CHANGES"]`,
+   `SCE_GATE_CHANGE_RANGES`) and which `formal-isolation.yml` runs over its own; a commit is judged where its parent
+   holds the models or the proofs manifest, which `--models` and `--proofs` name for a consumer.
 6. ADR 0115 continues on this runner: the proof of ADR 0084's door (ADR 0147), then D7, and `formal traces` with D4
    and D8 on every lane, the C11 lane among them.
 

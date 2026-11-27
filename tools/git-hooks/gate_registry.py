@@ -474,7 +474,10 @@ COST_MEASURED: dict[str, str] = {
 # 37 -> 38 the same day, the same direction: `formal-traces` arrived as the
 # first gate of the recorded runs (docs/adr/0115, D4 and D8), with a cost its
 # entry estimates. Its first run reads it.
-UNMEASURED_COST_CEILING = 38
+# 38 -> 39 the same day, the same direction: `formal-isolation` arrived when the
+# judge of what changes a check left the push hook for a gate unit handed the
+# push's ranges (docs/adr/0146, order step 5). Its first run reads it.
+UNMEASURED_COST_CEILING = 39
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -4082,6 +4085,22 @@ def self_test(repo_root: Path) -> int:
     # A gate script edit is judged the same way, for the same reason.
     check("gate-script-self", ["scripts/gates/clippy.sh"],
           want_full=False, want_has=["http-endpoint-ssot"], want_lacks=["workspace-tests"])
+    # formal-isolation-sees-every-proved-file. A commit changes a check only
+    # by changing a file of docs/formal or a file the proofs manifest declares
+    # proved, so each of those selects the judge of what changes a check. Read
+    # from the manifest, so a file proved tomorrow outside the gate's globs
+    # turns this red rather than leaving its contracts unjudged.
+    proofs_manifest = repo_root / "docs" / "formal" / "proofs.json"
+    proved = [proof.get("file") for proof
+              in json.loads(proofs_manifest.read_text(encoding="utf-8")).get("proofs", [])]
+    if not proved:
+        cases += 1
+        failures.append("formal-isolation: docs/formal/proofs.json declares no proved "
+                        "file, so the case below read nothing")
+    for path in proved:
+        check(f"formal-isolation-sees-{path}", [path], want_has=["formal-isolation"])
+    check("formal-isolation-sees-a-model", ["docs/formal/EngineInbox.tla"],
+          want_has=["formal-isolation"])
     # A ledger-only edit needs the citation gates, not the C++ build.
     check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
           want_full=False, want_lacks=["nostd-mcu", "forge-cpp", "ledger-citations"])
@@ -6169,14 +6188,15 @@ def self_test(repo_root: Path) -> int:
             "nothing; `embed-manifest-stamp` and `regen-reproduces` do")
 
     # a-verdict-that-reads-the-change-set-carries-it. A gate script that
-    # reads `SCE_GATE_CHANGED_FILE` does its work per changed path, and a
-    # unit is a build machine's checkout whose refs say nothing about the
-    # push, so the plan has to carry the push's ranges to it. Unlike HEAD this
-    # holds whether or not the pass is kept: without the ranges the gate
-    # answers for an unknown set. Derived from the code lines of each script,
-    # in both directions, so a declaration cannot outlive its reader either.
+    # reads `SCE_GATE_CHANGED_FILE` does its work per changed path, and one
+    # that reads `SCE_GATE_CHANGE_RANGES` per commit of the ranges; a unit
+    # is a build machine's checkout whose refs say nothing about the push, so
+    # the plan has to carry the push's ranges to it. Unlike HEAD this holds
+    # whether or not the pass is kept: without the ranges the gate answers for
+    # an unknown set. Derived from the code lines of each script, in both
+    # directions, so a declaration cannot outlive its reader either.
     cases += 1
-    change_reader = re.compile(r"\bSCE_GATE_CHANGED_FILE\b")
+    change_reader = re.compile(r"\bSCE_GATE_CHANGE(?:D_FILE|_RANGES)\b")
     readers_seen = 0
     for slug, spec in sorted(GATES.items()):
         script = gate_script(repo_root, slug)
@@ -6187,17 +6207,19 @@ def self_test(repo_root: Path) -> int:
         readers_seen += reads
         if reads and not declared:
             failures.append(
-                f"commits: scripts/gates/{slug}.sh reads SCE_GATE_CHANGED_FILE "
+                f"commits: scripts/gates/{slug}.sh reads the change set "
+                f"(SCE_GATE_CHANGED_FILE or SCE_GATE_CHANGE_RANGES) "
                 f"and the gate does not declare commits=['CHANGES']; a "
                 f"landing's unit of it would be handed no change set")
         if declared and not reads:
             failures.append(
                 f"commits: {slug} declares commits=['CHANGES'] and "
-                f"scripts/gates/{slug}.sh never reads SCE_GATE_CHANGED_FILE")
+                f"scripts/gates/{slug}.sh never reads SCE_GATE_CHANGED_FILE "
+                f"or SCE_GATE_CHANGE_RANGES")
     if readers_seen == 0:
         failures.append(
-            "commits: no gate script reads SCE_GATE_CHANGED_FILE, so the scan "
-            "above read nothing; `mutation-rounds` does")
+            "commits: no gate script reads the change set, so the scan above "
+            "read nothing; `mutation-rounds` and `formal-isolation` do")
 
     # a-narrowed-gate-reads-no-commit. bx runs a unit with input patterns in a
     # repository of one commit that holds them (bx RFC 0026). That commit is

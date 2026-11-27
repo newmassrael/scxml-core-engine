@@ -1,0 +1,137 @@
+name: Formal Isolation
+
+# Every commit changes what a formal check says by itself, with nothing beside it
+# but documents, and names its reason in a bullet `- Spec: <why>`
+# (docs/adr/0115, D11). Judged by `sce-codegen formal isolation`
+# (docs/adr/0146, order step 5) in the gate `formal-isolation`, the unit the push
+# hook's plan hands the push's ranges: this lane runs the same unit over its own.
+#
+# ## Its range
+#
+# The answer is about COMMITS, so a run that replaced a waiting one must not drop
+# that run's commits (`sce-build/tests/ci_supersession_policy.rs`). A push's
+# range therefore starts at the commit of the last run of this workflow on the
+# branch that reached a verdict (`success` or `failure`), as
+# mutation-rounds.yml's does, and at the push's own `before` only when there is
+# none. A pull request's range is its base to its head. A dispatch has no range,
+# and the gate says so and skips.
+#
+# ## Why it runs in the host image
+#
+# The judge is the generator, which builds with the libxml2 the host image
+# carries (tools/ci-images/host, docs/adr/0145).
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'backends/rust/mesh/src/https/**'
+      - 'backends/rust/mesh/src/outbound.rs'
+      - 'backends/rust/mesh/src/outbound/**'
+      - 'backends/rust/runtime/src/inbox.rs'
+      - 'backends/rust/runtime/src/inbox/**'
+      - 'tools/ci-images/host/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-isolation.sh'
+      - '.github/workflows/formal-isolation.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/formal/**'
+      - 'sce-build/src/formal/**'
+      - 'backends/rust/mesh/src/https/**'
+      - 'backends/rust/mesh/src/outbound.rs'
+      - 'backends/rust/mesh/src/outbound/**'
+      - 'backends/rust/runtime/src/inbox.rs'
+      - 'backends/rust/runtime/src/inbox/**'
+      - 'tools/ci-images/host/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-isolation.sh'
+      - '.github/workflows/formal-isolation.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  formal-isolation:
+    name: Formal Isolation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # `actions: read` lists this workflow's earlier runs to find the last one
+    # that reached a verdict; `packages: write` for the image a run on main
+    # builds and pushes (.github/actions/gate-image); `contents: read` is what
+    # checkout needs.
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+
+    steps:
+      # `fetch-depth: 0`: the judge reads every commit of the range and its
+      # parent, which a shallow clone does not hold.
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+
+      # A run that is `cancelled`, `skipped` or still running has no verdict
+      # and is passed over, so its commits fall inside the next range. The
+      # listing is not caught: a failed `gh api` fails the step, because falling
+      # back to `before` silently would drop the commits of a replaced run.
+      - name: Resolve the range
+        id: range
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base=""
+          case "${{ github.event_name }}" in
+            push)
+              base=$(gh api "repos/${{ github.repository }}/actions/workflows/formal-isolation.yml/runs?branch=${{ github.ref_name }}&event=push&status=completed&per_page=100" \
+                --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure") | .head_sha][0] // empty')
+              [ -n "$base" ] || base='${{ github.event.before }}'
+              ;;
+            pull_request) base='${{ github.event.pull_request.base.sha }}' ;;
+          esac
+          # A new branch's `before` is all-zeroes, and a force-push can name a
+          # commit this clone does not have: no range resolves, and the gate
+          # says it was handed none.
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "range=$base..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "no resolvable range"
+            echo "range=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
+
+      - name: Compile through the shared compile cache
+        id: compile-cache
+        uses: ./.github/actions/compile-cache
+
+      # The registry's credentials, so the runner pulls the gate's image by the
+      # digest of its build context and a run on main pushes one it built
+      # (.github/actions/gate-image).
+      - name: Pull the gate's image
+        uses: ./.github/actions/gate-image
+
+      # The range goes in as `--change-set`, as a push's plan hands it to the
+      # unit, and the runner hands it on to the gate.
+      - name: Formal isolation gate
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: scripts/gate formal-isolation ${RANGE:+--change-set "$RANGE"}
+
+      # What the compile cache answered of this job, and what it could not
+      # (.github/actions/compile-cache).
+      - name: Report what the compile cache answered
+        if: always() && steps.compile-cache.outcome == 'success'
+        run: sccache --show-stats

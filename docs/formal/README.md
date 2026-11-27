@@ -118,7 +118,8 @@ The proofs are `proofs.json`'s, judged by `sce-codegen formal proofs --manifest 
 `formal-proofs`): each file verified whole, nothing taken on trust, and each change that breaks what it promises refused.
 
 What a check says (a promise, a property, a contract, what a run must answer) is changed by a commit of its own with its
-reason; `pre-push` refuses another (`tools/git-hooks/spec_isolation.py`, ADR 0115 D11).
+reason; `sce-codegen formal isolation <base>..<head>` refuses another (ADR 0115 D11), in the gate `formal-isolation`,
+which a push's plan and the lane `formal-isolation.yml` hand the ranges they judge.
 
 After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
 
