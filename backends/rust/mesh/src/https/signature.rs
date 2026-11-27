@@ -49,7 +49,8 @@ use sce_rust_crypto::random::RandomSource;
 
 use super::freshness::FRESH_HEADER;
 use super::{
-    ACK_HEADER, EPOCH_HEADER, ETAG_HEADER, FIRST_HEADER, HOLD_HEADER, IF_MATCH_HEADER, MARK_HEADER,
+    ACK_HEADER, EPOCH_HEADER, ETAG_HEADER, FIRST_HEADER, HOLD_HEADER, IF_MATCH_HEADER,
+    JOINING_HEADER, MARK_HEADER,
 };
 
 /// The field that names what a signature covers and how (RFC 9421 section 4.1).
@@ -650,6 +651,8 @@ pub enum Field {
     IfMatch,
     /// `Sce-Mesh-Mark`: an instance's low-water mark (docs/adr/0113, D5).
     Mark,
+    /// `Sce-Mesh-Joining`: a join that says a proof of a person follows (docs/adr/0116, D2).
+    Joining,
 }
 
 impl Field {
@@ -670,6 +673,7 @@ impl Field {
             Field::Nonce => "sce-mesh-nonce",
             Field::IfMatch => "if-match",
             Field::Mark => "sce-mesh-mark",
+            Field::Joining => "sce-mesh-joining",
         }
     }
 
@@ -687,6 +691,7 @@ impl Field {
             Field::Nonce => Some(NONCE_HEADER),
             Field::IfMatch => Some(IF_MATCH_HEADER),
             Field::Mark => Some(MARK_HEADER),
+            Field::Joining => Some(JOINING_HEADER),
         }
     }
 
@@ -857,6 +862,12 @@ pub const TABLE: &[Row] = &[
     Row {
         signer: Signer::Request,
         field: Field::Mark,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Joining,
         of_request: false,
         when: When::Carried,
     },

@@ -92,6 +92,14 @@ pub const IF_MATCH_HEADER: &str = "If-Match";
 /// entity tag ([`entity_tag`]).
 pub const ETAG_HEADER: &str = "ETag";
 
+/// The request header of a join that says a proof of a person follows it (docs/adr/0116, D2), with
+/// the value [`JOINING_PROOF`]: its offer waits `login_ms`, and only an exchange whose body is a
+/// proof of a person for it confirms it.
+pub const JOINING_HEADER: &str = "Sce-Mesh-Joining";
+
+/// The one value [`JOINING_HEADER`] takes.
+pub const JOINING_PROOF: &str = "proof";
+
 /// The request header naming an instance's low-water mark (docs/adr/0113, D5): the lowest number
 /// of its incarnation whose answer it has not, in decimal. Carried with `If-Match`.
 pub const MARK_HEADER: &str = "Sce-Mesh-Mark";
