@@ -197,7 +197,7 @@
       "file": "backends/rust/mesh/src/https/rate/limits.rs",
       "compiled_by": "backends/rust/mesh/src/https/rate.rs",
       "decision": "docs/adr/0115",
-      "verified": 14,
+      "verified": 15,
       "mutants": [
         {
           "breaks": "a request the rule could not judge is admitted unjudged",
