@@ -58,6 +58,13 @@ on:
       - 'SCE_ERROR_CONTRACT.md'
       - 'SCE_MESH.md'
       - 'docs/SCE_ACCEPTED_SUBSET.md'
+      # The documents ADR 0114 amends and the record itself, which
+      # `forge::journal::documents` holds to one another and to the sources.
+      - 'docs/SCE_SERVER_DEPLOY.md'
+      - 'docs/SCE_SEALED_RECORD.md'
+      - 'docs/SCE_HOST_FEATURES.md'
+      - 'docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md'
+      - 'docs/adr/0114-a-keyed-sessions-facts-are-kept-in-a-journal-written-with-its-state-and-a-follower-reads-them-in-an-order-that-misses-nothing.md'
       - 'schemas/**'
       - 'apis/**'
       - 'sce/include/**'
@@ -87,6 +94,13 @@ on:
       - 'SCE_ERROR_CONTRACT.md'
       - 'SCE_MESH.md'
       - 'docs/SCE_ACCEPTED_SUBSET.md'
+      # The documents ADR 0114 amends and the record itself, which
+      # `forge::journal::documents` holds to one another and to the sources.
+      - 'docs/SCE_SERVER_DEPLOY.md'
+      - 'docs/SCE_SEALED_RECORD.md'
+      - 'docs/SCE_HOST_FEATURES.md'
+      - 'docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md'
+      - 'docs/adr/0114-a-keyed-sessions-facts-are-kept-in-a-journal-written-with-its-state-and-a-follower-reads-them-in-an-order-that-misses-nothing.md'
       - 'schemas/**'
       - 'apis/**'
       - 'sce/include/**'

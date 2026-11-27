@@ -1268,3 +1268,6 @@ fn located(
         at.and_then(|l| l.col),
     )
 }
+
+#[cfg(test)]
+mod documents;

@@ -4,6 +4,11 @@
   2026-11-22 by the owner: D1 (how an entry is typed, what its send does, deciding and applying, a variable held to the
   facts) and D4 (a machine does not follow itself). Amended on landing step 4 (2026-11-27): D2 (a session's row is the
   machine and the key) and D4 (the reader's mark, the order of a key's entries, a follower that does not end).
+- Landed (2026-11-28): every step of "Order of work". The store (step 2) is `sce-rust-session-store`'s
+  `JournalStore` in `MemoryStore` and `SqliteStore`, sealed by `sce-rust-crypto`'s `Sealed`; the build (step 3) is
+  `sce-build`'s; the pool's writes and its follower (step 4) are `sce-rust-mesh`'s `pool` and `pool::follow`; and each
+  document "Amends" names carries an "Amended by: ADR 0114" line (step 5), which `sce-build`'s
+  `forge::journal::documents` holds it to.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -232,15 +237,15 @@ retention, a journal several stores share, and any one application's streams.
 Each step lands with a test that fails without it.
 
 1. (2026-11-22) This record and its model, accepted.
-2. The store contract, its memory and SQLite implementations (layout 8) and the conformance kit: the horizon with two
+2. (2026-11-22) The store contract, its memory and SQLite implementations (layout 8) and the conformance kit: the horizon with two
    transactions committed out of order, concurrent writers, a crash at every write, positions that rise, a read as of a
    position that later writes do not change, an origin id given twice. `Sealed` and its re-seal pass.
-3. The build: `journal:`, `follows:`, `streams:`, `sce:journal` sends, `sce:valid-time`, `sce-host-journal-read`, and
+3. (2026-11-27) The build: `journal:`, `follows:`, `streams:`, `sce:journal` sends, `sce:valid-time`, `sce-host-journal-read`, and
    the refusals, each with its appendix row.
 4. (2026-11-27) The pool: the write that carries entries, the follower and its positions. In the server suite: an input
    killed at every write makes one entry or none, and a follower of many sessions that is killed repeats and misses
    nothing.
-5. The documents named in "Amends".
+5. (2026-11-28) The documents named in "Amends", held by a test to that list and to what the parts state.
 
 ## Open questions
 
