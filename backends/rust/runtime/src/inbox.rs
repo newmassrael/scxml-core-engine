@@ -79,6 +79,14 @@
 #[cfg(any(feature = "std", feature = "bounded-inbox"))]
 pub(crate) mod drain;
 
+// The queue of `BoundedInbox`, present where it is.
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
+mod ring;
+
 #[cfg(feature = "std")]
 use std::any::Any;
 #[cfg(feature = "std")]
@@ -836,23 +844,30 @@ impl<P: StatePolicy> EngineInbox<P> {
 ///
 /// `N` is a power of two from 2 to 128; another value fails to compile where the
 /// `static` is declared. The queue is Vyukov's bounded multi-producer queue
-/// (`heapless::mpmc`): a post takes no lock and never waits, so an interrupt
-/// handler may post. The owner takes at most `N` inputs at one boundary.
+/// (the submodule `ring`): a post takes no lock and never waits, so an
+/// interrupt handler may post. The owner takes at most `N` inputs at one
+/// boundary. A take that finds the oldest input still being written while one
+/// posted after it is written waits for the oldest, so a post that returned is
+/// never left behind an event of the owner's own (docs/adr/0147, D1). The wait
+/// is for a poster to run the few instructions between its reservation and its
+/// publication; a deployment whose owner preempts a poster on its own core, a
+/// task of lower priority, and has another context post behind it, can stop
+/// its owner there (the submodule says why the order asks it).
 ///
 /// `W` is the HAL whose `Hal::wake` a post the inbox took calls, on the posting
 /// thread: the waker the deployment installs. A generated bare-metal machine's
 /// own HAL is `NoOpHal`, whose wake stops the program, so the deployment names
 /// its board's HAL here.
 ///
-/// The queue does not drop what it still holds when it is dropped. In a
-/// `static`, which is what it is for, it is never dropped.
+/// What the queue still holds is dropped with it. In a `static`, which is what
+/// it is for, it is never dropped.
 #[cfg(all(
     feature = "bounded-inbox",
     target_has_atomic = "8",
     target_has_atomic = "ptr"
 ))]
 pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
-    queue: ::heapless::mpmc::MpMcQueue<InboxInputOf<P>, N>,
+    queue: ring::Ring<InboxInputOf<P>, N>,
     /// Posts refused because the inbox was full.
     refused: AtomicUsize,
     /// The session id of the engine this inbox is attached to, recorded by
@@ -877,7 +892,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     /// An empty inbox, for a `static`.
     pub const fn new() -> Self {
         Self {
-            queue: ::heapless::mpmc::MpMcQueue::new(),
+            queue: ring::Ring::new(),
             refused: AtomicUsize::new(0),
             #[cfg(feature = "std")]
             session_id: Mutex::new(None),

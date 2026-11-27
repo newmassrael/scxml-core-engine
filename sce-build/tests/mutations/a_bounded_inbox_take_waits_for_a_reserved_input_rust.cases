@@ -1,0 +1,34 @@
+# Mutation cases for docs/adr/0147, D1 on the Rust runtime's bounded inbox: a
+# take never stops in front of an input still being written while an input
+# posted after it waits behind it, so the drain before an event of the owner's
+# own never lets that event in ahead of a post that returned before it.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_bounded_inbox_take_waits_for_a_reserved_input_rust.cases`.
+#
+# The unit test parks a post between its reservation and its publication, has
+# a second post publish behind it and return, and asks the take for both. The
+# mutants take one decision away each:
+#
+#   the take never waits, as Vyukov's and heapless's do;
+#   the look behind the front reads a reserved cell as a published one, and so
+#   finds none published.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --lib inbox::ring
+mutation_targets backends/rust/runtime/src/inbox/ring.rs
+mutation_oracles backends/rust/runtime/src/inbox/ring.rs
+
+mutation_case "Rust's bounded inbox answers empty in front of an input still being written" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     "                    if !self.published_after(pos) {\n",
+     "                    if true {\n")
+PY
+
+mutation_case "Rust's bounded inbox reads a reserved cell behind the front as published" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     "            self.cell(pos).sequence.load(Ordering::Acquire) == pos.wrapping_add(1)\n",
+     "            self.cell(pos).sequence.load(Ordering::Acquire) == pos\n")
+PY
