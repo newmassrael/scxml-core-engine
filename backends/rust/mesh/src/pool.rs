@@ -137,6 +137,15 @@
 //! and why, and each lease renewal the store refused. [`Pool::health`] says
 //! whether it takes work in, whether a stop is going on, and whether its store
 //! answers, for the program's readiness and liveness checks.
+//!
+//! What the pool decides of one session's slot under the slot's locks
+//! (whether an envelope is admitted or meets a bound, how an inbox counts what
+//! it holds and when its session may leave the table, the lease the process
+//! holds on the key and when it comes due) is the module `slot`'s, a core
+//! proved by Verus (docs/adr/0115, D13). What is left here is who holds which
+//! lock and when.
+
+mod slot;
 
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
@@ -170,6 +179,7 @@ use crate::inbound::ConfigError;
 use crate::outbox::Outboxes;
 use crate::peers::{instance_of, KeyFrom, Machine, Sessions};
 use crate::router::{payload_text, within, RouterError, Standing};
+use slot::{Door, Full, KeyLease};
 
 mod follow;
 
@@ -494,23 +504,69 @@ enum Input {
     Followed(follow::Followed),
 }
 
-/// A session's inbox. Closed once the session left the table: nothing is
-/// posted to it after that, since posts and removals both hold the table.
-#[derive(Default)]
-struct Inbox {
-    queue: VecDeque<Input>,
-    closed: bool,
+impl Input {
+    /// Whether the input counts toward the inbox's bound as an envelope does: an envelope, or an
+    /// entry of a followed journal, which waits as an envelope does so that a follower that cannot
+    /// keep up stops the reader at the bound (docs/adr/0114, D4).
+    fn waits_as_an_envelope(&self) -> bool {
+        matches!(self, Input::Envelope { .. } | Input::Followed(_))
+    }
 }
 
-/// The lease a process holds on a session's key.
-enum LeaseState {
-    Unheld,
-    Held {
-        fence: u64,
-        renewed_ms: u64,
-    },
-    /// Taken over, or not renewed: the session is dropped at its next run.
-    Lost,
+/// A session's inbox: what it holds, in the order it took it, and its
+/// [`Door`], which decides what it takes and counts it, the two moved
+/// together here alone. Closed once the session left the table: nothing is
+/// posted to it after that, since posts and removals both hold the table.
+struct Inbox {
+    queue: VecDeque<Input>,
+    door: Door,
+}
+
+impl Inbox {
+    fn new() -> Self {
+        Self {
+            queue: VecDeque::new(),
+            door: Door::open(),
+        }
+    }
+
+    /// Put `input`, the envelope or followed journal entry [`slot::admit`]
+    /// admitted, `door` being the inbox's door after it.
+    fn admitted(&mut self, door: Door, input: Input) {
+        self.door = door;
+        self.queue.push_back(input);
+    }
+
+    /// Put `input`, which the pool makes itself and is no envelope, in the
+    /// inbox: no bound counts it.
+    fn tell(&mut self, input: Input) {
+        self.door.tell();
+        self.queue.push_back(input);
+    }
+
+    /// Take the oldest input, for the session's owner to apply.
+    fn take(&mut self) -> Option<Input> {
+        let input = self.queue.pop_front()?;
+        self.door.took(input.waits_as_an_envelope());
+        Some(input)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.door.is_empty()
+    }
+
+    /// Close the inbox for its session to leave the table, when it holds
+    /// nothing ([`Door::retire`]): whether it is closed, now or before.
+    fn retire(&mut self) -> bool {
+        self.door.retire()
+    }
+
+    /// Close the inbox whatever it holds, and hand back what it held for the
+    /// pool to answer ([`Door::close`]).
+    fn close(&mut self) -> VecDeque<Input> {
+        self.door.close();
+        core::mem::take(&mut self.queue)
+    }
 }
 
 /// One key's session: its inbox, which any thread posts to, its machine,
@@ -523,7 +579,7 @@ struct Slot<M, T, E> {
     indexed: String,
     inbox: Mutex<Inbox>,
     live: Mutex<Option<Live<M, T, E>>>,
-    lease: Mutex<LeaseState>,
+    lease: Mutex<KeyLease>,
 }
 
 impl<M, T, E> Slot<M, T, E> {
@@ -531,9 +587,9 @@ impl<M, T, E> Slot<M, T, E> {
         Self {
             key: key.to_string(),
             indexed,
-            inbox: Mutex::new(Inbox::default()),
+            inbox: Mutex::new(Inbox::new()),
             live: Mutex::new(None),
-            lease: Mutex::new(LeaseState::Unheld),
+            lease: Mutex::new(KeyLease::unheld()),
         }
     }
 }
@@ -625,18 +681,6 @@ enum Take {
 struct Request {
     invoke_id: [u8; 16],
     event: String,
-}
-
-/// Which bound of what the pool holds in memory an envelope met
-/// (docs/adr/0109, D1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Full {
-    /// Its session's inbox holds `sessions.max_inbox` envelopes.
-    Inbox,
-    /// Its key is not in memory, and the pool holds `sessions.max_live`.
-    Live,
-    /// The pool is stopping ([`Pool::stop`]): it admits nothing.
-    Stopping,
 }
 
 impl Full {
@@ -1153,9 +1197,7 @@ where
             let table = lock(&self.table);
             for key in holders {
                 if let Some(slot) = table.get(&key) {
-                    lock(&slot.inbox)
-                        .queue
-                        .push_back(Input::EndMember(instance.clone()));
+                    lock(&slot.inbox).tell(Input::EndMember(instance.clone()));
                     keys.insert(key);
                 }
             }
@@ -1199,7 +1241,7 @@ where
         let mut keys = Vec::new();
         for key in holders {
             if let Some(slot) = table.get(&key) {
-                lock(&slot.inbox).queue.push_back(input());
+                lock(&slot.inbox).tell(input());
                 keys.push(key);
             }
         }
@@ -1375,7 +1417,7 @@ where
                 table.values().map(|slot| slot.indexed.clone()).collect();
             // The pool holds at most `max_live` sessions (docs/adr/0109, D1):
             // the rest come due again at a later call, once room is made.
-            let room = (self.sessions.max_live as usize).saturating_sub(table.len());
+            let room = slot::room(table.len(), self.sessions.max_live);
             (in_memory, room)
         };
         // The store lists each session by the entry it indexes it under; a
@@ -1403,11 +1445,11 @@ where
             if table.contains_key(&key) {
                 continue;
             }
-            if table.len() >= self.sessions.max_live as usize {
+            if slot::room(table.len(), self.sessions.max_live) == 0 {
                 break;
             }
             let slot = Arc::new(Slot::new(&key, indexed));
-            lock(&slot.inbox).queue.push_back(Input::Wake);
+            lock(&slot.inbox).tell(Input::Wake);
             table.insert(key.clone(), slot);
             keys.push(key);
         }
@@ -1422,24 +1464,16 @@ where
         let mut lost = Vec::new();
         for slot in self.slots() {
             let mut lease = lock(&slot.lease);
-            let LeaseState::Held { fence, renewed_ms } = *lease else {
+            let Some(fence) = lease.renewal_due(now, self.config.renew_every_ms) else {
                 continue;
             };
-            if now < renewed_ms.saturating_add(self.config.renew_every_ms) {
-                continue;
-            }
             match self
                 .store
                 .renew(&slot.key, fence, self.config.lease_ttl_ms, now)
             {
-                Ok(_) => {
-                    *lease = LeaseState::Held {
-                        fence,
-                        renewed_ms: now,
-                    }
-                }
+                Ok(_) => lease.renewed(now),
                 Err(LeaseError::Lost(why)) => {
-                    *lease = LeaseState::Lost;
+                    lease.lose();
                     self.metrics().count(Counter::LeaseRenewalsRefused, 1);
                     self.error(PoolError::LeaseLost {
                         key: slot.key.clone(),
@@ -1508,14 +1542,11 @@ where
         }
         let removed = {
             let mut table = lock(&self.table);
-            let mut inbox = lock(&slot.inbox);
-            if inbox.queue.is_empty() {
-                inbox.closed = true;
+            let retired = lock(&slot.inbox).retire();
+            if retired {
                 remove_slot(&mut table, slot);
-                true
-            } else {
-                false
             }
+            retired
         };
         if !removed {
             // An input arrived while the clean checkpoint was written, and
@@ -1547,8 +1578,8 @@ where
         let mut next: Option<u64> = None;
         let mut at = |moment: u64| next = Some(next.map_or(moment, |n| n.min(moment)));
         for slot in self.slots() {
-            if let LeaseState::Held { renewed_ms, .. } = *lock(&slot.lease) {
-                at(renewed_ms.saturating_add(self.config.renew_every_ms));
+            if let Some(renewal) = lock(&slot.lease).next_renewal_ms(self.config.renew_every_ms) {
+                at(renewal);
             }
             let Some(live) = try_lock(&slot.live) else {
                 continue;
@@ -1658,43 +1689,41 @@ where
 
     /// [`Self::post_bounded`] without making room.
     fn try_post(&self, key: &str, input: Input) -> Result<(), (Input, Full)> {
-        if self.stopping.load(Ordering::SeqCst) {
-            return Err((input, Full::Stopping));
-        }
         self.post_in(&mut lock(&self.table), key, input).map(|_| ())
     }
 
-    /// Put `input` in the inbox of the session `key` in `table`, the pool's table locked, which
-    /// holds the session from now on if it did not, within the pool's bounds; answer the slot it
-    /// was put in, or the bound it met with the input.
+    /// Put `input`, an envelope or an entry of a followed journal, in the inbox of the session
+    /// `key` in `table`, the pool's table locked, which holds the session from now on if it did
+    /// not, as [`slot::admit`] admits it; answer the slot it was put in, or the bound it met with
+    /// the input.
     fn post_in(
         &self,
         table: &mut Table<F::Machine, T, E>,
         key: &str,
         input: Input,
     ) -> Result<SharedSlot<F::Machine, T, E>, (Input, Full)> {
+        let stopping = self.stopping.load(Ordering::SeqCst);
+        let (live, max_live, max_inbox) =
+            (table.len(), self.sessions.max_live, self.sessions.max_inbox);
         if let Some(slot) = table.get(key) {
             let mut inbox = lock(&slot.inbox);
-            // docs/adr/0114, D4: an entry of a followed journal waits in the inbox as an envelope
-            // does, so a follower that cannot keep up stops the reader at the bound.
-            let waiting = inbox
-                .queue
-                .iter()
-                .filter(|input| matches!(input, Input::Envelope { .. } | Input::Followed(_)))
-                .count();
-            if waiting >= self.sessions.max_inbox as usize {
-                return Err((input, Full::Inbox));
+            return match slot::admit(stopping, Some(inbox.door), live, max_live, max_inbox) {
+                Ok(door) => {
+                    inbox.admitted(door, input);
+                    Ok(Arc::clone(slot))
+                }
+                Err(full) => Err((input, full)),
+            };
+        }
+        match slot::admit(stopping, None, live, max_live, max_inbox) {
+            Ok(door) => {
+                let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
+                lock(&slot.inbox).admitted(door, input);
+                table.insert(key.to_string(), Arc::clone(&slot));
+                Ok(slot)
             }
-            inbox.queue.push_back(input);
-            return Ok(Arc::clone(slot));
+            Err(full) => Err((input, full)),
         }
-        if table.len() >= self.sessions.max_live as usize {
-            return Err((input, Full::Live));
-        }
-        let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
-        lock(&slot.inbox).queue.push_back(input);
-        table.insert(key.to_string(), Arc::clone(&slot));
-        Ok(slot)
     }
 
     /// Save and drop the session that has gone longest without an event and
@@ -1733,7 +1762,7 @@ where
     /// Whether `session` holds nothing a later call acts on: its inbox is
     /// empty and its endpoint is quiet ([`Endpoint::is_quiet`]).
     fn is_quiet(&self, slot: &Slot<F::Machine, T, E>, session: &Live<F::Machine, T, E>) -> bool {
-        lock(&slot.inbox).queue.is_empty() && lock(&session.endpoint).is_quiet()
+        lock(&slot.inbox).is_empty() && lock(&session.endpoint).is_quiet()
     }
 
     /// Tell what became of `input`, an envelope for `key` that no session
@@ -1787,7 +1816,7 @@ where
         }
         let table = lock(&self.table);
         for slot in table.values() {
-            lock(&slot.inbox).queue.push_back(input());
+            lock(&slot.inbox).tell(input());
         }
         table.keys().cloned().collect()
     }
@@ -1833,7 +1862,7 @@ where
         let mut keys = Vec::new();
         for sender in senders {
             if let Some(slot) = table.get(&sender) {
-                lock(&slot.inbox).queue.push_back(Input::Notes);
+                lock(&slot.inbox).tell(Input::Notes);
                 keys.push(sender);
             }
         }
@@ -1860,7 +1889,7 @@ where
             let waiting: Vec<String> = self
                 .slots()
                 .into_iter()
-                .filter(|slot| !lock(&slot.inbox).queue.is_empty())
+                .filter(|slot| !lock(&slot.inbox).is_empty())
                 .map(|slot| slot.key.clone())
                 .collect();
             if waiting.is_empty() || Instant::now() >= deadline {
@@ -1935,16 +1964,11 @@ where
     /// now or before.
     fn retire_if_idle(&self, slot: &SharedSlot<F::Machine, T, E>) -> bool {
         let mut table = lock(&self.table);
-        let mut inbox = lock(&slot.inbox);
-        if inbox.closed {
-            return true;
+        let retired = lock(&slot.inbox).retire();
+        if retired {
+            remove_slot(&mut table, slot);
         }
-        if !inbox.queue.is_empty() {
-            return false;
-        }
-        inbox.closed = true;
-        remove_slot(&mut table, slot);
-        true
+        retired
     }
 
     /// Take `slot`'s key's lease and build its session: restored from the
@@ -1976,10 +2000,7 @@ where
             }
         };
         lock(&self.deferred).remove(&slot.indexed);
-        *lock(&slot.lease) = LeaseState::Held {
-            fence: lease.fence,
-            renewed_ms: now,
-        };
+        lock(&slot.lease).granted(lease.fence, now);
         let built = self.build(key, now);
         match built {
             Ok(_) => self.metrics().count(Counter::Loads, 1),
@@ -2267,10 +2288,10 @@ where
     fn serve(&self, slot: &Slot<F::Machine, T, E>, session: &mut Live<F::Machine, T, E>) -> Served {
         let key = slot.key.as_str();
         loop {
-            if matches!(*lock(&slot.lease), LeaseState::Lost) {
+            if lock(&slot.lease).is_lost() {
                 return Served::Lost("its lease was not renewed".to_string());
             }
-            let next = lock(&slot.inbox).queue.pop_front();
+            let next = lock(&slot.inbox).take();
             let Some(input) = next else {
                 break;
             };
@@ -2576,7 +2597,7 @@ where
                 Ok(false)
             }
             Err(WriteError::Conflict(conflict)) => {
-                *lock(&slot.lease) = LeaseState::Lost;
+                lock(&slot.lease).lose();
                 let reason = alloc::format!("its save was refused: {conflict}");
                 self.error(PoolError::LeaseLost {
                     key: key.to_string(),
@@ -2735,7 +2756,7 @@ where
             self.metrics().adjust(Gauge::LiveSessions, -1);
             self.let_go(&mut dropped);
         }
-        *lock(&slot.lease) = LeaseState::Unheld;
+        lock(&slot.lease).forget();
         self.forget_session(&slot.key);
         self.abandon(slot, &Refusal::unavailable(reason));
     }
@@ -2770,8 +2791,7 @@ where
 
     /// Give up `slot`'s lease, if this process holds it.
     fn release(&self, slot: &Slot<F::Machine, T, E>) {
-        let state = core::mem::replace(&mut *lock(&slot.lease), LeaseState::Unheld);
-        let LeaseState::Held { fence, .. } = state else {
+        let Some(fence) = lock(&slot.lease).give_up() else {
             return;
         };
         match self.store.release(&slot.key, fence) {
@@ -2790,10 +2810,9 @@ where
     fn abandon(&self, slot: &SharedSlot<F::Machine, T, E>, refusal: &Refusal) {
         let held = {
             let mut table = lock(&self.table);
-            let mut inbox = lock(&slot.inbox);
-            inbox.closed = true;
+            let held = lock(&slot.inbox).close();
             remove_slot(&mut table, slot);
-            core::mem::take(&mut inbox.queue)
+            held
         };
         for input in held {
             let (peer, bytes, receipt) = match input {
@@ -2977,10 +2996,7 @@ fn sessions_with_host_starts<M: SessionMachine>(machine: &M, wall_now_ms: u64) -
 
 /// The fence of the lease `slot` holds, if it holds one.
 fn fence_of<M, T, E>(slot: &Slot<M, T, E>) -> Option<u64> {
-    match *lock(&slot.lease) {
-        LeaseState::Held { fence, .. } => Some(fence),
-        LeaseState::Unheld | LeaseState::Lost => None,
-    }
+    lock(&slot.lease).fence()
 }
 
 /// Take `slot` out of `table`, if it is still the session the table holds for

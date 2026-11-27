@@ -29,7 +29,8 @@
               "backends/rust/mesh/src/https/**", "backends/rust/mesh/src/outbound.rs",
               "backends/rust/mesh/src/outbound/**", "backends/rust/runtime/src/inbox.rs",
               "backends/rust/runtime/src/inbox/**", "backends/rust/session-store/src/rules.rs",
-              "backends/rust/session-store/src/rules/**"],
+              "backends/rust/session-store/src/rules/**", "backends/rust/mesh/src/pool.rs",
+              "backends/rust/mesh/src/pool/**"],
     # Not timed yet: git reads each commit of the push and its parent's
     # manifests, a second or two for the pushes this repository makes; the
     # generator it runs is `codegen-build`'s cost. Its first run reads it

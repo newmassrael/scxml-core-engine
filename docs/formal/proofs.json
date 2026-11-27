@@ -341,6 +341,99 @@
           "to": "    true\n}"
         }
       ]
+    },
+    {
+      "file": "backends/rust/mesh/src/pool/slot.rs",
+      "compiled_by": "backends/rust/mesh/src/pool.rs",
+      "decision": "docs/adr/0115",
+      "verified": 32,
+      "mutants": [
+        {
+          "breaks": "a stopping pool admits an envelope",
+          "from": "    if stopping {\n        return Err(Full::Stopping);",
+          "to": "    if false {\n        return Err(Full::Stopping);"
+        },
+        {
+          "breaks": "a new session is made while the table holds max_live, past its bound",
+          "from": "if live >= max_live as usize {",
+          "to": "if live > max_live as usize {"
+        },
+        {
+          "breaks": "an inbox takes an envelope while max_inbox wait in it, past its bound",
+          "from": "if self.envelopes >= max_inbox as usize {",
+          "to": "if self.envelopes > max_inbox as usize {"
+        },
+        {
+          "breaks": "an envelope taken is not counted, so an inbox takes envelopes past its bound",
+          "from": "        self.envelopes += 1;\n",
+          "to": ""
+        },
+        {
+          "breaks": "an input the pool makes is not counted, so an inbox that holds it reads as empty and its session leaves the table with it",
+          "from": "    pub(crate) fn tell(&mut self) {\n        self.held += 1;\n",
+          "to": "    pub(crate) fn tell(&mut self) {\n"
+        },
+        {
+          "breaks": "an input taken stays counted, so its session never leaves the table by itself",
+          "from": "        self.held -= 1;\n",
+          "to": ""
+        },
+        {
+          "breaks": "a session leaves the table holding an input, which is then neither applied nor answered",
+          "from": "        if self.held > 0 {\n            return false;\n        }",
+          "to": "        if false {\n            return false;\n        }"
+        },
+        {
+          "breaks": "a session that left the table keeps its inbox open, so a post reaches an inbox nobody drains",
+          "from": "        self.closed = true;\n        true\n",
+          "to": "        true\n"
+        },
+        {
+          "breaks": "an abandoned session answers none of what its inbox held",
+          "from": "let given = self.held;",
+          "to": "let given = 0;"
+        },
+        {
+          "breaks": "an abandoned session's inbox still counts what it gave back, so those inputs are answered and held at once",
+          "from": "        self.held = 0;\n",
+          "to": ""
+        },
+        {
+          "breaks": "a table at max_live reads as having room for one more",
+          "from": "    if live >= most {\n        return 0;\n    }",
+          "to": "    if live >= most {\n        return 1;\n    }"
+        },
+        {
+          "breaks": "the moment a renewal comes due wraps past the last there is, so a lease is renewed at every call",
+          "from": "if renewed_ms > u64::MAX - every_ms {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a renewal comes due before its period passed",
+          "from": "if now_ms >= renewal_moment(renewed_ms, every_ms) {",
+          "to": "if now_ms >= renewed_ms {"
+        },
+        {
+          "breaks": "a renewal does not move the moment the lease comes due from, so the pool wakes for it again at once",
+          "from": "                fence,\n                renewed_ms: now_ms,\n",
+          "to": "                fence,\n                renewed_ms: 0,\n"
+        },
+        {
+          "breaks": "a lease the store refused stays held, so the session writes under a fence another process replaced",
+          "from": "self.state = Tenure::Lost;",
+          "to": "self.state = Tenure::Unheld;"
+        },
+        {
+          "breaks": "a lost lease is served on, so inputs are applied that no write can keep",
+          "from": "matches!(self.state, Tenure::Lost)",
+          "to": "false"
+        },
+        {
+          "breaks": "a release gives up nothing, so the key stays leased to a process that no longer serves it",
+          "from": "let given = self.fence();",
+          "to": "let given = None;"
+        }
+      ]
     }
   ]
 }
