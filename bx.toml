@@ -432,7 +432,7 @@ install_inputs = ["sce-build/src/formal/toolchain.json", "sce-build/src/formal/t
 needed_by = ["formal-proofs"]
 
 # APALACHE, the symbolic checker of level 3 (`scripts/gates/formal-models.sh`: the inductive invariants
-# of a models manifest, docs/adr/0115 D3), at the release sce-build/src/formal/toolchain.json pins by
+# of a models manifest, docs/adr/0115 D3; `scripts/gates/formal-traces.sh` gives TLC its module), at the release sce-build/src/formal/toolchain.json pins by
 # digest (docs/adr/0146, D3; approved by the owner on 2026-11-27); `sce-codegen formal install` is the
 # one place it is installed from, admitting the archive by that digest and taking the standard module
 # `Apalache` out of its jar into `modules/`, where TLC reads it for a model that extends it. `bin/apalache`
@@ -446,7 +446,7 @@ check = "apalache {version}"
 prefix_link = "~/.local/apalache/{version}"
 install = "cargo run --quiet --bin sce-codegen --features cli -p sce-build -- formal install --tool apalache --apalache-place {prefix}"
 install_inputs = ["sce-build/src/formal/toolchain.json", "sce-build/src/formal/toolchain.rs"]
-needed_by = ["formal-models"]
+needed_by = ["formal-models", "formal-traces"]
 
 # THE RUST RELEASE VERUS RUNS ON, the one it was built with: no package's and not this tree's, read
 # from the same pins, so a move of Verus moves it with it. Verus reads its compiler libraries and

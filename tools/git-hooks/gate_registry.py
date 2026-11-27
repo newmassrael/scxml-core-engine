@@ -471,7 +471,10 @@ COST_MEASURED: dict[str, str] = {
 # 36 -> 37 the same day, the same direction: `release` arrived when the release
 # pipeline's work moved into a gate in the host image, and declares its
 # workflow's median until a run of the gate is timed.
-UNMEASURED_COST_CEILING = 37
+# 37 -> 38 the same day, the same direction: `formal-traces` arrived as the
+# first gate of the recorded runs (docs/adr/0115, D4 and D8), with a cost its
+# entry estimates. Its first run reads it.
+UNMEASURED_COST_CEILING = 38
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
