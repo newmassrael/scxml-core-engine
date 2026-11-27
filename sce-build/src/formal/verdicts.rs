@@ -886,6 +886,9 @@ fn not_answered(what: &str, status: i32, output: &str) -> String {
 mod tests {
     use super::*;
 
+    /// One change of a valid record the schema must refuse, by what it breaks.
+    type Mutation = (&'static str, fn(&mut serde_json::Value));
+
     fn schema() -> serde_json::Value {
         serde_json::from_str(include_str!(
             "../../../schemas/sce-formal-verdicts.v1.schema.json"
@@ -1029,7 +1032,7 @@ mod tests {
             validator.validate(&valid).is_ok(),
             "the control record must be valid, or a refusal below shows nothing"
         );
-        let cases: [(&str, fn(&mut serde_json::Value)); 6] = [
+        let cases: [Mutation; 6] = [
             ("a record without the generator stamp", |record| {
                 record
                     .as_object_mut()
