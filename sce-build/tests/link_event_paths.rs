@@ -282,8 +282,11 @@ fn c11_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
     let body =
         generate(OUTBOUND_THROUGH_POOL, Language::C11).expect("c11 link with a transmit pool");
     assert_has(&body, "#include \"scout_tx_pool.h\"");
-    assert_has(&body, "slot = scout_tx_pool_pool_acquire_for_encode();");
+    assert_has(
+        &body,
+        "slot = scout_tx_pool_pool_acquire_for_encode(scout_tx_pool_slot_len(), 0u);",
+    );
     assert_has(&body, "result.pool_exhausted = true;");
-    assert_has(&body, "SCOUT_TX_POOL_SLOT_SIZE, &length);");
+    assert_has(&body, "scout_tx_pool_slot_capacity(&slot), &length);");
     assert_has(&body, "(void)scout_tx_pool_pool_return(&slot);");
 }
