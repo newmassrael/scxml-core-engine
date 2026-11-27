@@ -16,13 +16,14 @@
 # repository fails here first (D6). The judge's own checks are its unit tests,
 # which the Rust lanes run.
 #
-# Runs in the host image, which carries the JDK. The pinned TLC and Apalache are
-# fetched by `sce-codegen formal install` below and admitted by their digests, or
-# found in the image's home; the judge itself never fetches. Apalache checks the
-# inductive invariants a manifest states (docs/adr/0115, D3), and gives TLC the
-# standard module `Apalache` a model extends. Without Java, TLC or Apalache the
-# judge exits 15 (`formal/tool-unavailable`), which is "could not run" and no
-# verdict about the models.
+# Runs in the host image. The pinned Java runtime, TLC and Apalache are fetched
+# by `sce-codegen formal install` below and admitted by their digests, or found
+# in the image's home; the judge itself never fetches, and never runs the JDK the
+# image carries for the Kotlin lanes (Apalache is built for Java 21). Apalache
+# checks the inductive invariants a manifest states (docs/adr/0115, D3), and
+# gives TLC the standard module `Apalache` a model extends. Without the pinned
+# runtime, TLC or Apalache the judge exits 15 (`formal/tool-unavailable`), which
+# is "could not run" and no verdict about the models.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -41,7 +42,7 @@ if [[ -n "${SCE_FORMAL_MODELS_SHARD:-}" ]]; then
     [[ "$SCE_FORMAL_MODELS_SHARD" == 1/* ]] || CONSUMER=0
 fi
 
-for tool in tlc apalache; do
+for tool in java tlc apalache; do
     install=0
     target/debug/sce-codegen formal install --tool "$tool" || install=$?
     case "$install" in
@@ -63,7 +64,7 @@ judge() {
     target/debug/sce-codegen formal models --workers "$WORKERS" --manifest "$@" || status=$?
     case "$status" in
         0) ;;
-        15) sce_gate_cannot_run "no Java, or not the pinned TLC or Apalache: sce-codegen formal install" ;;
+        15) sce_gate_cannot_run "not the pinned Java runtime, TLC or Apalache: sce-codegen formal install" ;;
         *) sce_gate_fail "a model is not as $1 declares it" ;;
     esac
 }

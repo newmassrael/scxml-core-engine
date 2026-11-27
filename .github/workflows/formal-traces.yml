@@ -7,17 +7,18 @@ name: Formal Traces
 #
 # ## Why a lane of its own
 #
-# It needs Java, the pinned TLC and the pinned Apalache's standard module
-# (docs/adr/0115, D3), which only the formal lanes carry. The gate runs in the
-# host image (tools/ci-images/host, docs/adr/0145), which carries the JDK and
-# what the generator builds with; the gate fetches the pinned tools there with
+# It needs the pinned Java runtime, the pinned TLC and the pinned Apalache's
+# standard module (docs/adr/0115, D3), which only the formal lanes carry. The
+# gate runs in the host image (tools/ci-images/host, docs/adr/0145), which
+# carries what the generator builds with (its JDK is the Kotlin lanes', and no
+# formal judge runs on it); the gate fetches the pinned tools there with
 # `sce-codegen formal install` and admits them by the digests
 # sce-build/src/formal/toolchain.json pins, into the image's home, which is
 # cached under a key made of that file.
 #
 # ## Why `ci_only` in the registry
 #
-# The push set's machine need not carry Java or the pinned TLC.
+# The push set's machine need not carry the pinned Java runtime or TLC.
 
 on:
   push:
@@ -78,13 +79,15 @@ jobs:
         uses: ./.github/actions/gate-image
 
       # The image's home (`gate_in_container` in scripts/gate), where the gate's
-      # `sce-codegen formal install` keeps the TLC and the Apalache it admitted.
-      - name: Restore TLC and Apalache
+      # `sce-codegen formal install` keeps the Java runtime, the TLC and the
+      # Apalache it admitted.
+      - name: Restore the Java runtime, TLC and Apalache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/.cache/sce-gate-containers/formal-traces/home/.cache/sce-formal
             ~/.cache/sce-gate-containers/formal-traces/home/.local/apalache
+            ~/.cache/sce-gate-containers/formal-traces/home/.local/jre
           key: tlc-apalache-${{ hashFiles('sce-build/src/formal/toolchain.json') }}
 
       - name: Formal traces gate

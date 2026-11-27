@@ -15,11 +15,12 @@
 # by the lane that records it (the Rust lane's
 # `a_run_is_a_behaviour_of_its_model`).
 #
-# Runs in the host image, which carries the JDK. The pinned TLC is fetched by
-# `sce-codegen formal install` below and admitted by its digest, or found in the
-# image's home; so is the pinned Apalache, whose standard module `Apalache` TLC
-# is given for a model beside the traces that extends it. The judge itself never
-# fetches. Without Java or a pinned tool the judge exits 15
+# Runs in the host image. The pinned Java runtime and TLC are fetched by
+# `sce-codegen formal install` below and admitted by their digests, or found in
+# the image's home; so is the pinned Apalache, whose standard module `Apalache`
+# TLC is given for a model beside the traces that extends it. The judge itself
+# never fetches, and never runs the JDK the image carries for the Kotlin lanes.
+# Without a pinned tool or its runtime the judge exits 15
 # (`formal/tool-unavailable`), which is "could not run" and no verdict about
 # the runs.
 
@@ -27,7 +28,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # `target/debug/sce-codegen` is built by `codegen-build`, which the registry
 # names as this gate's dependency.
-for tool in tlc apalache; do
+for tool in java tlc apalache; do
     install=0
     target/debug/sce-codegen formal install --tool "$tool" || install=$?
     case "$install" in
@@ -46,6 +47,6 @@ target/debug/sce-codegen formal traces --workers "$(sce_build_jobs)" \
     --manifest docs/formal/traces.json || status=$?
 case "$status" in
     0) ;;
-    15) sce_gate_cannot_run "no Java, or not the pinned TLC or Apalache: sce-codegen formal install" ;;
+    15) sce_gate_cannot_run "not the pinned Java runtime, TLC or Apalache: sce-codegen formal install" ;;
     *) sce_gate_fail "a recorded run is not as docs/formal/traces.json declares it" ;;
 esac

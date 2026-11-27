@@ -436,8 +436,10 @@ needed_by = ["formal-proofs"]
 # digest (docs/adr/0146, D3; approved by the owner on 2026-11-27); `sce-codegen formal install` is the
 # one place it is installed from, admitting the archive by that digest and taking the standard module
 # `Apalache` out of its jar into `modules/`, where TLC reads it for a model that extends it. `bin/apalache`
-# under the entry runs the release's own launcher on the machine's `java`, which `needs` names (the
-# release runs on Java 17 or later); it answers `--version` by itself, so `check` starts no JVM.
+# under the entry runs the release's own launcher; it answers `--version` by itself, so `check` starts no JVM.
+# The JVM it and TLC run on is not the machine's `java` (the one `needs` names is the Kotlin lanes'): the
+# release is built for Java 21, and the Java runtime the same file pins is installed with it, at
+# `~/.local/jre/<version>`, and the judge runs that one alone.
 [platform.linux.tools.apalache]
 version_file = "sce-build/src/formal/toolchain.json"
 version_pattern = '^  "apalache": \{"version": "([0-9.]+)"'
