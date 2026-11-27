@@ -36,6 +36,16 @@
 //! (docs/adr/0109, D15): their sessions then run beside each other, and their checkpoints share
 //! the pool's commits, while no `200` goes out before the commit that holds its envelopes.
 //!
+//! An instance of an open machine (docs/adr/0113), which no deployment lists, posts under the
+//! pair `<machine>/<instance>` ([`Listening::admits`]), and its membership is judged before
+//! anything of its exchange is taken in ([`HttpsServer::keep_members`]): a join (no `If-Match`)
+//! is offered an incarnation as its `ETag`, the same one again for a join repeated with its
+//! nonce, and takes nothing in; an exchange that names an incarnation the store holds is taken in
+//! under it and handed to the host with that judgement ([`ServerHost::deliver_member`]); one
+//! that names an incarnation the store does not hold, or that its session found fenced as it
+//! ran, is answered `412`, signed as a `200` is; and one whose offer would put the members past
+//! `max_instances` is shed `503`, none that stands put out for it.
+//!
 //! The server reports what it does through the metrics port its program gives it
 //! (docs/adr/0109, D16; [`HttpsServer::observed`]): each exchange by the status it was answered,
 //! the exchanges it holds open, each exchange it shed and each connection it closed at accept by
@@ -74,19 +84,24 @@ use super::freshness::{Freshness, FRESH_HEADER, USE_FRESH};
 use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
 pub use super::signature::ResponseSigner;
 use super::signature::{
-    content_digest, digest_matches, key_of_offer, target_uri, Answered, RequestSignature,
+    content_digest, digest_matches, key_of_offer, target_uri, Answered, Field, RequestSignature,
     CONTENT_DIGEST_HEADER, DEFAULT_MAX_SKEW_MS, KEY_HEADER, KEY_SCHEME, NONCE_HEADER,
 };
 use super::{
-    decode_install_secret, draw_epoch, install_digest, is_epoch, is_path_segment, split_sequence,
-    LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER,
-    IF_MATCH_HEADER, INSTALL_SCHEME, PATH_ROOT, VERSION,
+    decode_install_secret, draw_epoch, entity_tag, incarnation_of, install_digest, is_epoch,
+    is_path_segment, split_sequence, LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE,
+    EPOCH_HEADER, ETAG_HEADER, FIRST_HEADER, HOLD_HEADER, IF_MATCH_HEADER, INSTALL_SCHEME,
+    PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
 use crate::health::Health;
 use crate::outbox::{Outboxes, Wake};
-use crate::peers::{EdgeRate, EdgeRates, HttpsAuthenticator, Machine, PeerLink};
+use crate::peers::{
+    instance_of, EdgeRate, EdgeRates, HttpsAuthenticator, Machine, Members, PeerLink,
+};
+use crate::router::Standing;
 use sce_rust_crypto::equal::same_secret;
+use sce_rust_session_store::{MembershipStore, Terms};
 
 // The credentials an authenticator reads (ADR 0109, D3): the pin store of `install`, its memory
 // implementation, and the reference check of `bearer` over a credential store. The store contract
@@ -211,6 +226,9 @@ pub struct Listening {
     pub sign: Option<&'static str>,
     /// The peers accepted on the address: the names a server built for it binds.
     pub peers: Vec<&'static str>,
+    /// The open machines accepted on the address (docs/adr/0113, D7), each with the terms its
+    /// members are held to: an instance of one is bound by its pair, which no list names.
+    pub open: Vec<(&'static str, Members)>,
 }
 
 impl Listening {
@@ -220,7 +238,13 @@ impl Listening {
     /// rule.
     pub fn on(machine: &Machine, listen: &str) -> Option<Listening> {
         let mut found: Option<Listening> = None;
-        for peer in machine.peers {
+        let accepted = machine.peers.iter().map(|peer| (peer, None)).chain(
+            machine
+                .open_peers
+                .iter()
+                .map(|open| (&open.peer, Some(open.members))),
+        );
+        for (peer, members) in accepted {
             let PeerLink::HttpsAccept {
                 listen: at,
                 authenticator,
@@ -292,17 +316,35 @@ impl Listening {
                     .trusted_proxies
                     .retain(|block| declared.trusted_proxies.contains(block));
                 settings.max_skew = settings.max_skew.min(declared.max_skew);
-                held.peers.push(peer.name);
+                match members {
+                    Some(members) => held.open.push((peer.name, members)),
+                    None => held.peers.push(peer.name),
+                }
             } else {
+                let (peers, open) = match members {
+                    Some(members) => (Vec::new(), alloc::vec![(peer.name, members)]),
+                    None => (alloc::vec![peer.name], Vec::new()),
+                };
                 found = Some(Listening {
                     settings: declared,
                     authenticator,
                     sign,
-                    peers: alloc::vec![peer.name],
+                    peers,
+                    open,
                 });
             }
         }
         found
+    }
+
+    /// Whether a client posting under `name` is one the address binds (docs/adr/0113, D7): a peer
+    /// it lists, or an instance of an open machine it accepts, named by the pair
+    /// `<machine>/<instance>`. A server built for the address takes this as its `is_bound`, so a
+    /// program writes no predicate to widen.
+    pub fn admits(&self, name: &str) -> bool {
+        self.peers.iter().any(|peer| *peer == name)
+            || instance_of(name)
+                .is_some_and(|(machine, _)| self.open.iter().any(|(open, _)| *open == machine))
     }
 }
 
@@ -426,6 +468,25 @@ pub enum Durability {
     /// client carries the envelopes again, the section 10.5 window drops what was taken in, and a
     /// later exchange is answered once a checkpoint holds them.
     NotDurable,
+    /// Not taken in: the exchange of an instance of an open machine was made under an incarnation
+    /// of its membership the store no longer holds, its member standing under `current`
+    /// (docs/adr/0113, D4 and D5), as its session found when it ran the envelopes
+    /// (`crate::pool::Fate::Fenced`). The exchange is answered `412`.
+    Fenced { current: u64 },
+}
+
+/// How the edge admitted the exchange of an instance of an open machine (docs/adr/0113, D4 and
+/// D5), which the host hands its pool with each envelope the exchange carried
+/// (`Pool::receive_member`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Judgement {
+    /// The incarnation of the instance's membership the exchange was made under.
+    pub incarnation: u64,
+    /// What the store holds of the member now: that incarnation, and its low-water mark.
+    pub standing: Standing,
+    /// Whether the exchange confirmed an offer, ending the incarnation before it: the host tells
+    /// the sessions that hold the instance (`Pool::stand`), which drop its records.
+    pub confirmed: bool,
 }
 
 /// What the server asks of its host (§mesh-22.8): tell the endpoint what the binding observed,
@@ -445,6 +506,18 @@ pub trait ServerHost: Send + Sync + 'static {
     /// when a `200` may acknowledge the envelopes among them ([`Durability`]). The server reads
     /// the answer only for an exchange that carried envelopes: a poll waits for no checkpoint.
     fn deliver(&self, events: Vec<LinkEvent>) -> Durability;
+
+    /// [`Self::deliver`] for an exchange of an instance of an open machine (docs/adr/0113, D4
+    /// and D5), which its edge admitted as `judged` says: the host hands each envelope to its pool
+    /// with the judgement (`Pool::receive_member`), tells the pool the member's standing when the
+    /// exchange confirmed an offer (`Pool::stand`), and answers [`Durability::Fenced`] when a
+    /// session found an envelope fenced. Called for an exchange that carried envelopes or
+    /// confirmed an offer. A host that serves no open machine is never asked, and by default
+    /// takes nothing in: the exchange is shed.
+    fn deliver_member(&self, events: Vec<LinkEvent>, judged: Judgement) -> Durability {
+        let _ = (events, judged);
+        Durability::NotDurable
+    }
 }
 
 impl<F: Fn(Vec<LinkEvent>) + Send + Sync + 'static> ServerHost for F {
@@ -680,6 +753,17 @@ struct Shared {
     stopped: Notify,
     /// What the server reports to (docs/adr/0109, D16).
     metrics: Arc<dyn Metrics>,
+    /// The members of the open machines the server binds the instances of
+    /// ([`HttpsServer::keep_members`]).
+    members: OnceLock<OpenMembers>,
+}
+
+/// The members of the open machines a server binds the instances of (docs/adr/0113, D4): the
+/// store that keeps them, which its pool keeps its sessions in, and the terms each machine's
+/// members are held to.
+struct OpenMembers {
+    store: Arc<dyn MembershipStore>,
+    terms: HashMap<String, Terms>,
 }
 
 impl Shared {
@@ -878,6 +962,7 @@ impl HttpsServer {
                 stopping: AtomicBool::new(false),
                 stopped: Notify::new(),
                 metrics,
+                members: OnceLock::new(),
             }),
         })
     }
@@ -933,6 +1018,20 @@ impl HttpsServer {
         {
             outboxes.watch(wake);
         }
+    }
+
+    /// Bind the instances of the open machines `machine` is bound to (docs/adr/0113, D4) by their
+    /// memberships in `store`, the store its pool keeps its sessions in (`Pool::with_members`):
+    /// a join is offered an incarnation (`ETag`), an exchange that names one (`If-Match`) is
+    /// admitted under it or fenced (`412`), and one past the machine's `max_instances` is shed.
+    /// Given once, before the server serves; a second call is ignored.
+    pub fn keep_members(&self, store: Arc<dyn MembershipStore>, machine: &Machine) {
+        let terms = machine
+            .open_peers
+            .iter()
+            .map(|open| (open.peer.name.to_string(), open.members.terms()))
+            .collect();
+        let _ = self.shared.members.set(OpenMembers { store, terms });
     }
 
     /// Stop the server in order (docs/adr/0109, D10): accept no connection more, answer every
@@ -1216,6 +1315,19 @@ async fn tell(shared: &Arc<Shared>, events: Vec<LinkEvent>) -> Durability {
         .unwrap_or(Durability::NotDurable)
 }
 
+/// [`tell`] for an exchange of an instance of an open machine admitted as `judged` says
+/// ([`ServerHost::deliver_member`]).
+async fn tell_member(
+    shared: &Arc<Shared>,
+    events: Vec<LinkEvent>,
+    judged: Judgement,
+) -> Durability {
+    let host = Arc::clone(&shared.host);
+    tokio::task::spawn_blocking(move || host.deliver_member(events, judged))
+        .await
+        .unwrap_or(Durability::NotDurable)
+}
+
 /// Wait until the host reported durable a checkpoint above `sealed`, at most `bound`. Whether it
 /// did.
 async fn durable_past(shared: &Shared, sealed: u64, bound: Duration) -> bool {
@@ -1297,6 +1409,7 @@ fn status_code(status: ResponseStatus) -> StatusCode {
         ResponseStatus::NotFound => StatusCode::NOT_FOUND,
         ResponseStatus::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
         ResponseStatus::RequestTimeout => StatusCode::REQUEST_TIMEOUT,
+        ResponseStatus::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
         ResponseStatus::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
         ResponseStatus::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
         ResponseStatus::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
@@ -1373,12 +1486,98 @@ fn stale(settings: &ServerSettings, present: &str, answered: Option<&Answered>) 
 }
 
 /// The client name a path posts under, when it is `<base>/sce-mesh/<version>/<name>` with the
-/// version this server speaks; `None` is a `404`. The path is the only place the server learns
-/// the client's name from (§mesh-22.1).
+/// version this server speaks, or `<base>/sce-mesh/<version>/<machine>/<instance>` for an
+/// instance of an open machine (docs/adr/0113, D2), named by the pair; `None` is a `404`. The
+/// path is the only place the server learns the client's name from (§mesh-22.1).
 fn client_of<'a>(base_path: &str, path: &'a str) -> Option<&'a str> {
     let rest = path.strip_prefix(base_path)?.strip_prefix(PATH_ROOT)?;
     let (version, name) = rest.split_once('/')?;
-    (version == VERSION && is_path_segment(name)).then_some(name)
+    (version == VERSION && (is_path_segment(name) || instance_of(name).is_some())).then_some(name)
+}
+
+/// What the exchange of an instance of an open machine asks of its membership (docs/adr/0113,
+/// D4), read through the signed table ([`Field::read`]).
+enum Asked {
+    /// A join: no incarnation named, and the nonce its offer is kept for.
+    Join { nonce: String },
+    /// An exchange made under `incarnation`, carrying the low-water mark `mark`.
+    Under { incarnation: u64, mark: u64 },
+}
+
+/// What the request of `name` asks of a membership: `Ok(None)` for a name that is no instance of
+/// an open machine, and `Err` (a `400`) for an incarnation that is not a strong entity tag, a
+/// mark absent or not a number, or a join without a nonce.
+fn asked(request: &Request<Incoming>, name: &str) -> Result<Option<Asked>, ()> {
+    if instance_of(name).is_none() {
+        return Ok(None);
+    }
+    let field = |header: &str| header_field(request, header);
+    let Some(tag) = Field::IfMatch.read(&field) else {
+        let nonce = Field::Nonce.read(&field).ok_or(())?;
+        return Ok(Some(Asked::Join { nonce }));
+    };
+    let incarnation = incarnation_of(&tag).ok_or(())?;
+    let mark = Field::Mark
+        .read(&field)
+        .and_then(|mark| mark.trim().parse().ok())
+        .ok_or(())?;
+    Ok(Some(Asked::Under { incarnation, mark }))
+}
+
+/// `fields` with, under `sign:` and for a request that carries a nonce, the `Content-Digest` of
+/// an empty body and the signature of an answer of `status` that carries them, answering
+/// `answered` (SCE_MESH.md section 22.9; docs/adr/0113, D4).
+fn signed_empty(
+    shared: &Shared,
+    status: u16,
+    fields: Vec<(String, String)>,
+    answered: Option<&Answered>,
+) -> Vec<(String, String)> {
+    let (Some(signer), Some(answered)) = (&shared.settings.signer, answered) else {
+        return fields;
+    };
+    let mut signed = alloc::vec![(CONTENT_DIGEST_HEADER.to_string(), content_digest(&[]))];
+    signed.extend(fields);
+    if let Some(signature) = signer.sign_answer(status, &signed, answered) {
+        signed.extend(signature);
+    }
+    signed
+}
+
+/// An answer of `status` with an empty body and `fields`.
+fn answer_with(status: ResponseStatus, fields: Vec<(String, String)>) -> Answer {
+    let mut answered = answer(status);
+    for (name, value) in fields {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(&value),
+        ) {
+            answered.response.headers_mut().insert(name, value);
+        }
+    }
+    answered
+}
+
+/// The answer to a join (docs/adr/0113, D4): a `200` that takes nothing in and offers
+/// `incarnation` as its `ETag`, signed under `sign:` over the offer and the join it answers, so
+/// an instance takes an offer only as the answer to the join it waits on.
+fn offered(shared: &Shared, incarnation: u64, answered: Option<&Answered>) -> Answer {
+    let fields = alloc::vec![(ETAG_HEADER.to_string(), entity_tag(incarnation))];
+    answer_with(
+        ResponseStatus::Ok,
+        signed_empty(shared, 200, fields, answered),
+    )
+}
+
+/// The fence (docs/adr/0113, D4; RFC 9110 section 15.5.13): `412`, the exchange made under an
+/// incarnation the store does not hold having taken nothing in, signed under `sign:` over its
+/// status and the request it answers, that request's incarnation included, so that no
+/// intermediary ends what an instance waits on.
+fn fenced(shared: &Shared, answered: Option<&Answered>) -> Answer {
+    answer_with(
+        ResponseStatus::PreconditionFailed,
+        signed_empty(shared, 412, Vec::new(), answered),
+    )
 }
 
 /// A request header read as a number: absent is 0, anything but digits is `None` (a `400`, as
@@ -1709,6 +1908,9 @@ async fn exchange(
     ) else {
         return answer(ResponseStatus::BadRequest);
     };
+    let Ok(asked) = asked(&request, &name) else {
+        return answer(ResponseStatus::BadRequest);
+    };
     let declared = request
         .headers()
         .get(CONTENT_LENGTH)
@@ -1813,6 +2015,87 @@ async fn exchange(
         }
     }
 
+    // docs/adr/0113, D4: the membership of an instance of an open machine is judged before anything
+    // of its exchange is taken in, its acknowledgement included: a join is offered an incarnation
+    // and takes nothing in; an exchange under an incarnation the store does not hold is fenced;
+    // one whose offer finds as many members as the bound allows is shed, and none is put out.
+    let judged = match asked {
+        None => None,
+        Some(asked) => {
+            let Some(members) = shared.members.get() else {
+                return shared.shed(
+                    ServerShed::Store,
+                    ResponseStatus::ServiceUnavailable,
+                    settings.retry_after,
+                );
+            };
+            let Some(terms) = instance_of(&name)
+                .and_then(|(machine, _)| members.terms.get(machine))
+                .copied()
+            else {
+                return answer(ResponseStatus::NotFound);
+            };
+            let store = Arc::clone(&members.store);
+            let member = name.clone();
+            let now = unix_millis();
+            match asked {
+                Asked::Join { nonce } => {
+                    if !body.is_empty() {
+                        return answer(ResponseStatus::BadRequest);
+                    }
+                    let offer = tokio::task::spawn_blocking(move || {
+                        store.offer(&member, &nonce, terms.provisional_ms, now)
+                    })
+                    .await;
+                    return match offer {
+                        Ok(Ok(offer)) => offered(&shared, offer.incarnation, answered.as_ref()),
+                        _ => shared.shed(
+                            ServerShed::Store,
+                            ResponseStatus::ServiceUnavailable,
+                            settings.retry_after,
+                        ),
+                    };
+                }
+                Asked::Under { incarnation, mark } => {
+                    let admitted = tokio::task::spawn_blocking(move || {
+                        store.admit(&member, incarnation, mark, terms, now)
+                    })
+                    .await;
+                    let judgement = |mark, confirmed| Judgement {
+                        incarnation,
+                        standing: Standing { incarnation, mark },
+                        confirmed,
+                    };
+                    match admitted {
+                        Ok(Ok(sce_rust_session_store::Admission::Current { mark })) => {
+                            Some(judgement(mark, false))
+                        }
+                        Ok(Ok(sce_rust_session_store::Admission::Confirmed { mark, .. })) => {
+                            Some(judgement(mark, true))
+                        }
+                        Ok(Ok(sce_rust_session_store::Admission::Fenced { .. })) => {
+                            return fenced(&shared, answered.as_ref());
+                        }
+                        Ok(Ok(sce_rust_session_store::Admission::Full)) => {
+                            return shared.shed(
+                                ServerShed::MaxInstances,
+                                ResponseStatus::ServiceUnavailable,
+                                settings.retry_after,
+                            );
+                        }
+                        _ => {
+                            return shared.shed(
+                                ServerShed::Store,
+                                ResponseStatus::ServiceUnavailable,
+                                settings.retry_after,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     // docs/adr/0109, D10: a durable client's mailbox is its outbox in the store, opened at its
     // exchange (in an incarnation drawn now when the store holds none for it) and acknowledged
     // there before the request's envelopes are taken in, the order of section 22.3. A store that
@@ -1894,10 +2177,15 @@ async fn exchange(
                 .into_iter()
                 .map(|envelope| LinkEvent::Received(name.clone(), envelope)),
         );
-        let durability = if events.is_empty() {
-            Durability::Now
-        } else {
-            tell(&shared, events).await
+        // docs/adr/0113, D5: an instance's envelopes reach the host with the judgement of its
+        // edge, and so does a confirmation that ended an incarnation, which the host tells the
+        // sessions that hold the instance.
+        let durability = match judged {
+            Some(judged) if judged.confirmed || !events.is_empty() => {
+                tell_member(&shared, events, judged).await
+            }
+            _ if events.is_empty() => Durability::Now,
+            _ => tell(&shared, events).await,
         };
         drop(telling);
         // Only what the request carried waits for a checkpoint: a poll took nothing in.
@@ -1912,6 +2200,9 @@ async fn exchange(
         Durability::Now => true,
         Durability::After(sealed) => durable_past(&shared, sealed, settings.max_hold).await,
         Durability::NotDurable => false,
+        // docs/adr/0113, D5: a session judged an envelope again as it ran it, found its
+        // incarnation ended, and took nothing of it in.
+        Durability::Fenced { .. } => return fenced(&shared, answered.as_ref()),
     };
     if !durable {
         return shared.shed(
@@ -2098,7 +2389,21 @@ mod tests {
         assert_eq!(client_of("", "/sce-mesh/1/phone"), Some("phone"));
         assert_eq!(client_of("/api", "/api/sce-mesh/1/phone"), Some("phone"));
         assert_eq!(client_of("", "/sce-mesh/2/phone"), None, "another version");
-        assert_eq!(client_of("", "/sce-mesh/1/a/b"), None, "not one segment");
+        assert_eq!(
+            client_of("", "/sce-mesh/1/a/b/c"),
+            None,
+            "not one segment, nor a pair"
+        );
+        assert_eq!(
+            client_of("", "/sce-mesh/1/phone/a1"),
+            Some("phone/a1"),
+            "an instance of an open machine is named by its pair (docs/adr/0113, D2)"
+        );
+        assert_eq!(
+            client_of("", "/sce-mesh/1/phone/a 1"),
+            None,
+            "no instance id"
+        );
         assert_eq!(client_of("", "/sce-mesh/1/"), None, "no name");
         assert_eq!(
             client_of("/api", "/sce-mesh/1/phone"),
@@ -4269,5 +4574,237 @@ mod tests {
         )
         .expect("a server");
         assert!(server.health().ready());
+    }
+
+    /// The open machine `phone` a server of these tests binds the instances of (docs/adr/0113):
+    /// one member at a time, a minute after its last exchange.
+    const OPEN: Machine = Machine {
+        name: "cloud",
+        dedup_window: 8,
+        gap_timeout_ms: 50,
+        peers: &[],
+        open_peers: &[crate::peers::OpenPeer {
+            peer: crate::peers::Peer {
+                name: "phone",
+                config: crate::router::PeerConfig {
+                    transport: "https",
+                    buffer: None,
+                    retry: None,
+                    stamp_sequence: false,
+                    delivery: crate::inbound::Delivery {
+                        dedup: true,
+                        ordered: false,
+                    },
+                    responders: crate::router::Responders::Instance,
+                    deadline_ms: None,
+                    reply_events: &[],
+                    causal: None,
+                },
+                link: PeerLink::HttpsAccept {
+                    listen: "127.0.0.1:0",
+                    authenticator: HttpsAuthenticator::Bearer,
+                    max_hold_ms: 30_000,
+                    max_body_bytes: 1_048_576,
+                    absence_ms: 120_000,
+                    mailbox: 1024,
+                    max_clients: 100_000,
+                    max_response_bytes: 1_048_576,
+                    rate: EdgeRates::DEFAULT,
+                    trusted_proxies: &[],
+                    sign: None,
+                    max_skew_ms: 300_000,
+                    receipt: crate::peers::Receipt::Transport,
+                    retain_ms: 60_000,
+                },
+            },
+            members: Members {
+                lease_ms: 60_000,
+                provisional_ms: 60_000,
+                max_instances: 1,
+            },
+        }],
+        instances: crate::peers::Instances::One,
+        sessions: None,
+    };
+
+    /// A host of instances: it records each judgement it is handed with how many envelopes came
+    /// with it, and answers as it is told to.
+    #[derive(Clone)]
+    struct OfInstances {
+        judged: Arc<Mutex<Vec<(Judgement, usize)>>>,
+        answer: Arc<Mutex<Durability>>,
+    }
+
+    impl ServerHost for OfInstances {
+        fn deliver(&self, _: Vec<LinkEvent>) -> Durability {
+            Durability::Now
+        }
+
+        fn deliver_member(&self, events: Vec<LinkEvent>, judged: Judgement) -> Durability {
+            let carried = events
+                .iter()
+                .filter(|event| matches!(event, LinkEvent::Received(..)))
+                .count();
+            self.judged.lock().expect("held").push((judged, carried));
+            *self.answer.lock().expect("held")
+        }
+    }
+
+    /// An exchange of `name`, an instance of `phone`, carrying `body` and the nonce `nonce`,
+    /// under the incarnation `under` with the mark 1 when it names one: a join when it does not.
+    fn instance_request(
+        name: &str,
+        address: std::net::SocketAddr,
+        body: Vec<u8>,
+        nonce: &str,
+        under: Option<u64>,
+    ) -> super::super::HttpsRequest {
+        let mut request = request_as(name, address, body);
+        request
+            .headers
+            .push((NONCE_HEADER.to_string(), nonce.to_string()));
+        if let Some(incarnation) = under {
+            request
+                .headers
+                .push((IF_MATCH_HEADER.to_string(), entity_tag(incarnation)));
+            request
+                .headers
+                .push((super::super::MARK_HEADER.to_string(), "1".to_string()));
+        }
+        request
+    }
+
+    /// docs/adr/0113, D4 and D6, and docs/formal/OpenInstances.tla: a server binds an instance no
+    /// list names. A join is offered an incarnation, again for a join repeated with its nonce; the
+    /// exchange that names it confirms it and reaches the host with its judgement; an exchange
+    /// under an incarnation that ended is fenced `412`, signed over the incarnation it names, and
+    /// so is one whose session found it fenced; an instance past `max_instances` is shed `503`.
+    /// Red if the server takes in an exchange of an incarnation the store does not hold.
+    #[test]
+    fn an_instance_joins_is_confirmed_and_an_ended_incarnation_is_fenced() {
+        use super::super::signature::{field_value, normalize_target_uri, verify_response};
+        use super::super::HttpsTransport;
+
+        let key = sce_rust_crypto::ed25519::KeyPair::from_seed(&[3u8; 32]);
+        let trusted = alloc::vec![sce_rust_crypto::cose::TrustedKey {
+            id: "server-2026".to_string(),
+            public_key: key.public_key(),
+        }];
+        let host = OfInstances {
+            judged: Arc::new(Mutex::new(Vec::new())),
+            answer: Arc::new(Mutex::new(Durability::Now)),
+        };
+        let accepted = Listening {
+            settings: ServerSettings::default(),
+            authenticator: HttpsAuthenticator::Bearer,
+            sign: None,
+            peers: Vec::new(),
+            open: OPEN
+                .open_peers
+                .iter()
+                .map(|open| (open.peer.name, open.members))
+                .collect(),
+        };
+        assert!(accepted.admits("phone/a1"));
+        assert!(!accepted.admits("phone"), "the machine's name binds no one");
+        assert!(!accepted.admits("tablet/a1"));
+        let server = HttpsServer::new(
+            ServerSettings {
+                signer: Some(ResponseSigner::new("server-2026", key)),
+                ..ServerSettings::default()
+            },
+            Authenticator::Bearer(Arc::new(|_: &str, token: &str| token == "t")),
+            move |name| accepted.admits(name),
+            host.clone(),
+        )
+        .expect("a server");
+        let store = Arc::new(sce_rust_session_store::MemoryStore::new());
+        server.keep_members(store, &OPEN);
+        let Serving {
+            _runtime,
+            address,
+            port,
+            ..
+        } = listening(server);
+        let verified = |request: &super::super::HttpsRequest,
+                        response: &super::super::HttpsResponse| {
+            let field = |name: &str| response.header(name).map(str::to_string);
+            let sent = |name: &str| field_value(&request.headers, name);
+            let answered = Answered {
+                target_uri: normalize_target_uri(&request.url).expect("a URL"),
+                ack: sent(ACK_HEADER).expect("an acknowledgement"),
+                nonce: sent(NONCE_HEADER).expect("a nonce"),
+                if_match: sent(IF_MATCH_HEADER),
+            };
+            verify_response(&trusted, response.status, &field, &response.body, &answered)
+        };
+        let offer_of = |response: &super::super::HttpsResponse| {
+            response
+                .header(ETAG_HEADER)
+                .and_then(incarnation_of)
+                .expect("an offer")
+        };
+
+        let join = instance_request("phone/a1", address, Vec::new(), "n1", None);
+        let offered = port.exchange(join.clone()).expect("a response");
+        assert_eq!(offered.status, 200);
+        assert_eq!(verified(&join, &offered), Ok(()), "the offer is signed");
+        let first = offer_of(&offered);
+        let again = port.exchange(join).expect("a response");
+        assert_eq!(
+            offer_of(&again),
+            first,
+            "a join repeated is offered the same"
+        );
+        assert!(
+            host.judged.lock().expect("held").is_empty(),
+            "a join takes nothing in"
+        );
+
+        let confirming =
+            instance_request("phone/a1", address, alloc::vec![0x05], "n2", Some(first));
+        let confirmed = port.exchange(confirming.clone()).expect("a response");
+        assert_eq!(confirmed.status, 200);
+        assert_eq!(verified(&confirming, &confirmed), Ok(()));
+        {
+            let judged = host.judged.lock().expect("held");
+            let (judgement, carried) = judged.last().copied().expect("handed to the host");
+            assert_eq!(carried, 1);
+            assert!(judgement.confirmed);
+            assert_eq!(judgement.incarnation, first);
+            assert_eq!(judgement.standing.incarnation, first);
+        }
+
+        let rejoin = instance_request("phone/a1", address, Vec::new(), "n3", None);
+        let second = offer_of(&port.exchange(rejoin).expect("a response"));
+        assert_ne!(second, first);
+        let under_second = instance_request("phone/a1", address, Vec::new(), "n4", Some(second));
+        assert_eq!(port.exchange(under_second).expect("a response").status, 200);
+        let handed = host.judged.lock().expect("held").len();
+        let stale = instance_request("phone/a1", address, alloc::vec![0x06], "n5", Some(first));
+        let fence = port.exchange(stale.clone()).expect("a response");
+        assert_eq!(fence.status, 412);
+        assert_eq!(verified(&stale, &fence), Ok(()), "the fence is signed");
+        assert_eq!(
+            host.judged.lock().expect("held").len(),
+            handed,
+            "nothing of a fenced exchange reaches the host"
+        );
+
+        *host.answer.lock().expect("held") = Durability::Fenced {
+            current: second + 1,
+        };
+        let found = instance_request("phone/a1", address, alloc::vec![0x07], "n6", Some(second));
+        assert_eq!(port.exchange(found).expect("a response").status, 412);
+        *host.answer.lock().expect("held") = Durability::Now;
+
+        let other = instance_request("phone/b2", address, Vec::new(), "n1", None);
+        let other_offer = offer_of(&port.exchange(other).expect("a response"));
+        let past = instance_request("phone/b2", address, Vec::new(), "n2", Some(other_offer));
+        assert_eq!(
+            port.exchange(past).expect("a response").status,
+            503,
+            "no member is taken past max_instances, and none is put out"
+        );
     }
 }

@@ -711,10 +711,10 @@ pub enum Signer {
 pub enum When {
     /// By every signature of its signer.
     Always,
-    /// When the message (for a row of the request a response answers, that request) carries it.
+    /// When the message (for a row of the request a response answers, that request) carries it:
+    /// a signature covers what its message carries and a verifier expects exactly that, so a
+    /// field added to or taken from a signed message is refused either way.
     Carried,
-    /// By a `200`'s signature: what only a `200` carries.
-    OnSuccess,
 }
 
 /// One row of [`TABLE`]: the field, the signature that covers it, whether it is read from the
@@ -750,7 +750,7 @@ pub const TABLE: &[Row] = &[
         signer: Signer::Response,
         field: Field::Epoch,
         of_request: false,
-        when: When::OnSuccess,
+        when: When::Carried,
     },
     Row {
         signer: Signer::Response,
@@ -867,21 +867,16 @@ pub const TABLE: &[Row] = &[
 /// failed at the transport.
 pub const SIGNED_STATUSES: [u16; 3] = [200, 401, 412];
 
-/// The components `signer`'s signature covers, in the table's order: a response's of `status`,
-/// and a request's with `status` `None`; `carried` says whether the message carries a field,
-/// or, of a row read from the request a response answers, whether that request does.
-fn components(
-    signer: Signer,
-    status: Option<u16>,
-    carried: &dyn Fn(Field, bool) -> bool,
-) -> Vec<Component> {
+/// The components `signer`'s signature covers, in the table's order; `carried` says whether the
+/// message carries a field, or, of a row read from the request a response answers, whether that
+/// request does.
+fn components(signer: Signer, carried: &dyn Fn(Field, bool) -> bool) -> Vec<Component> {
     TABLE
         .iter()
         .filter(|row| row.signer == signer)
         .filter(|row| match row.when {
             When::Always => true,
             When::Carried => carried(row.field, row.of_request),
-            When::OnSuccess => status == Some(200),
         })
         .map(|row| {
             if row.of_request {
@@ -914,14 +909,12 @@ fn answered_value(answered: &Answered, field: Field) -> Option<String> {
     }
 }
 
-/// The components a response of `status` covers, given what it carries (`field`) and the request
-/// it answers.
+/// The components a response covers, given what it carries (`field`) and the request it answers.
 fn response_components(
-    status: u16,
     field: &dyn Fn(&str) -> Option<String>,
     answered: &Answered,
 ) -> Vec<Component> {
-    components(Signer::Response, Some(status), &|row, of_request| {
+    components(Signer::Response, &|row, of_request| {
         if of_request {
             answered_value(answered, row).is_some()
         } else {
@@ -932,7 +925,7 @@ fn response_components(
 
 /// The components a request covers, given what it carries (`field`).
 fn request_components(field: &dyn Fn(&str) -> Option<String>) -> Vec<Component> {
-    components(Signer::Request, None, &|row, _| row.read(field).is_some())
+    components(Signer::Request, &|row, _| row.read(field).is_some())
 }
 
 /// The values of a response's `components`: its status, its fields as `field` reads them, and
@@ -1179,7 +1172,7 @@ impl ResponseSigner {
             return None;
         }
         let field = |name: &str| field_value(headers, name);
-        let expected = response_components(status, &field, answered);
+        let expected = response_components(&field, answered);
         let covered = response_values(expected, status, &field, answered)?;
         let items: Vec<Item> = covered
             .iter()
@@ -1251,7 +1244,7 @@ fn verify_answer(
         return Err(Refusal::Digest);
     }
     let carried = Carried::read(field)?;
-    let expected = response_components(status, field, answered);
+    let expected = response_components(field, answered);
     if !carried.covers(&expected) || !carried.parameters_are(&["keyid", "alg", "tag"]) {
         return Err(Refusal::Profile);
     }
@@ -1982,8 +1975,8 @@ mod tests {
         );
         assert_eq!(
             verify_response(&trusted, 200, &field, &[], &fenced),
-            Err(Refusal::Profile),
-            "a fence's signature is no 200's"
+            Err(Refusal::Signature),
+            "a fence's signature is no 200's: it covers its status"
         );
         let forged = alloc::vec![(CONTENT_DIGEST_HEADER.to_string(), digest.clone())];
         let forged_field = |name: &str| field_value(&forged, name);
@@ -2058,7 +2051,7 @@ mod tests {
         ];
         let response_field = |name: &str| field_value(&response, name);
         assert_eq!(
-            names(response_components(200, &response_field, &answered())),
+            names(response_components(&response_field, &answered())),
             [
                 ("@status", false),
                 ("content-digest", false),
