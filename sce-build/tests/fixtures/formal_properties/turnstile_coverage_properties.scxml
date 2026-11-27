@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: two guarantees of the turnstile that hold, judged
+     again over each alteration of the machine. Taking out the count of a
+     coin that unlocks breaks the first; no alteration of the closed list
+     makes the count below zero, so nothing breaks the second, which says
+     nothing of what the machine does and must be refused by name. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_coverage_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:guarantee>
+    <sce:always req="COV-1" cond="!In('unlocked') || coins &gt; 0"/>
+    <sce:always req="COV-2" cond="coins &gt;= 0"/>
+  </sce:guarantee>
+</scxml>

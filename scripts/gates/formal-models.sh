@@ -80,17 +80,23 @@ judge() {
 # properties that hold, judged and written with the digests of what was judged,
 # then read back from that record; a guarantee in each form broken on purpose,
 # which must be found; a vacuous guarantee and an assumption about the machine
-# itself, which must be refused by name. `$1` the properties, `$2` the
-# exploration, `$3` the status the judge must end with, and each further
-# argument a line its report must hold; flags for the judge are
-# PROPERTIES_FLAGS.
+# itself, which must be refused by name; the scenario of each violation and
+# witness, held to the one committed beside the runs each lane recorded of it;
+# and two guarantees judged over each alteration of the machine, one of which
+# no alteration breaks. `$1` the properties, `$2` the exploration, `$3` the
+# status the judge must end with, and each further argument a line its report
+# must hold; flags for the judge are PROPERTIES_FLAGS.
+#
+# One worker: with more, the violation TLC reports first of a level is the one
+# whichever worker reached first, so its run, and the scenario written of it,
+# would be one of several. The fixture's spaces are a few hundred states.
 PROPERTIES=sce-build/tests/fixtures/formal_properties
 PROPERTIES_FLAGS=()
 judge_properties() {
     local properties="$PROPERTIES/$1" exploration="$PROPERTIES/$2" expected="$3"
     local status=0 report line
     shift 3
-    report="$(target/debug/sce-codegen formal properties --workers "$WORKERS" \
+    report="$(target/debug/sce-codegen formal properties --workers 1 \
         --properties "$properties" --exploration "$exploration" \
         ${PROPERTIES_FLAGS[@]+"${PROPERTIES_FLAGS[@]}"})" || status=$?
     printf '%s\n' "$report"
@@ -129,20 +135,41 @@ quantities() {
 }
 
 judge docs/formal/models.json ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"}
+# Each scenario written into `$1` is the one committed, and each committed one
+# was written: a scenario TLC no longer gives, or gives otherwise, moves the
+# runs every lane recorded of it (docs/adr/0115, D15).
+scenarios_are_committed() {
+    local written="$1" committed="$PROPERTIES/scenarios" file
+    for file in "$written"/*.scenario.json; do
+        [[ -e "$file" ]] || sce_gate_fail "the judge wrote no scenario into $written"
+        cmp -s "$file" "$committed/$(basename "$file")" \
+            || sce_gate_fail "$committed/$(basename "$file") is not the scenario TLC gives: write it again with --scenarios $committed and replay it on every lane"
+    done
+    for file in "$committed"/*.scenario.json; do
+        [[ -e "$file" ]] || continue
+        [[ -e "$written/$(basename "$file")" ]] \
+            || sce_gate_fail "$file is a scenario TLC no longer gives"
+    done
+}
+
 if [[ "$FIRST_PART" == 1 ]]; then
     judge sce-build/tests/fixtures/formal_consumer/formal/models.json
     RECORDED="$(mktemp)"
-    PROPERTIES_FLAGS=(--record "$RECORDED")
+    SCENARIOS="$(mktemp -d)"
+    PROPERTIES_FLAGS=(--record "$RECORDED" --scenarios "$SCENARIOS")
     judge_turnstile
     PROPERTIES_FLAGS=(--recorded "$RECORDED")
     judge_turnstile
     rm -f "$RECORDED"
-    PROPERTIES_FLAGS=()
+    PROPERTIES_FLAGS=(--scenarios "$SCENARIOS")
     judge_properties turnstile_broken_properties.scxml turnstile_exploration.scxml 1 \
         "BROKEN-1 (<sce:always>): violated" \
         "BROKEN-2 (<sce:step>): violated" \
         "BROKEN-3 (<sce:recurs>): violated" \
         "BROKEN-4 (<sce:leads-to>): violated"
+    scenarios_are_committed "$SCENARIOS"
+    rm -r -- "$SCENARIOS"
+    PROPERTIES_FLAGS=()
     judge_properties turnstile_unreachable_properties.scxml turnstile_quiet_exploration.scxml 1 \
         "every macrostep ends: holds of the whole space" \
         "UNREACH-1 (<sce:possible>): violated"
@@ -150,4 +177,11 @@ if [[ "$FIRST_PART" == 1 ]]; then
         "VAC-1 (<sce:leads-to>): vacuous: it holds though \`In('unlocked')\` is replaced by true, so it passes for nothing in that part"
     judge_properties turnstile_assumes_itself_properties.scxml turnstile_exploration.scxml 1
     quantities docs/formal/quantities.json
+    PROPERTIES_FLAGS=(--coverage)
+    judge_properties turnstile_coverage_properties.scxml turnstile_exploration.scxml 1 \
+        "COV-1 (<sce:always>): holds within: the most events from outside (4) reached" \
+        "COV-2 (<sce:always>): holds within: the most events from outside (4) reached" \
+        "the machine altered in 10 ways" \
+        "no guarantee notices: transition 0 of state \`locked\` taken out"
+    PROPERTIES_FLAGS=()
 fi
