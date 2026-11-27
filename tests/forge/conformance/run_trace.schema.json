@@ -1,0 +1,207 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunTrace",
+  "description": "One run of a machine by one lane, as the steps of Appendix D it took (docs/adr/0115, D4 and D8). Every lane's trace port writes this form and `sce-codegen formal traces` judges it against the model its traces manifest names, so one judge serves all of them. A step is one of the actions `docs/formal/AppendixD.tla` gives the interpreter: `start` (Start, the entry into the initial configuration), `eventless` (Eventless, a microstep on eventless transitions), `internal` and `external` (Internal and External, an event taken off its queue and the microstep it selects, which takes nothing when it selects nothing), and `stop` (Stop, the exit of the interpreter). A macrostep is the steps from a `start` or an `external` step to the next one. Each step says every field its kind has and no other, because a trace that leaves something unsaid may be accepted though the run was wrong: `fired` is the transitions the microstep took in the order they were selected, each by its source state and its position among that state's own transitions in document order (the row of the emitted transition table, docs/adr/0089); `exited` and `entered` are the states in the order they were exited and entered; `configuration` is the states active once the step was over, a set; `event` is the name of the event taken, its tokens separated by `.`; `outcome` is the top-level final state a stop ended the run in, or null. An event from outside and a delayed send that comes due are the environment's steps (Arrive and Due), which no runtime can tell apart on its external queue: the run does not say them, and the external step that takes such an event names it. The reader is `sce-build/src/run_trace.rs` (`RunTrace::from_json`), which refuses what this schema refuses.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "lane",
+    "steps"
+  ],
+  "properties": {
+    "version": {
+      "description": "The version of this form, which `TRACE_FORMAT_VERSION` holds.",
+      "const": 1
+    },
+    "lane": {
+      "description": "The lane that ran the machine: `rust`, `c11`, `cpp`, ...",
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "description": "The steps, in the order the run took them. A run of no step shows nothing.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/step"
+      }
+    }
+  },
+  "definitions": {
+    "name": {
+      "description": "A state's id.",
+      "type": "string",
+      "minLength": 1
+    },
+    "names": {
+      "description": "States in the order the step met them.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/name"
+      }
+    },
+    "configuration": {
+      "description": "The states active once the step was over: a set, in any order.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/name"
+      }
+    },
+    "event": {
+      "description": "The name of the event the step took: its tokens, none empty, separated by `.`.",
+      "type": "string",
+      "pattern": "^[^.]+(\\.[^.]+)*$"
+    },
+    "fired": {
+      "description": "The transitions the microstep took, in the order they were selected.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "index"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/definitions/name"
+          },
+          "index": {
+            "description": "The transition's position among the source state's own transitions in document order, from 0.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "start",
+            "eventless",
+            "internal",
+            "external",
+            "stop"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entered",
+            "configuration"
+          ],
+          "properties": {
+            "kind": {
+              "const": "start"
+            },
+            "entered": {
+              "$ref": "#/definitions/names"
+            },
+            "configuration": {
+              "$ref": "#/definitions/configuration"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fired",
+            "exited",
+            "entered",
+            "configuration"
+          ],
+          "properties": {
+            "kind": {
+              "const": "eventless"
+            },
+            "fired": {
+              "$ref": "#/definitions/fired"
+            },
+            "exited": {
+              "$ref": "#/definitions/names"
+            },
+            "entered": {
+              "$ref": "#/definitions/names"
+            },
+            "configuration": {
+              "$ref": "#/definitions/configuration"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "event",
+            "fired",
+            "exited",
+            "entered",
+            "configuration"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "internal",
+                "external"
+              ]
+            },
+            "event": {
+              "$ref": "#/definitions/event"
+            },
+            "fired": {
+              "$ref": "#/definitions/fired"
+            },
+            "exited": {
+              "$ref": "#/definitions/names"
+            },
+            "entered": {
+              "$ref": "#/definitions/names"
+            },
+            "configuration": {
+              "$ref": "#/definitions/configuration"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "exited",
+            "outcome"
+          ],
+          "properties": {
+            "kind": {
+              "const": "stop"
+            },
+            "exited": {
+              "$ref": "#/definitions/names"
+            },
+            "outcome": {
+              "description": "The top-level final state the run ended in, or null.",
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/name"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

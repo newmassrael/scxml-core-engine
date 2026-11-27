@@ -288,6 +288,11 @@ pub mod requirements_report;
 /// [`xinclude`] and [`template`] and mirrored by the C++ runtime's
 /// `FragmentResolver.h`.
 pub mod resolve;
+/// The run trace: the one JSON form every lane's trace port writes a run of a
+/// machine in, as the steps of Appendix D it took (docs/adr/0115, D4 and D8).
+/// Here, and not in a runtime, so `sce-codegen formal traces` reads the run of
+/// every lane.
+pub mod run_trace;
 /// Single source of truth for `#[derive(...)]` attributes on every
 /// Rust type the codegen emits — shared across both Rust-emitting
 /// engines (statechart codegen in [`generator`] and forge codegen in
