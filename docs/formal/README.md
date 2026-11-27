@@ -15,7 +15,7 @@ this file says what is here and how to read it.
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
 | 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust, C11, C++, Go, Kotlin, Python and Swift lanes (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust, C11, C++, Go, Kotlin, Python and Swift lanes, for three documents |
-| 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), the session store's lease and write rules refining the store's actions of `EventJournal`, a target's outbound side and the edge's rate limits, by Verus | yes, for five modules |
+| 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), the session store's lease and write rules refining the store's actions of `EventJournal` and its journal's positions refining `EventJournal`'s numbering, horizon and follower, a target's outbound side and the edge's rate limits, by Verus | yes, for six modules |
 
 ## The models
 

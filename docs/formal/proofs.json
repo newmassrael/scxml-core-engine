@@ -298,6 +298,49 @@
           "to": "} else if false {"
         }
       ]
+    },
+    {
+      "file": "backends/rust/session-store/src/rules/position.rs",
+      "compiled_by": "backends/rust/session-store/src/rules.rs",
+      "decision": "docs/adr/0115",
+      "verified": 9,
+      "mutants": [
+        {
+          "breaks": "a position is given again, the last one, so two entries share it and a follower that took the first passes the second",
+          "from": "    Some(issued + 1)\n}",
+          "to": "    Some(issued)\n}"
+        },
+        {
+          "breaks": "the last position there is is passed, and the next wraps to one given before",
+          "from": "if issued == u64::MAX {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a reader is told a horizon past the last position given, and moves its cursor past a position where an entry can still appear",
+          "from": "    issued\n}",
+          "to": "    u64::MAX\n}"
+        },
+        {
+          "breaks": "a read answers the entry at its cursor again, so a follower takes it twice",
+          "from": "first: after + 1,",
+          "to": "first: after,"
+        },
+        {
+          "breaks": "a read answers past the horizon, so a follower moves past a position where an entry can still appear",
+          "from": "last: horizon,",
+          "to": "last: u64::MAX,"
+        },
+        {
+          "breaks": "a cursor at the last position there is wraps, and a follower is answered the journal again from its start",
+          "from": "if after >= horizon {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "an answer is given as of a position above the horizon, so an entry kept later changes it",
+          "from": "    position <= horizon\n}",
+          "to": "    true\n}"
+        }
+      ]
     }
   ]
 }
