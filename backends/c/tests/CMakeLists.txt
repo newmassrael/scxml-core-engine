@@ -4078,6 +4078,79 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         )
     endforeach()
 
+    # docs/adr/0147, D3: the same document's inbox, each run written as its history
+    # and judged by `sce-codegen check-inbox-history` against
+    # docs/formal/InboxService.tla, as every runtime's inbox history is. Built with
+    # the machine's inbox port on (`SCE_INBOX_PORT`), so the machine tells the
+    # driver each event it puts on its external queue and whether its inbox held
+    # it, and with an inbox of four inputs, so the posters fill it while the owner
+    # drains it. Once per row of the queue, as above. The record of each row is a
+    # fixture its check requires; the check over the corpus of histories sce-build
+    # keeps, which holds histories that are not linearizable, must refuse them, so
+    # a check that could only pass would show here.
+    foreach(_sce_inbox_width 64 32 0)
+        set(_sce_history_target sce_c_integration_inbox_history_${_sce_inbox_width})
+        if(_sce_inbox_width EQUAL 0)
+            set(_sce_inbox_platform "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/tests/conformance/sce_irq_host.c")
+        else()
+            set(_sce_inbox_platform "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/tests/conformance/sce_atomic_host.c")
+        endif()
+        add_executable(${_sce_history_target}
+            integration/test_a_run_of_the_inbox_is_written_as_its_history.c
+            ${INTEGRATION_C_TEST_inbox_probe_SOURCES}
+            ${_sce_inbox_platform}
+        )
+        sce_c_link_runtime(${_sce_history_target})
+        # The driver's own posting threads.
+        target_link_libraries(${_sce_history_target} PRIVATE Threads::Threads)
+        target_include_directories(${_sce_history_target} PRIVATE
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        )
+        target_compile_definitions(${_sce_history_target} PRIVATE
+            SCE_MAX_INBOX=4
+            SCE_INBOX_ATOMIC_RMW_WIDTH=${_sce_inbox_width}
+            SCE_INBOX_PORT=1
+        )
+        set_target_properties(${_sce_history_target} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        set(_sce_histories "${CMAKE_CURRENT_BINARY_DIR}/inbox_histories_${_sce_inbox_width}")
+        add_test(NAME c11_inbox_history_record_${_sce_inbox_width}
+            COMMAND ${_sce_history_target} "${_sce_histories}"
+        )
+        set_tests_properties(c11_inbox_history_record_${_sce_inbox_width} PROPERTIES
+            FIXTURES_SETUP c11_inbox_histories_${_sce_inbox_width}
+            TIMEOUT 120
+            LABELS "integration;c11;aot"
+        )
+        add_test(NAME c11_inbox_history_check_${_sce_inbox_width}
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DCODEGEN=${SCE_CODEGEN}"
+                    "-DDIR=${_sce_histories}"
+                    -DMINIMUM=8
+                    -P "${CMAKE_SOURCE_DIR}/tests/forge/conformance/check_inbox_histories.cmake"
+        )
+        set_tests_properties(c11_inbox_history_check_${_sce_inbox_width} PROPERTIES
+            FIXTURES_REQUIRED c11_inbox_histories_${_sce_inbox_width}
+            TIMEOUT 300
+            LABELS "integration;c11;aot"
+        )
+    endforeach()
+    add_test(NAME c11_inbox_history_check_refuses
+        COMMAND "${CMAKE_COMMAND}"
+                "-DCODEGEN=${SCE_CODEGEN}"
+                "-DDIR=${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/inbox_histories"
+                -DMINIMUM=1
+                -P "${CMAKE_SOURCE_DIR}/tests/forge/conformance/check_inbox_histories.cmake"
+    )
+    set_tests_properties(c11_inbox_history_check_refuses PROPERTIES
+        PASS_REGULAR_EXPRESSION "inbox histories refused"
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset §2.15: a delayed `<send>` the host serves, in a
     # `datamodel="sce-static"` machine — typed `<param>`s read from the machine's
     # own fields when the send is made, and carried by the wait. The document the

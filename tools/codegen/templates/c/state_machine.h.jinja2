@@ -1605,6 +1605,38 @@ void {{ csym_prefix }}{{ model.name }}_trace_step(const {{ csym_prefix }}{{ mode
     const sce_trace_step_t *step);
 #endif
 
+{# A per-machine switch whose default is the build's (`SCE_INBOX_PORT`,
+   sce/types.h, 0 unless set), as the transition observer's is above. Off, the
+   preprocessor removes the declaration below and the two calls in
+   `_raise_external` (c/state_machine.c.jinja2), and the machine is what it was
+   before the port existed. On, the machine calls a function the HOST defines,
+   for the observer's reason. It tells what its inbox gave apart from what the
+   machine raised itself, so a machine with no inbox refuses it. #}
+#ifndef {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT SCE_INBOX_PORT
+#endif
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT
+#if SCE_MAX_INBOX == 0
+#error "<PREFIX><NAME>_INBOX_PORT tells which events of the external queue came from the inbox, and a machine built with SCE_MAX_INBOX 0 has none"
+#endif
+/* docs/adr/0147, D3: defined by the host, and called by the machine around each
+   event it puts on its external queue (`_raise_external`, through which every
+   external enqueue of the machine goes): immediately before the event enters
+   the queue, with `entered` false, and immediately after it entered, with
+   `entered` true. An event the queue did not take (a full queue, data the
+   machine could not hold) is told before and not after. `posted` is true for
+   an input the machine applied from its inbox, and false for an event of its
+   own: a `<send>` to itself, a delayed send come due, an ending or a report a
+   host gave it on the owner, the host's own raise. Called from inside the call
+   that drove the machine, in the order the events enter. `evt` and every text
+   it names are valid for the length of the call. It reads: `sm` is const, and
+   it must not call back into the machine. A host reads its clock in both calls,
+   and has each enqueue of the history `sce-codegen check-inbox-history` judges
+   (tests/forge/conformance/inbox_history.schema.json). */
+void {{ csym_prefix }}{{ model.name }}_external_enqueue(const {{ csym_prefix }}{{ model.name }}_t *sm,
+    const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt, bool posted, bool entered);
+#endif
+
 {% if model.host_processor_types %}
 /* ── §scxml-6.2.5: the host's half of a declared processor ────────── */
 /*

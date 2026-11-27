@@ -1,0 +1,43 @@
+# Mutation cases for docs/adr/0147, D3 on the C11 runtime: every run of a
+# generated machine's inbox is a history linearizable to
+# docs/formal/InboxService.tla.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_inbox_history_holds_the_c11_inbox_to_its_promise_ctest.cases`.
+#
+# The program runs the inbox of tests/integration/inbox_probe.scxml on real
+# threads with the machine's inbox port on, writes each run as an inbox history,
+# and `sce-codegen check-inbox-history` judges them (ctest
+# `c11_inbox_history_check_64`, which needs the record of
+# `c11_inbox_history_record_64`). The mutants take one decision away each:
+#
+#   the drain before an event of the owner's own: an own event enters ahead of
+#   a post taken before it (arrival order, W3C test 201's shape);
+#   the port tells no event that entered: the history loses every enqueue, so
+#   every input a post took is one that never entered;
+#   the port tells an applied input as an event of the owner's own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_inbox_history_(record|check)_64$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_run_of_the_inbox_is_written_as_its_history.c
+
+mutation_case "C11 puts an own event on the external queue ahead of what the inbox holds" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "       macrostep's own, and arrival order is the external queue's. */\n    drain_inbox(sm);\n#if",
+     "       macrostep's own, and arrival order is the external queue's. */\n#if")
+PY
+
+mutation_case "C11's inbox port tells no event that entered the external queue" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, true);\n",
+     "        (void)evt;\n")
+PY
+
+mutation_case "C11's inbox port tells an applied input as an event of the owner's own" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, true);\n",
+     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, false, true);\n")
+PY

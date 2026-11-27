@@ -4486,16 +4486,29 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
        a push. `_raise` does not drain: the internal queue is the running
        macrostep's own, and arrival order is the external queue's. */
     drain_inbox(sm);
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT
+    /* docs/adr/0147, D3: the host is told the event immediately before it enters
+       the queue and immediately after it did. An input the drain applies is
+       raised from inside the drain, so `draining_inbox` says the inbox held it. */
+    const uint16_t queued_before = sm->external_queue.count;
+    {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, false);
+#endif
 {% if model.needs_script_engine %}
     event_queue_push_moving(sm, &sm->external_queue, evt, text, text_size);
+{% else %}
+    event_queue_push(sm, &sm->external_queue, evt);
+{% endif %}
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT
+    if (sm->external_queue.count != queued_before) {
+        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, true);
+    }
+#endif
 }
+{% if model.needs_script_engine %}
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
                                      const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     raise_external_moving(sm, evt, NULL, NULL);
-}
-{% else %}
-    event_queue_push(sm, &sm->external_queue, evt);
 }
 {% endif %}
 

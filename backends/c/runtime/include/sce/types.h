@@ -190,6 +190,19 @@
 #define SCE_TRACE_PORT 0
 #endif
 
+// docs/adr/0147, D3: whether the machines of this build tell their host each
+// event they put on their external queue, and whether their inbox held it, so a
+// run of the inbox can be written as the history `sce-codegen
+// check-inbox-history` judges. Off by default, and then the preprocessor leaves
+// nothing of it in a machine: no declaration and no call. A machine's own
+// `<PREFIX><NAME>_INBOX_PORT` takes this value unless the build sets that one,
+// and a machine built with no inbox (`SCE_MAX_INBOX` 0) refuses it. A machine
+// that tells calls `<prefix><name>_external_enqueue`, which the host defines;
+// the link refuses a build that turned the port on and defined none.
+#ifndef SCE_INBOX_PORT
+#define SCE_INBOX_PORT 0
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used
