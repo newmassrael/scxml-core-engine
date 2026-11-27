@@ -91,11 +91,42 @@ generator (`document_model::SEMANTICS_TEXT`), so the judge stages the semantics 
   and the judge (`schemas/sce-formal-verdicts.v1.schema.json`); `--recorded` reports a recorded one instead of judging,
   and refuses it when a digest moved: a verdict of another digest is none.
 
-In this first step an observer reads the name of the event an observation took and its own data, and no more of the
-observation; a property of a deployment (D12), coverage of the machine by its properties, the scenario of a violation
-or a witness replayed on every lane (D8), and the watch beside a lane are the steps after it. The formal-models gate
-judges the fixture under `sce-build/tests/fixtures/formal_properties`: every form held, every form broken on purpose,
-a vacuous guarantee and an assumption about the machine itself.
+- **A violation is a scenario** (D15, and D8's converse). The properties module names each kind of step by an action of
+  its own (`PStart`, `PEventless`, `PInternal`, `PExternal`, `PStop`, `PArrive`, `PDueAny`), so the behaviour TLC
+  reports says which step of Appendix D each state was reached by; `sce-build/src/formal/behaviour.rs` reads it back as
+  a run in the run trace format, with the events the environment put on the external queue as its `inputs` (each an
+  `arrive` or a delayed send come `due`, after the count of steps over when it came) and, for a run that ends in a
+  cycle, the step the `cycle` starts at. The record holds it with the verdict; a violation whose behaviour is not read
+  as a scenario is *not judged*, since no lane could show it is the code's. A `<sce:possible>` that holds has a
+  witness, the run TLC finds to a state where its condition holds, held the same way. A `<sce:possible>` that fails
+  has no run, and its scenario of the state from which it was lost is a step after this one. `--scenarios <dir>`
+  writes each as `<req>.scenario.json` (`macrosteps.scenario.json` for a macrostep that does not end).
+- **Every lane replays it.** A lane's harness gives the machine a scenario's inputs, on a manual clock, with its trace
+  port on, and records the run the port is told as `<req>.<lane>.json` beside it; `sce-build/src/formal/replay.rs`
+  judges each such run to be the scenario's, step for step, the configurations as sets. The Rust lane
+  (`backends/rust/tests/tests/a_scenario_of_the_turnstile_is_its_run.rs`) and the C11 lane
+  (`backends/c/tests/integration/test_a_scenario_of_the_turnstile_is_its_run.c`) replay the fixture's scenarios, and
+  `sce-build/tests/a_scenario_is_the_run_of_every_lane.rs` holds both to them without TLC. A harness gives an input
+  once the machine has taken every step it can, so a scenario whose environment put an event on the queue in the middle
+  of a macrostep that also sends to its own external queue, or whose model made a later delayed send due before an
+  earlier one, is one no harness replays as the model ran it, and the judge finds the runs part.
+  Each other lane needs what these two have: its trace port (C++, Go, Kotlin, Python and Swift each have one, D8), the
+  fixture's machine generated in its test tree, and a harness that reads a scenario's `inputs`, gives each event by
+  name and moves a clock the harness owns to the next deadline, recording its runs beside the scenarios; the judge's
+  list of lanes then names it.
+- **Coverage.** `--coverage` alters the machine in each way of a closed list (`sce-build/src/formal/coverage.rs`: a
+  transition's condition made false, which takes it out, or made true; an action taken out; the event an action sends
+  or raises changed to one no transition names; the value an `<assign>` writes changed, an integer by one more and a
+  boolean to its negation) and judges every guarantee that held over each altered machine. A guarantee no alteration
+  breaks is refused by name (`formal/property-refused`); an alteration no guarantee notices is listed, and the document
+  has as yet no way to say why it may go unnoticed.
+
+An observer reads the name of the event an observation took and its own data, and no more of the observation; a
+property of a deployment (D12) and the watch beside a lane are the steps after this one. The formal-models gate judges
+the fixture under `sce-build/tests/fixtures/formal_properties`: every form held, every form broken on purpose, a
+vacuous guarantee, an assumption about the machine itself, the scenario of each violation and witness held to the one
+committed under `scenarios/` (written with one worker, whose first violation of a level is one run), and a guarantee
+no alteration breaks.
 
 ## Theorems, bounded and for every size (D3)
 
