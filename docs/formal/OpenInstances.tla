@@ -31,35 +31,138 @@
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS NInst, NSess, MaxK,         \* instances, sessions, requests of an instance
-          MaxInc, MaxJoin,            \* incarnations drawn and joins sent, per instance
-          MaxCliCrash, MaxSrvCrash, MaxExpire,
-          MaxMembers,                 \* the bound on members
-          Dup,                        \* messages repeat
-          Resend,                     \* the client sends again and acknowledges
-          Handshake,                  \* a join only offers; a request confirms
-          Match,                      \* an offer is taken only as the answer to the join waited on
-          Fence,                      \* an unknown incarnation is refused and told
-          Records,                    \* completion records and the mark (else a window of one)
-          Recheck,                    \* a session judges incarnation and mark again as it runs
-          GcDurable,                  \* records are dropped by the durable mark
-          Evict,                      \* a live member's records may be dropped
-          SameOffer,                  \* a join repeated is offered the same incarnation
-          SignInc,                    \* a request's incarnation is signed
-          SignMark,                   \* a request's low-water mark is signed
-          SignOffer,                  \* the incarnation an offer names is signed
-          SignFence,                  \* the answer that fences is signed
-          Limit,                      \* no member is taken past the bound
-          MaxForge                    \* messages an intermediary changes or makes
+CONSTANTS
+    \* instances
+    \* @type: Int;
+    NInst,
+    \* sessions
+    \* @type: Int;
+    NSess,
+    \* requests of an instance
+    \* @type: Int;
+    MaxK,
+    \* incarnations drawn, per instance
+    \* @type: Int;
+    MaxInc,
+    \* joins sent, per instance
+    \* @type: Int;
+    MaxJoin,
+    \* crashes of an instance
+    \* @type: Int;
+    MaxCliCrash,
+    \* crashes of the server
+    \* @type: Int;
+    MaxSrvCrash,
+    \* expiries
+    \* @type: Int;
+    MaxExpire,
+    \* the bound on members
+    \* @type: Int;
+    MaxMembers,
+    \* messages repeat
+    \* @type: Bool;
+    Dup,
+    \* the client sends again and acknowledges
+    \* @type: Bool;
+    Resend,
+    \* a join only offers; a request confirms
+    \* @type: Bool;
+    Handshake,
+    \* an offer is taken only as the answer to the join waited on
+    \* @type: Bool;
+    Match,
+    \* an unknown incarnation is refused and told
+    \* @type: Bool;
+    Fence,
+    \* completion records and the mark (else a window of one)
+    \* @type: Bool;
+    Records,
+    \* a session judges incarnation and mark again as it runs
+    \* @type: Bool;
+    Recheck,
+    \* records are dropped by the durable mark
+    \* @type: Bool;
+    GcDurable,
+    \* a live member's records may be dropped
+    \* @type: Bool;
+    Evict,
+    \* a join repeated is offered the same incarnation
+    \* @type: Bool;
+    SameOffer,
+    \* a request's incarnation is signed
+    \* @type: Bool;
+    SignInc,
+    \* a request's low-water mark is signed
+    \* @type: Bool;
+    SignMark,
+    \* the incarnation an offer names is signed
+    \* @type: Bool;
+    SignOffer,
+    \* the answer that fences is signed
+    \* @type: Bool;
+    SignFence,
+    \* no member is taken past the bound
+    \* @type: Bool;
+    Limit,
+    \* messages an intermediary changes or makes
+    \* @type: Int;
+    MaxForge
 
 Inst == 1..NInst
 Sess == 0..(NSess - 1)
 Ks   == 1..MaxK
 Target(k) == k % NSess
 
-VARIABLES member, offer, ofor, drawn, low, lowD, rec, inbox, effects,   \* the server
-          cinc, cjn, cwait, cnext, slot, status, got,             \* the instances
-          net, nCli, nSrv, nExp, nForge
+VARIABLES
+    \* the server: the member, the incarnation offered, the join it answers, the last drawn
+    \* @type: Int -> Int;
+    member,
+    \* @type: Int -> Int;
+    offer,
+    \* @type: Int -> Int;
+    ofor,
+    \* @type: Int -> Int;
+    drawn,
+    \* the low-water mark the server has seen, and the one its store holds
+    \* @type: Int -> Int;
+    low,
+    \* @type: Int -> Int;
+    lowD,
+    \* each session's completion records and its inbox
+    \* @type: Int -> Set({i: Int, inc: Int, seq: Int, k: Int});
+    rec,
+    \* @type: Int -> Set({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int});
+    inbox,
+    \* how many times each request took effect
+    \* @type: Int -> (Int -> Int);
+    effects,
+    \* the instances: incarnation, joins sent, whether a join is waited on, the next number
+    \* @type: Int -> Int;
+    cinc,
+    \* @type: Int -> Int;
+    cjn,
+    \* @type: Int -> Bool;
+    cwait,
+    \* @type: Int -> Int;
+    cnext,
+    \* the request each number names, its status and its answer
+    \* @type: Int -> (Int -> Int);
+    slot,
+    \* @type: Int -> (Int -> Str);
+    status,
+    \* @type: Int -> (Int -> Int);
+    got,
+    \* the network, and the faults and forgeries so far
+    \* @type: Set({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int});
+    net,
+    \* @type: Int;
+    nCli,
+    \* @type: Int;
+    nSrv,
+    \* @type: Int;
+    nExp,
+    \* @type: Int;
+    nForge
 
 srv  == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects>>
 cli  == <<cinc, cjn, cwait, cnext, slot, status, got>>
@@ -325,5 +428,118 @@ Service == INSTANCE AtMostOnceService WITH
     faulted <- nCli + nExp > 0
 
 Refines == Service!Spec
+
+-----------------------------------------------------------------------------
+\* At most once for every length of execution (docs/adr/0115, D3; docs/adr/0113, D4 and D5): an
+\* inductive invariant that implies AtMostOnce. Init satisfies it, every step from a state that
+\* satisfies it keeps it, and it implies AtMostOnce; Apalache checks the three at the parameters of a
+\* configuration (models.json), over every state the invariant allows and not only the reachable
+\* ones, so at those parameters no execution of any length takes a request's effect twice.
+\*
+\* Why: a request has ONE NAME, an incarnation and a number, wherever it is, since an instance names a
+\* request once, when it first sends it, and sends it again only under the name its slot keeps; and
+\* once it took effect, it is KEPT from taking it again: its session holds its record, its
+\* incarnation can never be a member again (each is drawn once, above every one before, and an offer
+\* is never the member), or its number is below the mark the store holds of its member, which a crash
+\* does not take back and below which alone a record is dropped.
+
+ReqStatuses == {"new", "waiting", "done", "unknown"}
+Marks == 1..(MaxK + 1)
+
+\* The messages of each kind, with the fields that kind carries.
+JoinMsgs   == {Msg("join", i, 0, 0, 0, 0, j) : i \in Inst, j \in 1..MaxJoin}
+OfferMsgs  == {Msg("offer", i, c, 0, 0, 0, j) : i \in Inst, c \in Incs, j \in 1..MaxJoin}
+ReqMsgs    == {Msg("req", i, c, q, k, w, 0) : i \in Inst, c \in Incs, q \in Ks, k \in Ks, w \in Marks}
+AckMsgs    == {Msg("ack", i, c, 0, 0, w, 0) : i \in Inst, c \in Incs, w \in Marks}
+ReplyMsgs  == {Msg("reply", i, c, q, k, 0, 0) : i \in Inst, c \in Incs, q \in Ks, k \in Ks}
+FencedMsgs == {Msg("fenced", i, c, 0, 0, 0, 0) : i \in Inst, c \in Incs}
+Messages   == JoinMsgs \cup OfferMsgs \cup ReqMsgs \cup AckMsgs \cup ReplyMsgs \cup FencedMsgs
+Completions == [i : Inst, inc : Incs, seq : Ks, k : Ks]
+
+\* Each variable a value of its type. Its conjuncts give every variable a value (x \in S), so
+\* Apalache starts the step from the invariant itself.
+TypeOK ==
+    /\ member \in [Inst -> 0..MaxInc]
+    /\ offer \in [Inst -> 0..MaxInc]
+    /\ ofor \in [Inst -> 0..MaxJoin]
+    /\ drawn \in [Inst -> 0..MaxInc]
+    /\ low \in [Inst -> Marks]
+    /\ lowD \in [Inst -> Marks]
+    /\ rec \in [Sess -> SUBSET Completions]
+    /\ inbox \in [Sess -> SUBSET ReqMsgs]
+    /\ effects \in [Inst -> [Ks -> 0..2]]
+    /\ cinc \in [Inst -> 0..MaxInc]
+    /\ cjn \in [Inst -> 0..MaxJoin]
+    /\ cwait \in [Inst -> BOOLEAN]
+    /\ cnext \in [Inst -> Marks]
+    /\ slot \in [Inst -> [Ks -> 0..MaxK]]
+    /\ status \in [Inst -> [Ks -> ReqStatuses]]
+    /\ got \in [Inst -> [Ks -> 0..MaxK]]
+    /\ net \in SUBSET Messages
+    /\ nCli \in 0..MaxCliCrash
+    /\ nSrv \in 0..MaxSrvCrash
+    /\ nExp \in 0..MaxExpire
+    /\ nForge \in 0..MaxForge
+
+IsReq(m) == m.kind = "req"
+
+\* An incarnation that can never be a member again: neither the member nor the one offered. A
+\* member is confirmed only from the offer, and an offer is drawn above every incarnation before it.
+Dead(i, c) == member[i] # c /\ offer[i] # c
+
+\* What keeps the request k of instance i, named by incarnation c and number q, from taking effect
+\* again: the record its session holds, its dead incarnation, or a number below the durable mark.
+Kept(i, c, q, k) ==
+    \/ \E r \in rec[Target(k)] : r.i = i /\ r.inc = c /\ r.seq = q
+    \/ Dead(i, c)
+    \/ member[i] = c /\ q < lowD[i]
+
+\* Two of one request of one instance, on the network, in an inbox or as a record, carry one name.
+OneName(x, y) == (x.i = y.i /\ x.k = y.k) => (x.inc = y.inc /\ x.seq = y.seq)
+
+AtMostOnceInductive ==
+    /\ TypeOK
+    /\ AtMostOnce
+    \* Incarnations.
+    /\ \A i \in Inst :
+           /\ member[i] <= drawn[i] /\ offer[i] <= drawn[i] /\ cinc[i] <= drawn[i]
+           /\ offer[i] # 0 => offer[i] # member[i]
+           /\ lowD[i] <= low[i]
+    /\ \A m \in net : m.inc <= drawn[m.i]
+    /\ \A s \in Sess : \A m \in inbox[s] : m.inc <= drawn[m.i] /\ Target(m.k) = s
+    /\ \A s \in Sess : \A r \in rec[s] : r.inc <= drawn[r.i] /\ r.inc # offer[r.i]
+    \* One name.
+    /\ \A x, y \in net : (IsReq(x) /\ IsReq(y)) => OneName(x, y)
+    /\ \A s, t \in Sess :
+           /\ \A x \in inbox[s], y \in inbox[t] : OneName(x, y)
+           /\ \A x \in rec[s], y \in rec[t] : OneName(x, y)
+           /\ \A x \in rec[s], y \in inbox[t] : OneName(x, y)
+    /\ \A s \in Sess : \A y \in net :
+           IsReq(y) => /\ \A x \in inbox[s] : OneName(x, y)
+                       /\ \A x \in rec[s] : OneName(x, y)
+    \* The instances: a request named once, when first sent, and again only under its slot's name.
+    /\ \A i \in Inst :
+           /\ cinc[i] = 0 => \A k \in Ks : status[i][k] # "waiting"
+           /\ \A q \in Ks : q >= cnext[i] => slot[i][q] = 0
+           /\ \A k \in Ks :
+                  status[i][k] = "new" =>
+                      /\ effects[i][k] = 0
+                      /\ \A q \in Ks : slot[i][q] # k
+                      /\ \A m \in net : IsReq(m) => ~(m.i = i /\ m.k = k)
+                      /\ \A s \in Sess : \A m \in inbox[s] : ~(m.i = i /\ m.k = k)
+                      /\ \A s \in Sess : \A r \in rec[s] : ~(r.i = i /\ r.k = k)
+           /\ \A q \in Ks :
+                  Waiting(i, q) =>
+                      LET k == slot[i][q] IN
+                      /\ \A m \in net :
+                             (IsReq(m) /\ m.i = i /\ m.k = k) => (m.inc = cinc[i] /\ m.seq = q)
+                      /\ \A s \in Sess : \A m \in inbox[s] :
+                             (m.i = i /\ m.k = k) => (m.inc = cinc[i] /\ m.seq = q)
+                      /\ \A s \in Sess : \A r \in rec[s] :
+                             (r.i = i /\ r.k = k) => (r.inc = cinc[i] /\ r.seq = q)
+                      /\ effects[i][k] >= 1 => Kept(i, cinc[i], q, k)
+    \* Kept.
+    /\ \A m \in net : (IsReq(m) /\ effects[m.i][m.k] >= 1) => Kept(m.i, m.inc, m.seq, m.k)
+    /\ \A s \in Sess : \A m \in inbox[s] : effects[m.i][m.k] >= 1 => Kept(m.i, m.inc, m.seq, m.k)
 
 =============================================================================

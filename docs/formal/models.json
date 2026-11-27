@@ -396,6 +396,32 @@
       "refines": "AtMostOnceService",
       "progress": [
         "Ends"
+      ],
+      "inductive": [
+        {
+          "invariant": "AtMostOnceInductive",
+          "implies": [
+            "AtMostOnce"
+          ],
+          "runs": [
+            {
+              "config": "OpenInstances.cfg",
+              "expect": "holds"
+            },
+            {
+              "config": "OpenInstances_without_records.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "Records"
+            },
+            {
+              "config": "OpenInstances_without_durable_mark.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "GcDurable"
+            }
+          ]
+        }
       ]
     },
     {
