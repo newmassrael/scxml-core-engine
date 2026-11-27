@@ -474,8 +474,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
 {% if field_table is defined %}
     /// The body is the table of its fields, read by the runtime's one walker
-    /// (docs/adr/0155): one call, which every site makes.
-{% elif body_read_attr %}
+    /// (docs/adr/0155): one call, placed by its sites as every body read is.
+{% endif %}
+{% if body_read_attr %}
     {{ body_read_attr }}
 {% endif %}
 {% endif %}

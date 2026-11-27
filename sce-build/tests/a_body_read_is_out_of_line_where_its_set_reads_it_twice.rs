@@ -475,8 +475,14 @@ fn a_codec_no_hot_body_reads_keeps_the_rule_of_its_sites() {
          codec named"
     );
 
+    // The ZInt extension is cold and read by the walker over its table
+    // (docs/adr/0155); its one call is placed by its sites as any body read.
     let code = rust_with("codec_zenoh_ext_zint", &options);
     let (before, body) = eager_body_read("codec_zenoh_ext_zint", &code);
+    assert!(
+        body.contains("::read_table(cursor, &CODEC_ZENOH_EXT_ZINT_FIELDS, "),
+        "codec_zenoh_ext_zint is cold and not read by its table:\n{body}"
+    );
     assert_eq!(
         before, "#[inline(never)]",
         "codec_zenoh_ext_zint is not hot and its read of two sites is not out of line:\n{body}"

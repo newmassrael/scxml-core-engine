@@ -85,7 +85,11 @@ every table; the stores are the value's, a jump table of moves. No public type c
 is the same text with and without tables (ADR 0140, first amendment).
 
 `read_into` of a cold codec is one call of `read_table` over its table and its value. The rules of ADR 0128 hold:
-every read is total, the first refusal recorded in the reader is the frame's verdict, and no read returns early.
+every read is total, the first refusal recorded in the reader is the frame's verdict, and no read returns early. The
+function is placed by its sites as ADR 0137 places every body read: with no attribute where the set reads it from one
+site, out of line where it reads it from two or more. The call is short, but it is still the table's address, the
+inputs and the value's stores handed to the walker, which two sites would each hold a copy of; one rule for every
+entry point keeps a codec's place in the set the same whether it is a table or printed.
 
 ### 3. One writer for every table
 
