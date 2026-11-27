@@ -3,7 +3,7 @@
 - Status: Accepted (2026-11-22, by the owner). Its model (D8) was written and checked the same day, before any code, and
   amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
   by the owner: what is signed (D4), the judgement as a condition of the write (D5), and an offer that waits for a proof
-  (D4, ADR 0116).
+  (D4, ADR 0116). Amended 2026-11-27: a `sce-static` document's route over the instances of an open machine (D2).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
@@ -80,6 +80,19 @@ shape, beside `mesh://<machine>` and the session endpoint's three segments (§9.
 `<send targetexpr="_event.origin">`, as W3C SCXML 5.10.1 and ADR 0090 have it, so no author concatenates a name. It is
 text the document may keep and send to later. A literal `target="#phone"` to an open machine names no one and is refused
 when the machine is generated. The name the binding's path carries is `<base>/sce-mesh/1/<machine>/<instance>`.
+
+**Amended (2026-11-27), before step 5: a document with no script engine, and a written origin.** A `sce-static`
+document holds a computed target to the routes it declares (`sce:targets`, ADR 0005, decision 3), and the instances of
+an open machine are a set no document can list. They are one route, `mesh://<machine>/{instance}`: an RFC 6570 URI
+template whose one variable expands to an instance id, which holds a value exactly when it is the origin of an
+instance of `<machine>`. It is not a wildcard over names (rejected in "Alternatives" for deploy.yaml keys): it is the
+shape of the one address an instance has, written where a document declares the addresses it sends to, and an
+instance's own origin may also be an entry. `_event.origin` is a string such a machine holds while it processes the
+event, so `<send targetexpr="_event.origin" sce:targets="mesh://phone/{instance}">` answers the instance that sent the
+request. A written `target="mesh://<machine>/<instance>"` is a Mesh target as `#peer` is, and so is the same `src` of
+`<invoke type="sce:mesh-rpc">`; each reaches the open machine's one binding. Only the Rust host core routes an
+instance's origin (D7): every other backend refuses, by its name, a document that writes one, declares the route, or
+reads `_event.origin` under `sce-static`, and its runtime answers a computed one as a target it cannot address.
 
 ### D3. One lookup binds
 

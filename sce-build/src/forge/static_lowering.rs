@@ -2613,6 +2613,14 @@ pub trait StaticTarget {
     fn target_expr_site(&self, _native_target: &str, _entries: &[String]) -> Option<String> {
         None
     }
+    /// What `_event.origin` reads on this target (the `_event` system variable): the address the
+    /// processor that delivered the event being processed wrote, as the target's text, or `None`
+    /// for a target whose machine holds no origin, which refuses a document that reads it by its name
+    /// ([`refuse_event_origin`]). What a document answers its sender at, and an instance of an
+    /// open machine by its one address (docs/adr/0113, D2).
+    fn event_origin(&self) -> Option<&'static str> {
+        None
+    }
     /// What the `typeexpr` attribute of a `<send>` is rewritten to, for a target
     /// that runs the document's own attribute (docs/adr/0005, decision 3):
     /// `native_type`, the string the attribute computes, held to the `entries` the
@@ -6492,6 +6500,12 @@ impl StaticTarget for RustTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The pair the delivering processor wrote, which the machine holds while it
+    // processes the event (`pending_event_origin`, filled by
+    // `populate_event_metadata`); empty for an event no processor stamped.
+    fn event_origin(&self) -> Option<&'static str> {
+        Some("self.pending_event_origin.as_ref().map_or(\"\", |origin| origin.address.as_str())")
+    }
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_event`).
     fn lowers_cancel_expr(&self) -> bool {
@@ -9551,6 +9565,7 @@ pub fn lower(
     let Some(scope) = StaticScope::of(model) else {
         return Ok(StaticLowering::default());
     };
+    refuse_event_origin(model, target)?;
     let lang = target.name();
     // The schemas the machine reads, one entry per field: every use of one that
     // holds a list, a record or an optional over either was refused where the
@@ -25621,7 +25636,33 @@ fn renames<'a>(
     if let Some(accessor) = payload {
         map.insert("_event.data", accessor);
     }
+    if let Some(origin) = target.event_origin() {
+        map.insert("_event.origin", origin);
+    }
     map
+}
+
+/// Refuse, on a target whose machine holds no origin ([`StaticTarget::event_origin`]), a
+/// `sce-static` document that reads `_event.origin`: its lowering would name a
+/// value the machine does not have. Refused by the target's name, at the first element that
+/// reads it, before anything is lowered.
+pub(crate) fn refuse_event_origin(
+    model: &SCXMLModel,
+    target: &dyn StaticTarget,
+) -> Result<(), GenerateError> {
+    if model.datamodel != crate::model::Datamodel::SceStatic
+        || target.event_origin().is_some()
+        || !model.needs_event_origin
+    {
+        return Ok(());
+    }
+    Err(GenerateError::unsupported(format!(
+        "`_event.origin` in '{}' has no {} lowering under `datamodel=\"sce-static\"`: its \
+         machine holds no origin of the event it processes; generate it with `--lang rust`, or \
+         under a script data model",
+        model.name,
+        target.name()
+    )))
 }
 
 /// The bound the build proves of the text `written` computes in `ctx`

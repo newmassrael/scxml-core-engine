@@ -151,6 +151,11 @@ arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_sta
 place = "backends/rust/tests/src/integration/host_processor"
 keep = ["*_sm.rs"]
 
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_static_answers_an_instance.scxml", "-l", "rust", "-o", "{out}"]
+place = "backends/rust/tests/src/integration/host_processor"
+keep = ["*_sm.rs"]
+
 # Each directory's module index: a machine is a private module re-exported
 # whole, a transition function a public module of its own.
 [[index]]

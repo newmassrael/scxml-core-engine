@@ -333,7 +333,12 @@
     } else {
         None
     }
-    .filter(|route| matches!(route.as_str(), {% for entry in action.targets %}"{{ entry | escape_rust }}"{% if not loop.last %} | {% endif %}{% endfor %}));
+{#- docs/adr/0113, D2 (amended): an entry `mesh://<machine>/{instance}` is one route over
+    every instance of the open machine <machine>, held by the instance's origin
+    (`helpers::send::origin_instance`); every other entry is one value. #}
+{%- set literal_routes = action.targets | reject('endingwith', '/{instance}') | list %}
+{%- set instance_routes = action.targets | select('endingwith', '/{instance}') | list %}
+    .filter(|route| {% if literal_routes %}matches!(route.as_str(), {% for entry in literal_routes %}"{{ entry | escape_rust }}"{% if not loop.last %} | {% endif %}{% endfor %}){% endif %}{% for entry in instance_routes %}{% if literal_routes or not loop.first %} || {% endif %}::sce_rust_runtime::helpers::send::origin_instance(route).and_then(::sce_rust_runtime::helpers::send::instance_pair).is_some_and(|(machine, _)| machine == "{{ entry[7:-11] | escape_rust }}"){% endfor %});
 {% elif action.targetexpr %}
     // A target that evaluates to nothing is not an evaluation error: it is an
     // address nobody answers at, which the resolution below reports as
@@ -872,7 +877,9 @@
 {% else %}
 {% set delay_rs = none %}
 {% endif %}
-{% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{# A `sce-static` send reaches a Mesh peer only by a route it declares over the instances of
+   an open machine (docs/adr/0113, D2, amended); a script engine's, by any value it computes. #}
+{% set dynamic_mesh = action.targetexpr and (model.needs_script_engine or (action.native_target and (action.targets | select('startingwith', 'mesh://') | list))) and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {% if dynamic_mesh %}
     if ::sce_rust_runtime::helpers::send::is_mesh_target(_rt) {
 {{ host_send_arm(action, model, machine_name, 'sce:mesh', dyn_event, has_params, has_dynamic_params, has_namelist) }}

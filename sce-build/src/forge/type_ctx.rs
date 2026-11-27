@@ -2502,6 +2502,13 @@ fn static_statechart<'a>(
         FuncSig::new(vec![InferredType::Str], InferredType::Bool),
     );
     ctx.insert_record("_event", RecordShape::Open);
+    // The `_event` system variable's `origin` is a URI the processor that delivered the
+    // event accepts as a `<send>` target, a string in every data model: what a
+    // document answers the sender at (`targetexpr="_event.origin"`), and, for an
+    // instance of an open machine, the one address of that instance
+    // (docs/adr/0113, D2). A lane that holds no origin refuses a document that
+    // reads it, by its name.
+    ctx.insert_var("_event.origin", InferredType::Str);
     close_the_scope(&mut ctx);
     ctx
 }

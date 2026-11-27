@@ -4410,7 +4410,18 @@ the declaration is what the send was held to. An entry is a target of the SCXML 
 I/O Processor as a written `target` is — `#_internal`, `#_parent`, `#_scxml_<session>`,
 `#_<invokeid>` or `sce://scxml/<session>`; a Mesh peer (`#name`) is a service a
 backend gains with its own runtime (decision 5) and is refused in the set, and so is
-anything the processor cannot address (§scxml-6.2.4). Four things are refused where
+anything the processor cannot address (§scxml-6.2.4). The instances of an open
+machine (docs/adr/0113, D2, amended) are one route, `mesh://<machine>/{instance}`:
+an RFC 6570 URI template whose one variable expands to an instance id, which holds
+a value that is the origin of an instance of `<machine>`, `mesh://<machine>/<id>`;
+the instances are an open set, so no document can list them one by one, and one
+instance's origin may also be an entry of its own. The value is commonly
+`_event.origin`, a string the machine holds while it processes the event
+(§scxml-5.10), so a server answers the instance that sent a request with
+`<send targetexpr="_event.origin" sce:targets="mesh://phone/{instance}">`. The
+Rust host core routes such a send to its Mesh router; every other backend refuses a
+document that declares the route or reads `_event.origin` under `sce-static`, by its
+name (`generate/unsupported-feature`). Four things are refused where
 the attribute is written, as `sce:candidates` is: an entry that names no route, one
 named twice (`validation/incompatible-attributes`), none at all
 (`validation/empty-value`), and `sce:targets` on a send with no `targetexpr` or whose
