@@ -251,6 +251,15 @@ pub(crate) trait InboxSource<I> {
     /// How many inputs one boundary takes at most, so posters that never stop
     /// cannot hold the owner at a boundary.
     fn per_boundary(&self) -> usize;
+    /// The token the next host-run start of an engine attached to this inbox
+    /// receives, once `next`, the one the asking engine would give, is
+    /// counted: the greatest such token any engine attached to it has asked
+    /// with. The inbox outlives the engine it is attached to, and an ending it
+    /// took for one engine is applied by the engine attached to it next, which
+    /// refuses it by the token check only while no start is given that token
+    /// again (docs/adr/0084, D2).
+    #[cfg(feature = "std")]
+    fn host_invoke_tokens_from(&self, next: u64) -> u64;
 }
 
 /// An inbox a deployment declared in a `static` and attached to the engine
@@ -763,6 +772,11 @@ pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
     /// here may name. `None` until it is attached.
     #[cfg(feature = "std")]
     session_id: Mutex<Option<String>>,
+    /// The token the next host-run start of an engine attached to this inbox
+    /// receives at the least: no engine attached to it has given a start this
+    /// token or a later one (`InboxSource::host_invoke_tokens_from`).
+    #[cfg(feature = "std")]
+    host_invoke_tokens: Mutex<u64>,
     waker: core::marker::PhantomData<fn() -> W>,
 }
 
@@ -779,6 +793,8 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
             refused: AtomicUsize::new(0),
             #[cfg(feature = "std")]
             session_id: Mutex::new(None),
+            #[cfg(feature = "std")]
+            host_invoke_tokens: Mutex::new(0),
             waker: core::marker::PhantomData,
         }
     }
@@ -928,5 +944,15 @@ impl<P: StatePolicy, const N: usize, W> InboxSource<InboxInputOf<P>> for Bounded
 
     fn per_boundary(&self) -> usize {
         N
+    }
+
+    #[cfg(feature = "std")]
+    fn host_invoke_tokens_from(&self, next: u64) -> u64 {
+        let mut tokens = self
+            .host_invoke_tokens
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *tokens = (*tokens).max(next);
+        *tokens
     }
 }

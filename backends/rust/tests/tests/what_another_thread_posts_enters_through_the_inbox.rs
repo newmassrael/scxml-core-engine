@@ -496,6 +496,9 @@ fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
 static BOUNDED_OWN: BoundedInbox<Policy, 4, StdHal> = BoundedInbox::new();
 /// A bounded inbox attached to one engine and then to another.
 static BOUNDED_MOVED: BoundedInbox<Policy, 4, StdHal> = BoundedInbox::new();
+/// A bounded inbox attached to one engine and then to the engine that stands
+/// in for it, while it holds an ending of the first one's start.
+static BOUNDED_RESTARTED: BoundedInbox<Policy, 4, StdHal> = BoundedInbox::new();
 
 /// The session id `machine`'s root was built under.
 fn session_of(machine: &Machine) -> String {
@@ -579,6 +582,47 @@ fn a_bounded_inbox_attached_to_another_engine_answers_for_that_engines_session()
     );
     second.engine.step();
     assert_eq!(second.taken(), "done:now;");
+}
+
+// docs/adr/0084, D2: a bounded inbox outlives the engine it is attached to, and
+// an ending it took for that engine is applied by the engine attached to it
+// next. So a start's token is unique for as long as the inbox is attached to one
+// engine after another: the next engine's start is not given the token of the
+// first one's, and the first one's ending is refused by the token check.
+#[test]
+fn an_ending_a_bounded_inbox_took_for_an_earlier_engine_is_refused_by_the_token_check() {
+    let mut first = Machine::booted();
+    first.engine.attach_inbox(&BOUNDED_RESTARTED);
+    let late = first.latest_token();
+    let answer = BOUNDED_RESTARTED.post(ending_of(
+        Some(session_of(&first).as_str()),
+        late,
+        true,
+        &quoted("late"),
+    ));
+    assert!(
+        answer.is_ok(),
+        "a bounded inbox answered {answer:?} to an ending naming its engine's session"
+    );
+    drop(first);
+
+    // Attached before its run starts, as a deployment hands its inbox to the
+    // engine that stands in for the one before.
+    let mut second = Machine::built();
+    second.engine.attach_inbox(&BOUNDED_RESTARTED);
+    second.boot();
+    let token = second.latest_token();
+    assert_ne!(
+        token, late,
+        "the engine attached next gave its start the token of the first one's"
+    );
+    second.engine.step();
+    assert_eq!(
+        second.taken(),
+        "",
+        "the next engine applied the ending of the first one's start"
+    );
+    assert_eq!(second.host_log(), [format!("start:{token}")]);
 }
 
 // The inbox is open from the moment the engine is built, so what is posted before

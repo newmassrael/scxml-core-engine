@@ -1598,6 +1598,12 @@ impl<P: StatePolicy> Engine<P> {
     /// the engine), so attaching is the one moment it can change for the
     /// inbox: attached to another engine, it answers for that one.
     ///
+    /// The inbox outlives the engine, and what it took for an engine attached
+    /// before is applied by this one, so in the `std` profile this engine's
+    /// host-run starts are given tokens no engine attached to it gave
+    /// (docs/adr/0084, D2): an ending it holds for an earlier engine's start is
+    /// refused by the token check.
+    ///
     /// Only with the crate's `bounded-inbox` feature, which `std` asks for.
     #[cfg(all(
         feature = "bounded-inbox",
@@ -1614,6 +1620,11 @@ impl<P: StatePolicy> Engine<P> {
         inbox.attached_to(self.policy.own_session_id());
         let source: crate::inbox::AttachedInbox<P> = inbox;
         self.state.attached_inbox = Some(source);
+        // docs/adr/0084, D2: the tokens this engine gave before it was attached
+        // count for the engine attached to the inbox next, and the ones engines
+        // attached to it before gave count for this one.
+        #[cfg(feature = "std")]
+        self.state.count_host_invoke_tokens_with_attached_inbox();
     }
 
     // ════════════════════════════════════════
@@ -5359,6 +5370,26 @@ impl<P: StatePolicy> EngineState<P> {
         child.adopt_host_invokers(self.host_processors.tree_invokers());
     }
 
+    /// docs/adr/0084, D2: hand host-run starts tokens from at least the one the
+    /// inbox attached with `attach_inbox` says no engine attached to it gave,
+    /// and tell it the one this engine gives next. That inbox outlives the
+    /// engine it is attached to, and an ending it took for an engine attached
+    /// before is applied by this one, so a token is unique for as long as the
+    /// inbox is attached to one engine after another, and that ending is refused
+    /// by the token check (§scxml-6.4: what a cancelled process sends is
+    /// ignored). Nothing to do with no inbox attached: the engine's own inbox
+    /// lives and ends with it.
+    #[cfg(feature = "std")]
+    fn count_host_invoke_tokens_with_attached_inbox(&mut self) {
+        if let Some(attached) = self.attached_inbox {
+            let next = crate::inbox::InboxSource::host_invoke_tokens_from(
+                attached,
+                self.host_processors.next_token(),
+            );
+            self.host_processors.set_next_token(next);
+        }
+    }
+
     /// The start itself, which an invocation the document begins and one a
     /// restore begins again both go through: record the request, hand it to the
     /// host, arm the deadline at `deadline_at` (a moment of the engine's clock),
@@ -5390,9 +5421,13 @@ impl<P: StatePolicy> EngineState<P> {
         request.principal = self.acting.clone();
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
+        // The start's token is one no engine attached to this engine's inbox
+        // gave, and the inbox is told it was given.
+        self.count_host_invoke_tokens_with_attached_inbox();
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
             return false;
         };
+        self.count_host_invoke_tokens_with_attached_inbox();
         // §scxml-6.4.1: the host could not start it, so it never started —
         // taken back out of the running set, with no deadline armed, and the
         // element's error raised with what the host said.
