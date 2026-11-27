@@ -21,27 +21,79 @@
 (*   A clock may lag and does not run back for one process.                *)
 (*   LiveSpec: a transaction under way ends, and a follower goes on.       *)
 (***************************************************************************)
-EXTENDS Naturals, FiniteSets, Sequences
+EXTENDS Naturals, FiniteSets, Sequences, Apalache
 
-CONSTANTS NProc, NSess, MaxInput, MaxOpen, MaxCrash,
-          Fence,        \* a write needs the lease's fence
-          Atomic,       \* the entry is written with the state
-          Horizon,      \* a reader reads up to the horizon
-          CursorAtomic, \* a cursor is written with what its follower did
-          ByPosition,   \* an earlier moment is a position, not a clock's time
-          Release       \* a process that stops ends the transactions it had under way
+CONSTANTS
+    \* processes, sessions, inputs of a session, transactions under way, crashes
+    \* @type: Int;
+    NProc,
+    \* @type: Int;
+    NSess,
+    \* @type: Int;
+    MaxInput,
+    \* @type: Int;
+    MaxOpen,
+    \* @type: Int;
+    MaxCrash,
+    \* a write needs the lease's fence
+    \* @type: Bool;
+    Fence,
+    \* the entry is written with the state
+    \* @type: Bool;
+    Atomic,
+    \* a reader reads up to the horizon
+    \* @type: Bool;
+    Horizon,
+    \* a cursor is written with what its follower did
+    \* @type: Bool;
+    CursorAtomic,
+    \* an earlier moment is a position, not a clock's time
+    \* @type: Bool;
+    ByPosition,
+    \* a process that stops ends the transactions it had under way
+    \* @type: Bool;
+    Release
 
 Procs == 1..NProc
 Nobody == 0             \* whose a transaction is that a stopped process left under way
 Sess  == 1..NSess
 MaxPos == NSess * MaxInput * 2
 
-VARIABLES fence, hold, mem,         \* the lease of a session; a process's copy of it
-          st, log, open, nextpos,   \* the store: state, visible entries, transactions under way
-          clock,                    \* each process's clock, which may lag
-          pend,                     \* entries whose state was written and that are not yet (not Atomic)
-          cursor, applied, staged,  \* the follower
-          asked, crashes
+VARIABLES
+    \* the lease of a session; a process's copy of it
+    \* @type: Int -> Int;
+    fence,
+    \* @type: Int -> (Int -> Int);
+    hold,
+    \* @type: Int -> (Int -> Int);
+    mem,
+    \* the store: state, visible entries, transactions under way
+    \* @type: Int -> Int;
+    st,
+    \* @type: Set({pos: Int, s: Int, n: Int, at: Int});
+    log,
+    \* @type: Set({p: Int, s: Int, n: Int, pos: Int, f: Int, at: Int});
+    open,
+    \* @type: Int;
+    nextpos,
+    \* each process's clock, which may lag
+    \* @type: Int -> Int;
+    clock,
+    \* entries whose state was written and that are not yet (not Atomic)
+    \* @type: Set({pos: Int, s: Int, n: Int, at: Int});
+    pend,
+    \* the follower
+    \* @type: Int;
+    cursor,
+    \* @type: <<Int, Int>> -> Int;
+    applied,
+    \* @type: Int;
+    staged,
+    \* the answers given as of a moment, and the crashes so far
+    \* @type: Set({r: Int, held: Set({pos: Int, s: Int, n: Int, at: Int})});
+    asked,
+    \* @type: Int;
+    crashes
 
 vars == <<fence, hold, mem, st, log, open, nextpos, clock, pend, cursor, applied, staged, asked, crashes>>
 
@@ -193,5 +245,69 @@ Service == INSTANCE JournalService WITH
     did <- applied
 
 Refines == Service!Spec
+
+-----------------------------------------------------------------------------
+\* A follower misses nothing for every length of execution (docs/adr/0115, D3; docs/adr/0114, D3 and
+\* D4): an inductive invariant that implies NonePassed and FollowedOnce, checked by Apalache at the
+\* parameters of a configuration (models.json), over every state it allows and not only the
+\* reachable ones.
+\*
+\* Why: a position is given once, above every one before, so the entries and the transactions under
+\* way have distinct positions; a write is judged by the lease's fence, and the one process that
+\* holds the fence has the state it continues, so each input makes one entry; the follower's cursor
+\* never passes a transaction under way (the horizon), so an entry that appears later is above it;
+\* and the follower keeps its cursor with what it did, so it has done each entry at or below its
+\* cursor once and none above. An answer as of a position is below the horizon too, so it is the
+\* journal as of that position for ever (Stable), the one value its type gives it below.
+
+EntryRecords == [pos : 1..MaxPos, s : Sess, n : 1..MaxInput, at : 1..2]
+Transactions == [p : Procs, s : Sess, n : 1..MaxInput, pos : 1..MaxPos, f : 1..2, at : 1..2]
+
+\* Each variable a value of its type. Its conjuncts give every variable a value (x \in S), so
+\* Apalache starts the step from the invariant itself.
+JournalTypeOK ==
+    /\ fence \in [Sess -> 0..2]
+    /\ hold \in [Procs -> [Sess -> 0..2]]
+    /\ mem \in [Procs -> [Sess -> 0..MaxInput]]
+    /\ st \in [Sess -> 0..MaxInput]
+    /\ log \in SUBSET EntryRecords
+    /\ open \in SUBSET Transactions
+    /\ nextpos \in 1..(MaxPos + 1)
+    /\ clock \in [Procs -> 1..2]
+    /\ pend \in SUBSET EntryRecords
+    /\ cursor \in 0..MaxPos
+    /\ applied \in [Sess \X (1..MaxInput) -> 0..2]
+    /\ staged \in 0..MaxPos
+    /\ asked \in SUBSET {[r |-> q, held |-> AsOf(q)] : q \in 1..MaxPos}
+    /\ crashes \in 0..MaxCrash
+
+FollowerInductive ==
+    /\ JournalTypeOK
+    /\ FollowedOnce
+    /\ pend = {} /\ staged = 0
+    \* Positions: each given once, below the next.
+    /\ \A t \in open : t.pos < nextpos
+    /\ \A e \in log : e.pos < nextpos
+    /\ \A t, u \in open : t.pos = u.pos => t = u
+    /\ \A e, d \in log : e.pos = d.pos => e = d
+    /\ \A t \in open : \A e \in log : t.pos # e.pos
+    \* The lease: one holder of the fence, which has the state its write continues.
+    /\ \A s \in Sess :
+           /\ \A p \in Procs : hold[p][s] <= fence[s]
+           /\ \A p, q \in Procs : (hold[p][s] # 0 /\ hold[p][s] = hold[q][s]) => p = q
+           /\ \A p \in Procs : (hold[p][s] # 0 /\ hold[p][s] = fence[s]) => mem[p][s] = st[s]
+    /\ \A t \in open : t.f <= fence[t.s]
+    /\ \A t \in open : t.f = fence[t.s] => (hold[t.p][t.s] = t.f /\ t.n = st[t.s] + 1)
+    /\ \A t, u \in open : (t.p = u.p /\ t.s = u.s) => t = u
+    \* One entry per input.
+    /\ \A e \in log : e.n <= st[e.s]
+    /\ AppendOnce
+    \* The follower: below the horizon, each entry at or below its cursor done once and none above.
+    /\ cursor < nextpos
+    /\ \A t \in open : cursor < t.pos
+    /\ \A e \in log : applied[<<e.s, e.n>>] = IF e.pos <= cursor THEN 1 ELSE 0
+    /\ \A k \in DOMAIN applied : (\A e \in log : <<e.s, e.n>> # k) => applied[k] = 0
+    \* An answer as of a position: below the horizon.
+    /\ \A a \in asked : a.r < nextpos /\ \A t \in open : a.r < t.pos
 
 =============================================================================
