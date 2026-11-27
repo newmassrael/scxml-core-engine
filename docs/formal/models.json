@@ -1185,6 +1185,109 @@
       "decision": "docs/adr/0115",
       "abstract": true,
       "runs": []
+    },
+    {
+      "module": "CheckpointWrite",
+      "decision": "docs/adr/0115",
+      "parts": {
+        "LeaseFence": "TRUE",
+        "JournalInWrite": "TRUE",
+        "RecordInWrite": "TRUE",
+        "OutboxInWrite": "TRUE",
+        "ClockLags": "TRUE",
+        "Release": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "CheckpointService",
+      "progress": [
+        "Ends",
+        "Followed"
+      ],
+      "possible": [
+        "CaughtUp"
+      ],
+      "runs": [
+        {
+          "config": "CheckpointWrite.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "CheckpointWrite_two_requests.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "CheckpointWrite_live.cfg",
+          "expect": "holds",
+          "possible": "CaughtUp"
+        },
+        {
+          "config": "CheckpointWrite_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Ends",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes a request end; the two promises and what ties them are safety and need none"
+        },
+        {
+          "config": "CheckpointWrite_followed_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Followed",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes an entry be followed; the two promises and what ties them are safety and need none"
+        },
+        {
+          "config": "CheckpointWrite_without_lease_fence.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "LeaseFence",
+          "promise": "broken"
+        },
+        {
+          "config": "CheckpointWrite_without_lease_fence_journal.cfg",
+          "expect": "violates",
+          "invariant": "AppendOnce",
+          "without": "LeaseFence",
+          "promise": "broken"
+        },
+        {
+          "config": "CheckpointWrite_without_record_in_write.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "RecordInWrite",
+          "promise": "broken"
+        },
+        {
+          "config": "CheckpointWrite_without_outbox_in_write.cfg",
+          "expect": "violates",
+          "invariant": "Answered",
+          "without": "OutboxInWrite",
+          "promise": "broken"
+        },
+        {
+          "config": "CheckpointWrite_without_journal_in_write.cfg",
+          "expect": "violates",
+          "invariant": "NothingLost",
+          "without": "JournalInWrite",
+          "promise": "broken"
+        },
+        {
+          "config": "CheckpointWrite_without_clock_lag.cfg",
+          "expect": "violates",
+          "property": "TakenWhenDue",
+          "without": "ClockLags",
+          "promise": "kept",
+          "why": "a deadline is a property of time and the promises are of none: a key taken over early has two holders for a while, the fence lets one of them write, and no effect, answer or entry depends on a clock"
+        },
+        {
+          "config": "CheckpointWrite_possible_without_release.cfg",
+          "expect": "violates",
+          "possible": "CaughtUp",
+          "without": "Release",
+          "promise": "kept",
+          "why": "a horizon that stops gives a reader nothing false, and no more"
+        }
+      ]
     }
   ]
 }

@@ -8,8 +8,8 @@ this file says what is here and how to read it.
 
 | Level (ADR 0115) | Here | Built |
 |---|---|---|
-| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`: what a user may rely on, no mechanism | yes, for five protocols |
-| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla` and `EngineInbox.tla` | yes, for five protocols |
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`: what a user may rely on, no mechanism; `CheckpointService.tla`: two of them over one server, and what ties them | yes, for five protocols and the composition of two |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla`, `EngineInbox.tla` and `CheckpointWrite.tla` | yes, for five protocols and the composition of two |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
@@ -29,6 +29,7 @@ this file says what is here and how to read it.
 | `BrowserNode` | ADR 0117, the pages of one browser as one node: the lock, the store, a cleared store, a change of person |
 | `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
 | `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted, a post refused when posted (a session the tree does not hold, an ended one, a full inbox) |
+| `CheckpointService`, `CheckpointWrite` | ADR 0115 D12, the composition: `OpenInstances` and `EventJournal` over the one write in which a session's state, its outbox, its journal and a member's records are made durable together, and the time a lease is judged by |
 | `AppendixD`, `W3CTest388`, `W3CTest570`, `W3CTest403c` | ADR 0115 D7, the SCXML recommendation's Appendix D over a document's tables, and three documents of the W3C corpus over it: history recorded and restored, the done events of a parallel state's regions and of the state, the removal of conflicting transitions |
 
 `AppendixD` is declared `abstract`: it is the semantics a document's model instantiates, and is run only by those. A
@@ -43,6 +44,15 @@ with the corpus's verdict (`NeverFails`, `Passes`) as properties. Their configur
 them; `regen-reproduces` holds them to their documents. A document carrying a construct the generator has no translation
 for (an `<invoke>`, a `<log>`, a string, `In()`, ...: `Construct` in `sce-build/src/formal/document_model.rs` is the
 list) is refused by name with `formal/no-translation` and has no model, never a model of part of it.
+
+`CheckpointWrite` instantiates `OpenInstances` and `EventJournal` and copies neither: every step of each but the
+run that takes an effect and the transaction, and in place of both the one write, which the store refuses whole by the
+lease's fence or by the incarnation the run was made under. Each protocol's properties are checked there where the other
+moves too, and a part of one is seen to carry a property of the other: without the lease's fence of `EventJournal`, a
+request of `OpenInstances` takes effect twice. Its promise, `CheckpointService`, is the two promises and what ties
+them: a request takes effect in the step that makes its entry, and an effect's entry is never passed over. Time is a
+variable there, and each process's clock lags it: no property of either protocol is one of a clock (the run that lets a
+clock run ahead keeps the promise), and the one property of a deadline, `TakenWhenDue`, is one of time.
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
