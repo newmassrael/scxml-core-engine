@@ -5552,6 +5552,22 @@ set_tests_properties(c11_unit_session_id PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# The trace port's recorder and the writer of the run trace format (docs/adr/0115,
+# D4 and D8; sce/trace_port.h, sce/trace_json.h), held to the cases of the Rust
+# runtime's trace_port module, so the two lanes write one format in one layout.
+# Header-only and allocation-free.
+add_executable(sce_c_trace_port_unit_test unit/trace_port_test.c)
+target_link_libraries(sce_c_trace_port_unit_test PRIVATE sce_c_runtime m)
+set_target_properties(sce_c_trace_port_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_trace_port COMMAND sce_c_trace_port_unit_test)
+set_tests_properties(c11_unit_trace_port PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 # An event's origin (docs/adr/0090): the pair its processor writes, the SCXML
 # processor's address codec a session's location and every origin it sends are
 # spelled by, a location read as a send target, and a format-2 stored origin read
