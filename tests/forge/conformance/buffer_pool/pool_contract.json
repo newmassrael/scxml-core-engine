@@ -1,0 +1,850 @@
+{
+  "version": 1,
+  "description": "The buffer-pool kind's lending contract (docs/adr/0111 D4), run by the Rust arm (backends/rust/forge-conformance/tests/forge_buffer_pool.rs) and the C11 arm (backends/c/forge-runtime/tests/conformance/buffer_pool_test.c) against every pool of `pools`, each of which is a document in this directory. A scenario makes a pool (`make`: a run-time `count` over the pool's own storage, or `over` a span the caller holds, cut at `offset` bytes past an aligned arena) and runs its steps in order. A step's `slot` and `out` name a handle register and `index` an index register, 0 to 7. The C11 arm learns a construction's refusal as `false` alone, so it checks `ok` against any refusal; every other outcome both arms check alike.",
+  "pools": [
+    "pool_conformance_owner",
+    "pool_conformance_shared"
+  ],
+  "scenarios": [
+    {
+      "id": "a_count_within_the_bound_lends_that_many",
+      "make": {
+        "count": 2
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "count",
+          "expect": 2
+        },
+        {
+          "op": "slot_len",
+          "expect": 64
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 2,
+          "expect": "exhausted"
+        },
+        {
+          "op": "free",
+          "expect": 0
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 1
+        },
+        {
+          "op": "return",
+          "slot": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 2
+        }
+      ]
+    },
+    {
+      "id": "a_count_of_none_is_refused",
+      "make": {
+        "count": 0
+      },
+      "expect": "count",
+      "steps": []
+    },
+    {
+      "id": "a_count_past_the_bound_is_refused",
+      "make": {
+        "count": 5
+      },
+      "expect": "count",
+      "steps": []
+    },
+    {
+      "id": "a_lending_names_its_length_and_its_headroom",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 0,
+          "headroom": 0,
+          "out": 0,
+          "expect": "length"
+        },
+        {
+          "op": "acquire",
+          "len": 65,
+          "headroom": 0,
+          "out": 0,
+          "expect": "length"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 64,
+          "out": 0,
+          "expect": "headroom"
+        },
+        {
+          "op": "free",
+          "expect": 4
+        },
+        {
+          "op": "acquire",
+          "len": 16,
+          "headroom": 2,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "capacity",
+          "slot": 0,
+          "expect": 14
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 4
+        }
+      ]
+    },
+    {
+      "id": "a_pool_over_caller_storage_lends_the_slots_it_was_cut_into",
+      "make": {
+        "over": {
+          "span": 128,
+          "offset": 0,
+          "count": 2,
+          "len": 32
+        }
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "count",
+          "expect": 2
+        },
+        {
+          "op": "slot_len",
+          "expect": 32
+        },
+        {
+          "op": "acquire",
+          "len": 33,
+          "headroom": 0,
+          "out": 0,
+          "expect": "length"
+        },
+        {
+          "op": "acquire",
+          "len": 32,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "capacity",
+          "slot": 0,
+          "expect": 32
+        },
+        {
+          "op": "acquire",
+          "len": 32,
+          "headroom": 0,
+          "out": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 32,
+          "headroom": 0,
+          "out": 2,
+          "expect": "exhausted"
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "return",
+          "slot": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 2
+        }
+      ]
+    },
+    {
+      "id": "a_short_span_is_refused",
+      "make": {
+        "over": {
+          "span": 63,
+          "offset": 0,
+          "count": 2,
+          "len": 32
+        }
+      },
+      "expect": "short",
+      "steps": []
+    },
+    {
+      "id": "a_misaligned_span_is_refused",
+      "make": {
+        "over": {
+          "span": 128,
+          "offset": 1,
+          "count": 2,
+          "len": 32
+        }
+      },
+      "expect": "misaligned",
+      "steps": []
+    },
+    {
+      "id": "a_length_off_the_alignment_is_refused",
+      "make": {
+        "over": {
+          "span": 128,
+          "offset": 0,
+          "count": 2,
+          "len": 24
+        }
+      },
+      "expect": "length",
+      "steps": []
+    },
+    {
+      "id": "a_length_past_the_bound_is_refused",
+      "make": {
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 2,
+          "len": 80
+        }
+      },
+      "expect": "length",
+      "steps": []
+    },
+    {
+      "id": "a_span_count_past_the_bound_is_refused",
+      "make": {
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 5,
+          "len": 32
+        }
+      },
+      "expect": "count",
+      "steps": []
+    },
+    {
+      "id": "an_index_rebuilds_its_handle_once",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "into_index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "free",
+          "expect": 3
+        },
+        {
+          "op": "reclaim",
+          "index": 0,
+          "state": "cpu-mut",
+          "out": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "reclaim",
+          "index": 0,
+          "state": "cpu-mut",
+          "out": 2,
+          "expect": "refused"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        },
+        {
+          "op": "return",
+          "slot": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 4
+        }
+      ]
+    },
+    {
+      "id": "a_stale_index_is_refused_and_counted",
+      "make": {
+        "count": 1
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "generation",
+          "index": 0,
+          "expect": 0
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "into_index",
+          "slot": 1,
+          "out": 1
+        },
+        {
+          "op": "generation",
+          "index": 1,
+          "expect": 1
+        },
+        {
+          "op": "reclaim",
+          "index": 0,
+          "state": "cpu-mut",
+          "out": 2,
+          "expect": "refused"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        },
+        {
+          "op": "reclaim",
+          "index": 1,
+          "state": "cpu-mut",
+          "out": 2,
+          "expect": "ok"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        },
+        {
+          "op": "return",
+          "slot": 2,
+          "expect": "ok"
+        }
+      ]
+    },
+    {
+      "id": "an_index_given_up_in_one_state_does_not_rebuild_another",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "into_index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "reclaim",
+          "index": 0,
+          "state": "cpu-ref",
+          "out": 1,
+          "expect": "refused"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        },
+        {
+          "op": "reclaim",
+          "index": 0,
+          "state": "cpu-mut",
+          "out": 1,
+          "expect": "ok"
+        },
+        {
+          "op": "return",
+          "slot": 1,
+          "expect": "ok"
+        }
+      ]
+    },
+    {
+      "id": "a_generation_advances_each_time_a_slot_returns",
+      "make": {
+        "count": 1
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "generation",
+          "index": 0,
+          "expect": 0
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "generation",
+          "index": 0,
+          "expect": 1
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "index",
+          "slot": 0,
+          "out": 0
+        },
+        {
+          "op": "generation",
+          "index": 0,
+          "expect": 2
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        }
+      ]
+    },
+    {
+      "id": "a_take_writes_the_prefix_in_front_of_the_frame",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 2,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "capacity",
+          "slot": 0,
+          "expect": 62
+        },
+        {
+          "op": "write",
+          "slot": 0,
+          "bytes": [
+            161,
+            162,
+            163
+          ]
+        },
+        {
+          "op": "arm_tx",
+          "slot": 0,
+          "frame": 3,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "take",
+          "index": 0,
+          "prefix": [
+            0,
+            3
+          ],
+          "expect": "ok",
+          "len": 5
+        },
+        {
+          "op": "sent",
+          "bytes": [
+            0,
+            3,
+            161,
+            162,
+            163
+          ]
+        },
+        {
+          "op": "take",
+          "index": 0,
+          "prefix": [],
+          "expect": "stale"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        },
+        {
+          "op": "complete_tx",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "free",
+          "expect": 4
+        }
+      ]
+    },
+    {
+      "id": "a_prefix_wider_than_the_headroom_is_refused_and_returns_the_slot",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 64,
+          "headroom": 1,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "arm_tx",
+          "slot": 0,
+          "frame": 0,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "take",
+          "index": 0,
+          "prefix": [
+            1,
+            2
+          ],
+          "expect": "prefix-too-wide"
+        },
+        {
+          "op": "refused_prefixes",
+          "expect": 1
+        },
+        {
+          "op": "violations",
+          "expect": 0
+        },
+        {
+          "op": "free",
+          "expect": 4
+        },
+        {
+          "op": "take",
+          "index": 0,
+          "prefix": [],
+          "expect": "stale"
+        },
+        {
+          "op": "violations",
+          "expect": 1
+        }
+      ]
+    },
+    {
+      "id": "a_frame_past_its_room_is_not_armed",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "acquire",
+          "len": 16,
+          "headroom": 2,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "arm_tx",
+          "slot": 0,
+          "frame": 15,
+          "out": 0,
+          "expect": "refused"
+        },
+        {
+          "op": "arm_tx",
+          "slot": 0,
+          "frame": 14,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "take",
+          "index": 0,
+          "prefix": [
+            9,
+            9
+          ],
+          "expect": "ok",
+          "len": 16
+        },
+        {
+          "op": "complete_tx",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "complete_tx",
+          "index": 0,
+          "expect": false
+        },
+        {
+          "op": "free",
+          "expect": 4
+        }
+      ]
+    },
+    {
+      "id": "a_slot_lent_to_events_returns_with_its_last_holder",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "receive",
+          "len": 64,
+          "bytes": [
+            7,
+            8
+          ],
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "free",
+          "expect": 3
+        },
+        {
+          "op": "lend",
+          "slot": 0,
+          "holds": 0,
+          "out": 0,
+          "expect": "refused"
+        },
+        {
+          "op": "lend",
+          "slot": 0,
+          "holds": 2,
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "lent",
+          "index": 0,
+          "expect": 64
+        },
+        {
+          "op": "hold",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "release",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "release",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "free",
+          "expect": 3
+        },
+        {
+          "op": "release",
+          "index": 0,
+          "expect": true
+        },
+        {
+          "op": "free",
+          "expect": 4
+        },
+        {
+          "op": "violations",
+          "expect": 0
+        },
+        {
+          "op": "release",
+          "index": 0,
+          "expect": false
+        },
+        {
+          "op": "hold",
+          "index": 0,
+          "expect": false
+        },
+        {
+          "op": "lent",
+          "index": 0,
+          "expect": null
+        },
+        {
+          "op": "violations",
+          "expect": 3
+        }
+      ]
+    },
+    {
+      "id": "a_received_frame_reads_back_as_the_device_wrote_it",
+      "make": {
+        "count": 4
+      },
+      "expect": "ok",
+      "steps": [
+        {
+          "op": "receive",
+          "len": 32,
+          "bytes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "out": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "capacity",
+          "slot": 0,
+          "expect": 32
+        },
+        {
+          "op": "read",
+          "slot": 0,
+          "bytes": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "op": "return",
+          "slot": 0,
+          "expect": "ok"
+        },
+        {
+          "op": "receive",
+          "len": 65,
+          "bytes": [],
+          "out": 0,
+          "expect": "length"
+        },
+        {
+          "op": "free",
+          "expect": 4
+        }
+      ]
+    }
+  ]
+}
