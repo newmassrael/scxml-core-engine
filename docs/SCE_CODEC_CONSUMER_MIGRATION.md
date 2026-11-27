@@ -4243,3 +4243,35 @@ changes.
   refusal. A request signature covers `sce-mesh-fresh` when the request carries one; one that carries none signs the
   bytes it signed before, so the C++ client and the vector of `tests/mesh/https_signature_cross_language.json` are
   unchanged. `sce_rust_mesh::https::freshness` holds the server's `Freshness` and the header's name.
+
+## A Rust map may keep its slots in memory its host lends, and names the slot of each entry (ADR 0154)
+
+Landing: the commits that add this section (ADR 0154, step 2). No committed generated tree changes; the generated Rust
+of an algorithm that holds a map changes where it is generated again (below).
+
+- `sce_portable_bytes` and `sce_rust_runtime` export two more map storages, `Lent<'a>` (the slots, no index) and
+  `LentIndexed<'a>` (the slots and the index's cells), and what a host builds their runs from: `LentSlot<K, V>`,
+  `LentIndexedSlot<K, V>` and `LentCell`, each with `EMPTY` and `empty()`. `BoundedMap::<K, V, N, Lent<'_>>::over(seed,
+  &mut slots)` and `BoundedMap::<K, V, N, LentIndexed<'_>>::over(seed, &mut slots, &mut cells)` (and `BoundedSet`'s)
+  build the empty map over the runs; its limit is `slots.len()`, at most `N`, and `cells` holds at least twice as
+  many. A run past the bound or cells too few are refused with `LendRefused`. Name the storage in the path
+  (`BoundedMap::<_, _, N, Lent<'_>>::over`): both lent storages have an `over`.
+- `BoundedMap::limit()` answers how many entries the map may hold, `N` or the slots lent; a put of an absent key at
+  the limit answers `PutOutcome::Full`.
+- `MapSlot { index, generation }` (`#[repr(C)]`) names the slot an entry is held in until it is removed:
+  `put_slot(key, value)` answers `(PutOutcome, Option<MapSlot>)`, `slot_of(key)`, `MapCursor::slot()` and
+  `at_slot(slot)` (`None` for a slot freed since, or taken again by another entry). `put` answers as before.
+- **What changes for code that exists.** A `MapCursor` carries its slot's generation: two positions read before and
+  after a slot was freed and taken again are unequal, and `key_at` or `value_at` of the earlier panics; compare
+  `cursor.slot().index` to ask whether two positions are one slot. `clear()` frees every slot onto the free list,
+  where it gave the slots back to the storage; what a map answers is unchanged. Each slot holds a `u32` more, so a
+  map in bounded storage grows by up to four bytes a slot, eight where alignment rounds it.
+- `Clone` of a map or a set is implemented for a storage that holds its own slots, `S: MapStorage<Owned = S>`
+  (`Inline`, `Heap`, `Linear`); code generic over `S: MapStorage` that clones a map writes `to_owned_storage()`,
+  which copies into `S::Owned` (`Linear` for `Lent`, `Inline` for `LentIndexed`, the storage itself otherwise), or
+  states that bound. `widened_map`, `map_from_saved`, `set_from_saved` and `SavedValue` for a map or a set state it
+  too; a lent map's saved form is written by `map_to_saved`, and a host restores a lent map by clearing it and
+  putting the entries of the map `map_from_saved` reads.
+- A generated Rust algorithm takes a lent map where it took any storage. A map it builds for itself is kept in
+  `<S0 as MapStorage>::Owned` and a walk whose body writes its map walks `to_owned_storage()`: for a caller that
+  lends `Inline`, `Heap` or `Linear` that is the storage and the copy it was before.
