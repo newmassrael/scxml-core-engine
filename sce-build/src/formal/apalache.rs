@@ -51,12 +51,20 @@ pub struct Run<'a> {
     pub length: u32,
 }
 
-/// The name of the configuration of a run's parameters, in its directory.
-const CONSTANTS_FILE: &str = "constants.cfg";
+/// The name of the configuration of a run, in its directory.
+const CONFIG_FILE: &str = "run.cfg";
 
 /// The name of the empty JSON configuration a run gives Apalache in place of
 /// the ones of the home and of the working directory.
 const SETTINGS_FILE: &str = "apalache.json";
+
+/// The TLC configuration of `run`: the predicate it starts from, its step and
+/// the CONSTANTS of its configuration. Apalache reads the behaviour from the
+/// configuration it is given and refuses one that names none (a status of
+/// 255), so the configuration names both, and nothing else names them.
+fn config(run: &Run<'_>) -> String {
+    format!("INIT {}\nNEXT Next\n{}", run.init, run.constants)
+}
 
 /// The argument `--<name>=<value>` for a path.
 fn setting(name: &str, value: &Path) -> std::ffi::OsString {
@@ -73,20 +81,18 @@ fn setting(name: &str, value: &Path) -> std::ffi::OsString {
 pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
     let work = WorkDir::new("apalache")?;
     let mut staged = run.extra.to_vec();
-    staged.push((CONSTANTS_FILE.to_string(), run.constants.to_string()));
+    staged.push((CONFIG_FILE.to_string(), config(run)));
     staged.push((SETTINGS_FILE.to_string(), "{}\n".to_string()));
     stage_modules(run.sources, work.path(), &staged)?;
     let settings = setting("config-file", &work.path().join(SETTINGS_FILE));
-    let constants = setting("config", &work.path().join(CONSTANTS_FILE));
+    let config = setting("config", &work.path().join(CONFIG_FILE));
     let out_dir = setting("out-dir", &work.path().join("out"));
     let ran = Command::new(run.tool)
         .current_dir(work.path())
         .env("TMPDIR", work.path())
         .arg("check")
         .arg(settings)
-        .arg(constants)
-        .arg(format!("--init={}", run.init))
-        .arg("--next=Next")
+        .arg(config)
         .arg(format!("--inv={}", run.invariants.join(",")))
         .arg(format!("--length={}", run.length))
         .arg("--discard-disabled=false")
@@ -110,4 +116,27 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
             String::from_utf8_lossy(&ran.stderr)
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_runs_configuration_names_its_start_and_step_before_its_parameters() {
+        let run = Run {
+            tool: Path::new("apalache-mc"),
+            sources: Path::new("."),
+            extra: &[],
+            module: "M",
+            constants: "CONSTANTS\n    N = 2\n",
+            init: "Start",
+            invariants: &[],
+            length: 1,
+        };
+        assert_eq!(
+            config(&run),
+            "INIT Start\nNEXT Next\nCONSTANTS\n    N = 2\n"
+        );
+    }
 }
