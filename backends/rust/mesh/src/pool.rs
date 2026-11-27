@@ -2393,15 +2393,23 @@ where
                             }
                         }
                     }
+                    // D6: an instance under a `transport` receipt is held to the bound as one judged
+                    // by its records is, and shed past it.
                     Input::Envelope {
                         peer,
                         bytes,
                         receipt,
                         ..
-                    } => {
-                        endpoint.receive(&peer, bytes);
-                        session.unsaved.push(receipt);
-                    }
+                    } => match endpoint.receive_within_bound(&peer, bytes) {
+                        Ok(()) => session.unsaved.push(receipt),
+                        Err(refused) => {
+                            receipt.settle(Fate::Lost);
+                            self.error(PoolError::Endpoint {
+                                key: key.to_string(),
+                                error: refused,
+                            });
+                        }
+                    },
                     Input::Stand(peer, standing) => endpoint.stand(&peer, standing),
                     Input::EndMember(peer) => endpoint.remove_peer(&peer),
                     Input::Ready(peer) => endpoint.peer_ready(&peer),
@@ -6169,41 +6177,41 @@ mod tests {
         ));
     }
 
-    /// docs/adr/0113, D5: an instance whose binding takes a `transport` receipt is admitted by its
-    /// edge and taken in by the section 10.5 window, whose guarantee it has; completion records
-    /// are a `durable` receipt's. Red if the pool hands such an envelope to the records: the
-    /// router refuses it as not durable, nothing is taken in, and the room stays empty though its
-    /// envelope is settled.
-    #[test]
-    fn an_instance_under_a_transport_receipt_is_taken_in_by_the_window() {
-        const TRANSPORT_ROOMS: Machine = Machine {
-            open_peers: &[OpenPeer {
-                peer: Peer {
-                    link: PeerLink::HttpsAccept {
-                        listen: "0.0.0.0:8443",
-                        authenticator: crate::peers::HttpsAuthenticator::Key,
-                        max_hold_ms: 30_000,
-                        max_body_bytes: 1_048_576,
-                        absence_ms: 120_000,
-                        mailbox: 1024,
-                        max_clients: 100_000,
-                        max_response_bytes: 1_048_576,
-                        rate: crate::peers::EdgeRates::DEFAULT,
-                        trusted_proxies: &[],
-                        sign: None,
-                        max_skew_ms: 300_000,
-                        fresh_ms: None,
-                        receipt: crate::peers::Receipt::Transport,
-                        retain_ms: 60_000,
-                    },
-                    ..PHONE.peer
+    /// The rooms, bound to the instances of [`PHONE`] under a `transport` receipt.
+    const TRANSPORT_ROOMS: Machine = Machine {
+        open_peers: &[OpenPeer {
+            peer: Peer {
+                link: PeerLink::HttpsAccept {
+                    listen: "0.0.0.0:8443",
+                    authenticator: crate::peers::HttpsAuthenticator::Key,
+                    max_hold_ms: 30_000,
+                    max_body_bytes: 1_048_576,
+                    absence_ms: 120_000,
+                    mailbox: 1024,
+                    max_clients: 100_000,
+                    max_response_bytes: 1_048_576,
+                    rate: crate::peers::EdgeRates::DEFAULT,
+                    trusted_proxies: &[],
+                    sign: None,
+                    max_skew_ms: 300_000,
+                    fresh_ms: None,
+                    receipt: crate::peers::Receipt::Transport,
+                    retain_ms: 60_000,
                 },
-                ..PHONE
-            }],
-            ..ROOMS
-        };
-        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
-        let pool = Pool::with_members(
+                ..PHONE.peer
+            },
+            ..PHONE
+        }],
+        ..ROOMS
+    };
+
+    /// A pool of [`TRANSPORT_ROOMS`] over `store`, which keeps the members of `phone` too.
+    fn transport_pool(
+        store: &MemoryStore,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+    ) -> Pool<Rooms, Wire, Clock> {
+        Pool::with_members(
             TRANSPORT_ROOMS,
             PoolConfig {
                 owner: "p1".to_string(),
@@ -6211,13 +6219,24 @@ mod tests {
                 renew_every_ms: 3_000,
             },
             Rooms {
-                probe: Arc::clone(&probe),
+                probe: Arc::clone(probe),
             },
             Arc::new(store.clone()),
             Wire::default(),
             clock.clone(),
         )
-        .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+        .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"))
+    }
+
+    /// docs/adr/0113, D5: an instance whose binding takes a `transport` receipt is admitted by its
+    /// edge and taken in by the section 10.5 window, whose guarantee it has; completion records
+    /// are a `durable` receipt's. Red if the pool hands such an envelope to the records: the
+    /// router refuses it as not durable, nothing is taken in, and the room stays empty though its
+    /// envelope is settled.
+    #[test]
+    fn an_instance_under_a_transport_receipt_is_taken_in_by_the_window() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let pool = transport_pool(&store, &clock, &probe);
         let incarnation = joined(&store, "phone/a1", "n1", &clock);
         let (key, taken) = pool.receive_member(
             "phone/a1",
@@ -6231,6 +6250,53 @@ mod tests {
         pool.run(key.as_deref().expect("placed"));
         assert_eq!(taken.fate(), Fate::Settled);
         assert_eq!(stored_members(&store, "r1"), 1, "{:?}", pool.take_errors());
+    }
+
+    /// docs/adr/0113, D6: an instance under a `transport` receipt is held to `max_instances` as
+    /// one judged by its records is: the envelope of one past the bound is shed, lost to its edge,
+    /// which answers `503` so that its sender carries it again, and no instance that stands is put
+    /// out for it. Red if the pool takes the router's refusal as a host error and settles the
+    /// envelope: the edge then answers `200` for what no session took in.
+    #[test]
+    fn an_instance_under_a_transport_receipt_past_the_bound_is_shed() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let pool = transport_pool(&store, &clock, &probe);
+        let a1 = joined(&store, "phone/a1", "n1", &clock);
+        let (key, first) = pool.receive_member(
+            "phone/a1",
+            a1,
+            Standing {
+                incarnation: a1,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 1),
+        );
+        pool.run(key.as_deref().expect("placed"));
+        assert_eq!(first.fate(), Fate::Settled);
+        // The session r1 binds a1, as many instances as the deployment's `max_instances` allows;
+        // the edge of another instance admitted it under an incarnation of its own.
+        let (_, past) = pool.receive_member(
+            "phone/b2",
+            a1 + 1,
+            Standing {
+                incarnation: a1 + 1,
+                mark: 1,
+            },
+            from_instance("b2", "r1", 1),
+        );
+        pool.run("r1");
+        assert_eq!(past.fate(), Fate::Lost, "shed, and carried again");
+        assert!(
+            pool.take_errors().iter().any(|error| matches!(
+                error,
+                PoolError::Endpoint {
+                    key,
+                    error: RouterError::InstancesFull { .. },
+                } if key == "r1"
+            )),
+            "the shed is told"
+        );
+        assert_eq!(stored_members(&store, "r1"), 1, "a1 is not put out");
     }
 
     /// The loom models of who holds the pool's locks, and when (docs/adr/0115, D13; the model

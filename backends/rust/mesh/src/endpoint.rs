@@ -442,6 +442,22 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.take_in(peer, effects);
     }
 
+    /// [`Self::receive`], for a host that answers its sender by what became of the envelope: an
+    /// envelope of an instance of an open machine that would be bound while `max_instances` of
+    /// it are ([`RouterError::InstancesFull`], docs/adr/0113, D6) is returned rather than
+    /// reported, for the host to shed (`503`) as it sheds one judged by completion records
+    /// ([`Self::receive_member`]). Nothing of it was taken in.
+    pub fn receive_within_bound(&mut self, peer: &str, bytes: Vec<u8>) -> Result<(), RouterError> {
+        let now = self.environment.now_ms();
+        match self.router.receive(peer, bytes, now) {
+            Err(refused @ RouterError::InstancesFull { .. }) => Err(refused),
+            effects => {
+                self.take_in(peer, effects);
+                Ok(())
+            }
+        }
+    }
+
     /// Envelope `bytes` the transport received from `peer`, an instance of an open machine
     /// whose binding receives durably, which its edge took in under the incarnation `made_under`
     /// while the store held its member as `standing` (see [`Router::receive_member`]).
