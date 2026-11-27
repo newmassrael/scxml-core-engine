@@ -118,7 +118,7 @@ impl Arms {
                 .map(|arm| {
                     let named = arm.tag.map(|_| arm.codec);
                     ArmName {
-                        prefix: body_prefix(arm.codec),
+                        prefix: body_prefix(plan, arm.codec),
                         alias: arm.codec.to_string(),
                         kind: arm_kind(&plan.model.name, named),
                         member: arm_member(named),
@@ -236,17 +236,21 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
 /// `alias`, where the C11 backend prints it from its plan: its header then
 /// declares `{prefix}_encode_source`, `{prefix}_value_source` and
 /// `{prefix}_source_ref_t`. The prefix is the one the template names the
-/// body's encode by (`resolve_variant_arm_encoder`).
+/// body's encode by (`resolve_variant_arm_encoder`): the held codec's own
+/// name's, whatever alias the import gives it.
 fn printed_body(imports: &[ImportContext], alias: &str) -> Option<String> {
     imports
         .iter()
-        .any(|import| import.alias == alias && import.c11_printed)
-        .then(|| body_prefix(alias))
+        .find(|import| import.alias == alias && import.c11_printed)
+        .map(|import| c11_codec_prefix(&import.document_name))
 }
 
-/// The prefix [`printed_body`] answers, of the codec imported as `alias`.
-fn body_prefix(alias: &str) -> String {
-    filters::to_snake_case(alias.to_string())
+/// The prefix [`printed_body`] answers, of the codec `plan` imports as
+/// `alias`: spelled from the codec's own name ([`EncodePlan::codec_name`]),
+/// as its header spells every symbol it declares, and never from the alias,
+/// which the header does not know.
+fn body_prefix(plan: &EncodePlan<'_>, alias: &str) -> String {
+    c11_codec_prefix(plan.codec_name(alias))
 }
 
 /// The names of the parameters an encode over a source takes besides its flag
@@ -888,7 +892,12 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 /// type `sce/forge/optional.h` holds it in, which the value's struct holds it
 /// in too, and a view, a pair or a list in the optional type declared beside
 /// it.
-fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
+fn presented_type(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    snake: &str,
+    element: &Element<'_>,
+) -> String {
     let gated = element.presence.optional();
     match &element.value {
         Value::Scalar(ty) if gated => l.c11_codec_optional(ty, None).type_name,
@@ -899,12 +908,14 @@ fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
         Value::Bytes(_) | Value::Text(_) => {
             BoundedView::of(l, snake, element.field, &element.value).ty()
         }
-        Value::Body { codec } if gated => format!("{}_source_ref_optional_t", body_prefix(codec)),
-        Value::Body { codec } => format!("{}_source_ref_t", body_prefix(codec)),
-        Value::List { .. } if gated => {
-            BoundedList::of(l, snake, element.field, &element.value).optional()
+        Value::Body { codec } if gated => {
+            format!("{}_source_ref_optional_t", body_prefix(plan, codec))
         }
-        Value::List { .. } => BoundedList::of(l, snake, element.field, &element.value).ty(),
+        Value::Body { codec } => format!("{}_source_ref_t", body_prefix(plan, codec)),
+        Value::List { .. } if gated => {
+            BoundedList::of(plan, l, snake, element.field, &element.value).optional()
+        }
+        Value::List { .. } => BoundedList::of(plan, l, snake, element.field, &element.value).ty(),
     }
 }
 
@@ -928,13 +939,19 @@ struct BoundedList {
 impl BoundedList {
     /// The list of `field`, holding `value`, a list or a chain of the codec
     /// `snake`, presented alone or as a member of a group.
-    fn of(l: &LangCtx, snake: &str, field: &CodecField, value: &Value<'_>) -> Self {
+    fn of(
+        plan: &EncodePlan<'_>,
+        l: &LangCtx,
+        snake: &str,
+        field: &CodecField,
+        value: &Value<'_>,
+    ) -> Self {
         let Value::List { codec, bound, .. } = value else {
             unreachable!("a list's refinement is of a list or a chain");
         };
         BoundedList {
             base: format!("{snake}_{}_list", l.codec_field_id(&field.id)),
-            entry: body_prefix(codec),
+            entry: body_prefix(plan, codec),
             bound: *bound,
         }
     }
@@ -1064,7 +1081,7 @@ fn law_text(
     if law.is_none() {
         return text;
     }
-    let entry = body_prefix(codec);
+    let entry = body_prefix(plan, codec);
     let mut updates = String::new();
     for law_input in &law.inputs {
         let name = input_name(&law_input.input);
@@ -1500,7 +1517,7 @@ fn before_encode(
                 }
             }
             Value::List { codec, law, .. } => {
-                let list = BoundedList::of(l, snake, element.field, &element.value);
+                let list = BoundedList::of(plan, l, snake, element.field, &element.value);
                 let law = law_text(plan, imports, element.field, codec, law);
                 out.push_str(&list.declare(&element.field.id, &value, &law));
                 if gated {
@@ -1539,7 +1556,7 @@ fn before_encode(
     for element in &plan.elements {
         out.push_str(&format!(
             "    {} (*{})(const void *ctx);\n",
-            presented_type(l, snake, element),
+            presented_type(plan, l, snake, element),
             l.codec_field_id(&element.field.id)
         ));
     }
@@ -1579,7 +1596,7 @@ fn before_encode(
     // as it is, and a view of the bytes and their length where it is present.
     for element in &plan.elements {
         let name = l.codec_field_id(&element.field.id);
-        let ty = presented_type(l, snake, element);
+        let ty = presented_type(plan, l, snake, element);
         let gated = element.presence == Presence::Gated;
         let body = match &element.value {
             Value::Bytes(_) | Value::Text(_) if gated => {
@@ -1611,7 +1628,7 @@ fn before_encode(
             // The body the struct holds, as a source of its codec by the table
             // that presents a value of it.
             Value::Body { codec } => {
-                let prefix = body_prefix(codec);
+                let prefix = body_prefix(plan, codec);
                 let (held, absent) = if gated {
                     (
                         format!("self->{name}.value"),
@@ -1642,7 +1659,7 @@ fn before_encode(
             // beside the array, within the bound the value's check holds it
             // to.
             Value::List { .. } => {
-                let list = BoundedList::of(l, snake, element.field, &element.value);
+                let list = BoundedList::of(plan, l, snake, element.field, &element.value);
                 let (list_ty, base, entry) = (list.ty(), &list.base, &list.entry);
                 let (data, len) = if gated {
                     (
@@ -1943,7 +1960,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     for element in &plan.elements {
         out.push_str(&format!(
             "    const {} {} = src->{}(ctx);\n",
-            presented_type(l, snake, element),
+            presented_type(plan, l, snake, element),
             element_local(l, &element.field.id),
             l.codec_field_id(&element.field.id)
         ));
@@ -2325,7 +2342,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         let held = read(field);
                         body.push_str(&format!(
                             "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, w{}));\n",
-                            body_prefix(codec),
+                            body_prefix(plan, codec),
                             handed(codec)
                         ));
                     }
@@ -2339,7 +2356,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                             unreachable!("a list or a chain is an element the value presents");
                         };
                         let held = read(field);
-                        let entry = body_prefix(codec);
+                        let entry = body_prefix(plan, codec);
                         let args = handed(codec);
                         let walk = match step {
                             Write::Streamed {
@@ -2518,7 +2535,7 @@ fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str, input: &str, at: 
             input,
             ..
         }) => {
-            let said = format!("{}_input_{}", body_prefix(alias), input_name(input));
+            let said = format!("{}_input_{}", body_prefix(plan, alias), input_name(input));
             match at {
                 Read::Encode => {
                     let held = element_local(l, embed);
@@ -2714,7 +2731,7 @@ fn input_check(
     };
     let said = format!(
         "{}_input_{}",
-        body_prefix(&check.codec),
+        body_prefix(plan, &check.codec),
         input_name(&check.input)
     );
     // Whether the source `table` presents over `ctx` says the input otherwise
@@ -2856,7 +2873,7 @@ fn flag_mask(plan: &EncodePlan<'_>, carrier: &str, flag: &str) -> u64 {
 fn parent_tag(plan: &EncodePlan<'_>, l: &LangCtx, tag: &ParentTag<'_>, local: &str) -> String {
     let mut out = String::new();
     for term in &tag.terms {
-        let prefix = body_prefix(&term.codec);
+        let prefix = body_prefix(plan, &term.codec);
         let body = element_local(l, &term.body.id);
         let gated = plan.presence(term.body) == Presence::Gated;
         let open = if gated {
@@ -3060,7 +3077,7 @@ fn measure_text(
                     handed.expect("an encoded length is counted once the carriers are written");
                 let count = format!(
                     "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, &{sink}{}));\n",
-                    body_prefix(codec),
+                    body_prefix(plan, codec),
                     handed(codec)
                 );
                 out.push_str(&format!(
@@ -3110,7 +3127,7 @@ fn measure_text(
             MeasureText {
                 size: format!(
                     "(size_t){}_input_{}({held}.table, {held}.ctx)",
-                    body_prefix(codec),
+                    body_prefix(plan, codec),
                     input_name(input)
                 ),
                 present: measure.gated.then(|| format!("{local}.present")),
@@ -3400,7 +3417,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         // it holds a value of its codec, by that codec's own check; where a
         // gate decides the list, only where it is present.
         if let Value::List { codec, law, .. } = &element.value {
-            let list = BoundedList::of(l, snake, element.field, &element.value);
+            let list = BoundedList::of(plan, l, snake, element.field, &element.value);
             let name = l.codec_field_id(&element.field.id);
             let held = u64::from(c11_held_entries(element.field, &plan.model.fields));
             let most = list.bound.most.map_or(held, |most| most.min(held));
@@ -3426,7 +3443,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             checks.push_str(&format!(
                 "    for (size_t _i = 0; _i < {len}; ++_i) {{\n        \
                  SCE_FORGE_TRY_WRITE({}_check_value(&{data}[_i]));\n    }}\n",
-                body_prefix(codec)
+                body_prefix(plan, codec)
             ));
             // The entries held to the list's law from the start the value
             // holds beside it, by the list's own maker over the value's walk
@@ -3459,7 +3476,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         }
         if let Value::Body { codec } = &element.value {
             let name = l.codec_field_id(&element.field.id);
-            let check = format!("{}_check_value", body_prefix(codec));
+            let check = format!("{}_check_value", body_prefix(plan, codec));
             out.push_str(&if element.presence == Presence::Gated {
                 format!(
                     "    if (self->{name}.present) {{\n        \

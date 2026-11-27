@@ -14346,6 +14346,29 @@ fn rust_as_borrowed_field_into_stmt(
     Ok(format!("{out_ref} = {expr};"))
 }
 
+/// The prefix of the C11 symbols of the codec named `name`: its struct
+/// `{prefix}_t`, its `{prefix}_decode` and `{prefix}_encode`, and what a
+/// printed codec declares besides (`{prefix}_source_ref_t`,
+/// `{prefix}_encode_source`, `{prefix}_input_{input}`). The codec spells its
+/// own symbols from it ([`insert_c_codec_symbols`]), and a codec that holds it
+/// names them by it: an alias its import gives it is a name of the importer,
+/// which the held codec's header never declares.
+pub(crate) fn c11_codec_prefix(name: &str) -> String {
+    filters::to_snake_case(name.to_string())
+}
+
+/// The import of the codec a codec holds as `alias`: a body, the entry of a
+/// list or a chain, or the body of an arm. Read where the alias has resolved to
+/// the held codec's type ([`resolve_repeat_body_type`],
+/// [`resolve_variant_arm_body_type`]), which refuses an alias no import names,
+/// so a miss is a defect of the generator and not of the document.
+fn held_codec_import<'i>(imports: &'i [ImportContext], alias: &str) -> &'i ImportContext {
+    imports
+        .iter()
+        .find(|i| i.alias == alias)
+        .unwrap_or_else(|| panic!("the type of the codec held as '{alias}' resolved its import"))
+}
+
 /// The C11 codec's flat-scope identifiers, one spelling for every C11 codec
 /// template — the positional one and `forge::cbor_codec`'s — derived from the
 /// codec's name: `<snake>_t`, `<snake>_decode`, `<snake>_encode`,
@@ -14355,7 +14378,7 @@ pub(crate) fn insert_c_codec_symbols(
     ctx: &mut serde_json::Map<String, serde_json::Value>,
     name: &str,
 ) {
-    let snake = filters::to_snake_case(name.to_string());
+    let snake = c11_codec_prefix(name);
     let upper = to_upper_snake(name);
     ctx.insert("c_struct_typedef".into(), format!("{snake}_t").into());
     ctx.insert(
@@ -15070,8 +15093,9 @@ fn render_codec(
                         let body_type = resolve_repeat_body_type(
                             &m.name, alias, imports, lang,
                         )?;
-                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        let body_import = held_codec_import(imports, alias);
+                        let body_decoder = resolve_variant_arm_decoder(body_import, lang);
+                        let body_encoder = resolve_variant_arm_encoder(body_import, lang);
                         // Borrowed zero-copy: when the repeat element codec is
                         // itself borrowed, the element type carries the
                         // parent's `<'a>` (`Vec<Body<'a>>`). The `Vec` stays
@@ -15305,8 +15329,9 @@ fn render_codec(
                         let body_type = resolve_repeat_body_type(
                             &m.name, alias, imports, lang,
                         )?;
-                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        let body_import = held_codec_import(imports, alias);
+                        let body_decoder = resolve_variant_arm_decoder(body_import, lang);
+                        let body_encoder = resolve_variant_arm_encoder(body_import, lang);
                         // Borrowed zero-copy: a borrowed TLV entry codec
                         // carries the parent's `<'a>` in the element type
                         // (`Vec<Entry<'a>>`). Rust-only, type positions only.
@@ -15649,8 +15674,9 @@ fn render_codec(
                         let body_type = resolve_repeat_body_type(
                             &m.name, alias, imports, lang,
                         )?;
-                        let body_decoder = resolve_variant_arm_decoder(alias, lang);
-                        let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                        let body_import = held_codec_import(imports, alias);
+                        let body_decoder = resolve_variant_arm_decoder(body_import, lang);
+                        let body_encoder = resolve_variant_arm_encoder(body_import, lang);
                         obj.insert("embed_body_alias".into(), alias.into());
                         obj.insert("embed_body_type".into(), body_type.clone().into());
                         obj.insert("embed_body_decoder".into(), body_decoder.clone().into());
@@ -17051,15 +17077,19 @@ fn render_codec(
                     resolve_variant_arm_body_type(&m.name, &arm.body_alias, imports, lang)?;
                 let variant_name = variant_arm_name(Some(&arm.body_alias));
                 let value_literal = format!("{}{}", arm.value, arm_value_suffix);
-                let body_decoder = resolve_variant_arm_decoder(&arm.body_alias, lang);
-                let body_encoder = resolve_variant_arm_encoder(&arm.body_alias, lang);
-                let arm_snake = filters::to_snake_case(arm.body_alias.clone());
-                let arm_upper = to_upper_snake(&arm.body_alias);
+                // The codec the arm holds, whose own name spells the symbols
+                // it declares, whatever alias the import gives it; the alias
+                // names only what the parent declares for the arm (its kind
+                // constant, its union member, its variant name).
+                let arm_import = held_codec_import(imports, &arm.body_alias);
+                let body_decoder = resolve_variant_arm_decoder(arm_import, lang);
+                let body_encoder = resolve_variant_arm_encoder(arm_import, lang);
                 let c_kind_constant = c11_source::arm_kind(&m.name, Some(&arm.body_alias));
                 // C11 arm body's encoded-bytes typedef — used by the
                 // splice loop in encode() so `_sub` carries the body's
                 // own `<snake>_encoded_t` shape, not the parent's.
-                let c_body_encoded_type = format!("{arm_snake}_encoded_t");
+                let c_body_encoded_type =
+                    format!("{}_encoded_t", c11_codec_prefix(&arm_import.document_name));
                 // RFC flag inversion — per-arm flag-bind threading.
                 // When the imported arm body declares `<sce:flag-inputs>`
                 // and the parent's `<sce:import>` declares matching
@@ -17068,8 +17098,7 @@ fn render_codec(
                 // carrier (or passes through the parent's own input by
                 // name for chain-forwarder shape) and threads the typed
                 // positional args to the arm's `decode`/`encode` call.
-                let arm_import = imports.iter().find(|i| i.alias == arm.body_alias);
-                let arm_flag_bind_args = embed_flag_bind_thread_args(arm_import, m, lang);
+                let arm_flag_bind_args = embed_flag_bind_thread_args(Some(arm_import), m, lang);
                 let (
                     body_decode_args_after_cursor,
                     body_encode_args_first,
@@ -17221,11 +17250,9 @@ fn render_codec(
                 // from their template context (`is defined` checks
                 // gate consumption).
                 if matches!(lang, crate::generator::Language::Go) {
-                    let snake = filters::to_snake_case(arm.body_alias.clone());
-                    let pascal = filters::to_pascal_case(arm.body_alias.clone());
                     obj.insert(
                         "go_body_constructor".into(),
-                        format!("{snake}.New{pascal}").into(),
+                        format!("{}.New{}", arm_import.namespace, arm_import.type_name).into(),
                     );
                     // Inner-codec NewT() emit flag: when the imported
                     // codec opts into the RFC `NewT()` contract (any
@@ -17235,11 +17262,10 @@ fn render_codec(
                     // fall back to a zero-value struct literal — see
                     // `tools/codegen/templates/forge/go/codec.go.jinja2`
                     // which branches on this flag.
-                    let inner_emits_ctor = imports
-                        .iter()
-                        .find(|i| i.alias == arm.body_alias)
-                        .is_some_and(|i| i.codec_emits_default_ctor);
-                    obj.insert("go_inner_emits_ctor".into(), inner_emits_ctor.into());
+                    obj.insert(
+                        "go_inner_emits_ctor".into(),
+                        arm_import.codec_emits_default_ctor.into(),
+                    );
                     // Bare element-type reference for the zero-value
                     // fallback (`&snake.Pascal{}`) when the inner has
                     // no NewT(). Pre-computed here so the template
@@ -17247,7 +17273,7 @@ fn render_codec(
                     // type split.
                     obj.insert(
                         "go_body_type_zero".into(),
-                        format!("{snake}.{pascal}").into(),
+                        format!("{}.{}", arm_import.namespace, arm_import.type_name).into(),
                     );
                 }
                 // RFC variant-default-uniformity on C11: macro
@@ -17260,7 +17286,8 @@ fn render_codec(
                 if matches!(lang, crate::generator::Language::C11) {
                     obj.insert(
                         "c_inner_default_init_macro".into(),
-                        format!("{arm_upper}_DEFAULT_INIT").into(),
+                        format!("{}_DEFAULT_INIT", to_upper_snake(&arm_import.document_name))
+                            .into(),
                     );
                 }
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
@@ -17272,15 +17299,16 @@ fn render_codec(
             .map(|d| {
                 let body_type =
                     resolve_variant_arm_body_type(&m.name, &d.body_alias, imports, lang)?;
-                let body_decoder = resolve_variant_arm_decoder(&d.body_alias, lang);
-                let body_encoder = resolve_variant_arm_encoder(&d.body_alias, lang);
+                let default_import = held_codec_import(imports, &d.body_alias);
+                let body_decoder = resolve_variant_arm_decoder(default_import, lang);
+                let body_encoder = resolve_variant_arm_encoder(default_import, lang);
                 let c_kind_constant = c11_source::arm_kind(&m.name, None);
-                let d_snake = filters::to_snake_case(d.body_alias.clone());
-                let c_body_encoded_type = format!("{d_snake}_encoded_t");
+                let c_body_encoded_type =
+                    format!("{}_encoded_t", c11_codec_prefix(&default_import.document_name));
                 // RFC flag inversion — per-arm flag-bind threading
                 // for default arm. Same shape as enumerated arms.
-                let default_import = imports.iter().find(|i| i.alias == d.body_alias);
-                let default_flag_bind_args = embed_flag_bind_thread_args(default_import, m, lang);
+                let default_flag_bind_args =
+                    embed_flag_bind_thread_args(Some(default_import), m, lang);
                 let (
                     body_decode_args_after_cursor,
                     body_encode_args_first,
@@ -18852,16 +18880,27 @@ fn resolve_chain_entry_identifier(
 
 /// How a codec reads its chains' entries' identifiers (see
 /// [`chain_identifier_masks`]): for the chains that leave flags out of it, the
-/// bits of an entry's value that are the identifier; and the chains whose entry
+/// bits of an entry's value that are the identifier; the chains whose entry
 /// codec the C++ or the Go backend prints from its plan, whose elements are
-/// read through accessors (docs/adr/0081 step 4).
+/// read through accessors (docs/adr/0081 step 4); and the name of each chain's
+/// entry codec, which spells the symbols the entry codec declares (a C11
+/// getter of one of its flags) whatever alias the import gives it.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ChainIdentifierMasks {
     masks: std::collections::BTreeMap<String, u64>,
     accessors: std::collections::BTreeSet<String>,
+    entries: std::collections::BTreeMap<String, String>,
 }
 
 impl ChainIdentifierMasks {
+    /// The name of the codec the entries of `chain` are of: the name of the
+    /// document its import reads, not the alias the import gives it. `None`
+    /// for a chain whose entry codec is not imported, which the chain's own
+    /// body type refuses before any of its entries is read.
+    pub(crate) fn entry_codec(&self, chain: &str) -> Option<&str> {
+        self.entries.get(chain).map(String::as_str)
+    }
+
     /// The bits of an entry's value that are the identifier, for a chain
     /// that leaves flags out of it.
     pub(crate) fn get(&self, chain: &str) -> Option<&u64> {
@@ -18889,13 +18928,17 @@ pub(crate) fn chain_identifier_masks(
 ) -> ChainIdentifierMasks {
     let mut masks = ChainIdentifierMasks::default();
     for chain in parent.fields.iter().filter(|f| f.is_tlv_chain()) {
-        if chain
+        if let Some(entry) = chain
             .tlv_chain_body_alias
             .as_deref()
             .and_then(|alias| imports.iter().find(|i| i.alias == alias))
-            .is_some_and(|entry| entry.printed.is_some())
         {
-            masks.accessors.insert(chain.id.clone());
+            masks
+                .entries
+                .insert(chain.id.clone(), entry.document_name.clone());
+            if entry.printed.is_some() {
+                masks.accessors.insert(chain.id.clone());
+            }
         }
         let BitSize::TlvChain {
             entry_id: Some(identifier),
@@ -19761,21 +19804,21 @@ fn validate_one_arm_inner_mid(
     Ok(())
 }
 
-fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Language) -> String {
+fn resolve_variant_arm_decoder(body: &ImportContext, lang: crate::generator::Language) -> String {
     match lang {
         crate::generator::Language::Swift => no_swift_emitter("resolve_variant_arm_decoder"),
-        crate::generator::Language::Go => {
-            let snake = filters::to_snake_case(body_alias.to_string());
-            let pascal = filters::to_pascal_case(body_alias.to_string());
-            format!("{snake}.Decode{pascal}")
-        }
+        // The free decoder of the body's package, which the package declares
+        // after its own struct (`Decode{struct_name}`), the package and the
+        // struct its import names it by, as `member_type` does.
+        crate::generator::Language::Go => format!("{}.Decode{}", body.namespace, body.type_name),
         // C11: imported codecs emit `<snake>_decode(cursor, *out)` —
         // see `tools/codegen/templates/forge/c/codec.h.jinja2:50`. The
         // variant decoder calls into that free function once it has
-        // the matching union slot's address.
+        // the matching union slot's address. The prefix is the body's own
+        // name, which its header spells its symbols from, and not the alias
+        // the import gives it.
         crate::generator::Language::C11 => {
-            let snake = filters::to_snake_case(body_alias.to_string());
-            format!("{snake}_decode")
+            format!("{}_decode", c11_codec_prefix(&body.document_name))
         }
         // Rust / Cpp / Kotlin templates already build the call from
         // `body_type` directly (e.g. `{{ body_type }}::decode`); they
@@ -19794,12 +19837,11 @@ fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Languag
 /// `<snake>_encoded_t` that the variant emitter splices into the parent
 /// codec's encoded buffer; method-style backends ignore this field
 /// because they call `.encode()` on the body value directly.
-fn resolve_variant_arm_encoder(body_alias: &str, lang: crate::generator::Language) -> String {
+fn resolve_variant_arm_encoder(body: &ImportContext, lang: crate::generator::Language) -> String {
     match lang {
         crate::generator::Language::Swift => no_swift_emitter("resolve_variant_arm_encoder"),
         crate::generator::Language::C11 => {
-            let snake = filters::to_snake_case(body_alias.to_string());
-            format!("{snake}_encode")
+            format!("{}_encode", c11_codec_prefix(&body.document_name))
         }
         crate::generator::Language::Rust
         | crate::generator::Language::Cpp
@@ -22095,7 +22137,14 @@ fn rust_chain_kinds(
             has: chain_has_local(&chain.id, value, Language::Rust),
             of_any: format!(
                 "{} == {}",
-                chain_entry_identifier(chain, "_e", mask, false, Language::Rust),
+                chain_entry_identifier(
+                    chain,
+                    "_e",
+                    mask,
+                    false,
+                    masks.entry_codec(&chain.id),
+                    Language::Rust,
+                ),
                 chain_identifier_literal(value, Language::Rust)
             ),
         })
@@ -22135,7 +22184,14 @@ fn c11_chain_kinds(
             has: chain_has_local(&chain.id, value, Language::C11),
             of_read: format!(
                 "{} == {}",
-                chain_entry_identifier(chain, &read, mask, false, Language::C11),
+                chain_entry_identifier(
+                    chain,
+                    &read,
+                    mask,
+                    false,
+                    masks.entry_codec(&chain.id),
+                    Language::C11,
+                ),
                 chain_identifier_literal(value, Language::C11)
             ),
         })
@@ -27236,6 +27292,7 @@ fn chain_entry_identifier(
     entry: &str,
     mask: Option<u64>,
     accessor: bool,
+    entry_codec: Option<&str>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -27260,14 +27317,13 @@ fn chain_entry_identifier(
         let getter = flag_getter_name(&identifier.name, lang);
         if matches!(lang, Language::C11) {
             // C11 has no methods: the getter is a free function prefixed by
-            // the entry codec's struct name, which is its decoder's.
-            let alias = chain
-                .tlv_chain_body_alias
-                .as_deref()
-                .expect("parser sets tlv_chain_body_alias for every BitSize::TlvChain");
-            let decoder = resolve_variant_arm_decoder(alias, lang);
-            let entry_struct = decoder.strip_suffix("_decode").unwrap_or(&decoder);
-            format!("{entry_struct}_{getter}(&{entry})")
+            // the entry codec's own name, as every symbol its header declares
+            // is, and not by the alias the import gives it.
+            let entry_codec = entry_codec.expect(
+                "a chain whose identifier is a flag of its entries imports its entry codec \
+                 (validate_cross_codec_chain_entry_id)",
+            );
+            format!("{}_{getter}(&{entry})", c11_codec_prefix(entry_codec))
         } else {
             format!("{entry}.{getter}()")
         }
@@ -27353,6 +27409,8 @@ struct ChainEntryBinds {
     /// Whether an entry presents its elements through accessors, a C++ codec
     /// printed from its plan (docs/adr/0081 step 4).
     accessor: bool,
+    /// The name of the entry codec ([`ChainIdentifierMasks::entry_codec`]).
+    entry_codec: Option<String>,
     binds: Vec<ChainEntryBind>,
 }
 
@@ -27372,6 +27430,7 @@ impl ChainEntryBinds {
         Self {
             mask: masks.get(&chain.id).copied(),
             accessor: masks.reads_accessor(&chain.id),
+            entry_codec: masks.entry_codec(&chain.id).map(str::to_string),
             binds,
         }
     }
@@ -27439,7 +27498,14 @@ impl ChainEntryBinds {
     ) -> String {
         format!(
             "{} == {}",
-            chain_entry_identifier(chain, entry, self.mask, self.accessor, lang),
+            chain_entry_identifier(
+                chain,
+                entry,
+                self.mask,
+                self.accessor,
+                self.entry_codec.as_deref(),
+                lang,
+            ),
             chain_identifier_literal(bind.previous_entry_id, lang)
         )
     }
@@ -27532,7 +27598,14 @@ fn chain_has_decl_lines(
     let test = |entry: &str| {
         format!(
             "{} == {literal}",
-            chain_entry_identifier(chain, entry, mask, masks.reads_accessor(&chain.id), lang)
+            chain_entry_identifier(
+                chain,
+                entry,
+                mask,
+                masks.reads_accessor(&chain.id),
+                masks.entry_codec(&chain.id),
+                lang,
+            )
         )
     };
     let encode = site == PresentIfSite::Encode;

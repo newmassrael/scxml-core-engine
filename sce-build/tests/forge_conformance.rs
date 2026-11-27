@@ -27750,6 +27750,290 @@ fn axis1_camelcase_cross_codec_refs_compile() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// ── A codec held under an alias that is not its name ─────
+
+/// The codecs the aliased parents hold, each read from the resources and
+/// written under its own name.
+const ALIASED_HELD: [&str; 4] = [
+    "codec_variant_session_open.scxml",
+    "codec_variant_session_close.scxml",
+    "codec_repeat_elem.scxml",
+    "codec_chain_prev_entry.scxml",
+];
+
+/// A variant whose arms and whose catch-all hold codecs imported under
+/// aliases that are not their names; the arm the value is made with by
+/// default is one of them.
+const ALIASED_VARIANT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="aliased_variant">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="held_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="held_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="held_open"/>
+      <sce:arm value="0x02" type="held_close" default="true"/>
+      <sce:default type="held_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+/// A body of a codec imported under an alias that is not its name.
+const ALIASED_EMBED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="aliased_embed">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="held_element"/>
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="first" type="held_element" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+/// A list of entries of a codec imported under an alias that is not its name.
+const ALIASED_REPEAT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="aliased_repeat">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="held_element"/>
+  <datamodel>
+    <sce:field id="num_frags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="frags" type="held_element" sce:byte="1"
+                count="num_frags" max-count="32"/>
+  </datamodel>
+</scxml>"#;
+
+/// A chain of entries of a codec imported under an alias that is not its name,
+/// closed by a flag of its entries and telling each entry whether the one
+/// before it was of a kind, the kind read off a flag of the entry's carrier:
+/// `codec_chain_prev_carrier` under an alias.
+const ALIASED_CHAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="aliased_chain">
+  <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="held_entry">
+    <sce:flag-bind input="tagged" source="head.T"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="T" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="held_entry" sce:byte="1"
+                   max-depth="4" terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+  </datamodel>
+</scxml>"#;
+
+/// The parents that hold a codec under an alias, by file name, with the
+/// aliases each gives.
+const ALIASED_PARENTS: [(&str, &str, &[&str]); 4] = [
+    (
+        "aliased_variant.scxml",
+        ALIASED_VARIANT,
+        &["held_open", "held_close"],
+    ),
+    ("aliased_embed.scxml", ALIASED_EMBED, &["held_element"]),
+    ("aliased_repeat.scxml", ALIASED_REPEAT, &["held_element"]),
+    ("aliased_chain.scxml", ALIASED_CHAIN, &["held_entry"]),
+];
+
+/// The held codecs and the aliased parents in a scratch directory, and the set
+/// a compile reads, the held codecs before the parents that import them.
+fn aliased_fixtures() -> (tempfile::TempDir, Vec<&'static str>) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in ALIASED_HELD {
+        std::fs::copy(resource_dir().join(name), dir.path().join(name))
+            .unwrap_or_else(|e| panic!("copy {name}: {e}"));
+    }
+    for (name, text, _) in ALIASED_PARENTS {
+        std::fs::write(dir.path().join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+    }
+    let mut set: Vec<&'static str> = ALIASED_HELD.to_vec();
+    set.extend(ALIASED_PARENTS.map(|(name, _, _)| name));
+    (dir, set)
+}
+
+/// The file `language` writes for the document `document` of `dir` itself, of
+/// those a generation of it writes with the codecs it holds.
+fn own_file(dir: &Path, document: &str, language: sce_build::generator::Language) -> String {
+    let stem = document.trim_end_matches(".scxml");
+    let own = match language {
+        sce_build::generator::Language::C11 => format!("{stem}.h"),
+        sce_build::generator::Language::Go => format!("{stem}.go"),
+        other => panic!("{other:?}: no own file is read here"),
+    };
+    generate_files_for_codec_set(dir, &[document], language)
+        .unwrap_or_else(|e| panic!("{language:?}: {document} generates: {e}"))
+        .into_iter()
+        .find(|(name, _)| {
+            Path::new(name).file_name().and_then(|n| n.to_str()) == Some(own.as_str())
+        })
+        .map(|(_, text)| text)
+        .unwrap_or_else(|| panic!("{language:?}: {document} writes no `{own}`"))
+}
+
+/// A codec held under an alias is called by the symbols the held codec
+/// declares, which its own name spells: on C11 its struct, its decode, the
+/// encode over its source, its check, the functions of the inputs it says,
+/// the getter of a flag of a chain's entry and the initializer of its default
+/// value; on Go its package's decoder. The alias names only what the parent
+/// declares for it (an arm's kind and member, a variant's arm type), and no
+/// symbol of the held codec is spelled from it, which neither header declares.
+///
+/// Turns red where `resolve_variant_arm_decoder` or
+/// `resolve_variant_arm_encoder` spells a decoder or an encoder from the alias,
+/// where the C11 `c_inner_default_init_macro` does, where
+/// `chain_entry_identifier` prefixes a C11 getter by the alias, or where
+/// `c11_source::body_prefix` or `printed_body` spells a prefix from it.
+#[test]
+fn a_codec_held_under_an_alias_is_called_by_its_own_name() {
+    use sce_build::generator::Language;
+    let (dir, _) = aliased_fixtures();
+    // The symbols each parent's C11 header calls the codec it holds by, and
+    // what its Go file calls the codec's decoder by.
+    let expected: [(&str, &[&str], &[&str]); 4] = [
+        (
+            "aliased_variant.scxml",
+            &[
+                "codec_variant_session_open_t held_open;",
+                "codec_variant_session_open_decode(cursor, &out->body.arm.held_open",
+                "codec_variant_session_close_decode(cursor, &out->body.arm.held_close",
+                "codec_variant_session_close_decode(cursor, &out->body.arm.default_body",
+                ".held_close = CODEC_VARIANT_SESSION_CLOSE_DEFAULT_INIT",
+                "codec_variant_session_open_source_ref_t held_open;",
+                "codec_variant_session_open_value_source()",
+                "codec_variant_session_open_encode_source(",
+                "codec_variant_session_close_check_value(",
+            ],
+            &[
+                "codec_variant_session_open.DecodeCodecVariantSessionOpen(cursor)",
+                "codec_variant_session_close.DecodeCodecVariantSessionClose(cursor)",
+            ],
+        ),
+        (
+            "aliased_embed.scxml",
+            &[
+                "codec_repeat_elem_t first;",
+                "codec_repeat_elem_decode(cursor, &out->first)",
+                "codec_repeat_elem_source_ref_t (*first)(const void *ctx);",
+                "codec_repeat_elem_value_source()",
+                "codec_repeat_elem_encode_source(",
+                "codec_repeat_elem_check_value(&self->first)",
+            ],
+            &["codec_repeat_elem.DecodeCodecRepeatElem(cursor)"],
+        ),
+        (
+            "aliased_repeat.scxml",
+            &[
+                "codec_repeat_elem_t frags[",
+                "codec_repeat_elem_decode(cursor, &out->frags[",
+                "codec_repeat_elem_source_t *entry",
+                "codec_repeat_elem_value_source()",
+                "codec_repeat_elem_encode_source(",
+                "codec_repeat_elem_check_value(&self->frags[",
+            ],
+            &["codec_repeat_elem.DecodeCodecRepeatElem(cursor)"],
+        ),
+        (
+            "aliased_chain.scxml",
+            &[
+                "codec_chain_prev_entry_t entries[",
+                "codec_chain_prev_entry_decode(cursor, &out->entries[",
+                "codec_chain_prev_entry_z(&out->entries[_just])",
+                "codec_chain_prev_entry_ext_id(&out->entries[_just])",
+                "codec_chain_prev_entry_input_tagged(",
+                "codec_chain_prev_entry_value_source()",
+            ],
+            &["codec_chain_prev_entry.DecodeCodecChainPrevEntry(cursor"],
+        ),
+    ];
+    for ((document, c11, go), (_, _, aliases)) in expected.iter().zip(ALIASED_PARENTS) {
+        let header = own_file(dir.path(), document, Language::C11);
+        for needle in *c11 {
+            assert!(
+                header.contains(needle),
+                "{document}: the C11 header calls the held codec by `{needle}`:\n{header}"
+            );
+        }
+        let package = own_file(dir.path(), document, Language::Go);
+        for needle in *go {
+            assert!(
+                package.contains(needle),
+                "{document}: the Go file calls the held codec by `{needle}`:\n{package}"
+            );
+        }
+        for alias in aliases {
+            let upper = alias.to_uppercase();
+            for symbol in [
+                format!("{alias}_t "),
+                format!("{alias}_decode("),
+                format!("{alias}_encode("),
+                format!("{alias}_encoded_t"),
+                format!("{alias}_source"),
+                format!("{alias}_value_source("),
+                format!("{alias}_check_value("),
+                format!("{alias}_input_"),
+                format!("{alias}_body_ref_t"),
+                format!("{alias}_z("),
+                format!("{alias}_ext_id("),
+                format!("{upper}_DEFAULT_INIT"),
+            ] {
+                assert!(
+                    !header.contains(&symbol),
+                    "{document}: the C11 header spells `{symbol}` from the alias `{alias}`, \
+                     which the held codec does not declare:\n{header}"
+                );
+            }
+            assert!(
+                !package.contains(&format!("{alias}.")),
+                "{document}: the Go file names a package by the alias `{alias}`, which \
+                 no import declares:\n{package}"
+            );
+        }
+    }
+}
+
+/// The parents that hold a codec under an alias, and the codecs they hold,
+/// compile on every backend with the strictest warnings: C11 has no implicit
+/// declaration of a function its header calls, and Go no package its file
+/// does not import.
+///
+/// Turns red where any backend calls a held codec by its alias.
+#[test]
+fn a_codec_held_under_an_alias_compiles_on_every_backend() {
+    let (dir, set) = aliased_fixtures();
+    let dir = dir.path();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = rustc_compile_codec_set(dir, &set, "aliased_held_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(dir, &set, "aliased_held_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(dir, &set, "aliased_held_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(dir, &set, "aliased_held_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(dir, &set, "aliased_held_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(dir, &set, "aliased_held_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a codec held under an alias that is not its name must compile on every \
+         backend. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
 // ── §synth-5-B B2 declared test-vectors — algorithm kind ─────
 
 /// SCE Protocol-Synthesis RFC §synth-5-B B2: a `<sce:test-vector>` an author

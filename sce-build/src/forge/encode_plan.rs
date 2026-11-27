@@ -98,6 +98,11 @@ pub struct EncodePlan<'m> {
     /// handed for each flag input it takes and does not say itself, in the
     /// order it declares them.
     pub handed: BTreeMap<String, Vec<Handed<'m>>>,
+    /// For each codec the codec imports, by its import alias, the codec's own
+    /// name: the name of the document the import reads, which the symbols the
+    /// held codec declares are spelled from, where the alias is a name of the
+    /// importer alone ([`EncodePlan::codec_name`]).
+    pub codec_names: BTreeMap<String, String>,
     /// Each input a held codec says that the parent also hands it from
     /// elsewhere, which the encode holds the codec to before it writes
     /// (docs/adr/0065 §6 R4a), in the order of the roles.
@@ -742,6 +747,11 @@ impl<'m> EncodePlan<'m> {
             })
             .collect();
         let handed = handed(model, imports);
+        let codec_names = imports
+            .iter()
+            .filter(|import| import.kind == "codec")
+            .map(|import| (import.alias.clone(), import.document_name.clone()))
+            .collect();
         let input_checks = input_checks(model, &roles, &arms, imports);
         let gate_checks = roles
             .source_checks()
@@ -761,12 +771,22 @@ impl<'m> EncodePlan<'m> {
             given,
             said,
             handed,
+            codec_names,
             input_checks,
             gate_checks,
             entry_ids,
             overridable,
             program,
         }
+    }
+
+    /// The name of the codec the codec imports as `alias`
+    /// ([`EncodePlan::codec_names`]): what a printer spells a symbol the held
+    /// codec declares from, whatever alias the import gives it. An alias no
+    /// codec import names has no document behind it and is its own name: a codec
+    /// that holds one is refused where the held codec's type is resolved.
+    pub fn codec_name<'a>(&'a self, alias: &'a str) -> &'a str {
+        self.codec_names.get(alias).map_or(alias, String::as_str)
     }
 
     /// The gate groups of the codec (docs/adr/0065 §6 R4): each holds the

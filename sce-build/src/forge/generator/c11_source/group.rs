@@ -270,9 +270,9 @@ impl<'g> Group<'g> {
             Value::Bytes(_) | Value::Text(_) => {
                 crate::forge::static_lowering::c_bytes_storage_type(c11_held_bytes(field, fields))
             }
-            Value::Body { codec } => format!("{}_t", body_prefix(codec)),
+            Value::Body { codec } => format!("{}_t", body_prefix(plan, codec)),
             Value::List { codec, .. } => crate::forge::static_lowering::c11_list_type(
-                &format!("{}_t", body_prefix(codec)),
+                &format!("{}_t", body_prefix(plan, codec)),
                 c11_held_entries(field, fields),
             ),
         }
@@ -286,8 +286,8 @@ impl<'g> Group<'g> {
         match &value {
             Value::Scalar(ty) => l.type_name(ty).into_owned(),
             Value::Bytes(_) | Value::Text(_) => BoundedView::of(l, snake, field, &value).ty(),
-            Value::Body { codec } => format!("{}_source_ref_t", body_prefix(codec)),
-            Value::List { .. } => BoundedList::of(l, snake, field, &value).ty(),
+            Value::Body { codec } => format!("{}_source_ref_t", body_prefix(plan, codec)),
+            Value::List { .. } => BoundedList::of(plan, l, snake, field, &value).ty(),
         }
     }
 
@@ -306,8 +306,8 @@ impl<'g> Group<'g> {
         match &value {
             Value::Scalar(ty) => l.c11_codec_optional(ty, None).type_name,
             Value::Bytes(_) | Value::Text(_) => BoundedView::of(l, snake, field, &value).optional(),
-            Value::Body { codec } => format!("{}_source_ref_optional_t", body_prefix(codec)),
-            Value::List { .. } => BoundedList::of(l, snake, field, &value).optional(),
+            Value::Body { codec } => format!("{}_source_ref_optional_t", body_prefix(plan, codec)),
+            Value::List { .. } => BoundedList::of(plan, l, snake, field, &value).optional(),
         }
     }
 
@@ -324,7 +324,7 @@ impl<'g> Group<'g> {
         for id in self.group.fields() {
             let field = field_of(plan, id);
             if let Value::List { codec, .. } = plan.value(field) {
-                let entry = format!("{}_t", body_prefix(codec));
+                let entry = format!("{}_t", body_prefix(plan, codec));
                 let capacity = c11_held_entries(field, &plan.model.fields);
                 out.push_str(&crate::forge::static_lowering::c11_list_def(
                     &entry,
@@ -371,7 +371,7 @@ impl<'g> Group<'g> {
                 // A list a group holds is held to no law
                 // (`c11_source::positional_forms`).
                 Value::List { .. } => {
-                    let list = BoundedList::of(l, snake, field, &value);
+                    let list = BoundedList::of(plan, l, snake, field, &value);
                     out.push_str(&list.declare(id, &value_ty, &LawText::default()));
                     out.push_str(&list.declare_optional());
                 }
@@ -533,10 +533,10 @@ impl<'g> Group<'g> {
                     }
                     Value::Body { codec } => set.push_str(&format!(
                         "    {to}.table = {}_value_source();\n    {to}.ctx = &{from};\n",
-                        body_prefix(codec)
+                        body_prefix(plan, codec)
                     )),
                     Value::List { codec, .. } => {
-                        let entry = body_prefix(codec);
+                        let entry = body_prefix(plan, codec);
                         let walk = self.walk(snake, i, id);
                         let label = filters::to_snake_case(id.clone());
                         walks.push_str(&format!(
@@ -714,10 +714,10 @@ impl<'g> Group<'g> {
                     }
                     Value::Body { codec } => checks.push_str(&format!(
                         "    SCE_FORGE_TRY_WRITE({}_check_value(&{at}));\n",
-                        body_prefix(codec)
+                        body_prefix(plan, codec)
                     )),
                     Value::List { codec, .. } => {
-                        let list = BoundedList::of(l, snake, field, &member);
+                        let list = BoundedList::of(plan, l, snake, field, &member);
                         let capacity = u64::from(c11_held_entries(field, &plan.model.fields));
                         let most = list.bound.most.map_or(capacity, |most| most.min(capacity));
                         checks.push_str(&format!(
@@ -734,7 +734,7 @@ impl<'g> Group<'g> {
                         checks.push_str(&format!(
                             "    for (size_t _i = 0; _i < {at}.len; ++_i) {{\n        \
                              SCE_FORGE_TRY_WRITE({}_check_value(&{at}.data[_i]));\n    }}\n",
-                            body_prefix(codec)
+                            body_prefix(plan, codec)
                         ));
                     }
                 }
