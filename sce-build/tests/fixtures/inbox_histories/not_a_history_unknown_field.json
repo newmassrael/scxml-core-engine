@@ -1,7 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
+  "sessions": [0],
   "closes": true,
-  "capacity": 4,
+  "clock": "shared",
   "owner": [
     { "call": "enqueue", "session": 0, "item": 1, "source": "posted", "invoked": 3, "returned": 4 }
   ],

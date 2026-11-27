@@ -1,5 +1,6 @@
 {
-  "version": 1,
+  "version": 2,
+  "sessions": [0, 1],
   "closes": true,
   "owner": [
     { "call": "enqueue", "session": 0, "item": 1, "source": "posted", "invoked": 7, "returned": 8 },

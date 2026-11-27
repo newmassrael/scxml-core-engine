@@ -4265,10 +4265,12 @@ enum Commands {
     /// the posters and the owner thread of one run of ADR 0084's door
     /// observed, each operation with the instants it was invoked and
     /// returned. The sequential specification is
-    /// `docs/formal/InboxService.tla`: each session's external queue takes
-    /// the inputs posted to it and its own events in the order they
-    /// linearized, each input taken exactly once, and a post is refused only
-    /// once its session has ended. Judged and reported as
+    /// `docs/formal/InboxService.tla`: a post is taken or refused when it is
+    /// posted; each session's external queue takes the inputs posted to it and
+    /// its own events in the order they linearized, each input taken exactly
+    /// once and an input refused never; and a refusal gives its reason, a
+    /// session the tree does not hold, a session whose run has ended, or a
+    /// full bounded inbox. Judged and reported as
     /// `check-queue-history` does: one line per file, and the command fails
     /// when any file is not linearizable, is not a history, or records no
     /// operation.

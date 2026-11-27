@@ -11,23 +11,38 @@
 //! order, each with the instants it was invoked and returned, both read from
 //! one clock every thread shares.
 //!
-//! - A poster's `post(session, input)` returned `taken` or `refused`.
-//! - The owner's `enqueue(session, item)` is recorded for every item that
-//!   entered a session's external queue: an input a post took, applied from
-//!   the inbox (`posted`), or an event of the owner's own (`own`).
+//! - A poster's `post(session, input)` returned `taken`, or `refused` with
+//!   its reason: `unknown`, `ended` or `full` ([`Refusal`]).
+//! - The owner's `enqueue(session, item, source)` is recorded for every item
+//!   that entered a session's external queue: an input a post took, applied
+//!   from the inbox (`posted`), or an event of the owner's own (`own`).
 //! - The owner's `end(session)` is the end of that session's run.
 //!
-//! The sequential specification is `docs/formal/InboxService.tla` (ADR 0147,
-//! D1): each session's external queue takes the inputs posted to it and its
-//! own events in the order those posts and events linearized, each input a
-//! post took exactly once and an input a post refused never, and a post is
-//! refused only once its session has ended and only by a runtime that closes
-//! its inbox then ([`History::closes`]). As a sequential object, each session
-//! holds the inputs taken and not yet entered, in the order they were taken:
+//! Beside the operations, a history says what the run was given: the sessions
+//! the tree holds ([`History::sessions`]), whether the runtime closes a
+//! session's inbox when its run ends ([`History::closes`]), and the capacity
+//! of a bounded inbox ([`History::capacity`]).
 //!
-//! - a post is refused when its session has ended and the runtime closes, and
-//!   is taken otherwise; a taken input joins the back of what its session
-//!   holds;
+//! The sequential specification is `docs/formal/InboxService.tla` (ADR 0147,
+//! D1): a post is either taken, and its input then enters the queue of the
+//! session it names exactly once, in the order the posts to that session and
+//! its own events linearized, or refused when it is posted, and its input never
+//! enters anything. As a sequential object, each session holds the inputs
+//! taken and not yet entered, in the order they were taken:
+//!
+//! - a post naming a session the tree does not hold is refused as `unknown`;
+//! - a post naming a session whose run has ended, where the runtime closes, is
+//!   refused as `ended`, or as `unknown` where the tree has let the session
+//!   go;
+//! - a post to a bounded inbox may be refused as `full` when its session holds
+//!   as many inputs as the capacity, and never when it holds fewer;
+//! - any other post is taken, and its input joins the back of what its session
+//!   holds. A post may be taken when its session holds the capacity: a drain
+//!   takes inputs out of the inbox before it enters them, and the room it
+//!   frees is not seen by an object that counts what has not entered. That an
+//!   inbox never holds more than its capacity is the mechanism's
+//!   (`Bounded` in `docs/formal/EngineInbox.tla`), and no poster is told
+//!   anything false past it;
 //! - an `enqueue` of a posted input needs that input at the front of what its
 //!   session holds, and takes it off;
 //! - an `enqueue` of an own event is where that event linearizes, so it needs
@@ -48,8 +63,11 @@
 //! history this checker refuses: an own event entered before a post that
 //! returned before it (the drain before an own event, or the address resolved
 //! when posted), two inputs entered in the reverse of their posts (one drain at
-//! a time), an input entered twice (a drain takes out what it applies), and an
-//! input taken and never entered (what an inbox holds at the end is applied).
+//! a time), an input entered twice (a drain takes out what it applies), an
+//! input taken and never entered (what an inbox holds at the end is applied),
+//! and a post naming a session the tree does not hold taken (the directory
+//! looked up when posted). The one part whose absence it cannot see is a full
+//! inbox's refusal, whose absence tells no poster anything false.
 //!
 //! Nothing here knows an implementation or a language: each runtime's inbox
 //! conformance test writes the JSON form ([`History::to_json`], read by
@@ -69,8 +87,20 @@ pub use crate::history_common::{HistoryError, Verdict};
 pub enum Delivery {
     /// The inbox took the input.
     Taken,
-    /// The inbox handed the input back.
-    Refused,
+    /// The inbox handed the input back, for the reason given.
+    Refused(Refusal),
+}
+
+/// Why the inbox handed a post back. A refused post never takes effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Refusal {
+    /// The session's bounded inbox held its capacity.
+    Full,
+    /// The session's run had ended, and the runtime closes its inbox then.
+    Ended,
+    /// The tree does not hold the session the post named: it never did, or it
+    /// let the session go when its run ended and the runtime closed its inbox.
+    Unknown,
 }
 
 /// Where an item that entered an external queue came from.
@@ -131,13 +161,20 @@ pub struct OwnerOperation {
     pub returned: u64,
 }
 
-/// Everything one run observed.
+/// Everything one run observed, and what it was given.
 #[derive(Debug, Clone)]
 pub struct History {
+    /// The sessions the tree holds for the run. A post naming any other is
+    /// refused, and the owner runs no other.
+    pub sessions: Vec<u64>,
     /// Whether the runtime refuses a post to a session whose run has ended.
     /// One that never closes takes it, and applies it at the end of the
     /// owner's loop.
     pub closes: bool,
+    /// The most inputs a session's inbox holds, where the inbox is bounded;
+    /// `None` for an inbox without a bound, which never refuses a post as
+    /// full.
+    pub capacity: Option<u64>,
     /// The owner's operations, in its program order.
     pub owner: Vec<OwnerOperation>,
     /// One list per poster, in that poster's program order.
@@ -182,12 +219,15 @@ impl Timed for Step {
 
 impl History {
     /// The operations as the search counts them, the owner's first, as
-    /// participant 0, then each poster's; and how many sessions they name.
-    fn steps(&self) -> (Vec<Vec<Step>>, usize) {
+    /// participant 0, then each poster's; and every session the history
+    /// names, held by the tree or not, in the order of the places the
+    /// operations count them by.
+    fn steps(&self) -> (Vec<Vec<Step>>, Vec<u64>) {
         let mut sessions: Vec<u64> = self
-            .owner
+            .sessions
             .iter()
-            .map(|op| op.call.session())
+            .copied()
+            .chain(self.owner.iter().map(|op| op.call.session()))
             .chain(self.posters.iter().flatten().map(|post| post.session))
             .collect();
         sessions.sort_unstable();
@@ -236,21 +276,25 @@ impl History {
                     .collect(),
             );
         }
-        (participants, sessions.len())
+        (participants, sessions)
     }
 }
 
 /// Judge `history`.
 pub fn check(history: &History) -> Verdict {
-    let (participants, sessions) = history.steps();
-    if let Err(why) = well_formed(&participants) {
+    let (participants, names) = history.steps();
+    let known: Vec<bool> = names
+        .iter()
+        .map(|name| history.sessions.contains(name))
+        .collect();
+    if let Err(why) = well_formed(&participants, &names, &known) {
         return Verdict::Malformed(why);
     }
-    let sequential = Sequential::of(history.closes, &participants[0], sessions);
+    let sequential = Sequential::of(history, &participants[0], known);
     let required = posts_each_post_must_follow(&participants);
     let start = State {
         frontier: vec![0; participants.len()],
-        waiting: vec![VecDeque::new(); sessions],
+        waiting: vec![VecDeque::new(); names.len()],
     };
     let mut seen: HashSet<State> = HashSet::new();
     seen.insert(start.clone());
@@ -348,6 +392,10 @@ struct Frame {
 /// search's state.
 struct Sequential {
     closes: bool,
+    /// The most inputs a session's inbox holds, if it is bounded.
+    capacity: Option<usize>,
+    /// `known[session]`: whether the tree holds the session.
+    known: Vec<bool>,
     /// `end_at[session]`: the place among the owner's operations of the first
     /// end of the session, if it has one.
     end_at: Vec<Option<usize>>,
@@ -357,8 +405,8 @@ struct Sequential {
 }
 
 impl Sequential {
-    fn of(closes: bool, owner: &[Step], sessions: usize) -> Sequential {
-        let mut end_at = vec![None; sessions];
+    fn of(history: &History, owner: &[Step], known: Vec<bool>) -> Sequential {
+        let mut end_at = vec![None; known.len()];
         let mut own_entered: HashSet<u64> = HashSet::new();
         let repeats = owner
             .iter()
@@ -384,7 +432,12 @@ impl Sequential {
             })
             .collect();
         Sequential {
-            closes,
+            closes: history.closes,
+            // A capacity past what an index counts is one no session reaches.
+            capacity: history
+                .capacity
+                .map(|capacity| usize::try_from(capacity).unwrap_or(usize::MAX)),
+            known,
             end_at,
             repeats,
         }
@@ -408,16 +461,26 @@ impl Sequential {
                 input,
                 outcome,
             } => {
-                let refuses = self.closes && self.ended(session, owner_placed);
-                match outcome {
-                    Delivery::Taken if !refuses => {
-                        let mut waiting = state.waiting.clone();
+                let known = self.known[session];
+                // Where the runtime closes, every post to a session whose run
+                // has ended is refused, and the tree may have let it go.
+                let closed = known && self.closes && self.ended(session, owner_placed);
+                let full = self
+                    .capacity
+                    .is_some_and(|capacity| state.waiting[session].len() >= capacity);
+                let answered = match outcome {
+                    Delivery::Taken => known && !closed,
+                    Delivery::Refused(Refusal::Unknown) => !known || closed,
+                    Delivery::Refused(Refusal::Ended) => closed,
+                    Delivery::Refused(Refusal::Full) => known && !closed && full,
+                };
+                answered.then(|| {
+                    let mut waiting = state.waiting.clone();
+                    if outcome == Delivery::Taken {
                         waiting[session].push_back(input);
-                        Some(waiting)
                     }
-                    Delivery::Refused if refuses => Some(state.waiting.clone()),
-                    Delivery::Taken | Delivery::Refused => None,
-                }
+                    waiting
+                })
             }
             Act::Enqueue {
                 session,
@@ -514,12 +577,27 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
     needed
 }
 
-/// Whether the history can be that of a run: the clock readings can be, and
-/// no input is posted twice, since the inputs of a run are distinct values
-/// (`docs/formal/InboxService.tla` takes them so). Participant 0 is the owner
-/// and participant `n` the poster `n - 1`, as the search counts them.
-fn well_formed(participants: &[Vec<Step>]) -> Result<(), String> {
+/// Whether the history can be that of a run: the clock readings can be, no
+/// input is posted twice, since the inputs of a run are distinct values
+/// (`docs/formal/InboxService.tla` takes them so), and the owner runs only
+/// the sessions the tree holds. Participant 0 is the owner and participant `n`
+/// the poster `n - 1`, as the search counts them; `names[place]` is the
+/// session counted at `place`, and `known[place]` whether the tree holds it.
+fn well_formed(participants: &[Vec<Step>], names: &[u64], known: &[bool]) -> Result<(), String> {
     check_clock(participants)?;
+    for (at, op) in participants[0].iter().enumerate() {
+        let session = match op.act {
+            Act::Enqueue { session, .. } | Act::End { session } => session,
+            Act::Post { .. } => continue,
+        };
+        if !known[session] {
+            return Err(format!(
+                "participant 0 operation {at} is the owner's on session {}, which is not among \
+                 the sessions the tree holds (`sessions`): the owner runs only those",
+                names[session]
+            ));
+        }
+    }
     let mut posted: HashMap<u64, (usize, usize)> = HashMap::new();
     for (who, ops) in participants.iter().enumerate() {
         for (at, op) in ops.iter().enumerate() {
@@ -541,7 +619,7 @@ fn well_formed(participants: &[Vec<Step>]) -> Result<(), String> {
 
 /// The version of the JSON form this module reads and writes. A reader that
 /// meets another refuses the file instead of guessing at it.
-pub const HISTORY_FORMAT_VERSION: u64 = 1;
+pub const HISTORY_FORMAT_VERSION: u64 = 2;
 
 /// The document as it sits in a file. Unknown fields are refused, so a field
 /// a writer adds that this reader would drop is an error and not a silent
@@ -550,7 +628,10 @@ pub const HISTORY_FORMAT_VERSION: u64 = 1;
 #[serde(deny_unknown_fields)]
 struct HistoryDocument {
     version: u64,
+    sessions: Vec<u64>,
     closes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capacity: Option<u64>,
     owner: Vec<OwnerOperationWire>,
     posters: Vec<Vec<PostWire>>,
 }
@@ -568,7 +649,15 @@ enum DeliveryWire {
     Refused,
 }
 
-/// One post. Every field is named: a post has nothing optional.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum RefusalWire {
+    Full,
+    Ended,
+    Unknown,
+}
+
+/// One post. `reason` is a refused post's, and a taken post names none.
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(deny_unknown_fields)]
 struct PostWire {
@@ -576,6 +665,8 @@ struct PostWire {
     session: u64,
     input: u64,
     outcome: DeliveryWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<RefusalWire>,
     invoked: u64,
     returned: u64,
 }
@@ -613,11 +704,13 @@ impl History {
     /// Read a history from its JSON form.
     ///
     /// Refuses a document that is not JSON, names another version, has a field
-    /// this format does not, puts a post among the owner's operations or an
-    /// enqueue or an end among a poster's, or states an operation of the owner
-    /// that cannot be one: an enqueue without its item or its source, or an end
-    /// with either. What this checks is the shape; whether the times are those
-    /// of a run, and the inputs distinct, is [`check`]'s `Malformed`.
+    /// this format does not, lists no session or one twice, gives a capacity
+    /// of 0, puts a post among the owner's operations or an enqueue or an end
+    /// among a poster's, or states an operation that cannot be one: an enqueue
+    /// without its item or its source, an end with either, a refused post
+    /// without its reason or a taken one with a reason. What this checks is the
+    /// shape; whether the times are those of a run, the inputs distinct and the
+    /// owner's sessions the tree's, is [`check`]'s `Malformed`.
     pub fn from_json(text: &str) -> Result<History, HistoryError> {
         let document: HistoryDocument = serde_json::from_str(text)
             .map_err(|e| HistoryError(format!("not an inbox history: {e}")))?;
@@ -627,17 +720,41 @@ impl History {
                 document.version
             )));
         }
+        if document.sessions.is_empty() {
+            return Err(HistoryError(
+                "`sessions` lists no session, and a tree holds its root at least".to_string(),
+            ));
+        }
+        for (at, session) in document.sessions.iter().enumerate() {
+            if document.sessions[..at].contains(session) {
+                return Err(HistoryError(format!(
+                    "`sessions` lists session {session} twice"
+                )));
+            }
+        }
+        if document.capacity == Some(0) {
+            return Err(HistoryError(
+                "`capacity` is 0, and a bounded inbox holds one input at least; an inbox \
+                 without a bound leaves `capacity` out"
+                    .to_string(),
+            ));
+        }
         let mut owner = Vec::with_capacity(document.owner.len());
         for (at, operation) in document.owner.iter().enumerate() {
             owner.push(operation.observed(&format!("owner[{at}]"))?);
         }
-        let posters = document
-            .posters
-            .iter()
-            .map(|posts| posts.iter().map(PostWire::observed).collect())
-            .collect();
+        let mut posters = Vec::with_capacity(document.posters.len());
+        for (who, posts) in document.posters.iter().enumerate() {
+            let mut observed = Vec::with_capacity(posts.len());
+            for (at, post) in posts.iter().enumerate() {
+                observed.push(post.observed(&format!("posters[{who}][{at}]"))?);
+            }
+            posters.push(observed);
+        }
         Ok(History {
+            sessions: document.sessions,
             closes: document.closes,
+            capacity: document.capacity,
             owner,
             posters,
         })
@@ -647,7 +764,9 @@ impl History {
     pub fn to_json(&self) -> String {
         let document = HistoryDocument {
             version: HISTORY_FORMAT_VERSION,
+            sessions: self.sessions.clone(),
             closes: self.closes,
+            capacity: self.capacity,
             owner: self.owner.iter().map(OwnerOperationWire::of).collect(),
             posters: self
                 .posters
@@ -661,30 +780,54 @@ impl History {
 
 impl PostWire {
     fn of(post: &Post) -> PostWire {
+        let (outcome, reason) = match post.outcome {
+            Delivery::Taken => (DeliveryWire::Taken, None),
+            Delivery::Refused(refusal) => (
+                DeliveryWire::Refused,
+                Some(match refusal {
+                    Refusal::Full => RefusalWire::Full,
+                    Refusal::Ended => RefusalWire::Ended,
+                    Refusal::Unknown => RefusalWire::Unknown,
+                }),
+            ),
+        };
         PostWire {
             call: PosterCallWire::Post,
             session: post.session,
             input: post.input,
-            outcome: match post.outcome {
-                Delivery::Taken => DeliveryWire::Taken,
-                Delivery::Refused => DeliveryWire::Refused,
-            },
+            outcome,
+            reason,
             invoked: post.invoked,
             returned: post.returned,
         }
     }
 
-    fn observed(&self) -> Post {
-        Post {
+    fn observed(&self, place: &str) -> Result<Post, HistoryError> {
+        let outcome = match (self.outcome, self.reason) {
+            (DeliveryWire::Taken, None) => Delivery::Taken,
+            (DeliveryWire::Refused, Some(reason)) => Delivery::Refused(match reason {
+                RefusalWire::Full => Refusal::Full,
+                RefusalWire::Ended => Refusal::Ended,
+                RefusalWire::Unknown => Refusal::Unknown,
+            }),
+            (DeliveryWire::Taken, Some(_)) => {
+                return Err(HistoryError(format!(
+                    "{place}: a taken post gives no `reason`"
+                )));
+            }
+            (DeliveryWire::Refused, None) => {
+                return Err(HistoryError(format!(
+                    "{place}: a refused post says why it was refused (`reason`)"
+                )));
+            }
+        };
+        Ok(Post {
             session: self.session,
             input: self.input,
-            outcome: match self.outcome {
-                DeliveryWire::Taken => Delivery::Taken,
-                DeliveryWire::Refused => Delivery::Refused,
-            },
+            outcome,
             invoked: self.invoked,
             returned: self.returned,
-        }
+        })
     }
 }
 

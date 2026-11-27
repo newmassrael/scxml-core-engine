@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "sessions": [0, 1],
+  "closes": true,
+  "owner": [
+    { "call": "end", "session": 1, "invoked": 1, "returned": 2 },
+    { "call": "enqueue", "session": 0, "item": 100, "source": "own", "invoked": 5, "returned": 6 }
+  ],
+  "posters": [
+    [
+      { "call": "post", "session": 1, "input": 1, "outcome": "refused", "reason": "unknown", "invoked": 3, "returned": 4 }
+    ]
+  ]
+}

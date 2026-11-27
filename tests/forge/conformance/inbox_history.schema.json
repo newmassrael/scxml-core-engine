@@ -1,18 +1,33 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "InboxHistory",
-  "description": "What the posters and the owner thread of one run of ADR 0084's door observed (docs/adr/0147, D3). Every runtime's inbox conformance test writes this form and `sce-codegen check-inbox-history` judges it, so one linearizability checker serves all of them. A poster is one thread or goroutine that posts inputs to the sessions' inboxes; the owner is the one thread that runs the sessions, moves what each inbox holds into that session's external queue, puts the sessions' own events there, and ends them. Each lists its operations in its program order. Every operation carries two readings of ONE clock that all threads share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each thread increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential specification `docs/formal/InboxService.tla`: each session's external queue takes the inputs posted to it and its own events in the order those posts and events linearized, so an own event enters behind every post taken before it; each input a post took enters exactly once, into the queue of the session it was posted to, and an input a post refused never; a post is refused only once its session has ended, and only where `closes` is true; an own event enters once and before its session ends, and a session ends once. A history is that of a whole run: every input taken has entered by its last operation. The inputs of a run are distinct values, and so are its own events.",
+  "description": "What the posters and the owner thread of one run of ADR 0084's door observed (docs/adr/0147, D3). Every runtime's inbox conformance test writes this form and `sce-codegen check-inbox-history` judges it, so one linearizability checker serves all of them. A poster is one thread or goroutine that posts inputs to the sessions' inboxes; the owner is the one thread that runs the sessions, moves what each inbox holds into that session's external queue, puts the sessions' own events there, and ends them. Each lists its operations in its program order. Every operation carries two readings of ONE clock that all threads share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each thread increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential specification `docs/formal/InboxService.tla`: a post is either taken or refused when it is posted. Each input a post took enters exactly once, into the queue of the session it was posted to, and each session's external queue takes the inputs posted to it and its own events in the order those posts and events linearized, so an own event enters behind every post taken before it. An input a post refused never enters any queue, and a refusal gives its reason: `unknown` for a session not in `sessions`, or one whose run has ended where `closes` is true; `ended` for a session whose run has ended where `closes` is true; `full` where `capacity` is given and the session holds that many inputs taken and not yet entered. A post to a session in `sessions` is taken in every other case, and may be taken past `capacity`. An own event enters once and before its session ends, and a session ends once; the owner operates only on the sessions in `sessions`. A history is that of a whole run: every input taken has entered by its last operation. The inputs of a run are distinct values, and so are its own events.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "closes", "owner", "posters"],
+  "required": ["version", "sessions", "closes", "owner", "posters"],
   "properties": {
     "version": {
       "description": "The version of this format. A reader that meets another refuses the file.",
-      "const": 1
+      "const": 2
+    },
+    "sessions": {
+      "description": "The sessions the tree holds for the run: the root and every session it drives. A post naming any other is refused as `unknown`, and the owner runs no other.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "minItems": 1,
+      "uniqueItems": true
     },
     "closes": {
       "description": "Whether the runtime under test refuses a post to a session whose run has ended. `true`: such a post is refused. `false`: the runtime never closes an inbox, takes such a post, and applies it at the end of the owner's loop, so a refusal is a violation.",
       "type": "boolean"
+    },
+    "capacity": {
+      "description": "The most inputs a session's inbox holds, where the runtime under test bounds it. Left out for an inbox without a bound, which never refuses a post as `full`.",
+      "type": "integer",
+      "minimum": 1
     },
     "owner": {
       "description": "The owner thread's operations, in its program order.",
@@ -34,7 +49,7 @@
   },
   "definitions": {
     "Post": {
-      "description": "One post: the input `input` posted to the inbox of the session `session`, which the inbox took or refused.",
+      "description": "One post: the input `input` posted to the inbox of the session `session`, which the inbox took or refused. A refused post gives its reason (`reason`), and a taken post names none.",
       "type": "object",
       "additionalProperties": false,
       "required": ["call", "session", "input", "outcome", "invoked", "returned"],
@@ -53,6 +68,10 @@
         "outcome": {
           "enum": ["taken", "refused"]
         },
+        "reason": {
+          "description": "Why the inbox refused the post. `full`: the session's bounded inbox held its capacity. `ended`: the session's run had ended and the runtime closes its inbox then. `unknown`: the tree does not hold the session, never having held it or having let it go when its run ended.",
+          "enum": ["full", "ended", "unknown"]
+        },
         "invoked": {
           "description": "The clock reading taken immediately before the call.",
           "type": "integer",
@@ -63,7 +82,27 @@
           "type": "integer",
           "minimum": 0
         }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": {
+              "const": "taken"
+            }
+          },
+          "not": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "properties": {
+            "outcome": {
+              "const": "refused"
+            }
+          },
+          "required": ["reason"]
+        }
+      ]
     },
     "OwnerOperation": {
       "description": "One operation of the owner. `enqueue`: the item `item` entered the external queue of the session `session`; `source` says whether it is an input a post took, applied from the inbox (`posted`, and `item` is that input), or an event of the owner's own (`own`, and `item` is the owner's name for it). It is recorded at the instant the item entered. `end`: the run of the session `session` ended; it names no item and no source.",

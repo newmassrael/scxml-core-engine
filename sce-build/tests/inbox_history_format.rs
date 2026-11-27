@@ -9,13 +9,15 @@
 //! the fixture carries, the schema that documents the form accepts exactly the
 //! histories the reader accepts, and a history written by the reader's own
 //! writer reads back the same. The fixtures `not_linearizable_*` hold one
-//! history for each part `docs/formal/EngineInbox.tla` takes out.
+//! history for each part `docs/formal/EngineInbox.tla` takes out whose
+//! absence a poster can see; a full inbox's refusal is the one part whose
+//! absence tells no poster anything false.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use sce_build::inbox_history::{
-    check, Delivery, History, OwnerCall, OwnerOperation, Post, Source, Verdict,
+    check, Delivery, History, OwnerCall, OwnerOperation, Post, Refusal, Source, Verdict,
     HISTORY_FORMAT_VERSION,
 };
 
@@ -77,6 +79,14 @@ fn expectation(name: &str) -> Option<&'static str> {
         // Whether the runtime closes decides what a refusal means, and the
         // format refuses to guess it.
         Some("not an inbox history")
+    } else if name == "not_a_history_without_sessions.json" {
+        // Which sessions the tree holds decides whether a post naming one may
+        // be refused as unknown, and the format refuses to guess it too.
+        Some("not an inbox history")
+    } else if name == "not_a_history_a_refusal_without_a_reason.json" {
+        Some("posters[0][1]: a refused post says why it was refused")
+    } else if name == "not_a_history_a_capacity_of_zero.json" {
+        Some("`capacity` is 0")
     } else if name.starts_with("not_a_history_") {
         panic!("{name} states no phrase its refusal must carry")
     } else if name == "records_no_operation.json" {
@@ -90,7 +100,7 @@ fn expectation(name: &str) -> Option<&'static str> {
 fn every_fixture_is_judged_as_its_name_says() {
     let files = fixtures();
     assert!(
-        files.len() >= 29,
+        files.len() >= 42,
         "the fixtures are the checker's own tests; only {} are here",
         files.len()
     );
@@ -220,7 +230,9 @@ fn is_not_linearizable(history: &History) -> bool {
 fn a_written_history_reads_back_the_same() {
     let big = (1u64 << 60) + 7;
     let history = History {
+        sessions: vec![big, 1],
         closes: false,
+        capacity: Some(big),
         owner: vec![
             enqueue(big, big, Source::Posted, 3, 4),
             enqueue(big, 9, Source::Own, 5, 6),
@@ -229,7 +241,11 @@ fn a_written_history_reads_back_the_same() {
         posters: vec![
             vec![post(big, big, Delivery::Taken, 1, 2)],
             vec![],
-            vec![post(big, 2, Delivery::Refused, 9, 10)],
+            vec![
+                post(big, 2, Delivery::Refused(Refusal::Ended), 9, 10),
+                post(big + 1, 3, Delivery::Refused(Refusal::Unknown), 11, 12),
+                post(1, 4, Delivery::Refused(Refusal::Full), 13, 14),
+            ],
         ],
     };
     let written = history.to_json();
@@ -240,6 +256,8 @@ fn a_written_history_reads_back_the_same() {
         "writing what was read gives the same text"
     );
     assert!(!read.closes);
+    assert_eq!(read.sessions, history.sessions);
+    assert_eq!(read.capacity, history.capacity);
     assert_eq!(read.owner, history.owner);
     assert_eq!(read.posters, history.posters);
     assert_eq!(check(&read), check(&history));
@@ -252,20 +270,20 @@ fn refused(text: &str) -> String {
 }
 
 fn with_owner(operation: &str) -> String {
-    format!(r#"{{"version":1,"closes":true,"owner":[{operation}],"posters":[]}}"#)
+    format!(r#"{{"version":2,"sessions":[0],"closes":true,"owner":[{operation}],"posters":[]}}"#)
 }
 
 #[test]
 fn the_reader_refuses_what_is_not_the_form() {
     assert!(refused("not json").contains("not an inbox history"));
     assert!(
-        refused(r#"{"version":2,"closes":true,"owner":[],"posters":[]}"#).contains(&format!(
-            "is not the version this reader reads ({HISTORY_FORMAT_VERSION})"
-        ))
+        refused(r#"{"version":3,"sessions":[0],"closes":true,"owner":[],"posters":[]}"#).contains(
+            &format!("is not the version this reader reads ({HISTORY_FORMAT_VERSION})")
+        )
     );
-    assert!(refused(r#"{"version":1,"owner":[],"posters":[]}"#).contains("closes"));
+    assert!(refused(r#"{"version":2,"sessions":[0],"owner":[],"posters":[]}"#).contains("closes"));
     assert!(
-        refused(r#"{"version":1,"closes":true,"owner":[],"posters":[null]}"#)
+        refused(r#"{"version":2,"sessions":[0],"closes":true,"owner":[],"posters":[null]}"#)
             .contains("not an inbox history"),
         "a poster that made no attempt is an empty list, not null"
     );
@@ -295,14 +313,14 @@ fn the_reader_refuses_what_is_not_the_form() {
     );
     assert!(
         refused(
-            r#"{"version":1,"closes":true,"owner":[],"posters":[[{"call":"end","session":0,"invoked":1,"returned":2}]]}"#
+            r#"{"version":2,"sessions":[0],"closes":true,"owner":[],"posters":[[{"call":"end","session":0,"invoked":1,"returned":2}]]}"#
         )
         .contains("not an inbox history"),
         "an end is the owner's"
     );
     assert!(
         refused(
-            r#"{"version":1,"closes":true,"owner":[],"posters":[[{"call":"post","session":0,"input":-1,"outcome":"taken","invoked":1,"returned":2}]]}"#
+            r#"{"version":2,"sessions":[0],"closes":true,"owner":[],"posters":[[{"call":"post","session":0,"input":-1,"outcome":"taken","invoked":1,"returned":2}]]}"#
         )
         .contains("not an inbox history"),
         "a negative input is not an input"
@@ -315,7 +333,9 @@ fn the_reader_refuses_what_is_not_the_form() {
 #[test]
 fn an_own_event_enters_behind_the_posts_taken_before_it() {
     let observed = |post_returned| History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![
             enqueue(0, 100, Source::Own, 3, 4),
             enqueue(0, 1, Source::Posted, 6, 7),
@@ -335,7 +355,9 @@ fn an_own_event_enters_behind_the_posts_taken_before_it() {
 #[test]
 fn posts_enter_in_the_order_they_linearized() {
     let observed = |first: (u64, u64), second: (u64, u64)| History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![
             enqueue(0, 2, Source::Posted, 5, 6),
             enqueue(0, 1, Source::Posted, 7, 8),
@@ -376,7 +398,9 @@ fn the_enqueue_order_fixes_the_order_of_overlapping_posts() {
         })
         .collect();
     let history = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner,
         posters: vec![a, b],
     };
@@ -403,7 +427,9 @@ fn the_enqueue_order_fixes_the_order_of_overlapping_posts() {
 #[test]
 fn a_taken_input_enters_once_and_a_refused_one_never() {
     let once = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![enqueue(0, 1, Source::Posted, 3, 4)],
         posters: vec![vec![post(0, 1, Delivery::Taken, 1, 2)]],
     };
@@ -427,9 +453,11 @@ fn a_taken_input_enters_once_and_a_refused_one_never() {
     };
     assert!(is_not_linearizable(&elsewhere));
     let refused_entered = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![end(0, 1, 2), enqueue(0, 1, Source::Posted, 5, 6)],
-        posters: vec![vec![post(0, 1, Delivery::Refused, 3, 4)]],
+        posters: vec![vec![post(0, 1, Delivery::Refused(Refusal::Ended), 3, 4)]],
     };
     assert!(is_not_linearizable(&refused_entered));
 }
@@ -439,15 +467,17 @@ fn a_taken_input_enters_once_and_a_refused_one_never() {
 #[test]
 fn a_post_is_refused_only_after_the_end_and_only_where_the_runtime_closes() {
     let after_end = |closes: bool, outcome: Delivery| History {
+        sessions: vec![0, 1],
         closes,
+        capacity: None,
         owner: match outcome {
             Delivery::Taken => vec![end(0, 1, 2), enqueue(0, 1, Source::Posted, 5, 6)],
-            Delivery::Refused => vec![end(0, 1, 2)],
+            Delivery::Refused(_) => vec![end(0, 1, 2)],
         },
         posters: vec![vec![post(0, 1, outcome, 3, 4)]],
     };
     assert_eq!(
-        check(&after_end(true, Delivery::Refused)),
+        check(&after_end(true, Delivery::Refused(Refusal::Ended))),
         Verdict::Linearizable
     );
     assert!(is_not_linearizable(&after_end(true, Delivery::Taken)));
@@ -455,20 +485,220 @@ fn a_post_is_refused_only_after_the_end_and_only_where_the_runtime_closes() {
         check(&after_end(false, Delivery::Taken)),
         Verdict::Linearizable
     );
-    assert!(is_not_linearizable(&after_end(false, Delivery::Refused)));
+    assert!(is_not_linearizable(&after_end(
+        false,
+        Delivery::Refused(Refusal::Ended)
+    )));
     let before_end = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![end(0, 3, 4)],
-        posters: vec![vec![post(0, 1, Delivery::Refused, 1, 2)]],
+        posters: vec![vec![post(0, 1, Delivery::Refused(Refusal::Ended), 1, 2)]],
     };
     assert!(is_not_linearizable(&before_end));
     // The end of another session refuses nothing of this one.
     let other_session_ended = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![end(1, 1, 2)],
-        posters: vec![vec![post(0, 1, Delivery::Refused, 3, 4)]],
+        posters: vec![vec![post(0, 1, Delivery::Refused(Refusal::Ended), 3, 4)]],
     };
     assert!(is_not_linearizable(&other_session_ended));
+}
+
+/// A post naming a session the tree does not hold is refused as unknown, and
+/// never taken; a session the tree holds is unknown to it only once its run
+/// has ended where the runtime closes, since the tree may let it go then.
+#[test]
+fn a_post_naming_a_session_the_tree_does_not_hold_is_refused_as_unknown() {
+    let posted = |session: u64, outcome: Delivery| History {
+        sessions: vec![0],
+        closes: true,
+        capacity: None,
+        owner: vec![enqueue(0, 100, Source::Own, 3, 4)],
+        posters: vec![vec![post(session, 1, outcome, 1, 2)]],
+    };
+    assert_eq!(
+        check(&posted(7, Delivery::Refused(Refusal::Unknown))),
+        Verdict::Linearizable
+    );
+    assert!(is_not_linearizable(&posted(7, Delivery::Taken)));
+    assert!(is_not_linearizable(&posted(
+        7,
+        Delivery::Refused(Refusal::Ended)
+    )));
+    assert!(is_not_linearizable(&posted(
+        7,
+        Delivery::Refused(Refusal::Full)
+    )));
+    assert!(is_not_linearizable(&posted(
+        0,
+        Delivery::Refused(Refusal::Unknown)
+    )));
+
+    let after_end = |closes: bool| History {
+        sessions: vec![0],
+        closes,
+        capacity: None,
+        owner: vec![end(0, 1, 2)],
+        posters: vec![vec![post(0, 1, Delivery::Refused(Refusal::Unknown), 3, 4)]],
+    };
+    assert_eq!(check(&after_end(true)), Verdict::Linearizable);
+    assert!(is_not_linearizable(&after_end(false)));
+}
+
+/// A bounded inbox refuses a post as full when its session holds the capacity
+/// of inputs taken and not yet entered, and never with room left, without a
+/// bound, or once the session has ended where the runtime closes. A post it
+/// takes past that count is taken: a drain frees room before it enters what it
+/// took out.
+#[test]
+fn a_full_inbox_refuses_and_only_when_full() {
+    let full = Delivery::Refused(Refusal::Full);
+    let observed = |capacity: Option<u64>, second: Delivery| History {
+        sessions: vec![0],
+        closes: true,
+        capacity,
+        owner: match second {
+            Delivery::Taken => vec![
+                enqueue(0, 1, Source::Posted, 5, 6),
+                enqueue(0, 2, Source::Posted, 7, 8),
+            ],
+            Delivery::Refused(_) => vec![enqueue(0, 1, Source::Posted, 5, 6)],
+        },
+        posters: vec![vec![
+            post(0, 1, Delivery::Taken, 1, 2),
+            post(0, 2, second, 3, 4),
+        ]],
+    };
+    assert_eq!(check(&observed(Some(1), full)), Verdict::Linearizable);
+    assert!(is_not_linearizable(&observed(Some(2), full)));
+    assert!(is_not_linearizable(&observed(None, full)));
+    assert_eq!(
+        check(&observed(Some(1), Delivery::Taken)),
+        Verdict::Linearizable
+    );
+
+    // The input entered before the second post was invoked: the inbox had room.
+    let after_room = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: Some(1),
+        owner: vec![enqueue(0, 1, Source::Posted, 3, 4)],
+        posters: vec![vec![
+            post(0, 1, Delivery::Taken, 1, 2),
+            post(0, 2, full, 5, 6),
+        ]],
+    };
+    assert!(is_not_linearizable(&after_room));
+
+    // Once the session has ended and the runtime closed its inbox, a post is
+    // refused for that, whatever its session still holds.
+    let after_end = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: Some(1),
+        owner: vec![end(0, 3, 4), enqueue(0, 1, Source::Posted, 7, 8)],
+        posters: vec![vec![
+            post(0, 1, Delivery::Taken, 1, 2),
+            post(0, 2, full, 5, 6),
+        ]],
+    };
+    assert!(is_not_linearizable(&after_end));
+}
+
+/// A refused post never takes effect, whatever its reason: its input enters
+/// no queue.
+#[test]
+fn a_refused_post_never_takes_effect() {
+    let full = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: Some(1),
+        owner: vec![
+            enqueue(0, 1, Source::Posted, 5, 6),
+            enqueue(0, 2, Source::Posted, 7, 8),
+        ],
+        posters: vec![vec![
+            post(0, 1, Delivery::Taken, 1, 2),
+            post(0, 2, Delivery::Refused(Refusal::Full), 3, 4),
+        ]],
+    };
+    assert!(is_not_linearizable(&full));
+    let unknown = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: None,
+        owner: vec![enqueue(0, 1, Source::Posted, 3, 4)],
+        posters: vec![vec![post(7, 1, Delivery::Refused(Refusal::Unknown), 1, 2)]],
+    };
+    assert!(is_not_linearizable(&unknown));
+}
+
+/// The owner runs only the sessions the tree holds, and a history that says
+/// it ran another cannot have come from a run.
+#[test]
+fn the_owner_runs_only_the_sessions_the_tree_holds() {
+    let history = History {
+        sessions: vec![0],
+        closes: true,
+        capacity: None,
+        owner: vec![enqueue(0, 100, Source::Own, 1, 2), end(1, 3, 4)],
+        posters: vec![],
+    };
+    assert!(matches!(
+        check(&history),
+        Verdict::Malformed(why)
+            if why.contains("participant 0 operation 1") && why.contains("on session 1")
+    ));
+}
+
+/// The tree and the bound are part of the form: the reader refuses a history
+/// that lists no session or one twice, gives a capacity of 0, or gives a post
+/// a reason that does not match its outcome.
+#[test]
+fn the_reader_refuses_a_tree_or_a_refusal_it_cannot_judge() {
+    let with = |head: &str, posted: &str| {
+        format!(r#"{{"version":2,{head},"owner":[],"posters":[[{posted}]]}}"#)
+    };
+    let taken =
+        r#"{"call":"post","session":0,"input":1,"outcome":"taken","invoked":1,"returned":2}"#;
+    assert!(refused(&with(r#""sessions":[],"closes":true"#, taken))
+        .contains("`sessions` lists no session"));
+    assert!(refused(&with(r#""sessions":[0,3,0],"closes":true"#, taken))
+        .contains("`sessions` lists session 0 twice"));
+    assert!(refused(&with(r#""closes":true"#, taken)).contains("sessions"));
+    assert!(
+        refused(&with(r#""sessions":[0],"closes":true,"capacity":0"#, taken))
+            .contains("`capacity` is 0")
+    );
+    let tree = r#""sessions":[0],"closes":true"#;
+    assert!(refused(&with(
+        tree,
+        r#"{"call":"post","session":0,"input":1,"outcome":"refused","invoked":1,"returned":2}"#
+    ))
+    .contains("posters[0][0]: a refused post says why it was refused"));
+    assert!(refused(&with(
+        tree,
+        r#"{"call":"post","session":0,"input":1,"outcome":"taken","reason":"full","invoked":1,"returned":2}"#
+    ))
+    .contains("posters[0][0]: a taken post gives no `reason`"));
+    assert!(refused(&with(
+        tree,
+        r#"{"call":"post","session":0,"input":1,"outcome":"refused","reason":"busy","invoked":1,"returned":2}"#
+    ))
+    .contains("not an inbox history"));
+
+    let read = History::from_json(&with(
+        r#""sessions":[0],"closes":true,"capacity":2"#,
+        r#"{"call":"post","session":0,"input":1,"outcome":"refused","reason":"full","invoked":1,"returned":2}"#,
+    ))
+    .expect("a bounded tree with a refusal and its reason reads");
+    assert_eq!(read.sessions, vec![0]);
+    assert_eq!(read.capacity, Some(2));
+    assert_eq!(read.posters[0][0].outcome, Delivery::Refused(Refusal::Full));
 }
 
 /// An own event enters once and before its session ends, and a session ends
@@ -476,7 +706,9 @@ fn a_post_is_refused_only_after_the_end_and_only_where_the_runtime_closes() {
 #[test]
 fn an_own_event_enters_once_before_the_end_and_a_session_ends_once() {
     let owner_only = |owner| History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner,
         posters: vec![],
     };
@@ -508,11 +740,13 @@ fn an_own_event_enters_once_before_the_end_and_a_session_ends_once() {
 #[test]
 fn an_input_posted_twice_is_malformed() {
     let history = History {
+        sessions: vec![0, 1],
         closes: true,
+        capacity: None,
         owner: vec![enqueue(0, 1, Source::Posted, 5, 6)],
         posters: vec![
             vec![post(0, 1, Delivery::Taken, 1, 2)],
-            vec![post(0, 1, Delivery::Refused, 3, 4)],
+            vec![post(0, 1, Delivery::Refused(Refusal::Ended), 3, 4)],
         ],
     };
     assert!(matches!(
