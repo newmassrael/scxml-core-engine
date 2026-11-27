@@ -245,8 +245,10 @@ fn a_recorded_judgement_is_read_only_of_what_it_judged() {
             req: req.to_string(),
             form: form.to_string(),
             verdict: within.clone(),
+            witness: None,
         })
         .collect(),
+        coverage: None,
     };
     let dir =
         std::env::temp_dir().join(format!("sce-formal-properties-test-{}", std::process::id()));

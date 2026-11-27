@@ -278,18 +278,31 @@ pub(super) struct Facts {
     pub(super) states: Vec<String>,
     /// Each `<data>`'s id and type, in document order.
     pub(super) data: Vec<(String, Ty)>,
+    /// Each row of the transitions, in the tables' order: a written
+    /// transition by its source state's id and its position among that
+    /// state's own transitions, as a run trace names a transition it took
+    /// (docs/adr/0089); `None` for an initial or a default transition, which
+    /// no microstep takes on an event or on none.
+    pub(super) rows: Vec<Option<(String, u32)>>,
 }
 
 impl Facts {
     fn of(writer: &Writer<'_>) -> Self {
+        let tables = writer.tables;
         Self {
-            states: writer
-                .tables
-                .states
-                .iter()
-                .map(|row| row.id.clone())
-                .collect(),
+            states: tables.states.iter().map(|row| row.id.clone()).collect(),
             data: writer.variables.clone(),
+            rows: tables
+                .transitions
+                .iter()
+                .map(|row| match (row.origin, row.source) {
+                    (TransitionOrigin::Written { index_in_source }, Some(state)) => Some((
+                        tables.states[usize::from(state)].id.clone(),
+                        u32::from(index_in_source),
+                    )),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 }

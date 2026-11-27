@@ -56,7 +56,7 @@
 //! `tests/forge/conformance/run_trace.schema.json`, and
 //! `sce-codegen formal traces` reads it ([`RunTrace::from_json`]) and judges it.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use crate::history_common::HistoryError as TraceError;
 
@@ -297,6 +297,12 @@ impl RunTrace {
     pub fn from_json(text: &str) -> Result<RunTrace, TraceError> {
         let document: TraceDocument =
             serde_json::from_str(text).map_err(|e| TraceError(format!("not a run trace: {e}")))?;
+        Self::from_document(document)
+    }
+
+    /// The run a document of the form says, held to every rule
+    /// [`RunTrace::from_json`] names.
+    fn from_document(document: TraceDocument) -> Result<RunTrace, TraceError> {
         if document.version != TRACE_FORMAT_VERSION {
             return Err(TraceError(format!(
                 "version {} is not the version this reader reads ({TRACE_FORMAT_VERSION})",
@@ -334,7 +340,12 @@ impl RunTrace {
 
     /// Write the run in its JSON form, as [`RunTrace::from_json`] reads it.
     pub fn to_json(&self) -> String {
-        let document = TraceDocument {
+        serde_json::to_string_pretty(&self.document()).expect("a run trace serialises")
+    }
+
+    /// The run as a document of the form.
+    fn document(&self) -> TraceDocument {
+        TraceDocument {
             version: TRACE_FORMAT_VERSION,
             lane: self.lane.clone(),
             steps: self.steps.iter().map(StepWire::of).collect(),
@@ -351,8 +362,24 @@ impl RunTrace {
                 })
                 .collect(),
             cycle: self.cycle,
-        };
-        serde_json::to_string_pretty(&document).expect("a run trace serialises")
+        }
+    }
+}
+
+/// A run is written inside another record, a judgement of properties that
+/// holds the scenario of a violation (docs/adr/0115, D15), in its own form.
+impl Serialize for RunTrace {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.document().serialize(serializer)
+    }
+}
+
+/// A run read from inside another record is held to every rule its own file
+/// is ([`RunTrace::from_json`]).
+impl<'de> Deserialize<'de> for RunTrace {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let document = TraceDocument::deserialize(deserializer)?;
+        RunTrace::from_document(document).map_err(serde::de::Error::custom)
     }
 }
 

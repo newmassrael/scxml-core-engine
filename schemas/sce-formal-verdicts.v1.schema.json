@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-verdicts.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE formal verdicts record (wire schema v1)",
-  "description": "The judgement of one machine's properties (docs/adr/0115, D15), as `sce-codegen formal properties --record` writes it and `--recorded` reads it back: whether every macrostep ends, the assumptions no machine of SCE discharges, and the verdict of each guarantee, by the sce:req token it states. A judgement is of exactly one machine, one properties document with its observers, one exploration and one judge, named by their digests; a record whose digests are not those of the documents and the judge it is read for is no judgement of them, and is refused naming each digest that moved. Authoritative producer and reader is sce-build/src/formal/verdicts.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "description": "The judgement of one machine's properties (docs/adr/0115, D15), as `sce-codegen formal properties --record` writes it and `--recorded` reads it back: whether every macrostep ends, the assumptions no machine of SCE discharges, and the verdict of each guarantee, by the sce:req token it states, with the scenario of each violation and each witness every lane replays, and, where it was asked for, what altering the machine showed of its guarantees. A judgement is of exactly one machine, one properties document with its observers, one exploration and one judge, named by their digests; a record whose digests are not those of the documents and the judge it is read for is no judgement of them, and is refused naming each digest that moved. Authoritative producer and reader is sce-build/src/formal/verdicts.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": ["record", "v", "digests", "macrosteps", "not_discharged", "verdicts"],
   "additionalProperties": false,
@@ -21,6 +21,11 @@
         "verdict": { "enum": ["holds-of-the-whole-space", "holds-within", "violated", "vacuous", "not-judged"] },
         "bounds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "run": { "type": "string" },
+        "scenario": {
+          "description": "The run of a violation, as the scenario every lane replays: a document of the run trace form (tests/forge/conformance/run_trace.schema.json) of the lane `model`, with the inputs its environment gave and the cycle it ends in. Absent where the violation has no run.",
+          "type": "object",
+          "required": ["version", "lane", "steps"]
+        },
         "part": { "type": "string" },
         "by": { "type": "boolean" },
         "why": { "type": "string" }
@@ -51,6 +56,27 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
+    "coverage": {
+      "description": "The machine altered in each way of a closed list (a transition's condition made false, which takes it out, or made true; an action taken out; an event it sends or a value it writes changed), and the guarantees that a run of each altered machine breaks. A guarantee that held and that no alteration breaks is refused; an alteration no guarantee notices is listed. Absent where it was not asked for.",
+      "type": "object",
+      "required": ["alterations"],
+      "additionalProperties": false,
+      "properties": {
+        "alterations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["alteration", "noticed_by"],
+            "additionalProperties": false,
+            "properties": {
+              "alteration": { "type": "string", "minLength": 1 },
+              "noticed_by": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "not_judged": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "verdicts": {
       "description": "Each guarantee's verdict, in document order.",
       "type": "array",
@@ -62,7 +88,12 @@
             "required": ["req", "form"],
             "properties": {
               "req": { "type": "string", "minLength": 1 },
-              "form": { "enum": ["always", "step", "recurs", "leads-to", "possible"] }
+              "form": { "enum": ["always", "step", "recurs", "leads-to", "possible"] },
+              "witness": {
+                "description": "For a possibility that holds, a run to a state where its condition holds, as the scenario every lane replays, in the run trace form.",
+                "type": "object",
+                "required": ["version", "lane", "steps"]
+              }
             }
           }
         ]

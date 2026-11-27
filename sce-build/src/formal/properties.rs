@@ -46,6 +46,7 @@ use crate::ecmascript::{Expr, ExprKind, UnaryOp};
 use crate::forge::error::{ForgeError, Located};
 use crate::forge::model::{ExplorationModel, ForgeDocument, PropertiesModel, PropertyForm};
 use crate::model::SCXMLModel;
+use crate::run_trace::Fired;
 
 use super::document_model::{
     self, tla_string, Binding, DocumentModel, Facts, Scope, Term, Tla, Ty, Typed, DOCUMENT_PREFIX,
@@ -285,6 +286,10 @@ pub struct Guarantee {
     pub operator: String,
     /// Each part of it, made stronger in turn.
     pub strengthened: Vec<Strengthened>,
+    /// For a `<sce:possible>`, the invariant that it never holds: a run TLC
+    /// finds to break it reaches a state where it holds, which is the
+    /// guarantee's witness.
+    pub witness: Option<String>,
 }
 
 /// The specification a run checks.
@@ -335,6 +340,11 @@ pub struct PropertiesModule {
     /// The most events that come from outside, a bound of the search; 0 when
     /// none come.
     pub most: u32,
+    /// Each row of the machine's transitions, numbered from 1 as the model
+    /// numbers them, as a run trace names it: a written transition by its
+    /// source and its place among that source's own (docs/adr/0089); `None`
+    /// for an initial or a default transition.
+    pub rows: Vec<Option<Fired>>,
 }
 
 /// The name of the invariant that holds while fewer than the most events
@@ -530,6 +540,11 @@ pub fn write(documents: &Documents) -> Result<PropertiesModule, FormalError> {
             property.req,
             formula(&property.form, &texts, escape)
         ));
+        let witness = (judged == Judged::Possible).then(|| {
+            let name = format!("{operator}Unseen");
+            statements.push_str(&format!("{name} == ~{operator}\n\n"));
+            name
+        });
         let mut strengthened = Vec::new();
         let mut number = 0usize;
         for (index, slot) in slots.iter().enumerate() {
@@ -560,6 +575,7 @@ pub fn write(documents: &Documents) -> Result<PropertiesModule, FormalError> {
             judged,
             operator,
             strengthened,
+            witness,
         });
     }
 
@@ -603,6 +619,16 @@ pub fn write(documents: &Documents) -> Result<PropertiesModule, FormalError> {
             .collect(),
         fair_arrivals,
         most: exploration.most,
+        rows: facts
+            .rows
+            .iter()
+            .map(|row| {
+                row.as_ref().map(|(source, index)| Fired {
+                    source: source.clone(),
+                    index: *index,
+                })
+            })
+            .collect(),
     })
 }
 
@@ -612,6 +638,7 @@ fn empty_facts() -> Facts {
     Facts {
         states: Vec::new(),
         data: Vec::new(),
+        rows: Vec::new(),
     }
 }
 
@@ -753,7 +780,15 @@ fn module_text(parts: &ModuleParts<'_>) -> String {
          /\\ obs = NoObservation\n    \
          /\\ observers = ObserversAtStart\n    \
          /\\ before = [observation |-> NoObservation, observers |-> ObserversAtStart]\n\n\
-         PStep == Step /\\ taking' = Taking /\\ Observe\n\n",
+         \\* Each kind of step of the interpreter, by a name of its own: TLC names each\n\
+         \\* step of a behaviour it reports by the action it took, and a scenario is\n\
+         \\* read from those names (sce-build/src/formal/behaviour.rs).\n\
+         PStart == Start /\\ taking' = Taking /\\ Observe\n\n\
+         PEventless == Eventless /\\ taking' = Taking /\\ Observe\n\n\
+         PInternal == Internal /\\ taking' = Taking /\\ Observe\n\n\
+         PExternal == External /\\ taking' = Taking /\\ Observe\n\n\
+         PStop == Stop /\\ taking' = Taking /\\ Observe\n\n\
+         PStep == PStart \\/ PEventless \\/ PInternal \\/ PExternal \\/ PStop\n\n",
     );
     let assumed = if parts.assumed.is_empty() {
         "TRUE".to_string()
@@ -770,13 +805,16 @@ fn module_text(parts: &ModuleParts<'_>) -> String {
          Assumed(e) == {assumed}\n\n\
          PArrive(e) == Arrive(e) /\\ Assumed(e) /\\ UNCHANGED <<taking, obs, before, observers>>\n\n\
          PDue(i) == Due(i) /\\ UNCHANGED <<taking, obs, before, observers>>\n\n\
+         \\* A delayed send comes due: one action, whose name TLC reports, since the\n\
+         \\* sends it chooses among are a variable's.\n\
+         PDueAny == \\E i \\in 1..Len(delayed) : PDue(i)\n\n\
          PNext ==\n    \
          \\/ PStep\n    \
-         \\/ \\E i \\in 1..Len(delayed) : PDue(i)\n    \
+         \\/ PDueAny\n    \
          \\/ \\E e \\in Outside : PArrive(e)\n\n\
          PSpec == PInit /\\ [][PNext]_pvars\n\n\
          \\* Time goes on: a delayed send that is due comes.\n\
-         TimeGoesOn == WF_pvars(\\E i \\in 1..Len(delayed) : PDue(i))\n\n"
+         TimeGoesOn == WF_pvars(PDueAny)\n\n"
     ));
     let mut fairness = vec![
         "([]<>(~StepEnabled) \\/ []<><<PStep>>_pvars)".to_string(),
@@ -1439,10 +1477,21 @@ mod tests {
             "Assumed(e) == (e # <<\"kick\">>)\n",
             "PropOutside == {<<\"coin\">>, <<\"push\">>}\n",
             "PropMaxOutside == 3\n",
+            "Guarantee4Unseen == ~Guarantee4\n",
             "====\n",
         ] {
             assert!(text.contains(expected), "missing {expected:?} in\n{text}");
         }
+        let witnesses: Vec<Option<&str>> = written
+            .guarantees
+            .iter()
+            .map(|g| g.witness.as_deref())
+            .collect();
+        assert_eq!(
+            witnesses,
+            [None, None, None, Some("Guarantee4Unseen"), None],
+            "only a possibility has a witness to find"
+        );
         let judged: Vec<(&str, Judged)> = written
             .guarantees
             .iter()
@@ -1485,6 +1534,44 @@ mod tests {
                 .map(|s| (s.part.as_str(), s.by))
                 .collect::<Vec<_>>(),
             [("In('unlocked')", true), ("In('locked')", false)]
+        );
+    }
+
+    /// Turns red if a kind of step loses the name TLC reports it by, or a row
+    /// of the transitions is named otherwise than a run trace names it.
+    #[test]
+    fn each_kind_of_step_is_an_action_of_its_own_name() {
+        let written = write(&documents(EVERY_FORM, true, EXPLORATION)).expect("a module");
+        let text = &written.text;
+        for expected in [
+            "PStart == Start /\\ taking' = Taking /\\ Observe\n",
+            "PEventless == Eventless /\\ taking' = Taking /\\ Observe\n",
+            "PInternal == Internal /\\ taking' = Taking /\\ Observe\n",
+            "PExternal == External /\\ taking' = Taking /\\ Observe\n",
+            "PStop == Stop /\\ taking' = Taking /\\ Observe\n",
+            "PStep == PStart \\/ PEventless \\/ PInternal \\/ PExternal \\/ PStop\n",
+            "PDueAny == \\E i \\in 1..Len(delayed) : PDue(i)\n",
+            "    \\/ PDueAny\n    \\/ \\E e \\in Outside : PArrive(e)\n",
+            "TimeGoesOn == WF_pvars(PDueAny)\n",
+        ] {
+            assert!(text.contains(expected), "missing {expected:?} in\n{text}");
+        }
+        for (name, _) in crate::formal::behaviour::ACTIONS {
+            assert!(
+                text.contains(&format!("\n{name} ==")) || text.contains(&format!("\n{name}(")),
+                "the action {name} a behaviour is read by is not written in\n{text}"
+            );
+        }
+        let fired = |source: &str, index: u32| {
+            Some(Fired {
+                source: source.to_string(),
+                index,
+            })
+        };
+        assert_eq!(
+            written.rows,
+            [fired("locked", 0), fired("unlocked", 0), None],
+            "the written transitions by state, then the document's own"
         );
     }
 

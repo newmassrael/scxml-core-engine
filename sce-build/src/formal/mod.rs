@@ -29,12 +29,20 @@
 //!   that model, with the runs that judge them (ADR 0115, D15).
 //! - [`verdicts`]: the judge of those properties, and the record of its
 //!   verdicts by the digests of what it judged (ADR 0115, D15).
+//! - [`behaviour`]: a behaviour TLC reports of those properties, read back as
+//!   the scenario every lane replays (ADR 0115, D15 and D8's converse).
+//! - [`replay`]: the judge of a lane's replay of a scenario: the run the lane
+//!   made is the run the model made (ADR 0115, D8's converse).
+//! - [`coverage`]: the machine altered in each way of a closed list, and the
+//!   properties that notice each alteration (ADR 0115, D15).
 //! - [`traces`]: the judge of a traces manifest, every recorded run of the code
 //!   a behaviour of its model (ADR 0115, D4 and D8).
 //! - [`error`]: the `formal/*` diagnostics a judge leaves through
 //!   (`SCE_ERROR_CONTRACT.md` §6).
 
 pub mod apalache;
+pub mod behaviour;
+pub mod coverage;
 pub mod document_jani;
 pub mod document_model;
 pub mod error;
@@ -44,6 +52,7 @@ pub mod models;
 pub mod proofs;
 pub mod properties;
 pub mod quantities;
+pub mod replay;
 pub mod storm;
 pub mod tla_value;
 pub mod tlc;

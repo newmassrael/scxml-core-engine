@@ -16614,6 +16614,18 @@ enum FormalCommand {
         /// refused naming each digest that moved (`formal/declaration`).
         #[arg(long)]
         recorded: Option<PathBuf>,
+        /// Write the scenario of each violation and each witness, the run
+        /// every lane replays, into this directory: `<req>.scenario.json`,
+        /// and `macrosteps.scenario.json` for a macrostep that does not end,
+        /// in the run trace form (docs/adr/0115, D15).
+        #[arg(long)]
+        scenarios: Option<PathBuf>,
+        /// Also alter the machine in each way of a closed list and judge every
+        /// guarantee that held over each altered machine: a guarantee no
+        /// alteration breaks is `formal/property-refused` (exit 1), and an
+        /// alteration no guarantee notices is listed.
+        #[arg(long, conflicts_with = "recorded")]
+        coverage: bool,
     },
     /// Hold every JANI model a quantities manifest declares to the TLA+ model
     /// of its document, with the pinned TLC and Storm (docs/adr/0119, D4).
@@ -16762,6 +16774,8 @@ fn cmd_formal(judge: FormalCommand) {
             workers,
             record,
             recorded,
+            scenarios,
+            coverage,
         } => {
             use crate::formal::{properties as judged, verdicts};
             let documents = match judged::read(&properties, &exploration) {
@@ -16797,9 +16811,28 @@ fn cmd_formal(judge: FormalCommand) {
                         }),
                     }
                 }
-                None => verdicts::judge(&documents, workers, &mut report)
-                    .unwrap_or_else(|err| leave(err)),
+                None => verdicts::judge(
+                    &documents,
+                    workers,
+                    verdicts::Asked { coverage },
+                    &mut report,
+                )
+                .unwrap_or_else(|err| leave(err)),
             };
+            if let Some(dir) = &scenarios {
+                let written = std::fs::create_dir_all(dir).and_then(|()| {
+                    judgement
+                        .scenarios()
+                        .into_iter()
+                        .try_for_each(|(name, run)| std::fs::write(dir.join(name), run.to_json()))
+                });
+                if let Err(e) = written {
+                    leave(FormalError::ToolUnavailable {
+                        tool: "the scenarios' directory".to_string(),
+                        detail: format!("cannot write into {}: {e}", dir.display()),
+                    });
+                }
+            }
             if let Some(path) = &record {
                 std::fs::write(path, judgement.to_text()).unwrap_or_else(|e| {
                     leave(FormalError::ToolUnavailable {

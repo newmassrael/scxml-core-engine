@@ -18,6 +18,19 @@
 //! macrostep ends, so there is always a next observation. A machine whose
 //! macrostep does not end is violated under every properties document.
 //!
+//! A violation TLC finds is a run, and the judgement holds it as a scenario
+//! every lane replays (D8's converse; [`super::behaviour`]): the run is read
+//! from the behaviour TLC reports, and a violation whose behaviour cannot be
+//! read as one is not judged, since no lane could show it is the code's. A
+//! `<sce:possible>` that holds has a witness, the run TLC finds to a state
+//! where its condition holds, held the same way.
+//!
+//! Asked for its coverage, the judge also alters the machine in each way of a
+//! closed list ([`super::coverage`]) and judges every guarantee that held
+//! again over each altered machine: a guarantee no alteration breaks says
+//! nothing of what the machine does, and is refused by name; an alteration no
+//! guarantee notices is listed.
+//!
 //! A judgement is of exactly one machine, one properties document with its
 //! observers, one exploration and one judge, by their digests ([`Digests`]),
 //! and is recorded with them (`schemas/sce-formal-verdicts.v1.schema.json`).
@@ -35,7 +48,8 @@ use super::models::Report;
 use super::properties::{
     Check, Documents, Judged, PropertiesModule, Spec, MACROSTEPS_END, WITHIN_MOST,
 };
-use super::{tlc, toolchain, FormalError, WorkDir};
+use super::{behaviour, coverage, tlc, toolchain, FormalError, WorkDir};
+use crate::run_trace::{Fired, RunTrace};
 
 /// The surface's stability (`SCE_WIRE_CONTRACTS.md`), which the header of
 /// `schemas/sce-formal-verdicts.v1.schema.json` repeats.
@@ -128,8 +142,14 @@ pub enum Verdict {
     HoldsOfTheWholeSpace,
     /// Explored, and these bounds of the exploration were reached.
     HoldsWithin { bounds: Vec<String> },
-    /// A run breaks it, under the assumptions: TLC's account of the run.
-    Violated { run: String },
+    /// A run breaks it, under the assumptions: TLC's account of the run, and
+    /// the run as the scenario every lane replays. A violation with no run (a
+    /// `<sce:possible>` lost from a reachable state) has no scenario.
+    Violated {
+        run: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scenario: Option<Box<RunTrace>>,
+    },
     /// It holds though `part` is replaced by `by`, which makes it stronger.
     Vacuous { part: String, by: bool },
     /// The search did not answer, or a bound cut what it would decide.
@@ -173,6 +193,10 @@ pub struct PropertyVerdict {
     pub form: String,
     #[serde(flatten)]
     pub verdict: Verdict,
+    /// For a `<sce:possible>` that holds, a run to a state where its
+    /// condition holds, as the scenario every lane replays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witness: Option<Box<RunTrace>>,
 }
 
 impl std::fmt::Display for PropertyVerdict {
@@ -197,6 +221,54 @@ pub struct Judgement {
     pub not_discharged: Vec<String>,
     /// Each guarantee's verdict, in document order.
     pub verdicts: Vec<PropertyVerdict>,
+    /// The machine altered in each way of the closed list, and the guarantees
+    /// that notice each alteration, where the judgement was asked for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<Coverage>,
+}
+
+/// What altering the machine showed of its guarantees (docs/adr/0115, D15).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Coverage {
+    /// Each alteration, in the order of the closed list.
+    pub alterations: Vec<AlterationVerdict>,
+}
+
+/// One alteration of the machine and what noticed it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlterationVerdict {
+    /// The alteration, as [`coverage::Alteration::describe`] names it.
+    pub alteration: String,
+    /// The guarantees, by their `sce:req` tokens, that a run of the altered
+    /// machine breaks.
+    pub noticed_by: Vec<String>,
+    /// Why the altered machine was not judged: it has no model, or a search
+    /// did not answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_judged: Option<String>,
+}
+
+impl Coverage {
+    /// The guarantees among `held` no alteration breaks, in their order.
+    pub fn unbroken<'a>(&self, held: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+        held.into_iter()
+            .filter(|req| {
+                !self
+                    .alterations
+                    .iter()
+                    .any(|altered| altered.noticed_by.iter().any(|by| by == req))
+            })
+            .collect()
+    }
+
+    /// The alterations no guarantee notices and that were judged.
+    pub fn unnoticed(&self) -> impl Iterator<Item = &AlterationVerdict> {
+        self.alterations
+            .iter()
+            .filter(|altered| altered.noticed_by.is_empty() && altered.not_judged.is_none())
+    }
 }
 
 impl Judgement {
@@ -232,7 +304,7 @@ impl Judgement {
                 failures,
             });
         }
-        let vacuous: Vec<String> = self
+        let mut refused: Vec<String> = self
             .verdicts
             .iter()
             .filter(|verdict| matches!(verdict.verdict, Verdict::Vacuous { .. }))
@@ -243,10 +315,55 @@ impl Judgement {
                 )
             })
             .collect();
-        (!vacuous.is_empty()).then(|| FormalError::PropertyRefused {
+        if let Some(coverage) = &self.coverage {
+            let held = self
+                .verdicts
+                .iter()
+                .filter(|verdict| verdict.verdict.holds())
+                .map(|verdict| verdict.req.as_str());
+            for req in coverage.unbroken(held) {
+                let form = self
+                    .verdicts
+                    .iter()
+                    .find(|verdict| verdict.req == req)
+                    .map_or("", |verdict| verdict.form.as_str());
+                refused.push(format!("`{req}` (<sce:{form}>): {UNBROKEN}"));
+            }
+        }
+        (!refused.is_empty()).then(|| FormalError::PropertyRefused {
             document: document.to_string(),
-            refusals: vacuous,
+            refusals: refused,
         })
+    }
+
+    /// Each scenario the judgement holds, by the name of the file a lane
+    /// reads it from: `macrosteps.scenario.json` for a macrostep that does
+    /// not end, and `<req>.scenario.json` for a guarantee's violation or
+    /// witness.
+    pub fn scenarios(&self) -> Vec<(String, &RunTrace)> {
+        let mut found = Vec::new();
+        if let Verdict::Violated {
+            scenario: Some(run),
+            ..
+        } = &self.macrosteps
+        {
+            found.push(("macrosteps.scenario.json".to_string(), &**run));
+        }
+        for verdict in &self.verdicts {
+            let run = match (&verdict.verdict, &verdict.witness) {
+                (
+                    Verdict::Violated {
+                        scenario: Some(run),
+                        ..
+                    },
+                    _,
+                ) => run,
+                (_, Some(run)) => run,
+                _ => continue,
+            };
+            found.push((format!("{}.scenario.json", verdict.req), &**run));
+        }
+        found
     }
 }
 
@@ -302,10 +419,42 @@ pub fn report(judgement: &Judgement, report: &mut Report<'_>) {
     }
     for verdict in &judgement.verdicts {
         (report.out)(&verdict.to_string());
-        if let Verdict::Violated { run } = &verdict.verdict {
+        if let Verdict::Violated { run, .. } = &verdict.verdict {
             (report.detail)(run);
         }
     }
+    if let Some(coverage) = &judgement.coverage {
+        report_coverage(coverage, report);
+    }
+}
+
+/// Write what altering the machine showed: one line per alteration no
+/// guarantee notices, and one per alteration not judged.
+fn report_coverage(coverage: &Coverage, report: &mut Report<'_>) {
+    (report.out)(&format!(
+        "the machine altered in {} ways",
+        coverage.alterations.len()
+    ));
+    for altered in coverage.unnoticed() {
+        (report.out)(&format!("no guarantee notices: {}", altered.alteration));
+    }
+    for altered in &coverage.alterations {
+        if let Some(why) = &altered.not_judged {
+            (report.out)(&format!("not judged: {}: {why}", altered.alteration));
+        }
+    }
+}
+
+/// What a guarantee no alteration of the machine breaks is refused as.
+pub const UNBROKEN: &str =
+    "no alteration of the machine breaks it, so it says nothing of what the machine does";
+
+/// What a judgement is asked for beside the verdicts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Asked {
+    /// Alter the machine in each way of the closed list and judge the
+    /// guarantees that held over each (docs/adr/0115, D15).
+    pub coverage: bool,
 }
 
 /// Judge every guarantee of `documents` with the pinned TLC, `workers` the
@@ -313,6 +462,7 @@ pub fn report(judgement: &Judgement, report: &mut Report<'_>) {
 pub fn judge(
     documents: &Documents,
     workers: NonZeroUsize,
+    asked: Asked,
     report_to: &mut Report<'_>,
 ) -> Result<Judgement, FormalError> {
     let written = super::properties::write(documents)?;
@@ -334,36 +484,10 @@ pub fn judge(
         workers,
     };
 
-    let bounds = if written.most > 0 {
-        let answer = runner.run(Spec::Safe, Check::Invariant(WITHIN_MOST))?;
-        match answer.status {
-            tlc::HOLDS => Ok(Vec::new()),
-            tlc::SAFETY => Ok(vec![format!(
-                "the most events from outside ({})",
-                written.most
-            )]),
-            status => Err(not_answered(
-                "whether the most events were reached",
-                status,
-                &answer.output,
-            )),
-        }
-    } else {
-        Ok(Vec::new())
-    };
-    let holding = match &bounds {
-        Ok(reached) if reached.is_empty() => Verdict::HoldsOfTheWholeSpace,
-        Ok(reached) => Verdict::HoldsWithin {
-            bounds: reached.clone(),
-        },
-        Err(why) => Verdict::NotJudged { why: why.clone() },
-    };
+    let holding = runner.holding()?;
 
-    let macrosteps = classify(
-        &runner.run(Spec::Live, Check::Property(MACROSTEPS_END))?,
-        tlc::LIVENESS,
-        &holding,
-    );
+    let ended = runner.run(Spec::Live, Check::Property(MACROSTEPS_END))?;
+    let macrosteps = runner.read_scenario(classify(&ended, tlc::LIVENESS, &holding), &ended.output);
     (report_to.out)(&format!("every macrostep ends: {macrosteps}"));
     if !written.assumptions.is_empty() {
         (report_to.out)(&format!(
@@ -378,7 +502,7 @@ pub fn judge(
         if verdict.holds() {
             for stronger in &guarantee.strengthened {
                 if runner
-                    .verdict(guarantee.judged, &stronger.operator, &holding)?
+                    .judged(guarantee.judged, &stronger.operator, &holding)?
                     .holds()
                 {
                     verdict = Verdict::Vacuous {
@@ -389,17 +513,33 @@ pub fn judge(
                 }
             }
         }
+        let mut witness = None;
+        if let (true, Some(unseen)) = (verdict.holds(), &guarantee.witness) {
+            match runner.witness(unseen)? {
+                Ok(run) => witness = Some(Box::new(run)),
+                Err(why) => verdict = Verdict::NotJudged { why },
+            }
+        }
         let judged = PropertyVerdict {
             req: guarantee.req.clone(),
             form: guarantee.form.to_string(),
             verdict,
+            witness,
         };
         (report_to.out)(&judged.to_string());
-        if let Verdict::Violated { run } = &judged.verdict {
+        if let Verdict::Violated { run, .. } = &judged.verdict {
             (report_to.detail)(run);
         }
         verdicts.push(judged);
     }
+
+    let coverage = if asked.coverage {
+        let coverage = judge_coverage(documents, &written, &verdicts, tools, workers)?;
+        report_coverage(&coverage, report_to);
+        Some(coverage)
+    } else {
+        None
+    };
 
     Ok(Judgement {
         record: RECORD.to_string(),
@@ -408,7 +548,81 @@ pub fn judge(
         macrosteps,
         not_discharged: written.assumptions.clone(),
         verdicts,
+        coverage,
     })
+}
+
+/// Judge every guarantee in `verdicts` that held over each alteration of
+/// the machine of `documents`, whose properties are `written`.
+fn judge_coverage(
+    documents: &Documents,
+    written: &PropertiesModule,
+    verdicts: &[PropertyVerdict],
+    tools: tlc::Tools<'_>,
+    workers: NonZeroUsize,
+) -> Result<Coverage, FormalError> {
+    let held: Vec<&super::properties::Guarantee> = written
+        .guarantees
+        .iter()
+        .filter(|guarantee| {
+            verdicts
+                .iter()
+                .any(|verdict| verdict.req == guarantee.req && verdict.verdict.holds())
+        })
+        .collect();
+    let mut alterations = Vec::new();
+    for alteration in coverage::alterations(&documents.machine.model) {
+        let described = alteration.describe();
+        let altered_documents = Documents {
+            machine: super::properties::Read {
+                path: documents.machine.path.clone(),
+                text: documents.machine.text.clone(),
+                model: alteration.apply(&documents.machine.model),
+            },
+            properties: documents.properties.clone(),
+            observers: documents.observers.clone(),
+            exploration: documents.exploration.clone(),
+        };
+        let altered = match super::properties::write(&altered_documents) {
+            Ok(altered) => altered,
+            Err(refused) => {
+                alterations.push(AlterationVerdict {
+                    alteration: described,
+                    noticed_by: Vec::new(),
+                    not_judged: Some(format!("the altered machine has no model: {refused}")),
+                });
+                continue;
+            }
+        };
+        let stage = WorkDir::new("coverage")?;
+        stage_modules(stage.path(), &altered)?;
+        let runner = Runner {
+            tools,
+            sources: stage.path(),
+            written: &altered,
+            workers,
+        };
+        let holding = runner.holding()?;
+        let mut noticed_by = Vec::new();
+        let mut not_judged = None;
+        for guarantee in &held {
+            match runner.judged(guarantee.judged, &guarantee.operator, &holding)? {
+                Verdict::Violated { .. } => noticed_by.push(guarantee.req.clone()),
+                Verdict::NotJudged { why } => {
+                    if not_judged.is_none() {
+                        not_judged = Some(format!("`{}`: {why}", guarantee.req));
+                    }
+                }
+                _ => {}
+            }
+        }
+        alterations.push(AlterationVerdict {
+            alteration: described,
+            noticed_by,
+            not_judged,
+        });
+    }
+    Ok(Coverage { alterations })
 }
 
 /// Write the semantics, the machine's model and the properties module into
@@ -440,6 +654,62 @@ struct Runner<'a> {
 }
 
 impl Runner<'_> {
+    /// What a run that holds is said to show: the whole space, or within the
+    /// bounds the search reached, or nothing where that could not be read.
+    fn holding(&self) -> Result<Verdict, FormalError> {
+        if self.written.most == 0 {
+            return Ok(Verdict::HoldsOfTheWholeSpace);
+        }
+        let answer = self.run(Spec::Safe, Check::Invariant(WITHIN_MOST))?;
+        Ok(match answer.status {
+            tlc::HOLDS => Verdict::HoldsOfTheWholeSpace,
+            tlc::SAFETY => Verdict::HoldsWithin {
+                bounds: vec![format!(
+                    "the most events from outside ({})",
+                    self.written.most
+                )],
+            },
+            status => Verdict::NotJudged {
+                why: not_answered(
+                    "whether the most events were reached",
+                    status,
+                    &answer.output,
+                ),
+            },
+        })
+    }
+
+    /// `verdict` with the scenario of the run TLC gave in `output`
+    /// ([`with_scenario`]).
+    fn read_scenario(&self, verdict: Verdict, output: &str) -> Verdict {
+        with_scenario(verdict, output, &self.written.rows)
+    }
+
+    /// The witness of a `<sce:possible>` that holds: the run TLC finds to
+    /// break `unseen`, the invariant that its condition never holds; or why
+    /// there is none.
+    fn witness(&self, unseen: &str) -> Result<Result<RunTrace, String>, FormalError> {
+        let answer = self.run(Spec::Safe, Check::Invariant(unseen))?;
+        Ok(match answer.status {
+            tlc::SAFETY => scenario_of(&answer.output, &self.written.rows).map_err(|why| {
+                format!(
+                    "the run TLC found to a state where it holds is not read as a scenario \
+                     every lane replays: {why}"
+                )
+            }),
+            tlc::HOLDS => Err(
+                "it is possible from every reachable state, and no run from the start reaches \
+                 a state where it holds, which cannot both be"
+                    .to_string(),
+            ),
+            status => Err(not_answered(
+                "a run to a state where it holds",
+                status,
+                &answer.output,
+            )),
+        })
+    }
+
     /// One run of `spec` checking `check`.
     fn run(&self, spec: Spec, check: Check<'_>) -> Result<tlc::Answer, FormalError> {
         let config_name = format!("{}.cfg", self.written.module);
@@ -455,25 +725,53 @@ impl Runner<'_> {
         })
     }
 
-    /// What the run that judges `operator` as `judged` says of it;
-    /// `holding` is what a run that holds is said to show.
+    /// What the run that judges `operator` as `judged` says of it, with the
+    /// scenario of a violation; `holding` is what a run that holds is said
+    /// to show.
     fn verdict(
         &self,
         judged: Judged,
         operator: &str,
         holding: &Verdict,
     ) -> Result<Verdict, FormalError> {
+        self.judged_as(judged, operator, holding, true)
+    }
+
+    /// What the run that judges `operator` as `judged` says of it, a
+    /// violation with TLC's account alone.
+    fn judged(
+        &self,
+        judged: Judged,
+        operator: &str,
+        holding: &Verdict,
+    ) -> Result<Verdict, FormalError> {
+        self.judged_as(judged, operator, holding, false)
+    }
+
+    /// What the run that judges `operator` as `judged` says of it, with
+    /// the scenario of a violation where `scenario` is asked.
+    fn judged_as(
+        &self,
+        judged: Judged,
+        operator: &str,
+        holding: &Verdict,
+        scenario: bool,
+    ) -> Result<Verdict, FormalError> {
         Ok(match judged {
-            Judged::Invariant => classify(
-                &self.run(Spec::Safe, Check::Invariant(operator))?,
-                tlc::SAFETY,
-                holding,
-            ),
-            Judged::Temporal => classify(
-                &self.run(Spec::Live, Check::Property(operator))?,
-                tlc::LIVENESS,
-                holding,
-            ),
+            Judged::Invariant | Judged::Temporal => {
+                let (spec, check, violated) = if judged == Judged::Invariant {
+                    (Spec::Safe, Check::Invariant(operator), tlc::SAFETY)
+                } else {
+                    (Spec::Live, Check::Property(operator), tlc::LIVENESS)
+                };
+                let answer = self.run(spec, check)?;
+                let verdict = classify(&answer, violated, holding);
+                if scenario {
+                    self.read_scenario(verdict, &answer.output)
+                } else {
+                    verdict
+                }
+            }
             Judged::Possible => {
                 let (name, text) = self.written.possible_module(operator);
                 let possible = super::models::possible_over(
@@ -489,6 +787,36 @@ impl Runner<'_> {
     }
 }
 
+/// `verdict` with the scenario of the run TLC gave in `output`, where it is
+/// a violation: one whose behaviour cannot be read as a scenario is not
+/// judged, since no lane could replay it.
+fn with_scenario(verdict: Verdict, output: &str, rows: &[Option<Fired>]) -> Verdict {
+    match verdict {
+        Verdict::Violated {
+            run,
+            scenario: None,
+        } => match scenario_of(output, rows) {
+            Ok(scenario) => Verdict::Violated {
+                run,
+                scenario: Some(Box::new(scenario)),
+            },
+            Err(why) => Verdict::NotJudged {
+                why: format!(
+                    "TLC found a run that breaks it, which is not read as a scenario every \
+                     lane replays: {why}"
+                ),
+            },
+        },
+        other => other,
+    }
+}
+
+/// The scenario of the behaviour TLC reports in `output`, the machine's rows
+/// numbered as `rows` names them.
+fn scenario_of(output: &str, rows: &[Option<Fired>]) -> Result<RunTrace, String> {
+    behaviour::read(output).and_then(|read| behaviour::scenario(&read, rows))
+}
+
 /// What a run of TLC says of the property it checked: `holding` where it
 /// holds, a violation where it ended with `violated` (TLC's status for the
 /// kind of property checked), and nothing judged otherwise.
@@ -497,6 +825,7 @@ fn classify(answer: &tlc::Answer, violated: i32, holding: &Verdict) -> Verdict {
         tlc::HOLDS => holding.clone(),
         status if status == violated => Verdict::Violated {
             run: account(&answer.output),
+            scenario: None,
         },
         status => Verdict::NotJudged {
             why: not_answered("the property", status, &answer.output),
@@ -514,6 +843,7 @@ fn possible_verdict(possible: Result<bool, String>, holding: &Verdict) -> Verdic
         Ok(false) => match holding {
             Verdict::HoldsOfTheWholeSpace => Verdict::Violated {
                 run: "from a reachable state, no state where it holds can be reached".to_string(),
+                scenario: None,
             },
             Verdict::HoldsWithin { bounds } => Verdict::NotJudged {
                 why: format!(
@@ -583,9 +913,25 @@ mod tests {
                     req: req.to_string(),
                     form: form.to_string(),
                     verdict,
+                    witness: None,
                 })
                 .collect(),
+            coverage: None,
         }
+    }
+
+    /// A scenario of two steps: the start, and `go` from outside taken.
+    fn scenario() -> Box<RunTrace> {
+        Box::new(
+            RunTrace::from_json(
+                r#"{"version": 1, "lane": "model", "steps": [
+                    {"kind": "start", "entered": ["a"], "configuration": ["a"]},
+                    {"kind": "external", "event": "go", "fired": [{"source": "a", "index": 0}],
+                     "exited": ["a"], "entered": ["b"], "configuration": ["b"]}],
+                   "inputs": [{"kind": "arrive", "after": 1, "event": "go"}]}"#,
+            )
+            .expect("a scenario"),
+        )
     }
 
     fn every_verdict() -> Judgement {
@@ -603,6 +949,7 @@ mod tests {
                 "step",
                 Verdict::Violated {
                     run: "Error: Invariant Guarantee3 is violated.".to_string(),
+                    scenario: Some(scenario()),
                 },
             ),
             (
@@ -774,6 +1121,7 @@ mod tests {
         let endless = Judgement {
             macrosteps: Verdict::Violated {
                 run: "Error: Temporal properties were violated.".to_string(),
+                scenario: None,
             },
             ..holding
         };
@@ -810,7 +1158,8 @@ mod tests {
                 &holding
             ),
             Verdict::Violated {
-                run: "Error: Invariant G is violated.\nState 1".to_string()
+                run: "Error: Invariant G is violated.\nState 1".to_string(),
+                scenario: None,
             }
         );
         assert!(matches!(
@@ -841,5 +1190,143 @@ mod tests {
                 why: "no graph".to_string()
             }
         );
+    }
+
+    /// What the wire schema finds wrong with the record `text`.
+    fn schema_errors(text: &str) -> Vec<String> {
+        let schema = schema();
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema)
+            .expect("the verdicts schema compiles");
+        let instance: serde_json::Value = serde_json::from_str(text).expect("the record is JSON");
+        let found: Vec<String> = match validator.validate(&instance) {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors.map(|e| e.to_string()).collect(),
+        };
+        found
+    }
+
+    /// Turns red if a violation's scenario or a possibility's witness is
+    /// dropped from the record, read back as another run, or named by another
+    /// file than a lane reads it from.
+    #[test]
+    fn a_scenario_is_recorded_with_its_verdict() {
+        let mut recorded = every_verdict();
+        recorded.verdicts[0].witness = Some(scenario());
+        recorded.macrosteps = Verdict::Violated {
+            run: "Error: Temporal properties were violated.".to_string(),
+            scenario: Some(scenario()),
+        };
+        let text = recorded.to_text();
+        assert!(text.contains("\"inputs\""), "{text}");
+        assert_eq!(read_record(&text, &digests()), Ok(recorded.clone()));
+        assert_eq!(schema_errors(&text), Vec::<String>::new());
+        let named: Vec<String> = recorded
+            .scenarios()
+            .into_iter()
+            .map(|(name, run)| {
+                assert_eq!(run, &*scenario());
+                name
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [
+                "macrosteps.scenario.json",
+                "R1.scenario.json",
+                "R3.scenario.json"
+            ]
+        );
+    }
+
+    /// Turns red if a violation whose behaviour cannot be read as a scenario
+    /// is told as violated, or one whose behaviour can is told without it.
+    #[test]
+    fn a_violation_no_lane_could_replay_is_not_judged() {
+        let violated = Verdict::Violated {
+            run: "Error: Invariant G is violated.".to_string(),
+            scenario: None,
+        };
+        assert!(matches!(
+            with_scenario(violated.clone(), "Error: Invariant G is violated.\n", &[]),
+            Verdict::NotJudged { why }
+                if why.starts_with("TLC found a run that breaks it, which is not read as a scenario")
+        ));
+        let output = "Error: Invariant G is violated.\n\
+                      Error: The behavior up to this point is:\n\
+                      State 1: <Initial predicate>\n\
+                      /\\ configuration = {}\n\
+                      /\\ told = [exited |-> <<>>, fired |-> <<>>, entered |-> <<>>]\n\
+                      \n\
+                      State 2: <PStart line 1, col 1 to line 1, col 9 of module M>\n\
+                      /\\ configuration = {\"a\"}\n\
+                      /\\ told = [exited |-> <<>>, fired |-> <<1>>, entered |-> <<\"a\">>]\n\
+                      \n";
+        match with_scenario(violated, output, &[]) {
+            Verdict::Violated {
+                scenario: Some(run),
+                ..
+            } => assert_eq!(run.steps.len(), 1),
+            other => panic!("expected a violation with its scenario, got {other:?}"),
+        }
+        assert_eq!(
+            with_scenario(Verdict::HoldsOfTheWholeSpace, "", &[]),
+            Verdict::HoldsOfTheWholeSpace
+        );
+    }
+
+    /// Turns red if a guarantee no alteration of the machine breaks passes,
+    /// one an alteration breaks is refused, or an alteration no guarantee
+    /// notices goes unlisted.
+    #[test]
+    fn a_guarantee_no_alteration_breaks_is_refused_by_name() {
+        let held = judgement(vec![
+            ("R1", "always", Verdict::HoldsOfTheWholeSpace),
+            ("R2", "leads-to", Verdict::HoldsOfTheWholeSpace),
+        ]);
+        let altered = |noticed_by: &[&str]| Coverage {
+            alterations: vec![
+                AlterationVerdict {
+                    alteration: "transition 0 of state `a` taken out".to_string(),
+                    noticed_by: noticed_by.iter().map(|req| req.to_string()).collect(),
+                    not_judged: None,
+                },
+                AlterationVerdict {
+                    alteration: "action 0 of the <onentry> 0 of state `b` taken out".to_string(),
+                    noticed_by: Vec::new(),
+                    not_judged: None,
+                },
+            ],
+        };
+        let partly = Judgement {
+            coverage: Some(altered(&["R2"])),
+            ..held.clone()
+        };
+        match partly.failure("p.scxml") {
+            Some(FormalError::PropertyRefused { refusals, .. }) => {
+                assert_eq!(refusals, [format!("`R1` (<sce:always>): {UNBROKEN}")]);
+            }
+            other => panic!("expected formal/property-refused, got {other:?}"),
+        }
+        let whole = Judgement {
+            coverage: Some(altered(&["R1", "R2"])),
+            ..held
+        };
+        assert!(whole.failure("p.scxml").is_none());
+        let unnoticed: Vec<&str> = whole
+            .coverage
+            .as_ref()
+            .expect("a coverage")
+            .unnoticed()
+            .map(|altered| altered.alteration.as_str())
+            .collect();
+        assert_eq!(
+            unnoticed,
+            ["action 0 of the <onentry> 0 of state `b` taken out"]
+        );
+        let text = whole.to_text();
+        assert_eq!(read_record(&text, &digests()), Ok(whole.clone()));
+        assert_eq!(schema_errors(&text), Vec::<String>::new());
     }
 }
