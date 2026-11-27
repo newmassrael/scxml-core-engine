@@ -16678,18 +16678,6 @@ enum FormalCommand {
         /// Which tool.
         #[arg(long, value_enum, default_value = "all")]
         tool: FormalTool,
-        /// Where Verus is unpacked: `~/.local/verus/<version>` unless a build
-        /// machine's declaration names another.
-        #[arg(long)]
-        verus_place: Option<PathBuf>,
-        /// Where Apalache is unpacked: `~/.local/apalache/<version>` unless a
-        /// build machine's declaration names another.
-        #[arg(long)]
-        apalache_place: Option<PathBuf>,
-        /// Where Storm is unpacked: `~/.local/storm/<version>` unless a build
-        /// machine's declaration names another.
-        #[arg(long)]
-        storm_place: Option<PathBuf>,
     },
 }
 
@@ -16882,12 +16870,7 @@ fn cmd_formal(judge: FormalCommand) {
             }
         }
         FormalCommand::Toolchain => out_line(toolchain::TOOLCHAIN_JSON.trim_end()),
-        FormalCommand::Install {
-            tool,
-            verus_place,
-            apalache_place,
-            storm_place,
-        } => {
+        FormalCommand::Install { tool } => {
             let pins = toolchain::pinned();
             let said = |what: &str, installed: toolchain::Installed| match installed {
                 toolchain::Installed::Present(at) => {
@@ -16908,28 +16891,22 @@ fn cmd_formal(judge: FormalCommand) {
                 }
             }
             if matches!(tool, FormalTool::All | FormalTool::Tlc) {
-                match toolchain::install_tlc(&pins.tlc) {
+                let place = toolchain::tlc_place(&pins.tlc).unwrap_or_else(|err| leave(err));
+                match toolchain::install_tlc(&pins.tlc, &place) {
                     Ok(installed) => said(&format!("TLC {}", pins.tlc.version), installed),
                     Err(err) => leave(err),
                 }
             }
             if matches!(tool, FormalTool::All | FormalTool::Verus) {
-                let place = match verus_place {
-                    Some(place) => place,
-                    None => toolchain::verus_place(&pins.verus).unwrap_or_else(|err| leave(err)),
-                };
+                let place = toolchain::verus_place(&pins.verus).unwrap_or_else(|err| leave(err));
                 match toolchain::install_verus(&pins.verus, &place) {
                     Ok(installed) => said(&format!("Verus {}", pins.verus.version), installed),
                     Err(err) => leave(err),
                 }
             }
             if matches!(tool, FormalTool::All | FormalTool::Apalache) {
-                let place = match apalache_place {
-                    Some(place) => place,
-                    None => {
-                        toolchain::apalache_place(&pins.apalache).unwrap_or_else(|err| leave(err))
-                    }
-                };
+                let place =
+                    toolchain::apalache_place(&pins.apalache).unwrap_or_else(|err| leave(err));
                 match toolchain::install_apalache(&pins.apalache, &place) {
                     Ok(installed) => {
                         said(&format!("Apalache {}", pins.apalache.version), installed)
@@ -16938,10 +16915,7 @@ fn cmd_formal(judge: FormalCommand) {
                 }
             }
             if matches!(tool, FormalTool::All | FormalTool::Storm) {
-                let place = match storm_place {
-                    Some(place) => place,
-                    None => toolchain::storm_place(&pins.storm).unwrap_or_else(|err| leave(err)),
-                };
+                let place = toolchain::storm_place(&pins.storm).unwrap_or_else(|err| leave(err));
                 match toolchain::install_storm(&pins.storm, &place) {
                     Ok(installed) => said(&format!("Storm {}", pins.storm.version), installed),
                     Err(err) => leave(err),

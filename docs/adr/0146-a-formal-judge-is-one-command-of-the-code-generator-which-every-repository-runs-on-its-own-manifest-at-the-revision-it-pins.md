@@ -12,6 +12,10 @@
 - Amended 2026-11-27: the Java runtime TLC and Apalache run on joins the toolchain of D3. Apalache 0.63.0 is built
   for Java 21, and a build machine whose `java` was 17 answered every inductive run with
   `UnsupportedClassVersionError`; the CI host image carries Java 17 for the Kotlin lanes alone.
+- Amended 2026-11-28: the procedure that installs the tools of D3 is one script beside the pins,
+  `sce-build/src/formal/install_tool.sh`, compiled into the binary with them. A build machine's declaration installs
+  a tool from the files it names, and `formal install` needs the whole workspace to be built, so the declaration runs
+  the script from the tree and `formal install` runs the copy it carries.
 - Date: 2026-11-26
 - Also amends `SCE_ERROR_CONTRACT.md` (the stage `formal`, its three codes, and the exit status 15) and
   `docs/SCE_ACCEPTED_SUBSET.md` (its appendix of codes).
@@ -129,7 +133,9 @@ x64. `formal install` installs it with TLC or Apalache, at `~/.local/jre/<versio
 that runtime's `bin` and `JAVA_HOME` naming it. A runtime that is not there, or that cannot load the tool, is
 `formal/tool-unavailable` (exit 15), never a verdict.
 
-The transport is `curl`. The digest admits the bytes, as D3's source says. No network crate enters the default
+The transport is `curl`. The digest admits the bytes, as D3's source says. The fetching, the admission and the
+unpacking are written once, in `install_tool.sh` beside the pins and compiled in with them: `formal install` runs
+it, and `bx.toml`'s table of each tool runs it from the tree with the script and the pins as its only inputs. No network crate enters the default
 build of `sce-build`, which keeps its one network client behind `remote-cache`.
 
 ### D4. One runner for every level

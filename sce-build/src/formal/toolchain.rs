@@ -9,8 +9,11 @@
 //! consumer that pins the revision pins the tools with it: the judge and its
 //! tools are what this repository's gates ran together.
 //!
-//! A judge never fetches; `sce-codegen formal install` does, by `curl`, and
-//! admits the bytes by their digest. The transport is not trusted, the digest is
+//! A judge never fetches; `sce-codegen formal install` does, by the installer
+//! beside the pins (`install_tool.sh`, compiled in as `INSTALLER`), which
+//! fetches by `curl` and admits the bytes by their digest. A build machine's
+//! declaration runs the same script from the tree, so the procedure is written
+//! once, and the pins are read from this one file by both. The transport is not trusted, the digest is
 //! (the fixed-output derivations of Nix, Dolstra 2006). A judge admits what it
 //! finds by the same digest before it runs it, so a tool replaced under the same
 //! name is refused as `formal/tool-unavailable`, never run.
@@ -26,7 +29,6 @@
 //! (docs/adr/0145) and in `bx.toml` for a build machine; the package is
 //! unpacked, never installed, and its program is run with its own libraries.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -180,21 +182,9 @@ pub fn storm_place(pin: &StormPin) -> Result<PathBuf, FormalError> {
     Ok(home()?.join(".local").join("storm").join(&pin.version))
 }
 
-/// The program of the package, under the place it is unpacked in.
-fn storm_program_in_package(pin: &StormPin) -> PathBuf {
-    Path::new("usr")
-        .join("bin")
-        .join(format!("storm-{}", pin.version))
-}
-
 /// The program `bin/java` of the Java runtime whose home is `home`.
 pub fn java_program(home: &Path) -> PathBuf {
     home.join("bin").join("java")
-}
-
-/// The directory the archive of the pinned Java runtime holds the runtime in.
-fn java_archive_root(pin: &JavaPin) -> String {
-    format!("jdk-{}-jre", pin.version)
 }
 
 /// What a refusal names as the tool when the Java runtime is missing.
@@ -203,9 +193,6 @@ const JAVA: &str = "the Java runtime TLC and Apalache run on";
 /// The directory under an unpacked Apalache that holds the standard module
 /// `Apalache`, taken out of the release's jar by `formal install`.
 const APALACHE_MODULES: &str = "modules";
-
-/// The one standard module of Apalache a model may extend, as its jar holds it.
-const APALACHE_MODULE_IN_JAR: &str = "tla2sany/StandardModules/Apalache.tla";
 
 /// The lowercase hex sha256 of a file's bytes.
 pub fn sha256_of(path: &Path) -> std::io::Result<String> {
@@ -228,7 +215,15 @@ pub fn admitted_tlc(pin: &TlcPin) -> Result<PathBuf, FormalError> {
             format!("no TLC at {}: sce-codegen formal install", jar.display()),
         ));
     }
-    let actual = sha256_of(&jar)
+    admit_tlc(pin, &jar)?;
+    Ok(jar)
+}
+
+/// Refuse the TLC at `jar` unless its bytes are the ones `pin` names: a jar is
+/// run as it is found, with nothing unpacked from it, so it is admitted by its
+/// digest each time it is found.
+fn admit_tlc(pin: &TlcPin, jar: &Path) -> Result<(), FormalError> {
+    let actual = sha256_of(jar)
         .map_err(|e| unavailable("TLC", format!("cannot read {}: {e}", jar.display())))?;
     if actual != pin.sha256 {
         return Err(unavailable(
@@ -240,7 +235,7 @@ pub fn admitted_tlc(pin: &TlcPin) -> Result<PathBuf, FormalError> {
             ),
         ));
     }
-    Ok(jar)
+    Ok(())
 }
 
 /// The pinned Verus and the Rust release it runs on, found. Verus is not
@@ -338,47 +333,6 @@ pub fn admitted_apalache_modules(pin: &ApalachePin) -> Result<PathBuf, FormalErr
     Ok(modules)
 }
 
-/// Fetch `url` to `to` by `curl`, which follows redirects and fails on an
-/// HTTP error.
-fn fetch(tool: &str, url: &str, to: &Path) -> Result<(), FormalError> {
-    let ran = Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--retry",
-            "3",
-            "--output",
-        ])
-        .arg(to)
-        .arg(url)
-        .output()
-        .map_err(|e| unavailable(tool, format!("cannot run curl to fetch {url}: {e}")))?;
-    if !ran.status.success() {
-        return Err(unavailable(
-            tool,
-            format!(
-                "curl could not fetch {url}: {}",
-                String::from_utf8_lossy(&ran.stderr).trim()
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn admit(tool: &str, path: &Path, url: &str, pinned: &str) -> Result<(), FormalError> {
-    let actual = sha256_of(path)
-        .map_err(|e| unavailable(tool, format!("cannot read {}: {e}", path.display())))?;
-    if actual != pinned {
-        return Err(unavailable(
-            tool,
-            format!("{url} is not the {tool} this judge pins (sha256 {actual}, pinned {pinned})"),
-        ));
-    }
-    Ok(())
-}
-
 /// What one install did, for its report line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Installed {
@@ -388,194 +342,50 @@ pub enum Installed {
     Fetched(PathBuf),
 }
 
-/// Fetch the pinned TLC where the judges look, unless the one pinned is there.
-pub fn install_tlc(pin: &TlcPin) -> Result<Installed, FormalError> {
-    let jar = tlc_place(pin)?;
-    if jar.is_file() {
-        admit("TLC", &jar, &pin.url, &pin.sha256)?;
-        return Ok(Installed::Present(jar));
-    }
-    let parent = jar.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)
-        .map_err(|e| unavailable("TLC", format!("cannot create {}: {e}", parent.display())))?;
-    let partial = jar.with_extension("partial");
-    fetch("TLC", &pin.url, &partial)?;
-    if let Err(refused) = admit("TLC", &partial, &pin.url, &pin.sha256) {
-        let _ = std::fs::remove_file(&partial);
-        return Err(refused);
-    }
-    std::fs::rename(&partial, &jar).map_err(|e| {
-        unavailable(
-            "TLC",
-            format!(
-                "cannot move {} to {}: {e}",
-                partial.display(),
-                jar.display()
-            ),
-        )
-    })?;
-    Ok(Installed::Fetched(jar))
-}
+/// The installer of the pinned tools, as the tree holds it beside the pins:
+/// the one procedure that fetches a tool, admits what was fetched by its pin's
+/// digest and unpacks it (docs/adr/0146, D3). A build machine's declaration
+/// runs it from the tree (`bx.toml`, a table for each tool); it is compiled
+/// into the binary with the pins, so `formal install` runs the same procedure
+/// where there is no tree.
+pub const INSTALLER: &str = include_str!("install_tool.sh");
 
-/// The program `bin/verus` under the unpacked release: Verus run on its Rust
-/// release with no rustup, which answers `--version` by itself so that a check
-/// of the installation asks nothing of that release. Verus asks rustup for its
-/// Rust release unless told not to; then it is the one whose libraries it finds.
-pub fn verus_wrapper(pin: &VerusPin) -> String {
-    format!(
-        "#!/bin/sh\n\
-         # Written by sce-codegen formal install: Verus {version} on Rust {toolchain}, with no rustup.\n\
-         if [ \"$1\" = --version ]; then\n    echo \"verus {version}\"\n    exit 0\nfi\n\
-         rust=\"$HOME/.local/rust/{toolchain}\"\n\
-         VERUS_USE_RUSTUP=0 LD_LIBRARY_PATH=\"$rust/lib\" exec \"$(dirname \"$(readlink -f \"$0\")\")/../verus\" --sysroot \"$rust\" \"$@\"\n",
-        version = pin.version,
-        toolchain = pin.toolchain,
-    )
-}
-
-/// Fetch the pinned Verus, admit the archive by its digest and unpack it into
-/// `place` (`verus_place` unless a build machine's declaration names another),
-/// unless it is there. The archive is the release's `x86-linux` one, unpacked
-/// by `unzip`, which keeps each file's mode.
-pub fn install_verus(pin: &VerusPin, place: &Path) -> Result<Installed, FormalError> {
-    let wrapper = place.join("bin").join("verus");
-    if wrapper.is_file() {
-        return Ok(Installed::Present(place.to_path_buf()));
+/// Install the tool `pin` pins, whose name in the pins is `key` and in a
+/// refusal `tool`, into `place` by the installer, run beside a
+/// `toolchain.json` that holds that pin alone, as it is run beside the tree's
+/// pins. `place` is absent or an empty directory: the installer refuses one
+/// that holds anything, and puts the tool there whole or not at all.
+fn run_installer<P: Serialize>(
+    tool: &str,
+    key: &str,
+    pin: &P,
+    place: &Path,
+) -> Result<(), FormalError> {
+    let pin = serde_json::to_string(pin)
+        .map_err(|e| unavailable(tool, format!("cannot write its pin for the installer: {e}")))?;
+    let pins = format!("{{\"{key}\": {pin}}}\n");
+    let scratch = super::WorkDir::new("install")?;
+    for (name, text) in [
+        ("install_tool.sh", INSTALLER),
+        ("toolchain.json", pins.as_str()),
+    ] {
+        let path = scratch.path().join(name);
+        std::fs::write(&path, text)
+            .map_err(|e| unavailable(tool, format!("cannot write {}: {e}", path.display())))?;
     }
-    let beside = place.parent().unwrap_or(place);
-    std::fs::create_dir_all(beside)
-        .map_err(|e| unavailable("Verus", format!("cannot create {}: {e}", beside.display())))?;
-    let scratch = super::WorkDir::new_in(beside, "verus")?;
-    let archive = scratch.path().join("verus.zip");
-    fetch("Verus", &pin.url, &archive)?;
-    admit("Verus", &archive, &pin.url, &pin.sha256)?;
-    let unpacked = scratch.path().join("unpacked");
-    let ran = Command::new("unzip")
-        .arg("-q")
-        .arg(&archive)
-        .arg("-d")
-        .arg(&unpacked)
+    let script = scratch.path().join("install_tool.sh");
+    let ran = Command::new("bash")
+        .arg(&script)
+        .arg(key)
+        .arg(place)
         .output()
-        .map_err(|e| unavailable("Verus", format!("cannot run unzip: {e}")))?;
-    if !ran.status.success() {
-        return Err(unavailable(
-            "Verus",
-            format!(
-                "unzip could not unpack {}: {}",
-                pin.url,
-                String::from_utf8_lossy(&ran.stderr).trim()
-            ),
-        ));
-    }
-    let tree = unpacked.join("verus-x86-linux");
-    if !tree.join("verus").is_file() {
-        return Err(unavailable(
-            "Verus",
-            format!("{} holds no verus-x86-linux/verus", pin.url),
-        ));
-    }
-    std::fs::create_dir_all(place)
-        .map_err(|e| unavailable("Verus", format!("cannot create {}: {e}", place.display())))?;
-    let entries = std::fs::read_dir(&tree)
-        .map_err(|e| unavailable("Verus", format!("cannot read {}: {e}", tree.display())))?;
-    for entry in entries {
-        let entry = entry
-            .map_err(|e| unavailable("Verus", format!("cannot read {}: {e}", tree.display())))?;
-        let to = place.join(entry.file_name());
-        std::fs::rename(entry.path(), &to).map_err(|e| {
-            unavailable(
-                "Verus",
-                format!(
-                    "cannot move {} to {}: {e}",
-                    entry.path().display(),
-                    to.display()
-                ),
-            )
-        })?;
-    }
-    std::fs::create_dir_all(wrapper.parent().unwrap_or(place)).map_err(|e| {
-        unavailable(
-            "Verus",
-            format!("cannot create {}: {e}", place.join("bin").display()),
-        )
-    })?;
-    std::fs::write(&wrapper, verus_wrapper(pin))
-        .map_err(|e| unavailable("Verus", format!("cannot write {}: {e}", wrapper.display())))?;
-    make_executable("Verus", &wrapper)?;
-    Ok(Installed::Fetched(place.to_path_buf()))
-}
-
-/// Fetch the pinned Java runtime, admit the archive by its digest and unpack it
-/// into `place` (`java_place`), unless it is there. The archive is unpacked by
-/// `tar`, which keeps each file's mode, beside `place`, and the runtime is moved
-/// into it by one rename, so a runtime at `place` is a whole one.
-pub fn install_java(pin: &JavaPin, place: &Path) -> Result<Installed, FormalError> {
-    if java_program(place).is_file() {
-        return Ok(Installed::Present(place.to_path_buf()));
-    }
-    let beside = place.parent().unwrap_or(place);
-    std::fs::create_dir_all(beside)
-        .map_err(|e| unavailable(JAVA, format!("cannot create {}: {e}", beside.display())))?;
-    let scratch = super::WorkDir::new_in(beside, "jre")?;
-    let archive = scratch.path().join("jre.tgz");
-    fetch(JAVA, &pin.url, &archive)?;
-    admit(JAVA, &archive, &pin.url, &pin.sha256)?;
-    let unpacked = scratch.path().join("unpacked");
-    std::fs::create_dir_all(&unpacked)
-        .map_err(|e| unavailable(JAVA, format!("cannot create {}: {e}", unpacked.display())))?;
-    run_for(
-        JAVA,
-        "tar",
-        &[
-            OsStr::new("-xzf"),
-            archive.as_os_str(),
-            OsStr::new("-C"),
-            unpacked.as_os_str(),
-        ],
-    )?;
-    let root = java_archive_root(pin);
-    let tree = unpacked.join(&root);
-    if !java_program(&tree).is_file() {
-        return Err(unavailable(
-            JAVA,
-            format!("{} holds no {root}/bin/java", pin.url),
-        ));
-    }
-    std::fs::rename(&tree, place).map_err(|e| {
-        unavailable(
-            JAVA,
-            format!("cannot move {} to {}: {e}", tree.display(), place.display()),
-        )
-    })?;
-    Ok(Installed::Fetched(place.to_path_buf()))
-}
-
-/// The program `bin/apalache` under the unpacked release: the release's own
-/// launcher, `bin/apalache-mc`, which sets the JVM's heap and collector as its
-/// authors run it, behind a line that answers `--version` by itself, so that a
-/// check of the installation starts no JVM.
-pub fn apalache_wrapper(pin: &ApalachePin) -> String {
-    format!(
-        "#!/bin/sh\n\
-         # Written by sce-codegen formal install: Apalache {version}, run by its own launcher.\n\
-         if [ \"$1\" = --version ]; then\n    echo \"apalache {version}\"\n    exit 0\nfi\n\
-         exec \"$(dirname \"$(readlink -f \"$0\")\")/apalache-mc\" \"$@\"\n",
-        version = pin.version,
-    )
-}
-
-/// Run `program` with `args` for `tool`'s installation, and refuse it as
-/// unavailable when it cannot run or fails.
-fn run_for(tool: &str, program: &str, args: &[&OsStr]) -> Result<(), FormalError> {
-    let ran = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| unavailable(tool, format!("cannot run {program}: {e}")))?;
+        .map_err(|e| unavailable(tool, format!("cannot run bash for its installer: {e}")))?;
     if !ran.status.success() {
         return Err(unavailable(
             tool,
             format!(
-                "{program} failed: {}",
+                "its installer did not put it at {}: {}",
+                place.display(),
                 String::from_utf8_lossy(&ran.stderr).trim()
             ),
         ));
@@ -583,217 +393,63 @@ fn run_for(tool: &str, program: &str, args: &[&OsStr]) -> Result<(), FormalError
     Ok(())
 }
 
-/// Fetch the pinned Apalache, admit the archive by its digest and unpack it into
-/// `place` (`apalache_place` unless a build machine's declaration names
-/// another), unless it is there. The archive is the release's `.tgz`, unpacked
-/// by `tar`, which keeps each file's mode. The standard module `Apalache` is
-/// taken out of the release's jar by `unzip` into `modules/`, where TLC reads
-/// it for a model that extends it. The wrapper is written last, so its presence
-/// is the mark of a whole installation.
+/// Fetch the pinned TLC into `place` (`tlc_place`), unless the one pinned is
+/// there.
+pub fn install_tlc(pin: &TlcPin, place: &Path) -> Result<Installed, FormalError> {
+    if place.is_file() {
+        admit_tlc(pin, place)?;
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer("TLC", "tlc", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// Fetch the pinned Verus into `place` (`verus_place`), unless it is there:
+/// the release's `x86-linux` archive, admitted by its digest and unpacked, with
+/// `bin/verus`, the program run on its Rust release with no rustup.
+pub fn install_verus(pin: &VerusPin, place: &Path) -> Result<Installed, FormalError> {
+    if place.join("bin").join("verus").is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer("Verus", "verus", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// Fetch the pinned Java runtime into `place` (`java_place`), unless it is
+/// there: the archive, admitted by its digest, whose `jdk-<version>-jre/` is
+/// the runtime.
+pub fn install_java(pin: &JavaPin, place: &Path) -> Result<Installed, FormalError> {
+    if java_program(place).is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer(JAVA, "java", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// Fetch the pinned Apalache into `place` (`apalache_place`), unless it is
+/// there: the release's archive, admitted by its digest and unpacked, with the
+/// standard module `Apalache` taken out of its jar into `modules/`, where TLC
+/// reads it for a model that extends it, and `bin/apalache`, the release's own
+/// launcher behind a line that answers `--version` with no JVM.
 pub fn install_apalache(pin: &ApalachePin, place: &Path) -> Result<Installed, FormalError> {
-    let wrapper = place.join("bin").join("apalache");
-    if wrapper.is_file() {
+    if place.join("bin").join("apalache").is_file() {
         return Ok(Installed::Present(place.to_path_buf()));
     }
-    let beside = place.parent().unwrap_or(place);
-    std::fs::create_dir_all(beside).map_err(|e| {
-        unavailable(
-            "Apalache",
-            format!("cannot create {}: {e}", beside.display()),
-        )
-    })?;
-    let scratch = super::WorkDir::new_in(beside, "apalache")?;
-    let archive = scratch.path().join("apalache.tgz");
-    fetch("Apalache", &pin.url, &archive)?;
-    admit("Apalache", &archive, &pin.url, &pin.sha256)?;
-    let unpacked = scratch.path().join("unpacked");
-    std::fs::create_dir_all(&unpacked).map_err(|e| {
-        unavailable(
-            "Apalache",
-            format!("cannot create {}: {e}", unpacked.display()),
-        )
-    })?;
-    run_for(
-        "Apalache",
-        "tar",
-        &[
-            OsStr::new("-xzf"),
-            archive.as_os_str(),
-            OsStr::new("-C"),
-            unpacked.as_os_str(),
-        ],
-    )?;
-    let tree = unpacked.join(format!("apalache-{}", pin.version));
-    let jar = Path::new("lib").join("apalache.jar");
-    for needed in [Path::new("bin").join("apalache-mc"), jar.clone()] {
-        if !tree.join(&needed).is_file() {
-            return Err(unavailable(
-                "Apalache",
-                format!(
-                    "{} holds no apalache-{}/{}",
-                    pin.url,
-                    pin.version,
-                    needed.display()
-                ),
-            ));
-        }
-    }
-    std::fs::create_dir_all(place).map_err(|e| {
-        unavailable(
-            "Apalache",
-            format!("cannot create {}: {e}", place.display()),
-        )
-    })?;
-    let entries = std::fs::read_dir(&tree)
-        .map_err(|e| unavailable("Apalache", format!("cannot read {}: {e}", tree.display())))?;
-    for entry in entries {
-        let entry = entry
-            .map_err(|e| unavailable("Apalache", format!("cannot read {}: {e}", tree.display())))?;
-        let to = place.join(entry.file_name());
-        std::fs::rename(entry.path(), &to).map_err(|e| {
-            unavailable(
-                "Apalache",
-                format!(
-                    "cannot move {} to {}: {e}",
-                    entry.path().display(),
-                    to.display()
-                ),
-            )
-        })?;
-    }
-    let modules = place.join(APALACHE_MODULES);
-    std::fs::create_dir_all(&modules).map_err(|e| {
-        unavailable(
-            "Apalache",
-            format!("cannot create {}: {e}", modules.display()),
-        )
-    })?;
-    let jar = place.join(jar);
-    run_for(
-        "Apalache",
-        "unzip",
-        &[
-            OsStr::new("-q"),
-            OsStr::new("-j"),
-            OsStr::new("-o"),
-            jar.as_os_str(),
-            OsStr::new(APALACHE_MODULE_IN_JAR),
-            OsStr::new("-d"),
-            modules.as_os_str(),
-        ],
-    )?;
-    if !modules.join("Apalache.tla").is_file() {
-        return Err(unavailable(
-            "Apalache",
-            format!("{} holds no {APALACHE_MODULE_IN_JAR}", jar.display()),
-        ));
-    }
-    std::fs::write(&wrapper, apalache_wrapper(pin)).map_err(|e| {
-        unavailable(
-            "Apalache",
-            format!("cannot write {}: {e}", wrapper.display()),
-        )
-    })?;
-    make_executable("Apalache", &wrapper)?;
+    run_installer("Apalache", "apalache", pin, place)?;
     Ok(Installed::Fetched(place.to_path_buf()))
 }
 
-/// The program `bin/storm` under the unpacked package: the package's program
-/// run with the libraries the package holds, which it does not find by itself
-/// (its run path names `/usr/local/lib`, where it is not unpacked), behind a
-/// line that answers `--version` by itself, as the wrappers of Verus and
-/// Apalache do. The libraries it asks of the system are found where the system
-/// keeps them.
-pub fn storm_wrapper(pin: &StormPin) -> String {
-    format!(
-        "#!/bin/sh\n\
-         # Written by sce-codegen formal install: Storm {version}, run with the libraries of its package.\n\
-         if [ \"$1\" = --version ]; then\n    echo \"storm {version}\"\n    exit 0\nfi\n\
-         here=\"$(dirname \"$(readlink -f \"$0\")\")/..\"\n\
-         LD_LIBRARY_PATH=\"$here/usr/lib\" exec \"$here/{program}\" \"$@\"\n",
-        version = pin.version,
-        program = storm_program_in_package(pin).display(),
-    )
-}
-
-/// Fetch the pinned Storm, admit the package by its digest and unpack it into
-/// `place` (`storm_place` unless a build machine's declaration names
-/// another), unless it is there. The package is unpacked by `dpkg-deb -x`,
-/// which keeps each file's mode and link, and is never installed: what it asks
-/// of the system it does not get by being unpacked, and the image and the build
-/// machines name those libraries themselves. The wrapper is written last, so
-/// its presence is the mark of a whole installation.
+/// Fetch the pinned Storm into `place` (`storm_place`), unless it is there:
+/// the Debian package, admitted by its digest and unpacked, never installed,
+/// with `bin/storm`, the package's program run with the libraries the package
+/// holds. What it asks of the system it does not get by being unpacked; the
+/// image and the build machines name those libraries themselves.
 pub fn install_storm(pin: &StormPin, place: &Path) -> Result<Installed, FormalError> {
-    let wrapper = place.join("bin").join("storm");
-    if wrapper.is_file() {
+    if place.join("bin").join("storm").is_file() {
         return Ok(Installed::Present(place.to_path_buf()));
     }
-    let beside = place.parent().unwrap_or(place);
-    std::fs::create_dir_all(beside)
-        .map_err(|e| unavailable("Storm", format!("cannot create {}: {e}", beside.display())))?;
-    let scratch = super::WorkDir::new_in(beside, "storm")?;
-    let package = scratch.path().join("storm.deb");
-    fetch("Storm", &pin.url, &package)?;
-    admit("Storm", &package, &pin.url, &pin.sha256)?;
-    let unpacked = scratch.path().join("unpacked");
-    std::fs::create_dir_all(&unpacked).map_err(|e| {
-        unavailable(
-            "Storm",
-            format!("cannot create {}: {e}", unpacked.display()),
-        )
-    })?;
-    run_for(
-        "Storm",
-        "dpkg-deb",
-        &[OsStr::new("-x"), package.as_os_str(), unpacked.as_os_str()],
-    )?;
-    let program = storm_program_in_package(pin);
-    if !unpacked.join(&program).is_file() {
-        return Err(unavailable(
-            "Storm",
-            format!("{} holds no {}", pin.url, program.display()),
-        ));
-    }
-    std::fs::create_dir_all(place.join("bin")).map_err(|e| {
-        unavailable(
-            "Storm",
-            format!("cannot create {}: {e}", place.join("bin").display()),
-        )
-    })?;
-    let tree = unpacked.join("usr");
-    let to = place.join("usr");
-    std::fs::rename(&tree, &to).map_err(|e| {
-        unavailable(
-            "Storm",
-            format!("cannot move {} to {}: {e}", tree.display(), to.display()),
-        )
-    })?;
-    std::fs::write(&wrapper, storm_wrapper(pin))
-        .map_err(|e| unavailable("Storm", format!("cannot write {}: {e}", wrapper.display())))?;
-    make_executable("Storm", &wrapper)?;
+    run_installer("Storm", "storm", pin, place)?;
     Ok(Installed::Fetched(place.to_path_buf()))
-}
-
-#[cfg(unix)]
-fn make_executable(tool: &str, path: &Path) -> Result<(), FormalError> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
-        unavailable(
-            tool,
-            format!("cannot make {} executable: {e}", path.display()),
-        )
-    })
-}
-
-#[cfg(not(unix))]
-fn make_executable(tool: &str, path: &Path) -> Result<(), FormalError> {
-    Err(unavailable(
-        tool,
-        format!(
-            "the pinned release is installed on Linux, so {} is not installed here",
-            path.display()
-        ),
-    ))
 }
 
 #[cfg(test)]
@@ -832,7 +488,7 @@ mod tests {
                 .url
                 .ends_with(&format!("/v{0}/apalache-{0}.tgz", pins.apalache.version)),
             "the Apalache fetched is the archive of the release the pin names, \
-             which install_apalache unpacks as apalache-<version>/"
+             which the installer unpacks as apalache-<version>/"
         );
         assert!(
             pins.storm.url.ends_with(&format!(
@@ -840,7 +496,7 @@ mod tests {
                 pins.storm.version
             )),
             "the Storm fetched is the Debian 12 package for x64 of the release the pin names, \
-             whose program install_storm finds as usr/bin/storm-<version>: {}",
+             whose program the installer finds as usr/bin/storm-<version>: {}",
             pins.storm.url
         );
     }
@@ -869,7 +525,6 @@ mod tests {
             "the runtime fetched is the JRE for Linux on x64: {}",
             pins.java.url
         );
-        assert_eq!(java_archive_root(&pins.java), format!("jdk-{release}-jre"));
         assert_eq!(
             java_program(Path::new("/opt/jre")),
             Path::new("/opt/jre/bin/java")
@@ -889,51 +544,193 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_of_another_digest_is_refused() {
+    fn every_pin_is_one_line_of_strings_as_the_installer_and_bx_read_it() {
+        let pins: serde_json::Value =
+            serde_json::from_str(TOOLCHAIN_JSON).expect("the pins are JSON");
+        let tools = pins.as_object().expect("the pins are an object of tools");
+        assert_eq!(tools.len(), 5, "TLC, Verus, Apalache, Java and Storm");
+        for (key, pin) in tools {
+            let fields = pin.as_object().expect("a pin is an object");
+            for (field, value) in fields {
+                let value = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{key}.{field}: the installer reads strings alone"));
+                assert!(
+                    !value.contains(['"', '\\', '{', '}', '\n']),
+                    "{key}.{field}: the installer reads a value up to its closing quote, \
+                     and a pin up to its closing brace: {value}"
+                );
+            }
+            let version = fields["version"].as_str().expect("a pin names its version");
+            let head = format!("  \"{key}\": {{\"version\": \"{version}\"");
+            let lines: Vec<&str> = TOOLCHAIN_JSON
+                .lines()
+                .filter(|line| line.contains(&format!("\"{key}\":")))
+                .collect();
+            assert_eq!(
+                lines.len(),
+                1,
+                "{key}: one line holds the pin, as bx.toml's version_pattern reads it"
+            );
+            assert!(
+                lines[0].starts_with(&head),
+                "{key}: the line starts with the version, as bx.toml's version_pattern reads it: {}",
+                lines[0]
+            );
+        }
+    }
+
+    #[test]
+    fn the_installer_writes_the_programs_the_judge_runs_and_bx_checks() {
+        for program in [
+            "verus_wrapper >\"$built/bin/verus\"",
+            "apalache_wrapper >\"$built/bin/apalache\"",
+            "storm_wrapper >\"$built/bin/storm\"",
+            "built=\"$unpacked/jdk-$version-jre\"",
+            "mkdir -p \"$built/modules\"",
+        ] {
+            assert!(
+                INSTALLER.contains(program),
+                "the installer writes what the judge finds: {program}"
+            );
+        }
+        for answer in [
+            "echo \"verus $version\"",
+            "echo \"apalache $version\"",
+            "echo \"storm $version\"",
+        ] {
+            assert!(
+                INSTALLER.contains(answer),
+                "a wrapper answers --version with no runtime, as bx.toml's check asks: {answer}"
+            );
+        }
+        assert!(INSTALLER.contains("VERUS_USE_RUSTUP=0"));
+        assert!(INSTALLER.contains("rust=\"\\$HOME/.local/rust/$toolchain\""));
+        assert!(INSTALLER.contains(
+            "LD_LIBRARY_PATH=\"\\$here/usr/lib\" exec \"\\$here/usr/bin/storm-$version\""
+        ));
+        assert!(INSTALLER.contains("/apalache-mc\" \"\\$@\""));
+    }
+
+    /// A file's URL, which curl fetches as it fetches a release's.
+    #[cfg(target_os = "linux")]
+    fn url_of(path: &Path) -> String {
+        format!("file://{}", path.display())
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_tool_of_another_digest_is_refused_and_nothing_is_put_in_its_place() {
         let dir = super::super::WorkDir::new("test-admit").expect("a working directory");
-        let jar = dir.path().join("tla2tools.jar");
-        std::fs::write(&jar, b"not TLC").expect("written");
-        let digest = sha256_of(&jar).expect("read");
-        assert!(admit("TLC", &jar, "u", &digest).is_ok());
-        let refused = admit("TLC", &jar, "u", &"0".repeat(64)).expect_err("another digest");
-        assert!(matches!(refused, FormalError::ToolUnavailable { .. }));
-    }
+        let fetched = dir.path().join("released.jar");
+        std::fs::write(&fetched, b"not TLC").expect("written");
+        let place = dir.path().join("cache").join("tla2tools.jar");
+        let mut pin = TlcPin {
+            version: "0.0.0".to_string(),
+            url: url_of(&fetched),
+            sha256: "0".repeat(64),
+        };
 
-    #[test]
-    fn the_wrapper_runs_verus_on_its_release_with_no_rustup() {
-        let pins = pinned();
-        let text = verus_wrapper(&pins.verus);
-        assert!(text.starts_with("#!/bin/sh\n"));
-        assert!(text.contains(&format!("echo \"verus {}\"", pins.verus.version)));
-        assert!(text.contains(&format!(
-            "rust=\"$HOME/.local/rust/{}\"",
-            pins.verus.toolchain
-        )));
-        assert!(text.contains("VERUS_USE_RUSTUP=0"));
-    }
+        let refused = install_tlc(&pin, &place).expect_err("another digest");
+        match refused {
+            FormalError::ToolUnavailable { detail, .. } => {
+                assert!(detail.contains("this judge pins"), "{detail}")
+            }
+            other => panic!("refused as unavailable, not {other:?}"),
+        }
+        assert!(!place.exists(), "nothing is put where the judge looks");
+        let left: Vec<_> = std::fs::read_dir(dir.path().join("cache"))
+            .expect("the place's directory")
+            .collect();
+        assert!(left.is_empty(), "the installer's scratch is gone: {left:?}");
 
-    #[test]
-    fn the_storm_wrapper_runs_the_package_with_its_own_libraries() {
-        let pins = pinned();
-        let text = storm_wrapper(&pins.storm);
-        assert!(text.starts_with("#!/bin/sh\n"));
-        assert!(text.contains(&format!("echo \"storm {}\"", pins.storm.version)));
-        assert!(text.contains("LD_LIBRARY_PATH=\"$here/usr/lib\""), "{text}");
+        pin.sha256 = sha256_of(&fetched).expect("read");
+        assert_eq!(
+            install_tlc(&pin, &place).expect("the pinned bytes"),
+            Installed::Fetched(place.clone())
+        );
+        assert_eq!(std::fs::read(&place).expect("installed"), b"not TLC");
+        assert_eq!(
+            install_tlc(&pin, &place).expect("there"),
+            Installed::Present(place.clone())
+        );
+
+        std::fs::write(&place, b"another TLC").expect("replaced");
         assert!(
-            text.contains(&format!(
-                "exec \"$here/usr/bin/storm-{}\" \"$@\"",
-                pins.storm.version
-            )),
-            "{text}"
+            matches!(
+                install_tlc(&pin, &place),
+                Err(FormalError::ToolUnavailable { .. })
+            ),
+            "a jar replaced under the same name is refused, never taken as present"
         );
     }
 
     #[test]
-    fn the_apalache_wrapper_answers_its_release_and_runs_the_launcher() {
-        let pins = pinned();
-        let text = apalache_wrapper(&pins.apalache);
-        assert!(text.starts_with("#!/bin/sh\n"));
-        assert!(text.contains(&format!("echo \"apalache {}\"", pins.apalache.version)));
-        assert!(text.contains("/apalache-mc\" \"$@\""));
+    #[cfg(target_os = "linux")]
+    fn the_runtime_is_put_whole_into_the_empty_place_a_tool_store_gives() {
+        let dir = super::super::WorkDir::new("test-install").expect("a working directory");
+        let version = "21.0.0+1";
+        let root = format!("jdk-{version}-jre");
+        let released = dir.path().join("released");
+        std::fs::create_dir_all(released.join(&root).join("bin")).expect("made");
+        std::fs::create_dir_all(released.join(&root).join("lib")).expect("made");
+        std::fs::write(
+            released.join(&root).join("bin").join("java"),
+            b"#!/bin/sh\n",
+        )
+        .expect("written");
+        std::fs::write(released.join(&root).join("lib").join("modules"), b"modules")
+            .expect("written");
+        let archive = dir.path().join("jre.tar.gz");
+        let packed = Command::new("tar")
+            .arg("-czf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&released)
+            .arg(&root)
+            .status()
+            .expect("tar runs");
+        assert!(packed.success(), "the release's archive is made");
+        let pin = JavaPin {
+            version: version.to_string(),
+            url: url_of(&archive),
+            sha256: sha256_of(&archive).expect("read"),
+        };
+
+        let store = dir.path().join("store");
+        let place = store.join("entry");
+        std::fs::create_dir_all(&place).expect("the store's empty entry");
+        assert_eq!(
+            install_java(&pin, &place).expect("installed"),
+            Installed::Fetched(place.clone())
+        );
+        assert!(java_program(&place).is_file());
+        assert_eq!(
+            std::fs::read(place.join("lib").join("modules")).expect("unpacked"),
+            b"modules"
+        );
+        let beside: Vec<_> = std::fs::read_dir(&store)
+            .expect("the store")
+            .map(|entry| entry.expect("an entry").file_name())
+            .collect();
+        assert_eq!(
+            beside,
+            [std::ffi::OsString::from("entry")],
+            "no scratch is left"
+        );
+        assert_eq!(
+            install_java(&pin, &place).expect("there"),
+            Installed::Present(place.clone())
+        );
+
+        let held = store.join("held");
+        std::fs::create_dir_all(&held).expect("made");
+        std::fs::write(held.join("kept"), b"kept").expect("written");
+        assert!(
+            install_java(&pin, &held).is_err(),
+            "a place that holds anything is refused, never written into"
+        );
+        assert_eq!(std::fs::read(held.join("kept")).expect("kept"), b"kept");
+        assert!(!java_program(&held).exists());
     }
 }

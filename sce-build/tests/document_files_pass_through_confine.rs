@@ -254,13 +254,17 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("sha256_of", 1),
             ("admitted_tlc", 1),
             ("admitted_verus", 2),
-            ("install_tlc", 1),
-            ("install_verus", 3),
             ("admitted_apalache", 1),
-            ("admitted_apalache_modules", 1),
-            ("install_apalache", 4),
             ("admitted_java", 1),
-            ("install_java", 2),
+            ("admitted_storm", 1),
+            ("admitted_apalache_modules", 1),
+            // Whether the tool is there already; the installer it runs otherwise is a
+            // script of its own, which this scan does not read.
+            ("install_tlc", 1),
+            ("install_verus", 1),
+            ("install_java", 1),
+            ("install_apalache", 1),
+            ("install_storm", 1),
         ],
     ),
     (
