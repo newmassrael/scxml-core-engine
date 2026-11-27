@@ -144,6 +144,42 @@
         {"step": 3, "kind": "eventless", "field": "fired", "value": [{"source": "s1", "index": 1}]},
         {"step": 4, "kind": "stop", "field": "outcome", "value": null}
       ]
+    },
+    {
+      "trace": "traces/W3CTest388.go.json",
+      "module": "W3CTest388",
+      "config": "W3CTest388.cfg",
+      "altered": [
+        {"step": 0, "kind": "start", "field": "entered", "value": ["s0", "s012", "s01"]},
+        {"step": 1, "kind": "internal", "field": "event", "value": "entering.s011"},
+        {"step": 2, "kind": "eventless", "field": "entered", "value": ["s0", "s01", "s011"]},
+        {"step": 3, "kind": "internal", "field": "fired", "value": [{"source": "s0", "index": 0}]},
+        {"step": 6, "kind": "stop", "field": "outcome", "value": "fail"}
+      ]
+    },
+    {
+      "trace": "traces/W3CTest570.go.json",
+      "module": "W3CTest570",
+      "config": "W3CTest570.cfg",
+      "altered": [
+        {"step": 0, "kind": "start", "field": "configuration", "value": ["p0", "p0s1", "p0s11", "p0s2"]},
+        {"step": 3, "kind": "internal", "field": "fired", "value": []},
+        {"step": 4, "kind": "internal", "field": "exited", "value": ["p0", "p0s1", "p0s1final", "p0s2", "p0s2final"]},
+        {"step": 5, "kind": "internal", "field": "event", "value": "done.state.p0s1"},
+        {"step": 6, "kind": "stop", "field": "exited", "value": []}
+      ]
+    },
+    {
+      "trace": "traces/W3CTest403c.go.json",
+      "module": "W3CTest403c",
+      "config": "W3CTest403c.cfg",
+      "altered": [
+        {"step": 0, "kind": "start", "field": "entered", "value": ["s0", "p0", "p0s1", "p0s2", "p0s3"]},
+        {"step": 1, "kind": "internal", "field": "fired", "value": [{"source": "p0s1", "index": 0}, {"source": "p0s2", "index": 0}, {"source": "p0s3", "index": 0}, {"source": "p0s4", "index": 0}]},
+        {"step": 2, "kind": "internal", "field": "exited", "value": ["s0", "p0", "p0s1", "p0s2", "p0s3", "p0s4"]},
+        {"step": 3, "kind": "eventless", "field": "fired", "value": [{"source": "s1", "index": 1}]},
+        {"step": 4, "kind": "stop", "field": "outcome", "value": null}
+      ]
     }
   ]
 }
