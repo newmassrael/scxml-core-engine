@@ -4153,6 +4153,97 @@ fn a_set_with_hot_codecs_compiles_with_and_without_views() {
     }
 }
 
+/// A cold codec read by the walker over the table of its fields (docs/adr/0155)
+/// decodes what its printed read decodes and refuses what it refuses: the request
+/// family generated with the put named hot reads the delete, the query and the
+/// key expression by their tables, each frame decodes to the value whose encode
+/// is the frame again, and a frame past a bound, short or not UTF-8 is refused
+/// as the printed read refuses it.
+#[test]
+fn a_cold_codec_read_by_its_table_decodes_and_writes_back_its_frames() {
+    const HARNESS: &str = r#"// Injected by a_cold_codec_read_by_its_table_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_zenoh_msg_del::CodecZenohMsgDel;
+    use crate::codec_zenoh_query::CodecZenohQuery;
+    use crate::codec_zenoh_wireexpr::CodecZenohWireexpr;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    /// The bytes of an encode, whether it can refuse a value or not.
+    trait Written {
+        fn written(self) -> Vec<u8>;
+    }
+
+    impl Written for Vec<u8> {
+        fn written(self) -> Vec<u8> {
+            self
+        }
+    }
+
+    impl<E: core::fmt::Debug> Written for Result<Vec<u8>, E> {
+        fn written(self) -> Vec<u8> {
+            self.expect("the value encodes")
+        }
+    }
+
+    #[test]
+    fn a_query_read_by_its_table_writes_its_frame_back() {
+        let frames: [&[u8]; 4] = [&[0x03], &[0x23, 0x01], &[0x43, 0x02, 0xAA, 0xBB], &[0x63, 0x07, 0x00]];
+        for frame in frames {
+            let query = CodecZenohQuery::decode(&mut SceCursor::new(frame)).expect("decode");
+            assert_eq!(query.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
+        }
+        let query = CodecZenohQuery::decode(&mut SceCursor::new(&[0x63, 0x07, 0x00])).expect("decode");
+        assert_eq!(query.consolidation, Some(7));
+        assert_eq!(query.parameters_len, Some(0));
+        let short = CodecZenohQuery::decode(&mut SceCursor::new(&[0x43, 0x02, 0xAA])).map(|_| ());
+        assert_eq!(short, Err(CodecError::NeedMoreBytes));
+    }
+
+    #[test]
+    fn a_delete_read_by_its_table_writes_its_frame_back() {
+        let frames: [&[u8]; 2] = [&[0x02], &[0x42]];
+        for frame in frames {
+            let delete = CodecZenohMsgDel::decode(&mut SceCursor::new(frame)).expect("decode");
+            assert_eq!(delete.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
+        }
+    }
+
+    #[test]
+    fn a_key_expression_read_by_its_table_reads_and_refuses_as_printed() {
+        let plain = CodecZenohWireexpr::decode(&mut SceCursor::new(&[0x05]), 0).expect("decode");
+        assert_eq!((plain.id, plain.suffix_len), (5, None));
+        let suffixed =
+            CodecZenohWireexpr::decode(&mut SceCursor::new(&[0x05, 0x02, b'a', b'b']), 1).expect("decode");
+        assert_eq!((suffixed.id, suffixed.suffix_len), (5, Some(2)));
+        // A suffix of 70000 bytes is past the bound of 65535.
+        let long = CodecZenohWireexpr::decode(&mut SceCursor::new(&[0x05, 0xF0, 0xA2, 0x04]), 1).map(|_| ());
+        assert_eq!(long, Err(CodecError::LengthOutOfRange));
+        let broken = CodecZenohWireexpr::decode(&mut SceCursor::new(&[0x05, 0x01, 0xFF]), 1).map(|_| ());
+        assert_eq!(broken, Err(CodecError::InvalidUtf8));
+    }
+}
+"#;
+    let case = &HOT_SETS[1];
+    let mut files = generate_hot_set(case, &[case.named]);
+    for table in [
+        "CODEC_ZENOH_MSG_DEL_FIELDS",
+        "CODEC_ZENOH_QUERY_FIELDS",
+        "CODEC_ZENOH_WIREEXPR_FIELDS",
+    ] {
+        assert!(
+            files
+                .iter()
+                .any(|(_, code)| code.contains(&format!("::read_table(cursor, &{table}, "))),
+            "no codec of the set is read by {table} with {} hot",
+            case.named
+        );
+    }
+    files.push(("cold_tables.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "cold_tables_rust", "test", RustcProfile::Alloc)
+        .expect("a cold codec read by its table must decode, refuse and write back its frames");
+}
+
 /// The declarations of the public face of a generated module, in order: each
 /// line that declares a `pub` struct, enum, union, trait or type alias, or a
 /// `pub` field, as written. An item visible to the modules of the set alone
