@@ -1,8 +1,11 @@
 # ADR 0119 — A document's probabilistic model is generated from the same tables, a distribution is given only to what the environment chooses, and the model is held to the TLA+ model and to the code
 
-- Status: Proposed (2026-11-23). The owner ordered it written on 2026-11-23, relayed by a session of a downstream
-  consumer. It comes after ADR 0118, ordered the same day. It is written under the owner's standing
-  rule: the most long-term correct structure, textbook in its foundations, cost ignored.
+- Status: Accepted (2026-11-28). Asked whether Storm is approved and installed on the build machines, the owner
+  answered "Storm 설치해" (install Storm) and "빌드 머신에 apt 패키지를 설치해" (install the apt packages on the
+  build machines). Storm is its checker, pinned by digest with the formal judges' tools (ADR 0146, D3). The owner
+  ordered it written on 2026-11-23, relayed by a session of a downstream consumer. It comes after ADR 0118, ordered
+  the same day. It is written under the owner's standing rule: the most long-term correct structure, textbook in
+  its foundations, cost ignored.
 - Date: 2026-11-23
 - Amends ADR 0115 once accepted (its owner adds the "Amended by: ADR 0119" line then):
   - "The levels" gains a level of quantity (D1);
