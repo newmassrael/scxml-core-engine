@@ -1385,6 +1385,12 @@
           "without": "StopHoldsTable"
         }
       ]
+    },
+    {
+      "module": "OrderService",
+      "decision": "SCE_MESH.md section 10.6",
+      "abstract": true,
+      "runs": []
     }
   ]
 }
