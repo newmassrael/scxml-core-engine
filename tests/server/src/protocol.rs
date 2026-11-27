@@ -330,6 +330,12 @@ pub enum Build {
     Upgrade1,
     /// Its next version, which migrates what the first saved (server_upgrade_2.scxml).
     Upgrade2,
+    /// The ledger, saying each tag it takes into the event journal (docs/adr/0114, D1;
+    /// `crate::journal`), its sessions kept as its machine's in the store.
+    Journaled,
+    /// The view that follows the journaling ledger's journal in the same store (docs/adr/0114,
+    /// D4; `crate::journal`).
+    View,
 }
 
 impl Build {
@@ -339,14 +345,22 @@ impl Build {
             Build::Ledger => "ledger",
             Build::Upgrade1 => "upgrade-1",
             Build::Upgrade2 => "upgrade-2",
+            Build::Journaled => "journaled",
+            Build::View => "view",
         }
     }
 
     /// The build `name` names, if any.
     pub fn parse(name: &str) -> Option<Build> {
-        [Build::Ledger, Build::Upgrade1, Build::Upgrade2]
-            .into_iter()
-            .find(|build| build.name() == name)
+        [
+            Build::Ledger,
+            Build::Upgrade1,
+            Build::Upgrade2,
+            Build::Journaled,
+            Build::View,
+        ]
+        .into_iter()
+        .find(|build| build.name() == name)
     }
 }
 
@@ -586,6 +600,13 @@ mod tests {
             ServerOptions::from_args(&without.args()),
             Ok(without.clone())
         );
+        for build in [Build::Journaled, Build::View] {
+            let built = ServerOptions {
+                build,
+                ..without.clone()
+            };
+            assert_eq!(ServerOptions::from_args(&built.args()), Ok(built));
+        }
         let mut odd = without.args();
         odd.push("--halt".to_string());
         assert!(

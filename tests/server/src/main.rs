@@ -31,10 +31,11 @@ use sce_rust_mesh::pool::{Pool, PoolConfig, SessionFactory};
 use sce_rust_mesh::served::Served;
 use sce_rust_session_store::{
     AcquireError, Append, Appended, Batched, Change, Committed, Conflict, Decided, Due, Expiry,
-    Failure, Lease, LeaseError, Note, Outbox, SessionStore, SqliteStore, Stored, Write, WriteError,
-    Written,
+    Failure, JournalStore, Lease, LeaseError, Note, Outbox, SessionStore, SqliteStore, Stored,
+    Write, WriteError, Written,
 };
 use sce_server_suite::clock::{wall_ms, WallClock};
+use sce_server_suite::journal::{self, Views};
 use sce_server_suite::ledger::{self, Ledgers, CLIENT, PIPE};
 use sce_server_suite::machines::generated::server_upgrade_1_sm::ServerUpgrade1Policy;
 use sce_server_suite::machines::generated::server_upgrade_2_sm::ServerUpgrade2Policy;
@@ -72,8 +73,15 @@ fn main() -> ExitCode {
         Some(durable) => ledger::durable_https(durable.mailbox, durable.retain_ms),
         None => PIPE,
     };
+    // docs/adr/0114, D2: the journaling ledger and its view keep their sessions in one store, each
+    // as its own machine's; every other build keeps the store's one machine.
+    let inner = match options.build {
+        Build::Journaled => store.of_machine(ledger::MACHINE_NAME),
+        Build::View => store.of_machine(journal::VIEW),
+        Build::Ledger | Build::Upgrade1 | Build::Upgrade2 => store,
+    };
     let store = Observed {
-        inner: store,
+        inner,
         halt: options.halt,
         loads: AtomicU64::new(0),
         puts: AtomicU64::new(0),
@@ -86,28 +94,55 @@ fn main() -> ExitCode {
             Ledgers::default(),
             &options,
             store,
+            None,
         ),
         Build::Upgrade1 => run(
             upgrade::machine(binding, options.idle_ms),
             Served::<ServerUpgrade1Policy, _>::new(UpgradeHost::new(&Notes::read())),
             &options,
             store,
+            None,
         ),
         Build::Upgrade2 => run(
             upgrade::machine(binding, options.idle_ms),
             Served::<ServerUpgrade2Policy, _>::new(UpgradeHost::new(&Notes::read())),
             &options,
             store,
+            None,
         ),
+        Build::Journaled => run(
+            ledger::machine(binding, options.idle_ms),
+            Ledgers::journaling(),
+            &options,
+            store,
+            None,
+        ),
+        // docs/adr/0114, D4: the view reads the ledger's journal from the store's file, through a
+        // connection of its own.
+        Build::View => match SqliteStore::open(&options.store) {
+            Ok(journal_store) => run(
+                journal::view_machine(binding, options.idle_ms),
+                Views,
+                &options,
+                store,
+                Some(Arc::new(journal_store)),
+            ),
+            Err(failure) => {
+                eprintln!("sce-suite-server: {failure}");
+                ExitCode::from(1)
+            }
+        },
     }
 }
 
-/// Serve `machine`, each session built by `factory`, from `store`, until the input ends.
+/// Serve `machine`, each session built by `factory`, from `store`, until the input ends; a pool
+/// that follows journals reads them from `journal`.
 fn run<F: SessionFactory<Lines, WallClock>>(
     machine: Machine,
     factory: F,
     options: &ServerOptions,
     store: Observed,
+    journal: Option<Arc<dyn JournalStore>>,
 ) -> ExitCode {
     let pool = Pool::new(
         machine,
@@ -125,7 +160,10 @@ fn run<F: SessionFactory<Lines, WallClock>>(
         WallClock::default(),
     );
     let pool = match pool {
-        Ok(pool) => pool,
+        Ok(pool) => match journal {
+            Some(journal) => pool.follow_from(journal),
+            None => pool,
+        },
         Err(error) => {
             eprintln!("sce-suite-server: {error:?}");
             return ExitCode::from(1);
@@ -206,6 +244,11 @@ fn serve<F: SessionFactory<Lines, WallClock>>(pool: &Serving<F>, commands: &Rece
         // docs/adr/0109, D10: what a durable client was kept longer than its binding's
         // `retain_ms` expires, and each sender in memory is run to be told.
         for key in pool.expire() {
+            pool.run(&key);
+        }
+        // docs/adr/0114, D4: a pool that follows a journal reads on in it, and runs each session
+        // it handed an entry to.
+        for key in pool.follow() {
             pool.run(&key);
         }
         pool.evict_idle();
@@ -341,6 +384,10 @@ impl Observed {
 }
 
 impl SessionStore for Observed {
+    fn machine(&self) -> &str {
+        self.inner.machine()
+    }
+
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
         let n = self.loads.fetch_add(1, Ordering::SeqCst) + 1;
         halt_at(self.halt, Stage::Load, n);

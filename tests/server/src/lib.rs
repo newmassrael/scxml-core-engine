@@ -39,11 +39,19 @@
 //! * `the_session_contract_holds` (docs/adr/0112): the ledger and the generated machines, served
 //!   by the library's adapter, each held to the kit of the session machine's contract
 //!   (`sce_rust_mesh::session_conformance`).
+//! * `an_input_killed_at_every_write_makes_one_entry_or_none` (docs/adr/0114, D1): a ledger that
+//!   says each tag it takes into the event journal, killed at points of load, checkpoint and
+//!   delivery; each session's stream holds exactly the tags its saved state took, so a request
+//!   made one entry with the state that took it, or none.
+//! * `a_follower_of_many_sessions_killed_repeats_and_misses_nothing` (docs/adr/0114, D4): a view
+//!   of many ledgers' sessions, killed again and again while it follows their journal; each view
+//!   ends holding its key's tags in the journal's order, each once.
 //!
 //! This library is what they share:
 //!
 //! * [`ledger`]: the machine most scenarios' sessions run, written by hand in the shape a
 //!   generated machine has to the pool, as the pool's own tests write theirs.
+//! * [`journal`]: the view that follows the journaling ledger, and what reads both back.
 //! * [`upgrade`] and [`machines`]: the document a server is upgraded between, its two versions
 //!   generated (the tree `rust-server-suite`) and served by `sce_rust_mesh::served`.
 //! * [`protocol`]: the lines a server process (this crate's binary, `sce-suite-server`) reads and
@@ -57,6 +65,7 @@
 pub mod campaign;
 pub mod clock;
 pub mod draw;
+pub mod journal;
 pub mod ledger;
 pub mod machines;
 pub mod process;

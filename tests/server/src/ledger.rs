@@ -23,6 +23,10 @@
 //!   version is still the one read, and read again when another session wrote between. Each start
 //!   of either operation carries the invocation's identity (docs/SCE_HOST_FEATURES.md, section 1),
 //!   so a repeat of one is answered with its first result.
+//!
+//! A ledger built to keep a journal ([`Ledgers::journaling`]) says each tag it takes as a fact
+//! (docs/adr/0114, D1; [`TAKEN_FACT`]), which the pool appends with the checkpoint that holds the
+//! take ([`crate::journal`]).
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -44,6 +48,7 @@ use sce_rust_mesh::peers::{
 };
 use sce_rust_mesh::pool::{SessionEndpoint, SessionFactory, SessionMachine};
 use sce_rust_mesh::router::{PeerConfig, Responders};
+use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedAct, SavedHostSend, SavedInvokes, SavedSend, SavedState};
 use sce_rust_runtime::HostSendRequest;
@@ -69,6 +74,13 @@ pub const CLAIM: &str = "service.request.claim";
 pub const CLAIMED: &str = "service.response.claim";
 /// The delayed send a taken request schedules.
 pub const REMINDED: &str = "reminded";
+/// The schema of the fact a journaling ledger says of each tag it takes (docs/adr/0114, D1): the
+/// event its schema declares.
+pub const TAKEN_FACT: &str = "ledger.taken";
+/// The description of [`TAKEN_FACT`]'s record (`sce_build::forge::payload_record::describe`): the
+/// key of the session that took the tag, and the tag.
+pub const TAKEN_RECORD: &str =
+    r#"{"record":[["key",false,{"text":32},null],["tag",false,{"text":64},null]]}"#;
 
 /// How many members one key admits: the rule the document states for one key.
 pub const LIMIT: u32 = 3;
@@ -330,6 +342,8 @@ pub struct Ledgers {
     rendezvous: Option<Arc<Rendezvous>>,
     started: Arc<AtomicU64>,
     restored: Arc<AtomicU64>,
+    /// Whether each ledger says the tags it takes into the journal.
+    journal: bool,
 }
 
 impl Ledgers {
@@ -339,6 +353,14 @@ impl Ledgers {
         Ledgers {
             host: Some(host),
             rendezvous: Some(rendezvous),
+            ..Ledgers::default()
+        }
+    }
+
+    /// Ledgers that say each tag they take into the event journal (docs/adr/0114, D1).
+    pub fn journaling() -> Ledgers {
+        Ledgers {
+            journal: true,
             ..Ledgers::default()
         }
     }
@@ -366,6 +388,8 @@ impl Ledgers {
             endpoint: Arc::clone(endpoint),
             host: self.host.clone(),
             rendezvous: self.rendezvous.clone(),
+            journal: self.journal,
+            said: Vec::new(),
         }
     }
 }
@@ -553,6 +577,9 @@ pub struct Ledger<T, E> {
     endpoint: SessionEndpoint<T, E>,
     host: Option<SharedHost>,
     rendezvous: Option<Arc<Rendezvous>>,
+    /// Whether it says the tags it takes, and what it said since the pool last took it.
+    journal: bool,
+    said: Vec<JournalEntry>,
 }
 
 impl<T: Transport, E: Environment> Ledger<T, E> {
@@ -577,6 +604,21 @@ impl<T: Transport, E: Environment> Ledger<T, E> {
             _ => String::new(),
         };
         self.held.taken.push(tag.clone());
+        if self.journal {
+            let record = format!(
+                r#"{{"key":{},"tag":{}}}"#,
+                json::quote(&self.key),
+                json::quote(&tag)
+            );
+            let fact = sce_rust_runtime::record_cbor::encode(&record, TAKEN_RECORD)
+                .unwrap_or_else(|refusal| panic!("a tag the record holds: {refusal:?}"));
+            self.said.push(JournalEntry {
+                schema: TAKEN_FACT,
+                revision: 1,
+                data: fact,
+                valid_ms: None,
+            });
+        }
         if let Some(Value::Array(dues)) = data.member("due_ms") {
             for (n, due) in dues.iter().enumerate() {
                 let Value::Number(digits) = due else {
@@ -758,6 +800,10 @@ where
 
     fn finished(&self) -> bool {
         false
+    }
+
+    fn take_journal(&mut self) -> Vec<JournalEntry> {
+        core::mem::take(&mut self.said)
     }
 }
 
