@@ -469,7 +469,9 @@ pub trait TableSource<E: core::fmt::Debug> {
         0
     }
 
-    /// Whether the field of the row `row`, which a gate reads, is present.
+    /// Whether the field of the row `row` is present: what a
+    /// [`Derived::Present`] computes. Whether a gated row is written is its
+    /// gate's, as whether it is read is.
     fn present(&self, row: usize) -> bool {
         let _ = row;
         true
@@ -558,18 +560,23 @@ impl<E: core::fmt::Debug> SceSink for DynSink<'_, E> {
     }
 }
 
-/// Write the fields of `table` that `src` says into `sink`: the write of every
-/// cold codec whose encode refuses no value, one function for every table and
-/// sink error (docs/adr/0155 section 3).
+/// Write the fields of `table` that `src` says into `sink`, the codec being
+/// handed `inputs`: the write of every cold codec whose encode refuses no
+/// value, one function for every table and sink error (docs/adr/0155 section
+/// 3).
 ///
 /// The number of each row is the value's, or the count of its bytes, with the
 /// bits each of the table's derives computes written over it; then each row is
-/// written in order, a row a gate reads only where its field is present. The
-/// only error is the sink's (docs/adr/0065).
+/// written in order where its gate is open over those numbers and `inputs`,
+/// the one rule [`read_table`] reads it by, so a frame written is read back
+/// row for row. The only error is the sink's (docs/adr/0065): a byte string or
+/// a text is held to its row's bound by its type in every codec whose encode
+/// refuses no value, which is the only codec a table is written for.
 #[inline(never)]
 pub fn write_table<E: core::fmt::Debug>(
     sink: &mut dyn SceSink<Error = E>,
     table: &FieldTable,
+    inputs: &[u64],
     src: &dyn TableSource<E>,
 ) -> Result<(), E> {
     let mut frame = [0u64; TABLE_ROWS];
@@ -595,14 +602,22 @@ pub fn write_table<E: core::fmt::Debug>(
             }
         }
     }
-    for ((at, row), &number) in table.rows.iter().enumerate().zip(frame.iter()) {
-        if !matches!(row.gate, Gate::Always) && !src.present(at) {
+    for (at, row) in table.rows.iter().enumerate() {
+        if !row.gate.open(&frame, inputs) {
             continue;
         }
+        let number = frame.get(at).copied().unwrap_or(0);
         match row.read {
             Read::Uint { bytes, big } => write_uint(sink, number, bytes, big)?,
             Read::Zint { bits } => sink.write_vle_inner(number, u32::from(bits))?,
-            Read::Bytes { .. } | Read::Text { .. } => sink.write_bytes(src.bytes(at))?,
+            Read::Bytes { max, .. } | Read::Text { max, .. } => {
+                let bytes = src.bytes(at);
+                debug_assert!(
+                    bytes.len() as u64 <= max,
+                    "a byte string or a text written by a table is held to its row's bound"
+                );
+                sink.write_bytes(bytes)?;
+            }
             Read::Body { .. } => src.write(at, sink)?,
         }
     }
@@ -667,19 +682,56 @@ pub struct Carry {
 
 /// The rule of a chain of a cold codec whose kinds no gate reads, as data
 /// (docs/adr/0155 section 5): what [`crate::chain::ChainRule`] says of a chain by
-/// a type, read by [`read_chain_table`].
+/// a type, read by [`read_chain_table`]. Made by [`ChainTable::new`] only,
+/// which checks it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChainTable {
     /// How the chain ends.
-    pub end: ChainEnd,
+    end: ChainEnd,
     /// The most entries the chain holds, `None` where the protocol states no
     /// depth (docs/adr/0077 §7).
-    pub depth: Option<u32>,
+    depth: Option<u32>,
     /// The range of an entry's carrier that says another entry follows, read
     /// where the chain ends on a flag ([`ChainEnd::Flag`]).
-    pub follows: Span,
+    follows: Span,
     /// What the chain carries from each entry to the next.
-    pub carry: &'static [Carry],
+    carry: &'static [Carry],
+    /// How many inputs an entry is handed.
+    args: u8,
+}
+
+impl ChainTable {
+    /// The rule of a chain whose entries are handed `args` inputs, checked:
+    /// each carry writes an input an entry is handed, and a range that fits the
+    /// input's byte. Made in the `static` that holds it, so a rule that breaks
+    /// one of these does not compile.
+    pub const fn new(
+        end: ChainEnd,
+        depth: Option<u32>,
+        follows: Span,
+        carry: &'static [Carry],
+        args: u8,
+    ) -> Self {
+        let mut c = 0;
+        while c < carry.len() {
+            assert!(
+                carry[c].arg < args,
+                "a chain carries into an input its entries are handed"
+            );
+            assert!(
+                carry[c].span.mask <= u8::MAX as u64,
+                "a chain carries a range an input's byte holds"
+            );
+            c += 1;
+        }
+        Self {
+            end,
+            depth,
+            follows,
+            carry,
+            args,
+        }
+    }
 }
 
 /// The entries of one chain a [`ChainTable`] reads: how one is read and held,
@@ -748,6 +800,10 @@ pub fn read_chain_table<'f>(
     args: &mut [u8],
     entries: &mut dyn ChainEntries<'f>,
 ) -> Result<(), CodecError> {
+    debug_assert!(
+        args.len() >= usize::from(chain.args),
+        "a chain is handed every input its entries are handed"
+    );
     let with_frame = chain.end.with_frame();
     let mut left = chain.depth;
     let mut full = false;
@@ -1140,7 +1196,7 @@ mod tests {
         };
         let mut buf = [0u8; 16];
         let mut sink = SliceSink::new(&mut buf);
-        assert_eq!(write_table(&mut sink, &WRITTEN, &said), Ok(()));
+        assert_eq!(write_table(&mut sink, &WRITTEN, &[1], &said), Ok(()));
         let n = sink.position();
         // The bytes the read of the same table reads back.
         assert_eq!(&buf[..n], &[0xE1, 0x2A, 0x02, b'o', b'k', 0x77, 0x99]);
@@ -1162,7 +1218,7 @@ mod tests {
         };
         let mut buf = [0u8; 16];
         let mut sink = SliceSink::new(&mut buf);
-        assert_eq!(write_table(&mut sink, &WRITTEN, &said), Ok(()));
+        assert_eq!(write_table(&mut sink, &WRITTEN, &[0], &said), Ok(()));
         let n = sink.position();
         // Bit 7 is the id's presence, whatever the value's header held.
         assert_eq!(&buf[..n], &[0x10]);
@@ -1180,7 +1236,7 @@ mod tests {
         let mut buf = [0u8; 3];
         let mut sink = SliceSink::new(&mut buf);
         assert_eq!(
-            write_table(&mut sink, &WRITTEN, &said),
+            write_table(&mut sink, &WRITTEN, &[1], &said),
             Err(CodecError::BufferOverflow)
         );
     }
@@ -1240,12 +1296,7 @@ mod tests {
     }
 
     const fn chain(end: ChainEnd, depth: Option<u32>) -> ChainTable {
-        ChainTable {
-            end,
-            depth,
-            follows: Span::range(7, 1),
-            carry: &[],
-        }
+        ChainTable::new(end, depth, Span::range(7, 1), &[], 1)
     }
 
     type List = heapless::Vec<Entry, 4>;
@@ -1311,10 +1362,7 @@ mod tests {
             arg: 0,
             span: Span::range(1, 1),
         }];
-        let carried = ChainTable {
-            carry: SECOND_BIT,
-            ..chain(ChainEnd::Frame, None)
-        };
+        let carried = ChainTable::new(ChainEnd::Frame, None, Span::range(7, 1), SECOND_BIT, 1);
         let (list, verdict, _) = read_chain(&carried, &[0x02, 0x00, 0x04]);
         assert_eq!(verdict, Ok(()));
         let handed: heapless::Vec<u8, 4> = list.iter().map(|e| e.carried).collect();
@@ -1327,5 +1375,87 @@ mod tests {
         assert_eq!(heads(&list), [2, 4, 6, 8]);
         assert_eq!(verdict, Ok(()));
         assert_eq!(answer, Err(CodecError::CapacityExceeded));
+    }
+    #[test]
+    #[should_panic(expected = "a chain carries into an input its entries are handed")]
+    fn a_chain_that_carries_into_no_input_is_refused() {
+        const PAST: &[Carry] = &[Carry {
+            arg: 1,
+            span: Span::range(1, 1),
+        }];
+        let _ = ChainTable::new(ChainEnd::Frame, None, Span::range(7, 1), PAST, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "a chain carries a range an input's byte holds")]
+    fn a_chain_that_carries_a_range_wider_than_a_byte_is_refused() {
+        const WIDE: &[Carry] = &[Carry {
+            arg: 0,
+            span: Span::range(0, 9),
+        }];
+        let _ = ChainTable::new(ChainEnd::Frame, None, Span::range(7, 1), WIDE, 1);
+    }
+
+    /// The next number of a sequence that covers every `u64` (xorshift), so a
+    /// test reads many values and the same ones every run.
+    fn next(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    /// Every value of [`WRITTEN`] a run draws is read back as it was written:
+    /// each kind of row, gated by a carrier's bit, by an input and by a clear
+    /// bit, with the numbers the encode derives. A frame is written and read by
+    /// one rule, the gate over the same numbers, so what is written is read
+    /// whole and row for row.
+    #[test]
+    fn a_value_written_by_a_table_is_read_back_by_the_same_table() {
+        const NAMES: [&str; 4] = ["", "a", "ok", "12345678"];
+        const BYTES: [&[u8]; 4] = [&[], &[0x99], &[1, 2, 3], &[0xFF, 0, 0xFF, 0]];
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        for _ in 0..512 {
+            let draw = next(&mut state);
+            let id = (draw & 1 == 1).then_some((draw >> 8) as u16);
+            let name = (draw & 2 == 2).then_some(NAMES[(draw >> 24) as usize % NAMES.len()]);
+            let body = (draw & 4 == 4).then_some((draw >> 32) as u8);
+            let bytes = BYTES[(draw >> 40) as usize % BYTES.len()];
+            // The body's gate is the header's bit 4 clear, which the value
+            // states; bits 5 and 6 are the value's own.
+            let header = ((draw >> 48) as u8 & 0x60) | if body.is_some() { 0 } else { 0x10 };
+            let said = Said {
+                header,
+                id,
+                name,
+                body,
+                bytes,
+            };
+            let inputs = [u64::from(name.is_some())];
+            let mut buf = [0u8; 32];
+            let mut sink = SliceSink::new(&mut buf);
+            assert_eq!(write_table(&mut sink, &WRITTEN, &inputs, &said), Ok(()));
+            let n = sink.position();
+            let mut reader = SceReader::new(&buf[..n]);
+            let mut out = Stored::default();
+            read_table(&mut reader, &WRITTEN, &inputs, &mut out);
+            assert_eq!(reader.verdict(), Ok(()), "{:x?}", &buf[..n]);
+            assert_eq!(reader.remaining(), 0, "{:x?}", &buf[..n]);
+            // The header as written: bit 7 the id's presence, the low nibble
+            // the count of the byte string.
+            let written =
+                u64::from(header) | if id.is_some() { 0x80 } else { 0 } | bytes.len() as u64;
+            assert_eq!(out.numbers[0], Some(written));
+            assert_eq!(out.numbers[1], id.map(u64::from));
+            assert_eq!(out.absent[1], id.is_none());
+            assert_eq!(out.text, name);
+            assert_eq!(out.absent[3], name.is_none());
+            assert_eq!(
+                out.body,
+                body.map(|byte| ([(written >> 5) & 3, written & 1], byte))
+            );
+            assert_eq!(out.absent[4], body.is_none());
+            assert_eq!(out.bytes, Some(bytes));
+        }
     }
 }
