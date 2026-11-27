@@ -324,8 +324,15 @@ fn rest_of(module: &str, names: &BTreeSet<String>) -> String {
 ///
 /// A definition the protocol's own steps use too is the model's: changing it
 /// changes what is judged, and the runs that take a part out are what see a
-/// check it made hollow.
-fn said_by(module: &str, checked: &BTreeSet<String>) -> BTreeSet<String> {
+/// check it made hollow. The steps are `Init`, `Next` and `Fair`, and the
+/// behaviour `behaviour` names: the formula a configuration gives as its
+/// SPECIFICATION (or INIT and NEXT), whose variables tuple and fairness are the
+/// model's, as a variable added to the model is added to them.
+fn said_by(
+    module: &str,
+    checked: &BTreeSet<String>,
+    behaviour: &BTreeSet<String>,
+) -> BTreeSet<String> {
     let found = definitions(module);
     let uses: BTreeMap<&str, BTreeSet<&str>> = found
         .iter()
@@ -340,7 +347,11 @@ fn said_by(module: &str, checked: &BTreeSet<String>) -> BTreeSet<String> {
         .collect();
     let from_checks: Vec<&str> = checked.iter().map(String::as_str).collect();
     let by_checks = reached(&found, &uses, &from_checks);
-    let by_steps = reached(&found, &uses, &["Init", "Next", "Fair"]);
+    let steps: Vec<&str> = ["Init", "Next", "Fair"]
+        .into_iter()
+        .chain(behaviour.iter().map(String::as_str))
+        .collect();
+    let by_steps = reached(&found, &uses, &steps);
     let mut said: BTreeSet<String> = by_checks.difference(&by_steps).cloned().collect();
     said.extend(
         checked
@@ -403,6 +414,30 @@ fn checks_of(config: &str) -> (BTreeSet<String>, String) {
         }
     }
     (checks, rest.join("\n"))
+}
+
+/// The behaviour a configuration explores: the formula its SPECIFICATION names,
+/// or its INIT and NEXT.
+fn behaviour_of(config: &str) -> BTreeSet<String> {
+    let mut named: BTreeSet<String> = BTreeSet::new();
+    let mut inside = false;
+    for line in config.lines() {
+        let line = line.split("\\*").next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+        let first = words.next().unwrap_or("");
+        if matches!(first, "SPECIFICATION" | "INIT" | "NEXT") {
+            inside = true;
+            named.extend(words.map(str::to_string));
+        } else if SECTION.is_match(line) {
+            inside = false;
+        } else if inside {
+            named.extend(line.split_whitespace().map(str::to_string));
+        }
+    }
+    named
 }
 
 /// Just past the bracket that closes the one at byte `start` of `text`, or
@@ -571,6 +606,7 @@ fn judged_commit(
     let models = loaded(models_text.as_deref());
     let proofs = loaded(proofs_text.as_deref());
     let mut checked: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut behaviour: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for model in listed(&models, "models") {
         let module = shown(model.get("module"));
         for run in listed(model, "runs") {
@@ -585,6 +621,10 @@ fn judged_commit(
                     .entry(module.clone())
                     .or_default()
                     .extend(checks_of(&text).0);
+                behaviour
+                    .entry(module.clone())
+                    .or_default()
+                    .extend(behaviour_of(&text));
             }
         }
     }
@@ -639,7 +679,11 @@ fn judged_commit(
                 }
                 continue;
             }
-            let names = said_by(&old, checked.get(module).unwrap_or(&no_checks));
+            let names = said_by(
+                &old,
+                checked.get(module).unwrap_or(&no_checks),
+                behaviour.get(module).unwrap_or(&no_checks),
+            );
             let (before, after) = (definitions(&old), definitions(new_text));
             for name in names.iter().filter(|name| before.contains_key(*name)) {
                 if before.get(name) != after.get(name) {
@@ -1215,5 +1259,20 @@ mod tests {
                 .trim()
                 .to_string()
         }
+    }
+
+    #[test]
+    fn the_variables_of_the_behaviour_a_configuration_explores_are_the_models() {
+        let module = "---- MODULE M ----\nVARIABLES x, y\nvars == <<x, y>>\n\
+            Init == x = 0 /\\ y = 0\nNext == x' = x /\\ y' = y\n\
+            Spec == Init /\\ [][Next]_vars\nSafe == x < 3\nSteady == [][x' = x]_vars\n====\n";
+        let checks: BTreeSet<String> = ["Safe", "Steady"].map(String::from).into();
+        let unexplored = said_by(module, &checks, &BTreeSet::new());
+        assert!(unexplored.contains("vars"), "{unexplored:?}");
+        let explored = behaviour_of(CONFIG);
+        assert_eq!(explored, ["Spec".to_string()].into());
+        let said = said_by(module, &checks, &explored);
+        assert!(!said.contains("vars"), "{said:?}");
+        assert!(said.contains("Safe") && said.contains("Steady"), "{said:?}");
     }
 }
