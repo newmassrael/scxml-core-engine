@@ -22,6 +22,9 @@ pub enum {{ enum_name }} {
 {% endfor %}
 }
 
+{# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
+   function carries it (algorithm.rs.jinja2 says why). #}
+#[inline]
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Option<{{ enum_name }}>{% else %}{{ enum_name }}{% endif %} {
     match {{ input_id }} {
 {% for group in entries_by_value %}
@@ -36,11 +39,15 @@ use sce_forge_runtime::lookup::lookup as sce_lookup;
 const KEYS: [{{ input_type }}; {{ n }}] = [{{ keys_literal | join(", ") }}];
 const VALUES: [{{ value_type }}; {{ n }}] = [{{ values_literal | join(", ") }}];
 
+{# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
+   function carries it (algorithm.rs.jinja2 says why). #}
 {% if on_miss_error %}
+#[inline]
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> Option<{{ value_type }}> {
     sce_lookup(&KEYS, &VALUES, {{ input_id }})
 }
 {% else %}
+#[inline]
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ value_type }} {
     sce_lookup(&KEYS, &VALUES, {{ input_id }}).unwrap_or({{ default_literal }})
 }

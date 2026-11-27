@@ -11,6 +11,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn algorithm_checked_arith(a: i32, b: i32, op: u8) -> Result<i32, sce_forge_runtime::algorithm::AlgorithmError> {
     let mut r: i32 = 0;
     if op == 0 {

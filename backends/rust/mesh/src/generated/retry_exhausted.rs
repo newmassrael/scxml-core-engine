@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn retry_exhausted(
     attempts: u32,
     max_retries: u32,

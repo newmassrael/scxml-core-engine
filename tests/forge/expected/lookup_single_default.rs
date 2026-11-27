@@ -13,6 +13,7 @@ pub enum Quality {
     High,
 }
 
+#[inline]
 pub fn lookup_quality(level: u8) -> Quality {
     match level {
         3 =>Quality::High,

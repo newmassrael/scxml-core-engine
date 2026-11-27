@@ -11,6 +11,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn algorithm_tick_until_due(now: u32, last: u32, period: u32) -> u32 {
     return u32::saturating_sub(period, u32::wrapping_sub(now, last));
 }

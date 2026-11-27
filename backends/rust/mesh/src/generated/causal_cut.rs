@@ -20,6 +20,7 @@ use sce_portable_bytes::{CapacityExceeded, SceOwnedList};
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn causal_cut(
     members: u32,
     known: &[causal_known::CausalKnownPayload],

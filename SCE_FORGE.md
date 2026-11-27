@@ -598,6 +598,7 @@ inline double computeTemperature(uint16_t raw) {
 
 **Codegen** (Rust):
 ```rust
+#[inline]
 pub fn compute_temperature(raw: u16) -> f64 {
     raw as f64 * 0.1 - 40.0
 }
@@ -772,6 +773,7 @@ fun lookupEngineStatus(engSta: UByte): EngineStatus = when (engSta.toInt()) {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineStatus { Stop, Running, Fault }
 
+#[inline]
 pub fn lookup_engine_status(eng_sta: u8) -> EngineStatus {
     match eng_sta {
         0x00..=0x02 => EngineStatus::Stop,
@@ -2287,6 +2289,8 @@ private:
 ### 4.12 algorithm
 
 A pure synchronous function — bounded loops, language-native locals, no I/O, no allocation on the no-alloc profile. An `<sce:signature>` declares the parameters and return type; an `<sce:body>` holds the statement list (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`/`<sce:else>`, `<sce:while>`, `<sce:foreach>`, `<sce:return>`, `<sce:call>`). The kind's full surface is specified by SCE Protocol-Synthesis RFC §synth-5-A; this section documents the SCE-owned **byte-buffer-build** primitive.
+
+**The function is a hint to inline, in Rust.** Rust writes an algorithm's function `#[inline]`, as it writes the free functions of a transform, a condition and a lookup: the hint C11's `static inline` and C++'s `inline` give the same function, which lets a caller in another crate, or in another codegen unit of its own crate, inline it and leaves whether to the compiler. Without it a `pub fn` is compiled once, kept as a symbol and called however small it is, so a decision a host moved from its own code into an algorithm (a `match` over a closed enum, called from one place) grew the host's `.text`. It is never `#[inline(always)]`: a body the compiler judges too large stays a call.
 
 **An `<sce:else>` contains its branch.** The statements of an `<sce:if>` before its `<sce:else>` are the then branch, and the statements inside the `<sce:else>` are the else branch: `<sce:if cond="…">S1<sce:else>S2</sce:else></sce:if>`. The `<sce:else>` is the last child of its `<sce:if>`, and a statement written after it is refused (`algorithm/statement-after-else`, placed on the statement, with the `<sce:else>` as a `must-follow` site). SCXML's `<else/>` separates the branches instead, and a document that wrote `<sce:else/>` that way was read with the else branch's statements in the then branch and an empty else until 2026-11-23.
 

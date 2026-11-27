@@ -12,6 +12,7 @@ pub enum Status {
     Fault,
 }
 
+#[inline]
 pub fn lookup_status(eng_sta: u8) -> Status {
     match eng_sta {
         0x07 =>Status::Fault,

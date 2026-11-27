@@ -9,6 +9,7 @@ use sce_forge_runtime::lookup::lookup as sce_lookup;
 const KEYS: [i32; 4] = [0, 1, 2, 3];
 const VALUES: [i32; 4] = [10, 20, 30, 40];
 
+#[inline]
 pub fn lookup_action(state: i32) -> Option<i32> {
     sce_lookup(&KEYS, &VALUES, state)
 }

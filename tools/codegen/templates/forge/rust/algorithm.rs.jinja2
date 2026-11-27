@@ -18,8 +18,16 @@
 {% endfor %}
 {% endif %}
 
+{# `#[inline]` is the hint C11's `static inline` and C++'s `inline` give the
+   same function, and only a hint: it lets a caller in another crate, or in
+   another codegen unit of this one, inline the function, and leaves whether to
+   the compiler. Without it a `pub fn` is compiled once, kept as a symbol, and
+   called, however small it is (a `match` over a closed enum, a host calling it
+   from one place). It is not `#[inline(always)]`: a body the compiler judges
+   too large stays a call. #}
 {{ consts_prelude }}#[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn {{ primary_symbol }}{{ generics }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %} {
 {{ body }}
 }

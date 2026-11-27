@@ -18,6 +18,7 @@ use sce_portable_bytes::SceOwnedList;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn dedup_admit(
     window: &[envelope_id::EnvelopeIdPayload],
     id: envelope_id::EnvelopeIdPayload,

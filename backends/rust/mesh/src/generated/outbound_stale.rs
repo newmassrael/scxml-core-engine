@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn outbound_stale(
     enqueued_at_ms: i64,
     now: i64,

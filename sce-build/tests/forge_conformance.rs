@@ -12414,6 +12414,50 @@ fn forge_rust_condition_range() {
     assert_standalone_forge_rust("condition_range", "condition_range.rs");
 }
 
+// ── Every free function of a pure kind is `#[inline]` (Rust) ───────────
+
+/// The free function an algorithm, a transform, a condition or a lookup
+/// generates for Rust carries `#[inline]` on the line before it, the hint C11's
+/// `static inline` gives the same function, and never `#[inline(always)]`: the
+/// compiler keeps the choice. One document of each shape a template writes such
+/// a function in: an algorithm that cannot fail and one that can, a transform of
+/// two outputs, a condition, and a lookup to an enum, through a table to a value
+/// that may be missing, and through a table with a default.
+#[test]
+fn forge_rust_pure_kind_functions_are_inline() {
+    for (document, functions) in [
+        ("algorithm_crc16", &["algorithm_crc16"][..]),
+        ("algorithm_checked_arith", &["algorithm_checked_arith"][..]),
+        (
+            "transform_multi_output",
+            &["compute_fahrenheit", "compute_kelvin"][..],
+        ),
+        ("condition_threshold", &["condition_threshold"][..]),
+        ("lookup_engine_status", &["lookup_status"][..]),
+        ("lookup_state_action", &["lookup_action"][..]),
+        ("lookup_severity_default", &["lookup_severity"][..]),
+    ] {
+        let text = render_golden_rust(document);
+        let lines: Vec<&str> = text.lines().collect();
+        for function in functions {
+            let declared = format!("pub fn {function}(");
+            let at = lines
+                .iter()
+                .position(|line| line.starts_with(&declared))
+                .unwrap_or_else(|| panic!("{document}: no `{declared}` line:\n{text}"));
+            assert_eq!(
+                at.checked_sub(1).map(|before| lines[before]),
+                Some("#[inline]"),
+                "{document}: `{function}` is not `#[inline]`:\n{text}"
+            );
+        }
+        assert!(
+            !text.contains("#[inline(always)]"),
+            "{document}: a function is forced inline:\n{text}"
+        );
+    }
+}
+
 // ── Codec (Rust) ─────────────────────────────────────────────
 
 #[test]

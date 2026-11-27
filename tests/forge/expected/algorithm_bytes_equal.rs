@@ -11,6 +11,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;

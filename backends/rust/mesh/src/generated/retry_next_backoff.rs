@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn retry_next_backoff(
     prev_ms: i64,
     multiplier: f64,

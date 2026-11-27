@@ -17,6 +17,7 @@ use super::causal_entry;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn causal_admit(
     delivered: &[causal_entry::CausalEntryPayload],
     dot: causal_entry::CausalEntryPayload,

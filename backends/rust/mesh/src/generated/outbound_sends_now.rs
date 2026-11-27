@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn outbound_sends_now(ready: bool, depth: u32) -> bool {
     return ready && depth == 0;
 }

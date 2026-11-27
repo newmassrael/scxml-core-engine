@@ -16,6 +16,7 @@ use super::ordering_slot;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn ordering_gap_end(
     pending: &[ordering_slot::OrderingSlotPayload],
     next: u64,

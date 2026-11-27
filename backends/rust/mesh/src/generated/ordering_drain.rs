@@ -16,6 +16,7 @@ use super::ordering_slot;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn ordering_drain(
     pending: &[ordering_slot::OrderingSlotPayload],
     start: u64,

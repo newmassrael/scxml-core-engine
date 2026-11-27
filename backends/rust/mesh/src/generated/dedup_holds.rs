@@ -16,6 +16,7 @@ use super::envelope_id;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn dedup_holds(
     window: &[envelope_id::EnvelopeIdPayload],
     id: envelope_id::EnvelopeIdPayload,

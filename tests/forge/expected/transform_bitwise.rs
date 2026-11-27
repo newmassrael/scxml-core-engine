@@ -10,6 +10,7 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn compute_high_nibble(byte: u8) -> u8 {
     byte >> 4 & 0x0F
 }
@@ -19,6 +20,7 @@ pub fn compute_high_nibble(byte: u8) -> u8 {
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn compute_low_nibble(byte: u8) -> u8 {
     byte & 0x0F
 }

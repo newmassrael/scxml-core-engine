@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn retry_jittered(
     base_ms: i64,
     jitter_pct: i64,

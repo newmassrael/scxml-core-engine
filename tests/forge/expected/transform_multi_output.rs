@@ -10,6 +10,7 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn compute_fahrenheit(celsius: f64) -> f64 {
     celsius * 9.0 / 5.0 + 32.0
 }
@@ -19,6 +20,7 @@ pub fn compute_fahrenheit(celsius: f64) -> f64 {
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn compute_kelvin(celsius: f64) -> f64 {
     celsius + 273.15
 }

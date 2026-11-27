@@ -18,6 +18,7 @@ use sce_portable_bytes::{CapacityExceeded, SceOwnedList};
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn ordering_prune(
     pending: &[ordering_slot::OrderingSlotPayload],
     next: u64,

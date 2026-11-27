@@ -13,6 +13,7 @@ pub static CRC16_TABLE: [u16; 256] = [0, 4129, 8258, 12387, 16516, 20645, 24774,
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn algorithm_crc16_table(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &b in data.iter() {

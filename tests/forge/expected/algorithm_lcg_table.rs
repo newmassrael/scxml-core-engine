@@ -13,6 +13,7 @@ pub static LCG_TABLE: [u32; 16] = [12345, 87628868, 71072467, 2332836374, 272689
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn algorithm_lcg_table(n: u8) -> u32 {
     return sce_forge_runtime::algorithm::proven::at(&LCG_TABLE, n & 15);
 }

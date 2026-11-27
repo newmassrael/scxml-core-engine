@@ -16,6 +16,7 @@ use super::gcra_decision;
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn gcra_admit(
     tat: i64,
     now: i64,

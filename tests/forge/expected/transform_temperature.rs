@@ -10,6 +10,7 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn compute_temperature(raw: u16) -> f64 {
     raw as f64 * 0.1 - 40.0
 }

@@ -14,6 +14,7 @@ pub enum Gear {
     Sport,
 }
 
+#[inline]
 pub fn lookup_gear(gear_raw: u8) -> Gear {
     match gear_raw {
         3 =>Gear::Drive,

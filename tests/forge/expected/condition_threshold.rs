@@ -10,6 +10,7 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
+#[inline]
 pub fn condition_threshold(coolant_temp: f64, oil_temp: f64, max_temp: f64) -> bool {
     coolant_temp > max_temp || oil_temp > max_temp
 }

@@ -18,6 +18,7 @@ use sce_portable_bytes::{CapacityExceeded, SceOwnedList};
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn causal_raise(
     vector: &[causal_entry::CausalEntryPayload],
     other: &[causal_entry::CausalEntryPayload],

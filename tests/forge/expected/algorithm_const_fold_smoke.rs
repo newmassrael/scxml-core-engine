@@ -13,6 +13,7 @@ pub static DOUBLED: [u16; 4] = [0, 2, 4, 6];
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn algorithm_const_fold_smoke() -> u16 {
     return 0;
 }

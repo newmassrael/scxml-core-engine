@@ -14,6 +14,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
+#[inline]
 pub fn outbound_overflows(depth: u32, max_pending: u32) -> bool {
     return depth >= max_pending;
 }
