@@ -14,7 +14,7 @@ this file says what is here and how to read it.
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
-| 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust, C11, Go, Kotlin and Python lanes (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust, C11, Go, Kotlin and Python lanes, for three documents; the C++ port writes the same format |
+| 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust, C11, Go, Kotlin, Python and Swift lanes (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust, C11, Go, Kotlin, Python and Swift lanes, for three documents; the C++ port writes the same format |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
 
 ## The models
@@ -146,6 +146,9 @@ Each lane records its runs with the command below, and the same tests hold each 
   written by `RunTrace`).
 - Python: `UPDATE_EXPECT=1 python -m pytest backends/python/tests/trace_port/` (`Engine.set_trace_port`, written by
   `sce_runtime.trace_port`).
+- Swift: `UPDATE_EXPECT=1 swift test --filter W3cMachinesTests.ARunIsABehaviourOfItsModel` in `backends/swift/tests`
+  once `scripts/regen_swift_w3c.sh` has written the W3C machines (the runtime package's `TracePort` trait, which the
+  tests package asks for).
 
 A lane's run of a document is judged against the one model of that document, and these documents leave a run's steps
 no choice, so the lanes' runs of one document differ only in their lane.

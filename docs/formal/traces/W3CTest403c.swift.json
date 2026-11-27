@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "lane": "swift",
+  "steps": [
+    {"kind": "start", "entered": ["s0", "p0", "p0s1", "p0s2", "p0s3", "p0s4"], "configuration": ["s0", "p0", "p0s1", "p0s2", "p0s3", "p0s4"]},
+    {"kind": "internal", "event": "event1", "fired": [{"source": "p0s1", "index": 0}, {"source": "p0s2", "index": 0}, {"source": "p0s4", "index": 0}], "exited": ["p0s4", "p0s3", "p0s2", "p0s1", "p0"], "entered": ["p0", "p0s1", "p0s2", "p0s3", "p0s4"], "configuration": ["s0", "p0", "p0s1", "p0s2", "p0s3", "p0s4"]},
+    {"kind": "internal", "event": "event2", "fired": [{"source": "p0s1", "index": 1}, {"source": "p0s3", "index": 1}, {"source": "p0s4", "index": 0}], "exited": ["p0s4", "p0s3", "p0s2", "p0s1", "p0", "s0"], "entered": ["s1"], "configuration": ["s1"]},
+    {"kind": "eventless", "fired": [{"source": "s1", "index": 0}], "exited": ["s1"], "entered": ["pass"], "configuration": ["pass"]},
+    {"kind": "stop", "exited": ["pass"], "outcome": "pass"}
+  ]
+}
