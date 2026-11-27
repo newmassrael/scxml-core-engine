@@ -42,7 +42,7 @@ use crate::membership::{
     Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms, Under,
 };
 use crate::outbox::{Append, Write, Written};
-use crate::{AcquireError, Conflict, Lease, WriteError};
+use crate::{AcquireError, Conflict, Lease, SessionStore, WriteError};
 
 /// What gives the functions of this module their store.
 pub trait MembershipHarness {
