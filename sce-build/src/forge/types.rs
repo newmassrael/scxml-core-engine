@@ -1273,25 +1273,41 @@ pub struct UnionParam {
 }
 
 /// A list an imported algorithm takes as a parameter or returns, as its own
-/// document declares it (docs/adr/0086, section 1): the list's type, its bound
-/// part of it, and the scope the callee names the records, enums and unions of
-/// its element in. A list is typed by no operand type in the expression
-/// pipeline, so which list a slot takes is said here, beside the slot's type
-/// ([`FuncSig::lists`]), and an argument is held to it by the relation "fits"
-/// (docs/adr/0086, section 5.1), each record, enum and union of the argument
-/// read in the caller's scope and each of the slot in this one.
+/// document declares it (docs/adr/0086, section 1): the type of its element,
+/// every bound inside it stated, the bound of a returned list, and the scope
+/// the callee names the records, enums and unions of its element in. A list is
+/// typed by no operand type in the expression pipeline, so which list a slot
+/// takes is said here, beside the slot's type ([`FuncSig::lists`]).
 ///
-/// A parameter that states no bound views a list of any length, and is held
-/// here at the most elements any list holds; a returned list is held at its
-/// `returns-max-size`.
+/// A parameter is a view of its argument and holds the argument's bound
+/// (SCE_FORGE.md §4.12), so it states none, and a list lent to it is held to
+/// its element alone by the relation "fits" (docs/adr/0086, section 5.1), each
+/// record, enum and union of the argument read in the caller's scope and each
+/// of the slot in this one. A returned list holds its `returns-max-size`, which
+/// the list local that takes it whole holds it to, element and bound.
 #[derive(Debug, Clone)]
 pub struct ListParam {
-    /// The list type, every bound in it stated.
-    pub ty: ValueType,
-    /// The type as the callee's document spells it, which a refusal names.
+    /// The type of one element, every bound in it stated.
+    pub elem: ValueType,
+    /// The most elements a returned list holds; `None` for a parameter, a view
+    /// of whatever list it is lent.
+    pub returned: Option<crate::forge::value_type::Bound>,
+    /// The type as the callee's document spells it, the bound of a returned
+    /// list included, which a refusal names.
     pub written: String,
-    /// The scope the callee's document names the types of [`Self::ty`] in.
+    /// The scope the callee's document names the types of [`Self::elem`] in.
     pub scope: crate::forge::value_type::TypeScope,
+}
+
+impl ListParam {
+    /// The type of the list a call returns, its bound stated; `None` for a
+    /// parameter, which holds no bound of its own.
+    pub fn returned_type(&self) -> Option<ValueType> {
+        Some(ValueType::List {
+            elem: Box::new(self.elem.clone()),
+            max: self.returned.clone()?,
+        })
+    }
 }
 
 /// Signature of a function that may appear in a SCXML expression as
@@ -1647,12 +1663,11 @@ pub struct TypeCtx<'a> {
     /// statechart's own ([`crate::forge::value_path::statechart_scope`]).
     pub value_scope: Option<&'a crate::forge::value_type::TypeScope>,
     /// Each list an algorithm's body holds, by the place it is read at, with
-    /// its type in the scope of [`TypeCtx::list_scope`]: a list parameter, its
-    /// bound the one it states or the most any list holds where it states none;
-    /// a list local, its bound its capacity; and the list field of a record
-    /// parameter, its bound the schema's (`<record>.<field>`). What an argument
-    /// handed to an imported algorithm's list parameter is held to
-    /// ([`FuncSig::lists`]).
+    /// the type of its element in the scope of [`TypeCtx::list_scope`]: a list
+    /// parameter, a list local and the list field of a record parameter
+    /// (`<record>.<field>`). What an argument handed to an imported algorithm's
+    /// list parameter is held to ([`FuncSig::lists`]): its element, since the
+    /// parameter is a view of a list of any bound.
     ///
     /// Empty everywhere but an algorithm's body.
     pub held_lists: HashMap<&'a str, ValueType>,

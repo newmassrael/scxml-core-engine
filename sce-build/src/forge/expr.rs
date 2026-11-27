@@ -1457,10 +1457,10 @@ fn list_parameters<'c>(
 }
 
 /// Refuse every argument handed to a parameter that takes a list which is not
-/// a list the caller holds that fits the parameter's ([`judge_list_argument`]),
-/// at any depth of `expr`. The one rule of a list argument, read by the judge
-/// of an algorithm's body before any backend and by every lowering
-/// ([`resolve_names`]).
+/// a list the caller holds of an element that fits the parameter's
+/// ([`judge_list_argument`]), at any depth of `expr`. The one rule of a list
+/// argument, read by the judge of an algorithm's body before any backend and by
+/// every lowering ([`resolve_names`]).
 fn reject_list_arguments(expr: &TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if let (ExprKind::Ident(name), Some(lists)) = (&callee.kind, list_parameters(callee, ctx)) {
@@ -1480,13 +1480,14 @@ fn reject_list_arguments(expr: &TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> R
 /// the list `param`, or its refusal. A list stands there by the place that holds
 /// it, which the parameter reads and does not write: a list parameter or a list
 /// local of the caller, or the list field of a record parameter it holds
-/// (`order.lines`), each a list of its type ([`TypeCtx::held_lists`]). It is
-/// held to the parameter's type by the relation "fits" (docs/adr/0086, section
-/// 5.1): its element the parameter's, a record of the same schema document, an
-/// enum of the same values and a union of the same document, and its bound at
-/// most the parameter's, so a list the parameter cannot hold is refused at the
-/// build, not at the call. Anything else (a call that answers a list, an
-/// element, a number) is refused naming the type the parameter takes.
+/// (`order.lines`), each held with its element ([`TypeCtx::held_lists`]). The
+/// parameter is a view of its argument and holds the argument's bound
+/// (SCE_FORGE.md §4.12), so a list of any bound stands there, held to the
+/// parameter by its element alone, by the relation "fits" (docs/adr/0086,
+/// section 5.1): the parameter's element, a record of the same schema
+/// document, an enum of the same values and a union of the same document.
+/// Anything else (a call that answers a list, an element, a number) is refused
+/// naming the type the parameter takes.
 fn judge_list_argument(
     arg: &TypedExpr,
     callee: &str,
@@ -1504,23 +1505,27 @@ fn judge_list_argument(
     let held = place_path(arg)
         .filter(|_| matches!(arg.ty, InferredType::List(_) | InferredType::ListBuffer(_)))
         .and_then(|path| {
-            let ty = ctx.held_lists.get(path.as_str())?.clone();
-            Some((path, ty))
+            let elem = ctx.held_lists.get(path.as_str())?.clone();
+            Some((path, elem))
         });
     let construct = match held {
-        Some((path, ty)) => {
+        Some((path, elem)) => {
             let names = crate::forge::static_datamodel::ScopedNames {
                 from: ctx.list_scope,
                 to: Some(&param.scope),
             };
-            match crate::forge::value_type::fits(&ty, &param.ty, &names) {
+            match crate::forge::value_type::fits(&elem, &param.elem, &names) {
                 Ok(()) => return Ok(path),
-                Err(misfit) => format!(
-                    "{} handed to `{callee}`, whose parameter takes {} (a list is handed only \
-                     to a parameter whose type it fits)",
-                    misfit.sentence(&observed),
-                    param.written
-                ),
+                // The misfit is of an element: its place is one below the list.
+                Err(mut misfit) => {
+                    misfit.path = format!("/*{}", misfit.path);
+                    format!(
+                        "{} handed to `{callee}`, whose parameter takes {} (a list is handed \
+                         only to a parameter of an element it fits)",
+                        misfit.sentence(&observed),
+                        param.written
+                    )
+                }
             }
         }
         None => list_argument_unnamed(&observed, callee, param),

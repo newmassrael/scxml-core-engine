@@ -463,8 +463,9 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// The backends on which an algorithm calls another algorithm that takes or
 /// returns a list (SCE_FORGE.md section 4.12): a list parameter of the callee is
 /// lent a list the caller holds, by the place that holds it (a list parameter, a
-/// list local, the list field of a record parameter), which fits the type the
-/// parameter declares, its bound included (docs/adr/0086, section 5.1); and a
+/// list local, the list field of a record parameter), of any bound, since a
+/// parameter is a view of its argument, and of an element that fits the one the
+/// parameter declares (docs/adr/0086, section 5.1); and a
 /// list the callee returns is taken whole by an `<sce:assign>` to a list local
 /// whose type it fits, in a body that receives the failure of a callee that
 /// declares `may-fail`. A backend joins this list in the change that gives it

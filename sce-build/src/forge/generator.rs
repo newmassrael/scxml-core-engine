@@ -1140,8 +1140,7 @@ pub struct RecordListField {
     pub id: String,
     /// The element, a fixed-width number or a `bool`.
     pub elem: SceType,
-    /// The field's type, its bound stated: what an argument it is lent as is
-    /// held to ([`crate::forge::types::TypeCtx::held_lists`]).
+    /// The field's type, its bound stated: what a refusal of the record names.
     pub ty: crate::forge::value_type::ValueType,
 }
 
@@ -1327,8 +1326,9 @@ pub enum CalleeSlot {
     /// A parameter or the return of `list<T>`, on a backend that hands a list
     /// from one algorithm to another
     /// ([`crate::forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]): the
-    /// caller lends a parameter a list it holds that fits the slot's type, and
-    /// takes a returned list whole into a list local whose type it fits.
+    /// caller lends a parameter a list it holds, of any bound and an element
+    /// that fits the slot's, and takes a returned list whole into a list local
+    /// whose type it fits.
     List(crate::forge::types::ListParam),
 }
 
@@ -48193,11 +48193,15 @@ fn lower_whole_list_call(
         .ok_or_else(|| pipeline(format!("`{name}` is no list local the body declares")))?;
     let held = algorithm_map_place(&decl.ty)
         .ok_or_else(|| pipeline(format!("the list local `{name}` states no bound")))?;
+    let returned = call
+        .returned
+        .returned_type()
+        .ok_or_else(|| pipeline(format!("`{alias}` returns a list of no bound")))?;
     let names = crate::forge::static_datamodel::ScopedNames {
         from: Some(&call.returned.scope),
         to: type_ctx.list_scope,
     };
-    if let Err(misfit) = crate::forge::value_type::fits(&call.returned.ty, &held, &names) {
+    if let Err(misfit) = crate::forge::value_type::fits(&returned, &held, &names) {
         return Err(refuse(format!(
             "{}: the list `{alias}` returns, {}, taken whole into `{name}`, a {} (a returned \
              list is taken whole into a list local whose type it fits)",
@@ -49582,9 +49586,9 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
     list_params: Vec<(String, AlgorithmValueType)>,
     /// Every list the body holds — a list parameter, a list local and the list
-    /// field of a record parameter — by its place, with its type
+    /// field of a record parameter — by its place, with the type of its element
     /// ([`crate::forge::types::TypeCtx::held_lists`]).
-    list_types: Vec<(String, crate::forge::value_type::ValueType)>,
+    list_elems: Vec<(String, crate::forge::value_type::ValueType)>,
     /// Every list field of a record parameter (docs/adr/0086, section 7.3): its
     /// place (`order.lines`), the place of its element (`order.lines[]`) and
     /// the element, read as a list parameter's is.
@@ -49685,8 +49689,7 @@ fn record_param_list_field<'i>(
 /// (docs/adr/0108, D5): its type with every bound inside it, its outermost the
 /// one it states, or, for a parameter, which views its argument's and states
 /// none, the most any map holds — what no read of it consults. `None` for a
-/// type no place holds. A list slot is held so too, its bound what a list lent
-/// to another algorithm is held to ([`AlgorithmTypes::list_types`]).
+/// type no place holds.
 fn algorithm_map_place(ty: &AlgorithmValueType) -> Option<crate::forge::value_type::ValueType> {
     let held = if ty.stated_outer_bound().is_some() {
         ty.clone()
@@ -49809,16 +49812,16 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .filter_map(|p| p.sce_type.list_elem().map(|t| (p.name.clone(), t.clone())))
             .collect();
-        // Each list the body holds, by its place, with its type: what a list
-        // lent to another algorithm's list parameter is held to
-        // ([`crate::forge::types::TypeCtx::held_lists`]). A parameter that
-        // states no bound views a list of any length.
-        let mut list_types: Vec<(String, crate::forge::value_type::ValueType)> = m
+        // Each list the body holds, by its place, with the type of its
+        // element: what a list lent to another algorithm's list parameter, a
+        // view of a list of any bound, is held to
+        // ([`crate::forge::types::TypeCtx::held_lists`]).
+        let held_elem = |ty: &AlgorithmValueType| ty.list_elem()?.clone().bounded().ok();
+        let mut list_elems: Vec<(String, crate::forge::value_type::ValueType)> = m
             .signature
             .params
             .iter()
-            .filter(|p| p.sce_type.list_elem().is_some())
-            .filter_map(|p| Some((p.name.clone(), algorithm_map_place(&p.sce_type)?)))
+            .filter_map(|p| Some((p.name.clone(), held_elem(&p.sce_type)?)))
             .collect();
         // An optional parameter is a value that may be absent, read as one.
         let mut optionals: Vec<(String, crate::forge::types::OptionalElem)> = m
@@ -49923,10 +49926,8 @@ impl<'a> AlgorithmTypes<'a> {
                         }
                         Some(t) => t.clone(),
                         None => {
-                            if sce_type.list_elem().is_some() {
-                                if let Some(ty) = algorithm_map_place(sce_type) {
-                                    list_types.push((name.to_string(), ty));
-                                }
+                            if let Some(elem) = held_elem(sce_type) {
+                                list_elems.push((name.to_string(), elem));
                             }
                             match sce_type.list_elem() {
                                 Some(AlgorithmValueType::Scalar(elem)) => {
@@ -50127,7 +50128,10 @@ impl<'a> AlgorithmTypes<'a> {
             // parameter (docs/adr/0086, section 7.3).
             for field in &record.lists {
                 let path = format!("{name}.{}", field.id);
-                list_types.push((path.clone(), field.ty.clone()));
+                list_elems.push((
+                    path.clone(),
+                    crate::forge::value_type::ValueType::Scalar(field.elem.clone()),
+                ));
                 record_lists.push((
                     path.clone(),
                     format!("{path}{}", crate::forge::value_path::ELEMENT),
@@ -50228,7 +50232,7 @@ impl<'a> AlgorithmTypes<'a> {
             optionals,
             optional_enums,
             list_params,
-            list_types,
+            list_elems,
             record_lists,
             list_buffers,
             record_list_buffers,
@@ -50480,10 +50484,10 @@ impl<'a> AlgorithmTypes<'a> {
         }
         // Each list the body holds, in the scope its imports name types in:
         // what a list lent to another algorithm's list parameter is held to.
-        for (path, ty) in &self.list_types {
-            type_ctx.held_lists.insert(path.as_str(), ty.clone());
+        for (path, elem) in &self.list_elems {
+            type_ctx.held_lists.insert(path.as_str(), elem.clone());
         }
-        if !self.list_types.is_empty() {
+        if !self.list_elems.is_empty() {
             type_ctx.list_scope = Some(&self.scope);
         }
         for &(name, shape) in &self.record_items {

@@ -6882,8 +6882,9 @@ pass discovers — its parameters' and return's types. An algorithm whose
 signature takes or returns a `list<T>` or a `record:` is not called from a
 statechart unless the statechart can hand it what it takes and receive what it
 returns — a host calls it, and another algorithm when its slots are records or
-unions it is handed by name, or, on Rust, lists (SCE_FORGE.md §4.12, "Where a
-list crosses") — and is refused where it is
+unions it is handed by name, or, on Rust, lists, a list parameter a view of a
+list of any bound held to its element (SCE_FORGE.md §4.12, "Where a list
+crosses") — and is refused where it is
 called, with two exceptions: an algorithm that takes scalars only, declares `may-fail` and
 returns a `list<T>` of numbers or bools (never of enum values) with a `returns-max-size` is taken
 whole by an `<assign>` to a list variable (below), and an algorithm whose

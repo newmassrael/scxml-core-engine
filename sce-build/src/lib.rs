@@ -9914,11 +9914,11 @@ fn algorithm_record_slots(
         })
     };
     // A list slot, on a backend that hands a list from one algorithm to another
-    // ([`forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]): its type, every
-    // bound stated (a parameter that states none views a list of any length, a
-    // return holds its `returns-max-size`), read in the callee's own scope, which
-    // a list the caller lends or takes is held to. Read once, for a callee with a
-    // list slot.
+    // ([`forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS`]): its element,
+    // every bound in it stated, and, for a return, its `returns-max-size`, read
+    // in the callee's own scope, which a list the caller lends or takes is held
+    // to. A parameter states no bound: it is a view of whatever list it is lent
+    // (SCE_FORGE.md §4.12). Read once, for a callee with a list slot.
     let lists_cross = forge::codegen_matrix::ALGORITHM_LIST_CALL_BACKENDS.contains(&language);
     let has_list = am
         .signature
@@ -9931,31 +9931,25 @@ fn algorithm_record_slots(
         .then(|| forge::import_source::type_scope(callee_imports, callee_base));
     let list = |ty: &AlgorithmValueType, param: bool| -> Option<forge::types::ListParam> {
         let scope = list_scope.as_ref()?;
-        let stated = if ty.stated_outer_bound().is_some() {
-            ty.clone()
+        let elem = ty.list_elem()?.clone().bounded().ok()?;
+        let returned = if param {
+            None
         } else {
-            let max = if param {
-                u32::MAX
-            } else {
-                am.signature.returns_max_size()?
-            };
-            ty.clone()
-                .with_outer_bound(forge::value_type::Bound {
-                    max,
-                    limit: None,
-                    min: 0,
-                })
-                .ok()?
+            Some(match ty.stated_outer_bound() {
+                Some(bound) => bound.clone(),
+                None => forge::value_type::Bound::of(am.signature.returns_max_size()?),
+            })
         };
-        Some(forge::types::ListParam {
-            written: if param {
-                ty.as_attr()
-            } else {
-                stated.as_attr()
-            },
-            ty: stated.bounded().ok()?,
+        let mut slot = forge::types::ListParam {
+            elem,
+            returned,
+            written: ty.as_attr(),
             scope: scope.clone(),
-        })
+        };
+        if let Some(whole) = slot.returned_type() {
+            slot.written = whole.to_string();
+        }
+        Some(slot)
     };
     // The slot `ty` is to another algorithm's call, a parameter when `param`;
     // `None` for one no such call fills.

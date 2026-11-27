@@ -14,10 +14,12 @@
 //!   into its list local the `list<uint16>[3]` `probe_tail` returns.
 //! * The four units compile under `rustc -D warnings`, and a program built of
 //!   them runs the caller and checks the list it answers.
-//! * A list that does not fit the parameter or the local, a returned list taken
-//!   where no failure is received or by a `<sce:call>`, and a record that holds
-//!   a list anywhere but a parameter are refused by name; every other backend
-//!   refuses the caller by name.
+//! * A list parameter is a view of a list of any bound, so a list of another
+//!   element is refused where it is lent, and one of any bound is not; a
+//!   returned list that does not fit the local, one taken where no failure is
+//!   received or by a `<sce:call>`, and a record that holds a list anywhere but
+//!   a parameter are refused by name; every other backend refuses the caller by
+//!   name.
 //!
 //! What was wrong: an algorithm that takes or returns a list was called by a
 //! host alone, and a record whose schema holds a list was refused by every
@@ -60,24 +62,6 @@ const SUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       <sce:assign target="total" expr="total + x"/>
     </sce:foreach>
     <sce:return expr="total"/>
-  </sce:body>
-</scxml>
-"#;
-
-/// The count of a list of at most two: a parameter that states its bound.
-const PAIR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm" name="probe_pair" version="1.0">
-  <sce:signature>
-    <sce:param name="xs" type="list&lt;uint16&gt;[2]"/>
-    <sce:return type="uint32" may-fail="true"/>
-  </sce:signature>
-  <sce:body>
-    <sce:var name="n" type="uint32" init="0"/>
-    <sce:foreach item="x" in="xs">
-      <sce:assign target="n" expr="n + 1"/>
-    </sce:foreach>
-    <sce:return expr="n"/>
   </sce:body>
 </scxml>
 "#;
@@ -145,7 +129,6 @@ fn fixture(caller_text: &str) -> (tempfile::TempDir, PathBuf) {
     for (name, text) in [
         ("probe_order.scxml", ORDER),
         ("probe_sum.scxml", SUM),
-        ("probe_pair.scxml", PAIR),
         ("probe_tail.scxml", TAIL),
         ("probe_caller.scxml", caller_text),
     ] {
@@ -405,41 +388,36 @@ fn every_other_backend_refuses_a_call_that_lends_a_list_by_name() {
     }
 }
 
-/// The caller's refusal on Rust, for the body `body`, with the algorithm
-/// `probe_pair` imported as `Pair` beside the others.
+/// The caller's refusal on Rust, for the body `body`.
 fn rust_refusal(body: &str, may_fail: bool) -> (DiagnosticCode, String) {
-    let text = caller(body, may_fail).replace(
-        "  <sce:signature>",
-        "  <sce:import kind=\"algorithm\" src=\"probe_pair.scxml\" as=\"Pair\"/>\n  <sce:signature>",
-    );
-    let (_dir, path) = fixture(&text);
+    let (_dir, path) = fixture(&caller(body, may_fail));
     refused(generated(&path, Language::Rust))
 }
 
-/// A list that may hold more than the parameter's bound is refused where it is
-/// lent. Pinned by the bound of the relation "fits" read in
-/// `judge_list_argument` (`sce-build/src/forge/expr.rs`): an unbounded list
-/// parameter is held at the most any list holds, which `list<uint16>[2]` does
-/// not.
+/// A list parameter is a view of its argument and states no bound, so a list
+/// of any bound is lent to it, a list local of two elements and a record's list
+/// field of four alike. Pinned by `judge_list_argument`
+/// (`sce-build/src/forge/expr.rs`), which holds the argument to the
+/// parameter's element alone: one that compared the argument's bound with a
+/// bound the parameter does not have refuses one of the two.
 #[test]
-fn a_list_that_may_pass_the_parameters_bound_is_refused() {
-    let (code, why) = rust_refusal(
-        r#"    <sce:var name="kept" type="list&lt;uint16&gt;[4]"/>
-    <sce:var name="n" type="uint32" init="Pair(extra)"/>
+fn a_list_of_any_bound_is_lent_to_a_list_parameter() {
+    let body = r#"    <sce:var name="kept" type="list&lt;uint16&gt;[4]"/>
+    <sce:var name="two" type="list&lt;uint16&gt;[2]"/>
+    <sce:append target="two" expr="1"/>
+    <sce:var name="n" type="uint32" init="Sum(two) + Sum(order.lines)"/>
     <sce:if cond="n &gt; 1">
       <sce:append target="kept" expr="1"/>
     </sce:if>
-    <sce:return expr="kept"/>"#,
-        true,
-    );
-    assert!(
-        matches!(code, DiagnosticCode::ExpressionUnsupportedConstruct),
-        "{code:?}: {why}"
-    );
-    assert!(
-        why.contains("may hold more than") && why.contains("list<uint16>[2]"),
-        "{why}"
-    );
+    <sce:return expr="kept"/>"#;
+    let (_dir, path) = fixture(&caller(body, true));
+    let (_, text) = unit(&path, Language::Rust);
+    for expected in ["(two.as_slice())?", "(order.lines.as_slice())?"] {
+        assert!(
+            text.contains(expected),
+            "the Rust caller lends `{expected}`:\n{text}"
+        );
+    }
 }
 
 /// A list of another element is refused where it is lent, and so is anything

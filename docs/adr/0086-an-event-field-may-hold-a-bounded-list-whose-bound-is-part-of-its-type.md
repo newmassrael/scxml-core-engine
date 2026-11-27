@@ -600,8 +600,9 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    position of the table on Rust (`ALGORITHM_LISTED_RECORD_BACKENDS`, `sce-build/src/forge/codegen_matrix.rs`), the
    algorithm's parameter alone: lent by reference in the type the schema's unit declares (`&OrderPayload`, its list
    a `BoundedList<T, N>` whose bound is part of its type, as item 4 holds it), read by `len`, an index and a
-   `<sce:foreach>` as a list parameter is, lent whole to another algorithm's list parameter, and handed whole to
-   another algorithm's parameter of its schema. The parameter is read and never written, so a reference is all it
+   `<sce:foreach>` as a list parameter is, lent whole to another algorithm's list parameter (a view of its argument,
+   which states no bound and holds the field to its element alone), and handed whole to another algorithm's parameter of
+   its schema. The parameter is read and never written, so a reference is all it
    needs and no copy of the caller's list is made. A record that holds a list is no local, return, element, optional
    value or part of a map of an algorithm yet, and each is refused by name; every other lane refuses such a record by
    name, naming the backends that hold one (SCE_FORGE.md section 4.12, "A record that holds a list").
