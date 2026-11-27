@@ -102,12 +102,23 @@ fn valid_ms_of(
 /// deterministic CBOR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageEntry<'a> {
+    /// Its place in the order of the journal, above every position given before
+    /// it; never `0`.
     pub position: u64,
+    /// When the store recorded it, in milliseconds since the Unix epoch.
     pub recorded_ms: u64,
+    /// When its fact holds from in the world, in milliseconds since the Unix
+    /// epoch: its valid time, or its recorded moment where its schema marks none.
     pub holds_ms: i64,
+    /// The id another system gave an entry of an observed stream; empty for a
+    /// session's.
     pub origin: &'a str,
+    /// The id of the schema its fact is a record of: the event the schema
+    /// declares.
     pub schema: &'a str,
+    /// The schema's revision that wrote the fact.
     pub revision: u32,
+    /// The fact's deterministic CBOR.
     pub data: &'a [u8],
 }
 
