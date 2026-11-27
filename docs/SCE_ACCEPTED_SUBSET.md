@@ -1339,7 +1339,10 @@ that import's `src`, and each other import on the cycle is an
 `also-refused` site (SCE_ERROR_CONTRACT §2.4).
 
 The documents built together — every input of one `orchestrate` run, or
-of one `check` over a document set — share one namespace. Two of them
+of one `check` over a document set — share one namespace. With
+`--with-imports` the set is grown by every document its inputs reach (the
+walk `generate --with-imports` makes), each once, so a document named and
+reached, or named twice, is one input. Two of them
 declaring the same name are rejected as
 `manifest/duplicate-document-name`, whatever their kinds: a reference
 by name would have two answers, and each document's generated symbols
@@ -2628,7 +2631,8 @@ not say which file a node is in.
 holds each of these.
 
 With `--with-imports` the design is the documents named and every document
-they reach, found by the walk `generate --with-imports` makes: what an
+they reach, found by the walk `generate --with-imports` (and `orchestrate
+--with-imports`, over a document set) makes: what an
 `<sce:import>` names, transitively, the element a collection names, and a
 statechart a statechart starts. A standard-library document the walk reaches
 is not part of it: it has no file an acceptance could pin and is not where an
