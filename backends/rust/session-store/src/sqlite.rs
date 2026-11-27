@@ -25,7 +25,8 @@ use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
 use crate::membership::{
-    Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms,
+    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, Person,
+    PersonKey, Renewal, Revocation, Terms,
 };
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -38,7 +39,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 9;
+const LAYOUT_VERSION: i64 = 10;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -264,6 +265,28 @@ const LAYOUT_9: &str = "
     CREATE INDEX member_offers_by_expiry ON member_offers (expires_ms, member);
 ";
 
+/// What layout 10 adds to layout 9: the person a member's incarnation acts for (ADR 0116, D1 and
+/// D6), in the member's row, empty for one that acts for nobody: the person's issuer and subject,
+/// by which a revocation finds every incarnation that acts for them, the moment and method of the
+/// proof, the delegation's `until`, and the bytes a store that wraps this one seals the person in.
+/// A member ends at its lease or at its `until`, whichever comes first: that moment is kept as
+/// `ends_ms`, by which the members that stand are counted and those that ran out are swept, so
+/// the sweep stays one range of an index. A member of layout 9 acts for nobody and ends at its
+/// lease.
+const LAYOUT_10: &str = "
+    ALTER TABLE members ADD COLUMN person_issuer TEXT;
+    ALTER TABLE members ADD COLUMN person_subject TEXT;
+    ALTER TABLE members ADD COLUMN proved_ms INTEGER;
+    ALTER TABLE members ADD COLUMN method TEXT;
+    ALTER TABLE members ADD COLUMN until_ms INTEGER;
+    ALTER TABLE members ADD COLUMN person_sealed BLOB;
+    ALTER TABLE members ADD COLUMN ends_ms INTEGER NOT NULL DEFAULT 0;
+    UPDATE members SET ends_ms = expires_ms;
+    DROP INDEX members_by_expiry;
+    CREATE INDEX members_by_end ON members (ends_ms, member);
+    CREATE INDEX members_by_person ON members (person_issuer, person_subject);
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -347,8 +370,9 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 9] = [
+    const ADDITIONS: [&str; 10] = [
         LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8, LAYOUT_9,
+        LAYOUT_10,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -822,15 +846,33 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
 fn member_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<Member>> {
     connection
         .prepare_cached(
-            "SELECT incarnation, mark, expires_ms, kept, lease_ms FROM members WHERE member = ?1",
+            "SELECT incarnation, mark, expires_ms, kept, lease_ms, person_issuer, person_subject, \
+             proved_ms, method, until_ms, person_sealed FROM members WHERE member = ?1",
         )?
         .query_row((member,), |row| {
+            // A member that acts for nobody has no subject, and none of the person's columns.
+            let subject: Option<String> = row.get(6)?;
+            let delegation = subject
+                .map(|subject| {
+                    Ok::<_, rusqlite::Error>(Delegation {
+                        person: Person {
+                            issuer: row.get(5)?,
+                            subject,
+                            proved_ms: row.get(7)?,
+                            method: row.get(8)?,
+                        },
+                        until_ms: row.get(9)?,
+                        sealed: row.get(10)?,
+                    })
+                })
+                .transpose()?;
             Ok(Member {
                 incarnation: row.get(0)?,
                 mark: row.get(1)?,
                 expires_ms: row.get(2)?,
                 kept: row.get(3)?,
                 lease_ms: row.get(4)?,
+                delegation,
             })
         })
         .optional()
@@ -852,22 +894,32 @@ fn offer_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<Of
         .optional()
 }
 
-/// Keep `held` as the member `member` names, in place of the one before.
+/// Keep `held` as the member `member` names, in place of the one before, with the moment it ends
+/// ([`Member::ends_ms`]) beside it.
 fn put_member(connection: &Connection, member: &str, held: &Member) -> rusqlite::Result<()> {
+    let delegation = held.delegation.as_ref();
     connection
         .prepare_cached(
             "INSERT OR REPLACE INTO members \
-             (member, incarnation, mark, expires_ms, kept, lease_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             (member, incarnation, mark, expires_ms, kept, lease_ms, person_issuer, \
+              person_subject, proved_ms, method, until_ms, person_sealed, ends_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?
-        .execute((
+        .execute(rusqlite::params![
             member,
             held.incarnation,
             held.mark,
             held.expires_ms,
             held.kept,
             held.lease_ms,
-        ))?;
+            delegation.map(|delegation| delegation.person.issuer.as_str()),
+            delegation.map(|delegation| delegation.person.subject.as_str()),
+            delegation.map(|delegation| delegation.person.proved_ms),
+            delegation.map(|delegation| delegation.person.method.as_str()),
+            delegation.map(|delegation| delegation.until_ms),
+            delegation.map(|delegation| delegation.sealed.as_slice()),
+            held.ends_ms(),
+        ])?;
     Ok(())
 }
 
@@ -1464,11 +1516,12 @@ impl MembershipStore for SqliteStore {
         Ok(offered)
     }
 
-    fn admit(
+    fn admit_as(
         &self,
         member: &str,
         incarnation: u64,
         mark: u64,
+        delegation: Option<&Delegation>,
         terms: Terms,
         now_ms: u64,
     ) -> Result<Admission, Failure> {
@@ -1477,23 +1530,26 @@ impl MembershipStore for SqliteStore {
         let held = member_of(&transaction, member)?;
         let offered = offer_of(&transaction, member)?;
         let others: i64 = transaction
-            .prepare_cached("SELECT count(*) FROM members WHERE expires_ms > ?1 AND member <> ?2")?
+            .prepare_cached("SELECT count(*) FROM members WHERE ends_ms > ?1 AND member <> ?2")?
             .query_row((moment(now_ms), member), |row| row.get(0))?;
         let judged = judge::admit(
             held.as_ref(),
             offered.as_ref(),
             u64::try_from(others).unwrap_or(0),
-            incarnation,
-            mark,
+            judge::Exchange {
+                incarnation,
+                mark,
+                delegation,
+            },
             terms,
             now_ms,
         );
-        match judged {
-            Judged::Renew { member: renewed } => put_member(&transaction, member, &renewed)?,
+        match &judged {
+            Judged::Renew { member: renewed } => put_member(&transaction, member, renewed)?,
             Judged::Confirm {
                 member: confirmed, ..
             } => {
-                put_member(&transaction, member, &confirmed)?;
+                put_member(&transaction, member, confirmed)?;
                 transaction
                     .prepare_cached("DELETE FROM member_offers WHERE member = ?1")?
                     .execute((member,))?;
@@ -1518,8 +1574,8 @@ impl MembershipStore for SqliteStore {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let ended = {
             let mut statement = transaction.prepare_cached(
-                "SELECT member, incarnation FROM members WHERE expires_ms <= ?1 \
-                 ORDER BY expires_ms, member LIMIT ?2",
+                "SELECT member, incarnation FROM members WHERE ends_ms <= ?1 \
+                 ORDER BY ends_ms, member LIMIT ?2",
             )?;
             let rows = statement.query_map((moment(before_ms), limit), |row| {
                 Ok(Ended {
@@ -1542,6 +1598,112 @@ impl MembershipStore for SqliteStore {
             .execute((moment(before_ms), limit))?;
         transaction.commit()?;
         Ok(ended)
+    }
+
+    fn end_revoked(&self, revocation: Revocation<'_>) -> Result<Vec<Ended>, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        // The names a revocation may end: every member of the person, found by the index of
+        // persons, or the one member it names. Each is then judged by the rule every store reads.
+        let named: Vec<String> = match revocation {
+            Revocation::Person(person) => {
+                let mut statement = transaction.prepare_cached(
+                    "SELECT member FROM members WHERE person_issuer = ?1 AND person_subject = ?2 \
+                     ORDER BY member",
+                )?;
+                let rows =
+                    statement.query_map((person.issuer, person.subject), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+            Revocation::Instance(member) | Revocation::Incarnation { member, .. } => {
+                vec![member.to_string()]
+            }
+        };
+        let mut ended = Vec::new();
+        for name in named {
+            let Some(held) = member_of(&transaction, &name)? else {
+                continue;
+            };
+            if judge::revokes(&revocation, &name, &held) {
+                transaction
+                    .prepare_cached("DELETE FROM members WHERE member = ?1")?
+                    .execute((&name,))?;
+                ended.push(Ended {
+                    member: name,
+                    incarnation: held.incarnation,
+                });
+            }
+        }
+        transaction.commit()?;
+        Ok(ended)
+    }
+
+    fn renew_delegation(
+        &self,
+        member: &str,
+        incarnation: u64,
+        person: PersonKey<'_>,
+        until_ms: u64,
+        now_ms: u64,
+    ) -> Result<Renewal, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let (renewal, renewed) = judge::renew(
+            member_of(&transaction, member)?.as_ref(),
+            incarnation,
+            person,
+            until_ms,
+            now_ms,
+        );
+        if let Some(renewed) = renewed {
+            put_member(&transaction, member, &renewed)?;
+        }
+        transaction.commit()?;
+        Ok(renewal)
+    }
+
+    fn delegated_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // A name is TEXT compared by the BINARY collation, which is the order of its UTF-8 bytes.
+        let listed = match after {
+            Some(after) => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT member FROM members WHERE person_subject IS NOT NULL AND member > ?1 \
+                     ORDER BY member LIMIT ?2",
+                )?;
+                let rows = statement.query_map((after, limit), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+            None => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT member FROM members WHERE person_subject IS NOT NULL \
+                     ORDER BY member LIMIT ?1",
+                )?;
+                let rows = statement.query_map((limit,), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+        };
+        Ok(listed)
+    }
+
+    fn reseal_delegation(
+        &self,
+        member: &str,
+        incarnation: u64,
+        held: &[u8],
+        sealed: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let replaced = transaction
+            .prepare_cached(
+                "UPDATE members SET person_sealed = ?4 WHERE member = ?1 AND incarnation = ?2 \
+                 AND person_subject IS NOT NULL AND person_sealed = ?3",
+            )?
+            .execute((member, incarnation, held, sealed))?;
+        transaction.commit()?;
+        Ok(replaced == 1)
     }
 }
 

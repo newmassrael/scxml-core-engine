@@ -44,7 +44,7 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 9;
+const LAYOUT: i64 = 10;
 
 /// The tables layout 9 added (ADR 0113), dropped from a file this build made so that it is left as
 /// a build of layout 8 left it.
@@ -1432,8 +1432,8 @@ mod journal {
 mod members {
     use rusqlite::Connection;
     use sce_rust_session_store::{
-        Admission, Conflict, MembershipStore, SessionStore, SqliteStore, Terms, Under, Write,
-        WriteError,
+        Admission, Conflict, Delegation, MembershipStore, Person, SessionStore, SqliteStore, Terms,
+        Under, Write, WriteError,
     };
 
     use super::{LAYOUT, WITHOUT_LAYOUT_9};
@@ -1444,6 +1444,116 @@ mod members {
         provisional_ms: 1_000,
         max_members: 4,
     };
+
+    /// The members as a build of layout 9 kept them, its tables as it made them, with one member a
+    /// session kept, leased until 5000.
+    const LAYOUT_9_MEMBERS: &str = "
+        CREATE TABLE members (
+            member TEXT PRIMARY KEY NOT NULL,
+            incarnation INTEGER NOT NULL,
+            mark INTEGER NOT NULL,
+            expires_ms INTEGER NOT NULL,
+            kept INTEGER NOT NULL,
+            lease_ms INTEGER NOT NULL
+        );
+        CREATE UNIQUE INDEX members_by_incarnation ON members (incarnation);
+        CREATE INDEX members_by_expiry ON members (expires_ms, member);
+        CREATE TABLE member_offers (
+            member TEXT PRIMARY KEY NOT NULL,
+            incarnation INTEGER NOT NULL,
+            nonce TEXT NOT NULL,
+            expires_ms INTEGER NOT NULL
+        );
+        CREATE INDEX member_offers_by_expiry ON member_offers (expires_ms, member);
+        INSERT INTO members (member, incarnation, mark, expires_ms, kept, lease_ms)
+            VALUES ('phone/a1', 7, 3, 5000, 1, 10000);
+    ";
+
+    /// ADR 0116, D1: a file of layout 9 is brought to this build's layout when it is opened, in
+    /// place: a member it held acts for nobody and ends at its lease, which the upgrade keeps as
+    /// the moment it ends, and a member that acts for a person is then kept in it. Red if the
+    /// upgrade leaves a member of layout 9 no end, which a sweep takes for one that ran out.
+    #[test]
+    fn a_file_of_layout_9_is_brought_to_this_layout_and_its_members_act_for_nobody() {
+        let scratch = Scratch::new("layout-9");
+        drop(SqliteStore::open(scratch.database()).expect("making the store"));
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 9");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_9)
+                .expect("the file without the members of this layout");
+            connection
+                .execute_batch(LAYOUT_9_MEMBERS)
+                .expect("the members as layout 9 kept them");
+            connection
+                .pragma_update(None, "user_version", 9)
+                .expect("the file as layout 9 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 9");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        let member = store
+            .membership("phone/a1")
+            .expect("reading")
+            .member
+            .expect("the member of layout 9");
+        assert_eq!(
+            (member.incarnation, member.mark, member.expires_ms),
+            (7, 3, 5_000)
+        );
+        assert_eq!(member.delegation, None, "it acts for nobody");
+        assert_eq!(
+            store.end_expired(4_999, 10).expect("sweeping"),
+            Vec::new(),
+            "it ends at its lease and not before"
+        );
+        assert_eq!(
+            store
+                .admit("phone/a1", 7, 3, TERMS, 4_000)
+                .expect("an exchange"),
+            Admission::Current { mark: 3 }
+        );
+        let alice = Delegation {
+            person: Person {
+                issuer: "https://id.example".to_string(),
+                subject: "alice".to_string(),
+                proved_ms: 3_900,
+                method: "pwd".to_string(),
+            },
+            until_ms: 9_000,
+            sealed: Vec::new(),
+        };
+        let offered = store
+            .offer("phone/b2", "n1", 1_000, 4_000)
+            .expect("a join in the upgraded file");
+        assert!(matches!(
+            store.admit_as(
+                "phone/b2",
+                offered.incarnation,
+                1,
+                Some(&alice),
+                TERMS,
+                4_000
+            ),
+            Ok(Admission::Confirmed { .. })
+        ));
+        assert_eq!(
+            SqliteStore::open(scratch.database())
+                .expect("another connection")
+                .membership("phone/b2")
+                .expect("reading")
+                .member
+                .and_then(|member| member.delegation),
+            Some(alice)
+        );
+    }
 
     /// ADR 0113: a file of layout 8 is brought to this build's layout when it is opened, in place,
     /// its sessions kept, and members are then kept in it.

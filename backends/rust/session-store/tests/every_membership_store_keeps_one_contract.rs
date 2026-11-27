@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Both stores of the crate run the membership conformance kit (ADR 0113, D4 to D6), function by
+//! Both stores of the crate run the membership conformance kit (ADR 0113, D4 to D6; ADR 0116, D1,
+//! D6 and D7), function by
 //! function, each on a store that holds nothing when it starts: the store in memory, and the
 //! SQLite store's file, whose every handle is a connection of its own, as a second process's
 //! would be.
@@ -21,6 +22,11 @@ macro_rules! kit {
                 no_member_is_taken_past_the_bound,
                 what_ran_out_is_swept_and_told,
                 a_batch_judges_each_write_by_its_own_incarnations,
+                a_confirmation_binds_its_person_to_its_incarnation_alone,
+                a_delegation_ends_its_incarnation_at_until,
+                a_revocation_ends_what_it_names_in_one_write,
+                a_renewal_moves_until_alone_and_only_for_its_person,
+                a_delegations_bytes_are_replaced_only_from_what_they_hold,
             ]
         );
     };

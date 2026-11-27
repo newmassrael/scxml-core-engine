@@ -32,6 +32,25 @@
 //! * [`a_batch_judges_each_write_by_its_own_incarnations`]: a batch keeps each write whose
 //!   incarnations stand and refuses each other alone.
 //!
+//! The person an incarnation acts for (ADR 0116, D1 and D6), held to docs/formal/Principals.tla,
+//! each function named by the configuration of that model that takes its part out:
+//!
+//! * [`a_confirmation_binds_its_person_to_its_incarnation_alone`] (`without_one_person`,
+//!   `without_one_person_kept`): the exchange that confirms binds the person; no later exchange
+//!   under the incarnation changes it, and the next incarnation acts for nobody unless its own
+//!   confirmation binds someone.
+//! * [`a_delegation_ends_its_incarnation_at_until`] (`without_condition`): from its `until`, read
+//!   against the write's own moment, a write made under the incarnation keeps nothing, an exchange
+//!   is fenced, and a sweep ends it.
+//! * [`a_revocation_ends_what_it_names_in_one_write`] (`without_durable_end`): a person's, an
+//!   instance's or an incarnation's revocation ends what it names and nothing else, for every
+//!   handle, and a write made under what it ended keeps nothing.
+//! * [`a_renewal_moves_until_alone_and_only_for_its_person`]: a renewal moves `until`, never
+//!   back, and never the moment or method of the proof; one of another person is refused.
+//! * [`a_delegations_bytes_are_replaced_only_from_what_they_hold`]: the members that act for a
+//!   person are listed a page at a time, and the bytes a sealing store keeps are replaced only
+//!   from the ones read.
+//!
 //! Each function needs a harness whose store holds nothing when it starts. The clock is the one
 //! the functions give; nothing here waits on time. A failed expectation panics, as a test's does.
 //!
@@ -39,7 +58,8 @@
 
 use crate::batch::{Batched, Decided};
 use crate::membership::{
-    Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms, Under,
+    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, Person,
+    PersonKey, Renewal, Revocation, Terms, Under,
 };
 use crate::outbox::{Append, Write, Written};
 use crate::{AcquireError, Conflict, Lease, SessionStore, WriteError};
@@ -102,6 +122,51 @@ fn held(store: &impl MembershipStore, member: &str) -> Membership {
     store.membership(member).expect("reading a membership")
 }
 
+/// The issuer of the people of the functions.
+const ISSUER: &str = "https://id.example";
+
+/// The delegation to the person `subject` of [`ISSUER`], proved at 50 by a password, until
+/// `until_ms`.
+fn delegation(subject: &str, until_ms: u64) -> Delegation {
+    Delegation {
+        person: Person {
+            issuer: ISSUER.to_string(),
+            subject: subject.to_string(),
+            proved_ms: 50,
+            method: "pwd".to_string(),
+        },
+        until_ms,
+        sealed: Vec::new(),
+    }
+}
+
+/// The key of the person `subject` of [`ISSUER`].
+fn person(subject: &str) -> PersonKey<'_> {
+    PersonKey {
+        issuer: ISSUER,
+        subject,
+    }
+}
+
+/// The incarnation `member` is a member under once a join with `nonce` at `now_ms` and the
+/// exchange that names its offer at the same moment, carrying `bound`, confirmed it.
+fn joined_as(
+    store: &impl MembershipStore,
+    member: &str,
+    nonce: &str,
+    bound: &Delegation,
+    now_ms: u64,
+) -> u64 {
+    let offered = offer(store, member, nonce, now_ms);
+    match store
+        .admit_as(member, offered.incarnation, 1, Some(bound), TERMS, now_ms)
+        .expect("confirming an offer")
+    {
+        Admission::Confirmed { .. } => offered.incarnation,
+        other => panic!("the offer of {member} at {now_ms} was not confirmed: {other:?}"),
+    }
+}
+
 fn granted(acquired: Result<Lease, AcquireError>) -> Lease {
     acquired.unwrap_or_else(|error| panic!("a lease on a free key: {error}"))
 }
@@ -151,6 +216,7 @@ pub fn a_join_offers_and_the_exchange_that_names_it_confirms(harness: &impl Memb
                 expires_ms: 1_200,
                 kept: false,
                 lease_ms: TERMS.lease_ms,
+                delegation: None,
             }),
             offer: None,
         },
@@ -555,4 +621,353 @@ pub fn a_batch_judges_each_write_by_its_own_incarnations(harness: &impl Membersh
     );
     assert!(store.get("a").expect("reading").is_some());
     assert_eq!(store.get("b").expect("reading"), None);
+}
+
+/// ADR 0116, D1 and D2: the exchange that confirms an offer binds the person its proof names to
+/// the incarnation it confirms, for every handle; no later exchange under that incarnation changes
+/// whom it acts for, whatever it carries; and the next incarnation of the instance acts for nobody
+/// unless its own confirmation binds someone, so nothing of the person before passes to it. Red
+/// without one person per incarnation: one person reading what was made for another.
+pub fn a_confirmation_binds_its_person_to_its_incarnation_alone(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let alice = delegation("alice", 50_000);
+    let first = joined_as(&store, PHONE, "n1", &alice, 100);
+    assert_eq!(
+        held(&harness.handle(), PHONE)
+            .member
+            .and_then(|member| member.delegation),
+        Some(alice.clone()),
+        "the confirmation binds the person its proof names, for every handle"
+    );
+    let bob = delegation("bob", 90_000);
+    assert_eq!(
+        store
+            .admit_as(PHONE, first, 2, Some(&bob), TERMS, 200)
+            .expect("an exchange is judged"),
+        Admission::Current { mark: 2 }
+    );
+    assert_eq!(
+        held(&store, PHONE)
+            .member
+            .and_then(|member| member.delegation),
+        Some(alice),
+        "no later exchange changes whom an incarnation acts for"
+    );
+    let next = offer(&store, PHONE, "n2", 300);
+    assert_eq!(
+        admit(&store, PHONE, next.incarnation, 1, 300),
+        Admission::Confirmed {
+            mark: 1,
+            ended: Some(first)
+        }
+    );
+    assert_eq!(
+        held(&store, PHONE)
+            .member
+            .and_then(|member| member.delegation),
+        None,
+        "the next incarnation acts for nobody: nothing of the one before passes to it"
+    );
+}
+
+/// ADR 0116, D6: an incarnation that acts for a person ends at its delegation's `until`, however
+/// long its lease: a write made under it keeps nothing from that moment, read against the write's
+/// own moment, an exchange under it is fenced, and a sweep ends it. A run kept extends the lease
+/// and not the delegation. Red without the condition of the write: a run kept after its
+/// incarnation ended.
+pub fn a_delegation_ends_its_incarnation_at_until(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let lease = granted(store.acquire("room", "a", 60_000, 0));
+    let first = joined_as(&store, PHONE, "n1", &delegation("alice", 2_000), 100);
+    let under = [Under {
+        member: PHONE,
+        incarnation: first,
+    }];
+    let written = store
+        .write(
+            "room",
+            &Write {
+                now_ms: 300,
+                under: &under,
+                ..Write::put(b"one", None, 0, lease.fence)
+            },
+        )
+        .expect("a write before the delegation's until");
+    let member = held(&store, PHONE).member.expect("a member");
+    assert_eq!(member.expires_ms, 10_300, "a kept run extends the lease");
+    assert_eq!(member.ends_ms(), 2_000, "and not the delegation");
+    assert_eq!(
+        conflict(store.write(
+            "room",
+            &Write {
+                now_ms: 2_000,
+                under: &under,
+                ..Write::put(b"two", None, written.version, lease.fence)
+            },
+        )),
+        Conflict::Incarnation {
+            presented: first,
+            current: None
+        },
+        "until is read against the write's own moment"
+    );
+    assert_eq!(
+        store
+            .get("room")
+            .expect("reading")
+            .map(|stored| stored.state),
+        Some(b"one".to_vec()),
+        "a refused write keeps no state"
+    );
+    assert_eq!(
+        admit(&store, PHONE, first, 2, 2_000),
+        Admission::Fenced { current: None }
+    );
+    assert_eq!(
+        store.end_expired(2_000, 10).expect("sweeping"),
+        vec![Ended {
+            member: PHONE.to_string(),
+            incarnation: first
+        }],
+        "a delegation that ran out is swept as a lease that ran out is"
+    );
+}
+
+/// ADR 0116, D6: a revocation of a person ends every incarnation that acts for them, one of an
+/// instance ends its incarnation whoever it acts for, and one of an incarnation ends it when it is
+/// the member's; each in one write that every handle reads, after which a write made under what it
+/// ended keeps nothing. An offer is no incarnation yet, and stays. Red without a durable end: a
+/// run kept after its incarnation ended, which a crash took back.
+pub fn a_revocation_ends_what_it_names_in_one_write(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let lease = granted(store.acquire("room", "a", 60_000, 0));
+    let phone = joined_as(&store, PHONE, "n1", &delegation("alice", 50_000), 100);
+    let other = joined_as(&store, OTHER, "n1", &delegation("alice", 50_000), 100);
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Person(person("bob")))
+            .expect("revoking"),
+        Vec::new(),
+        "a person no incarnation acts for ends nothing"
+    );
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Person(person("alice")))
+            .expect("revoking"),
+        vec![
+            Ended {
+                member: PHONE.to_string(),
+                incarnation: phone
+            },
+            Ended {
+                member: OTHER.to_string(),
+                incarnation: other
+            },
+        ],
+        "every incarnation of the person ends, in the order of the members' names"
+    );
+    let another = harness.handle();
+    assert_eq!(
+        held(&another, PHONE).member,
+        None,
+        "the end is the store's, and every handle reads it"
+    );
+    assert_eq!(held(&another, OTHER).member, None);
+    let under = [Under {
+        member: PHONE,
+        incarnation: phone,
+    }];
+    assert_eq!(
+        conflict(store.write(
+            "room",
+            &Write {
+                now_ms: 200,
+                under: &under,
+                ..Write::put(b"late", None, 0, lease.fence)
+            },
+        )),
+        Conflict::Incarnation {
+            presented: phone,
+            current: None
+        },
+        "a run made under an ended incarnation keeps nothing"
+    );
+    let third = joined_as(&store, THIRD, "n1", &delegation("bob", 50_000), 300);
+    let nobodys = joined(&store, PHONE, "n2", 300);
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Incarnation {
+                member: THIRD,
+                incarnation: nobodys
+            })
+            .expect("revoking"),
+        Vec::new(),
+        "an incarnation of another member ends nothing"
+    );
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Instance(PHONE))
+            .expect("revoking"),
+        vec![Ended {
+            member: PHONE.to_string(),
+            incarnation: nobodys
+        }],
+        "an instance's revocation ends its incarnation, whoever it acts for"
+    );
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Incarnation {
+                member: THIRD,
+                incarnation: third
+            })
+            .expect("revoking"),
+        vec![Ended {
+            member: THIRD.to_string(),
+            incarnation: third
+        }]
+    );
+    let waiting = offer(&store, OTHER, "n2", 400);
+    assert_eq!(
+        store
+            .end_revoked(Revocation::Instance(OTHER))
+            .expect("revoking"),
+        Vec::new()
+    );
+    assert_eq!(
+        held(&store, OTHER).offer.map(|offer| offer.incarnation),
+        Some(waiting.incarnation),
+        "an offer is no incarnation yet, and stays"
+    );
+}
+
+/// ADR 0116, D6: a renewal for the person an incarnation acts for moves its `until`, never back,
+/// and moves nothing else: not the moment or method of the proof, which a document that asks for
+/// a person proved lately reads, and not the lease. A renewal for another person, for an
+/// incarnation that acts for nobody, or for an incarnation the store does not hold renews nothing.
+pub fn a_renewal_moves_until_alone_and_only_for_its_person(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let first = joined_as(&store, PHONE, "n1", &delegation("alice", 2_000), 100);
+    assert_eq!(
+        store
+            .renew_delegation(PHONE, first, person("alice"), 5_000, 1_000)
+            .expect("renewing"),
+        Renewal::Renewed { until_ms: 5_000 }
+    );
+    let member = held(&store, PHONE).member.expect("a member");
+    assert_eq!(
+        member.expires_ms, 1_100,
+        "a renewal does not touch the lease"
+    );
+    let renewed = member.delegation.expect("still alice's");
+    assert_eq!(renewed.until_ms, 5_000);
+    assert_eq!(
+        (renewed.person.proved_ms, renewed.person.method.as_str()),
+        (50, "pwd"),
+        "a renewal is not a proof: the moment and method stay the proof's"
+    );
+    assert_eq!(
+        store
+            .renew_delegation(PHONE, first, person("alice"), 3_000, 1_050)
+            .expect("renewing"),
+        Renewal::Renewed { until_ms: 5_000 },
+        "a renewal never brings until back"
+    );
+    assert_eq!(
+        store
+            .renew_delegation(PHONE, first, person("bob"), 9_000, 1_050)
+            .expect("renewing"),
+        Renewal::Refused,
+        "a proof of another person renews nothing"
+    );
+    assert_eq!(
+        store
+            .renew_delegation(PHONE, first + 1, person("alice"), 9_000, 1_050)
+            .expect("renewing"),
+        Renewal::Fenced {
+            current: Some(first)
+        }
+    );
+    assert_eq!(
+        admit(&store, PHONE, first, 1, 1_090),
+        Admission::Current { mark: 1 }
+    );
+    assert_eq!(
+        admit(&store, PHONE, first, 1, 2_050),
+        Admission::Current { mark: 1 },
+        "the incarnation stands past the until it was bound with"
+    );
+    let nobodys = joined(&store, OTHER, "n1", 2_100);
+    assert_eq!(
+        store
+            .renew_delegation(OTHER, nobodys, person("alice"), 9_000, 2_100)
+            .expect("renewing"),
+        Renewal::Refused,
+        "an incarnation that acts for nobody has no delegation to renew"
+    );
+}
+
+/// ADR 0109, D8 over ADR 0116, D7: the members that act for a person are listed by name a page at
+/// a time, and the bytes kept with a delegation are replaced only from the ones read, for the
+/// incarnation named, every other field kept: how a sealing store seals a person again under its
+/// active key without writing over a member that changed in between.
+pub fn a_delegations_bytes_are_replaced_only_from_what_they_hold(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let bound = Delegation {
+        sealed: b"first".to_vec(),
+        ..delegation("alice", 50_000)
+    };
+    let phone = joined_as(&store, PHONE, "n1", &bound, 100);
+    let other = joined(&store, OTHER, "n1", 100);
+    assert_eq!(
+        store.delegated_after(None, 10).expect("listing"),
+        vec![PHONE.to_string()],
+        "a member that acts for nobody is not listed"
+    );
+    assert!(
+        !store
+            .reseal_delegation(OTHER, other, b"", b"x")
+            .expect("replacing"),
+        "a member that acts for nobody has no bytes to replace"
+    );
+    store
+        .end_revoked(Revocation::Instance(OTHER))
+        .expect("revoking");
+    joined_as(&store, THIRD, "n1", &delegation("bob", 50_000), 200);
+    assert_eq!(
+        store.delegated_after(None, 1).expect("listing"),
+        vec![PHONE.to_string()]
+    );
+    assert_eq!(
+        store.delegated_after(Some(PHONE), 1).expect("listing"),
+        vec![THIRD.to_string()]
+    );
+    assert_eq!(
+        store.delegated_after(Some(THIRD), 1).expect("listing"),
+        Vec::<String>::new()
+    );
+    assert!(
+        !store
+            .reseal_delegation(PHONE, phone, b"other", b"second")
+            .expect("replacing"),
+        "bytes that changed since they were read are not written over"
+    );
+    assert!(
+        !store
+            .reseal_delegation(PHONE, phone + 1, b"first", b"second")
+            .expect("replacing"),
+        "another incarnation's bytes are not these"
+    );
+    assert!(store
+        .reseal_delegation(PHONE, phone, b"first", b"second")
+        .expect("replacing"));
+    assert_eq!(
+        held(&harness.handle(), PHONE)
+            .member
+            .and_then(|member| member.delegation),
+        Some(Delegation {
+            sealed: b"second".to_vec(),
+            ..bound
+        }),
+        "every other field is kept"
+    );
 }

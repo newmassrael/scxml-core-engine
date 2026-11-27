@@ -11,8 +11,10 @@
 //! (`PinStore`, `TokenStore`, `CredentialStore`), the keys of D7 (`KeyStore`), the values of the
 //! key-value feature of D13 (`KvStore`), with the first results of its put-ifs, and the audit log
 //! of D14 (`AuditStore`), whose entries and checkpoint signatures are sealed and whose chain a
-//! reader verifies without the sealing keys, and the event journal of ADR 0114 (`JournalStore`),
-//! whose entries are sealed for their stream and their position.
+//! reader verifies without the sealing keys, the event journal of ADR 0114 (`JournalStore`),
+//! whose entries are sealed for their stream and their position, and the members of open
+//! machines of ADR 0113 (`MembershipStore`), the person each incarnation acts for (ADR 0116, D7)
+//! sealed for that incarnation and found by the entry of their key.
 //!
 //! - **Every value is a sealed record** ([`seal_record`]): `SCE-SEALED-1`, the id of the key that
 //!   sealed it, a 192-bit random nonce and the XChaCha20-Poly1305 ciphertext with its tag. The
@@ -29,11 +31,12 @@
 //! - **Rotation.** Each record names its sealing key, and a write seals under the active one. A
 //!   re-seal pass ([`Sealed::reseal_sessions`], [`Sealed::reseal_credentials`],
 //!   [`Sealed::reseal_keys`], [`Sealed::reseal_values`], [`Sealed::reseal_outboxes`],
-//!   [`Sealed::reseal_audit`], [`Sealed::reseal_journal`]) writes the rows sealed under any other
-//!   key again through the store's ordinary write: a session's versioned and fenced put, under a
-//!   lease the pass takes; a pin's, a token's, a value's, an outbox envelope's, a note's, an audit
-//!   entry's, a checkpoint signature's or a journal entry's replacement from the bytes it read,
-//!   every other column kept, an audit row's chain included. Once every pass leaves nothing, a
+//!   [`Sealed::reseal_audit`], [`Sealed::reseal_journal`], [`Sealed::reseal_members`]) writes the
+//!   rows sealed under any other key again through the store's ordinary write: a session's
+//!   versioned and fenced put, under a lease the pass takes; a pin's, a token's, a value's, an
+//!   outbox envelope's, a note's, an audit entry's, a checkpoint signature's, a journal entry's or
+//!   a person's replacement from the bytes it read, every other column kept, an audit row's chain
+//!   included. Once every pass leaves nothing, a
 //!   retired key opens nothing and may be destroyed.
 //! - **The keys** ([`SealingKeys`]) are keys of a key ring ([`Keyring`]) kept in the store's own key
 //!   store, wrapped under the key-encryption key the program holds apart from the store: the index
@@ -69,12 +72,14 @@ mod credentials;
 mod journal;
 mod keys;
 mod kv;
+mod membership;
 mod outbox;
 mod sessions;
 
 pub use audit::{STORE_AUDIT_CHECKPOINTS, STORE_AUDIT_ROWS};
 pub use journal::STORE_JOURNAL;
 pub use kv::STORE_KV_VALUES;
+pub use membership::STORE_MEMBERS;
 pub use outbox::STORE_OUTBOX;
 
 /// What every sealed record begins with: the version of its form.

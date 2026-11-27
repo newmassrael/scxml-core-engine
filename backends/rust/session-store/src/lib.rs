@@ -78,7 +78,9 @@
 //! [`MembershipStore`]: an offer per joining instance, a member per confirmed one with its lease
 //! and its low-water mark, and the condition every write made under an incarnation is kept on
 //! ([`Write::under`]): [`MemoryStore`] in memory, and `SqliteStore` in the same file (layout 9),
-//! held to [`membership_conformance`].
+//! held to [`membership_conformance`]. Beside a member, the person its incarnation acts for (ADR
+//! 0116, D1 and D6; [`Delegation`]) until a moment no exchange moves, which a renewal moves and a
+//! revocation ends with the incarnation (layout 10).
 //!
 //! # Building the SQLite store
 //!
@@ -140,8 +142,8 @@ pub use journal::{
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};
 pub use membership::{
-    Admission, Ended, Member, Membership, MembershipStore, NoMembership, Offer, Offered, Terms,
-    Under,
+    Admission, Delegation, Ended, Member, Membership, MembershipStore, NoMembership, Offer,
+    Offered, Person, PersonKey, Renewal, Revocation, Terms, Under,
 };
 pub use memory::MemoryStore;
 pub use outbox::{

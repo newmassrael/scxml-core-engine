@@ -6,7 +6,8 @@
 //! this crate and which the C++ host is held to as well; every store contract it wraps keeps its
 //! conformance kit under it, in memory and in the SQLite file; a row moved to another key, changed
 //! by a byte or opened under another key is refused; the file holds none of what was saved; and a
-//! re-seal pass moves every row to the active key, so a retired one may go.
+//! re-seal pass moves every row to the active key, so a retired one may go. The person a member's
+//! incarnation acts for (ADR 0116, D7) is held to the same.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,6 +26,7 @@ use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
 use sce_rust_session_store::journal_conformance::{self, JournalHarness};
 use sce_rust_session_store::key_conformance::{self, KeyHarness};
 use sce_rust_session_store::kv_conformance::{self, KvHarness};
+use sce_rust_session_store::membership_conformance::{self, MembershipHarness};
 use sce_rust_session_store::outbox_conformance;
 use sce_rust_session_store::{
     Append, CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
@@ -372,6 +374,24 @@ impl JournalHarness for SealedOnSqlite {
     }
 }
 
+/// The members are kept beside the sessions whose writes are made under them: one store serves
+/// both kits.
+impl MembershipHarness for SealedInMemory {
+    type Store = Sealed<MemoryStore>;
+
+    fn handle(&self) -> Sealed<MemoryStore> {
+        Sealed::new(self.sessions.clone(), first_keys())
+    }
+}
+
+impl MembershipHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
 /// A test per function of a kit, each on a store of its own the harness `$made` makes.
 macro_rules! kit {
     ($kit:ident, $made:ident, [$($case:ident),* $(,)?]) => {
@@ -646,6 +666,211 @@ mod journal_on_sqlite {
             handles_share_the_journal,
         ]
     );
+}
+
+mod members_in_memory {
+    use super::membership_conformance;
+    kit!(
+        membership_conformance,
+        in_memory,
+        [
+            a_join_offers_and_the_exchange_that_names_it_confirms,
+            a_repeated_join_is_offered_the_same_incarnation,
+            a_late_join_puts_no_live_member_out,
+            what_the_store_does_not_hold_is_fenced,
+            a_mark_only_rises_and_every_handle_reads_it,
+            a_write_keeps_a_run_only_under_an_incarnation_the_store_holds,
+            no_member_is_taken_past_the_bound,
+            what_ran_out_is_swept_and_told,
+            a_batch_judges_each_write_by_its_own_incarnations,
+            a_confirmation_binds_its_person_to_its_incarnation_alone,
+            a_delegation_ends_its_incarnation_at_until,
+            a_revocation_ends_what_it_names_in_one_write,
+            a_renewal_moves_until_alone_and_only_for_its_person,
+            a_delegations_bytes_are_replaced_only_from_what_they_hold,
+        ]
+    );
+}
+
+mod members_on_sqlite {
+    use super::membership_conformance;
+    kit!(
+        membership_conformance,
+        on_sqlite,
+        [
+            a_join_offers_and_the_exchange_that_names_it_confirms,
+            a_repeated_join_is_offered_the_same_incarnation,
+            a_late_join_puts_no_live_member_out,
+            what_the_store_does_not_hold_is_fenced,
+            a_mark_only_rises_and_every_handle_reads_it,
+            a_write_keeps_a_run_only_under_an_incarnation_the_store_holds,
+            no_member_is_taken_past_the_bound,
+            what_ran_out_is_swept_and_told,
+            a_batch_judges_each_write_by_its_own_incarnations,
+            a_confirmation_binds_its_person_to_its_incarnation_alone,
+            a_delegation_ends_its_incarnation_at_until,
+            a_revocation_ends_what_it_names_in_one_write,
+            a_renewal_moves_until_alone_and_only_for_its_person,
+            a_delegations_bytes_are_replaced_only_from_what_they_hold,
+        ]
+    );
+}
+
+/// ADR 0116, D7 under ADR 0109, D8: the file of a sealed store holds nothing of the person a
+/// member's incarnation acts for in the clear, and a renewal and a revocation find the person by
+/// their entry; a person moved to another member's row does not open; and a re-seal pass moves
+/// every person to the active key and changes no answer.
+mod members_sealed {
+    use sce_rust_crypto::sealed::{record_key_id, Sealed};
+    use sce_rust_session_store::{
+        Admission, Delegation, Ended, MembershipStore, Person, PersonKey, Renewal, Revocation,
+        SqliteStore, Terms,
+    };
+
+    use super::{keys_of, on_sqlite, ID_1, ID_2, KEY_1, KEY_2};
+
+    const TERMS: Terms = Terms {
+        lease_ms: 10_000,
+        provisional_ms: 1_000,
+        max_members: 8,
+    };
+
+    /// The delegation to the person `subject`, proved at 50 with a passkey, until 60000.
+    fn delegation(subject: &str) -> Delegation {
+        Delegation {
+            person: Person {
+                issuer: "https://id.example".to_string(),
+                subject: subject.to_string(),
+                proved_ms: 50,
+                method: "webauthn".to_string(),
+            },
+            until_ms: 60_000,
+            sealed: Vec::new(),
+        }
+    }
+
+    /// The incarnation `member` is a member under once its join and the exchange that carried a
+    /// proof of `subject`, both at 100, confirmed it.
+    fn joined(store: &impl MembershipStore, member: &str, subject: &str) -> u64 {
+        let offered = store.offer(member, "n1", 1_000, 100).expect("a join");
+        assert!(matches!(
+            store.admit_as(
+                member,
+                offered.incarnation,
+                1,
+                Some(&delegation(subject)),
+                TERMS,
+                100
+            ),
+            Ok(Admission::Confirmed { .. })
+        ));
+        offered.incarnation
+    }
+
+    /// The person `member` acts for, as `store` holds it.
+    fn person_of(store: &impl MembershipStore, member: &str) -> Option<Delegation> {
+        store
+            .membership(member)
+            .expect("reading a membership")
+            .member
+            .and_then(|held| held.delegation)
+    }
+
+    #[test]
+    fn a_file_read_without_the_key_holds_none_of_the_person() {
+        let harness = on_sqlite("members-medium");
+        let store = harness.sealed();
+        let phone = joined(&store, "phone/a1", "alice-subject-0001");
+        drop(store);
+        let medium = harness.0.every_byte();
+        for clear in [
+            &b"https://id.example"[..],
+            b"alice-subject-0001",
+            b"webauthn",
+        ] {
+            assert!(
+                !medium.windows(clear.len()).any(|window| window == clear),
+                "{} is in the clear on the medium",
+                String::from_utf8_lossy(clear)
+            );
+        }
+        let store = harness.sealed();
+        assert_eq!(
+            person_of(&store, "phone/a1"),
+            Some(delegation("alice-subject-0001"))
+        );
+        let alice = PersonKey {
+            issuer: "https://id.example",
+            subject: "alice-subject-0001",
+        };
+        assert_eq!(
+            store
+                .renew_delegation("phone/a1", phone, alice, 90_000, 200)
+                .expect("renewing"),
+            Renewal::Renewed { until_ms: 90_000 },
+            "a renewal finds the person by their entry"
+        );
+        assert_eq!(
+            store
+                .end_revoked(Revocation::Person(alice))
+                .expect("revoking"),
+            vec![Ended {
+                member: "phone/a1".to_string(),
+                incarnation: phone
+            }],
+            "and so does a revocation"
+        );
+    }
+
+    #[test]
+    fn a_person_moved_to_another_member_does_not_open() {
+        let harness = on_sqlite("members-moved");
+        let store = harness.sealed();
+        joined(&store, "phone/a1", "alice");
+        let other = joined(&store, "phone/b2", "bob");
+        let inner: &SqliteStore = store.inner();
+        let of_phone = person_of(inner, "phone/a1").expect("a person in the wrapped row");
+        let of_other = person_of(inner, "phone/b2").expect("a person in the wrapped row");
+        assert!(inner
+            .reseal_delegation("phone/b2", other, &of_other.sealed, &of_phone.sealed)
+            .expect("the record copied over another member's"));
+        assert!(
+            store.membership("phone/b2").is_err(),
+            "a person moved to another member is refused"
+        );
+        assert!(
+            store.membership("phone/a1").is_ok(),
+            "the member it came from still opens"
+        );
+    }
+
+    #[test]
+    fn a_reseal_pass_moves_every_person_to_the_active_key() {
+        let harness = on_sqlite("members-reseal");
+        let first = harness.sealed();
+        joined(&first, "phone/a1", "alice");
+        joined(&first, "phone/b2", "bob");
+        drop(first);
+        let rotated = Sealed::new(
+            SqliteStore::open(harness.0.database()).expect("the store"),
+            keys_of(ID_2, &[(ID_1, KEY_1), (ID_2, KEY_2)]),
+        );
+        let resealed = rotated.reseal_members().expect("a pass");
+        assert_eq!(
+            (resealed.resealed, resealed.left, resealed.refused),
+            (2, 0, 0)
+        );
+        for (member, subject) in [("phone/a1", "alice"), ("phone/b2", "bob")] {
+            let held = person_of(rotated.inner(), member).expect("a person in the wrapped row");
+            assert_eq!(record_key_id(&held.sealed).expect("a record"), ID_2);
+            assert_eq!(person_of(&rotated, member), Some(delegation(subject)));
+        }
+        assert_eq!(
+            rotated.reseal_members().expect("a second pass").resealed,
+            0,
+            "nothing is left under the retired key"
+        );
+    }
 }
 
 /// ADR 0114, D8: an entry is sealed for its stream and its position, its valid time inside; the

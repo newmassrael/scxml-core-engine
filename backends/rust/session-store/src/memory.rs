@@ -19,7 +19,8 @@ use crate::journal::{
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
 use crate::membership::{
-    Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms,
+    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, PersonKey,
+    Renewal, Revocation, Terms,
 };
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -689,11 +690,12 @@ impl MembershipStore for MemoryStore {
         Ok(offered)
     }
 
-    fn admit(
+    fn admit_as(
         &self,
         member: &str,
         incarnation: u64,
         mark: u64,
+        delegation: Option<&Delegation>,
         terms: Terms,
         now_ms: u64,
     ) -> Result<Admission, Failure> {
@@ -701,19 +703,21 @@ impl MembershipStore for MemoryStore {
         let others = records
             .members
             .iter()
-            .filter(|(name, held)| {
-                name.as_str() != member && judge::stands(held.expires_ms, now_ms)
-            })
+            .filter(|(name, held)| name.as_str() != member && judge::member_stands(held, now_ms))
             .count() as u64;
         let judged = judge::admit(
             records.members.get(member),
             records.offers.get(member),
             others,
-            incarnation,
-            mark,
+            judge::Exchange {
+                incarnation,
+                mark,
+                delegation,
+            },
             terms,
             now_ms,
         );
+        let admission = judged.admission();
         match judged {
             Judged::Renew { member: renewed } => {
                 records.members.insert(member.to_string(), renewed);
@@ -726,13 +730,13 @@ impl MembershipStore for MemoryStore {
             }
             Judged::Refuse(_) => {}
         }
-        Ok(judged.admission())
+        Ok(admission)
     }
 
     fn membership(&self, member: &str) -> Result<Membership, Failure> {
         let records = self.records();
         Ok(Membership {
-            member: records.members.get(member).copied(),
+            member: records.members.get(member).cloned(),
             offer: records.offers.get(member).cloned(),
         })
     }
@@ -742,8 +746,8 @@ impl MembershipStore for MemoryStore {
         let mut members: Vec<(u64, String, u64)> = records
             .members
             .iter()
-            .filter(|(_, held)| held.expires_ms <= before_ms)
-            .map(|(name, held)| (held.expires_ms, name.clone(), held.incarnation))
+            .filter(|(_, held)| held.ends_ms() <= before_ms)
+            .map(|(name, held)| (held.ends_ms(), name.clone(), held.incarnation))
             .collect();
         members.sort();
         members.truncate(limit);
@@ -768,6 +772,79 @@ impl MembershipStore for MemoryStore {
                 incarnation,
             })
             .collect())
+    }
+
+    fn end_revoked(&self, revocation: Revocation<'_>) -> Result<Vec<Ended>, Failure> {
+        let mut records = self.records();
+        let ended: Vec<Ended> = records
+            .members
+            .iter()
+            .filter(|(name, held)| judge::revokes(&revocation, name, held))
+            .map(|(name, held)| Ended {
+                member: name.clone(),
+                incarnation: held.incarnation,
+            })
+            .collect();
+        for gone in &ended {
+            records.members.remove(&gone.member);
+        }
+        Ok(ended)
+    }
+
+    fn renew_delegation(
+        &self,
+        member: &str,
+        incarnation: u64,
+        person: PersonKey<'_>,
+        until_ms: u64,
+        now_ms: u64,
+    ) -> Result<Renewal, Failure> {
+        let mut records = self.records();
+        let (renewal, renewed) = judge::renew(
+            records.members.get(member),
+            incarnation,
+            person,
+            until_ms,
+            now_ms,
+        );
+        if let Some(renewed) = renewed {
+            records.members.insert(member.to_string(), renewed);
+        }
+        Ok(renewal)
+    }
+
+    fn delegated_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+        let records = self.records();
+        Ok(records
+            .members
+            .iter()
+            .filter(|(name, held)| {
+                held.delegation.is_some() && after.is_none_or(|after| name.as_str() > after)
+            })
+            .map(|(name, _)| name.clone())
+            .take(limit)
+            .collect())
+    }
+
+    fn reseal_delegation(
+        &self,
+        member: &str,
+        incarnation: u64,
+        held: &[u8],
+        sealed: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut records = self.records();
+        let Some(delegation) = records
+            .members
+            .get_mut(member)
+            .filter(|kept| kept.incarnation == incarnation)
+            .and_then(|kept| kept.delegation.as_mut())
+            .filter(|delegation| delegation.sealed == held)
+        else {
+            return Ok(false);
+        };
+        delegation.sealed = sealed.to_vec();
+        Ok(true)
     }
 }
 
