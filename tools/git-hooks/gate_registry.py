@@ -2385,6 +2385,10 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     A UNIT THAT READS HEAD CARRIES ITS ID. When a gate the unit runs
     declares `commits: ["HEAD"]`, the argv gets `--at <head>`, so the commit
     is in the key, and the runner refuses a checkout at any other commit.
+    The unit also says `commit: true`, so bx keys it by the commit and runs it
+    where HEAD is that commit, its isolated copy included (bx RFC 0088, 7.1);
+    and `unmeasured_status: [3]`, so the runner's refusal of a checkout at
+    another commit (exit 3) is read as not measured, never as a failure.
 
     A UNIT THAT READS THE CHANGE SET CARRIES ITS RANGES. When a gate the unit
     runs declares `commits: ["CHANGES"]`, the argv gets `--change-set R` for
@@ -2490,6 +2494,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 wanted = {item for s in closure for item in table[s].get(key, [])}
                 if wanted:
                     unit[key] = sorted(wanted)
+            if reads_head and head is not None:
+                unit["commit"] = True
+                unit["unmeasured_status"] = [3]
             if kept and inputs:
                 unit["inputs"] = inputs
             units.append(unit)
@@ -6628,6 +6635,16 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             f"plan-fixture: a gate that reads HEAD was planned as "
             f"{with_head[0]}, not at HEAD's id with its pass kept")
+    if with_head[0].get("commit") is not True \
+            or with_head[0].get("unmeasured_status") != [3]:
+        failures.append(
+            f"plan-fixture: a gate that reads HEAD was planned as {with_head[0]}; "
+            f"bx keys it by the commit and reads a run at another commit as "
+            f"not measured only when it says `commit` and `unmeasured_status`")
+    if "commit" in without[0] or "unmeasured_status" in without[0]:
+        failures.append(
+            f"plan-fixture: with no HEAD id, a gate that reads HEAD was planned "
+            f"as {without[0]}; it names no commit to be keyed by")
     if "--at" in without[0]["argv"] or without[0]["cache"] is not False:
         failures.append(
             f"plan-fixture: with no HEAD id to carry, a gate that reads HEAD "
