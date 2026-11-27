@@ -75,10 +75,10 @@ codec printed; the
 generator answers which codecs are tables and why the others are not, as the printers of ADR 0081 answer the forms
 they lower, and a generator test lists them for the conformance set.
 
-The value is reached through `TableOut`, a trait the generated code implements once for each form of the codec
-(`{Codec}In<S>` at its profile and `{Codec}View<'a>`): one method per kind of store (a number, bytes, a text, a
-body, a list, an absent field), each a `match` on the row index whose arms are the stores of the fields. The walker
-calls it through `&mut dyn TableOut<'f>`:
+The value is reached through `TableOut`, a trait the generated code implements once for the codec's value
+(`{Codec}In<S>` at its profile, or `{Codec}<'a>` where it has none): one method per kind of store (a number, bytes,
+a text, a body, a list, an absent field), each a `match` on the row index whose arms are the stores of the fields.
+The walker calls it through `&mut dyn TableOut<'f>`:
 
     pub fn read_table<'f>(reader: &mut SceReader<'f>, table: &FieldTable, inputs: &[u64],
                           out: &mut dyn TableOut<'f>);
@@ -96,6 +96,15 @@ function is placed by its sites as ADR 0137 places every body read: with no attr
 site, out of line where it reads it from two or more. The call is short, but it is still the table's address, the
 inputs and the value's stores handed to the walker, which two sites would each hold a copy of; one rule for every
 entry point keeps a codec's place in the set the same whether it is a table or printed.
+
+A view that is the codec's value (`{Codec}View` an alias of `{Codec}`, ADR 0049) is read by the same table, as the
+value is. A view with a type of its own (a codec that holds a list, a chain or an embedded body) is printed, and the
+generator says so of the cold codec (`NotATable::OwnView`, `SetTable::view`). The walker stores into a value it is
+handed, so a view read by it would be made as a default first and then filled, row by row; ADR 0137 builds a view
+once as the value its read returns, no default of it made first and nothing copied over one, and a view's fields are
+borrowed slices and bodies bound once from the locals its reads return. Reading such a view by the table would undo
+that rule for the view's size and its read's instructions, which ADR 0137 measured; the view stays printed, and the
+value's read is the walker's call.
 
 ### 3. One writer for every table
 
@@ -153,7 +162,8 @@ holds the walker or a table read. A generator test of a set with hot roots named
 - The runtime gains the `table` module: the table types, `read_table`, `write_table`, `read_chain_table` and
   `HeldEntries`, each one function for every table, out of line, with unit tests over tables written by hand.
 - A cold read costs the walker's dispatch, a few instructions a field, once per event; a hot read costs what it costs.
-- The stores of a cold codec are still printed once per form and profile, as its types are.
+- The stores of a cold codec are still printed once per profile, as its types are, and the read of a view with a type
+  of its own is printed as before (section 2).
 - The table, the stores and the adapter the writer reads a source through (`{Codec}Rows` and its `TableSource`) are
   printed by the codec template from a structured context (rows, gates, derives, store arms, source arms), as every
   template-printed form is. The source interface's printer (`rust_source`, docs/adr/0081) lowers the adapter's arms
@@ -170,6 +180,9 @@ holds the walker or a table read. A generator test of a set with hot roots named
   shows in its instructions. Refused: a hot body stays printed.
 - **A cold chain's rule as a type, as now.** Each chain instantiates the routine and holds its entry read. Refused for
   the chains whose rule is data; kept where a gate reads kinds.
+- **Read a cold view of its own type by the walker**, through an adapter that hands its stores the view and the
+  chain hook. The view would be made as a default and filled, which ADR 0137 refuses for a view (built once as the
+  value its read returns). Refused: the view stays printed.
 - **Merge documents of one layout into one document.** That is the consumer's decision about its documents (one
   document of a declared entity whose kind is the header's identifier), and it may make it; the generator's part is
   that one layout is one table whatever the documents.
