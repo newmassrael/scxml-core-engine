@@ -430,23 +430,24 @@ fn delivery<I>(answer: Result<(), InboxRefusal<I>>) -> Delivery {
     }
 }
 
-/// Post `input` with `post`, recorded as a post of input `value` to
-/// `session` through `door` with the clock read immediately around it.
-fn record_post<I>(
+/// Post with `post`, which answers what became of the post, recorded as a
+/// post of input `value` to `session` through `door` with the clock read
+/// immediately around it.
+fn record_post(
     clock: &Clock,
     session: u64,
     value: u64,
     door: Door,
-    post: impl FnOnce() -> Result<(), InboxRefusal<I>>,
+    post: impl FnOnce() -> Delivery,
 ) -> Post {
     let invoked = clock.tick();
-    let answer = post();
+    let outcome = post();
     let returned = clock.tick();
     Post {
         session,
         input: value,
         door,
-        outcome: delivery(answer),
+        outcome,
         invoked,
         returned,
     }
@@ -521,17 +522,17 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
                             // session the tree never held.
                             4 if child_left.load(Ordering::Acquire) => {
                                 record_post(clock, 1, value, Door::Addressed, || {
-                                    root_inbox.post(naming(SESSION_IDS[1]))
+                                    delivery(root_inbox.post(naming(SESSION_IDS[1])))
                                 })
                             }
                             4 => record_post(clock, ABSENT, value, Door::Addressed, || {
-                                root_inbox.post(naming(ABSENT_ID))
+                                delivery(root_inbox.post(naming(ABSENT_ID)))
                             }),
                             1 | 3 => record_post(clock, 1, value, Door::Handle, || {
-                                child_inbox.post(posted(value))
+                                delivery(child_inbox.post(posted(value)))
                             }),
                             _ => record_post(clock, 0, value, Door::Handle, || {
-                                root_inbox.post(posted(value))
+                                delivery(root_inbox.post(posted(value)))
                             }),
                         });
                         made.fetch_add(1, Ordering::AcqRel);
@@ -553,7 +554,7 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
             root.step();
             child.step();
             round += 1;
-            if round % 3 == 0 && root_own < OWN_PER_SESSION {
+            if round.is_multiple_of(3) && root_own < OWN_PER_SESSION {
                 raise_own(&mut root, own);
                 own += 1;
                 root_own += 1;
@@ -594,7 +595,7 @@ fn record_std_run(clock: &Arc<Clock>) -> History {
         scope
             .spawn(|| {
                 vec![record_post(clock, 1, LATE_INPUT, Door::Addressed, || {
-                    root_inbox.post(naming(SESSION_IDS[1]))
+                    delivery(root_inbox.post(naming(SESSION_IDS[1])))
                 })]
             })
             .join()
@@ -644,7 +645,7 @@ fn record_bounded_run(clock: &Arc<Clock>) -> History {
                     .map(|k| {
                         let value = input_of(0, k, filler_posts);
                         record_post(clock, 0, value, Door::Handle, || {
-                            BOUNDED.post(posted(value))
+                            delivery(BOUNDED.post(posted(value)))
                         })
                     })
                     .collect::<Vec<Post>>()
@@ -671,11 +672,11 @@ fn record_bounded_run(clock: &Arc<Clock>) -> History {
                         let value = base + input_of(poster, k, PER_POSTER);
                         posts.push(if k % 7 == 6 {
                             record_post(clock, ABSENT, value, Door::Addressed, || {
-                                BOUNDED.post(naming(ABSENT_ID))
+                                delivery(BOUNDED.post(naming(ABSENT_ID)))
                             })
                         } else {
                             record_post(clock, 0, value, Door::Handle, || {
-                                BOUNDED.post(posted(value))
+                                delivery(BOUNDED.post(posted(value)))
                             })
                         });
                         made.fetch_add(1, Ordering::AcqRel);
@@ -693,7 +694,7 @@ fn record_bounded_run(clock: &Arc<Clock>) -> History {
         while running.load(Ordering::Acquire) > 0 {
             engine.step();
             round += 1;
-            if !ended && round % 3 == 0 && own < OWN_BASE + OWN_PER_SESSION {
+            if !ended && round.is_multiple_of(3) && own < OWN_BASE + OWN_PER_SESSION {
                 raise_own(&mut engine, own);
                 own += 1;
             }
