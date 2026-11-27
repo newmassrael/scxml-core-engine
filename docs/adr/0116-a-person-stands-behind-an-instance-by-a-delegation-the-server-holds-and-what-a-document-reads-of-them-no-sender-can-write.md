@@ -205,10 +205,42 @@ Each step lands with a test that fails without it.
 1. (2026-11-23) This record, accepted, and its model (D9), checked, with its failing configurations.
 2. The person in the membership's store, its conformance kit, sealing and re-sealing.
 3. The offer that waits, the port and the edge; the condition of the write (ADR 0113 step 4 builds it).
-4. `sce:principal`, `_x.principal`, `_x.quoted` and `sce:on-behalf`, with each refusal's appendix row.
+4. (2026-11-28) `sce:principal`, `_x.principal`, `_x.quoted` and `sce:on-behalf`, with each refusal's
+   appendix row (`validation/principal-record`, `validation/quote-refused`,
+   `mesh/codegen-principal-unproved`; every backend but Rust by `generate/unsupported-feature`).
 5. What the journal and the audit log record (D7), and D5 over ADR 0114's followers.
 
 Step 3 needs ADR 0113 step 4; step 5 needs ADR 0114 step 4.
+
+## Decided while landing step 4
+
+Each decided by the record's own text and the source it cites, and written here so the next step reads it.
+
+1. **The spelling of the required guard.** `sce:principal="required"` on a `<transition>`: the attribute D3 names,
+   whose one value says what D3's `required="true"` says, so no second attribute is read. It is the guard
+   `_x.principal !== null` joined before the transition's own condition, the same guard as D3 says, so the condition
+   reads the person where it is proven present (docs/adr/0055, step 9).
+2. **A text of a person is held to the bound its record states.** Every text a document declares states its bound,
+   and `issuer`, `subject`, `method` and `instance` are the identity provider's and the server's texts, of no length
+   the document fixes. A person whose text is longer than its field holds refuses the delivery whole, by the verdict a
+   payload that does not fit its type takes (ADR 0124, D2: `error.execution` in its place): a text cut short could
+   name another person (OpenID Connect Core 1.0, section 2: `sub` is unique within its issuer as written), and an
+   event said for a person is never run as nobody's (D6). A subject, at most 255 ASCII characters (the same section),
+   fits a record that states that bound.
+3. **A quote is refused where it is written.** Open question 2 decided that `_x.quoted` lands as a refusal of every
+   quote until a deployment lists one. No deployment can list one yet, so the build refuses `sce:on-behalf` where it
+   is written (`validation/quote-refused`) rather than send a quote to be dropped at the receiver's edge (Saltzer and
+   Schroeder 1975, fail-safe defaults), and `_x.quoted` is absent on every event. The syntax is fixed: the landing
+   that lists quotes changes the refusal and the read, and no document.
+4. **A machine that reads a person receives durably.** An event is told the person of the incarnation it was taken in
+   under (`Endpoint::receive_member_for`), and only an instance's completion records judge an envelope by its
+   incarnation (ADR 0113, D5); a binding that does not receive durably knows no incarnation of what it takes in, and
+   could tell an event the person of a later one. So D10's bindings are held to `receipt: durable` beside `key`,
+   `sign:` and `verify:`.
+5. **A saved state and a checkpoint hold no person.** A saved state is one text on every backend, and a person is the
+   Rust host core's alone; an event of a person in a queue or released and not applied is never run as nobody's
+   (D6), so the save and the seal that would hold one refuse, and a host saves after the run that takes the event, as
+   the write that keeps a run is made after the run (ADR 0113, D5).
 
 ## Open questions
 
