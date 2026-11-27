@@ -18,8 +18,9 @@ use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
 use crate::journal::{
-    holds_from, recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage,
-    JournalStore, Observation, ObservedStream, PastHorizon, SessionsStream, Stream, StreamName,
+    holds_from, recorded, ActorName, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry,
+    JournalPage, JournalStore, Observation, ObservedActor, ObservedStream, PastHorizon,
+    SessionsStream, Stream, StreamName,
 };
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
@@ -39,7 +40,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 12;
+const LAYOUT_VERSION: i64 = 13;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -336,6 +337,17 @@ const LAYOUT_12: &str = "
     );
 ";
 
+/// What layout 13 adds to layout 12: who each fact of the journal was said for (ADR 0116, D7), the
+/// instance and the person of the delegation the run that said it was made under, all five
+/// columns or none. An entry of layout 12 was said for nobody, as every observed one is.
+const LAYOUT_13: &str = "
+    ALTER TABLE journal_entries ADD COLUMN actor_instance TEXT;
+    ALTER TABLE journal_entries ADD COLUMN actor_issuer TEXT;
+    ALTER TABLE journal_entries ADD COLUMN actor_subject TEXT;
+    ALTER TABLE journal_entries ADD COLUMN actor_proved_ms INTEGER;
+    ALTER TABLE journal_entries ADD COLUMN actor_method TEXT;
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -438,9 +450,9 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 12] = [
+    const ADDITIONS: [&str; 13] = [
         LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8, LAYOUT_9,
-        LAYOUT_10, LAYOUT_11, LAYOUT_12,
+        LAYOUT_10, LAYOUT_11, LAYOUT_12, LAYOUT_13,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -2323,12 +2335,15 @@ fn fact_in(
         .execute((position, recorded_ms))?;
     let data = fact.data.at(position)?;
     let (name, key) = stream_columns(stream);
+    let actor = fact.actor;
     connection
         .prepare_cached(
             "INSERT INTO journal_entries (position, recorded_ms, name, key, origin, schema, \
-             revision, valid_ms, holds_ms, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             revision, valid_ms, holds_ms, data, actor_instance, actor_issuer, actor_subject, \
+             actor_proved_ms, actor_method) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         )?
-        .execute((
+        .execute(rusqlite::params![
             position,
             recorded_ms,
             name,
@@ -2339,7 +2354,12 @@ fn fact_in(
             fact.valid_ms,
             holds_from(fact.valid_ms, recorded_ms),
             &*data,
-        ))?;
+            actor.map(|actor| actor.instance),
+            actor.map(|actor| actor.issuer),
+            actor.map(|actor| actor.subject),
+            actor.map(|actor| actor.proved_ms),
+            actor.map(|actor| actor.method),
+        ])?;
     Ok(position)
 }
 
@@ -2362,10 +2382,26 @@ fn stream_columns(stream: Stream<'_>) -> (&str, Option<&str>) {
 }
 
 /// An entry of the journal from its columns, read in the order `position, recorded_ms, name, key,
-/// origin, schema, revision, valid_ms, data`.
+/// origin, schema, revision, valid_ms, data, actor_instance, actor_issuer, actor_subject,
+/// actor_proved_ms, actor_method`.
 fn journal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<JournalEntry> {
     let name: String = row.get(2)?;
     let key: Option<String> = row.get(3)?;
+    // An entry said for nobody has no instance, and none of the actor's columns.
+    let instance: Option<String> = row.get(9)?;
+    let actor = instance
+        .map(|instance| {
+            Ok::<_, rusqlite::Error>(ActorName {
+                instance,
+                person: Person {
+                    issuer: row.get(10)?,
+                    subject: row.get(11)?,
+                    proved_ms: row.get(12)?,
+                    method: row.get(13)?,
+                },
+            })
+        })
+        .transpose()?;
     Ok(JournalEntry {
         position: row.get(0)?,
         recorded_ms: row.get(1)?,
@@ -2377,6 +2413,7 @@ fn journal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<JournalEntry> {
         schema: row.get(5)?,
         revision: row.get(6)?,
         valid_ms: row.get(7)?,
+        actor,
         data: row.get(8)?,
     })
 }
@@ -2395,7 +2432,8 @@ impl JournalStore for SqliteStore {
         }
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut statement = connection.prepare_cached(
-            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data, \
+             actor_instance, actor_issuer, actor_subject, actor_proved_ms, actor_method \
              FROM journal_entries WHERE position > ?1 AND position <= ?2 \
              ORDER BY position LIMIT ?3",
         )?;
@@ -2417,7 +2455,8 @@ impl JournalStore for SqliteStore {
         let (name, key) = stream_columns(stream);
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut statement = connection.prepare_cached(
-            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data, \
+             actor_instance, actor_issuer, actor_subject, actor_proved_ms, actor_method \
              FROM journal_entries \
              WHERE name = ?1 AND key IS ?2 AND position > ?3 AND position <= ?4 \
              ORDER BY position LIMIT ?5",
@@ -2457,7 +2496,8 @@ impl JournalStore for SqliteStore {
         let (name, key) = stream_columns(stream);
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut statement = connection.prepare_cached(
-            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data, \
+             actor_instance, actor_issuer, actor_subject, actor_proved_ms, actor_method \
              FROM journal_entries \
              WHERE name = ?1 AND key IS ?2 AND position <= ?3 \
              AND holds_ms >= ?5 AND holds_ms <= ?4 AND (holds_ms > ?5 OR position > ?6) \
@@ -2488,6 +2528,9 @@ impl JournalStore for SqliteStore {
         fact: &Fact<'_>,
         now_ms: u64,
     ) -> Result<Observation, Failure> {
+        if fact.actor.is_some() {
+            return Err(Failure::new(ObservedActor));
+        }
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
         let held: Option<u64> = transaction

@@ -44,13 +44,27 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 12;
+const LAYOUT: i64 = 13;
 
-/// What layout 12 changed (ADR 0114, D2), undone in a file this build made so that it is left as a
-/// build of layout 11 left it: a session, its lease and its notes by the key alone, an outbox entry
-/// with no machine, and no reader of the journal. Every `WITHOUT_LAYOUT_` below begins with it, the
-/// later layout's first.
-const WITHOUT_LAYOUT_12: &str = "DROP TABLE journal_readers; \
+/// What layout 13 added (ADR 0116, D7), dropped from a file this build made so that it is left as a
+/// build of layout 12 left it: an entry of the journal with no one it was said for. Every
+/// `WITHOUT_LAYOUT_` below begins with it, the later layout's first.
+const WITHOUT_LAYOUT_13: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method;";
+
+/// What layouts 13 and 12 changed (ADR 0114, D2), undone in a file this build made so that it is
+/// left as a build of layout 11 left it: a session, its lease and its notes by the key alone, an
+/// outbox entry with no machine, and no reader of the journal. Every `WITHOUT_LAYOUT_` below
+/// begins with it, the later layout's first.
+const WITHOUT_LAYOUT_12: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -67,7 +81,12 @@ const WITHOUT_LAYOUT_12: &str = "DROP TABLE journal_readers; \
 
 /// The tables layout 9 added (ADR 0113), dropped from a file this build made so that it is left as
 /// a build of layout 8 left it.
-const WITHOUT_LAYOUT_9: &str = "DROP TABLE journal_readers; \
+const WITHOUT_LAYOUT_9: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -85,7 +104,12 @@ const WITHOUT_LAYOUT_9: &str = "DROP TABLE journal_readers; \
 
 /// The tables layouts 8 (ADR 0114) and 9 (ADR 0113) added, dropped from a file this build made so
 /// that it is left as a build of layout 7 left it: the later layout's first.
-const WITHOUT_LAYOUT_8: &str = "DROP TABLE journal_readers; \
+const WITHOUT_LAYOUT_8: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -104,7 +128,12 @@ const WITHOUT_LAYOUT_8: &str = "DROP TABLE journal_readers; \
 
 /// The tables layouts 7 (ADR 0109, D14) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 6 left it: the later layouts' first.
-const WITHOUT_LAYOUT_7: &str = "DROP TABLE journal_readers; \
+const WITHOUT_LAYOUT_7: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -125,7 +154,12 @@ const WITHOUT_LAYOUT_7: &str = "DROP TABLE journal_readers; \
 
 /// The tables layouts 6 (ADR 0109, D13) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 5 left it: the later layouts' first.
-const WITHOUT_LAYOUT_6: &str = "DROP TABLE journal_readers; \
+const WITHOUT_LAYOUT_6: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -147,7 +181,12 @@ const WITHOUT_LAYOUT_6: &str = "DROP TABLE journal_readers; \
 
 /// The tables layouts 5 (ADR 0109, D10) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 4 or earlier left it: the later layouts' first.
-const WITHOUT_LAYOUT_5: &str = "DROP TABLE journal_readers; \
+const WITHOUT_LAYOUT_5: &str = "ALTER TABLE journal_entries DROP COLUMN actor_instance; \
+     ALTER TABLE journal_entries DROP COLUMN actor_issuer; \
+     ALTER TABLE journal_entries DROP COLUMN actor_subject; \
+     ALTER TABLE journal_entries DROP COLUMN actor_proved_ms; \
+     ALTER TABLE journal_entries DROP COLUMN actor_method; \
+     DROP TABLE journal_readers; \
      CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
      version INTEGER NOT NULL, earliest_due INTEGER); \
      INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
@@ -1173,11 +1212,11 @@ mod journal {
 
     use rusqlite::Connection;
     use sce_rust_session_store::{
-        AtPosition, Fact, FactData, Failure, Journal, JournalStore, Observation, SessionStore,
-        SqliteStore, Stream, Write, WriteError, LATEST_MOMENT,
+        Actor, ActorName, AtPosition, Fact, FactData, Failure, Journal, JournalStore, Observation,
+        Person, SessionStore, SqliteStore, Stream, Write, WriteError, LATEST_MOMENT,
     };
 
-    use super::{LAYOUT, WITHOUT_LAYOUT_8};
+    use super::{LAYOUT, WITHOUT_LAYOUT_13, WITHOUT_LAYOUT_8};
     use crate::common::Scratch;
 
     fn fact(data: &[u8]) -> Fact<'_> {
@@ -1186,6 +1225,7 @@ mod journal {
             revision: 1,
             data: FactData::Bytes(data),
             valid_ms: None,
+            actor: None,
         }
     }
 
@@ -1273,6 +1313,95 @@ mod journal {
             )
             .expect("a write that appends in the upgraded file");
         assert_eq!(entries(&store), [(1, 1_000, "one".to_string())]);
+    }
+
+    /// ADR 0116, D7: a file of layout 12 is brought to this build's layout when it is opened, in
+    /// place: an entry it kept was said for nobody, and who a fact written after was said for, the
+    /// instance and the whole person, is there when the file is opened again. Red if the upgrade
+    /// adds no column for the actor, or a write or a read leaves one out.
+    #[test]
+    fn a_file_of_layout_12_is_brought_to_this_layout_and_keeps_who_a_fact_was_said_for() {
+        let scratch = Scratch::new("layout-12");
+        let (fence, version) = {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 60_000, 0).expect("a lease");
+            let version = store
+                .write(
+                    "k",
+                    &keeps(b"one", 0, lease.fence, &[fact(b"before")], 1_000),
+                )
+                .expect("a write of layout 12")
+                .version;
+            (lease.fence, version)
+        };
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 12");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_13)
+                .expect("the file as layout 12 laid it out");
+            connection
+                .pragma_update(None, "user_version", 12)
+                .expect("the file as layout 12 left it");
+        }
+        let alice = Actor {
+            instance: "a1",
+            issuer: "https://id.example",
+            subject: "alice",
+            proved_ms: 1_700_000_000_000,
+            method: "pwd",
+        };
+        {
+            let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 12");
+            let layout: i64 = Connection::open(scratch.database())
+                .expect("a second connection")
+                .pragma_query_value(None, "user_version", |row| row.get(0))
+                .expect("its layout");
+            assert_eq!(
+                layout, LAYOUT,
+                "the file was brought to this build's layout"
+            );
+            let said = Fact {
+                actor: Some(alice),
+                ..fact(b"after")
+            };
+            store
+                .write("k", &keeps(b"two", version, fence, &[said], 2_000))
+                .expect("a write that appends a fact said for a person");
+        }
+        let reopened = SqliteStore::open(scratch.database()).expect("opening the file again");
+        let actors: Vec<(String, Option<ActorName>)> = reopened
+            .stream(
+                Stream::Session {
+                    machine: "ledger",
+                    key: "k",
+                },
+                0,
+                10,
+            )
+            .expect("the stream")
+            .entries
+            .into_iter()
+            .map(|entry| (String::from_utf8(entry.data).expect("a text"), entry.actor))
+            .collect();
+        assert_eq!(
+            actors,
+            [
+                ("before".to_string(), None),
+                (
+                    "after".to_string(),
+                    Some(ActorName {
+                        instance: "a1".to_string(),
+                        person: Person {
+                            issuer: "https://id.example".to_string(),
+                            subject: "alice".to_string(),
+                            proved_ms: 1_700_000_000_000,
+                            method: "pwd".to_string(),
+                        },
+                    })
+                ),
+            ]
+        );
     }
 
     /// ADR 0114, D3 and D5: what the store kept of the journal is there when its file is opened

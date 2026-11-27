@@ -617,6 +617,7 @@ impl<T: Transport, E: Environment> Ledger<T, E> {
                 revision: 1,
                 data: fact,
                 valid_ms: None,
+                principal: None,
             });
         }
         if let Some(Value::Array(dues)) = data.member("due_ms") {

@@ -40,8 +40,8 @@ use std::time::{Duration, Instant};
 
 use sce_rust_metrics::{Histogram, Metrics};
 use sce_rust_session_store::{
-    Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal, SessionStore,
-    Under, Write, WriteError, Written,
+    ActorName, Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal,
+    SessionStore, Under, Write, WriteError, Written,
 };
 
 /// The committer of one store. See the module documentation.
@@ -113,6 +113,8 @@ struct HeldFact {
     revision: u32,
     data: Vec<u8>,
     valid_ms: Option<i64>,
+    /// Who the fact was said for (docs/adr/0116, D7).
+    actor: Option<ActorName>,
 }
 
 impl HeldJournal {
@@ -129,6 +131,7 @@ impl HeldJournal {
                     revision: fact.revision,
                     data: data.to_vec(),
                     valid_ms: fact.valid_ms,
+                    actor: fact.actor.map(|actor| actor.to_name()),
                 }),
                 FactData::AtPosition(_) => Err(Failure::new(
                     "a fact handed to the committer gives its bytes, not what makes them",
@@ -207,6 +210,7 @@ impl HeldWrite {
                 revision: fact.revision,
                 data: FactData::Bytes(&fact.data),
                 valid_ms: fact.valid_ms,
+                actor: fact.actor.as_ref().map(ActorName::actor),
             })
             .collect()
     }
@@ -746,10 +750,10 @@ mod tests {
     /// docs/adr/0114, D1: the facts a write gives the committer are appended with it, as it gave
     /// them, through the batch that commits it; a fact whose bytes are made at its position is
     /// refused, and its write with it. Red if the committer drops a write's journal, which loses
-    /// the entries of a state that is kept.
+    /// the entries of a state that is kept, or who a fact was said for (docs/adr/0116, D7).
     #[test]
     fn a_write_handed_to_the_committer_keeps_its_facts() {
-        use sce_rust_session_store::{AtPosition, JournalStore, Stream};
+        use sce_rust_session_store::{Actor, AtPosition, JournalStore, Stream};
 
         struct Made;
         impl AtPosition for Made {
@@ -768,6 +772,13 @@ mod tests {
             revision: 2,
             data: FactData::Bytes(b"opened"),
             valid_ms: Some(-5),
+            actor: Some(Actor {
+                instance: "a1",
+                issuer: "https://id.example",
+                subject: "alice",
+                proved_ms: 7,
+                method: "pwd",
+            }),
         };
         let made = Fact {
             data: FactData::AtPosition(&Made),
@@ -814,6 +825,14 @@ mod tests {
                 entries[0].recorded_ms
             ),
             ("entry.recorded", 2, &b"opened"[..], Some(-5), 1_000)
+        );
+        assert_eq!(
+            entries[0]
+                .actor
+                .as_ref()
+                .map(|actor| (actor.instance.as_str(), actor.person.subject.as_str())),
+            Some(("a1", "alice")),
+            "the committer dropped who the fact was said for"
         );
     }
 

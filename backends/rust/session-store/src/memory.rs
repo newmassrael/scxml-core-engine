@@ -13,8 +13,9 @@ use crate::audit::{
 };
 use crate::batch::{Batched, Committed, Decided};
 use crate::journal::{
-    recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage, JournalStore,
-    Observation, ObservedStream, PastHorizon, SessionsStream, Stream, StreamName,
+    recorded, Actor, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage,
+    JournalStore, Observation, ObservedActor, ObservedStream, PastHorizon, SessionsStream, Stream,
+    StreamName,
 };
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
@@ -307,6 +308,7 @@ impl Records {
             schema: fact.schema.to_string(),
             revision: fact.revision,
             valid_ms: fact.valid_ms,
+            actor: fact.actor.map(Actor::to_name),
             data: fact.data.at(position)?.into_owned(),
         })
     }
@@ -1286,6 +1288,9 @@ impl JournalStore for MemoryStore {
         fact: &Fact<'_>,
         now_ms: u64,
     ) -> Result<Observation, Failure> {
+        if fact.actor.is_some() {
+            return Err(Failure::new(ObservedActor));
+        }
         let mut records = self.records();
         let kept = (name.to_string(), origin.to_string());
         if let Some(position) = records.journal_origins.get(&kept) {

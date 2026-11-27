@@ -1192,6 +1192,15 @@ pub struct EngineState<P: StatePolicy> {
     /// ([`EngineState::take_journal`]). Not part of a saved state.
     #[cfg(feature = "std")]
     pub(crate) journal: Vec<crate::journal::JournalEntry>,
+    /// The person the macrostep now running acts for (docs/adr/0116, D7): the one the external
+    /// event that began it was said for (`EventMetadata::principal`), `None` for one said for
+    /// nobody (a timer, a completion, an entry of a followed journal) and before the first. A fact
+    /// the macrostep says ([`EngineState::record_journal_entry`]) and a host-run invocation it
+    /// starts (`HostInvokeRequest::principal`) are recorded as done for it: the internal events
+    /// the macrostep raises carry no person (`_x.principal` is absent on them), and their work is
+    /// still the run's. Not part of a saved state: the next external event sets it again.
+    #[cfg(feature = "std")]
+    pub(crate) acting: Option<Box<crate::event::Principal>>,
     /// The factory of the routers of this machine's children (SCE_MESH.md,
     /// Child Sessions in Mesh): registered by the host on a machine it starts
     /// ([`Engine::register_child_mesh_routers`]), and on a child by the
@@ -1316,6 +1325,8 @@ macro_rules! engine_initial_fields {
             restored_host_invokes: Vec::new(),
             #[cfg(feature = "std")]
             journal: Vec::new(),
+            #[cfg(feature = "std")]
+            acting: None,
             #[cfg(feature = "std")]
             child_mesh_routers: None,
             #[cfg(feature = "std")]
@@ -3126,6 +3137,15 @@ impl<P: StatePolicy> Engine<P> {
         // (docs/adr/0123).
         let delivered = queued.event;
         let mut metadata = queued.metadata;
+        // docs/adr/0116, D7: the macrostep an external event begins is made for the person it
+        // was said for, or for nobody; the internal events it raises inherit the run, not a
+        // person of their own.
+        #[cfg(feature = "std")]
+        {
+            if external {
+                self.state.acting = metadata.principal.clone();
+            }
+        }
         // EventSchema native lowering: when no typed payload rode with this
         // event, read it out of the `data` every other producer fills, at the
         // door. Data a host lent is held there to the same contract, and
@@ -4086,9 +4106,13 @@ impl<P: StatePolicy> EngineState<P> {
     /// Keep `entry`, an entry of the event journal a `<send type="sce:journal">`
     /// of this macrostep made, after the ones made before it (docs/adr/0114,
     /// D1). The send raises the fact's event itself; this keeps only the entry,
-    /// which has no position until the host's write appends it.
+    /// which has no position until the host's write appends it. The entry is
+    /// recorded as said for the person the macrostep acts for, whatever the
+    /// document wrote (docs/adr/0116, D7: who did it is recorded by the
+    /// platform, and a document neither writes it nor leaves it out).
     #[cfg(feature = "std")]
-    pub fn record_journal_entry(&mut self, entry: crate::journal::JournalEntry) {
+    pub fn record_journal_entry(&mut self, mut entry: crate::journal::JournalEntry) {
+        entry.principal = self.acting.clone();
         self.journal.push(entry);
     }
 

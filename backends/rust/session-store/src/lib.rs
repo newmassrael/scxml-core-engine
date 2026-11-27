@@ -140,9 +140,9 @@ pub use credentials::{
     CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
 pub use journal::{
-    AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal, JournalEntry, JournalPage,
-    JournalStore, NoJournal, Observation, ObservedStream, PastHorizon, SessionsStream, Stream,
-    StreamName,
+    Actor, ActorName, AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal,
+    JournalEntry, JournalPage, JournalStore, NoJournal, Observation, ObservedActor, ObservedStream,
+    PastHorizon, SessionsStream, Stream, StreamName,
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};

@@ -38,6 +38,8 @@
 //!   after.
 //! * [`a_fact_is_kept_with_the_bytes_made_for_its_position`]: bytes made at an entry's position are
 //!   the bytes it keeps.
+//! * [`who_a_fact_was_said_for_is_kept_with_it`] (ADR 0116, D7): who a fact was said for is kept
+//!   with its entry and answered by every read, and an observation that names one is refused.
 //! * [`data_is_replaced_only_from_what_it_holds`] (ADR 0109, D8): an entry's data is replaced only
 //!   from the bytes it holds, every other field kept.
 //! * [`handles_share_the_journal`]: what one handle appended, another reads.
@@ -55,8 +57,8 @@ use std::thread;
 
 use crate::batch::{Batched, Committed, Decided};
 use crate::journal::{
-    AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal, JournalEntry, JournalPage,
-    JournalStore, Observation, PastHorizon, Stream, StreamName,
+    Actor, ActorName, AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal,
+    JournalEntry, JournalPage, JournalStore, Observation, PastHorizon, Stream, StreamName,
 };
 use crate::outbox::{Append, Write, Written};
 use crate::{Conflict, Failure, Lease, SessionStore, Stored, WriteError, LATEST_MOMENT};
@@ -127,6 +129,7 @@ fn fact(data: &[u8]) -> Fact<'_> {
         revision: 1,
         data: FactData::Bytes(data),
         valid_ms: None,
+        actor: None,
     }
 }
 
@@ -322,6 +325,7 @@ pub fn an_entry_is_made_by_its_sessions_write_or_not_at_all(harness: &impl Journ
             schema: schema.to_string(),
             revision,
             valid_ms,
+            actor: None,
             data: data.to_vec(),
         }
     };
@@ -1252,6 +1256,111 @@ pub fn a_fact_is_kept_with_the_bytes_made_for_its_position(harness: &impl Journa
     }
 }
 
+/// ADR 0116, D7: who a fact was said for is kept with its entry as the write gave it, and answered
+/// by every read: in the order of the journal, in its stream's and in an answer as of a moment; a
+/// fact said for nobody beside it is answered with no one; and an entry's data replaced keeps it.
+/// An observation that names who it was said for is refused and appends nothing, for an origin id
+/// the stream holds as well: another system's fact was said for no instance of this server.
+pub fn who_a_fact_was_said_for_is_kept_with_it(harness: &impl JournalHarness) {
+    let store = harness.handle();
+    let held = lease(&store, "k");
+    let alice = Actor {
+        instance: "a1",
+        issuer: "https://id.example",
+        subject: "alice",
+        proved_ms: 1_700_000_000_000,
+        method: "pwd",
+    };
+    let bob = Actor {
+        instance: "a2",
+        subject: "bob",
+        method: "passkey",
+        ..alice
+    };
+    let facts = [
+        Fact {
+            actor: Some(alice),
+            ..fact(b"by alice")
+        },
+        fact(b"by nobody"),
+        Fact {
+            actor: Some(bob),
+            ..dated(b"by bob", 5)
+        },
+    ];
+    store
+        .write("k", &keeps(b"s", 0, held.fence, &facts, 1_000))
+        .expect("a write of facts said for people");
+    let said = |entries: &[JournalEntry]| -> Vec<(String, Option<ActorName>)> {
+        texts(entries)
+            .into_iter()
+            .zip(entries.iter().map(|entry| entry.actor.clone()))
+            .collect()
+    };
+    let in_order = vec![
+        ("by alice".to_string(), Some(alice.to_name())),
+        ("by nobody".to_string(), None),
+        ("by bob".to_string(), Some(bob.to_name())),
+    ];
+    assert_eq!(said(&all(&store)), in_order, "the journal's order");
+    assert_eq!(
+        said(&all_of(&store, of_session("k"))),
+        in_order,
+        "the stream's order"
+    );
+    let last = last_position(&store);
+    assert_eq!(
+        said(&answer(&store, of_session("k"), last, 1_000)),
+        vec![
+            ("by bob".to_string(), Some(bob.to_name())),
+            ("by alice".to_string(), Some(alice.to_name())),
+            ("by nobody".to_string(), None),
+        ],
+        "an answer as of a moment, ordered by when each holds from"
+    );
+    store
+        .observe("bank", "tx-1", &fact(b"observed"), 2_000)
+        .expect("an observation said for nobody");
+    let before = all(&store);
+    assert!(
+        store
+            .observe(
+                "bank",
+                "tx-2",
+                &Fact {
+                    actor: Some(alice),
+                    ..fact(b"forged")
+                },
+                3_000,
+            )
+            .is_err(),
+        "an observation that names who it was said for was kept"
+    );
+    assert!(
+        store
+            .observe(
+                "bank",
+                "tx-1",
+                &Fact {
+                    actor: Some(alice),
+                    ..fact(b"observed")
+                },
+                3_000,
+            )
+            .is_err(),
+        "an observation that names who it was said for was answered as a repeat"
+    );
+    assert_eq!(all(&store), before, "a refused observation appended");
+    assert!(store
+        .reseal_journaled(before[0].position, b"by alice", b"by alice again")
+        .expect("a replacement the store could make or refuse"));
+    assert_eq!(
+        all(&harness.handle())[0].actor,
+        Some(alice.to_name()),
+        "a replacement of the data dropped who the fact was said for"
+    );
+}
+
 /// ADR 0109, D8: an entry's data is replaced only from the bytes it holds, every other field kept:
 /// a replacement made from bytes another one already replaced writes nothing.
 pub fn data_is_replaced_only_from_what_it_holds(harness: &impl JournalHarness) {
@@ -1426,7 +1535,9 @@ mod tests {
 
     use super::*;
     use crate::journal::recorded;
-    use crate::{AcquireError, Due, LeaseError, MemoryStore, ObservedStream, SessionsStream};
+    use crate::{
+        AcquireError, Due, LeaseError, MemoryStore, ObservedActor, ObservedStream, SessionsStream,
+    };
 
     /// How a store breaks the contract, if it does.
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1446,6 +1557,8 @@ mod tests {
         GoesBackWithTheClock,
         /// The transaction of a writer that is gone stays open.
         LeavesAnAbandonedTransactionOpen,
+        /// Who a fact was said for is not kept.
+        ForgetsWhoAFactWasSaidFor,
     }
 
     /// A store that numbers the entries of a transaction as it begins and makes them visible as it
@@ -1530,6 +1643,10 @@ mod tests {
                 schema: fact.schema.to_string(),
                 revision: fact.revision,
                 valid_ms: fact.valid_ms,
+                actor: fact
+                    .actor
+                    .filter(|_| self.breach != Breach::ForgetsWhoAFactWasSaidFor)
+                    .map(Actor::to_name),
                 data: fact.data.at(position)?.into_owned(),
             })
         }
@@ -1738,6 +1855,9 @@ mod tests {
             fact: &Fact<'_>,
             now_ms: u64,
         ) -> Result<Observation, Failure> {
+            if fact.actor.is_some() {
+                return Err(Failure::new(ObservedActor));
+            }
             let mut numbers = self.numbers();
             let stream = Stream::Observed { name };
             for entry in numbers.entries.values() {
@@ -1861,6 +1981,7 @@ mod tests {
         a_session_and_an_observed_stream_share_no_name,
         a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
         a_fact_is_kept_with_the_bytes_made_for_its_position,
+        who_a_fact_was_said_for_is_kept_with_it,
         data_is_replaced_only_from_what_it_holds,
         handles_share_the_journal,
         a_reader_keeps_how_far_it_read,
@@ -1917,6 +2038,12 @@ mod tests {
         super::a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither(&broken(
             Breach::WritesItsEntriesApart,
         ));
+    }
+
+    #[test]
+    #[should_panic(expected = "the journal's order")]
+    fn a_store_that_forgets_who_a_fact_was_said_for_is_refused() {
+        super::who_a_fact_was_said_for_is_kept_with_it(&broken(Breach::ForgetsWhoAFactWasSaidFor));
     }
 
     #[test]

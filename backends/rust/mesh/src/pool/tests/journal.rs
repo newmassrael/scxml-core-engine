@@ -44,6 +44,7 @@ impl SessionMachine for Teller {
                         revision: 1,
                         data,
                         valid_ms: None,
+                        principal: event.metadata.principal.clone(),
                     });
                 }
                 "close" => self.closed = true,
@@ -318,4 +319,68 @@ fn a_pool_refuses_a_store_that_keeps_another_machines_sessions() {
         .get("r1")
         .expect("read")
         .is_some());
+}
+
+/// docs/adr/0116, D7: a fact the engine recorded as said for a person is given to the write as
+/// said for them, the instance and the whole person, and one said for nobody as said for nobody.
+/// Red if the pool's write leaves who a fact was said for out.
+#[test]
+fn a_fact_said_for_a_person_is_written_as_said_for_them() {
+    use sce_rust_session_store::{ActorName, Journal, Person};
+
+    let alice = sce_rust_runtime::Principal {
+        issuer: "https://id.example".to_string(),
+        subject: "alice".to_string(),
+        proved_ms: 1_700_000_000_000,
+        method: "pwd".to_string(),
+        instance: "a1".to_string(),
+    };
+    let said = |principal: Option<sce_rust_runtime::Principal>| JournalEntry {
+        schema: SAID,
+        revision: 1,
+        data: b"fact".to_vec(),
+        valid_ms: None,
+        principal: principal.map(Box::new),
+    };
+    let entries = [said(Some(alice)), said(None)];
+    let store = MemoryStore::new();
+    let lease = store
+        .acquire("r1", "p1", LEASE_TTL_MS, 0)
+        .expect("a lease on a key no one holds");
+    let facts = facts_of(&entries);
+    store
+        .write(
+            "r1",
+            &Write {
+                journal: Some(Journal {
+                    machine: "tellers",
+                    facts: &facts,
+                }),
+                now_ms: 1_000,
+                ..Write::put(b"s", None, 0, lease.fence)
+            },
+        )
+        .expect("a write that appends");
+    let actors: Vec<Option<ActorName>> = store
+        .after(0, 10)
+        .expect("a read of the journal")
+        .entries
+        .into_iter()
+        .map(|entry| entry.actor)
+        .collect();
+    assert_eq!(
+        actors,
+        [
+            Some(ActorName {
+                instance: "a1".to_string(),
+                person: Person {
+                    issuer: "https://id.example".to_string(),
+                    subject: "alice".to_string(),
+                    proved_ms: 1_700_000_000_000,
+                    method: "pwd".to_string(),
+                },
+            }),
+            None,
+        ]
+    );
 }

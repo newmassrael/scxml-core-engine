@@ -36,6 +36,13 @@ pub struct JournalEntry {
     /// the field the schema marks `sce:valid-time="from"`; `None` for a schema
     /// that marks none, whose fact holds from its recorded moment (D5).
     pub valid_ms: Option<i64>,
+    /// Who the fact was said for (docs/adr/0116, D7): the person the macrostep
+    /// that said it acts for, with the instance that acts for them, which the
+    /// engine writes as it keeps the entry
+    /// ([`EngineState::record_journal_entry`](crate::EngineState::record_journal_entry));
+    /// `None` for a macrostep made for nobody. Boxed as
+    /// `EventMetadata::principal` is, from which it is copied.
+    pub principal: Option<Box<crate::event::Principal>>,
 }
 
 /// The entry of a fact said of the schema `schema` at `revision`, whose record is
@@ -67,6 +74,8 @@ pub fn entry(
         revision,
         data,
         valid_ms,
+        // The engine writes who it was said for as it keeps the entry.
+        principal: None,
     })
 }
 

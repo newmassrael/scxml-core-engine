@@ -738,7 +738,7 @@ These are not built, and nothing here stands in for them:
   health checks, and the metrics port (`sce-rust-metrics`). The reference host
   of these features serves such a program's machine as it serves any other:
   - **Its stores.** One SQLite file holds every store a server keeps
-    (`sce_rust_session_store::SqliteStore`, layout 12): the sessions the pools
+    (`sce_rust_session_store::SqliteStore`, layout 13): the sessions the pools
     keep, each machine's through a handle of its own
     (`SqliteStore::of_machine`), the event journal their sessions say facts
     into and the pools that follow it read (section 16), and the host's

@@ -151,8 +151,9 @@ use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
-    AcquireError, Append, Change, Conflict, Fact, FactData, Failure, Held, Journal, JournalStore,
-    LeaseError, MembershipStore, SessionStore, Under, Write, WriteError, LATEST_MOMENT,
+    AcquireError, Actor, Append, Change, Conflict, Fact, FactData, Failure, Held, Journal,
+    JournalStore, LeaseError, MembershipStore, SessionStore, Under, Write, WriteError,
+    LATEST_MOMENT,
 };
 
 use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
@@ -2919,6 +2920,15 @@ fn facts_of(entries: &[JournalEntry]) -> Vec<Fact<'_>> {
             revision: entry.revision,
             data: FactData::Bytes(&entry.data),
             valid_ms: entry.valid_ms,
+            // docs/adr/0116, D7: who the fact was said for, as the engine recorded it from the
+            // person the edge stamped on the event that began the macrostep.
+            actor: entry.principal.as_deref().map(|person| Actor {
+                instance: &person.instance,
+                issuer: &person.issuer,
+                subject: &person.subject,
+                proved_ms: person.proved_ms,
+                method: &person.method,
+            }),
         })
         .collect()
 }

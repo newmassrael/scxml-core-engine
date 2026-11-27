@@ -721,6 +721,7 @@ mod journal_in_memory {
             a_session_and_an_observed_stream_share_no_name,
             a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
             a_fact_is_kept_with_the_bytes_made_for_its_position,
+            who_a_fact_was_said_for_is_kept_with_it,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
             a_reader_keeps_how_far_it_read,
@@ -746,6 +747,7 @@ mod journal_on_sqlite {
             a_session_and_an_observed_stream_share_no_name,
             a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
             a_fact_is_kept_with_the_bytes_made_for_its_position,
+            who_a_fact_was_said_for_is_kept_with_it,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
             a_reader_keeps_how_far_it_read,
@@ -968,7 +970,7 @@ mod members_sealed {
 mod journal_sealed {
     use sce_rust_crypto::sealed::{record_key_id, Resealed, Sealed};
     use sce_rust_session_store::{
-        AsOf, AsOfCursor, Fact, FactData, Journal, JournalEntry, JournalStore, MemoryStore,
+        Actor, AsOf, AsOfCursor, Fact, FactData, Journal, JournalEntry, JournalStore, MemoryStore,
         SessionStore, Stream, StreamName, Write, LATEST_MOMENT,
     };
 
@@ -980,6 +982,7 @@ mod journal_sealed {
             revision: 4,
             data: FactData::Bytes(data),
             valid_ms,
+            actor: None,
         }
     }
 
@@ -1073,6 +1076,67 @@ mod journal_sealed {
         );
         assert_eq!(entries[0].valid_ms, Some(-5));
         assert_eq!(entries[1].origin.as_deref(), Some("transfer-of-alice"));
+    }
+
+    /// ADR 0116, D7: who a fact was said for is sealed inside its record, with a valid time or
+    /// without one: the wrapped store is given no one, the file holds neither the instance nor the
+    /// person in the clear, and the sealing store answers them. Red if the payload leaves the actor
+    /// out, or the wrapped store is given it.
+    #[test]
+    fn who_a_fact_was_said_for_is_inside_its_record() {
+        let harness = on_sqlite("journal-actor");
+        let store = harness.sealed();
+        let alice = Actor {
+            instance: "device-of-alice",
+            issuer: "https://issuer-of-alice.example",
+            subject: "subject-of-alice",
+            proved_ms: 1_700_000_000_000,
+            method: "method-of-alice",
+        };
+        written(
+            &store,
+            "k",
+            &[
+                Fact {
+                    actor: Some(alice),
+                    ..fact(b"undated", None)
+                },
+                Fact {
+                    actor: Some(alice),
+                    ..fact(b"dated", Some(-5))
+                },
+            ],
+        );
+        let kept = store.inner().after(0, 10).expect("the wrapped journal");
+        assert!(
+            kept.entries.iter().all(|entry| entry.actor.is_none()),
+            "the wrapped store was given who a fact was said for"
+        );
+        drop(store);
+        let medium = harness.0.every_byte();
+        for clear in [
+            &b"device-of-alice"[..],
+            b"issuer-of-alice",
+            b"subject-of-alice",
+            b"method-of-alice",
+        ] {
+            assert!(
+                !medium.windows(clear.len()).any(|window| window == clear),
+                "{} is in the clear on the medium",
+                String::from_utf8_lossy(clear)
+            );
+        }
+        let entries = all(&harness.sealed());
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.valid_ms, entry.actor.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (None, Some(alice.to_name())),
+                (Some(-5), Some(alice.to_name()))
+            ]
+        );
     }
 
     #[test]

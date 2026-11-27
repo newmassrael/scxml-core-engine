@@ -39,6 +39,13 @@
 //!   ([`JournalEntry::holds_from`]). An answer as of an earlier moment is asked by a position at or
 //!   below the horizon and a valid time ([`AsOf`]) and never changes; a moment of the clock is
 //!   first turned into a position ([`JournalStore::position_at`]).
+//! * **Who a fact was said for is the store's to keep, never a writer's to choose** (ADR 0116,
+//!   D7). A fact a session said in a run under a delegation names the instance whose event the run
+//!   took in and the person its incarnation acted for ([`Fact::actor`]), which the host core read
+//!   from the delegation its own server holds, never from a field a sender wrote; the store keeps
+//!   it with the entry and answers it with every read ([`JournalEntry::actor`]). Another system's
+//!   fact was said for no instance of this server, so an observation that names one is refused
+//!   ([`ObservedActor`]).
 //! * **Nothing is changed or removed.** A correction is an entry. The one replacement is of the
 //!   bytes that hold an entry's data, made only from the bytes held, every other field kept
 //!   ([`JournalStore::reseal_journaled`]): how a store that seals what it keeps seals them again
@@ -55,6 +62,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 
+use crate::membership::Person;
 use crate::{Failure, SessionStore};
 
 /// What names a stream of the journal. The kind is part of the name: an entry a session made and
@@ -166,6 +174,63 @@ pub struct Fact<'a> {
     /// When the fact holds from in the world, in milliseconds since the Unix epoch, before it for a
     /// negative number; `None` for a fact that holds from its recorded moment.
     pub valid_ms: Option<i64>,
+    /// Who the fact was said for (ADR 0116, D7): the instance and the person of the delegation the
+    /// run that said it was made under; `None` for a fact of a run made for nobody, and for every
+    /// observed one.
+    pub actor: Option<Actor<'a>>,
+}
+
+/// Who a fact was said for (ADR 0116, D1 and D7): the instance of an open machine whose event the
+/// run that said it took in, and the person that instance's incarnation acted for, as the delegation
+/// the server's store holds names them. The host core gives it, from the edge that took the event
+/// in; no document writes it and none leaves it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Actor<'a> {
+    /// The instance id of the open machine (ADR 0113, D1).
+    pub instance: &'a str,
+    /// The identity provider's issuer.
+    pub issuer: &'a str,
+    /// Who the person is to their issuer: unique within the issuer alone.
+    pub subject: &'a str,
+    /// When they proved it, in milliseconds since the Unix epoch.
+    pub proved_ms: u64,
+    /// How they proved it, as the port that judged the proof names it.
+    pub method: &'a str,
+}
+
+impl Actor<'_> {
+    /// Who, owned.
+    pub fn to_name(self) -> ActorName {
+        ActorName {
+            instance: self.instance.to_string(),
+            person: Person {
+                issuer: self.issuer.to_string(),
+                subject: self.subject.to_string(),
+                proved_ms: self.proved_ms,
+                method: self.method.to_string(),
+            },
+        }
+    }
+}
+
+/// Who a fact was said for, owned: the actor of an entry read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActorName {
+    pub instance: String,
+    pub person: Person,
+}
+
+impl ActorName {
+    /// Who, borrowed: what a write that keeps the fact again gives.
+    pub fn actor(&self) -> Actor<'_> {
+        Actor {
+            instance: &self.instance,
+            issuer: &self.person.issuer,
+            subject: &self.person.subject,
+            proved_ms: self.person.proved_ms,
+            method: &self.person.method,
+        }
+    }
 }
 
 /// The facts a write appends to its session's stream ([`Write::journal`]).
@@ -196,6 +261,10 @@ pub struct JournalEntry {
     pub schema: String,
     pub revision: u32,
     pub valid_ms: Option<i64>,
+    /// Who its fact was said for ([`Fact::actor`]); `None` for one said for nobody, every observed
+    /// one among them, and in a store that wraps another and seals what it keeps, where it is
+    /// inside the sealed record.
+    pub actor: Option<ActorName>,
     /// Its data's bytes, which the store keeps and never reads: the fact's, or, in a store that
     /// wraps another and seals what it keeps (ADR 0109, D8), their sealed record.
     pub data: Vec<u8>,
@@ -397,6 +466,22 @@ impl fmt::Display for SessionsStream {
 
 impl Error for SessionsStream {}
 
+/// Why a store refused an observation: it names who it was said for, and another system's fact was
+/// said for no instance of this server (ADR 0116, D7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedActor;
+
+impl fmt::Display for ObservedActor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "an observed fact is another system's and was said for no instance of this server, so \
+             it names no one it was said for",
+        )
+    }
+}
+
+impl Error for ObservedActor {}
+
 /// The refusal of a session store that keeps no journal: what it answers, as
 /// [`WriteError::Failed`](crate::WriteError::Failed), a write that gives facts, which it would
 /// otherwise lose.
@@ -456,7 +541,9 @@ pub trait JournalStore: SessionStore {
     /// for that id, appending nothing ([`Observation::Repeated`]). The only way an observed stream
     /// is written.
     ///
-    /// Refused ([`SessionsStream`]) when a machine of that name has entries in the journal.
+    /// Refused ([`SessionsStream`]) when a machine of that name has entries in the journal, and
+    /// ([`ObservedActor`]) when the fact names who it was said for ([`Fact::actor`]), whatever the
+    /// stream holds.
     fn observe(
         &self,
         name: &str,
@@ -503,6 +590,7 @@ mod tests {
             schema: "schema".to_string(),
             revision: 1,
             valid_ms,
+            actor: None,
             data: Vec::new(),
         }
     }

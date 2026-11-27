@@ -24,6 +24,7 @@ macro_rules! kit {
                 a_session_and_an_observed_stream_share_no_name,
                 a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
                 a_fact_is_kept_with_the_bytes_made_for_its_position,
+                who_a_fact_was_said_for_is_kept_with_it,
                 data_is_replaced_only_from_what_it_holds,
                 handles_share_the_journal,
                 a_reader_keeps_how_far_it_read,
