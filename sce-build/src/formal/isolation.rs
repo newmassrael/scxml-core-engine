@@ -269,6 +269,12 @@ fn number(value: Option<&Value>) -> f64 {
     value.and_then(Value::as_f64).unwrap_or(0.0)
 }
 
+/// `text` with every run of white space one space: where a line breaks says
+/// nothing of what a module means.
+fn layout_free(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// A TLA+ module without its comments and the space they left.
 fn uncommented(module: &str) -> String {
     let text = BLOCK_COMMENT.replace_all(module, " ");
@@ -674,7 +680,7 @@ fn judged_commit(
             ));
         } else if path.starts_with(&formal) && path.ends_with(".tla") {
             if abstract_module(module) {
-                if uncommented(&old) != uncommented(new_text) {
+                if layout_free(&uncommented(&old)) != layout_free(&uncommented(new_text)) {
                     spec.push(format!("{path}: a promise"));
                 }
                 continue;
@@ -686,11 +692,13 @@ fn judged_commit(
             );
             let (before, after) = (definitions(&old), definitions(new_text));
             for name in names.iter().filter(|name| before.contains_key(*name)) {
-                if before.get(name) != after.get(name) {
+                if before.get(name).map(|text| layout_free(text))
+                    != after.get(name).map(|text| layout_free(text))
+                {
                     spec.push(format!("{path}: {name}"));
                 }
             }
-            if rest_of(&old, &names) != rest_of(new_text, &names) {
+            if layout_free(&rest_of(&old, &names)) != layout_free(&rest_of(new_text, &names)) {
                 beside.push(format!("{path}: the model itself"));
             }
         } else if path.starts_with(&formal) && path.ends_with(".cfg") {
@@ -1274,5 +1282,20 @@ mod tests {
         let said = said_by(module, &checks, &explored);
         assert!(!said.contains("vars"), "{said:?}");
         assert!(said.contains("Safe") && said.contains("Steady"), "{said:?}");
+    }
+
+    #[test]
+    fn a_declaration_laid_out_again_is_no_change() {
+        let old = "---- MODULE S ----\nCONSTANTS A, B\nVARIABLES x, \\* the count\n    y\nSpec == x = 0\n====\n";
+        let new = "---- MODULE S ----\nCONSTANTS\n    \\* @type: Int;\n    A,\n    B\nVARIABLES\n    x,\n    y\nSpec ==\n    x = 0\n====\n";
+        assert_eq!(
+            layout_free(&uncommented(old)),
+            layout_free(&uncommented(new))
+        );
+        let changed = new.replace("x = 0", "x = 1");
+        assert_ne!(
+            layout_free(&uncommented(old)),
+            layout_free(&uncommented(&changed))
+        );
     }
 }
