@@ -30,6 +30,11 @@
 //!   response lost on purpose, and with the store refusing a checkpoint, which no `200`
 //!   acknowledges before a later one is durable.
 //!
+//! * `open_instances_reach_a_pool_over_https` (docs/adr/0113): two hundred instances of an open
+//!   machine that no deployment lists join and are answered once each; a request whose response
+//!   was lost is answered from its completion record; an instance whose lease ran out is fenced
+//!   `412` and joins again.
+//!
 //! * `a_server_upgraded_in_place_under_load_loses_nothing` (docs/adr/0109, D11, and
 //!   "Conformance"): a server of the first version of a generated document, stopped in order under
 //!   load, and the next build started on its store: every session migrates or is refused as D11
