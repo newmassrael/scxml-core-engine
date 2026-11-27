@@ -1505,6 +1505,136 @@
       "decision": "docs/adr/0045",
       "abstract": true,
       "runs": []
+    },
+    {
+      "module": "DurableReceipt",
+      "decision": "docs/adr/0045",
+      "parts": {
+        "HoldUntilDurable": "TRUE",
+        "KeepUntilAck": "TRUE",
+        "UnackedInCheckpoint": "TRUE",
+        "RestoreCounter": "TRUE",
+        "WindowBound": "TRUE",
+        "ByNumber": "TRUE",
+        "AnswerRepeat": "TRUE",
+        "AckDurable": "TRUE",
+        "MarkAtSeal": "TRUE",
+        "RestoreMarks": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "ReceiptService",
+      "progress": [
+        "Delivered",
+        "Settled"
+      ],
+      "possible": [
+        "Idle"
+      ],
+      "runs": [
+        {
+          "config": "DurableReceipt.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "DurableReceipt_window.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "DurableReceipt_live.cfg",
+          "expect": "holds",
+          "possible": "Idle"
+        },
+        {
+          "config": "DurableReceipt_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Delivered",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "a network that delivers and hosts that checkpoint are what make an envelope be kept; the promise is safety and needs none"
+        },
+        {
+          "config": "DurableReceipt_without_answer_repeat.cfg",
+          "expect": "violates",
+          "property": "Settled",
+          "without": "AnswerRepeat",
+          "promise": "kept",
+          "why": "an acknowledgement lost and never sent again leaves the sender holding what the receiver keeps; nothing false is told and nothing is lost"
+        },
+        {
+          "config": "DurableReceipt_possible_without_answer_repeat.cfg",
+          "expect": "violates",
+          "possible": "Idle",
+          "without": "AnswerRepeat",
+          "promise": "kept",
+          "why": "an acknowledgement lost and never sent again leaves the sender holding what the receiver keeps; nothing false is told and nothing is lost"
+        },
+        {
+          "config": "DurableReceipt_without_hold_until_durable.cfg",
+          "expect": "violates",
+          "invariant": "NoPhantom",
+          "without": "HoldUntilDurable",
+          "promise": "broken"
+        },
+        {
+          "config": "DurableReceipt_without_keep_until_ack.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "KeepUntilAck",
+          "promise": "kept",
+          "why": "a sender that lets go of what it released tells no machine anything false; what the network loses is then never kept, which is progress's (Delivered)"
+        },
+        {
+          "config": "DurableReceipt_without_unacked_in_checkpoint.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "UnackedInCheckpoint",
+          "promise": "kept",
+          "why": "a restored sender that forgot what was unacknowledged tells no machine anything false; what the network lost is then never kept, which is progress's (Delivered)"
+        },
+        {
+          "config": "DurableReceipt_without_restore_counter.cfg",
+          "expect": "violates",
+          "invariant": "ReceiptKept",
+          "without": "RestoreCounter",
+          "promise": "broken"
+        },
+        {
+          "config": "DurableReceipt_without_window_bound.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "WindowBound",
+          "promise": "kept",
+          "why": "the window is what the sender's memory is promised: past it every envelope is still taken in once and let go only once kept"
+        },
+        {
+          "config": "DurableReceipt_without_by_number.cfg",
+          "expect": "violates",
+          "invariant": "Once",
+          "without": "ByNumber",
+          "promise": "broken"
+        },
+        {
+          "config": "DurableReceipt_without_ack_durable.cfg",
+          "expect": "violates",
+          "invariant": "ReceiptKept",
+          "without": "AckDurable",
+          "promise": "broken"
+        },
+        {
+          "config": "DurableReceipt_without_mark_at_seal.cfg",
+          "expect": "violates",
+          "invariant": "ReceiptKept",
+          "without": "MarkAtSeal",
+          "promise": "broken"
+        },
+        {
+          "config": "DurableReceipt_without_restore_marks.cfg",
+          "expect": "violates",
+          "invariant": "Once",
+          "without": "RestoreMarks",
+          "promise": "broken"
+        }
+      ]
     }
   ]
 }
