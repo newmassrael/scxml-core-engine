@@ -1086,10 +1086,20 @@ foreach(_s RANGE ${_pool_scenario_last})
             set(_b 0)
             set(_want 0)
             string(JSON _expect_type ERROR_VARIABLE _no_expect TYPE "${_pool_contract}" scenarios ${_s} steps ${_t} expect)
-            if(NOT _no_expect AND NOT _expect_type STREQUAL "NULL")
-                string(JSON _expect GET "${_pool_contract}" scenarios ${_s} steps ${_t} expect)
-            else()
+            # A step that only moves bytes or names an index answers nothing and
+            # gives no `expect`; every other step gives one, `null` included.
+            if(_op STREQUAL "write" OR _op STREQUAL "read" OR _op STREQUAL "sent" OR _op STREQUAL "index"
+               OR _op STREQUAL "into_index")
+                if(NOT _no_expect)
+                    message(FATAL_ERROR "pool scenario ${_id} step ${_t}: ${_op} answers nothing and gives no expect")
+                endif()
                 set(_expect "")
+            elseif(_no_expect)
+                message(FATAL_ERROR "pool scenario ${_id} step ${_t}: ${_op} gives no expect")
+            elseif(_expect_type STREQUAL "NULL")
+                set(_expect "")
+            else()
+                string(JSON _expect GET "${_pool_contract}" scenarios ${_s} steps ${_t} expect)
             endif()
             if(_op STREQUAL "count" OR _op STREQUAL "slot_len" OR _op STREQUAL "free" OR _op STREQUAL "violations"
                OR _op STREQUAL "refused_prefixes" OR _op STREQUAL "capacity" OR _op STREQUAL "generation")
