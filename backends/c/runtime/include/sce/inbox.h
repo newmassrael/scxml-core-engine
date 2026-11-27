@@ -38,7 +38,12 @@
 // (sce/forge/atomics.h) for 64 and 32, `sce_irq_save` and `sce_irq_restore`
 // for 0. An SCQ row may refuse a post while other posts, or the owner's take,
 // hold slots (at most one each), as the queue it is built on says; that is a
-// refusal for room like any other.
+// refusal for room like any other, and the door's promise admits it: a post
+// still under way counts toward a full inbox with what its session holds, and
+// an input the owner has taken and not yet applied is one the session still
+// holds (docs/adr/0147, D1). The take never waits for a post: a ticket a post
+// holds and has not yet filled is made unusable for it, the post takes another,
+// and the take goes on to the next (docs/adr/0147, D5).
 
 #ifndef SCE_INBOX_H
 #define SCE_INBOX_H

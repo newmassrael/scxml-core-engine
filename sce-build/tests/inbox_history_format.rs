@@ -609,7 +609,8 @@ fn a_handle_names_a_session_the_tree_holds() {
 }
 
 /// A bounded inbox refuses a post as full when its session holds the capacity
-/// of inputs taken and not yet entered, and never with room left, without a
+/// of inputs taken and not yet entered (here no other post is under way, which
+/// would count too), and never with room left, without a
 /// bound, or once the session has ended where the runtime closes. A post it
 /// takes past that count is taken: a drain frees room before it enters what it
 /// took out.
@@ -666,6 +667,48 @@ fn a_full_inbox_refuses_and_only_when_full() {
         ]],
     };
     assert!(is_not_linearizable(&after_end));
+}
+
+/// docs/adr/0147, D1: a post under way may hold storage before it is taken, so
+/// a refusal as full counts the other posts to its session that overlap it and
+/// are placed after it with what the session holds, and only posts to its
+/// session. Post 1 is under way from 1 to 20 and enters last; post 4 is refused
+/// while its session holds input 3 alone.
+#[test]
+fn a_full_inbox_counts_the_posts_to_it_under_way() {
+    let full = Delivery::Refused(Refusal::Full);
+    let run = |capacity: u64, under_way_to: u64| History {
+        sessions: vec![0, 1],
+        closes: true,
+        capacity: Some(capacity),
+        owner: vec![
+            enqueue(0, 2, Source::Posted, 4, 5),
+            enqueue(0, 3, Source::Posted, 12, 13),
+            enqueue(0, 5, Source::Posted, 16, 17),
+            enqueue(under_way_to, 1, Source::Posted, 21, 22),
+        ],
+        posters: vec![
+            vec![post(under_way_to, 1, Delivery::Taken, 1, 20)],
+            vec![
+                post(0, 2, Delivery::Taken, 2, 3),
+                post(0, 3, Delivery::Taken, 6, 7),
+            ],
+            vec![post(0, 4, full, 8, 9), post(0, 5, Delivery::Taken, 14, 15)],
+        ],
+    };
+    assert_eq!(
+        check(&run(2, 0)),
+        Verdict::Linearizable,
+        "one input held and one post to the session under way did not reach a capacity of two"
+    );
+    assert!(
+        is_not_linearizable(&run(3, 0)),
+        "one input held and one post under way reached a capacity of three"
+    );
+    assert!(
+        is_not_linearizable(&run(2, 1)),
+        "a post to another session under way was counted toward this session's capacity"
+    );
 }
 
 /// A refused post never takes effect, whatever its reason: its input enters

@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "sessions": [0],
+  "closes": true,
+  "capacity": 2,
+  "owner": [
+    { "call": "enqueue", "session": 0, "item": 2, "source": "posted", "invoked": 4, "returned": 5 },
+    { "call": "enqueue", "session": 0, "item": 3, "source": "posted", "invoked": 12, "returned": 13 },
+    { "call": "enqueue", "session": 0, "item": 5, "source": "posted", "invoked": 16, "returned": 17 },
+    { "call": "enqueue", "session": 0, "item": 1, "source": "posted", "invoked": 21, "returned": 22 }
+  ],
+  "posters": [
+    [
+      { "call": "post", "session": 0, "input": 1, "door": "handle", "outcome": "taken", "invoked": 1, "returned": 20 }
+    ],
+    [
+      { "call": "post", "session": 0, "input": 2, "door": "handle", "outcome": "taken", "invoked": 2, "returned": 3 },
+      { "call": "post", "session": 0, "input": 3, "door": "handle", "outcome": "taken", "invoked": 6, "returned": 7 }
+    ],
+    [
+      { "call": "post", "session": 0, "input": 4, "door": "handle", "outcome": "refused", "reason": "full", "invoked": 8, "returned": 9 },
+      { "call": "post", "session": 0, "input": 5, "door": "handle", "outcome": "taken", "invoked": 14, "returned": 15 }
+    ]
+  ]
+}

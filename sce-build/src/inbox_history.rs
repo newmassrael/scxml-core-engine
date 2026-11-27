@@ -43,8 +43,14 @@
 //!   the tree holds;
 //! - a post naming a session whose run has ended, where the runtime closes, is
 //!   refused as `ended`, through either door;
-//! - a post to a bounded inbox may be refused as `full` when its session holds
-//!   as many inputs as the capacity, and never when it holds fewer;
+//! - a post to a bounded inbox may be refused as `full` when the inputs its
+//!   session holds, with the other posts to that session still under way, are
+//!   as many as the capacity, and never when they are fewer: a post under way
+//!   may hold storage before it is taken, and an inbox whose owner never waits
+//!   for a post cannot count it otherwise (ADR 0147, D1). A post is under way
+//!   at a refusal when it was invoked before the refusal returned and is placed
+//!   after it, so no post is refused while its session holds fewer inputs than
+//!   the capacity and no other post to it overlaps the refusal;
 //! - any other post is taken, and its input joins the back of what its session
 //!   holds. A post may be taken when its session holds the capacity: a drain
 //!   takes inputs out of the inbox before it enters them, and the room it
@@ -315,7 +321,7 @@ pub fn check(history: &History) -> Verdict {
     if let Err(why) = well_formed(&participants, &names, &known) {
         return Verdict::Malformed(why);
     }
-    let sequential = Sequential::of(history, &participants[0], known);
+    let sequential = Sequential::of(history, &participants, known);
     let required = posts_each_post_must_follow(&participants);
     let start = State {
         frontier: vec![0; participants.len()],
@@ -361,7 +367,7 @@ pub fn check(history: &History) -> Verdict {
             {
                 continue;
             }
-            let Some(waiting) = sequential.admits(&frame.state, op) else {
+            let Some(waiting) = sequential.admits(&frame.state, who, op) else {
                 continue;
             };
             let mut frontier = frame.state.frontier.clone();
@@ -427,11 +433,36 @@ struct Sequential {
     /// `repeats[at]`: whether the owner's operation `at` is an own event
     /// that entered before, or the end of a session that ended before.
     repeats: Vec<bool>,
+    /// `posts_to[session]`: every post that names the session, whoever made
+    /// it.
+    posts_to: Vec<Vec<Invocation>>,
+}
+
+/// A post as a refusal as full counts it: the participant that made it, its
+/// place among that participant's operations, and the instant it was invoked.
+#[derive(Debug, Clone, Copy)]
+struct Invocation {
+    who: usize,
+    at: usize,
+    invoked: u64,
 }
 
 impl Sequential {
-    fn of(history: &History, owner: &[Step], known: Vec<bool>) -> Sequential {
+    fn of(history: &History, participants: &[Vec<Step>], known: Vec<bool>) -> Sequential {
+        let owner = &participants[0];
         let mut end_at = vec![None; known.len()];
+        let mut posts_to = vec![Vec::new(); known.len()];
+        for (who, ops) in participants.iter().enumerate() {
+            for (at, op) in ops.iter().enumerate() {
+                if let Act::Post { session, .. } = op.act {
+                    posts_to[session].push(Invocation {
+                        who,
+                        at,
+                        invoked: op.invoked,
+                    });
+                }
+            }
+        }
         let mut own_entered: HashSet<u64> = HashSet::new();
         let repeats = owner
             .iter()
@@ -465,6 +496,7 @@ impl Sequential {
             known,
             end_at,
             repeats,
+            posts_to,
         }
     }
 
@@ -474,11 +506,33 @@ impl Sequential {
         self.end_at[session].is_some_and(|at| at < owner_placed)
     }
 
-    /// What the sessions hold after `op`, placed next from `state`, or `None`
-    /// when the sequential object would not give the outcome `op` was
-    /// observed to give. An operation of the owner is the owner's next, so its
-    /// place among the owner's operations is `state.frontier[0]`.
-    fn admits(&self, state: &State, op: &Step) -> Option<Vec<VecDeque<u64>>> {
+    /// Whether a post to `session`, `op`, the next operation of participant
+    /// `who`, placed next from `state`, finds the session's bounded inbox
+    /// full: what the session holds and the other posts to it under way reach
+    /// the capacity. A post is under way there when it was invoked before `op`
+    /// returned and is not yet placed, so it linearizes after `op`. The
+    /// participant's own other posts are each placed before `op` or invoked
+    /// after it returned, so none of them is.
+    fn full(&self, state: &State, session: usize, who: usize, op: &Step) -> bool {
+        self.capacity.is_some_and(|capacity| {
+            let under_way = self.posts_to[session]
+                .iter()
+                .filter(|post| {
+                    post.who != who
+                        && state.frontier[post.who] <= post.at
+                        && post.invoked < op.returned
+                })
+                .count();
+            state.waiting[session].len() + under_way >= capacity
+        })
+    }
+
+    /// What the sessions hold after `op`, the next operation of participant
+    /// `who`, placed next from `state`, or `None` when the sequential object
+    /// would not give the outcome `op` was observed to give. An operation of
+    /// the owner is the owner's next, so its place among the owner's operations
+    /// is `state.frontier[0]`.
+    fn admits(&self, state: &State, who: usize, op: &Step) -> Option<Vec<VecDeque<u64>>> {
         let owner_placed = state.frontier[0];
         match op.act {
             Act::Post {
@@ -496,14 +550,13 @@ impl Sequential {
                 // through the directory may find it gone, whether the runtime
                 // closes or not; a handle looks nothing up.
                 let gone = ended && door == Door::Addressed;
-                let full = self
-                    .capacity
-                    .is_some_and(|capacity| state.waiting[session].len() >= capacity);
                 let answered = match outcome {
                     Delivery::Taken => known && !closed,
                     Delivery::Refused(Refusal::Unknown) => !known || gone,
                     Delivery::Refused(Refusal::Ended) => closed,
-                    Delivery::Refused(Refusal::Full) => known && !closed && full,
+                    Delivery::Refused(Refusal::Full) => {
+                        known && !closed && self.full(state, session, who, op)
+                    }
                 };
                 answered.then(|| {
                     let mut waiting = state.waiting.clone();
