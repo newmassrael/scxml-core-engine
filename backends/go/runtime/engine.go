@@ -111,6 +111,11 @@ type Engine[S comparable, E comparable] struct {
 	// nil until a host sets one.
 	transitionObserver func(TransitionTaken[S])
 
+	// inboxPort is told each event the engine puts on its external queue, when it
+	// begins to put it there and once it entered (SetInboxPort, docs/adr/0147,
+	// D3; inbox_port.go); nil until a test sets one.
+	inboxPort func(InboxEnqueue[E])
+
 	// trace is the trace port SetTracePort set and the step it is being told
 	// (docs/adr/0115, D4 and D8; trace_port.go). A build without the tag
 	// sce_trace_port holds a field of no size here, and the calls that would

@@ -16,6 +16,10 @@
 //     Appendix D takes, told to a test and written in the run trace format
 //     `sce-codegen formal traces` judges (docs/adr/0115, D4 and D8;
 //     trace_port.go)
+//   - The inbox port (Engine.SetInboxPort): each event the engine puts on its
+//     external queue, told to a test that writes the run as the inbox history
+//     `sce-codegen check-inbox-history` judges (docs/adr/0147, D3;
+//     inbox_port.go)
 //
 // This package is a 1:1 port of the Rust runtime at sce-rust-runtime/. Method
 // names, field layouts, and semantics match the Rust (and C++) source. When the

@@ -372,11 +372,22 @@ func (e *Engine[S, E]) drainInbox() {
 // The internal queue has no such door: it is the running macrostep's own, and
 // arrival order is a property of the external queue, so a <raise> or a platform
 // error waits for no post (Engine.Raise).
+//
+// docs/adr/0147, D3: the inbox port is told the event before that drain, which
+// is part of putting an event of the engine's own on the queue: what the inbox
+// holds when the drain reads it enters ahead of the event, and a post made after
+// that read may follow it. And it is told the event once it entered. An input
+// the drain applies comes back here from inside the drain, where drainingInbox
+// says the inbox held it and the drain is nothing, so its two calls are told
+// inside its own event's two.
 func (e *Engine[S, E]) enqueueExternal(event EventWithMetadata[E]) {
+	posted := e.drainingInbox
+	e.tellInboxPort(event, posted, false)
 	if e.isRunning {
 		e.drainInbox()
 	}
 	e.externalQueue.Raise(event)
+	e.tellInboxPort(event, posted, true)
 }
 
 // closeInbox closes the inbox, applies what it still holds, and takes the session
