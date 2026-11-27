@@ -142,8 +142,8 @@ pub(crate) fn bound(max_tracked: u32) -> usize {
     }
 }
 
-/// Where a key goes in a table of `tracked` keys bounded by `bound`, its arrival time there
-/// `held`, `None` when the table does not track it.
+/// Where a key goes in a table that tracks `keys` keys, bounded by `bound`: `held` is its arrival
+/// time there, `None` when the table does not track it.
 #[cfg_attr(verus_only, verus_verify)]
 #[cfg_attr(verus_only, verus_spec(place =>
     ensures
@@ -151,11 +151,11 @@ pub(crate) fn bound(max_tracked: u32) -> usize {
         held is None ==> ((place is Full) == (bound <= tracked)),
         held is None ==> ((place is Free) == (tracked < bound)),
 ))]
-pub(crate) fn room<T>(tracked: usize, bound: usize, held: Option<T>) -> Room<T> {
+pub(crate) fn room<T>(keys: usize, bound: usize, held: Option<T>) -> Room<T> {
     match held {
         Some(held) => Room::Held(held),
         None => {
-            if tracked >= bound {
+            if keys >= bound {
                 Room::Full
             } else {
                 Room::Free
@@ -191,10 +191,10 @@ pub(crate) fn longer(a: Answer, b: Answer) -> Answer {
 ))]
 pub(crate) fn seconds(wait_ms: u128) -> u64 {
     let whole = wait_ms / 1000;
-    let rounded = if wait_ms.is_multiple_of(1000) {
-        whole
-    } else {
+    let rounded = if whole * 1000 < wait_ms {
         whole + 1
+    } else {
+        whole
     };
     if rounded == 0 {
         1

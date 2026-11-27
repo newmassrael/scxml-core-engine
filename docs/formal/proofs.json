@@ -221,8 +221,8 @@
         },
         {
           "breaks": "a table at its bound takes a new key past it",
-          "from": "if tracked >= bound {",
-          "to": "if tracked > bound {"
+          "from": "if keys >= bound {",
+          "to": "if keys > bound {"
         },
         {
           "breaks": "a limiter told to track no key keeps one past its bound",
