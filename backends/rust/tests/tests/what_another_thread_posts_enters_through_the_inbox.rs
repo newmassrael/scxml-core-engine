@@ -614,8 +614,11 @@ fn a_bounded_inbox_attached_to_another_engine_answers_for_that_engines_session()
 // first one's, and the first one's ending is refused by the token check.
 #[test]
 fn an_ending_a_bounded_inbox_took_for_an_earlier_engine_is_refused_by_the_token_check() {
-    let mut first = Machine::booted();
+    // Attached before its run starts: a session has one inbox (docs/adr/0084, D2),
+    // so the bounded one is handed over before the engine would make its own.
+    let mut first = Machine::built();
     first.engine.attach_inbox(&BOUNDED_RESTARTED);
+    first.boot();
     let late = first.latest_token();
     let answer = BOUNDED_RESTARTED.post(ending_of(
         Some(session_of(&first).as_str()),
