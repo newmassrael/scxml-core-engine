@@ -7,7 +7,8 @@
   Amended 2026-11-28 on two later requests of the consumer, under the same rule: a machine asks for a link through a
   host-run invocation and receives its handle as the completion's data (D1), and a host ends what it holds by an
   explicit input, a value destroyed without one being counted as a violation of the contract (D3); the order of work
-  places them (items 3 and 3a). The steps they join had not started.
+  places them (items 3 and 3a). The steps they join had not started. The amendment was revised the same day on the
+  consumer's review of it; the Review table at the end says where each of its twelve points went.
 - Date: 2026-11-22
 - Amends, once landed (each amended document gains an "Amended by: ADR 0111" line in the landing that moves it):
   - ADR 0084 D1, by an owner that is whoever holds the drive (D5);
@@ -18,12 +19,12 @@
   - RFC §synth-5-E's buffer-pool, by a run-time slot count and slot length, storage the caller holds, a headroom, a
     slot index that crosses an interface, a shared book, and a slot lent to an event (D4);
   - the `queue` kind, by a run-time capacity under its bound (D4);
-  - ADR 0084 D4 and D6, by one more reserved type a host serves through a registration of its own, `sce:link-open`
+  - ADR 0084 D4 and D6, by one more reserved type a host serves through a registration of its own, `sce:link-dial`
     (D1, amended 2026-11-28);
   - ADR 0045 and the saved state of `docs/SCE_ACCEPTED_SUBSET.md`, by a link table saved as its generations and
     restored closed (D1, amended 2026-11-28);
-  - ADR 0115 D7's link connector (`LinkChannel.tla`), by the asked open and the host's explicit end, and a module of
-    the door's host handles beside it (D1 and D3, amended 2026-11-28);
+  - ADR 0115 D7's link connector (`LinkChannel.tla`), by the dial a machine asks for, the lowered frame limit and the
+    host's explicit end, and a module of the door's host handles beside it (D1 and D3, amended 2026-11-28);
   - `docs/SCE_ACCEPTED_SUBSET.md`, the paragraphs of each of the above.
 - Scope: the Rust lane (`std` and `no_std`) and the C11 lane, which are the two that generate a link and a
   buffer-pool (the kinds are MCU-class elsewhere); the door's ask and drive (D5) on every runtime; the build entry of
@@ -130,10 +131,15 @@ What exists, checked at `7f52c3d78ee`:
   "Linear types can change the world!", 1990), and a session-typed channel ends by an explicit close (Honda,
   Vasconcelos and Kubo, ESOP 1998). Rust's types are affine: a value may be dropped unsaid, or never (`mem::forget`
   is safe, Rust RFC 1066), so a destructor can be a safety net and not the end a protocol counts. A model of a
-  protocol has a step for an end only where the end is an act.
+  protocol has a step for an end only where the end is an act. Freeing a region frees every object in it at once
+  (Tofte and Talpin, "Region-based memory management", 1997), which is how a scope's end ends what it holds. And an
+  abstraction a program does not use costs it nothing when the compiler can see that it is not used (Stroustrup's
+  zero-overhead principle), which a report through a type parameter or a seam gets and a branch on a null hook
+  does not.
 
 The works cited in the two bullets added on 2026-11-28 were cited from memory and were not checked against their
-sources when the amendment was written; the section and RFC numbers (RFC 8446 §2.2, Rust RFC 1066) in particular.
+sources when the amendment was written; the section and RFC numbers (RFC 8446 §2.2, Rust RFC 1066) and the year of
+Tofte and Talpin's paper in particular.
 
 ## Decision
 
@@ -177,55 +183,87 @@ may import one, so a machine generated for a hosted Rust build and for a firmwar
 link into a machine generated for another lane is refused as a link document is refused there
 (`codegen/mcu-class-kind-on-non-mcu-language`).
 
-(Amended 2026-11-28, on the consumer's request to move a link's dial plan and its deadline into the document.) An
-instance enters the machine's **link table**, the book its handles index (one per imported link kind, of the bound
-the link declares), in one of two ways, and both give the same handle:
+(Amended 2026-11-28, on the consumer's request to move a link's dial plan and its deadline into the document; revised
+the same day on its review, the table at the end.) An instance enters the machine's **link table**, the book its
+handles index (one per imported link kind, of the bound the link declares), in one of two ways, and both give the same
+handle:
 
-- **The host opens it on its own**, when its driver accepts, or dials by a plan of the host's, as above. A link may
-  declare `<sce:opened event="E"/>`; `E` is then posted with the instance's record (below) before any event of the
-  instance. A link that declares none makes the handle known first as the `_event.origin` of the instance's first
-  event.
-- **The machine asks for it**, through a host-run invocation (§scxml-6.4.1), whose lifecycle is the one every host-run
-  invocation has: the ledger of ADR 0084 D5, an ending posted through the door of ADR 0084 D2, and
+- **The host opens it on its own**, when its driver accepts, or when the host dials on its own account a link the
+  document does not ask for. A link may declare `<sce:opened event="E"/>`; `E` is then posted with the instance's
+  record (below) before any event of the instance. A link that declares none makes the handle known first as the
+  `_event.origin` of the instance's first event.
+- **The machine asks for a dial**, through a host-run invocation (§scxml-6.4.1), whose lifecycle is the one every
+  host-run invocation has: the ledger of ADR 0084 D5, an ending posted through the door of ADR 0084 D2, and
   `docs/SCE_ACCEPTED_SUBSET.md`, "Types the host runs".
 
 ```xml
-<invoke type="sce:link-open" id="dial" sce:link="session_link" sce:request="DialPlan">
-  <param name="locators" expr="plan.locators"/>
-  <param name="_sce_deadline_ms" expr="plan.deadline_ms"/>
+<invoke type="sce:link-dial" id="dial" sce:link="tcp_link" sce:request="Dial">
+  <param name="locator" expr="next_locator"/>
+  <param name="_sce_deadline_ms" expr="dial_ms"/>
 </invoke>
 ```
 
-- **The type is SCE's; the service is the host's.** `sce:link-open` is reserved, as `sce:mesh-rpc` is (ADR 0084 D6),
-  and the host serves it through a registration of its own per link kind (Rust `register_link_opener::<L>`, C11
-  `<machine>_register_link_opener_<alias>`), not through `--host-invoker`, whose types are the host's to name and
+- **One invocation dials one locator; the plan is the document's.** The host makes one attempt to reach the locator
+  it is handed, by the link kind `sce:link` names, and answers with an instance or a failure. Which locators, in
+  what order, how often each is tried again, the backoff between tries, which failure takes a locator out of the
+  plan, and the deadline of the whole open are the document's: its states, its variables and its own timers (a
+  delayed `<send>`). They are where a protocol's profiles differ (one stays on a locator and tries it again, another
+  walks the list round after round and drops a locator whose failure cannot be retried), so none of them is the
+  host's. Two cases follow with nothing more. A list that mixes schemes is walked by invocations of different link
+  kinds, one per locator, each with its own kind's framing and headroom (D4). A peer that goes on dialing the
+  locators it has not reached while it already holds links, and reports that it is partly connected, does so by
+  further invocations, which may run in parallel regions.
+- **The type is SCE's; the service is the host's.** `sce:link-dial` is reserved, as `sce:mesh-rpc` is (ADR 0084
+  D6), and the host serves it through a registration of its own per link kind (Rust `register_link_dialer::<L>`, C11
+  `<machine>_register_link_dialer_<alias>`), not through `--host-invoker`, whose types are the host's to name and
   whose completion is data the host writes. The request is a host-run request: its `<param>`s, typed by
   `sce:request` as any typed host-run request is, are evaluated by the machine where the invocation starts, as ADR
   0098 Decision 1 has a parent evaluate what it hands, and a value that cannot be evaluated or does not fit its field is
-  `error.execution` and starts nothing. The reserved `_sce_deadline_ms` is the dial's deadline and the engine's, as
-  for every host-run invocation. The host reads the plan; how it dials (the order of the locators, its retries within
-  the deadline) is the host's, since it is I/O.
+  `error.execution` and starts nothing. The host's part is the I/O of the one attempt.
+- **The deadline is the dial's.** `_sce_deadline_ms`, the engine's as for every host-run invocation, measures the dial
+  alone: from the start of the invocation to its completion, which the host makes when the transport is connected and
+  the instance open, before any message of the protocol has crossed it. The protocol's handshake over the new link is
+  the machine's, under its own timers. A deadline over the dial and the handshake together, on one clock, is the
+  document's: a delayed `<send>` armed before the first dial and cancelled when the handshake completes.
 - **The handle is minted by the coupling, never written by the host.** The host completes the invocation with the
-  instance it opened through the generated coupling of that kind (Rust `complete_link_open(token,
-  LinkInstance<L>)`, C11 `<machine>_complete_link_open_<alias>(m, token, instance)`), not with data. The token check
+  instance it opened through the generated coupling of that kind (Rust `complete_link_dial(token,
+  LinkInstance<L>)`, C11 `<machine>_complete_link_dial_<alias>(m, token, instance)`), not with data. The token check
   every host-run completion passes accepts it; then, in the same owner operation, the instance enters the link table,
   its handle is minted, and `done.invoke.<id>` is queued with the instance's record as its `_event.data`. A handle is
   therefore a capability: a host cannot make one from bytes, and the entry of one kind takes no instance of another
   (in Rust the type, in C11 the pointer type, differs).
 - **Its type is decided at generation.** `sce:link` names an imported link alias, and the completion's data is the
-  record `sce:std/link/opened.scxml` over that kind: `link`, of type `link:<alias>`; `slot_length` and
-  `frame_limit`, the instance's run-time limits (D3), each a `uint32`; and `result`, the record `sce:result` names,
-  when the invocation names one (what the host learned while dialing, such as the locator that answered). The same
-  record is the data of a host's own open's `opened` event, without `result`. An assignment of `_event.data.link` to
-  a location of any type but `link:<alias>` or `optional<link:<alias>>` is refused where it is written
-  (`scxml/static-datamodel-rule`). Refused at parse, by a code of its own (`validation/link-open-invoke`): no `id`
-  (the done event and the generated entries are named after it); no `sce:link`, or one that names no imported link;
-  `typeexpr`; a `namelist` or `<content>`; `sce:link` on an invocation of another type. A machine generated for a
-  lane that cannot import a link is refused as an import of one is (above).
-- **A failure, a deadline or a cancel leaves no link.** A host that could not open reports the failure
-  (`error.invoke.<id>`, with the host's data); a deadline that passes is `error.invoke.<id>` with `"deadline"`;
-  leaving the invoking state cancels the start, and the host is told to stop. In each case no instance entered the
-  table and nothing of a link is posted. A completion the token check refuses (after a cancel, a deadline or a
+  record `sce:std/link/opened.scxml` over that kind:
+  - `link`, of type `link:<alias>`;
+  - `slot_length` and `frame_limit`, the instance's run-time limits (D3), each a `uint32`;
+  - `streamed`, a `bool`: the transport is a byte stream, so the link writes its length prefix into the headroom
+    (D4); an instance that is not streamed keeps its frames' boundaries and writes none;
+  - `reliable`, a `bool`: the transport delivers what it accepts, in order and without loss, or reports the link
+    lost. The two are independent: a WebSocket carries datagrams and is reliable. Both are the instance's, reported
+    by the host for the transport it opened, since one link kind may be carried by transports that differ in either;
+  - `result`, the record `sce:result` names, when the invocation names one (what the host learned while dialing).
+
+  The same record, without `result`, is the data of a host's own open's `opened` event. An assignment of
+  `_event.data.link` to a location of any type but `link:<alias>` or `optional<link:<alias>>` is refused where it
+  is written (`scxml/static-datamodel-rule`). Refused at parse, by a code of its own (`validation/link-dial-invoke`):
+  no `id` (the done event and the generated entries are named after it); no `sce:link`, or one that names no
+  imported link; `typeexpr`; a `namelist` or `<content>`; `sce:link` on an invocation of another type. A machine
+  generated for a lane that cannot import a link is refused as an import of one is (above).
+- **A failure is a record too.** The host fails the dial with a record, not with free data (Rust
+  `fail_link_dial(token, DialFailed)`, C11 `<machine>_fail_link_dial_<alias>(m, token, &failed)`), and the data of
+  `error.invoke.<id>` is `sce:std/link/dial_failed.scxml`:
+  - `cause`, of the closed enum `unresolved` (the locator's name did not resolve), `unreachable` (no route, or no
+    answer), `refused` (the peer refused the connection), `unsupported` (the host does not carry the locator's
+    scheme or one of its options), `invalid-locator` (the locator cannot be read), `resources` (the host lacked what
+    a dial needs: a descriptor, memory, a slot), `deadline` (the engine's: `_sce_deadline_ms` passed) and `other`;
+  - `retriable`, a `bool`: whether the same locator may succeed if tried again. It is `false` for
+    `invalid-locator` and `unsupported`, `true` for `deadline`, and the host's judgement for the rest.
+
+  The deadline's `error.invoke.<id>` carries this record (`cause` `deadline`, `retriable` `true`) in place of
+  the string `"deadline"` an untyped host-run invocation carries, so the machine reads one type on every failure.
+- **A failure, a deadline or a cancel leaves no link.** A failed dial and a deadline are `error.invoke.<id>`, as
+  above; leaving the invoking state cancels the start, and the host is told to stop. In each case no instance entered
+  the table and nothing of a link is posted. A completion the token check refuses (after a cancel, a deadline or a
   restart, or a second one) mints nothing and hands the instance back to the host (Rust: `Err(Refused(instance))`;
   C11: `false`, the instance still the host's), which closes it with its driver. The instance moves to the machine
   only with an accepted completion, at one point.
@@ -236,12 +274,13 @@ the link declares), in one of two ways, and both give the same handle:
 - **An unclaimed handle.** If the macrostep that takes `done.invoke.<id>` selects no transition for it, the event is
   discarded, as any event no transition takes is, and the only copy of the handle with it: the engine closes the
   instance as `<sce:link-close armed="discard"/>` would (it has armed nothing) and posts its `closed` with the reason
-  `unclaimed` (D3), counted (`link/unclaimed`). A transition that takes the event and keeps no handle loses it as a
-  program loses a file descriptor it does not store: the instance stays open until its peer or its host closes it or
-  the run ends (D3), and a document that must not lose one states it as a property (ADR 0115 D15).
-- **The same handle as a host's own open.** A handle from an asked open and one from the host's own open are of one
-  type, `link:<alias>`, index one table, are refused when stale the same way, and are closed by `<sce:link-close>`
-  and reported by `closed` the same way (D3). A machine may hold both in one map.
+  `unclaimed` (D3), reported as `link/unclaimed` (the seam of D3). A transition that takes the event and keeps no
+  handle loses it as a program loses a file descriptor it does not store: the instance stays open until its peer or
+  its host closes it or the run ends (D3), and a document that must not lose one states it as a property (ADR 0115
+  D15).
+- **The same handle as a host's own open.** A handle from a dial the machine asked for and one from the host's own
+  open are of one type, `link:<alias>`, index one table, are refused when stale the same way, and are closed by
+  `<sce:link-close>` and reported by `closed` the same way (D3). A machine may hold both in one map.
 - **The variable that holds it.** A handle has no zero (ADR 0099), so a variable that holds one before a link is open
   is `optional<link:<alias>>`, and a table of them is a map (`map<PeerId, link:session_link>[8]`, ADR 0108).
   `<assign location="peer" expr="_event.data.link"/>` copies the handle, not the instance: a handle is a value, as an
@@ -254,15 +293,18 @@ the link declares), in one of two ways, and both give the same handle:
   can be taken for it, which a table restored from generation zero would allow (the ABA case of D4). For each such
   entry the restore posts the link's `closed` with the reason `restored`, behind the saved external queue, so that an
   instance's last event is its `closed`, as in a run. An event of the saved queue that borrowed an rx slot (D2) is
-  saved as its value, since the slot is not saved. An asked open still running at the save is a running host-run
-  invocation and starts again as each does (ADR 0045: `restarted` set, a new token, the deadline it had left), so the
-  host dials again. A protocol that resumes its peer's session over a new link does so by its own handshake; a handle
-  carried over a restore would let it read a new transport as the old one.
-- **In the model.** In `LinkChannel.tla` (ADR 0115 D7) the asked open is an invocation the machine starts and the
-  environment completes, fails or lets the deadline take, or the machine cancels by leaving its state; the completion
-  is the one step that adds the instance and posts `done.invoke`, and a completion after the start has ended is a
-  step that adds nothing. A restore is the step of the restart fault (ADR 0115 D4) that closes every open instance
-  with `restored`.
+  saved as its value, since the slot is not saved. A dial still running at the save is a running host-run invocation
+  and starts again as each does (ADR 0045: `restarted` set, a new token, the deadline it had left), so the host
+  dials again. A protocol that resumes its peer's session over a new link does so by its own handshake; a handle
+  carried over a restore would let it read a new transport as the old one. The code that writes and reads the
+  generations is generated only into what saves: C11's `<machine>_saved.c` (the separate unit of ADR 0110 D2) and
+  Rust's save and restore entries, so a machine whose deployment does not save links none of it. The generations
+  themselves are kept in every build, since they are what makes a handle stale.
+- **In the model.** In `LinkChannel.tla` (ADR 0115 D7) a dial is an invocation the machine starts and the
+  environment completes, fails with a `dial_failed` record or lets the deadline take, or the machine cancels by
+  leaving its state; the completion is the one step that adds the instance and posts `done.invoke`, and a completion
+  after the start has ended is a step that adds nothing. A restore is the step of the restart fault (ADR 0115 D4)
+  that closes every open instance with `restored`.
 
 ### D2. A received batch is decoded where it arrives, split into its messages, and handed to the machine typed
 
@@ -374,15 +416,29 @@ on in the same transition, which is what a batch's sequence numbers need.
   slots unsent, which is how a protocol drops a link on congestion or on a decode error without a Close, and how a
   link whose peer stops reading is ever closed; a link may declare `<sce:closed event="E"/>`, posted when the instance
   is closed by either side, after which its handle is stale. Its data, and the host's part in a close, are below.
-- **A run-time frame limit.** An instance's slot length and its frame limit (the negotiated batch size, the path's
-  MTU) are given when the host opens it, on its own or asked (D1), each at most the pool's build bounds (D4).
-- **What the host holds, it ends by saying so** (amended 2026-11-28, on the consumer's request: its C ABI left the
-  release of a handle and the end of a delivery to `Drop` and to a reference count). An end that happens when a value
-  is destroyed is not an event: the model of ADR 0115 has no step for it, its moment is the allocator's, a cycle of
-  references never comes to it, and in Rust it may not come at all (the textbook structure, above). So every handle
-  the host holds that the machine counts ends by an explicit input of the host, posted through ADR 0084's door and a
-  step of the model. `Drop` stays, as a safety net that keeps the core sound, and what it does is observed as a
-  violation of the contract.
+- **A run-time frame limit, lowered by the protocol** (amended 2026-11-28). An instance's slot length and its frame
+  limit are given when the host opens it, on its own or by a dial (D1): the transport's own, such as the path's MTU or
+  the largest frame the link carries, each at most the pool's build bounds (D4), and the `opened` record states them.
+  The batch size a protocol negotiates is known only after its handshake (the smaller of the sizes the two sides
+  advertise), so the machine lowers the instance's limit to it:
+
+  ```xml
+  <sce:link-limit link="peer_link" frame-limit="negotiated" outcome="o"/>
+  ```
+
+  The limit only falls. A value above the instance's current limit answers `not-lower`; zero answers
+  `limit-short`; a stage holding an open batch already longer than the value answers `batch-open`; a closed instance
+  answers `stale-link`; each changes nothing. `ok` applies the value to every operation after it. The outcome is of
+  `sce:std/link/tx_outcome.scxml`, which gains `not-lower` and `limit-short`. In `LinkChannel.tla` it is the
+  machine's step `LowerLimit(i, n)`, enabled only for an `n` below the instance's limit, so the limit never rises in
+  any behaviour.
+- **What the host holds, it ends by saying so** (amended 2026-11-28, on the consumer's request: an end made only by a
+  destructor or a reference count is no step of the model). An end that happens when a value is destroyed is not an
+  event: the model of ADR 0115 has no step for it, its moment is the allocator's, a cycle of references never comes to
+  it, and in Rust it may not come at all (the textbook structure, above). So every handle the host holds that the
+  machine counts ends by an explicit input of the host, posted through ADR 0084's door and a step of the model.
+  `Drop` stays, as a safety net that keeps the core sound, and what it does is observed as a violation of the
+  contract.
   - **A link instance.** The host ends its instance by `close(instance, cause)` (C11 `<link>_close(instance,
     cause)`), `cause` `peer` (the driver saw the peer close, or lost the transport) or `host` (the host's own
     decision, its shutdown among them). Where the machine has asked to close it (`<sce:link-close>`), the host's close
@@ -392,43 +448,80 @@ on in the same transition, which is what a batch's sequence numbers need.
     and `unsent`, the count of armed slots returned unsent. Its `_event.origin` is the instance's handle, as for
     every event of the instance (D1).
   - **A host handle.** A document names the kinds of handle the host holds of what the machine keeps for it (a
-    subscription the machine delivers to, a query whose replies it hands out), each with the events that end it:
+    session, a subscription the machine delivers to, a query whose replies it hands out), each with the events that
+    end it:
 
     ```xml
-    <sce:host-handle kind="subscriber" capacity="64"
+    <sce:host-handle kind="session" capacity="4" released="session.released"/>
+    <sce:host-handle kind="subscriber" capacity="64" scope="session"
                      released="subscriber.released" delivery-ended="subscriber.delivery-ended"/>
     ```
 
     The door keeps a table of `capacity` entries per kind (the bound, ADR 0086), whose index is D4's generational
     form and whose type in the datamodel is `handle:<kind>`. The host takes an entry before it tells the machine of
-    the object (Rust `inbox.host_handle::<Subscriber>()`, C11 `<machine>_host_handle_take_<kind>`, each answering
-    `full` when the table is), passes its index in the event that declares the object, and ends it by `release`,
-    which posts the `released` event, and, for a kind that names `delivery-ended`, by `end_delivery`, which posts that
-    event: the host's sink of the machine's outputs for the handle is gone, while the handle may still be held. Each
-    is posted at most once, and `release` ends the delivery too. Their data is the record
-    `sce:std/host/handle_end.scxml`: `handle`, and `how`, `explicit` or `dropped`. The machine ends a handle from
-    its side by `<sce:handle-end handle="h"/>`; the host's later `release` then answers `ended` and posts nothing.
-    An entry is free again, its generation advanced, only when both holders have let it go: the machine by taking its
+    the object (Rust `inbox.host_handle::<Session>()`, or `host_handle_in::<Subscriber>(&session)` for a kind with a
+    scope; C11 `<machine>_host_handle_take_<kind>`; each answering `full` when the table is), passes its index in the
+    event that declares the object, and ends it by `release`, which posts the `released` event, and, for a kind that
+    names `delivery-ended`, by `end_delivery`, which posts that event: the host's sink of the machine's outputs for
+    the handle is gone, while the handle may still be held. Each is posted at most once, and `release` ends the
+    delivery too. Their data is the record `sce:std/host/handle_end.scxml`: `handle`; `how`, `explicit` or
+    `dropped`; and `scoped`, the count of handles that ended with it (below). The machine ends a handle from its side
+    by `<sce:handle-end handle="h"/>`; the host's later `release` then answers `ended` and posts nothing. An entry is
+    free again, its generation advanced, only when both holders have let it go: the machine by taking its
     `released` event or by `<sce:handle-end>`, the host by its `release` or by its value's end. An output addressed
-    to a handle whose delivery has ended, made before the machine took that event, is not run by the host's adapter
-    and is counted (`handle/after-delivery-end`); that is the race of two holders, not a violation.
+    to a handle whose delivery has ended is not run by the host's adapter and is reported as
+    `handle/after-delivery-end`; that is the race of two holders, not a violation.
+  - **A scope ends at once.** A kind may name another kind as its `scope`, and each of its handles is then taken in
+    a handle of that kind. Ending a scope's handle (the host's `release`, the machine's `<sce:handle-end>`, or the
+    safety net below) ends every handle taken in it, in the same step, by one input: the scope's own `released`
+    event, whose `scoped` counts them; no event is posted for each, and each of their host values answers `ended`
+    from then on. A session's close is therefore one input that ends every subscription, query and publisher of it,
+    as freeing a region frees every object in it (the textbook structure, above). Scopes form a tree; a cycle, or a
+    scope that names no declared kind, is refused at parse (`validation/host-handle-scope`).
+  - **What waits for the last run is the adapter's.** An end is a post (below), so it returns before the machine has
+    taken it, and possibly while the host's adapter is still running an output for that handle. An API whose
+    contract is that its undeclare returns only after the last callback has run waits in its adapter: it sets the
+    entry's delivery-ended bit, after which no new run starts (the word below), waits for the runs in progress to
+    finish, posts the end, and returns. The machine waits for nothing.
+  - **The table lies in storage the caller may hold.** As a pool (D4), a table may own its `capacity` entries or be
+    made over a span its caller lends, under the Lent contract (ADR 0146, which states it in full for ADR 0154, in
+    draft): a count `c <= capacity` given at run time, the span's length checked once at construction, all zero
+    when empty, the span outliving the table. An entry is one atomic word, whose layout is generated and published:
+    the generation, the entry's state (free, held, ended by the machine, ended by the host), the delivery-ended bit,
+    and bits left to the holder. An adapter keeps its call latch (its count of runs in progress) in those bits, so
+    the check that the delivery has not ended and the latch that admits a run are one compare-and-swap of one word,
+    and an end sets its bit in that word, after which no compare-and-swap admits a run. A target without an atomic
+    of that width runs the transition inside the deployment's critical section, as a `shared` pool does (D4).
   - **An output's hold on an rx slot** (D4) ends when the host's run of that output returns, by the adapter's
     explicit release; an output the host keeps beyond its run copies what it keeps.
-  - **`Drop` without the end is a violation, counted and still told.** A Rust `LinkInstance` or `HostHandle`
-    dropped without its end (in the consumer's C ABI, its last reference counted down) does what the end would, and
-    marks it: the instance's `closed` with the reason `dropped`, the handle's `released` (and its `delivery-ended`,
-    if that was not posted) with `how` `dropped`. The machine still learns of the end and the core stays sound, but
-    the end is not a clean one. It is counted on the runtime's counters of its host's contract violations
-    (`link/dropped`, `handle/dropped`, beside `pool/ownership-violation`), reported through the trace port when one
-    is installed (ADR 0115 D4, D8), and logged once per kind in a debug build. C11 has no destructor, so its ends are
-    the explicit calls alone. A value the host forgets without dropping it (`mem::forget`, a leaked reference) is
-    never seen: its entry stays held until the run ends, when the engine ends every instance and handle still held,
-    posting nothing to a run that has ended, and a host value used after that answers `ended`. That is the one gap
-    the safety net leaves, and it holds an entry of its own kind until the run's end, never another holder's.
+  - **A value of SCE's dropped without its end is a violation, counted and still told.** The violation is exactly
+    this: a `LinkInstance` or a `HostHandle`, the values SCE's runtime hands a host, dropped without its end. An
+    adapter whose own API's contract makes the drop of a handle its end (an API whose drop of a subscriber is its
+    undeclare) calls `release` in that drop, and that is an explicit end, not a violation: the end is the API's act,
+    made at the point its contract names. A value of SCE's dropped without its end does what the end would, and
+    marks it: the instance's `closed` with the reason `dropped`, the handle's `released` (and its
+    `delivery-ended`, if that was not posted) with `how` `dropped`, a scope's ending its scope as `release` would.
+    The machine still learns of the end and the core stays sound, but the end is not a clean one, and it is reported
+    as `link/dropped` or `handle/dropped` (the seam below). C11 has no destructor, so its ends are the explicit
+    calls alone. A value the host forgets without dropping it (`mem::forget`, a leaked reference) is never seen: its
+    entry stays held until the run ends, when the engine ends every instance and handle still held, posting nothing to
+    a run that has ended, and a host value used after that answers `ended`. That is the one gap the safety net
+    leaves, and it holds an entry of its own kind until the run's end, never another holder's.
+  - **A violation is reported through a seam, which costs nothing when it does nothing.** The counters, the report
+    to the trace port (ADR 0115 D4, D8) and a debug build's log are not in the runtime; they are an observer of the
+    host's contract that the deployment gives, and every report named in this decision (`link/dropped`,
+    `handle/dropped`, `link/unclaimed`, `handle/after-delivery-end`) goes to it. In Rust the runtime's values take
+    the observer as a type parameter (`LinkInstance<L, O: ContractObserver = Unobserved>`); `Unobserved` is a type
+    of size zero whose methods are empty, so monomorphisation leaves no code and no field of it, and `Counting`
+    (the counters) and `Tracing` (the trace port) are the two the runtime provides. In C11 it is the seam
+    `_sce_contract_violation(kind, index)`, declared by the runtime and defined by the deployment as every C11 seam
+    is (ADR 0110 D2); an empty definition is removed by link-time optimisation. One program is built either way.
+    The safety net itself, the posted end, is no part of the seam: the core's soundness does not wait on an
+    observer.
   - **An end is never lost.** An end that finds a bounded inbox full is held in its table entry, as a refusal is held
     in its link's latch (D2), and posted when the inbox has room, before any later input of that instance or handle.
     An end is always a post, never an ask (D5), so it may be made wherever a post may: on any thread, from an
-    interrupt, and inside a macrostep, where a callback drops its last reference.
+    interrupt, and inside a macrostep, where a callback ends a handle.
   - **In the model.** An end is a step of the environment, written where the environment is (a sketch; the modules
     are written with step 3):
 
@@ -442,14 +535,18 @@ on in the same transition, which is what a batch's sequence numbers need.
                        /\ Post(Closed(i, "dropped"))
     ```
 
-    `HostHandle.tla`, beside the connectors, states the door's handle table the same way: `Take(k)`, `Release(h)`,
-    `EndDelivery(h)`, `MachineEnd(h)` and `HostDropHandle(h)`, each a step, and an entry free again only after both
-    holders' steps. `HostEndsExplicitly` is a named assumption of the host (ADR 0115 D6): under it no behaviour has a
-    `dropped` end, so a run of the code whose trace reports one (level 5, ADR 0115 D8) is refused, TLC naming the
-    step it cannot explain, which is where a test sees the violation; the run that takes the assumption out (ADR 0115
-    D5) shows which properties stand on it. In a document's model (level 4, ADR 0115 D7) the end events are inputs of
-    its alphabet, and the exploration's environment gives a handle's ends only after it was taken and at most once
-    each, which is `HostHandle.tla`'s promise.
+    `HostHandle.tla`, beside the connectors, states the door's handle table the same way. Its steps are
+    `Take(k, s)`, `Release(h)`, `EndDelivery(h)`, `MachineEnd(h)`, `EndScope(s)` (every handle of the scope `s`
+    in one step, with `s` itself), `StartRun(h)`, `FinishRun(h)` and `HostDropHandle(h)`, and an entry is free
+    again only after both holders' steps. `StartRun(h)` is enabled only while `h`'s delivery has not ended, so the
+    invariant `NoRunAfterDeliveryEnded` (no run of an output for `h` begins after `EndDelivery(h)`, `Release(h)`
+    or the end of its scope) holds of every behaviour, and an API's promise that nothing is delivered after its
+    undeclare returns refines onto it. `HostEndsExplicitly` is a named assumption of the host (ADR 0115 D6): under
+    it no behaviour has a `dropped` end, so a run of the code whose trace reports one (level 5, ADR 0115 D8) is
+    refused, TLC naming the step it cannot explain, which is where a test sees the violation; the run that takes the
+    assumption out (ADR 0115 D5) shows which properties stand on it. In a document's model (level 4, ADR 0115 D7) the
+    end events are inputs of its alphabet, and the exploration's environment gives a handle's ends only after it was
+    taken and at most once each, which is `HostHandle.tla`'s promise.
 
 ### D4. A pool is lent: run-time counts and lengths, caller-held storage, a headroom, a generational index, a shared book
 
@@ -615,7 +712,7 @@ The supported way for a build outside this repository to generate code is the `s
   thread, and be answered after several steps, without the core giving up run-to-completion or a single holder.
 - **Another repository builds from a program, not a library,** so the generator's internals stay free to change.
 - **A dial plan and its deadline are the document's** (amended 2026-11-28), and the handle the machine receives is the
-  one a host's own open gives. A failed, cancelled or late open leaves no link, and a restore leaves every saved
+  one a host's own open gives. A failed, cancelled or late dial leaves no link, and a restore leaves every saved
   handle stale and says so by `closed`.
 - **Every end the machine counts is a step of the model** (amended 2026-11-28), made by the host explicitly. A value
   dropped without one still ends, counted as the host's violation and visible in a run's trace.
@@ -658,6 +755,13 @@ The supported way for a build outside this repository to generate code is the `s
     panic in a `Drop` that runs while the thread unwinds aborts the process, and the last reference of a C ABI's
     value is counted down in a program that cannot be told why; the safety net keeps the core sound and the
     violation observed.
+18. **Compiling the reports out by a build switch (a Cargo feature or `cfg`, a preprocessor macro)** (2026-11-28,
+    the consumer's review, 11(b)). The goal, no cost when nothing observes, is taken; the means is not. A switch that
+    compiles code out is a second program that nothing tests unless it is built both ways, which ADR 0110 D2 refuses
+    ("It never becomes a preprocessor switch"). The observer seam reaches the same cost with one program.
+19. **One invocation that walks a list of locators by the host's plan** (2026-11-28, the amendment's first text). A
+    protocol's profiles differ in the order, the retries and what a failure takes out, which is protocol logic outside
+    the document, and a list that mixes schemes cannot share one link kind's framing.
 
 ## Order of work
 
@@ -682,16 +786,20 @@ The supported way for a build outside this repository to generate code is the `s
    `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures
    of `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link. With it (amended
    2026-11-28), the host's explicit end (D3): `close` and its causes, the `closed` record and its reasons, the host
-   handle kinds (`<sce:host-handle>`, their table, `released` and `delivery-ended`, `<sce:handle-end>`), an output's
-   hold released when its run returns, `Drop` counted as `link/dropped` and `handle/dropped`, an end held while the
-   inbox is full, and the end steps of `LinkChannel.tla` and `HostHandle.tla`; each with a fixture that ends
-   explicitly and one that drops, whose trace the model refuses.
-3a. A machine asks for a link (D1, amended 2026-11-28), before step 4, whose fixtures open their links by it; the link
-   table and its handle type are taken into this step from step 4. `sce:link-open`, its registration per link kind,
-   the minted handle and the `opened` record, `<sce:opened>`, the completion the token check refuses handing the
-   instance back, the unclaimed handle, the saved table's generations and the `closed` a restore posts, and the asked
-   open's steps in `LinkChannel.tla`; Rust and C11, on the loopback fixtures, with an open that completes, fails,
-   passes its deadline, is cancelled, is completed after its cancel, and is running when the machine is saved.
+   handle kinds (`<sce:host-handle>`, their table over lent storage and its one-word entry, `released` and
+   `delivery-ended`, `<sce:handle-end>`, scopes and their one-step end), an output's hold released when its run
+   returns, `Drop` of SCE's values reported as `link/dropped` and `handle/dropped` through the contract observer
+   (Rust's type parameter, C11's seam), an end held while the inbox is full, `<sce:link-limit>`, and the steps of
+   `LinkChannel.tla` and `HostHandle.tla` with `NoRunAfterDeliveryEnded`; each with a fixture that ends explicitly
+   and one that drops, whose trace the model refuses.
+3a. A machine asks for a dial (D1, amended 2026-11-28), before step 4, whose fixtures open their links by it; the link
+   table and its handle type are taken into this step from step 4. `sce:link-dial`, one locator per invocation, its
+   registration per link kind, the deadline of the dial alone, the minted handle and the `opened` record with
+   `streamed` and `reliable`, `<sce:opened>`, the `dial_failed` record, the completion the token check refuses
+   handing the instance back, the unclaimed handle, the saved table's generations (in the saved unit only) and the
+   `closed` a restore posts, and the dial's steps in `LinkChannel.tla`; Rust and C11, on the loopback fixtures, with
+   a dial that completes, fails retriably and not, passes its deadline, is cancelled, is completed after its cancel,
+   and is running when the machine is saved, and a document that walks two locators of two link kinds.
 4. A machine imports a link (D1): the grammar, link handles (their table from step 3a), record views as event types,
    `decode`, `each`, row inputs, and the refusals.
 5. The receive coupling (D2): one event at a time under the drive, typed posts otherwise, rx slots lent to events,
@@ -707,3 +815,25 @@ The supported way for a build outside this repository to generate code is the `s
 
 - None for this record. U17 (a full queue's policy) reopens ADR 0062 in a record of its own (order item 4b); U7 (a
   pool of statechart instances chosen by a run-time key) is item 4c.
+
+## Review of the amendment of 2026-11-28
+
+The consumer reviewed the amendment the day it was written and made twelve points. Each is answered here and the
+text above carries the answer.
+
+| # | Point | Answer | Where |
+|---|---|---|---|
+| 1 | Who owns the dial plan | Taken: one invocation dials one locator; the order, the retries, the backoff and the deadline of the whole open are the document's, and the sentence that gave them to the host is gone | D1, "One invocation dials one locator; the plan is the document's"; Alternatives rejected, 19 |
+| 2 | A list of mixed schemes; partial connectivity | Taken, as a consequence of 1: one invocation per locator, of that locator's link kind, and further invocations while links are held | D1, the same bullet |
+| 3 | A typed failure | Taken: `sce:std/link/dial_failed.scxml`, `cause` (a closed enum) and `retriable`; the deadline carries it too | D1, "A failure is a record too" |
+| 4 | What `_sce_deadline_ms` measures | Taken: the dial alone; the handshake and a deadline over both are the machine's | D1, "The deadline is the dial's" |
+| 5 | Lowering `frame_limit` | Taken: `<sce:link-limit>`, which only lowers, to a value at most the one `opened` stated | D3, "A run-time frame limit, lowered by the protocol"; Order of work, 3 |
+| 6 | `streamed` and `reliable` in `opened` | Taken, as properties of the instance | D1, "Its type is decided at generation" |
+| 7 | One name for two operations | Taken: the invocation is `sce:link-dial`; `<sce:link-open>` stays the batch's open | D1; Amends; Order of work, 3a |
+| 8 | The scope of the `Drop` violation | Taken: only SCE's `LinkInstance` and `HostHandle` dropped without their end; an adapter whose API makes the drop its end calls `release` in it, an explicit end | D3, "A value of SCE's dropped without its end is a violation" |
+| 9 | A session's close ends its handles | Taken: a kind names its `scope`, and the scope's end ends every handle in it in one step | D3, "A scope ends at once"; "In the model" (`EndScope`) |
+| 10 | Waiting for the last callback | Taken: the wait is the adapter's; `HostHandle.tla` holds `NoRunAfterDeliveryEnded` | D3, "What waits for the last run is the adapter's"; "In the model" |
+| 11(a) | The table's entries in the caller's storage, one word | Taken: the Lent contract, and one atomic word holding the delivery-ended bit and the holder's latch | D3, "The table lies in storage the caller may hold" |
+| 11(b) | No cost for the reports | The goal taken, the means changed: an observer seam (a Rust type parameter whose empty case is of size zero; a C11 seam with an empty definition), not a build switch, which ADR 0110 D2 refuses | D3, "A violation is reported through a seam"; Alternatives rejected, 18 |
+| 11(c) | The generations' save code only where a machine saves | Taken: generated only into the saved unit | D1, "A saved state holds the table's generations" |
+| 12 | The consumer's own release of a link by `Drop` | The consumer's: it moves to the explicit `close(instance, peer \| host)`; nothing in this record | (none) |
