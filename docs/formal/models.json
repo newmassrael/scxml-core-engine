@@ -527,6 +527,33 @@
       ],
       "progress": [
         "Followed"
+      ],
+      "inductive": [
+        {
+          "invariant": "FollowerInductive",
+          "implies": [
+            "NonePassed",
+            "FollowedOnce"
+          ],
+          "runs": [
+            {
+              "config": "EventJournal.cfg",
+              "expect": "holds"
+            },
+            {
+              "config": "EventJournal_without_horizon.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "Horizon"
+            },
+            {
+              "config": "EventJournal_without_cursor_atomic.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "CursorAtomic"
+            }
+          ]
+        }
       ]
     },
     {

@@ -12,7 +12,7 @@ this file says what is here and how to read it.
 | 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla` and `EngineInbox.tla` | yes, for five protocols |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
-| 3. Theorem for every size (D3) | | no |
+| 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
 | 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust lane (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust lane, for three documents; the C11 and C++ ports write the same format |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
@@ -47,6 +47,48 @@ list) is refused by name with `formal/no-translation` and has no model, never a 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
 
+## Theorems, bounded and for every size (D3)
+
+An inductive invariant `Inv` of a theorem `P` is three obligations, each checked by Apalache symbolically over every
+state the predicate it starts from allows, not only the reachable ones: **base**, `Init` implies `Inv`; **step**, a step
+of `Next` from a state that satisfies `Inv` ends in one that does; **implies**, `Inv` implies `P`. Then `P` holds after
+executions of every length, at the parameters of the configuration the run names. Each invariant has runs that take a
+part out, in which the obligation they name fails, so it shows what it stands on as every property does (D5).
+
+| Theorem | Record | Invariant | Holds at | Fails without |
+|---|---|---|---|---|
+| a request takes effect at most once (`AtMostOnce`) | ADR 0113, D4 and D5 | `AtMostOnceInductive`, `OpenInstances.tla` | `OpenInstances.cfg` | `Records`, `GcDurable` (step) |
+| a follower misses nothing (`NonePassed`, `FollowedOnce`) | ADR 0114, D3 and D4 | `FollowerInductive`, `EventJournal.tla` | `EventJournal.cfg` | `Horizon`, `CursorAtomic` (step) |
+| each queue in order, once, nothing lost (`InOrder`, `AtMostOnce`, `NoLoss`) | ADR 0147, D2 | `QueueInductive`, `EngineInbox.tla` | `EngineInbox.cfg`, `EngineInbox_never_closes.cfg` | `TakeOut`, `AddressAtPost` (step) |
+
+What each says, and what is **bounded**:
+
+- **Every other property is bounded**: TLC explores every reachable state of a configuration, so it holds at that size
+  after executions of every length, and says nothing of a larger size.
+- **The three theorems above hold for every length at the sizes named**, which TLC's whole exploration of the same
+  configurations also gives. What the invariant adds is the reason, checked over every state it allows: a hole in the
+  argument is found even where no reachable state shows it, and a change to the protocol that keeps the theorem but
+  breaks its reason is seen. The step's cost follows the size of one state and not the count of reachable ones, so a
+  size TLC cannot explore is checked by naming a larger configuration in the invariant's runs.
+- **None is proved for every size.** That is TLAPS's (D3), which is not a dependency: the owner approves it per theorem
+  (ADR 0115, Questions decided at acceptance, 1). Decided per theorem, with the reason:
+  - *At most once*: **not worth its upkeep.** The model has seventeen actions over sets of records, with a cardinality
+    bound and a choice of the least number waited on, and it moves with ADR 0113's steps 4 and 5; each move would prove
+    again obligations whose number grows with the actions. The argument is per request of one instance (one name, and
+    what ran is kept), so a larger size costs Apalache time and no upkeep.
+  - *A follower misses nothing*: **worth its upkeep, and the first to prove when TLAPS is approved.** It is what every
+    follower of every deployment relies on, its argument is linear arithmetic over positions and one holder of a fence
+    per session, which TLAPS's SMT back ends discharge, and the protocol of ADR 0114 has landed. Until then it is held at
+    the size named.
+  - *The inbox's order, once and no loss*: **not worth its upkeep.** The tree is two sessions by construction, and the
+    sizes are the inputs and own events, which the argument treats one at a time (what a session linearized is its
+    queue, then its inbox); a proof over sequences for every count costs more upkeep than Apalache at a larger count.
+
+A model is written in the fragment both tools read. Apalache types every definition, so a model extends the standard
+module `Apalache` where a sequence is built from a set (`MkSeq`) or a sequence variable is given a value (`Gen`), and
+TLC reads that module from the pinned Apalache. Each constant and variable carries Apalache's type in a comment
+(`@type:`), which TLC reads as a comment.
+
 ## Running them
 
 `sce-codegen formal models --manifest docs/formal/models.json` (`--only <module>` for one, `--shard k/N` for a part)
@@ -67,7 +109,10 @@ A configuration of its own is not enough: `models.json` must declare it, and the
 - a model that states no progress and gives no reason, and a progress no run shows to fail without what it stands on;
 - a temporal property beside a constraint, a symmetry or a view, under which it may hold for nothing;
 - what must stay possible (`AG EF`, decided over the whole graph) and no run that loses it;
-- a key it does not know, a tool named in the manifest (the judge pins its tools), and a manifest of another `v`.
+- a key it does not know, a tool named in the manifest (the judge pins its tools), and a manifest of another `v`;
+- an inductive invariant that implies no property a holding run checks, that no run holds or no run shows to fail, a
+  run that holds with a part out, and a violation that does not name the obligation it fails (base, step or implies),
+  or fails an earlier one.
 
 The proofs are `proofs.json`'s, judged by `sce-codegen formal proofs --manifest docs/formal/proofs.json` (the gate is
 `formal-proofs`): each file verified whole, nothing taken on trust, and each change that breaks what it promises refused.
@@ -92,8 +137,11 @@ run to its recorded file.
 ## What all of this stands on
 
 - **TLC**, the release the judge pins, and the Java that runs it.
+- **Apalache**, the pinned release, its Z3 and the Java that runs it; and the types a model names for it, read by a
+  person: that they give each variable a value of its type and narrow nothing the invariant does not.
 - **Verus**, the pinned release, its Z3 and the Rust release it runs on; that its reading of Rust is the compiler's.
-- **The bounds** of a configuration: an error past them is not found. A theorem (level 3) is what would say so.
+- **The bounds** of a configuration: an error past them is not found. A theorem for every size (level 3, TLAPS) is what
+  would say so; an inductive invariant says it for every length at the size named, and no more.
 - **That the model is of the code.** No model reads the code. A generated model (level 4) is read from the tables the
   code is printed from, and that the code runs them as the model does is level 5's to show (D8). A proof (level 6) is of
   the code it is written on, and the model its preconditions name is read by a person.
