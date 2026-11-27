@@ -13,8 +13,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
 use sce_build::forge::standard_host::HostLane;
 use sce_build::generator::Language;
+use sce_build::toolchain;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -318,17 +321,24 @@ topology:
     )
 }
 
-/// The document of `rooms`: it says the fact `room.booked`.
+/// The document of `rooms`: it says the fact `room.booked` on `book` and
+/// `room.cancelled` on `cancel`, both of the room `east`.
 fn rooms() -> String {
     r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static" name="rooms">
   <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>
+  <sce:import kind="event-schema" src="room_cancelled.scxml" as="RoomCancelled"/>
   <state id="s">
     <transition event="book" type="internal">
       <send type="sce:journal" event="room.booked">
         <param name="room" expr="'east'"/>
         <param name="at" expr="1"/>
+      </send>
+    </transition>
+    <transition event="cancel" type="internal">
+      <send type="sce:journal" event="room.cancelled">
+        <param name="room" expr="'east'"/>
       </send>
     </transition>
   </state>
@@ -412,4 +422,235 @@ fn a_read_of_a_journal_the_machine_does_not_follow_is_refused_on_its_attribute()
             && out.contains("`room.booked` are no case of the union"),
         "a union short of the stream's schemas:\n{out}"
     );
+}
+
+/// Generate `doc`, a document of `work`, for Rust into `out`, and answer the
+/// path of its machine, `<stem>_sm.rs`.
+fn generate_machine(work: &Path, doc: &str, out: &Path) -> PathBuf {
+    std::fs::create_dir_all(out).expect("create the output directory");
+    let output = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .args(["generate", "-l", "rust", "-o"])
+        .arg(out)
+        .arg(work.join(doc))
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        output.status.success(),
+        "{doc} generates for Rust:\n{}{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stem = doc.strip_suffix(".scxml").expect("a document is an .scxml");
+    let machine = out.join(format!("{stem}_sm.rs"));
+    assert!(machine.is_file(), "{} is written", machine.display());
+    machine
+}
+
+/// The program [`both_machines_compile_and_a_page_of_both_facts_is_read`] runs:
+/// `@ROOMS@` and `@VIEW@` are the paths of the two generated machines. It
+/// prints `opened 2` when every assertion holds.
+const PROGRAM: &str = r#"#![deny(warnings)]
+
+#[path = "@ROOMS@"]
+mod rooms;
+#[path = "@VIEW@"]
+mod view;
+
+use std::sync::{Arc, Mutex};
+
+use sce_rust_runtime::journal::{write_page, PageEntry};
+use sce_rust_runtime::{Engine, StatePolicy};
+use view::ViewHostInvokers;
+
+/// The moment the store recorded both entries, in milliseconds.
+const RECORDED_MS: u64 = 1_700_000_000_000;
+const RECORDED_AT: i64 = RECORDED_MS as i64;
+
+/// The host of the read: it keeps each start's token and the stream the
+/// request names, and completes the read later.
+struct Reads(Arc<Mutex<Vec<(u64, String)>>>);
+
+impl view::ViewSceHostJournalReadInvoker for Reads {
+    fn start_page(
+        &mut self,
+        request: view::ViewPageRequest,
+        token: u64,
+    ) -> Option<view::ViewPageResult> {
+        self.0
+            .lock()
+            .expect("the starts")
+            .push((token, request.stream.to_string()));
+        None
+    }
+
+    fn cancel_page(&mut self, _token: u64) {}
+}
+
+fn main() {
+    // The machine that says the facts, one of each schema.
+    let mut rooms = Engine::new(rooms::RoomsPolicy::new());
+    let Ok(()) = rooms.initialize();
+    rooms.raise_external_by_name("book", "");
+    rooms.step();
+    rooms.raise_external_by_name("cancel", "");
+    rooms.step();
+    let said = rooms.take_journal();
+    let schemas: Vec<&str> = said.iter().map(|entry| entry.schema).collect();
+    assert_eq!(schemas, ["room.booked", "room.cancelled"], "the facts, in the order said");
+    assert_eq!(said[0].valid_ms, Some(1), "a booking holds from the time it names");
+    assert_eq!(said[1].valid_ms, None, "a cancellation names none");
+
+    // The page the host answers: both entries, at positions 1 and 2.
+    let entries: Vec<PageEntry<'_>> = said
+        .iter()
+        .zip(1u64..)
+        .map(|(entry, position)| PageEntry {
+            position,
+            recorded_ms: RECORDED_MS,
+            holds_ms: entry.valid_ms.unwrap_or(RECORDED_AT),
+            origin: "",
+            schema: entry.schema,
+            revision: entry.revision,
+            data: &entry.data,
+        })
+        .collect();
+    let page = write_page(&entries, 64, 65536)
+        .unwrap_or_else(|why| panic!("a page of two entries is written: {}", why.reason));
+    let result = view::ViewPageResult {
+        error: String::new(),
+        horizon: 2,
+        as_of_position: 2,
+        entries: sce_rust_runtime::SceBytes::from_slice(&page)
+            .unwrap_or_else(|_| panic!("a page of {} bytes is within its bound", page.len())),
+    };
+
+    // The completion lifted as the engine lifts it: the page opened into the
+    // union, one value of each case.
+    let mut payload = view::ViewPayload::default();
+    if let Err(why) = <view::ViewPolicy as StatePolicy>::lift_event_payload(
+        view::ViewEvent::DoneInvokePage,
+        &result.wire(),
+        &mut payload,
+    ) {
+        panic!("the completion is refused: {why:?}");
+    }
+    let read = match payload {
+        view::ViewPayload::DoneInvokePage(read) => read,
+        other => panic!("the completion is lifted into no payload of its event: {other:?}"),
+    };
+    assert_eq!(read.error.as_str(), "", "the read did not fail");
+    assert_eq!(read.horizon, 2, "the horizon is the host's");
+    let opened = read.entries.as_slice();
+    assert_eq!(opened.len(), 2, "both entries are opened");
+    match &opened[0].fact {
+        view::ViewRoomFactsUnion::Booked(fact) => {
+            assert_eq!(fact.room.as_str(), "east", "the booking's room");
+            assert_eq!(fact.at, 1, "the booking's time");
+        }
+        other => panic!("the first entry is the booking: {other:?}"),
+    }
+    assert_eq!((opened[0].position, opened[0].holds_ms), (1, 1));
+    match &opened[1].fact {
+        view::ViewRoomFactsUnion::Cancelled(fact) => {
+            assert_eq!(fact.room.as_str(), "east", "the cancellation's room");
+        }
+        other => panic!("the second entry is the cancellation: {other:?}"),
+    }
+    assert_eq!((opened[1].position, opened[1].holds_ms), (2, RECORDED_AT));
+    assert_eq!(opened[1].recorded_ms, RECORDED_MS);
+    assert_eq!(opened[1].origin.as_str(), "", "a session's entry has no origin");
+
+    // The read as the machine makes it: the stream the build wrote into the
+    // request, and the completion taken on `done.invoke.page`, which returns
+    // the machine to `idle`. A completion the lift refused would be
+    // `error.execution` and leave it reading.
+    let starts: Arc<Mutex<Vec<(u64, String)>>> = Arc::default();
+    let mut engine = Engine::new(view::ViewPolicy::new());
+    engine.register_sce_host_journal_read_invoker(Reads(Arc::clone(&starts)));
+    let Ok(()) = engine.initialize();
+    engine.raise_external_by_name("go", "");
+    engine.step();
+    let (token, stream) = starts
+        .lock()
+        .expect("the starts")
+        .first()
+        .cloned()
+        .expect("the read was started");
+    assert_eq!(stream, "rooms", "the request names the stream sce:journal names");
+    assert!(engine.complete_page(token, result), "the read's completion is taken");
+    engine.step();
+    assert!(engine.is_active(view::ViewState::Idle), "the completion was taken");
+    println!("opened {}", opened.len());
+}
+"#;
+
+/// docs/adr/0114, D1 and D5: the machine that says facts and the machine that
+/// reads them compile against the Rust runtime with its record codec, under
+/// `#![deny(warnings)]`, and a page the host writes (`write_page`) of the
+/// entries the first made, one of each schema, is opened by the second into the
+/// union, each entry by the case its schema names, and taken as the read's
+/// completion. Red if the generated send, the derived record, the lift's
+/// `open_page` or the case table does not compile or does not open the page.
+#[test]
+fn both_machines_compile_and_a_page_of_both_facts_is_read() {
+    let Some(cargo) = toolchain::locate("cargo") else {
+        toolchain::skipped(
+            "both_machines_compile_and_a_page_of_both_facts_is_read: cargo not on PATH",
+        );
+        return;
+    };
+    let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("journal_page");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).expect("create the scratch");
+    let mut documents = siblings(BOTH);
+    documents.push(("rooms.scxml", rooms()));
+    documents.push(("view.scxml", reader(READS_ROOMS, "")));
+    for (name, text) in &documents {
+        std::fs::write(work.join(name), text).expect("write a document");
+    }
+    let rooms_machine = generate_machine(&work, "rooms.scxml", &work.join("out_rooms"));
+    let view_machine = generate_machine(&work, "view.scxml", &work.join("out_view"));
+
+    let project = work.join("project");
+    std::fs::create_dir_all(project.join("src")).expect("create the project");
+    std::fs::write(
+        project.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"journal-page-check\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
+             [dependencies]\nsce-rust-runtime = {{ path = {:?}, features = [\"record-cbor\"] }}\n\n[workspace]\n",
+            repo_root().join("backends/rust/runtime").to_str().unwrap()
+        ),
+    )
+    .expect("write the manifest");
+    std::fs::write(
+        project.join("src/main.rs"),
+        PROGRAM
+            .replace("@ROOMS@", rooms_machine.to_str().unwrap())
+            .replace("@VIEW@", view_machine.to_str().unwrap()),
+    )
+    .expect("write the program");
+    // The repo's own lock, so the runtime's dependencies resolve to the
+    // versions already fetched.
+    std::fs::copy(repo_root().join("Cargo.lock"), project.join("Cargo.lock"))
+        .expect("copy the lock file");
+
+    let manifest = project.join("Cargo.toml");
+    let target_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("journal_page_rust_target");
+    let run = common::run_cargo_offline_first(|| {
+        let mut build = Command::new(&cargo);
+        build
+            .args(["run", "--quiet", "--manifest-path"])
+            .arg(&manifest)
+            .env("CARGO_TARGET_DIR", &target_dir);
+        build
+    });
+    let printed = String::from_utf8_lossy(&run.output.stdout).into_owned();
+    assert!(
+        run.output.status.success(),
+        "the two machines compile and the page is read:\nstdout: {printed}\nstderr: {}",
+        String::from_utf8_lossy(&run.output.stderr)
+    );
+    assert_eq!(printed.trim(), "opened 2", "the program ran to its end");
 }
