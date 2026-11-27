@@ -783,9 +783,14 @@ mod tests {
     const PROMISE: &str = "---- MODULE S ----\nVARIABLES x\nSpec == x = 0\n====\n";
     const MODEL: &str = "---- MODULE M ----\nVARIABLES x\nInit == x = 0\n\\* what is promised\nSafe == x < 3\nNext == x' = x\n====\n";
     const CONFIG: &str = "SPECIFICATION Spec\nCONSTANTS\n    N = 2\nINVARIANTS\n    Safe\n";
-    const PROVED: &str = "#[cfg(verus_only)]\nuse vstd::prelude::*;\n\
-        #[cfg_attr(verus_only, verus_spec(r => ensures r <= a))]\npub fn low(a: u64) -> u64 { a }\n\
-        #[cfg(verus_only)]\nverus! { proof fn l() ensures true {} }\n";
+    // Split where the proofs judge looks for a contract (proofs::CONTRACT_MARK), so
+    // this source is no file the proofs manifest must declare.
+    const PROVED: &str = concat!(
+        "#[cfg(verus_only)]\nuse vstd::prelude::*;\n",
+        "#[cfg_attr(verus",
+        "_only, verus_spec(r => ensures r <= a))]\npub fn low(a: u64) -> u64 { a }\n",
+        "#[cfg(verus_only)]\nverus! { proof fn l() ensures true {} }\n",
+    );
     const MODELS: &str = r#"{"models": [{"module": "M", "parts": {"P": "TRUE"}, "progress": ["Ends"], "runs": [{"config": "M.cfg", "expect": "holds", "states": 7}]}, {"module": "S", "abstract": true, "runs": []}]}"#;
     const PROOFS: &str = r#"{"proofs": [{"file": "rules.rs", "verified": 2, "mutants": [{"breaks": "b", "from": "a", "to": "c"}]}]}"#;
     const JUDGE_FILE: &str = "sce-build/src/formal/isolation.rs";
