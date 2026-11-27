@@ -17,7 +17,14 @@
     "meaning two things, so every copy reads this table.",
     "",
     "`peer` is the name the router is addressed by, or null when the target",
-    "names no peer."
+    "names no peer.",
+    "",
+    "`instance` is the name the origin of an instance of an open machine,",
+    "mesh://<machine>/<instance> (docs/adr/0113, D2), is routed by on the",
+    "cores that serve an open machine (the Rust host core): the machine name",
+    "a path segment as it stands, the instance id 1 to 64 of A-Z a-z 0-9 . _ -.",
+    "A case names a peer or an instance, never both. Every other core reads",
+    "`peer` alone, and answers an instance's origin as no peer."
   ],
   "cases": [
     { "target": "#hmi", "peer": "hmi" },
@@ -30,6 +37,13 @@
     { "target": "#_scxml_session", "peer": null },
     { "target": "hmi", "peer": null },
     { "target": "", "peer": null },
-    { "target": "http://example.org/#hmi", "peer": null }
+    { "target": "http://example.org/#hmi", "peer": null },
+    { "target": "mesh://phone/a1", "peer": null, "instance": "phone/a1" },
+    { "target": "mesh://phone.v2/A-z_9.b", "peer": null, "instance": "phone.v2/A-z_9.b" },
+    { "target": "mesh://phone", "peer": null, "instance": null },
+    { "target": "mesh://phone/", "peer": null, "instance": null },
+    { "target": "mesh://phone/a%31", "peer": null, "instance": null },
+    { "target": "mesh://phone/a1/x", "peer": null, "instance": null },
+    { "target": "mesh://ph one/a1", "peer": null, "instance": null }
   ]
 }

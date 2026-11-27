@@ -14,7 +14,6 @@
 use alloc::string::String;
 
 use crate::inbound::ConfigError;
-use crate::link::is_path_segment;
 use crate::router::{DurableSend, PeerConfig, Router};
 
 /// How the link to a peer is opened. The core never reads it; the host's
@@ -246,35 +245,56 @@ pub enum Instances {
     Open,
 }
 
-/// The most characters an instance id holds (docs/adr/0113, D1).
-pub const MAX_INSTANCE_ID_CHARS: usize = 64;
-
-/// Whether `id` is an instance id (docs/adr/0113, D1): 1 to
-/// [`MAX_INSTANCE_ID_CHARS`] characters, each a letter or digit of ASCII,
-/// `.`, `_` or `-`. Every one is a character a path segment carries as it
-/// stands, so no encoding can make two ids one. The id is opaque: not a key,
-/// and not a person.
-pub fn is_instance_id(id: &str) -> bool {
-    (1..=MAX_INSTANCE_ID_CHARS).contains(&id.len())
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-}
+/// The instance id's rule (docs/adr/0113, D1), the runtime's: the one rule the
+/// send site that routes an instance's origin and this core read.
+pub use sce_rust_runtime::helpers::send::{is_instance_id, MAX_INSTANCE_ID_CHARS};
 
 /// The name an instance of the open machine `machine` is bound under (docs/adr/0113, D2 and D3):
 /// the pair as the path its binding posts to carries it, `<machine>/<instance>`, which its origin
 /// `mesh://<machine>/<instance>` names too. A machine's name is a segment of that path
-/// ([`is_path_segment`]) and so is an instance id ([`is_instance_id`]); neither holds a `/`, so
-/// the name is one pair's and no declared peer's.
+/// ([`crate::link::is_path_segment`]) and so is an instance id ([`is_instance_id`]); neither
+/// holds a `/`, so the name is one pair's and no declared peer's.
 pub fn instance_peer(machine: &str, instance: &str) -> String {
     alloc::format!("{machine}/{instance}")
 }
 
 /// The pair (machine, instance) `name` holds, when it is the name of an instance
-/// ([`instance_peer`]).
+/// ([`instance_peer`]): the runtime's reading, which its send site routes an
+/// instance's origin by.
 pub fn instance_of(name: &str) -> Option<(&str, &str)> {
-    let (machine, instance) = name.split_once('/')?;
-    (is_path_segment(machine) && is_instance_id(instance)).then_some((machine, instance))
+    sce_rust_runtime::helpers::send::instance_pair(name)
+}
+
+/// The terms a server holds the members of an open machine to (deploy.yaml's `members:`;
+/// docs/adr/0113, D4 and D6), each the deployment's, none defaulted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Members {
+    /// How long a member a session kept a message of stays one past its last exchange.
+    pub lease_ms: u64,
+    /// How long a member no session kept a message of stays one past its last exchange, and how
+    /// long an offer stands.
+    pub provisional_ms: u64,
+    /// The most members that stand at once.
+    pub max_instances: u32,
+}
+
+impl Members {
+    /// The terms as the membership store judges an exchange under them.
+    pub fn terms(&self) -> sce_rust_session_store::Terms {
+        sce_rust_session_store::Terms {
+            lease_ms: self.lease_ms,
+            provisional_ms: self.provisional_ms,
+            max_members: u64::from(self.max_instances),
+        }
+    }
+}
+
+/// An open machine one machine is bound to (docs/adr/0113, D3): the one entry its instances are
+/// bound under, and the terms its members are held to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenPeer {
+    pub peer: Peer,
+    pub members: Members,
 }
 
 /// One machine's side of a deployment.
@@ -291,11 +311,11 @@ pub struct Machine {
     /// Every open machine the machine is bound to, by name (docs/adr/0113,
     /// D3): not one peer but any number of them, each an instance under the
     /// one [`PeerConfig`] here, whose responder is the instance itself
-    /// ([`Responders::Instance`]). The host binds each with
-    /// [`Router::open_machine`] and the deployment's `max_instances`.
+    /// ([`Responders::Instance`]), with the terms the deployment holds its
+    /// members to. [`Self::router`] binds each ([`Router::open_machine`]).
     ///
     /// [`Responders::Instance`]: crate::router::Responders::Instance
-    pub open_peers: &'static [Peer],
+    pub open_peers: &'static [OpenPeer],
     /// Whether this machine is one or an open set of instances.
     pub instances: Instances,
     /// The machine's keyed pool, when the deployment serves it as one; `None`
@@ -304,9 +324,10 @@ pub struct Machine {
 }
 
 impl Machine {
-    /// A router holding every peer this machine is bound to by name. An open
-    /// machine's name is no peer's ([`Self::open_peers`]), so a router refuses
-    /// it as one it does not hold.
+    /// A router holding every peer this machine is bound to by name, and binding the instances of
+    /// each open machine it is bound to as they arrive, at most its `max_instances` at once
+    /// ([`Router::open_machine`], docs/adr/0113, D3 and D6). An open machine's name is no peer's
+    /// ([`Self::open_peers`]), so a router refuses it as one it does not hold.
     ///
     /// A dialing `https` binding under `receipt: durable` (docs/adr/0109, D10) makes the router
     /// checkpoint and hold what it sends the peer until a `200` carried it, the binding's
@@ -335,6 +356,17 @@ impl Machine {
                     .map_err(|_| ConfigError::BadReceipt { peer: peer.name })?;
             }
         }
+        for open in self.open_peers {
+            router
+                .open_machine(
+                    open.peer.name,
+                    open.peer.config,
+                    open.members.max_instances as usize,
+                )
+                .map_err(|_| ConfigError::BadOpenMachine {
+                    machine: open.peer.name,
+                })?;
+        }
         Ok(router)
     }
 
@@ -344,9 +376,10 @@ impl Machine {
     }
 
     /// The open machine named `name`, if the machine is bound to one: what
-    /// each of its instances is a peer under.
-    pub fn open_peer(&self, name: &str) -> Option<&'static Peer> {
-        self.open_peers.iter().find(|peer| peer.name == name)
+    /// each of its instances is a peer under, and the terms its members are
+    /// held to.
+    pub fn open_peer(&self, name: &str) -> Option<&'static OpenPeer> {
+        self.open_peers.iter().find(|open| open.peer.name == name)
     }
 }
 
@@ -544,31 +577,88 @@ mod tests {
         }
     }
 
-    /// docs/adr/0113, D3: an open machine is held beside the peers and not among them, under its
-    /// one configuration, whose responder is the instance itself; the machine's name binds no
-    /// peer of the router. Red if `Machine::router` binds an open machine by its name.
+    /// docs/adr/0113, D3 and D6: an open machine is held beside the peers and not among them,
+    /// under its one configuration, whose responder is the instance itself, with the terms of its
+    /// members; the machine's name binds no peer of the router, an instance of it is bound as it
+    /// arrives, and none past the deployment's `max_instances`. Red if `Machine::router` binds
+    /// an open machine by its name, or does not register it with its bound.
     #[test]
-    fn an_open_machine_is_no_peer_by_its_name() {
+    fn an_open_machine_is_bound_by_its_instances_up_to_its_bound() {
         const SERVER: Machine = Machine {
             peers: &[],
-            open_peers: &[Peer {
-                config: PeerConfig {
-                    responders: Responders::Instance,
-                    ..HTTPS_SERVER.peers[0].config
+            open_peers: &[OpenPeer {
+                peer: Peer {
+                    config: PeerConfig {
+                        responders: Responders::Instance,
+                        ..HTTPS_SERVER.peers[0].config
+                    },
+                    ..HTTPS_SERVER.peers[0]
                 },
-                ..HTTPS_SERVER.peers[0]
+                members: Members {
+                    lease_ms: 60_000,
+                    provisional_ms: 1_000,
+                    max_instances: 1,
+                },
             }],
             ..HTTPS_SERVER
         };
         let mut router = SERVER.router().expect("a valid configuration");
         assert!(router.peer_ready("phone", 0).is_err());
+        assert!(
+            router.peer_ready("phone/a1", 0).is_ok(),
+            "an instance is bound"
+        );
+        assert!(
+            matches!(
+                router.peer_ready("phone/b2", 0),
+                Err(crate::router::RouterError::InstancesFull {
+                    max_instances: 1,
+                    ..
+                })
+            ),
+            "no instance past max_instances"
+        );
         assert!(SERVER.peer("phone").is_none());
+        let open = SERVER.open_peer("phone").expect("the open machine");
+        assert_eq!(open.peer.config.responders, Responders::Instance);
         assert_eq!(
-            SERVER.open_peer("phone").map(|p| p.config.responders),
-            Some(Responders::Instance)
+            open.members.terms(),
+            sce_rust_session_store::Terms {
+                lease_ms: 60_000,
+                provisional_ms: 1_000,
+                max_members: 1,
+            }
         );
         assert!(SERVER.open_peer("elsewhere").is_none());
         assert_eq!(SERVER.instances, Instances::One, "the server is one");
+    }
+
+    /// docs/adr/0113, D6: an open machine with room for no instance is refused when its router is
+    /// built, as the build refuses it. Red if `Machine::router` skips the open machines.
+    #[test]
+    fn an_open_machine_with_room_for_none_is_refused_at_router_time() {
+        const NONE: Machine = Machine {
+            peers: &[],
+            open_peers: &[OpenPeer {
+                peer: Peer {
+                    config: PeerConfig {
+                        responders: Responders::Instance,
+                        ..HTTPS_SERVER.peers[0].config
+                    },
+                    ..HTTPS_SERVER.peers[0]
+                },
+                members: Members {
+                    lease_ms: 60_000,
+                    provisional_ms: 1_000,
+                    max_instances: 0,
+                },
+            }],
+            ..HTTPS_SERVER
+        };
+        assert_eq!(
+            NONE.router().err(),
+            Some(ConfigError::BadOpenMachine { machine: "phone" })
+        );
     }
 
     /// A client of an `https` server whose binding declares `receipt: durable`.

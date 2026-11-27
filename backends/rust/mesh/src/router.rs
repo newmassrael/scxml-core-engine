@@ -1110,7 +1110,7 @@ impl Router {
         id: [u8; 16],
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
-        let peer_name = addressed_peer(&request.target)
+        let peer_name = mesh_peer(&request.target)
             .ok_or_else(|| RouterError::NotMeshTarget(request.target.clone()))?;
         // docs/adr/0113, D3: a peer the one lookup cannot bind, unknown or past
         // its open machine's bound, is unreachable.
@@ -1203,7 +1203,7 @@ impl Router {
         now_ms: i64,
         now_unix_ms: u64,
     ) -> Result<Invoked, RouterError> {
-        let Some(peer_name) = addressed_peer(&request.src) else {
+        let Some(peer_name) = mesh_peer(&request.src) else {
             return Ok(Invoked::Refused(rpc::src_not_found_data(&alloc::format!(
                 "'{}' names no Mesh peer",
                 request.src
@@ -2105,20 +2105,6 @@ pub enum RouterError {
 /// predicate, so the router and a generated send site's choice to reach it
 /// are one answer rather than two copies of it.
 pub use sce_rust_runtime::helpers::send::mesh_peer;
-
-/// The peer a `<send>` target or an `<invoke>` `src` names: `#peer`
-/// ([`mesh_peer`]), or the origin of an instance of an open machine,
-/// `mesh://<machine>/<instance>` (docs/adr/0113, D2), the `_event.origin` of
-/// its events, which a document keeps and sends to as `targetexpr`. Both
-/// segments are unreserved characters alone, so the origin's percent-encoding
-/// is the name itself, and a target that encodes one is not this form.
-pub fn addressed_peer(target: &str) -> Option<&str> {
-    mesh_peer(target).or_else(|| {
-        target
-            .strip_prefix(sce_rust_runtime::MESH_ORIGIN_SCHEME)
-            .filter(|name| instance_of(name).is_some())
-    })
-}
 
 /// Whether `envelope` names as its sender the one the link of `peer` names
 /// (SCE_MESH.md section 10.9, invariants 10 and 11): the machine `peer` and

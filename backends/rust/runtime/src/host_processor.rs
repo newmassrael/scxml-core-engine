@@ -225,8 +225,10 @@ pub const MESH_RPC_INVOKE_TYPE: &str = "sce:mesh-rpc";
 
 /// `_event.origin` of a Mesh-delivered event is this scheme and the sending
 /// machine's name (SCE_MESH.md §mesh-10.7) — the C++ core's
-/// `kMeshOriginScheme`.
-pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
+/// `kMeshOriginScheme` — or the sending instance's `<machine>/<instance>`
+/// (docs/adr/0113, D2). Kept with the predicate that reads it back as a peer
+/// (`helpers::send::mesh_peer`), which a build without `std` has too.
+pub use crate::helpers::send::MESH_ORIGIN_SCHEME;
 
 /// The `_event` of an event that arrived over Mesh from `source`, as
 /// SCE_MESH.md §mesh-10.7 tabulates it: external, origin `mesh://<source>`,

@@ -127,17 +127,76 @@ pub fn is_unreachable_target(target: &str) -> bool {
     target.is_empty() || target == "undefined"
 }
 
+/// What a Mesh origin begins with (SCE_MESH.md §mesh-10.7): `mesh://<source>`
+/// for an event a machine sent, `mesh://<machine>/<instance>` for one an
+/// instance of an open machine sent (docs/adr/0113, D2).
+pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
+
+/// The most characters an instance id holds (docs/adr/0113, D1).
+pub const MAX_INSTANCE_ID_CHARS: usize = 64;
+
+/// Whether `id` is an instance id (docs/adr/0113, D1): 1 to
+/// [`MAX_INSTANCE_ID_CHARS`] characters, each a letter or digit of ASCII, `.`,
+/// `_` or `-`. Every one is a character a path segment carries as it stands, so
+/// no encoding can make two ids one. The id is opaque: not a key, and not a
+/// person.
+pub fn is_instance_id(id: &str) -> bool {
+    (1..=MAX_INSTANCE_ID_CHARS).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+/// Whether `name` is a path segment as it stands: RFC 3986's unreserved
+/// characters, so no encoding can make two names one. It is also a key
+/// expression chunk as it stands, which is why the Zenoh binding asks the same
+/// question of a machine name.
+pub fn is_path_segment(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
+}
+
+/// The machine and the instance the name `<machine>/<instance>` holds, when it
+/// is one: a machine name that is a path segment ([`is_path_segment`]) and an
+/// instance id ([`is_instance_id`]). Neither holds a `/`, so the name is one
+/// pair's, and no peer bound by its name is one.
+pub fn instance_pair(name: &str) -> Option<(&str, &str)> {
+    let (machine, instance) = name.split_once('/')?;
+    (is_path_segment(machine) && is_instance_id(instance)).then_some((machine, instance))
+}
+
+/// The instance an origin `mesh://<machine>/<instance>` names (docs/adr/0113,
+/// D2), as the name `<machine>/<instance>` a router binds it under. Each
+/// segment is percent-encoded in an origin, and both alphabets are unreserved
+/// characters, so the encoding of each is the segment itself: a target that
+/// encodes a character is not this form.
+pub fn origin_instance(target: &str) -> Option<&str> {
+    target
+        .strip_prefix(MESH_ORIGIN_SCHEME)
+        .filter(|name| instance_pair(name).is_some())
+}
+
 /// The peer a `<send target>` names, when it names one: `#` followed by at
 /// least one character, where `#_` stays reserved for the targets
-/// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...).
+/// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...); or the
+/// origin of an instance of an open machine, `mesh://<machine>/<instance>`
+/// ([`origin_instance`]), which this core routes as the instance's name
+/// (docs/adr/0113, D2): the `_event.origin` of the instance's events, which a
+/// document answers with `<send targetexpr="_event.origin">` or keeps.
 ///
-/// Ports C++ `SendHelper::isMeshTarget`. Every copy of the predicate — the
-/// C++ core's, the build's, this one — reads `tests/mesh/mesh_target_cases.json`,
-/// so a target one of them routes over Mesh is one they all do.
+/// Ports C++ `SendHelper::isMeshTarget` for the `#peer` form. Every copy of the
+/// predicate — the C++ core's, the build's, each runtime's — reads
+/// `tests/mesh/mesh_target_cases.json`, so a target one of them routes over Mesh
+/// is one they all do; the origin of an instance, the table's `instance`
+/// column, is routed by the cores that serve an open machine alone, and every
+/// other one answers it as no peer.
 pub fn mesh_peer(target: &str) -> Option<&str> {
     target
         .strip_prefix('#')
         .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
+        .or_else(|| origin_instance(target))
 }
 
 /// Whether a `<send target>` names a Mesh peer (see [`mesh_peer`]).
@@ -526,7 +585,10 @@ mod mesh_target_table {
     use crate::json::{parse, Value};
 
     /// tests/mesh/mesh_target_cases.json: the table the C++ core's
-    /// `SendHelper::isMeshTarget`, the build and the Kotlin core read too.
+    /// `SendHelper::isMeshTarget`, the build and the Kotlin core read too. This
+    /// core serves an open machine (docs/adr/0113, D2), so an instance's origin,
+    /// the table's `instance` column, is a peer here, and nothing else is. Red if
+    /// `mesh_peer` does not read the origin form, or reads more than it.
     #[test]
     fn a_mesh_peer_is_named_as_the_shared_table_names_it() {
         let path = concat!(
@@ -549,11 +611,21 @@ mod mesh_target_table {
             let Some(Value::Text(target)) = field("target") else {
                 panic!("a case's target is a string");
             };
-            let expected = match field("peer") {
+            let peer = match field("peer") {
                 Some(Value::Text(peer)) => Some(peer.as_str()),
                 Some(Value::Null) => None,
                 other => panic!("{target:?}: peer is a string or null, got {other:?}"),
             };
+            let instance = match field("instance") {
+                Some(Value::Text(instance)) => Some(instance.as_str()),
+                Some(Value::Null) | None => None,
+                other => panic!("{target:?}: instance is a string or null, got {other:?}"),
+            };
+            assert!(
+                peer.is_none() || instance.is_none(),
+                "{target:?}: a case names a peer or an instance, not both"
+            );
+            let expected = peer.or(instance);
             assert_eq!(mesh_peer(target), expected, "{target:?}");
             assert_eq!(is_mesh_target(target), expected.is_some(), "{target:?}");
         }

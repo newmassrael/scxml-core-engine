@@ -77,10 +77,6 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
 
 /// Whether `name` is a path segment as it stands: RFC 3986's unreserved characters, so no
 /// encoding can make two names one. It is also a key expression chunk as it stands, which is why
-/// the Zenoh binding asks the same question of a machine name.
-pub fn is_path_segment(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
-}
+/// the Zenoh binding asks the same question of a machine name. The runtime's, which reads an
+/// instance's origin by it too (docs/adr/0113, D2).
+pub use sce_rust_runtime::helpers::send::is_path_segment;
