@@ -4187,8 +4187,8 @@ the one argument below; nothing else a consumer compiles against does.
 
 - **`SceReader::within` takes `impl WireLength`**, where it took `usize`: the length as its field holds it, an
   unsigned or signed integer of any width. Generated code passes the field as it is (`cursor.within(total_length, ..)`,
-  where it wrote `total_length as usize`). A consumer that calls `within` by hand with a `usize` passes a `u64`
-  (`u64::try_from(n)`, or the field it read the length from); an integer literal still compiles.
+  where it wrote `total_length as usize`). A consumer that calls `within` by hand with a `usize` compiles as it did
+  (`usize` is a `WireLength` too); an integer literal still compiles.
 - **A length the target cannot hold is refused**: a negative length of a signed field, or one past a 32-bit
   `usize`, is `CodecError::LengthOutOfRange`, where it was cut to its low bits and the frame read another body. On a
   64-bit target an unsigned length decodes as it did.

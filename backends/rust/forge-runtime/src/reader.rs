@@ -78,6 +78,15 @@ macro_rules! wire_length_signed {
 wire_length_unsigned!(u8, u16, u32, u64);
 wire_length_signed!(i8, i16, i32, i64);
 
+/// A length a caller already holds as a count of bytes: `usize` is no wider
+/// than 64 bits on any target Rust supports, so the count is whole.
+impl WireLength for usize {
+    #[inline(always)]
+    fn byte_count(self) -> Option<u64> {
+        u64::try_from(self).ok()
+    }
+}
+
 /// The reader one frame is decoded through: the bytes the frame is read from,
 /// how far the decode has read, the first refusal it recorded and whether a
 /// value was past a capacity.
