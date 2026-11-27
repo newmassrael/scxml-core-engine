@@ -827,23 +827,28 @@
       "runs": [
         {
           "config": "EngineInbox.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 5104
         },
         {
           "config": "EngineInbox_never_closes.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 5128
         },
         {
           "config": "EngineInbox_bounded.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 6192
         },
         {
           "config": "EngineInbox_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 5104
         },
         {
           "config": "EngineInbox_live_never_closes.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 5128
         },
         {
           "config": "EngineInbox_without_drain_before_own.cfg",
@@ -1208,12 +1213,12 @@
         {
           "config": "CheckpointWrite.cfg",
           "expect": "holds",
-          "states": 9614
+          "states": 28712
         },
         {
           "config": "CheckpointWrite_two_requests.cfg",
           "expect": "holds",
-          "states": 37328
+          "states": 44840
         },
         {
           "config": "CheckpointWrite_live.cfg",
