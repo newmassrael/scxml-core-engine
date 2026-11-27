@@ -338,12 +338,13 @@ pub struct PoolFnContract {
 /// `dma-armed-tx` hands out no handle, so its accessor takes a slot
 /// index and there is nothing here to say about it, the same as the
 /// index-keyed seam edges.
-pub const POOL_CONTRACTS: [PoolFnContract; 7] = [
-    // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle)` —
-    // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`).
+pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
+    // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle, size_t frame)` —
+    // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`). `frame` is a
+    // scalar, the bytes of the frame the holder wrote (docs/adr/0111 D4).
     PoolFnContract {
         suffix: "_link_arm_tx",
-        arity: 1,
+        arity: 2,
         params: &[ParamContract {
             position: 0,
             effect: PointerEffect::InOut,
@@ -419,6 +420,33 @@ pub const POOL_CONTRACTS: [PoolFnContract; 7] = [
     PoolFnContract {
         suffix: "_mutate_in_place",
         arity: 1,
+        params: &[ParamContract {
+            position: 0,
+            effect: PointerEffect::InOut,
+            caller_guarantees_non_null: false,
+        }],
+        may_return_null: false,
+    },
+    // `<pool>_slot_index_t <pool>_into_index(sce_slot_handle_t *handle)` —
+    // docs/adr/0111 D4: the handle is given up for the index that crosses an
+    // interface. The tag is read to find the slot, then invalidated, the
+    // shape of `_pool_return`.
+    PoolFnContract {
+        suffix: "_into_index",
+        arity: 1,
+        params: &[ParamContract {
+            position: 0,
+            effect: PointerEffect::InOut,
+            caller_guarantees_non_null: false,
+        }],
+        may_return_null: false,
+    },
+    // `<pool>_slot_index_t <pool>_lend(sce_slot_handle_t *handle, uint32_t holds)`
+    // — docs/adr/0111 D4: a received frame's handle is given up to the events
+    // that hold the slot. Read then invalidated, as `_into_index`.
+    PoolFnContract {
+        suffix: "_lend",
+        arity: 2,
         params: &[ParamContract {
             position: 0,
             effect: PointerEffect::InOut,
