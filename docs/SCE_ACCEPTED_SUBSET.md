@@ -5595,7 +5595,8 @@ writes `stream` and `observed`, and a `<param>` of either is
 each its `position`, `recorded_ms`, `holds_ms` (when the fact holds from),
 `origin` (the id another system gave it, empty for a session's) and `fact`, a value
 of `U`; as for any payload that holds a union, the statechart imports the
-enum of `U`'s tag, so the machine holds a type for it. The host answers the page
+enum of `U`'s tag and the schema of each record its cases hold, so the machine
+holds a type for each. The host answers the page
 as its deterministic CBOR, within
 `journal_page_bytes` (65536), and the Rust machine opens it where the completion is
 lifted (`sce_rust_runtime::journal::open_page`); a page that holds a fact no case
