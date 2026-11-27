@@ -178,6 +178,9 @@ type historyRecorder struct {
 	// event of the engine's own applies are told between that event's two
 	// calls.
 	begun [2]uint64
+	// ownOpen is set while an event of the engine's own is being put on the
+	// queue: the port's first call of it came and its second has not.
+	ownOpen bool
 	// ending is set while the owner's call that ends the run is under way,
 	// which began at endInvoked.
 	ending     bool
@@ -208,6 +211,9 @@ func (r *historyRecorder) told(enqueue sce.InboxEnqueue[probeEvent]) {
 			reading = r.clock.tick()
 		}
 		r.begun[at] = reading
+		if !enqueue.Posted {
+			r.ownOpen = true
+		}
 		return
 	}
 	value, err := strconv.ParseUint(enqueue.Event.Metadata.Data, 10, 64)
@@ -219,10 +225,23 @@ func (r *historyRecorder) told(enqueue sce.InboxEnqueue[probeEvent]) {
 	if enqueue.Posted {
 		source = "posted"
 	}
+	// docs/adr/0147, D3: an input the drain before an event of the engine's own
+	// applies left the inbox at that drain's read, which comes after the
+	// event's first call, so its enqueue is invoked at the event's reading.
+	// Read at its own first call, a post that returned between the drain's read
+	// and that call would be held to enter ahead of the event, which the drain
+	// did not read.
+	invoked := r.begun[0]
+	if enqueue.Posted && !r.ownOpen {
+		invoked = r.begun[1]
+	}
 	r.owner = append(r.owner, historyOwnerOperation{
 		Call: "enqueue", Session: historySession, Item: &value, Source: source,
-		Invoked: r.begun[at], Returned: r.clock.tick(),
+		Invoked: invoked, Returned: r.clock.tick(),
 	})
+	if !enqueue.Posted {
+		r.ownOpen = false
+	}
 	if enqueue.Posted && r.behind != nil {
 		post := r.behind
 		r.behind = nil

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "sessions": [0],
+  "closes": false,
+  "owner": [
+    { "call": "enqueue", "session": 0, "item": 1, "source": "posted", "invoked": 5, "returned": 6 },
+    { "call": "enqueue", "session": 0, "item": 2, "source": "posted", "invoked": 5, "returned": 9 },
+    { "call": "enqueue", "session": 0, "item": 100, "source": "own", "invoked": 5, "returned": 10 },
+    { "call": "enqueue", "session": 0, "item": 3, "source": "posted", "invoked": 11, "returned": 12 },
+    { "call": "end", "session": 0, "invoked": 13, "returned": 14 }
+  ],
+  "posters": [
+    [
+      { "call": "post", "session": 0, "input": 1, "door": "handle", "outcome": "taken", "invoked": 1, "returned": 2 },
+      { "call": "post", "session": 0, "input": 2, "door": "handle", "outcome": "taken", "invoked": 3, "returned": 4 }
+    ],
+    [
+      { "call": "post", "session": 0, "input": 3, "door": "handle", "outcome": "taken", "invoked": 7, "returned": 8 }
+    ]
+  ]
+}

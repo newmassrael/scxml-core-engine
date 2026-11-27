@@ -213,6 +213,9 @@ public:
                 reading = tick();
             }
             begun_[at] = reading;
+            if (!enqueue.posted) {
+                ownOpen_ = true;
+            }
             return;
         }
         const std::optional<uint64_t> value = valueOf(enqueue.data);
@@ -223,9 +226,17 @@ public:
         OwnerRecord record;
         record.item = *value;
         record.own = !enqueue.posted;
-        record.invoked = begun_[at];
+        // docs/adr/0147, D3: an input the drain before an event of the machine's own
+        // applies left the inbox at that drain's read, which comes after the event's
+        // first call, so its enqueue is invoked at the event's reading. Read at its own
+        // first call, a post that returned between the drain's read and that call would
+        // be held to enter ahead of the event, which the drain did not read.
+        record.invoked = enqueue.posted && !ownOpen_ ? begun_[1] : begun_[0];
         record.returned = tick();
         owner_.push_back(record);
+        if (!enqueue.posted) {
+            ownOpen_ = false;
+        }
         if (enqueue.posted && behind_) {
             const std::function<void()> post = std::move(behind_);
             behind_ = nullptr;
@@ -279,6 +290,9 @@ private:
     /// inbox at [1]. Two, because the inputs the drain before an event of the
     /// machine's own applies are told between that event's two calls.
     uint64_t begun_[2] = {0, 0};
+    /// An event of the machine's own is being put on the queue: the port's first
+    /// call of it came and its second has not.
+    bool ownOpen_ = false;
     bool ending_ = false;
     uint64_t endInvoked_ = 0;
     std::function<void()> behind_;
