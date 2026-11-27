@@ -22,6 +22,9 @@
 //!   Storm reads, written from the same tables (ADR 0119, D2).
 //! - [`tla_value`]: the values of TLA+ as TLC prints them, read into one
 //!   form, so that states of the two encodings are compared by value.
+//! - [`storm`]: the one runner of Storm, and the state space it exports.
+//! - [`quantities`]: the judge of a quantities manifest, each JANI model held
+//!   to the TLA+ model of its document (ADR 0119, D4).
 //! - [`properties`]: the properties of one machine and their observers over
 //!   that model, with the runs that judge them (ADR 0115, D15).
 //! - [`verdicts`]: the judge of those properties, and the record of its
@@ -40,6 +43,8 @@ pub mod isolation;
 pub mod models;
 pub mod proofs;
 pub mod properties;
+pub mod quantities;
+pub mod storm;
 pub mod tla_value;
 pub mod tlc;
 pub mod toolchain;

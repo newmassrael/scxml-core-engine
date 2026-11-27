@@ -287,3 +287,57 @@ fn the_toolchain_schema_rejects_what_the_judge_refuses() {
             .remove("sha256");
     });
 }
+
+const QUANTITIES_SCHEMA: &str = "schemas/sce-formal-quantities.v1.schema.json";
+
+#[test]
+fn this_repositorys_quantities_manifest_validates_against_the_wire_schema() {
+    let schema = compile(QUANTITIES_SCHEMA);
+    let found = errors(&schema, &instance("docs/formal/quantities.json"));
+    assert!(
+        found.is_empty(),
+        "docs/formal/quantities.json is not a quantities manifest:\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_quantities_schema_rejects_what_the_judge_refuses() {
+    let schema = compile(QUANTITIES_SCHEMA);
+    let whole = instance("docs/formal/quantities.json");
+    assert!(
+        errors(&schema, &whole).is_empty(),
+        "the control: the manifest as it is validates"
+    );
+    let refused = |what: &str, edit: &dyn Fn(&mut serde_json::Value)| {
+        let mut value = whole.clone();
+        edit(&mut value);
+        assert!(
+            !errors(&schema, &value).is_empty(),
+            "the schema accepts a manifest with {what}"
+        );
+    };
+    refused("Storm pinned in it", &|v| {
+        v["storm"] = serde_json::json!({"version": "2.0.0"})
+    });
+    refused("another version", &|v| v["v"] = serde_json::json!(2));
+    refused("no model", &|v| v["models"] = serde_json::json!([]));
+    refused("a model that names no traces manifest", &|v| {
+        v["models"][0]
+            .as_object_mut()
+            .expect("an object")
+            .remove("traces");
+    });
+    refused("an unknown key of a model", &|v| {
+        v["models"][0]["note"] = serde_json::json!("x")
+    });
+    refused("a model that is no JANI file", &|v| {
+        v["models"][0]["jani"] = serde_json::json!("M.tla")
+    });
+    refused("an event from outside with an empty token", &|v| {
+        v["models"][0]["outside"] = serde_json::json!(["a..b"])
+    });
+    refused("a negative bound on what comes from outside", &|v| {
+        v["models"][0]["max_outside"] = serde_json::json!(-1)
+    });
+}

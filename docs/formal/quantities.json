@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "models": [
+    {
+      "jani": "W3CTest403c.jani",
+      "document": "../../resources/403/test403c.scxml",
+      "module": "W3CTest403c",
+      "config": "W3CTest403c.cfg",
+      "w3c_verdict": true,
+      "traces": "traces.json"
+    }
+  ]
+}

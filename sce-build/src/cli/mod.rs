@@ -16615,6 +16615,24 @@ enum FormalCommand {
         #[arg(long)]
         recorded: Option<PathBuf>,
     },
+    /// Hold every JANI model a quantities manifest declares to the TLA+ model
+    /// of its document, with the pinned TLC and Storm (docs/adr/0119, D4).
+    ///
+    /// Each model must be what `sce-codegen model --jani` writes of its
+    /// document; the state graph Storm builds of it must be the graph TLC
+    /// writes of the module under the configuration's constants, state by
+    /// state; and every recorded run the traces manifest declares of the module
+    /// must be a path of it, each altered run refused where it was altered.
+    Quantities {
+        /// The quantities manifest (`schemas/sce-formal-quantities.v1.schema.json`).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// The processors the judge is given, a count or `auto` (every one
+        /// this process may run on): TLC's `-workers` and the processors its
+        /// virtual machine sees, one run at a time.
+        #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
+        workers: std::num::NonZeroUsize,
+    },
     /// Judge every commit of the ranges given: one that changes what a formal
     /// check says changes nothing else but documents, and names its reason in
     /// a bullet `- Spec: <why>` of its message (docs/adr/0115, D11).
@@ -16794,6 +16812,17 @@ fn cmd_formal(judge: FormalCommand) {
                 leave(err);
             }
             out_line("every property holds as judged");
+        }
+        FormalCommand::Quantities { manifest, workers } => {
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            if let Err(err) = crate::formal::quantities::check(&manifest, workers, &mut report) {
+                leave(err);
+            }
         }
         FormalCommand::Isolation {
             ranges,

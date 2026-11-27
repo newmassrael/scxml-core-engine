@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-quantities.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal quantities manifest (wire schema v1)",
+  "description": "What a repository declares of the JANI models of its documents, judged by `sce-codegen formal quantities --manifest <file>` (docs/adr/0119, D4; docs/adr/0146, D1). Written by the repository beside the models, which are read relative to this file's directory; never emitted by SCE. Each model is the second encoding of a document whose TLA+ module is beside it (docs/adr/0115, D7): it must be what `sce-codegen model --jani` writes of the document, the state graph Storm builds of it must be the graph TLC writes of the module under the configuration's constants, and every recorded run the traces manifest it names declares of the module must be a path of it, each altered run refused where it was altered. Every JANI model beside the manifest is declared. No tool is named here: the judge pins its tools (docs/adr/0146, D3). Authoritative reader is sce-build/src/formal/quantities.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": [
+    "v",
+    "models"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "The version of this format."
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/model"
+      }
+    }
+  },
+  "definitions": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^[^.]+(\\.[^.]+)*$"
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "jani",
+        "document",
+        "module",
+        "config",
+        "traces"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "jani": {
+          "type": "string",
+          "pattern": "\\.jani$",
+          "description": "The JANI model, beside the manifest."
+        },
+        "document": {
+          "type": "string",
+          "pattern": "\\.scxml$",
+          "description": "The document both models are written from, relative to the manifest."
+        },
+        "module": {
+          "$ref": "#/definitions/name",
+          "description": "The TLA+ module of the same document, `<module>.tla` beside the manifest; the JANI model bears its name."
+        },
+        "config": {
+          "type": "string",
+          "pattern": "\\.cfg$",
+          "description": "A configuration of that module, whose constants both models are judged under."
+        },
+        "w3c_verdict": {
+          "type": "boolean",
+          "description": "Whether the module is written with the W3C verdict (`sce-codegen model --w3c-verdict`)."
+        },
+        "outside": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/event"
+          },
+          "description": "The events that may come from outside, the configuration's `Outside`."
+        },
+        "max_outside": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The most events that come from outside, the configuration's `MaxOutside`."
+        },
+        "traces": {
+          "type": "string",
+          "pattern": "\\.json$",
+          "description": "The traces manifest whose recorded runs of the module are replayed, relative to the manifest."
+        }
+      }
+    }
+  }
+}
