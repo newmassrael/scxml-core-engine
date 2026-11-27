@@ -155,10 +155,11 @@ enum class HostOperation : std::uint8_t {
     CredentialIssue,
     CredentialRevoke,
     AuditAppend,
+    JournalRead,
 };
 
 /// The `type` of every standard host operation, in the order of HostOperation.
-inline constexpr std::array<const char *, 27> kHostOperationTypes = {
+inline constexpr std::array<const char *, 28> kHostOperationTypes = {
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -186,6 +187,7 @@ inline constexpr std::array<const char *, 27> kHostOperationTypes = {
     "sce-host-credential-issue",
     "sce-host-credential-revoke",
     "sce-host-audit-append",
+    "sce-host-journal-read",
 };
 
 /// The label value `operation` is: its `type`.
