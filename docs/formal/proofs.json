@@ -68,6 +68,44 @@
           "to": "            self.ack = first;"
         }
       ]
+    },
+    {
+      "file": "backends/rust/mesh/src/https/fresh_step.rs",
+      "compiled_by": "backends/rust/mesh/src/https/mod.rs",
+      "decision": "docs/adr/0117",
+      "verified": 7,
+      "mutants": [
+        {
+          "breaks": "a value two steps old is taken",
+          "from": "    step == present || (present >= 1 && step == present - 1)\n}",
+          "to": "    step <= present && present - step <= 2\n}"
+        },
+        {
+          "breaks": "a value of a step that has not come is taken",
+          "from": "    step == present || (present >= 1 && step == present - 1)\n}",
+          "to": "    step >= present || (present >= 1 && step == present - 1)\n}"
+        },
+        {
+          "breaks": "an answer that arrives late puts back an older value",
+          "from": "            if held > step {",
+          "to": "            if false {"
+        },
+        {
+          "breaks": "a value the server gives is never signed",
+          "from": "        if !other || self.generation == u64::MAX {",
+          "to": "        if true {"
+        },
+        {
+          "breaks": "a value is taken without moving its generation",
+          "from": "        self.generation += 1;\n",
+          "to": ""
+        },
+        {
+          "breaks": "a lane that holds only the value refused signs it again at once",
+          "from": "        sent < self.generation\n    }",
+          "to": "        sent <= self.generation\n    }"
+        }
+      ]
     }
   ]
 }

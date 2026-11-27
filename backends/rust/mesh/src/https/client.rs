@@ -1134,7 +1134,7 @@ mod tests {
             if let Some(first) = first {
                 headers.push((FIRST_HEADER.to_string(), first.to_string()));
             }
-            headers.extend(self.signer.sign(&digest, EPOCH, first, &answered));
+            headers.extend(self.signer.sign(&digest, EPOCH, first, None, &answered));
             let mut tampered = self.tampered.lock().unwrap();
             if first.is_some() && *tampered > 0 {
                 *tampered -= 1;

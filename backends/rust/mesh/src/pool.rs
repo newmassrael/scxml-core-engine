@@ -4437,6 +4437,7 @@ mod tests {
                     trusted_proxies: &[],
                     sign: None,
                     max_skew_ms: 300_000,
+                    fresh_ms: None,
                     receipt: crate::peers::Receipt::Durable {
                         window: 256,
                         retry_ms: 1_000,

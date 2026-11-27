@@ -16,6 +16,14 @@
 //! what a lane is asked ([`Effect::Ask`]) one task at a time in the order asked, and gives back the
 //! input each [`Task`] names. A [`Task::Stop`] ends a [`Task::Wake`] still being waited out; nothing
 //! else is asked of a lane that has a task unanswered.
+//!
+//! **The freshness step** (docs/adr/0117, D4). A client of the `key` authenticator signs, with
+//! each request, the last value of the freshness step its server gave it (`Sce-Mesh-Fresh`), and
+//! takes a value from a `200` it took and from a `401` that refuses a request for its freshness,
+//! each verified under `verify:` when the binding verifies. A refusal took nothing in: what the
+//! request carried goes again, at once when the client now holds a value other than the one
+//! refused, and after the lane's backoff when it does not. The values are in the trace, in the
+//! requests that sign them and the answers that give them.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -27,8 +35,11 @@ use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_metrics::ExchangeOutcome;
 
 use super::client_mailbox::{Mailbox, Mark, Numbering};
+use super::fresh_step::Held;
+use super::freshness::{step_of, FRESH_HEADER};
 use super::signature::{
-    content_digest, field_value, verify_response, Answered, CONTENT_DIGEST_HEADER, NONCE_HEADER,
+    content_digest, field_value, verify_refusal, verify_response, Answered, Refusal,
+    CONTENT_DIGEST_HEADER, NONCE_HEADER,
 };
 use super::{
     is_epoch, join_sequence, read_retry_after, split_sequence, HttpsFailure, HttpsRequest,
@@ -162,12 +173,24 @@ pub struct Received {
 }
 
 /// What a request was sent with that its response is read against: where its acknowledgement
-/// stood, and, when the client verifies, what of it the response's signature covers.
+/// stood, the generation of the value of the freshness step it signed (0 for none), and, when the
+/// client verifies, what of it the response's signature covers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Sent {
     mark: Mark,
+    fresh: u64,
     answered: Option<Answered>,
 }
+
+/// One of the profile's checks of a signed answer: `verify_response` of a `200`, `verify_refusal`
+/// of a refusal for freshness.
+type Verifier = fn(
+    &[TrustedKey],
+    u16,
+    &dyn Fn(&str) -> Option<String>,
+    &[u8],
+    &Answered,
+) -> Result<(), Refusal>;
 
 /// The number an incarnation's 32 hexadecimal digits spell, and none for any other text.
 fn epoch_number(text: &str) -> Option<u128> {
@@ -243,6 +266,10 @@ pub(super) struct ClientCore {
     /// Whether the last `200` did not verify under `verify:`, so that a run of them is told once
     /// (SCE_MESH.md section 16.7 row 19, once per edge).
     unauthenticated: bool,
+    /// What the client knows of the value of the freshness step it signs (docs/adr/0117, D4), and
+    /// the value's text; read only by a client that signs.
+    fresh: Held,
+    fresh_value: Option<String>,
     poll: LaneState,
     send: LaneState,
 }
@@ -257,6 +284,8 @@ impl ClientCore {
             ready: false,
             stopped: false,
             unauthenticated: false,
+            fresh: Held::new(),
+            fresh_value: None,
             poll: LaneState::new(),
             send: LaneState::new(),
         }
@@ -377,6 +406,15 @@ impl ClientCore {
         if let Some(epoch) = mark.epoch {
             headers.push((EPOCH_HEADER.to_string(), epoch_text(epoch)));
         }
+        // docs/adr/0117, D4: a client that signs signs the last value of the freshness step its
+        // server gave it, and records which, so that a refusal of it is told from one of another.
+        let mut fresh = 0;
+        if self.settings.signs {
+            if let Some(value) = &self.fresh_value {
+                headers.push((FRESH_HEADER.to_string(), value.clone()));
+                fresh = self.fresh.generation;
+            }
+        }
         if let Some(authorization) = &self.settings.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
         }
@@ -390,6 +428,7 @@ impl ClientCore {
             carried,
             sent: Sent {
                 mark,
+                fresh,
                 answered: None,
             },
         };
@@ -538,25 +577,17 @@ impl ClientCore {
         }
         match outcome {
             Ok(response) if response.status == 200 => {
-                // §mesh-22.9: a `200` that did not verify proves nothing of the server. The
-                // client takes nothing of it and acknowledges nothing, so what the mailbox holds
-                // stays there for a response that verifies; what the request carried is handed
-                // back as not sent, since nothing says the server took it; readiness stands as it
-                // was; and the host is told once per edge (section 16.7 row 19). The client tries
-                // again on its backoff.
-                if let Some(why) = self.unverified(&sent, &response) {
-                    self.hand_back(carried, effects);
-                    if !self.unauthenticated {
-                        self.unauthenticated = true;
-                        effects.push(Effect::Tell(LinkEvent::Unauthenticated(
-                            self.settings.server.clone(),
-                            why,
-                        )));
-                    }
-                    return Then::Wait(self.back_off(lane));
+                // §mesh-22.9: a `200` that did not verify proves nothing of the server.
+                if let Some(why) = self.unverified(&sent, &response, verify_response) {
+                    return self.distrust(lane, carried, why, effects);
                 }
                 self.lane(lane).failures = 0;
                 self.unauthenticated = false;
+                // docs/adr/0117, D4: the present value of the freshness step, which the next
+                // request signs.
+                if self.settings.signs {
+                    self.take_fresh(&response);
+                }
                 if !self.ready {
                     self.ready = true;
                     effects.push(Effect::Tell(LinkEvent::Ready(self.settings.server.clone())));
@@ -572,6 +603,15 @@ impl ClientCore {
                 }
                 self.take_mailbox(&sent.mark, &response, effects);
                 Then::Continue
+            }
+            // docs/adr/0117, D4: a refusal of the request for its freshness, which gives the
+            // present value of the step.
+            Ok(response)
+                if response.status == 401
+                    && self.settings.signs
+                    && response.header(FRESH_HEADER).is_some() =>
+            {
+                self.take_refusal(lane, carried, &sent, &response, effects)
             }
             // §mesh-22.4: load shed is neither a failure nor a lost server. What the request
             // carried goes again after at least the wait `Retry-After` asks for.
@@ -672,17 +712,94 @@ impl ClientCore {
         }
     }
 
-    /// Why `response`, a `200`, is not one the client may take: `None` when the binding does not
-    /// verify or the response verifies (SCE_MESH.md section 22.9).
-    fn unverified(&self, sent: &Sent, response: &HttpsResponse) -> Option<String> {
+    /// Why `response` is not one the client may take, by the check `verify` of its kind: `None`
+    /// when the binding does not verify or the response verifies (SCE_MESH.md section 22.9).
+    fn unverified(
+        &self,
+        sent: &Sent,
+        response: &HttpsResponse,
+        verify: Verifier,
+    ) -> Option<String> {
         let trusted = self.settings.verify.as_ref()?;
         let Some(answered) = &sent.answered else {
             return Some("the request was sent without a nonce".to_string());
         };
         let field = |name: &str| field_value(&response.headers, name);
-        verify_response(trusted, response.status, &field, &response.body, answered)
+        verify(trusted, response.status, &field, &response.body, answered)
             .err()
             .map(|refusal| refusal.to_string())
+    }
+
+    /// §mesh-22.9: an answer that did not verify proves nothing of the server. The client takes
+    /// nothing of it and acknowledges nothing, so what the mailbox holds stays there for a
+    /// response that verifies; what the request carried is handed back as not sent, since nothing
+    /// says the server took it; readiness stands as it was; and the host is told once per edge
+    /// (section 16.7 row 19). The client tries again on its backoff.
+    fn distrust(
+        &mut self,
+        lane: Lane,
+        carried: Vec<Vec<u8>>,
+        why: String,
+        effects: &mut Vec<Effect>,
+    ) -> Then {
+        self.hand_back(carried, effects);
+        if !self.unauthenticated {
+            self.unauthenticated = true;
+            effects.push(Effect::Tell(LinkEvent::Unauthenticated(
+                self.settings.server.clone(),
+                why,
+            )));
+        }
+        Then::Wait(self.back_off(lane))
+    }
+
+    /// Take the value of the freshness step `response` gives (docs/adr/0117, D4), when it gives
+    /// one of the profile: the client signs it from now on unless it holds a later one
+    /// (`Held::give`). Whether the response gave one.
+    fn take_fresh(&mut self, response: &HttpsResponse) -> bool {
+        let Some(value) = response.header(FRESH_HEADER).map(str::trim) else {
+            return false;
+        };
+        let Some(step) = step_of(value) else {
+            return false;
+        };
+        let other = self.fresh_value.as_deref() != Some(value);
+        if self.fresh.give(step, other) {
+            self.fresh_value = Some(value.to_string());
+        }
+        true
+    }
+
+    /// docs/adr/0117, D4: the server refused the request for the value of the freshness step it
+    /// signed, or for signing none, before it took anything of it in, and gave the present value.
+    /// A refusal that does not verify is distrusted as a `200` that does not verify is, and one
+    /// that gives no value of the profile is a status the binding does not take in. Otherwise the
+    /// value is taken, what the request carried goes again first, and the lane begins again at
+    /// once when the client now holds a value other than the one refused (`Held::again_at_once`),
+    /// and after its backoff when it does not.
+    fn take_refusal(
+        &mut self,
+        lane: Lane,
+        carried: Vec<Vec<u8>>,
+        sent: &Sent,
+        response: &HttpsResponse,
+        effects: &mut Vec<Effect>,
+    ) -> Then {
+        if let Some(why) = self.unverified(sent, response, verify_refusal) {
+            return self.distrust(lane, carried, why, effects);
+        }
+        if !self.take_fresh(response) {
+            self.hand_back(carried, effects);
+            return Then::Wait(self.back_off(lane));
+        }
+        for envelope in carried.into_iter().rev() {
+            self.outbox.push_front(envelope);
+        }
+        if self.fresh.again_at_once(sent.fresh) {
+            Then::Continue
+        } else {
+            Then::Wait(self.back_off(lane))
+        }
     }
 
     /// The envelopes were not sent: hand them back, oldest first.
@@ -744,7 +861,7 @@ impl ClientCore {
 
 #[cfg(test)]
 mod tests {
-    use super::super::signature::{Refusal, ResponseSigner, SIGNATURE_HEADER};
+    use super::super::signature::{ResponseSigner, SIGNATURE_HEADER};
     use super::*;
     use sce_rust_crypto::ed25519::KeyPair;
 
@@ -1127,7 +1244,7 @@ mod tests {
             .push((CONTENT_DIGEST_HEADER.to_string(), digest.clone()));
         response
             .headers
-            .extend(signer().sign(&digest, EPOCH, first.as_deref(), &answered));
+            .extend(signer().sign(&digest, EPOCH, first.as_deref(), None, &answered));
         response
     }
 
@@ -1771,5 +1888,183 @@ mod tests {
         ] {
             assert_eq!(epoch_number(text), None, "{text}");
         }
+    }
+
+    /// A value of the freshness step made for `step` (docs/adr/0117, D4).
+    fn fresh(step: u64) -> String {
+        alloc::format!("{step}.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")
+    }
+
+    /// A refusal for freshness that gives `value`.
+    fn stale(value: &str) -> HttpsResponse {
+        status(
+            401,
+            &[
+                ("WWW-Authenticate", "SCE-Signature error=\"use_fresh\""),
+                (FRESH_HEADER, value),
+            ],
+        )
+    }
+
+    /// Draw for and sign the request `lane` began, and the request carried then.
+    fn signed_with(core: &mut ClientCore, lane: Lane, nonce: &str) -> HttpsRequest {
+        core.step(drawn(lane, nonce));
+        carried(&core.step(Input::Signed(lane, Some(Vec::new()))))
+    }
+
+    /// The value of the freshness step `request` signs.
+    fn signs(request: &HttpsRequest) -> Option<String> {
+        field_value(&request.headers, FRESH_HEADER)
+    }
+
+    /// docs/adr/0117, D4: a client of the `key` authenticator signs the last value its server
+    /// gave it. A refusal for freshness gives the present value: the lane signs again at once with
+    /// it when it is another than the one refused, and waits its backoff when it is the same; what
+    /// a refused request carried goes again, handed back to nobody. A `200` gives the present
+    /// value, and one that arrives late gives back no older value. Red if `take_refusal` hands
+    /// back what was carried or waits while it holds a value it has not tried, or `begin` signs
+    /// another value than the last given.
+    #[test]
+    fn a_refusal_for_freshness_is_signed_again_at_once_with_the_value_it_gives() {
+        let mut core = begun(signing());
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Poll, "n1")),
+            None,
+            "no value was given yet"
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, stale(&fresh(5)))),
+            [
+                counted(ExchangeOutcome::Unauthorized),
+                Effect::Ask(Lane::Poll, Task::Draw),
+            ],
+            "signed again at once"
+        );
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Poll, "n2")),
+            Some(fresh(5))
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, stale(&fresh(5)))),
+            [
+                counted(ExchangeOutcome::Unauthorized),
+                wait_ms(Lane::Poll, 250),
+            ],
+            "the value refused is the one held: the lane waits"
+        );
+
+        core.step(Input::Transmitted(alloc::vec![9]));
+        assert_eq!(
+            core.step(Input::Woken(Lane::Send)),
+            [Effect::Ask(Lane::Send, Task::Draw)]
+        );
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Send, "n3")),
+            Some(fresh(5))
+        );
+        assert_eq!(
+            core.step(answered(Lane::Send, stale(&fresh(6)))),
+            [
+                counted(ExchangeOutcome::Unauthorized),
+                Effect::Ask(Lane::Send, Task::Draw),
+            ],
+            "nothing handed back"
+        );
+        let again = signed_with(&mut core, Lane::Send, "n4");
+        assert_eq!(signs(&again), Some(fresh(6)));
+        assert_eq!(
+            again.body,
+            [9],
+            "what the refused request carried goes again"
+        );
+
+        let mut given = ok(None, &[]);
+        given.headers.push((FRESH_HEADER.to_string(), fresh(7)));
+        core.step(answered(Lane::Send, given));
+        core.step(Input::Woken(Lane::Poll));
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Poll, "n5")),
+            Some(fresh(7)),
+            "a `200` gives the present value"
+        );
+        let mut late = ok(None, &[]);
+        late.headers.push((FRESH_HEADER.to_string(), fresh(6)));
+        assert_eq!(
+            core.step(answered(Lane::Poll, late)),
+            [
+                counted(ExchangeOutcome::Ok),
+                Effect::Ask(Lane::Poll, Task::Draw),
+            ]
+        );
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Poll, "n6")),
+            Some(fresh(7)),
+            "an older value arrived late"
+        );
+    }
+
+    /// A refusal for freshness that answers `request` and gives `value`, signed as the server
+    /// signs one.
+    fn signed_refusal(request: &HttpsRequest, value: &str) -> HttpsResponse {
+        let field = |name: &str| field_value(&request.headers, name).unwrap_or_default();
+        let answered = Answered {
+            target_uri: request.url.clone(),
+            ack: field(ACK_HEADER),
+            nonce: field(NONCE_HEADER),
+        };
+        let digest = content_digest(&[]);
+        let mut response = stale(value);
+        response
+            .headers
+            .push((CONTENT_DIGEST_HEADER.to_string(), digest.clone()));
+        response
+            .headers
+            .extend(signer().sign_refusal(&digest, value, &answered));
+        response
+    }
+
+    /// docs/adr/0117, D4: under `verify:` a refusal for freshness changes what the client signs
+    /// only when it verifies: one that does not is distrusted as a `200` that does not verify is,
+    /// and gives no value; one the server signed is taken and signed again at once. Red if
+    /// `take_refusal` takes a value before it verifies the refusal.
+    #[test]
+    fn a_refusal_for_freshness_is_taken_only_when_it_verifies() {
+        let mut core = begun(CoreSettings {
+            verify: Some(alloc::vec![TrustedKey {
+                id: "server-2026".to_string(),
+                public_key: KeyPair::from_seed(&[3u8; 32]).public_key(),
+            }]),
+            ..signing()
+        });
+        signed_with(&mut core, Lane::Poll, "n1");
+        assert_eq!(
+            core.step(answered(Lane::Poll, stale(&fresh(5)))),
+            [
+                counted(ExchangeOutcome::Unauthorized),
+                told(LinkEvent::Unauthenticated(
+                    "cloud".to_string(),
+                    Refusal::Digest.to_string(),
+                )),
+                wait_ms(Lane::Poll, 250),
+            ]
+        );
+        core.step(Input::Woken(Lane::Poll));
+        let asked = signed_with(&mut core, Lane::Poll, "n2");
+        assert_eq!(
+            signs(&asked),
+            None,
+            "a refusal that did not verify gave nothing"
+        );
+        assert_eq!(
+            core.step(answered(Lane::Poll, signed_refusal(&asked, &fresh(5)))),
+            [
+                counted(ExchangeOutcome::Unauthorized),
+                Effect::Ask(Lane::Poll, Task::Draw),
+            ]
+        );
+        assert_eq!(
+            signs(&signed_with(&mut core, Lane::Poll, "n3")),
+            Some(fresh(5))
+        );
     }
 }

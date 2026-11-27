@@ -70,6 +70,7 @@ use sce_rust_crypto::cose::{cose_key_ed25519_required, ed25519_of_cose_key};
 use sce_rust_crypto::ed25519::PUBLIC_KEY_BYTES;
 use sce_rust_metrics::{AuthenticatorKind, Counter, Gauge, Metrics, ResponseStatus, ServerShed};
 
+use super::freshness::{Freshness, FRESH_HEADER, USE_FRESH};
 use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
 pub use super::signature::ResponseSigner;
 use super::signature::{
@@ -146,6 +147,10 @@ pub struct ServerSettings {
     /// deploy.yaml's `max_skew_ms`: how far a request's `created` may lie from the server's clock
     /// under the `key` authenticator (SCE_MESH.md section 22.9).
     pub max_skew: Duration,
+    /// deploy.yaml's `fresh_ms`: the freshness step a request under the `key` authenticator is
+    /// held to (docs/adr/0117, D4), its values made of a key the server draws when it is built;
+    /// `None` holds a request to none.
+    pub fresh: Option<Duration>,
 }
 
 /// deploy.yaml's `max_clients` when the binding sets none (docs/adr/0109, D1).
@@ -175,6 +180,7 @@ impl Default for ServerSettings {
             trusted_proxies: Vec::new(),
             signer: None,
             max_skew: Duration::from_millis(u64::from(DEFAULT_MAX_SKEW_MS)),
+            fresh: None,
         }
     }
 }
@@ -209,8 +215,9 @@ pub struct Listening {
 
 impl Listening {
     /// What `machine` accepts over HTTPS on `listen` ([`PeerLink::HttpsAccept`]). `None` when no
-    /// peer is accepted there, or when the bindings there name different authenticators or
-    /// different `sign` keys, which one server cannot keep by one rule.
+    /// peer is accepted there, or when the bindings there name different authenticators,
+    /// different `sign` keys or different freshness steps, which one server cannot keep by one
+    /// rule.
     pub fn on(machine: &Machine, listen: &str) -> Option<Listening> {
         let mut found: Option<Listening> = None;
         for peer in machine.peers {
@@ -227,6 +234,7 @@ impl Listening {
                 trusted_proxies,
                 sign,
                 max_skew_ms,
+                fresh_ms,
                 // The outbox of a durable binding is the keyed pool's, kept in its store
                 // (`HttpsServer::keep_outboxes`), not a bound of the server's own.
                 receipt: _,
@@ -252,10 +260,15 @@ impl Listening {
                     .filter_map(|block| Cidr::parse(block))
                     .collect(),
                 max_skew: Duration::from_millis(u64::from(max_skew_ms)),
+                fresh: fresh_ms.map(|ms| Duration::from_millis(u64::from(ms))),
                 ..ServerSettings::default()
             };
             if let Some(held) = found.as_mut() {
-                if held.authenticator != authenticator || held.sign != sign {
+                // docs/adr/0117, D4: a request is held to one step, or to none, by the server.
+                if held.authenticator != authenticator
+                    || held.sign != sign
+                    || held.settings.fresh != declared.fresh
+                {
                     return None;
                 }
                 let settings = &mut held.settings;
@@ -646,6 +659,8 @@ impl Transport for MailboxTransport {
 struct Shared {
     settings: ServerSettings,
     authenticator: Authenticator,
+    /// The freshness step of `settings.fresh` under the key the server drew (docs/adr/0117, D4).
+    fresh: Option<Freshness>,
     is_bound: Box<dyn Fn(&str) -> bool + Send + Sync>,
     host: Arc<dyn ServerHost>,
     mailboxes: Arc<Mailboxes>,
@@ -690,6 +705,28 @@ impl Shared {
             1,
         );
         unauthorized(&self.authenticator)
+    }
+
+    /// The present value of the freshness step for `name` (docs/adr/0117, D4), when the server
+    /// holds requests to one: under the `key` authenticator, whose signature covers it.
+    fn present_value(&self, name: &str) -> Option<String> {
+        match (&self.fresh, &self.authenticator) {
+            (Some(fresh), Authenticator::Key(_)) => Some(fresh.value(name, unix_millis())),
+            _ => None,
+        }
+    }
+
+    /// The present value of the freshness step for `name` when a request of it that signs
+    /// `carried` (none when it carries no value) is not taken now (docs/adr/0117, D4); `None`
+    /// when it is, or when the server holds requests to no step.
+    fn refusing(&self, name: &str, carried: Option<&str>) -> Option<String> {
+        let now = unix_millis();
+        match (&self.fresh, &self.authenticator) {
+            (Some(fresh), Authenticator::Key(_)) if !fresh.admits(name, carried, now) => {
+                Some(fresh.value(name, now))
+            }
+            _ => None,
+        }
     }
 
     /// Ask the edge `judge` at the server's clock.
@@ -814,6 +851,9 @@ impl HttpsServer {
         // Every mailbox draws its incarnation from the source: one that cannot be read refuses
         // the server now, not its first client.
         draw_epoch()?;
+        // docs/adr/0117, D4: the key the values of the freshness step are made of is the server's
+        // own, drawn now and given to nobody.
+        let fresh = settings.fresh.map(Freshness::draw).transpose()?;
         let mailboxes = Arc::new(Mailboxes {
             capacity: settings.mailbox,
             max_clients: settings.max_clients,
@@ -825,6 +865,7 @@ impl HttpsServer {
             shared: Arc::new(Shared {
                 settings,
                 authenticator,
+                fresh,
                 is_bound: Box::new(is_bound),
                 host: Arc::new(host),
                 mailboxes,
@@ -1299,6 +1340,38 @@ fn unauthorized(authenticator: &Authenticator) -> Answer {
     answered
 }
 
+/// docs/adr/0117, D4: the refusal of a request for its freshness, `401` with the `key`
+/// authenticator's scheme and the error `use_fresh` (as RFC 9449, section 9, refuses a request
+/// without the nonce it was given), giving the present value `present` in `Sce-Mesh-Fresh`.
+/// It changes what the client signs, so under `sign:` it is signed for the request it answers
+/// as a `200` is.
+fn stale(settings: &ServerSettings, present: &str, answered: Option<&Answered>) -> Answer {
+    let mut refused = answer(ResponseStatus::Unauthorized);
+    let headers = refused.response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&alloc::format!("{KEY_SCHEME} error=\"{USE_FRESH}\""))
+    {
+        headers.insert("WWW-Authenticate", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(present) {
+        headers.insert(FRESH_HEADER, value);
+    }
+    if let (Some(signer), Some(answered)) = (&settings.signer, answered) {
+        let digest = content_digest(&[]);
+        let fields = signer.sign_refusal(&digest, present, answered);
+        for (name, value) in
+            core::iter::once((CONTENT_DIGEST_HEADER.to_string(), digest)).chain(fields)
+        {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(name.as_bytes()),
+                HeaderValue::from_str(&value),
+            ) {
+                headers.insert(name, value);
+            }
+        }
+    }
+    refused
+}
+
 /// The client name a path posts under, when it is `<base>/sce-mesh/<version>/<name>` with the
 /// version this server speaks; `None` is a `404`. The path is the only place the server learns
 /// the client's name from (§mesh-22.1).
@@ -1614,6 +1687,14 @@ async fn exchange(
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.client(&name, now)) {
         return shared.shed(ServerShed::Rate, ResponseStatus::TooManyRequests, wait);
     }
+    // docs/adr/0117, D4: under the `key` authenticator a request signs a value of the freshness
+    // step this server gave the name, of the present step or of the one before. One that signs an
+    // older value, or none, is refused before anything of it is taken in (no pin, no body), and
+    // given the present value to sign again. Its signature verified, so it is no failed
+    // authentication and counts against no rate of failures.
+    if let Some(present) = shared.refusing(&name, header_field(&request, FRESH_HEADER).as_deref()) {
+        return stale(settings, &present, answered.as_ref());
+    }
     // A name pinned for the first time is held to the rate at which its address pins new names.
     if new {
         if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.new_name(address, now)) {
@@ -1916,10 +1997,19 @@ async fn exchange(
     // signed over its status, its body's digest and its numbering, and over the request's method,
     // target, acknowledgement and nonce, so that it answers that request alone.
     let first = first.map(|first| first.to_string());
+    // docs/adr/0117, D4: every `200` gives the present value of the freshness step, which the
+    // client's next request signs, and is signed over it.
+    let fresh = shared.present_value(&name);
     let signed = match (&settings.signer, &answered) {
         (Some(signer), Some(answered)) => {
             let digest = content_digest(&body);
-            let fields = signer.sign(&digest, &epoch, first.as_deref(), answered);
+            let fields = signer.sign(
+                &digest,
+                &epoch,
+                first.as_deref(),
+                fresh.as_deref(),
+                answered,
+            );
             Some((digest, fields))
         }
         _ => None,
@@ -1936,6 +2026,11 @@ async fn exchange(
     if let Some(first) = &first {
         if let Ok(value) = HeaderValue::from_str(first) {
             response.headers_mut().insert(FIRST_HEADER, value);
+        }
+    }
+    if let Some(fresh) = &fresh {
+        if let Ok(value) = HeaderValue::from_str(fresh) {
+            response.headers_mut().insert(FRESH_HEADER, value);
         }
     }
     if let Some((digest, fields)) = signed {
@@ -2196,6 +2291,7 @@ mod tests {
                 trusted_proxies: &[],
                 sign: None,
                 max_skew_ms: 300_000,
+                fresh_ms: None,
                 receipt: crate::peers::Receipt::Transport,
                 retain_ms: 2_592_000_000,
             },
@@ -3330,6 +3426,19 @@ mod tests {
         key: &KeyPair,
         created: i64,
     ) -> super::super::HttpsRequest {
+        signed_fresh_request(name, address, body, key, created, None)
+    }
+
+    /// [`signed_request`], signing the value of the freshness step `fresh` when it carries one
+    /// (docs/adr/0117, D4).
+    fn signed_fresh_request(
+        name: &str,
+        address: std::net::SocketAddr,
+        body: Vec<u8>,
+        key: &KeyPair,
+        created: i64,
+        fresh: Option<&str>,
+    ) -> super::super::HttpsRequest {
         let url = alloc::format!("http://{address}/sce-mesh/1/{name}");
         let mut headers = alloc::vec![
             ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
@@ -3338,6 +3447,9 @@ mod tests {
             (NONCE_HEADER.to_string(), NONCE.to_string()),
             (CONTENT_DIGEST_HEADER.to_string(), content_digest(&body)),
         ];
+        if let Some(fresh) = fresh {
+            headers.push((FRESH_HEADER.to_string(), fresh.to_string()));
+        }
         let signed = RequestSigner::new(key.clone())
             .sign(
                 &normalize_target_uri(&url).expect("a URL"),
@@ -3449,6 +3561,148 @@ mod tests {
         assert_eq!(at(unix_seconds()), 200, "the registered key");
         assert_eq!(at(unix_seconds() - 1_000), 401, "created too long ago");
         assert_eq!(at(unix_seconds() + 1_000), 401, "created too far ahead");
+    }
+
+    /// docs/adr/0117, D4: under the `key` authenticator and a freshness step, a request that signs
+    /// no value, a value two steps old or a value of another name is refused `401` with
+    /// `use_fresh`, takes nothing in, and is given the present value, signed under `sign:` for
+    /// the request it answers; one that signs the value it was given, or the step before's, is
+    /// taken, and its `200` gives the present value, signed. Red if `exchange` takes a request
+    /// without a value, or `stale` gives none.
+    #[test]
+    fn a_request_signs_a_value_of_the_freshness_step_or_is_refused_and_given_it() {
+        use super::super::signature::verify_refusal;
+        use super::super::HttpsTransport;
+
+        let pins = MemoryCredentials::new();
+        let client = KeyPair::from_seed(&[1u8; 32]);
+        pins.pin("phone", &KeyPins::pin_of(&client.public_key()))
+            .expect("the host registers the key");
+        let key = KeyPair::from_seed(&[3u8; 32]);
+        let trusted = alloc::vec![TrustedKey {
+            id: "server-2026".to_string(),
+            public_key: key.public_key(),
+        }];
+        let taken_in = Arc::new(Mutex::new(Vec::<LinkEvent>::new()));
+        let server = HttpsServer::new(
+            ServerSettings {
+                // An hour, so that no step ends while the test runs.
+                fresh: Some(Duration::from_secs(3_600)),
+                signer: Some(ResponseSigner::new("server-2026", key)),
+                ..ServerSettings::default()
+            },
+            Authenticator::Key(KeyPins::registered(Arc::new(pins.clone()))),
+            |name| name == "phone",
+            {
+                let taken_in = Arc::clone(&taken_in);
+                move |events: Vec<LinkEvent>| taken_in.lock().expect("held").extend(events)
+            },
+        )
+        .expect("a server");
+        let freshness = server.shared.fresh.clone().expect("a freshness step");
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = listening(server);
+        let send = |fresh: Option<&str>| {
+            let request = signed_fresh_request(
+                "phone",
+                address,
+                alloc::vec![0x05],
+                &client,
+                unix_seconds(),
+                fresh,
+            );
+            let response = port.exchange(request.clone()).expect("a response");
+            (request, response)
+        };
+
+        let (request, refused) = send(None);
+        assert_eq!(refused.status, 401, "no value");
+        assert_eq!(
+            refused.header("WWW-Authenticate"),
+            Some("SCE-Signature error=\"use_fresh\"")
+        );
+        let given = refused
+            .header(FRESH_HEADER)
+            .expect("the present value")
+            .to_string();
+        let field = |name: &str| field_value(&refused.headers, name);
+        assert_eq!(
+            verify_refusal(
+                &trusted,
+                refused.status,
+                &field,
+                &refused.body,
+                &answered_by(&request)
+            ),
+            Ok(())
+        );
+        assert!(
+            taken_in.lock().expect("held").is_empty(),
+            "a refused request takes nothing in"
+        );
+
+        let (request, taken) = send(Some(given.as_str()));
+        assert_eq!(taken.status, 200, "the value given");
+        assert!(
+            taken.header(FRESH_HEADER).is_some(),
+            "a `200` gives the present value"
+        );
+        let field = |name: &str| field_value(&taken.headers, name);
+        assert_eq!(
+            verify_response(&trusted, 200, &field, &taken.body, &answered_by(&request)),
+            Ok(())
+        );
+        assert!(taken_in
+            .lock()
+            .expect("held")
+            .contains(&LinkEvent::Received("phone".to_string(), alloc::vec![0x05])));
+
+        let present = freshness.step_at(unix_millis());
+        let before = freshness.value_of("phone", present - 1);
+        assert_eq!(send(Some(before.as_str())).1.status, 200, "the step before");
+        let older = freshness.value_of("phone", present - 2);
+        assert_eq!(send(Some(older.as_str())).1.status, 401, "two steps old");
+        let another = freshness.value_of("tablet", present);
+        assert_eq!(send(Some(another.as_str())).1.status, 401, "another name's");
+    }
+
+    /// docs/adr/0117, D4: an address holds requests to the one freshness step its bindings name;
+    /// bindings that name two, or one and none, cannot be one server's. Red if `Listening::on`
+    /// drops `fresh_ms` or takes either of two.
+    #[test]
+    fn an_address_holds_requests_to_the_one_freshness_step_its_bindings_name() {
+        let fresh = |name: &'static str, fresh_ms: Option<u32>| {
+            let mut peer = accepted(name, "0.0.0.0:9443", HttpsAuthenticator::Key, 64);
+            if let PeerLink::HttpsAccept { fresh_ms: at, .. } = &mut peer.link {
+                *at = fresh_ms;
+            }
+            peer
+        };
+        let machine = |peers: [crate::peers::Peer; 2]| Machine {
+            name: "cloud",
+            dedup_window: 8,
+            gap_timeout_ms: 50,
+            peers: Box::leak(Box::new(peers)),
+            open_peers: &[],
+            instances: crate::peers::Instances::One,
+            sessions: None,
+        };
+        let one = machine([fresh("phone", Some(60_000)), fresh("tablet", Some(60_000))]);
+        assert_eq!(
+            Listening::on(&one, "0.0.0.0:9443").map(|l| l.settings.fresh),
+            Some(Some(Duration::from_secs(60)))
+        );
+        let two = machine([fresh("phone", Some(60_000)), fresh("tablet", Some(30_000))]);
+        assert!(Listening::on(&two, "0.0.0.0:9443").is_none(), "two steps");
+        let some = machine([fresh("phone", Some(60_000)), fresh("tablet", None)]);
+        assert!(
+            Listening::on(&some, "0.0.0.0:9443").is_none(),
+            "a step and none"
+        );
     }
 
     /// An exchange of `phone` with the server at `address` acknowledging `ack` in `epoch` (none

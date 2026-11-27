@@ -121,6 +121,7 @@ pub const HTTPS: Binding = Binding {
         // the server keeps, not the message signatures, which the conformance kit judges.
         sign: None,
         max_skew_ms: 300_000,
+        fresh_ms: None,
         receipt: Receipt::Transport,
         retain_ms: 2_592_000_000,
     },
@@ -142,6 +143,7 @@ pub fn durable_https(mailbox: u32, retain_ms: u64) -> Binding {
         trusted_proxies,
         sign,
         max_skew_ms,
+        fresh_ms,
         ..
     } = HTTPS.link
     else {
@@ -162,6 +164,7 @@ pub fn durable_https(mailbox: u32, retain_ms: u64) -> Binding {
             trusted_proxies,
             sign,
             max_skew_ms,
+            fresh_ms,
             receipt: Receipt::Durable {
                 window: 256,
                 retry_ms: 1_000,

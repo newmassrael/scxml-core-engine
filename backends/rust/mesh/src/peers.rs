@@ -86,6 +86,10 @@ pub enum PeerLink {
         /// deploy.yaml's `max_skew_ms`: how far a signed request's `created` may lie from the
         /// server's clock under the `key` authenticator (docs/adr/0109, D9).
         max_skew_ms: u32,
+        /// deploy.yaml's `fresh_ms`: the freshness step a request of an instance of an open
+        /// machine under the `key` authenticator signs a value of (docs/adr/0117, D4); `None`
+        /// on every other binding, whose requests sign none.
+        fresh_ms: Option<u32>,
         /// deploy.yaml's `receipt:` (docs/adr/0109, D10; SCE_MESH.md section 10.11): under
         /// [`Receipt::Durable`] what the machine sends the peer is kept in the peer's outbox in
         /// the store until the peer acknowledges it, `mailbox` the durable window of it.
@@ -503,6 +507,7 @@ mod tests {
                 trusted_proxies: &[],
                 sign: None,
                 max_skew_ms: 300_000,
+                fresh_ms: None,
                 receipt: Receipt::Transport,
                 retain_ms: 2_592_000_000,
             },
