@@ -26,18 +26,18 @@ mutation_oracles backends/c/tests/integration/test_a_run_of_the_inbox_is_written
 
 mutation_case "C11 puts an own event on the external queue ahead of what the inbox holds" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "       macrostep's own, and arrival order is the external queue's. */\n    drain_inbox(sm);\n#if",
-     "       macrostep's own, and arrival order is the external queue's. */\n#if")
+     "#endif\n    drain_inbox(sm);\n#if {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT\n    const uint16_t queued_before",
+     "#endif\n#if {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_PORT\n    const uint16_t queued_before")
 PY
 
 mutation_case "C11's inbox port tells no event that entered the external queue" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, true);\n",
+     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, posted, true);\n",
      "        (void)evt;\n")
 PY
 
 mutation_case "C11's inbox port tells an applied input as an event of the owner's own" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, sm->draining_inbox, true);\n",
+     "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, posted, true);\n",
      "        {{ csym_prefix }}{{ model.name }}_external_enqueue(sm, evt, false, true);\n")
 PY

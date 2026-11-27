@@ -1621,14 +1621,16 @@ void {{ csym_prefix }}{{ model.name }}_trace_step(const {{ csym_prefix }}{{ mode
 #endif
 /* docs/adr/0147, D3: defined by the host, and called by the machine around each
    event it puts on its external queue (`_raise_external`, through which every
-   external enqueue of the machine goes): immediately before the event enters
-   the queue, with `entered` false, and immediately after it entered, with
-   `entered` true. An event the queue did not take (a full queue, data the
-   machine could not hold) is told before and not after. `posted` is true for
-   an input the machine applied from its inbox, and false for an event of its
-   own: a `<send>` to itself, a delayed send come due, an ending or a report a
-   host gave it on the owner, the host's own raise. Called from inside the call
-   that drove the machine, in the order the events enter. `evt` and every text
+   external enqueue of the machine goes): with `entered` false before the
+   machine begins to put the event there, ahead of the drain that applies what
+   its inbox holds first (ADR 0084, D2 as amended at step 9), and with
+   `entered` true immediately after the event entered. An event the queue did
+   not take (a full queue, data the machine could not hold) is told before and
+   not after. `posted` is true for an input the machine applied from its inbox,
+   and false for an event of its own: a `<send>` to itself, a delayed send come
+   due, an ending or a report a host gave it on the owner, the host's own raise.
+   The inputs the drain before an event of its own applies are told inside
+   that event's two calls. Called from inside the call that drove the machine. `evt` and every text
    it names are valid for the length of the call. It reads: `sm` is const, and
    it must not call back into the machine. A host reads its clock in both calls,
    and has each enqueue of the history `sce-codegen check-inbox-history` judges

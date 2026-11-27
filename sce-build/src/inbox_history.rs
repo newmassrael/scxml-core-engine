@@ -17,7 +17,11 @@
 //!   `unknown`, `ended` or `full` ([`Refusal`]).
 //! - The owner's `enqueue(session, item, source)` is recorded for every item
 //!   that entered a session's external queue: an input a post took, applied
-//!   from the inbox (`posted`), or an event of the owner's own (`own`).
+//!   from the inbox (`posted`), or an event of the owner's own (`own`). An
+//!   own enqueue is invoked when the owner begins to put its event on the
+//!   queue, ahead of the drain that applies what the inbox holds first
+//!   (ADR 0084, D2 as amended at step 9), whose posted enqueues are listed
+//!   before it and lie within it, and returns once the event has entered.
 //! - The owner's `end(session)` is the end of that session's run.
 //!
 //! Beside the operations, a history says what the run was given: the sessions
@@ -84,7 +88,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::history_common::{check_clock, may_come_next, Timed};
+use crate::history_common::{may_come_next, Timed};
 pub use crate::history_common::{HistoryError, Verdict};
 
 /// What the inbox answered a post.
@@ -605,6 +609,71 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
     needed
 }
 
+/// Whether the clock readings can be those of a run: each operation returned
+/// after it was invoked, and a participant's next operation was invoked after
+/// its previous one returned, but for an event of the owner's own. Putting
+/// one on a queue begins with the drain before it (ADR 0084, D2 as amended at
+/// step 9), whose read of the inbox is where the event linearizes: what the
+/// inbox held then enters ahead of the event, and a post made after it may
+/// follow the event. So an own enqueue is invoked before that drain, and the
+/// posted enqueues of its session listed right before it, the drain's, lie
+/// within it; it is invoked after the owner's operation before them returned.
+/// Participant 0 is the owner.
+fn check_run_clock(participants: &[Vec<Step>]) -> Result<(), String> {
+    for (who, ops) in participants.iter().enumerate() {
+        for (at, op) in ops.iter().enumerate() {
+            if op.returned <= op.invoked {
+                return Err(format!(
+                    "participant {who} operation {at} returned at {} but was invoked at {}",
+                    op.returned, op.invoked
+                ));
+            }
+            let before = if who == 0 {
+                before_the_drain(ops, at)
+            } else {
+                at.checked_sub(1)
+            };
+            if let Some(previous) = before.map(|place| &ops[place]) {
+                if op.invoked <= previous.returned {
+                    return Err(format!(
+                        "participant {who} operation {at} was invoked at {} before its previous \
+                         operation returned at {}",
+                        op.invoked, previous.returned
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The place of the owner's operation an operation of the owner at `at` must
+/// be invoked after: the one before it, or, for an own enqueue, the one before
+/// the posted enqueues of its session listed right before it, which the drain
+/// it began with made. `None` when there is none.
+fn before_the_drain(owner: &[Step], at: usize) -> Option<usize> {
+    let Act::Enqueue {
+        session,
+        source: Source::Own,
+        ..
+    } = owner[at].act
+    else {
+        return at.checked_sub(1);
+    };
+    let mut first = at;
+    while let Some(previous) = first.checked_sub(1) {
+        match owner[previous].act {
+            Act::Enqueue {
+                session: drained,
+                source: Source::Posted,
+                ..
+            } if drained == session => first = previous,
+            _ => break,
+        }
+    }
+    first.checked_sub(1)
+}
+
 /// Whether the history can be that of a run: the clock readings can be, no
 /// input is posted twice, since the inputs of a run are distinct values
 /// (`docs/formal/InboxService.tla` takes them so), the owner runs only
@@ -613,7 +682,7 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
 /// the poster `n - 1`, as the search counts them; `names[place]` is the
 /// session counted at `place`, and `known[place]` whether the tree holds it.
 fn well_formed(participants: &[Vec<Step>], names: &[u64], known: &[bool]) -> Result<(), String> {
-    check_clock(participants)?;
+    check_run_clock(participants)?;
     for (at, op) in participants[0].iter().enumerate() {
         let session = match op.act {
             Act::Enqueue { session, .. } | Act::End { session } => session,

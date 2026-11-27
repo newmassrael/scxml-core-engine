@@ -138,9 +138,11 @@ static void log_clear(op_log_t *log) {
 static op_log_t g_owner;
 /* Whether the owner records what the port tells it. */
 static bool g_recording;
-/* The clock reading the port took immediately before the event it is telling
-   entered the queue. */
-static uint64_t g_enqueue_invoked;
+/* The clock reading the port took before the event it is telling began to
+   enter the queue: for an event of the machine's own at [0], and for an input
+   from the inbox at [1]. Two, because the inputs the drain before an event of the
+   machine's own applies are told between that event's two calls. */
+static uint64_t g_enqueue_invoked[2];
 
 /* The value an event carries as its data: the digits of `"<value>"`; 0, which
    no input or own event of a run has, when it carries none. */
@@ -163,7 +165,7 @@ void inbox_probe_external_enqueue(const inbox_probe_t *sm, const inbox_probe_eve
         return;
     }
     if (!entered) {
-        g_enqueue_invoked = tick();
+        g_enqueue_invoked[posted ? 1 : 0] = tick();
         return;
     }
     op.kind = OP_ENQUEUE;
@@ -172,7 +174,7 @@ void inbox_probe_external_enqueue(const inbox_probe_t *sm, const inbox_probe_eve
     op.outcome = POST_TAKEN;
     op.addressed = false;
     op.own = !posted;
-    op.invoked = g_enqueue_invoked;
+    op.invoked = g_enqueue_invoked[posted ? 1 : 0];
     op.returned = tick();
     log_add(&g_owner, &op);
 }

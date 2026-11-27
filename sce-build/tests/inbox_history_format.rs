@@ -104,7 +104,7 @@ fn expectation(name: &str) -> Option<&'static str> {
 fn every_fixture_is_judged_as_its_name_says() {
     let files = fixtures();
     assert!(
-        files.len() >= 47,
+        files.len() >= 50,
         "the fixtures are the checker's own tests; only {} are here",
         files.len()
     );
