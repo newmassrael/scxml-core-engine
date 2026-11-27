@@ -106,6 +106,15 @@ TEST(AComputedEventNameIsMatchedLikeAnyOtherAotTest, TheObserverIsToldEachRowOfT
     }
 }
 
+// docs/adr/0115, D4 and D8: built with nothing set, as this target builds it, the
+// machine tells no trace port and its engine holds no recorder. The same machine
+// built with `SCE_TRACE_PORT=1` is ATracedRunTellsEachStepItTakesAotTest.cpp.
+TEST(AComputedEventNameIsMatchedLikeAnyOtherAotTest, AMachineWhoseBuildDoesNotAskTellsNoTracePort) {
+    static_assert(!ComputedNameSM::PolicyType::TRACE_PORT, "integration_tests sets no SCE_TRACE_PORT");
+    static_assert(!ComputedNameSM::HAS_TRACE_PORT, "an engine whose policy is off holds no trace port");
+    SUCCEED();
+}
+
 // An observer set and then cleared is told nothing, and the run still reaches
 // `pass`, as one that never had an observer does.
 TEST(AComputedEventNameIsMatchedLikeAnyOtherAotTest, AClearedObserverIsToldNothingAndTheRunIsTheSame) {

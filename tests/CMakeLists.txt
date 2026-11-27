@@ -275,6 +275,10 @@ add_executable(sce_scxml_tests
     # docs/adr/0084 D5: the bookkeeping of host-run invocations, apart from any
     # engine.
     core/HostInvokeLedgerTest.cpp
+    # docs/adr/0115, D4 and D8: the trace port's recorder and the writer of the
+    # run trace format, held to the Rust trace_port module's cases, apart from
+    # any engine.
+    core/TracePortTest.cpp
     # docs/SCE_TEST_PROFILE.md §12.2: the test profile's runtime, with
     # components written by hand, apart from any generated machine.
     test_runtime/TestCaseRunTest.cpp
@@ -3397,6 +3401,40 @@ sce_declare_registered_static_integration_tests()
 # headers are known so Ninja schedules codegen before compilation.
 target_sources(integration_tests PRIVATE ${GENERATED_INTEGRATION_HEADERS})
 target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# docs/adr/0115, D4 and D8: the machine of a_computed_event_name_is_matched_like_any_other
+# built with its trace port on (SCE_TRACE_PORT=1), which integration_tests builds
+# with nothing set. The driver sets a port and a transition observer and holds the
+# steps the port is told to the document: a start, an event step per transition off
+# the queue its event came by, under the name it was sent under, and a stop; and
+# the transitions those steps took to the ones the observer is told. The W3C
+# documents docs/formal has models of take no external event, so this program is
+# the one that holds the external step. Its own program: the switch changes the
+# machine's engine, so the machine is compiled with it on in no program that also
+# compiles it with it off.
+set(_trace_port_headers ${GENERATED_INTEGRATION_HEADERS})
+list(FILTER _trace_port_headers INCLUDE REGEX "/a_computed_event_name_is_matched_like_any_other[^/]*$")
+add_executable(integration_trace_port_tests
+    integration/ATracedRunTellsEachStepItTakesAotTest.cpp
+    ${_trace_port_headers}
+)
+target_include_directories(integration_trace_port_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+        ${STATIC_INTEGRATION_OUTPUT_DIR}
+)
+target_compile_definitions(integration_trace_port_tests PRIVATE SCE_TRACE_PORT=1)
+target_link_libraries(integration_trace_port_tests
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+apply_sce_test_policies(integration_trace_port_tests)
+add_test(NAME IntegrationTracePort COMMAND integration_trace_port_tests)
+set_tests_properties(IntegrationTracePort PROPERTIES TIMEOUT 60)
 
 # The AI supervision loop is the one integration fixture whose canonical
 # document lives under `examples/` rather than `integration_resources/`, so it
