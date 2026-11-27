@@ -16,9 +16,12 @@
 // its own external queue after that point would take the two in another order
 // here; the judge then finds the runs part, which is a defect of this harness
 // to settle, and not a verdict about the document. A delayed send comes due by
-// the clock moving to the next deadline, which is the earliest: a scenario in
-// which the model's time makes a later one due first is one no clock replays,
-// and the judge finds that too.
+// the clock moving to the next deadline, which is the earliest, and that move
+// makes every send of the deadline due at once, where the model's time may make
+// them due one at a time with steps between: a `due` input that finds no send
+// pending was given by the move before it, and gives nothing. Two sends of one
+// deadline that the model makes due around another event, or a later deadline
+// made due first, is a run no clock replays, and the judge finds the runs part.
 //
 // The scenarios are the arguments, as the build globs them
 // (backends/c/tests/CMakeLists.txt). Recording again, after a change that moves
@@ -109,14 +112,12 @@ static int replay(const char *path) {
             turnstile_raise_external(&sm, &meta);
             turnstile_step(&sm);
         } else {
+            // None pending: the send came due with an earlier one of its
+            // deadline, and the run held to the recorded one says whether it did.
             const int64_t wait = turnstile_time_until_next_scheduled_ms(&sm);
-            if (wait < 0) {
-                (void)fprintf(stderr, "scenario: FAIL - %s: `%s` comes due, and the machine holds no delayed send\n",
-                              name, input->event);
-                bad = 1;
-                break;
+            if (wait >= 0) {
+                turnstile_advance_time_ms(&sm, (uint64_t)wait);
             }
-            turnstile_advance_time_ms(&sm, (uint64_t)wait);
         }
     }
     turnstile_destroy(&sm);

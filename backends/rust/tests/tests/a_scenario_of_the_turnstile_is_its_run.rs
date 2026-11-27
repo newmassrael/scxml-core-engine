@@ -16,9 +16,12 @@
 // its own external queue after that point would take the two in another order
 // here; the runs then part, which is a defect of this harness to settle, and
 // not a verdict about the document. A delayed send comes due by the clock
-// moving to the next deadline, which is the earliest: a scenario in which the
-// model's time makes a later one due first is one no clock replays, and the
-// runs part there too.
+// moving to the next deadline, which is the earliest, and that move makes every
+// send of the deadline due at once, where the model's time may make them due
+// one at a time with steps between: a `due` input that finds no send pending
+// was given by the move before it, and gives nothing. Two sends of one deadline
+// that the model makes due around another event, or a later deadline made due
+// first, is a run no clock replays, and the runs part there.
 //
 // The scenarios are written by `sce-codegen formal properties --scenarios
 // sce-build/tests/fixtures/formal_properties/scenarios`. Recording the lane's
@@ -92,13 +95,11 @@ fn replay(name: &str, inputs: &[Input]) -> RunTrace {
                 engine.tick();
             }
             InputKind::Due => {
-                let wait = engine.time_until_next_scheduled_ms().unwrap_or_else(|| {
-                    panic!(
-                        "{name}: `{}` comes due, and the machine holds no delayed send",
-                        input.event
-                    )
-                });
-                engine.advance_time_ms(wait);
+                // None pending: the send came due with an earlier one of its
+                // deadline, and the steps compared below say whether it did.
+                if let Some(wait) = engine.time_until_next_scheduled_ms() {
+                    engine.advance_time_ms(wait);
+                }
             }
         }
     }
@@ -130,6 +131,70 @@ fn holds_to_the_recorded_run(path: &Path, trace: &RunTrace) {
         "the run of {} is not the recorded one the replay judge reads",
         path.display()
     );
+}
+
+/// Two sends of one deadline: the turnstile unlocked twice at the same moment
+/// arms `relock` twice for the same deadline. The model makes them due one at
+/// a time, a step apart, and one move of the clock makes both due; the run is
+/// the same. Turns red if the harness reads the second `due` as asking for a
+/// move of the clock of its own, which finds no send pending.
+#[test]
+fn two_sends_of_one_deadline_come_due_with_one_move_of_the_clock() {
+    let step = |kind: &str, event: &str, fired: &str, exited: &str, entered: &str, at: &str| {
+        format!(
+            r#"{{"kind": "{kind}", "event": "{event}", "fired": [{fired}], "exited": [{exited}], "entered": [{entered}], "configuration": ["{at}"]}}"#
+        )
+    };
+    let fired = |source: &str, index: u32| format!(r#"{{"source": "{source}", "index": {index}}}"#);
+    let steps = [
+        r#"{"kind": "start", "entered": ["locked"], "configuration": ["locked"]}"#.to_string(),
+        step(
+            "external",
+            "coin",
+            &fired("locked", 0),
+            r#""locked""#,
+            r#""unlocked""#,
+            "unlocked",
+        ),
+        step(
+            "external",
+            "push",
+            &fired("unlocked", 1),
+            r#""unlocked""#,
+            r#""locked""#,
+            "locked",
+        ),
+        step(
+            "external",
+            "coin",
+            &fired("locked", 0),
+            r#""locked""#,
+            r#""unlocked""#,
+            "unlocked",
+        ),
+        step(
+            "external",
+            "relock",
+            &fired("unlocked", 2),
+            r#""unlocked""#,
+            r#""locked""#,
+            "locked",
+        ),
+        step("external", "relock", "", "", "", "locked"),
+    ];
+    let text = format!(
+        r#"{{"version": 1, "lane": "model", "steps": [{}], "inputs": [
+            {{"kind": "arrive", "after": 1, "event": "coin"}},
+            {{"kind": "arrive", "after": 2, "event": "push"}},
+            {{"kind": "arrive", "after": 3, "event": "coin"}},
+            {{"kind": "due", "after": 4, "event": "relock"}},
+            {{"kind": "due", "after": 5, "event": "relock"}}]}}"#,
+        steps.join(", ")
+    );
+    let scenario = Scenario::from_json(&text).expect("the scenario is a run trace");
+    let trace = replay("two sends of one deadline", &scenario.inputs);
+    let run = Scenario::from_json(&trace.to_json()).expect("the lane writes the run trace form");
+    assert_eq!(parting(&scenario, &run), None);
 }
 
 #[test]

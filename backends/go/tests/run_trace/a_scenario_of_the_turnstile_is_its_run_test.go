@@ -24,6 +24,11 @@
 // clock moving to the next deadline, which is the earliest: a scenario in which
 // the model's time makes a later one due first is one no clock replays, and the
 // judge finds that too.
+// That move makes every send of the deadline due at once, where the model may
+// make them due one at a time with steps between: a `due` input that finds no
+// send pending was given by the move before it, and gives nothing. Sends of one
+// deadline the model makes due around another event are a run no clock replays
+// either.
 //
 // The machine is the formal fixture's (the go-integration tree's directory
 // integration/formal_turnstile); the scenarios are written by
@@ -147,11 +152,11 @@ func replay(t *testing.T, name string, inputs []scenarioInput) *sce.RunTrace {
 			engine.Tick()
 			continue
 		}
-		wait, ok := engine.TimeUntilNextScheduled()
-		if !ok {
-			t.Fatalf("%s: `%s` comes due, and the machine holds no delayed send", name, input.Event)
+		// None pending: the send came due with an earlier one of its deadline,
+		// and the steps compared say whether it did.
+		if wait, ok := engine.TimeUntilNextScheduled(); ok {
+			engine.AdvanceTimeMs(wait.Milliseconds())
 		}
-		engine.AdvanceTimeMs(wait.Milliseconds())
 	}
 	return trace
 }

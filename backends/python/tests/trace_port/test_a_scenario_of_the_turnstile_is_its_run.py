@@ -22,6 +22,11 @@ not a verdict about the document. A delayed send comes due by the clock moving
 to the next deadline, which is the earliest: a scenario in which the model's
 time makes a later one due first is one no clock replays, and the judge finds
 that too.
+That move makes every send of the deadline due at once, where the model may
+make them due one at a time with steps between: a `due` input that finds no
+send pending was given by the move before it, and gives nothing. Sends of one
+deadline the model makes due around another event are a run no clock replays
+either.
 
 The machine is the formal fixture's (the python-integration tree's directory
 ``integration/formal_turnstile``); the scenarios are written by
@@ -138,11 +143,11 @@ def _replay(machine: ModuleType, name: str, inputs: List[_Input]) -> RunTrace:
             # The macrostep the event starts, run to its end.
             engine.advance_time(0)
         else:
+            # None pending: the send came due with an earlier one of its
+            # deadline, and the steps compared say whether it did.
             wait = engine.time_until_next_scheduled_ms()
-            assert wait is not None, (
-                f"{name}: `{given.event}` comes due, and the machine holds no delayed send"
-            )
-            engine.advance_time(wait)
+            if wait is not None:
+                engine.advance_time(wait)
     return trace
 
 

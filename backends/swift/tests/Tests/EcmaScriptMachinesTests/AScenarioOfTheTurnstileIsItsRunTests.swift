@@ -18,6 +18,10 @@
 // not a verdict about the document. A delayed send comes due by the clock moving to the next
 // deadline, which is the earliest: a scenario in which the model's time makes a later one due first
 // is one no clock replays, and the judge finds that too.
+// That move makes every send of the deadline due at once, where the model may make them due one at
+// a time with steps between: a `due` input that finds no send pending was given by the move before
+// it, and gives nothing. Sends of one deadline the model makes due around another event are a run
+// no clock replays either.
 //
 // The machine is the formal fixture's (the swift-ecmascript tree); the scenarios are written by
 // `sce-codegen formal properties --scenarios sce-build/tests/fixtures/formal_properties/scenarios`.
@@ -122,10 +126,9 @@ private func replay(_ name: String, _ inputs: [ScenarioInput]) throws -> RunTrac
             engine.raiseExternalByName(input.event)
             engine.tick()
         case .due:
-            guard let wait = engine.timeUntilNextScheduled() else {
-                throw ScenarioRefusal(
-                    description: "\(name): `\(input.event)` comes due, and the machine holds no delayed send")
-            }
+            // None pending: the send came due with an earlier one of its
+            // deadline, and the steps compared say whether it did.
+            guard let wait = engine.timeUntilNextScheduled() else { continue }
             let (seconds, attoseconds) = wait.components
             engine.advanceTimeMs(seconds * 1000 + (attoseconds + 999_999_999_999_999) / 1_000_000_000_000_000)
         }
