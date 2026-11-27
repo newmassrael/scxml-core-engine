@@ -231,9 +231,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Operator,
         &[("declared", 2), ("check", 2)],
     ),
-    // `run` copies the operator's modules into its scratch and reads back the graph TLC wrote
-    // there.
-    ("src/formal/tlc.rs", Why::Operator, &[("run", 2)]),
+    // `run` reads back the graph TLC wrote in the run's scratch.
+    ("src/formal/tlc.rs", Why::Operator, &[("run", 1)]),
     // The one copy of the operator's modules into a run's scratch, for TLC and Apalache alike.
     ("src/formal/mod.rs", Why::Operator, &[("stage_modules", 1)]),
     // The configurations the inductive runs of the operator's manifest name, beside it.
@@ -251,7 +250,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("install_verus", 3),
             ("admitted_apalache", 1),
             ("admitted_apalache_modules", 1),
-            ("install_apalache", 5),
+            ("install_apalache", 4),
         ],
     ),
     (
