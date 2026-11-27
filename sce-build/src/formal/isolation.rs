@@ -620,6 +620,7 @@ fn judged_commit(
     let proofs = loaded(proofs_text.as_deref());
     let mut checked: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut behaviour: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut proof: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for model in listed(&models, "models") {
         let module = shown(model.get("module"));
         for run in listed(model, "runs") {
@@ -640,21 +641,25 @@ fn judged_commit(
                     .extend(behaviour_of(&text));
             }
         }
-        // An inductive invariant, the theorems it implies and the types its runs
-        // start from are what level 3 checks (docs/adr/0115, D3): the
-        // specification, as a configuration's properties are.
+        // Level 3 (docs/adr/0115, D3): the theorems an inductive invariant implies
+        // are the specification, as a configuration's properties are. The
+        // invariant and the types its runs start from are the proof of them, not
+        // the specification: Apalache checks that the invariant holds at the start,
+        // is kept by every step and implies each theorem, so no edit of the proof
+        // passes a theorem that is false. A proof may change beside the model.
         for stated in listed(model, "inductive") {
-            let names = ["invariant", "types"]
-                .into_iter()
-                .filter_map(|key| stated.get(key).and_then(Value::as_str))
-                .map(str::to_string)
-                .chain(
-                    listed(stated, "implies")
-                        .iter()
-                        .filter_map(|name| name.as_str())
-                        .map(str::to_string),
-                );
-            checked.entry(module.clone()).or_default().extend(names);
+            checked.entry(module.clone()).or_default().extend(
+                listed(stated, "implies")
+                    .iter()
+                    .filter_map(|name| name.as_str())
+                    .map(str::to_string),
+            );
+            proof.entry(module.clone()).or_default().extend(
+                ["invariant", "types"]
+                    .into_iter()
+                    .filter_map(|key| stated.get(key).and_then(Value::as_str))
+                    .map(str::to_string),
+            );
         }
     }
     let abstract_module = |module: &str| {
@@ -713,8 +718,12 @@ fn judged_commit(
             let names = said_by(&old, checks, explored);
             // A definition the change adds that only the checks use is the
             // checks', as the ones they used before are.
+            let proved = proof.get(module).unwrap_or(&no_checks);
             let all_said: BTreeSet<String> = names
-                .union(&said_by(new_text, checks, explored))
+                .iter()
+                .chain(said_by(new_text, checks, explored).iter())
+                .chain(said_by(&old, proved, explored).iter())
+                .chain(said_by(new_text, proved, explored).iter())
                 .cloned()
                 .collect();
             let (before, after) = (definitions(&old), definitions(new_text));
