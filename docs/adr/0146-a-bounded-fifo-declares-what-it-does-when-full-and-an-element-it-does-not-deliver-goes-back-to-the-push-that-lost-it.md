@@ -1,30 +1,34 @@
 # ADR 0146 — A bounded FIFO declares what it does when full: it refuses, drops the newest or evicts the oldest, and an element it does not deliver goes back to the push that lost it
 
-- Status: Accepted (2026-11-28) by the owner, after the consumer read the revision and raised no objection.
-  Proposed 2026-11-26; revised 2026-11-28 on the consumer's review, whose twelve items are each taken (section
-  "Review", which names where). Item 4b of the order agreed with a downstream consumer on 2026-11-19, as ADR 0111
-  "Open questions" placed it ("U17 (a full queue's policy) reopens ADR 0062 in a record of its own").
+- Status: Accepted (2026-11-28) by the owner, after the consumer read the revision and raised no objection. Proposed
+  2026-11-26; revised 2026-11-28 on the consumer's review, whose twelve items are each taken (section "Review", which
+  names where). Item 4b of the order agreed with a downstream consumer on 2026-11-19, as ADR 0111 "Open questions"
+  placed it ("U17 (a full queue's policy) reopens ADR 0062 in a record of its own"). Audited 2026-11-28 after
+  acceptance, under ADR 0115's standing rule (the most long-term correct structure, textbook, cost ignored): an
+  algorithm argued only by hand serves no document until a machine check promotes it, `lost` is linearizable, and a
+  close stays declared on type precision alone (section "Review", "The owner's audit").
 - Date: 2026-11-26
 - Reopens: ADR 0062 §1, the cell *consumed once x forget the oldest*, and the third bullet of ADR 0062 §8
   ("Overwrite of a consumed queue ... not revisited"), on a reason §1 did not weigh (§"Why ADR 0062's refusal is
   reopened").
 - Amends, once landed (each amended document gains an "Amended by: ADR 0146" line in the landing that moves it):
   - RFC §synth-5-P (`queue`): a declared full policy and fullness, a close, a drain, a declared sharing, storage the
-    caller lends, the outcomes of a push and a pop, the selection table's three new rows, the waiting protocol, and its
-    bullets "Overwriting the oldest element is excluded" and "Elements still queued when the queue is destroyed are
-    destroyed with it" (D1 to D3);
+    caller lends, the outcomes of a push and a pop, the selection table's two new rows and the candidates that may join
+    it, the waiting protocol, and its bullets "Overwriting the oldest element is excluded" and "Elements still queued
+    when the queue is destroyed are destroyed with it" (D1 to D3);
   - `sce-build/src/queue_history.rs`: the sequential specification it judges histories against (D1, D5);
   - `docs/SCE_ACCEPTED_SUBSET.md`: `<sce:append>` gains `on-full`, `limit` and `outcome` (D4), and the `queue` kind's
     paragraphs gain what D2 adds;
   - ADR 0086's rule that an append to a full list raises `error.execution`, which stays the default (D4).
 - Scope: the `queue` kind on every backend that generates one (Rust, C11, C++, Go, Kotlin, Python, Swift); a
   statechart's `<sce:append>` on every lane that lowers it.
-- Related: ADR 0062 (`broadcast-log`), ADR 0084 (one inbox, one door), ADR 0088 (an intrusive queue's element stays
-  a value), ADR 0108 D4 (a statement writes its outcome into a standard enum; a run-time limit is a value of the
-  machine), ADR 0111 D4 (a queue's capacity `c` is given at construction under its bound; `Pool::over`, storage the
-  caller holds; U16's `c <= B`) and D5 (the owner is whoever holds the drive; the door that can be waited on), ADR 0141
-  (a fixed list's raw parts), ADR 0145 (the door proved as a concurrent object), ADR 0154 (in draft: a map over storage
-  its caller lends), `sce-build/src/queue_history.rs`, `scripts/gates/genmc-queue.sh`.
+- Related: ADR 0062 (`broadcast-log`), ADR 0084 (one inbox, one door), ADR 0088 (an intrusive queue's element stays a
+  value), ADR 0108 D4 (a statement writes its outcome into a standard enum; a run-time limit is a value of the machine),
+  ADR 0111 D4 (a queue's capacity `c` is given at construction under its bound; `Pool::over`, storage the caller holds;
+  U16's `c <= B`) and D5 (the owner is whoever holds the drive; the door that can be waited on), ADR 0115 (the levels of
+  a machine check that promote a candidate, D5), ADR 0141 (a fixed list's raw parts), ADR 0145 (the door proved as a
+  concurrent object), ADR 0154 (in draft: a map over storage its caller lends), `sce-build/src/queue_history.rs`,
+  `scripts/gates/genmc-queue.sh`.
 
 ## Context
 
@@ -50,9 +54,12 @@ lost". §8 closed it as "not revisited".
 
 ### Why ADR 0062's refusal is reopened
 
-The first reason is true of two rows and not of the cell. A head that the producer may also advance is a head written
-by a compare-and-swap, and a ring whose head is claimed that way serves the cell with a producer that is still
-wait-free (D3). The refusal took the two algorithms that existed for the abstract data type that did not.
+The first reason is true of the two rows and not of the cell. A bounded buffer under one lock serves the cell, as the
+textbook bounded buffer does (Hoare 1974), at `blocking` progress and with nothing to argue beyond D1's table (D3, "The
+locked ring"). ADR 0062 refused the abstract data type because the two lock-free algorithms it had could not serve it,
+which is a reason to serve it by another algorithm and not a reason to refuse it. Whether a lock-free algorithm serves
+it is a separate claim: the literature gives none for this cell (D3, "Why a lock for one producer too"), and the one
+this record proposes is a candidate that a machine check promotes or does not (D3, "Candidates"; D5).
 
 The second reason fails where an element owns something. Each row above holds elements that are resources: an owned
 sample the queue must release exactly once, by the caller's function, when it is evicted, and hand over exactly once
@@ -96,13 +103,19 @@ it is reopened here with this consumer's reason.
 |---|---|
 | crossbeam-queue `ArrayQueue::force_push` (checked 2026-11-26 in crossbeam-queue 0.3.14, `src/array_queue.rs:293`) | The cell in a widely used library: a push into a full bounded MPMC queue moves the head by a compare-and-swap and *returns the element it replaced* (`Option<T>`), so the caller, not the queue, disposes of it. That is D1's hand-back. Its ring is Vyukov's bounded MPMC queue, in which a producer stalled between its claim and its stamp store stalls the consumers at that slot, so its progress is `blocking` (Alternatives rejected, 7) |
 | crossbeam-channel's bounded flavour (checked 2026-11-28 in crossbeam-channel 0.5.17, `src/flavors/array.rs`) | A close that is part of the queue's state: `disconnect` sets a mark bit in `tail` by `fetch_or` (:498-499), so a send that claims `tail` meets the close in the same word and hands its message back (`TrySendError::Disconnected(msg)`). And the order a waiting receiver keeps: it registers (:442), then checks the channel again (:445), and a write notifies the receivers (:245) |
+| The Linux kernel's tracing ring buffer (`kernel/trace/ring_buffer.c`, its design in `Documentation/trace/ring-buffer-design.rst`) and LTTng's (Desnoyers and Dagenais, "Lockless multi-core high-throughput buffering scheme for kernel tracing", ACM SIGOPS OSR 46(3), 2012) | The published lock-free buffers that overwrite their oldest data: one writer per CPU overwrites a whole page or sub-buffer, the reader takes a page by exchanging it, and what is overwritten is bytes counted as an overrun. Neither evicts one element or hands it to anyone, so neither serves the cell (D3, "Why a lock for one producer too") |
+| The bounded lock-free FIFOs: Tsigas and Zhang (SPAA 2001), Morrison and Afek's CRQ (PPoPP 2013), Feldman and Dechev's ring buffer (ACM SIGAPP ACR 15(3), 2015), Nikolaev's SCQ | Each refuses, or closes its ring, when full; none moves the head from the producer's side. With crossbeam's `force_push` and the tracing buffers, the audit of 2026-11-28 found no published lock-free algorithm for a bounded FIFO that evicts its oldest element, one at a time, to the push that displaced it |
+| Lamport, "Specifying concurrent program modules", TOPLAS 5(2), 1983 | The ring of one producer and one consumer on loads and stores, with its proof: the Lamport row, which serves `refuse` as published (D2) |
+| Michael and Scott, "Correction of a memory management method for lock-free data structures", TR 599, University of Rochester, 1995 | A lock-free queue published with an argument by hand (Valois's) and a race in it found afterwards: the reason an algorithm argued by hand is a candidate and not a row (D3, "What a row is") |
+| Abadi and Lamport, "The existence of refinement mappings", TCS 82(2), 1991; Lahav et al., "Repairing sequential consistency in C/C++11", PLDI 2017; Kokologiannakis and Vafeiadis, "GenMC: a model checker for weak memory models", CAV 2021 | What promotes a candidate (D5 item 6): a refinement mapping to D1's table, with an auxiliary variable where a linearization point is not one of the operation's own steps, checked whole at small sizes and proved for every size; and every execution of the code under RC11 |
+| Liskov and Wing, "A behavioral notion of subtyping", TOPLAS 16(6), 1994; Hoare, "Communicating sequential processes", CACM 21(8), 1978 | A queue that can be closed and one that cannot are two types, neither a subtype of the other; CSP's channel ends with the process at its other end, while a monitor's bounded buffer has no end (D2, `<sce:closable/>`) |
 | zenoh-pico `_z_ring_push_force_drop` and `_z_fifo_push_drop`, and the consumer's port of them | The three policies as one implementation with a discriminant, and the rule that the evicted element is released *after* the lock is dropped, because the release is caller code that may re-enter the library. D1 makes that rule structural: the queue never runs element code |
-| Nikolaev, "A scalable, portable, and memory-efficient lock-free FIFO queue", DISC 2019 | LSCQ closes a ring by a *finalize* bit in its `Tail`, which an enqueuer's fetch-and-add reads in the same step: the close of the SCQ rows (D2) |
-| Hoare, "Monitors: an operating system structuring concept", CACM 17(10), 1974 | The bounded buffer under one lock with two conditions: the row for several producers (D3) and its waiting |
+| Nikolaev, "A scalable, portable, and memory-efficient lock-free FIFO queue", DISC 2019 | LSCQ closes a ring by a *finalize* bit in its `Tail`, which an enqueuer's fetch-and-add reads in the same step: the close of the SCQ candidates, whose proof for a queue that stays closed is still owed (D3, "Candidates") |
+| Hoare, "Monitors: an operating system structuring concept", CACM 17(10), 1974 | The bounded buffer under one lock with two conditions: the locked ring, which serves every cell no published lock-free algorithm serves (D3), and its waiting |
 | Reed and Kanodia, "Synchronization with eventcounts and sequencers", CACM 22(2), 1979 | The eventcount: a waiter reads a count, checks its condition, and waits only while the count is unchanged, so a notification between its check and its wait is not lost (D3, "Waiting") |
 | Herlihy, "Wait-free synchronization", TOPLAS 13(1), 1991 | Loads and stores cannot solve consensus between two parties wait-free; deciding whether the producer or a consumer owns the oldest element is such a consensus, which is why a core without compare-and-swap takes a critical section (D3) |
 | tokio `sync::broadcast` (ADR 0062's prior art) | The retained-for-every-reader contract this record is *not* |
-| Linearizability (Herlihy and Wing, TOPLAS 12(3), 1990); quiescent consistency (Aspnes, Herlihy and Shavit, "Counting networks", JACM 41(5), 1994) | The criterion for the outcomes, and the weaker, sufficient one for the loss count (D1) |
+| Linearizability (Herlihy and Wing, TOPLAS 12(3), 1990); quiescent consistency (Aspnes, Herlihy and Shavit, "Counting networks", JACM 41(5), 1994) | The criterion for every operation, the read of the loss count included; the weaker one, which the accepted text gave the loss count, is withdrawn (D1; Alternatives rejected, 5) |
 
 ## Decision
 
@@ -122,19 +135,21 @@ policy `P` is one of `refuse`, `drop-newest`, `evict-oldest`, fixed for the obje
 | `pop()` | `|s| = 0`, not `closed` | none | `Empty` |
 | `pop()` | `|s| = 0`, `closed` | none | `Closed` |
 | `close()` | any | `closed := true` | `Done` (a second close changes nothing) |
+| `lost()` | `P` is not `refuse` | none | `Lost(lost)` |
 | `drain()` | the last operation on the object | `s := <>` | `Drained(s)`: every element still held, oldest first |
 
 - **Hand-back, never disposal.** Whatever the queue does not deliver it returns to the push that lost it, as a value
   of the element type. The queue never runs element code (a destructor, a release function) under its own
   synchronisation; Conservation is then a theorem of the table, and each backend's push returns the value as that
   language moves values (Rust by move, C11 into a caller's out-parameter, the managed languages as the reference).
-- **A close is part of the queue's state.** A closed queue refuses every later push with `Closed(v)`, and still
-  delivers what it held: a pop answers `Closed`, not `Empty`, only once it holds nothing, and from then on it answers
-  nothing else, since no push can add to it. The flag lives in the word whose update is a push's linearization point
-  (D3 names it for each row: a mark bit in the tail, a field under the lock), never in a flag beside the queue. A push
-  that read a separate flag and then published could succeed after a close had returned, and a pop could answer
-  `Closed` before an element it later delivers; no order of the operations explains either. Close is offered by a
-  queue that declares it (D2), so a queue that does not keeps the rows, the API and the histories it has.
+- **A close is part of the queue's state.** A closed queue refuses every later push with `Closed(v)`, and still delivers
+  what it held: a pop answers `Closed`, not `Empty`, only once it holds nothing, and from then on it answers nothing
+  else, since no push can add to it. The flag lives in the word whose update is a push's linearization point (D3 names
+  it for each row: a field under the lock, a field in one context, a mark in a candidate's control word), never in a
+  flag beside the queue. A push that read a separate flag and then published could succeed after a close had returned,
+  and a pop could answer `Closed` before an element it later delivers; no order of the operations explains either. Close
+  is an operation of a queue that declares it (D2); a queue that does not is this table without `close` and the `Closed`
+  rows, which is another type (D2, `<sce:closable/>`).
 - **A drain is the teardown.** `drain` hands every element the queue still holds to its caller, in order, and ends
   the object. It is the last operation by definition: Rust takes the queue by value, C11 and the other languages take
   the caller's word that every handle is released, as they do for freeing it. So it needs no synchronisation, every
@@ -147,30 +162,36 @@ policy `P` is one of `refuse`, `drop-newest`, `evict-oldest`, fixed for the obje
   `drop-newest`, `Pushed` or `Evicted` under `evict-oldest`, and `Closed` besides on a closable queue; a pop's has
   `Closed` only on a closable queue. A caller cannot be handed an arm its queue cannot produce, and cannot mistake an
   eviction for a refusal.
-- **`lost` is a statistic, quiescently consistent.** It is monotone, saturates at its width, and is exact whenever
-  no push is in flight. It is not ordered against the outcomes: the per-push outcome is the exact, linearizable
-  record of every loss, and `lost` is what a party that saw none of those outcomes (the consumer, a telemetry read)
-  learns. Making it linearizable would put it in the word the eviction's compare-and-swap writes and give the
-  Lamport row an atomic read-modify-write for `drop-newest`, for an exactness no row's consumer uses (the consumer
-  confirmed that `lost` is all it reads). It is kept per producer and summed on read, so no row gains a
-  read-modify-write for it. A queue under `refuse` has none: a refused push loses nothing, its caller still holds the
-  value, and a push closed out loses nothing either.
-- **One specification, two homes.** The same table, without `close` and `drain`, is the sequential object a
-  statechart's list is (D4), and the whole table is the specification a concurrent `queue` is linearizable to (D2,
-  D3), as ADR 0062 §7 shares one structure between two kinds. A list is a value the machine alone writes, so it has
-  nothing to close and nothing to tear down.
+- **`lost` is part of the state, and linearizable.** It counts the elements the queue has lost, saturating at the
+  largest value of its width, and `lost()` reads it as an operation of the object: a read ordered after a push that
+  answered `Dropped` or `Evicted` counts it, and no read counts a loss whose push is ordered after the read. Each row
+  changes it in the atomic access that is the losing push's linearization point (D3 names the word), so the count adds
+  no step that a row's progress could wait on. The accepted text made it quiescently consistent (Aspnes, Herlihy and
+  Shavit 1994), on the grounds that a linearizable count gives the Lamport ring a read-modify-write and that no consumer
+  reads it exactly. Under ADR 0115's standing rule neither is a reason: a specification is the strongest that the rows
+  can meet, cost does not weaken it, and one consumer's present use does not bound a contract. A weaker criterion would
+  stand only if the stronger one took a guarantee from some row, and it takes none: the sequential and locked rings hold
+  `lost` as a field that the table's step updates; the claimed-head ring, the candidate for one producer, holds `lost`
+  in the control word that the drop's and the eviction's own compare-and-swap writes, and keeps its wait-free producer
+  and, for one consumer that nothing evicts from, its wait-free consumer (D3, "Candidates"); SCQ's candidate changes it
+  in the access that decides a refusal. A queue under `refuse` has none: a refused push loses nothing, its caller still
+  holds the value, and a push closed out loses nothing either.
+- **One specification, two homes.** The same table, without `close`, `drain` and `lost()`, is the sequential object a
+  statechart's list is (D4), and the whole table is the specification a concurrent `queue` is linearizable to (D2, D3),
+  as ADR 0062 §7 shares one structure between two kinds. A list is a value the machine alone writes, so it has nothing
+  to close and nothing to tear down.
 
 ### D2. The `queue` kind declares its full policy, its fullness, its close and its sharing
 
 ```xml
 <sce:on-full fullness="exact">evict-oldest</sce:on-full>   <!-- refuse (default) | drop-newest | evict-oldest -->
-<sce:closable/>                                            <!-- absent: no close, as today -->
+<sce:closable/>                                            <!-- absent: a queue with no close -->
 <sce:sharing>owner</sce:sharing>                           <!-- shared (default) | owner -->
 ```
 
-- `<sce:on-full>` is a child element, as `<sce:producers>` and `<sce:progress>` are; absent means `refuse`, so every
-  queue that exists keeps its behaviour, its generated code and its API byte for byte. The attribute spellings ADR
-  0062 tested and refused (`sce:on-full` on the root, `on-full` on `<sce:bounded>`) stay refused as they are.
+- `<sce:on-full>` is a child element, as `<sce:producers>` and `<sce:progress>` are; absent means `refuse`, the one
+  policy under which no push loses its element, so a loss is always something a document wrote. The attribute spellings
+  ADR 0062 tested and refused (`sce:on-full` on the root, `on-full` on `<sce:bounded>`) stay refused as they are.
 - **`fullness`** says what a full queue is for the outcomes `Full` and `Dropped`. `at-rest`, the default, is the
   RFC's "capacity is exact at rest": a row may also refuse while operations of other participants hold slots
   (`Refusal::WhileSlotsAreHeld`, the SCQ and LSCQ rows), so under it a `Dropped` can be answered while `|s| < c`.
@@ -179,102 +200,77 @@ policy `P` is one of `refuse`, `drop-newest`, `evict-oldest`, fixed for the obje
   writes `exact` is never given a row whose refusal is excused by held slots; the table below says which rows those
   are, and where only such a row reaches the declared progress the document is refused by the existing
   `queue/progress-unreachable`.
-- `drop-newest` is the row's refusal, reported as `Dropped` and counted in the pushing participant's own count, on
-  every row that serves `refuse`.
-- `evict-oldest` is served by the rows D3 adds, with `<sce:bounded>` storage only.
-- **`<sce:closable/>`** gives the queue D1's `close` and the `Closed` outcomes. Absent, the queue has neither, and
-  the rows that would publish by a read-modify-write to see a close (the Lamport ring) keep their loads and stores.
+- `drop-newest` is a refusal reported as `Dropped` that adds one to `lost` in the step that decides the refusal. The
+  locked and sequential rings serve it; the claimed-head ring for one producer and SCQ for the others serve it once each
+  is promoted, since counting the loss in that step changes an access the published rows make (D3, "Candidates").
+- `evict-oldest` is served by the locked and sequential rings, with `<sce:bounded>` storage only; the claimed-head ring
+  is its candidate for one producer (D3, "Candidates").
+- **`<sce:closable/>`** gives the queue D1's `close` and the `Closed` outcomes; absent, the queue has neither. A queue
+  that can be closed and one that cannot are two abstract data types, and neither is a behavioural subtype of the other
+  (Liskov and Wing 1994): the closable one's push and pop answer `Closed`, which the other's never do, and the other has
+  no `close`. Both are textbook. The bounded buffer of a monitor (Hoare 1974) has no close; a channel whose ends belong
+  to processes ends with them (CSP's distributed termination, Hoare 1978; Go's `close`; crossbeam's `disconnect`). A
+  document declares which one it means and gets exactly that type's outcomes (D1), so the caller of a queue that nothing
+  closes is never handed a `Closed` arm it must answer and can never meet. That type precision is the reason the
+  declaration exists; a close on every queue would widen every queue's outcome types for an operation that many queues
+  never perform. It follows, as a consequence and not as a reason, that a queue that does not close is served by the
+  published rows as they are published (D3, "What a row is").
 - **`<sce:sharing>`** is ADR 0111 D4's spelling for a pool. `shared`, the default, is every queue today: its
   producers and consumers may run in different contexts. `owner` says that every producer and every consumer is one
   context (one thread, or whoever holds the drive under ADR 0111 D5), and selects the sequential ring (D3), which
   uses no atomic access.
 
 The selection table of RFC §synth-5-P, with this record's rows in place. The generator still takes the first row that
-matches and whose guarantee is at least the declared progress; a row added after an existing one never takes a
-document the existing one serves.
+matches and whose guarantee is at least the declared progress; a row added after an existing one never takes a document
+the existing one serves. A candidate of D3 is not in the table until it is promoted, and its promotion inserts its row
+above the locked ring on purpose (D3, "Candidates"). The Close column says how a row holds the close; "no" means the row
+serves only a queue that does not close.
 
 | Storage | Sharing | Producers | Consumers | On full | Row | Producer | Consumer | Fullness | Close |
 |---|---|---|---|---|---|---|---|---|---|
 | `bounded` | `owner` | one | one | any | sequential ring (D3, new) | wait-free | wait-free | exact | a field |
-| `bounded` | `shared` | one | one | `refuse`, `drop-newest` | Lamport ring | wait-free | wait-free | exact | a mark in `tail`, the publish a compare-and-swap |
-| `bounded` | `shared` | one | any | `evict-oldest` | claimed-head ring (D3, new) | wait-free | lock-free | exact | a mark in `tail` |
-| `bounded` | `shared` | any other | | `refuse`, `drop-newest` | SCQ | lock-free | lock-free | at rest | the finalize bit in `Tail` |
+| `bounded` | `shared` | one | one | `refuse` | Lamport ring | wait-free | wait-free | exact | no |
+| `bounded` | `shared` | any other | | `refuse` | SCQ | lock-free | lock-free | at rest | no |
 | `bounded` | `shared` | any | any | any | locked ring (D3, new) | blocking | blocking | exact | a field under the lock |
-| `segmented` | `shared` | one | one | `refuse`, `drop-newest` | linked Lamport rings | wait-free, bounded by the allocator | wait-free | exact | a mark in the tail of the ring the producer writes |
-| `segmented` | `shared` | any other | | `refuse`, `drop-newest` | LSCQ | lock-free, bounded by the allocator | lock-free | at rest | the finalize bit |
-| `intrusive` | `shared` | any | any | `refuse` only | the Vyukov list | as today | as today | (a push cannot fail) | refused |
+| `segmented` | `shared` | one | one | `refuse` | linked Lamport rings | wait-free, bounded by the allocator | wait-free | exact | no |
+| `segmented` | `shared` | any other | | `refuse` | LSCQ | lock-free, bounded by the allocator | lock-free | at rest | no |
+| `intrusive` | `shared` | any | any | `refuse` | the Vyukov list | as today | as today | (a push cannot fail) | no |
 
 - Refused by name, each a new `DiagnosticCode` with its row in the acceptance document's appendix:
-  - `queue/full-policy-not-for-storage`: any policy but `refuse`, or a `fullness`, on `<sce:intrusive>` (the caller
-    owns every node, so a push cannot meet a full queue, ADR 0088), and `evict-oldest` on `<sce:segmented>` (D6);
-  - `queue/close-not-for-storage`: `<sce:closable/>` on `<sce:intrusive>`. The Vyukov push is an exchange that cannot
-    fail, so it cannot meet a close in the word it writes (D6);
+  - `queue/full-policy-not-for-storage`: any policy but `refuse`, or a `fullness`, on `<sce:intrusive>` (the caller owns
+    every node, so a push cannot meet a full queue, ADR 0088); `evict-oldest` on `<sce:segmented>` (D6); and
+    `drop-newest` on `<sce:segmented>` until its candidate is promoted (D3, "Candidates");
+  - `queue/close-not-for-storage`: `<sce:closable/>` on `<sce:intrusive>`, since the Vyukov push is an exchange that
+    cannot fail and so cannot meet a close in the word it writes (D6); and on `<sce:segmented>` until its candidate is
+    promoted;
   - `queue/owner-queue-in-two-contexts`: an `owner` queue whose deploy placement names more than one context, an
     interrupt handler and a thread among them (D3).
-- Several producers under `evict-oldest` are no longer refused: they take the locked ring, and a document that
-  declares `lock-free` or `wait-free` for them is refused by `queue/progress-unreachable`, whose fix names
-  `blocking`.
+- A `shared` queue that drops, evicts or closes takes the locked ring, whatever its producers, until a candidate that
+  serves it is promoted (D3, "Candidates"; D5 item 6). A document that declares `lock-free` or `wait-free` for such a
+  queue is refused by `queue/progress-unreachable`, whose fix names `blocking`, or `owner` sharing where one context
+  does everything: while no algorithm that meets the declaration has been checked, the refusal is the true answer.
 
-### D3. The rows: a ring whose head is claimed, a ring under one lock, a ring in one context
+### D3. The rows: a ring under one lock and a ring in one context; the candidates a machine check promotes
 
-#### The claimed-head ring: one producer, one or many consumers, `evict-oldest`
-
-`B` slots with `c < B` (`B = CAPACITY + 1` when the queue holds its own storage, so every `c <= CAPACITY` fits; the
-length of the span when the caller lends it), a 64-bit `tail` that the producer advances and a closer marks, and a
-64-bit `head` that every remover, the producer's eviction among them, advances by compare-and-swap.
-
-- **Removal claims, then owns.** A consumer loads `head = h`, loads `tail` with acquire and, when `h` equals the
-  tail's count, answers `Closed` if the tail is marked and `Empty` otherwise; else it copies slot `h mod B` with
-  per-word atomic loads (the read of ADR 0062 §4, which a concurrent store cannot make a data race) and then attempts
-  `CAS(head, h, h + 1)`. On success the copy is the element and the consumer owns it; on failure the copy is discarded
-  unused (no destructor runs on it) and the consumer retries.
-- **The producer publishes first and evicts after.** It loads `tail = t` (if marked, it answers `Closed(v)`) and
-  `head = h` with acquire. It stores the new element into slot `t mod B` with per-word atomic stores and publishes it
-  by `CAS(tail, t, t + 1)` with release, which fails only when a closer has marked the tail since: the push then
-  answers `Closed(v)`, and the slot it wrote is never published. If `t - h` was `c`, the ring now shows `c + 1`
-  elements, and the producer copies slot `h mod B` and attempts `CAS(head, h, h + 1)`. On success it owns the oldest
-  and returns it as `Evicted`, counting it in `lost`; on failure a consumer took that element, the ring holds at most
-  `c`, and the push answers `Pushed`. A queue that is not closable publishes by the same compare-and-swap, which
-  then cannot fail.
-- **Why the new element is published before the oldest is claimed.** The first draft claimed the oldest and then
-  wrote the new element into the slot it left, at `c = B`. Between the two steps the ring shows `c - 1` elements while
-  the abstract queue holds `c` before the push and `c` after it, and a pop in that window can answer `Empty`: at
-  `c = 1`, a push into a ring that holds `a` claims `a`, a pop finds `head = tail` and answers `Empty`, the push
-  publishes `v` and returns `Evicted(a)`. Ordered before that pop the push leaves `[v]` and the pop must take `v`;
-  ordered after, the pop must take `a`; neither answers `Empty`, so that history is not linearizable, and a row that
-  excused it would be the Vyukov list's `EmptyPops::WhileAPushIsInFlight`, which this row has no reason to need.
-  Publishing first leaves the window with `c + 1` elements shown, all of them abstractly present: a pop in it takes
-  the oldest, which is the element the push would evict, so the push's claim then fails and the history is the pop
-  followed by an ordinary push. The price is one slot: the new element's slot must be free while the oldest is still
-  held, which is `c < B`, the ring with one spare slot of the textbook.
-- **Why a copy whose claim succeeds is exact.** `head` only grows. The producer writes slot `t mod B` only when
-  `t - h' <= c < B` for the `h'` it read, so it never writes a slot of an element whose index is `head` or above: an
-  element at index `x >= head >= h'` has `x < t < h' + B` and so another slot. A successful `CAS(head, h, h + 1)`
-  shows `head` was `h` from the copier's load to its claim, so nothing wrote slot `h mod B` in between; a failed one
-  is the only way a torn copy can arise, and it is discarded. The argument uses `c < B` and nothing else about `B`.
-- **Ordering.** Every claim is a compare-and-swap with acquire-release, and the producer reads `head` with acquire
-  before it decides the ring is full or writes a slot, so a remover's copy that its claim made the element happens
-  before any later store into that slot. The publish is a release, so a consumer that acquires the tail sees the
-  slot's words. A copy whose claim fails is ordered against nothing, which is why it is made of per-word atomic loads
-  and never used.
-- **Close.** `close` sets the tail's top bit by `fetch_or` from any context, as crossbeam-channel's `disconnect`
-  does. Its linearization point is that update. The producer's publish meets it in the same word: a push either
-  published before the mark, and is ordered before the close, or fails its publish and answers `Closed(v)` having
-  evicted nothing, since the publish comes before the claim. A pop that answered `Closed` saw the mark and nothing
-  between `head` and the tail, and no later publish can succeed. The mark costs the counters one bit: `2^63` laps.
-- **Progress, declared and checked.** The producer is **wait-free**: its publish fails at most once (a close is the
-  only other write to `tail`, and it is sticky), it attempts one claim, and after a failed claim the ring holds at
-  most `c`. Removers are **lock-free**: a claim fails only because another party claimed that element. A document
-  that requires more of a side is refused by the existing `queue/progress-unreachable`.
-- **Width.** `head` and `tail` are lap counters; the existing wrap analysis (ADR 0062 §7, the `min_wrap_ops`
-  check) applies to them unchanged, and a target without 64-bit compare-and-swap takes the narrow rows' treatment
-  ADR 0062 records for the log.
+**What a row is.** A row of the selection table is an algorithm that the literature publishes with its proof (Lamport
+1983 for the ring of one producer and one consumer, Nikolaev 2019 for SCQ and LSCQ, the Vyukov list as ADR 0088 records
+it), used as published, or an algorithm whose verification D5 has passed in this repository; the rows that exist today
+are taken as the RFC accepted them, and this record judges what it adds. An algorithm argued only by hand, a published
+one with a step changed among them, is a **candidate**: it is specified here, its verification is planned (D5 item 6),
+and it serves no document until an amendment of this record promotes it on those runs. Lock-free algorithms published
+with arguments by hand have been found wrong afterwards (Valois's queue, corrected by Michael and Scott 1995), and this
+record's own claimed-head ring was not linearizable in its first draft nor, as the owner's audit found, in the form it
+was accepted in (below); the rule is ADR 0115's standing rule applied to concurrent objects, whose interleavings a model
+checker exhausts and an argument by hand samples. Meanwhile the locked ring serves every cell a candidate would, with
+the same outcomes and `blocking` progress.
 
 #### The locked ring: any producers and consumers, any policy
 
-For several producers under `evict-oldest`, and for a document whose declared fullness only a lock can give it, the
-row is D1's table run as written under one lock over a ring of `B >= c` slots: a start index, a length, `lost` and
-`closed` as plain fields, an eviction a move of the start (D4 gives the same lowering to a list).
+The row of every `shared` `<sce:bounded>` queue that drops, evicts or closes, until a candidate that serves it is
+promoted, and of several producers under `evict-oldest` always (D6), is D1's table run as written under one lock over a
+ring of `B >= c` slots: a start index, a length, `lost` and `closed` as plain fields, an eviction a move of the start
+(D4 gives the same lowering to a list). A read of `lost` takes the lock, so the count is linearizable with no further
+step.
 
 - **The lock.** Rust: `std::sync::Mutex` under `std`, the `critical-section` crate without it; C11: the deployment's
   `_sce_critical_enter` and `_sce_critical_exit` seams, declared exactly when such a queue is generated, as ADR 0111
@@ -289,6 +285,14 @@ row is D1's table run as written under one lock over a ring of `B >= c` slots: a
   published in two steps, and a remover that meets a claimed, unpublished slot either waits for a producer that may
   be stopped or skips it and breaks FIFO order. The textbook algorithm that does not skip, Vyukov's bounded MPMC
   queue as crossbeam's `force_push` runs it, therefore has `blocking` progress too (Alternatives rejected, 7).
+- **Why a lock for one producer too.** One producer evicting from a ring that its consumers remove from is the cell ADR
+  0062 refused, and no published algorithm serves it lock-free one element at a time. Crossbeam's `force_push` runs on
+  Vyukov's ring and is `blocking`; the tracing buffers of the Linux kernel and of LTTng overwrite from one writer
+  without a lock, but by the page, take pages from their reader by exchange, and count what they overwrite as bytes,
+  handing nothing back; and the bounded lock-free FIFOs (Tsigas and Zhang, CRQ, Feldman and Dechev, SCQ) refuse or close
+  when full. The claimed-head ring below is this record's own algorithm, so it is a candidate, and until it is promoted
+  the lock is what the cell has. A search that finds nothing does not show that nothing exists: a published algorithm
+  found later, whose proof covers D1's table, is taken in place of the candidate.
 
 #### The sequential ring: `<sce:sharing>owner</sce:sharing>`
 
@@ -307,20 +311,21 @@ edition, whose ring takes no lock.
 
 Which party owns the oldest element, the producer evicting it or a consumer removing it, is consensus between two
 parties, and loads and stores cannot solve it wait-free (Herlihy 1991); ARMv6-M has no compare-and-swap and no
-load-linked/store-conditional to solve it with. On a single core the textbook mutual exclusion is a masked
-interrupt. So an `evict-oldest` queue on such a core is either the sequential ring, where its producer and consumer
-are one context and nothing needs excluding, or the locked ring with interrupts masked as its lock, which is the
-RFC's rule for every row on such a target (`sce_irq_save` and `sce_irq_restore`, `platform.core_count` 1, and
-`queue/no-atomics-across-cores` for more cores). The claimed-head ring is not emulated there: under the masked section
-its claims would all succeed, and the locked ring is that ring with nothing left to claim.
+load-linked/store-conditional to solve it with. On a single core the textbook mutual exclusion is a masked interrupt. So
+an `evict-oldest` queue on such a core is either the sequential ring, where its producer and consumer are one context
+and nothing needs excluding, or the locked ring with interrupts masked as its lock, which is the RFC's rule for every
+row on such a target (`sce_irq_save` and `sce_irq_restore`, `platform.core_count` 1, and `queue/no-atomics-across-cores`
+for more cores). The claimed-head candidate is not emulated there, promoted or not: under the masked section its claims
+would all succeed, and the locked ring is that ring with nothing left to claim.
 
 #### Interrupt handlers
 
 The RFC's placement rule decides, unchanged: an operation in an interrupt handler must be `lock-free` or better, or
 run inside the masked section of a single-core target without atomics (`queue/progress-insufficient-for-isr`).
 
-- The claimed-head ring: its producer is wait-free and its removers lock-free, so either side may be an interrupt
-  handler; so may a closer, whose close is one `fetch_or`.
+- A `shared` queue that drops, evicts or closes is the locked ring until a candidate is promoted, so where its lock is a
+  mutex no side of it may be an interrupt handler. Once promoted, the claimed-head ring would let either side be one,
+  its producer being wait-free and its removers lock-free, and a closer too, whose close is one `fetch_or`.
 - The locked ring: refused in an interrupt handler where its lock is a mutex, since the handler would wait for the
   thread it preempted; accepted where its lock is the masked section of a single core.
 - The sequential ring: an interrupt handler and anything else are two contexts, so the queue is not `owner`.
@@ -333,21 +338,21 @@ contract is the one ADR 0111 D4 gave a pool (`Pool::over`) and the one ADR 0154 
 storage; it is stated here in full, under the name **Lent**, so that it stands whatever that draft becomes:
 
 - **The count is a run-time value under the bound.** The queue is constructed with `1 <= c <= CAPACITY` (ADR 0111 D4).
-- **The caller holds the storage, and its length is checked once.** `Queue::over(slots, c)` (C11:
-  `<queue>_init_over(q, slots, n, c)`) takes a span of the row's slot type; the row exports
-  `slots_for(c)` (C11: `<queue>_slots_for(c)`), which is `c` for the sequential, locked and Lamport rings, `c + 1`
-  for the claimed-head ring and SCQ's power of two for SCQ. A span shorter than that, or misaligned for the slot type,
-  is refused at construction (`Err`; `false`), and the queue never grows into more.
+- **The caller holds the storage, and its length is checked once.** `Queue::over(slots, c)` (C11: `<queue>_init_over(q,
+  slots, n, c)`) takes a span of the row's slot type; the row exports `slots_for(c)` (C11: `<queue>_slots_for(c)`),
+  which is `c` for the sequential, locked and Lamport rings, `c + 1` for the claimed-head ring once promoted and SCQ's
+  power of two for SCQ. A span shorter than that, or misaligned for the slot type, is refused at construction (`Err`;
+  `false`), and the queue never grows into more.
 - **An empty queue is all zero bytes.** Its indices, its mark, `lost` and its start are zero, and its slots are never
   read before they are written, so they need no initialisation: the constructor is a `const fn` (C11: a static
   initializer) and a `static` queue lies in `.bss`, as ADR 0108 made an empty map.
 - **The span outlives the queue.** Rust holds it as a borrow for the queue's lifetime; C11 takes the caller's word
   that the span stays until the drain.
 
-What the rows prove needs nothing more of `B` than `c < B` (the claimed-head ring, above) or `c <= B` (the others),
-for `B` the span's slot count; `B = CAPACITY` appears in no argument. So a C ABI that gives each channel the capacity
-its caller asked for lends exactly `slots_for(c)` slots, as the consumer's no-heap edition allocates exactly `c`
-today, and no channel reserves `CAPACITY` slots it was not asked for.
+What the rows prove needs nothing more of `B` than `c < B` (the claimed-head ring, D3 "Candidates") or `c <= B` (the
+others), for `B` the span's slot count; `B = CAPACITY` appears in no argument. So a C ABI that gives each channel the
+capacity its caller asked for lends exactly `slots_for(c)` slots, as the consumer's no-heap edition allocates exactly
+`c` today, and no channel reserves `CAPACITY` slots it was not asked for.
 
 #### Waiting: a queue that never waits, paired with a party that does
 
@@ -380,6 +385,91 @@ answered `Popped`, and every waiter after a `close`.
   steps. This is the order ADR 0111's door is waited on by, so a host that waits on a door and on a queue waits one
   way. The locked ring may use its monitor's condition variables under its own lock instead, which keeps the same
   order by holding the lock across steps 1 to 3.
+
+#### Candidates
+
+Each candidate is specified here so that its verification has a fixed target, and each is promoted, or not, on its own.
+A promotion is an amendment of this record, accepted by the owner, that cites the runs of D5 item 6 for it; it inserts
+the candidate's row above the locked ring, so the documents the candidate serves move to it with the same outcomes and a
+stronger progress.
+
+| Candidate | Serves | Producer | Consumer | Fullness | Close | Changed against the literature |
+|---|---|---|---|---|---|---|
+| claimed-head ring | `bounded`, `shared`, one producer, any consumers, any policy | wait-free | lock-free; wait-free for one consumer under `refuse` or `drop-newest` | exact | the mark in the control word | the whole algorithm |
+| SCQ with a loss count and a close | `bounded`, `shared`, the other counts, `refuse` or `drop-newest` | lock-free | lock-free | at rest | the finalize bit in `Tail` | `lost` changes in the access that decides a refusal; the finalize bit closes the whole queue |
+| linked rings, LSCQ | `segmented`, the counts of their rows, `refuse` or `drop-newest` | as their rows | as their rows | as their rows | the mark of the ring the producer writes; the finalize bit | the changes of the two rows above, on each ring |
+
+##### The claimed-head ring: one producer, one or many consumers, any policy
+
+`B` slots with `c < B` (`B = CAPACITY + 1` when the queue holds its own storage, so every `c <= CAPACITY` fits; the
+length of the span when the caller lends it), and one **control word** that holds the ring's whole state: `head`, a lap
+counter that removals advance; `len`, the number of elements held, at most `c`; the close mark; and `lost`. Every
+operation is one load of the word or one compare-and-swap on it (one `fetch_add` in the case named below), so each
+linearization point is one access of one word, and D1's state is read off the word: `s = slots[head .. head + len)`,
+`closed` the mark, `lost` the field.
+
+- **Removal claims, then owns.** A consumer loads the word `w`. If `len` is 0 it answers `Closed` when the mark is set
+  and `Empty` otherwise, at that load. Else it copies slot `head mod B` with per-word atomic loads (the read of ADR 0062
+  §4, which a concurrent store cannot make a data race) and attempts `CAS(word, w, w')`, `w'` having `head + 1` and `len
+  - 1`. On success the copy is the element and the consumer owns it; on failure the copy is discarded unused (no
+  destructor runs on it) and the consumer starts again. Where there is one consumer and nothing evicts (`refuse`,
+  `drop-newest`), only that consumer removes, so it advances the word by one `fetch_add` of `head + 1, len - 1`, which
+  cannot fail.
+- **A push is one step.** The producer loads `w` and answers `Closed(v)` if the mark is set. If `len < c` it stores `v`
+  into slot `(head + len) mod B` with per-word atomic stores and attempts the compare-and-swap with `len + 1`: `Pushed`.
+  If `len = c`: under `refuse` it answers `Full(v)` at the load; under `drop-newest` it attempts the compare-and-swap
+  with `lost + 1`, saturating: `Dropped(v)`; under `evict-oldest` it stores `v` into slot `(head + c) mod B`, copies
+  slot `head mod B`, and attempts the compare-and-swap with `head + 1` and `lost + 1`, `len` unchanged: `Evicted` with
+  the copy. A failed attempt means that a consumer removed or a closer marked since the load, and the producer starts
+  again from the load. The new element's slot must be free while the oldest is still held, which is `c < B`, the ring
+  with one spare slot of the textbook.
+- **Why the eviction and the publish are one step.** The first draft claimed the oldest and then wrote the new element
+  into the slot it left, at `c = B`. Between the two steps the ring showed `c - 1` elements while the abstract queue
+  held `c` before the push and `c` after it, so a pop in that window could answer `Empty`: at `c = 1`, a push into a
+  ring that holds `a` claims `a`, a pop finds the ring empty, the push publishes `v` and returns `Evicted(a)`; neither
+  order of the push and the pop answers `Empty`. The accepted text published first and claimed after, in two words, and
+  the audit found its window wrong too: the ring showed `c + 1` elements, which no state of D1 has, and on a closable
+  queue a close in that window is not linearizable. At `c = 1` with `[a]` held, the push publishes `v`, a close
+  completes, a pop that begins after the close claims `a`, and the push's own claim fails, so it answers `Pushed`.
+  Answering `Pushed` orders the push before the close, and the close precedes the pop, so the push met a full queue and
+  had to evict `a`, which the pop then took. With the state in one word the eviction and the publish are one
+  compare-and-swap, and the ring never shows a state D1 does not have.
+- **Why a copy whose claim succeeds is exact.** Only the producer adds, and removals leave `head + len` unchanged, so
+  the producer writes only slot `(head + len) mod B` of the current word, or of an older word with the same sum. With `1
+  <= len <= c < B` that slot is never `head mod B` or the slot of any element held. A successful compare-and-swap shows
+  the word unchanged from the copier's load to its claim, so the slot it copied held that element throughout; a copy
+  from a stale load, whose slot may since have been freed and written, is the only way a torn copy arises, and its
+  compare-and-swap fails and discards it.
+- **Ordering.** Every compare-and-swap is acquire-release. The producer's slot stores precede its release, so a consumer
+  that acquires the word sees the slot's words; a remover's copy precedes its release, and the producer acquires the
+  word before it writes a slot, so the copy happens before any later store into that slot. A copy whose claim fails is
+  ordered against nothing, which is why it is made of per-word atomic loads and never used.
+- **Close.** `close` sets the mark by `fetch_or` on the word, from any context, as crossbeam-channel's `disconnect` sets
+  its mark in the word a send claims; its linearization point is that update. A push meets the mark in the word its
+  compare-and-swap writes, so it either changed the word before the mark and is ordered before the close, or answers
+  `Closed(v)` having published and evicted nothing. A removal answers `Closed` only at a load that shows the mark and
+  `len = 0`, after which no push can raise `len`.
+- **Progress, as claimed.** The producer is wait-free: an attempt fails only after a removal, which takes one of at most
+  `c` elements that no push can replace while the one producer is between its load and its compare-and-swap, or after
+  the close, which happens once; so it makes at most `c + 2` attempts. Removers are lock-free: a claim fails only
+  because another operation succeeded. The one consumer of a ring that never evicts is wait-free. These are the claims
+  D5 item 6 checks before promotion; once promoted, a document that requires more of a side is refused by the existing
+  `queue/progress-unreachable`.
+- **The loss count** is a field of the word, changed by the drop's and the eviction's own compare-and-swap, and `lost()`
+  is a load of the word, so the count is linearizable and costs no step.
+- **Width.** The word holds `head`, `len` (the bits `CAPACITY` needs), the mark and `lost`. Where the target compares
+  and swaps a double word, `head` is a 64-bit lap counter; elsewhere the word is 64 bits with a narrower `head`, and the
+  existing wrap analysis (ADR 0062 §7, the `min_wrap_ops` check) applies to that counter, the slot index included. A
+  target without 64-bit compare-and-swap takes the narrow rows' treatment ADR 0062 records for the log.
+
+##### SCQ and LSCQ, extended
+
+A refused enqueue's linearization point is the access that tells it the free-index queue is empty, so `lost` must change
+in that access's word; and a close by the finalize bit must resolve an enqueue that took its index before the mark. The
+published arguments (Nikolaev 2019) cover SCQ's refusal as it is and LSCQ's finalize as a ring its enqueuers leave for
+the next one, not a queue that stays closed. The design of each change is its promotion record's, held to the same
+checks; the audit's finding on the claimed-head ring's two words is the reason a close is not taken on an argument by
+hand.
 
 ### D4. A statechart's append declares its full policy, may take a run-time limit, and may write its outcome
 
@@ -431,33 +521,50 @@ answered `Popped`, and every waiter after a `close`.
   accepted.
 - Every lane that lowers `<sce:append>` lowers the three attributes. The saved form of a list does not change.
 
-### D5. The verification, by layer (the structure ADR 0062 §6 gives the log)
+### D5. The verification, by layer (the structure ADR 0062 §6 gives the log), and what promotes a candidate
 
-1. **The specification and its checker.** `queue_history.rs` gains the policy, the operations `close` and `drain`,
-   and the outcomes `Dropped(v)`, `Evicted(v)`, `Closed(v)`, `Closed`, `Done` and `Drained(s)`; a declared fullness
-   maps to its `Refusal` (`exact` to `AtCapacity`). Its search (Wing and Gong with Lowe's memo) judges a history
-   against D1's table, and value identity makes Conservation part of what it checks: a value popped twice, popped and
-   handed back, drained and popped, or handed back by an eviction that the sequence could not have made, is a
-   violation. Counterexample histories for each are kept as tests that must fail, with three more: a pop that
-   answered `Closed` followed by a `Popped`; a push answered `Pushed` that began after a close returned; and the
-   first draft's window, a pop answering `Empty` while an evicting push at `c = 1` is in flight, under
-   `EmptyPops::Exact`.
-2. **A TLA+ model with a refinement mapping** (`docs/formal/ClaimedHeadQueue.tla`): the ring of D3, each atomic
-   access a step, refines the sequence of D1, close included, under `s = slots[head .. tail)` and `closed = the
-   tail's mark`, for one producer, two consumers and a closer, at `c = B - 1` and `c < B - 1`. It must say no when
-   the claim is made after the copy is used, when the oldest is claimed before the new element is published (the
-   first draft's order, at `c = B`), and when the close is a flag beside the tail. The locked and sequential rings
-   are D1's table itself and need no refinement of their own; the history checker judges them.
-3. **The memory-model checkers**: `loom` for Rust and GenMC for C and C++ on the `genmc-queue` harness, with an
-   eviction racing a removal at `c = B - 1` and a close racing a publish; `loom` also on the waiting order of D3,
-   where a lost wake-up is a waiter that never returns; Lincheck for Kotlin; the race detector for Go.
+1. **The specification and its checker.** `queue_history.rs` gains the policy, the operations `close`, `drain` and
+   `lost()`, and the outcomes `Dropped(v)`, `Evicted(v)`, `Closed(v)`, `Closed`, `Done`, `Drained(s)` and `Lost(n)`; a
+   declared fullness maps to its `Refusal` (`exact` to `AtCapacity`). Its search (Wing and Gong with Lowe's memo) judges
+   a history against D1's table, and value identity makes Conservation part of what it checks: a value popped twice,
+   popped and handed back, drained and popped, or handed back by an eviction that the sequence could not have made, is a
+   violation. Counterexample histories for each are kept as tests that must fail, with five more: a pop that answered
+   `Closed` followed by a `Popped`; a push answered `Pushed` that began after a close returned; the first draft's
+   window, a pop answering `Empty` while an evicting push at `c = 1` is in flight, under `EmptyPops::Exact`; a `lost()`
+   that does not count an `Evicted` returned before it began; and a `lost()` that counts a `Dropped` whose push began
+   after it returned.
+2. **The rows that serve now.** The locked and sequential rings are D1's table itself, with no step of their own to
+   refine: the history checker judges their stress runs (item 4), the memory-model checkers run the locked ring with its
+   lock (item 3), and the mutation cases (item 5) show that those checks can fail.
+3. **The memory-model checkers**: `loom` for Rust and GenMC for C and C++ on the `genmc-queue` harness; `loom` also on
+   the waiting order of D3, where a lost wake-up is a waiter that never returns; Lincheck for Kotlin; the race detector
+   for Go. For a candidate the harness races what its changed steps race: an eviction against a removal at `c = B - 1`,
+   a close against a publish, a drop against a pop while a third party reads `lost`.
 4. **The history checker**, fed by every backend's stress run in the one JSON form.
-5. **Mutation cases** in `sce-build/tests/mutations/`: the claim replaced by a store; the copy taken after the claim;
-   the tail published before the slot; the oldest claimed before the publish; `Evicted` returning the new element;
-   `lost` counted before a failed claim; the publish made a plain store on a closable queue; the waiter's re-check
-   (step 2) removed; a ring list's eviction made a shift rather than a move of the start (caught by a test that counts
-   element writes, since the outcomes do not change).
-6. **A reference that is not ours**: the channel handler of the consumer's C ABI in its no-heap edition, as a
+5. **Mutation cases** in `sce-build/tests/mutations/`. For the rows that serve now: the locked ring's pop answering
+   `Closed` while it holds an element; an eviction that does not count `lost`; `lost` read outside the lock; the
+   waiter's re-check (step 2) removed; a ring list's eviction made a shift rather than a move of the start (caught by a
+   test that counts element writes, since the outcomes do not change). For the claimed-head ring: the claim replaced by
+   a store; the copy taken after the claim; the word changed before the slot is stored; the eviction and the publish
+   split into two steps; `Evicted` returning the new element; `lost` counted outside the word; the close made a flag
+   beside the word; the one consumer's `fetch_add` used on a ring that evicts.
+6. **What promotes a candidate**, at the levels of ADR 0115, each run declared in `docs/formal/models.json`:
+   - Level 2, **a TLA+ refinement** of D1's table by the candidate's ring, each atomic access a step, checked whole by
+     TLC for one producer, two consumers, a closer and a reader of `lost`, at `c = B - 1` and `c < B - 1`, with each
+     part taken out in turn and the violation found. For the claimed-head ring the mapping is read off the control word,
+     `s = slots[head .. head + len)`; the accepted text's two-word form had none, since its window showed `c + 1`
+     elements, and its proposed mapping `slots[head .. tail)` was not one. Where a candidate's linearization point is
+     not one of the operation's own steps (SCQ's may not be), the auxiliary variable is added and named, as ADR 0115 D2
+     asks. The claimed-head model must say no when the claim is made after the copy is used, when the eviction and the
+     publish are two steps in either order (the first draft's, the accepted text's with a close in the window), when the
+     close is a flag beside the word, when `lost` is counted outside it, and when the one consumer's `fetch_add` is used
+     on a ring that evicts.
+   - Level 3, **the inductive invariant** of that refinement checked by Apalache, and **a TLAPS proof** of the
+     refinement for every `c < B`: the row would serve every capacity, and TLC covers the ones it ran.
+   - Item 3's memory-model runs and item 5's mutation cases for the candidate, every mutant caught.
+   A candidate whose runs do not all pass stays a candidate; one whose model finds a defect is corrected in an amendment
+   of this record and checked again from level 2.
+7. **A reference that is not ours**: the channel handler of the consumer's C ABI in its no-heap edition, as a
    differential oracle for the outcomes of the same push, pop and close sequences, in the manner of
    `tools/reference-oracles/`. It releases an evicted element after its lock is dropped, so its eviction is D1's
    hand-back one for one: the element leaves the queue as a value and its caller releases it. The heap edition's RING
@@ -467,8 +574,10 @@ answered `Popped`, and every waiter after a `close`.
 
 ### D6. What stays refused, and when each is revisited
 
-- `evict-oldest` with several producers at `lock-free` or better: no textbook algorithm reaches it without breaking
-  FIFO order (D3). Revisited when one does.
+- A `shared` queue that drops, evicts or closes at `lock-free` or better: until a candidate that serves it is promoted
+  (D3, "Candidates"; D5 item 6). Revisited by each promotion.
+- `evict-oldest` with several producers at `lock-free` or better: there is no candidate, since no published algorithm
+  reaches it without breaking FIFO order (D3). Revisited when one does.
 - `evict-oldest` on `<sce:segmented>`: an LSCQ's oldest element sits in the oldest ring of a list whose rings are
   retired by their consumers; claiming it from the producer side is a second algorithm. Revisited when a consumer needs
   an evicting queue larger than one ring.
@@ -479,21 +588,25 @@ answered `Popped`, and every waiter after a `close`.
 
 ## Consequences
 
-- The three census rows of U17 have a home: S7 #61 and S8 #38 a `queue` with `evict-oldest` (or `drop-newest` at
-  `exact` fullness), closable, drained at teardown, over slots the C ABI lends for the capacity its caller asked for;
-  the claimed-head ring where every push is made by the drive's holder, the locked ring where the caller's own thread
-  pushes beside the drive thread, the sequential ring in the single-threaded edition. S11 #31 is an
-  `<sce:append on-full="evict-oldest" limit="...">` with its outcome counted. Together with ADR 0111 D4's run-time
-  capacity, S7 #61 is no longer blocked by SCE, whichever answer U18 takes.
+- The three census rows of U17 have a home: S7 #61 and S8 #38 a `queue` with `evict-oldest` (or `drop-newest` at `exact`
+  fullness), closable, drained at teardown, over slots the C ABI lends for the capacity its caller asked for; the locked
+  ring in both multi-threaded arms, which is the ring under a mutex the consumer has today, and the sequential ring in
+  the single-threaded edition. Where every push is made by the drive's holder, the claimed-head ring takes the row once
+  it is promoted, with the same outcomes. S11 #31 is an `<sce:append on-full="evict-oldest" limit="...">` with its
+  outcome counted. Together with ADR 0111 D4's run-time capacity, S7 #61 is no longer blocked by SCE, whichever answer
+  U18 takes.
 - Nothing changes for the consumer's census beyond these rows: no row needs a count of what the removing side
   missed, and `lost` is what it reads.
 - Every existing `queue` document is unchanged: same rows, same API, same histories. `fullness`, `<sce:closable/>`
   and `<sce:sharing>` are absent from every document that exists, and their defaults are today's behaviour.
-- The history checker's specification gains four outcomes, two operations and a fullness; every existing recorded
-  history stays valid, since a `refuse` queue that is not closable produces none of them.
-- Seven backend rows and their gates grow by three algorithms (the claimed-head, locked and sequential rings), a
-  close on the rows that serve it, a drain, a lent construction and an eventcount; the acceptance document gains three
-  codes and one standard enum.
+- The history checker's specification gains the operations and outcomes of D5 item 1 and a fullness; every existing
+  recorded history stays valid, since a `refuse` queue that is not closable produces none of them.
+- Seven backends and their gates grow by two rows (the locked and sequential rings), a close and a linearizable `lost`
+  on them, a drain, a lent construction and an eventcount; each candidate adds its row only when it is promoted, with
+  its model, its proof and its harnesses. The acceptance document gains three codes and one standard enum.
+- Until a candidate is promoted, a `shared` queue that drops, evicts or closes is `blocking`, and where its lock is a
+  mutex it cannot be used from an interrupt handler; a document that needs more is refused by name (D2), not served by
+  an algorithm no machine has checked.
 
 ## Alternatives rejected
 
@@ -505,37 +618,47 @@ answered `Popped`, and every waiter after a `close`.
    evict twice, and on the Lamport row the producer cannot pop.
 4. **Releasing the evicted element inside the queue** (zenoh-pico's `free_f`). It runs caller code under the queue's
    synchronisation (the re-entrant self-deadlock the consumer's port documents), and C11 has no destructor to run.
-5. **A linearizable `lost`.** D1: an atomic read-modify-write on the Lamport row for an exactness no consumer reads,
-   while the outcomes already record every loss exactly.
+5. **A quiescently consistent `lost`** (the accepted text's D1). A weaker specification chosen for cost and for one
+   consumer's present use; no row loses a guarantee to the stronger one (D1), so the weaker one has no reason left.
 6. **A ring type for statecharts (`ring<E>[N]`).** A second sequential type repeating everything a list is (index,
    `len`, `<foreach>`, its saved form) for one difference in one statement. The ring is the lowering's choice of
    storage for a list that some append evicts from (D4), not a type a document writes.
 7. **Crossbeam's `force_push` for several producers.** Its progress is `blocking`, the locked ring's, and it needs a
    stamp per slot and a second mark for a close, while the locked ring is D1's table as its code, makes close and
    drain atomic by construction, and waits by a monitor. At equal progress the simpler structure is the textbook one.
-8. **Claiming the oldest before writing the new element, at `c = B`** (the first draft's D3). Not linearizable: a pop
-   in the window answers `Empty` (D3). The spare slot is the price of the order that is.
+8. **Claiming the oldest before writing the new element, at `c = B`** (the first draft's D3). Not linearizable: a pop in
+   the window answers `Empty` (D3). The spare slot is the price of the one step that is.
 9. **A closed flag beside the queue.** A push that reads it and then publishes can succeed after a close returned, and
    a pop can answer `Closed` and then deliver (D1).
 10. **Shifting a list on eviction.** `c - 1` element copies per append on a full list, of a frame's size where the
     element is a frame, for a result a moved start gives in one step (D4).
 11. **One queue row of `B = CAPACITY` slots for every channel.** Every channel would reserve the bound whatever
     capacity its caller asked for; no argument of D3 needs it (D3, "Storage the caller lends").
+12. **The claimed-head ring as a row on its argument by hand, in two words** (the accepted text's D3). An algorithm the
+    literature does not have, whose first draft was not linearizable and whose accepted form was not linearizable on a
+    closable queue either (D3, "Why the eviction and the publish are one step"), is a candidate until a machine check
+    promotes it, restated with its state in one word (D3, "What a row is").
+13. **A close on every queue, as a channel has one** (Go's `close`, crossbeam's `disconnect`). A queue that can be
+    closed and one that cannot are two types, neither a behavioural subtype of the other (Liskov and Wing 1994), and
+    giving every queue the closable one's outcomes hands the callers of a queue that nothing closes an arm they can
+    never meet. The textbook bounded buffer has no close and a channel with ends has one; a document declares which it
+    means (D2).
 
 ## Order of work
 
 1. This record: the consumer's review (taken, section "Review"), then the owner's acceptance.
-2. D1 in `queue_history.rs`: the policy, the fullness, close and drain, the outcomes, Conservation, the
+2. D1 in `queue_history.rs`: the policy, the fullness, close, drain and `lost()`, the outcomes, Conservation, the
    counterexample histories.
 3. D4: the schema, the checker, `append_outcome.scxml`, `limit`, the ring lowering on every lane, scenarios shaped
    like S11 #31 (a held send queue that evicts at a run-time limit and counts) and like S8 #59 (a ring held at a map's
    key).
-4. D2: the grammar, the selection, the three codes with their acceptance rows, `drop-newest` and close on the
-   existing rows, drain everywhere, lent construction.
-5. D3: the TLA+ model first, then the Rust and C11 rows (the consumer's lanes) with `loom`, GenMC, the stress
-   histories and the mutation cases, in the order the consumer's editions need them: the locked ring, the sequential
-   ring, the claimed-head ring, then the waiting order; then C++, Go, Kotlin, Python and Swift.
-6. D5 item 6: the differential run against the no-heap edition's channel.
+4. D2: the grammar, the selection, the three codes with their acceptance rows, the locked and sequential rings for every
+   queue that drops, evicts or closes while the published rows keep `refuse`, drain everywhere, lent construction.
+5. D3: the locked ring and the sequential ring, Rust and C11 first (the consumer's lanes) with `loom`, GenMC, the stress
+   histories and the mutation cases, then the waiting order; then C++, Go, Kotlin, Python and Swift.
+6. D5 item 7: the differential run against the no-heap edition's channel.
+7. The candidates, each on its own: its TLA+ module, Apalache, TLAPS, its harnesses and mutation cases, and its
+   promotion record; the claimed-head ring first, since it is the row the consumer's drive-held channels would move to.
 
 ## Open questions
 
@@ -554,19 +677,30 @@ The consumer's review of 2026-11-28, item by item, and where each is taken:
 | Item | Request | Where |
 |---|---|---|
 | 1 | Several producers: the C ABI's own deliveries run on the calling thread beside the drive thread; state the dependence on ADR 0111 D5; give several producers under `evict-oldest` a `blocking` row; withdraw "no consumer has" | Context, the census table and "How many producers"; D2's table; D3 "The locked ring"; D6; Alternatives rejected, 7 |
-| 2 | A close in D1: `Closed(v)` on push, `Empty` told from `Closed` on pop, its atomicity inside the queue's state, in the model and the checker | D1 (table, "A close is part of the queue's state"); D2 `<sce:closable/>`; D3 "Close"; D5 items 1 to 3 and 5; Alternatives rejected, 9 |
+| 2 | A close in D1: `Closed(v)` on push, `Empty` told from `Closed` on pop, its atomicity inside the queue's state, in the model and the checker | D1 (table, "A close is part of the queue's state"); D2 `<sce:closable/>`; D3 "Close" of the claimed-head ring; D5 items 1, 3, 5 and 6; Alternatives rejected, 9 |
 | 3 | A drain that hands back what is left at teardown, so Conservation closes in C11 | D1 (table, "A drain is the teardown"), Conservation in Context |
-| 4 | Storage the caller gives, sized by its `c`, under 0154's Lent contract | D3 "Storage the caller lends", with the contract stated; the claimed-head ring needs `c + 1` slots (the note below the table) |
+| 4 | Storage the caller gives, sized by its `c`, under 0154's Lent contract | D3 "Storage the caller lends", with the contract stated; the claimed-head ring needs `c + 1` slots (D3, "Storage the caller lends") |
 | 5 | A sequential row for one context, and the row of a core without compare-and-swap | D2 `<sce:sharing>`; D3 "The sequential ring" and "A core without compare-and-swap" |
 | 6 | Exact fullness for `drop-newest` | D2 `fullness` and the table's Fullness column |
 | 7 | `on-full` at a run-time capacity the document holds | D4 `limit` |
 | 8 | Eviction as an O(1) rotation, one write per element, and its relation to 4a(i) | D4 "The lowering rotates" and "One write per element"; Alternatives rejected, 10 |
 | 9 | A waking order between a blocking wait and a lock-free queue | D3 "Waiting" |
-| 10 | The no-heap edition's handler as the oracle, and how the heap edition differs | D5 item 6 |
-| 11 | Whether D3's producer is safe in an interrupt handler | D3 "Interrupt handlers" |
+| 10 | The no-heap edition's handler as the oracle, and how the heap edition differs | D5 item 7 |
+| 11 | Whether D3's producer is safe in an interrupt handler | D3 "Interrupt handlers": after the owner's audit, only once the claimed-head ring is promoted, or in a single core's masked section |
 | 12 | No row reports a miss count to the consumer; `lost` suffices | Context; D1 `lost`; D6; Consequences |
 
-Reading item 4 against D3 found that the first draft's order of the claimed-head ring was not linearizable at
-`c = B` (D3, "Why the new element is published before the oldest is claimed"). The corrected order needs `c < B`, so
-the ring the consumer lends to that row is `c + 1` slots, and the sequential and locked rings, which its editions use
-today, take exactly `c`.
+Reading item 4 against D3 found that the first draft's order of the claimed-head ring was not linearizable at `c = B`
+(D3, "Why the eviction and the publish are one step"). Each correction since needs `c < B`, so the ring the consumer
+lends to that candidate is `c + 1` slots, and the sequential and locked rings, which its editions use today, take
+exactly `c`.
+
+### The owner's audit of 2026-11-28
+
+After acceptance the owner asked whether the record is the most long-term correct structure, textbook in its
+foundations, cost ignored (ADR 0115's standing rule). Three answers changed it:
+
+| Question | Finding | Where |
+|---|---|---|
+| Is an algorithm argued by hand a row? | No. The claimed-head ring is not in the literature and its first draft was not linearizable; the audit found the accepted form not linearizable either, on a closable queue (a close in the window between its publish and its claim), and its proposed refinement mapping no mapping at all (`c + 1` elements shown). It is restated with its whole state in one word and becomes a candidate, promoted by D5's machine checks, while the locked ring serves its cell. No published lock-free algorithm evicts one element at a time to the displacing push: crossbeam's `force_push` is blocking, and the kernel's and LTTng's tracing buffers overwrite pages and hand nothing back. The same rule makes a candidate of every published row whose steps this record changes, so the Lamport ring and SCQ serve only `refuse` without a close until their cells' candidates are promoted | D3 "What a row is", "Why a lock for one producer too", "Candidates"; D2's table, codes and last bullet; D5 items 2, 5 and 6; D6; Consequences; Alternatives rejected, 12 |
+| Is `lost` as strong as it can be? | Not as accepted: quiescent consistency rested on cost and on one consumer's present use. A linearizable `lost` takes no guarantee from any row (a field under the lock or in one context; on the candidates, a word the losing step already writes), so `lost()` is an operation of D1's table | D1; D2 `drop-newest`; D3 "Candidates"; D5 items 1, 5 and 6; Alternatives rejected, 5 |
+| Is a declared close the textbook structure? | Yes, on type precision alone: a closable queue and one that is not are two types, neither a subtype of the other, and no caller is handed an arm its type cannot produce. The reason that existing queues stay byte for byte is withdrawn, from the close and from `refuse` as the default: a contract before 1.0 is not shaped by what exists | D1 "A close is part of the queue's state"; D2 `<sce:on-full>` and `<sce:closable/>`; Alternatives rejected, 13 |
