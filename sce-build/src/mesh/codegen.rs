@@ -2762,7 +2762,7 @@ fn generate_host_mesh(
                     mailbox: *mailbox,
                     max_clients: *max_clients,
                     max_response_bytes: *max_response_bytes,
-                    rate: *rate,
+                    rate: **rate,
                     trusted_proxies: trusted_proxies.clone(),
                     sign: sign.clone(),
                     max_skew_ms: *max_skew_ms,

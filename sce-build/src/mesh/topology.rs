@@ -371,8 +371,10 @@ pub enum TransportState {
         /// The most mailbox bytes one response carries; the rest go at the
         /// next exchange (docs/adr/0109, D1). `max_body_bytes` when unset.
         max_response_bytes: u64,
-        /// The edge's rate limits (docs/adr/0109, D2).
-        rate: HttpsRates,
+        /// The edge's rate limits (docs/adr/0109, D2). Boxed: the limiters
+        /// are the largest part of the binding, and held inline they would
+        /// make every variant of this type as large as this one.
+        rate: Box<HttpsRates>,
         /// The proxies whose `Forwarded` header names the client's address
         /// (docs/adr/0109, D2): CIDR blocks, each as written.
         trusted_proxies: Vec<String>,
@@ -3600,10 +3602,12 @@ fn https_state(pt: &PartialTarget) -> TransportState {
             .get("max_response_bytes")
             .and_then(|v| v.as_u64())
             .unwrap_or(max_body_bytes),
-        rate: extra
-            .get("rate")
-            .map(|v| https_rates(v).expect("validate_https_extras_partial proved the rates"))
-            .unwrap_or(HttpsRates::DEFAULT),
+        rate: Box::new(
+            extra
+                .get("rate")
+                .map(|v| https_rates(v).expect("validate_https_extras_partial proved the rates"))
+                .unwrap_or(HttpsRates::DEFAULT),
+        ),
         trusted_proxies: extra
             .get("trusted_proxies")
             .map(|v| trusted_proxies(v).expect("validate_https_extras_partial proved the proxies"))
@@ -6784,7 +6788,7 @@ topology:
                 // docs/adr/0109, D1 and D2: the edge's bounds at their defaults.
                 assert_eq!(*max_clients, HTTPS_DEFAULT_MAX_CLIENTS);
                 assert_eq!(*max_response_bytes, HTTPS_DEFAULT_MAX_BODY_BYTES);
-                assert_eq!(*rate, HttpsRates::DEFAULT);
+                assert_eq!(**rate, HttpsRates::DEFAULT);
                 assert!(trusted_proxies.is_empty());
                 // docs/adr/0109, D9: nothing signed or verified unless named.
                 assert_eq!(*sign, None);
@@ -6891,7 +6895,7 @@ topology:
                 assert_eq!(*max_clients, 5);
                 assert_eq!(*max_response_bytes, 4096);
                 assert_eq!(
-                    *rate,
+                    **rate,
                     HttpsRates {
                         address: Some(HttpsRate {
                             interval_ms: 100,
@@ -6914,11 +6918,8 @@ topology:
         .expect("a server binding whose edge limits nothing");
         assert!(
             matches!(
-                off[0].state,
-                TransportState::Https {
-                    rate: HttpsRates::NONE,
-                    ..
-                }
+                &off[0].state,
+                TransportState::Https { rate, .. } if **rate == HttpsRates::NONE
             ),
             "{:?}",
             off[0].state
