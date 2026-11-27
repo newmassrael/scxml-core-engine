@@ -250,7 +250,9 @@ where
         reader.open.retain(|_, open| {
             match open.handed.as_ref().map(|handed| handed.receipt.fate()) {
                 Some(Fate::Settled) => return false,
-                Some(Fate::Lost) => open.handed = None,
+                // Fenced, like lost, took nothing of the entry in; an entry of a journal is never
+                // an instance's, so the fence does not reach it, and it is handed again either way.
+                Some(Fate::Lost | Fate::Fenced { .. }) => open.handed = None,
                 Some(Fate::Pending) | None => {}
             }
             true
