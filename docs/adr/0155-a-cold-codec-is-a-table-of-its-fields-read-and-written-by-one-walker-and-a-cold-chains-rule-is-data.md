@@ -61,7 +61,11 @@ A codec's table is a `static` `FieldTable` of rows in wire order. A row says:
   length's arithmetic and the field's bound; the bytes left in the frame; an embedded body, a variant arm, a repeat
   or a chain, which the value reads itself (below), handed the inputs a flag-bind gives it as bits of earlier rows;
 - **its gate**: always, a bit range of an earlier row or of an input set or clear (`sce:present-if` on a flag of a
-  carrier), or a disjunction of such ranges (`a || b`), open where any of them is;
+  carrier), or a disjunction of such ranges (`a || b`), open where any of them is. A codec with a row a disjunction
+  gates keeps its write printed, and the generator says so by name (`NotWrittenByTable::Disjunction`): the flags of
+  a disjunction do not say alone whether its field is present, so a value can set one of them and hold the field
+  absent, which the printed encode refuses or derives as its plan says and the writer, opening the row by the flags,
+  would write as a zero;
 - **its place in the value**: the row's index, which the value's store answers.
 
 The walker keeps the number each row read in a frame of its own (`[u64; TABLE_ROWS]`), so a gate, a length, a count,
