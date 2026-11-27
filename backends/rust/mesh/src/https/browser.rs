@@ -718,12 +718,15 @@ mod tests {
             assert_eq!(after[1]["ask"], "wake", "{after}");
             after[1]["ms"].as_u64().expect("a wait in milliseconds")
         };
-        let wait = failed_wait(1);
-        assert!(
-            (800..=1200).contains(&wait),
-            "{wait} is not 1000 spread by a fifth"
+        // The first draw of a seed of 32 bytes `s` is the first eight bytes of SHA-256(s, 0), read
+        // as Backoff::spread reads a draw: 1265 and 1367 ten-thousandths above the base here.
+        assert_eq!(
+            failed_wait(1),
+            1126,
+            "1000 spread by the first draw of the seed"
         );
-        assert_eq!(failed_wait(1), wait, "the same seed draws the same spread");
+        assert_eq!(failed_wait(1), 1126, "the same seed draws the same spread");
+        assert_eq!(failed_wait(2), 1136, "another seed draws another spread");
 
         let mut client = started(1);
         client.started();
