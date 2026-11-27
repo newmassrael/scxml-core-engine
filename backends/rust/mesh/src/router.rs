@@ -391,7 +391,15 @@ pub struct Router {
     /// The instance this machine runs as, when it is an instance of an open machine
     /// ([`Router::speak_as_instance`]).
     instance: Option<String>,
+    /// What gives each instance of an open machine the window it takes a place in, by machine
+    /// ([`Router::open_windows`]).
+    windows: BTreeMap<String, OpenWindows>,
 }
+
+/// What gives an instance of an open machine, by the name the router binds it under, the window
+/// every envelope to it takes a place in first, when its binding keeps one
+/// ([`Router::open_windows`]).
+pub type OpenWindows = Arc<dyn Fn(&str) -> Option<Arc<dyn Window>> + Send + Sync>;
 
 impl Router {
     /// A router for `machine`, with the receive side's dedup window and gap
@@ -406,7 +414,20 @@ impl Router {
             persist: None,
             bound_since: Vec::new(),
             instance: None,
+            windows: BTreeMap::new(),
         })
+    }
+
+    /// Every instance of the open machine `machine` takes the window `windows` gives it when it is
+    /// bound (see [`Self::bound_window`]): the durable window of its outbox at an `https` server
+    /// (docs/adr/0113, D4; docs/adr/0109, D10), which the sessions of a pool share. An instance
+    /// bound already keeps the window it has.
+    pub fn open_windows(&mut self, machine: &str, windows: OpenWindows) -> Result<(), RouterError> {
+        if !self.open.contains_key(machine) {
+            return Err(RouterError::UnknownPeer(machine.to_string()));
+        }
+        self.windows.insert(machine.to_string(), windows);
+        Ok(())
     }
 
     /// Speak as the instance `instance` of this machine, which runs as an open set of instances
@@ -511,6 +532,10 @@ impl Router {
             });
         }
         self.add_peer(peer, open.config);
+        if let (Some(windows), Some(bound)) = (self.windows.get(machine), self.peers.get_mut(peer))
+        {
+            bound.window = windows(peer);
+        }
         self.bound_since.push(peer.to_string());
         Ok(())
     }
@@ -3748,6 +3773,61 @@ mod tests {
                 "{target}"
             );
         }
+    }
+
+    /// docs/adr/0113, D4: an instance takes the window its open machine's windows give it when it
+    /// is bound, and an answer that finds no place in it is refused as row 9 and never written.
+    /// Red if `bind` leaves the instance without the window: the answer then leaves past the
+    /// bound of its outbox.
+    #[test]
+    fn an_instance_takes_the_window_of_its_outbox_when_it_is_bound() {
+        struct Full;
+        impl Window for Full {
+            fn reserve(&self) -> Result<(), u32> {
+                Err(7)
+            }
+        }
+        let mut cloud = open_server(4);
+        assert_eq!(
+            cloud.open_windows(
+                "tablet",
+                Arc::new(|_: &str| -> Option<Arc<dyn Window>> { None })
+            ),
+            Err(RouterError::UnknownPeer("tablet".to_string()))
+        );
+        cloud
+            .open_windows(
+                "phone",
+                Arc::new(|_: &str| {
+                    let full: Arc<dyn Window> = Arc::new(Full);
+                    Some(full)
+                }),
+            )
+            .unwrap();
+        cloud
+            .receive("phone/a1", force_request_from("phone", "a1", 1), 0)
+            .unwrap();
+        let answered = cloud
+            .send(
+                &HostSendRequest {
+                    invoke_id: WIRE_TEXT.to_string(),
+                    ..request(
+                        "mesh://phone/a1",
+                        "service.response.force",
+                        r#"{"force":12}"#,
+                    )
+                },
+                [5; 16],
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            answered,
+            alloc::vec![Effect::Raise {
+                peer: Some("phone/a1".to_string()),
+                signal: Signal::BackpressureDrop { depth: 7 },
+            }]
+        );
     }
 
     /// The wall and monotonic clocks the checkpoints of these tests are taken against.

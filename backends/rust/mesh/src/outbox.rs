@@ -43,7 +43,7 @@ use sce_rust_metrics::{Counter, Gauge, Metrics};
 use sce_rust_session_store::{Appended, Expiry, Failure, Outbox, SessionStore};
 
 use crate::commit::Committer;
-use crate::peers::{Machine, PeerLink, Receipt};
+use crate::peers::{instance_of, Machine, PeerLink, Receipt};
 use crate::router::Window;
 
 /// What an accepting binding under `receipt: durable` keeps of one client (docs/adr/0109, D10).
@@ -66,6 +66,10 @@ pub struct Outboxes {
     /// to its store directly.
     committer: Arc<Committer>,
     bindings: BTreeMap<String, OutboxBinding>,
+    /// The open machines whose instances each keep an outbox of their own, named by the pair
+    /// `<machine>/<instance>`, by machine (docs/adr/0113, D4): one ends with its member's lease
+    /// ([`Outboxes::end`]).
+    open: BTreeMap<String, OutboxBinding>,
     clients: Mutex<BTreeMap<String, Client>>,
     wake: Mutex<Option<Wake>>,
 }
@@ -141,6 +145,7 @@ impl Outboxes {
         Outboxes {
             committer,
             bindings,
+            open: BTreeMap::new(),
             clients: Mutex::new(BTreeMap::new()),
             wake: Mutex::new(None),
         }
@@ -167,28 +172,64 @@ impl Outboxes {
     }
 
     /// The outboxes of `machine`'s clients whose `https` accepting binding declares `receipt:
-    /// durable`, kept in the store `committer` commits to; `None` when it has none.
+    /// durable`, and of each instance of an open machine bound so (docs/adr/0113, D4), kept in
+    /// the store `committer` commits to; `None` when it has none.
     pub fn of_machine(machine: &Machine, committer: Arc<Committer>) -> Option<Arc<Self>> {
-        let bindings: BTreeMap<String, OutboxBinding> = machine
-            .peers
-            .iter()
-            .filter_map(|peer| match peer.link {
-                PeerLink::HttpsAccept {
-                    receipt: Receipt::Durable { .. },
-                    mailbox,
+        let durable = |peer: &crate::peers::Peer| match peer.link {
+            PeerLink::HttpsAccept {
+                receipt: Receipt::Durable { .. },
+                mailbox,
+                retain_ms,
+                ..
+            } => Some((
+                peer.name.to_string(),
+                OutboxBinding {
+                    window: mailbox as usize,
                     retain_ms,
-                    ..
-                } => Some((
-                    peer.name.to_string(),
-                    OutboxBinding {
-                        window: mailbox as usize,
-                        retain_ms,
-                    },
-                )),
-                _ => None,
-            })
+                },
+            )),
+            _ => None,
+        };
+        let bindings: BTreeMap<String, OutboxBinding> =
+            machine.peers.iter().filter_map(durable).collect();
+        let open: BTreeMap<String, OutboxBinding> = machine
+            .open_peers
+            .iter()
+            .filter_map(|open| durable(&open.peer))
             .collect();
-        (!bindings.is_empty()).then(|| Arc::new(Self::new(committer, bindings)))
+        (!bindings.is_empty() || !open.is_empty()).then(|| {
+            Arc::new(Self {
+                open,
+                ..Self::new(committer, bindings)
+            })
+        })
+    }
+
+    /// What `client`'s binding keeps of it: its own, or its open machine's when it is an instance
+    /// of one (docs/adr/0113, D4).
+    fn binding(&self, client: &str) -> Option<&OutboxBinding> {
+        self.bindings
+            .get(client)
+            .or_else(|| instance_of(client).and_then(|(machine, _)| self.open.get(machine)))
+    }
+
+    /// Whether each instance of the open machine `machine` keeps an outbox of its own.
+    pub fn keeps_instances_of(&self, machine: &str) -> bool {
+        self.open.contains_key(machine)
+    }
+
+    /// Every client the process holds an outbox of, or took a place in one's window for, and every
+    /// listed client whose binding keeps one: what an expiry looks at, and what a session let go
+    /// gives back the places of.
+    pub fn clients(&self) -> Vec<String> {
+        let held = lock(&self.clients);
+        let mut clients: Vec<String> = self.bindings.keys().cloned().collect();
+        for client in held.keys() {
+            if !self.bindings.contains_key(client) {
+                clients.push(client.clone());
+            }
+        }
+        clients
     }
 
     /// Whether the store the outboxes are kept in answers a read now ([`Committer::store_answers`]):
@@ -199,7 +240,7 @@ impl Outboxes {
 
     /// Whether `client`'s binding keeps a durable outbox.
     pub fn keeps(&self, client: &str) -> bool {
-        self.bindings.contains_key(client)
+        self.binding(client).is_some()
     }
 
     /// Every client whose binding keeps a durable outbox, with what it keeps.
@@ -233,7 +274,7 @@ impl Outboxes {
     /// counts; one that cannot be read is answered as a full window, so that no envelope is
     /// accepted that the bound cannot be kept for.
     fn reserve(&self, client: &str) -> Result<(), u32> {
-        let Some(binding) = self.bindings.get(client) else {
+        let Some(binding) = self.binding(client).copied() else {
             return Ok(());
         };
         let full = |depth: usize| u32::try_from(depth).unwrap_or(u32::MAX);
@@ -427,10 +468,29 @@ impl Outboxes {
     /// the outbox once it holds nothing and nothing touched it for as long (docs/adr/0109, D10).
     /// What the store deleted is let go here too.
     pub fn expire(&self, client: &str, now_ms: u64, limit: usize) -> Result<Expiry, Failure> {
-        let Some(binding) = self.bindings.get(client) else {
+        let Some(binding) = self.binding(client) else {
             return Ok(Expiry::default());
         };
-        let before = now_ms.saturating_sub(binding.retain_ms);
+        self.expire_before(client, now_ms.saturating_sub(binding.retain_ms), limit)
+    }
+
+    /// End `client`'s outbox, the outbox of an instance of an open machine whose membership
+    /// ended (docs/adr/0113, D4: a member's records, window and outbox end with its lease). What
+    /// it still owes is let go as `retain_ms` lets an entry go, at most `limit` entries a call,
+    /// each noted in the same transaction for the session that sent it, which is told as
+    /// SCE_MESH.md section 16.7 row 15; and the outbox is closed once it holds nothing, so the
+    /// instance's next exchange opens one in another incarnation. A client whose binding keeps no
+    /// outbox has none to end.
+    pub fn end(&self, client: &str, limit: usize) -> Result<Expiry, Failure> {
+        if !self.keeps(client) {
+            return Ok(Expiry::default());
+        }
+        self.expire_before(client, u64::MAX, limit)
+    }
+
+    /// Let go of at most `limit` entries of `client`'s outbox appended before `before_ms`, in
+    /// the store and then here, closing it once it holds nothing and nothing touched it since.
+    fn expire_before(&self, client: &str, before: u64, limit: usize) -> Result<Expiry, Failure> {
         let expiry = self.store().expire(client, before, limit)?;
         if !expiry.expired.is_empty() {
             let expired = u64::try_from(expiry.expired.len()).unwrap_or(u64::MAX);
@@ -456,7 +516,7 @@ impl Outboxes {
 
     /// The retain of `client`'s binding, in milliseconds, when it keeps an outbox.
     pub fn retain_ms(&self, client: &str) -> Option<u64> {
-        self.bindings.get(client).map(|binding| binding.retain_ms)
+        self.binding(client).map(|binding| binding.retain_ms)
     }
 
     /// The earliest moment an entry the process holds comes to expire, in milliseconds since the
@@ -467,7 +527,7 @@ impl Outboxes {
         clients
             .iter()
             .filter_map(|(client, held)| {
-                let retain = self.bindings.get(client)?.retain_ms;
+                let retain = self.binding(client)?.retain_ms;
                 let first = held.held.as_ref()?.entries.front()?;
                 Some(first.at_ms.saturating_add(retain))
             })

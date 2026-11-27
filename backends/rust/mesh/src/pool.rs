@@ -205,7 +205,7 @@ use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_runtime::Principal;
 use sce_rust_session_store::{
-    AcquireError, Actor, Append, Change, Conflict, Fact, FactData, Failure, Held, Journal,
+    AcquireError, Actor, Append, Change, Conflict, Expiry, Fact, FactData, Failure, Held, Journal,
     JournalStore, LeaseError, MembershipStore, SessionStore, Under, Write, WriteError,
     LATEST_MOMENT,
 };
@@ -1235,8 +1235,10 @@ where
     /// Let go of the members whose leases ended (docs/adr/0113, D4): the store removes at most a
     /// batch of them ([`MembershipStore::end_expired`]), and each session whose router binds one
     /// unbinds it, dropping what it kept of it (its completion records, its place among the
-    /// deployment's `max_instances`). The keys answered are the sessions to run. The host calls
-    /// this on its clock loop's schedule, as it calls [`Self::expire`].
+    /// deployment's `max_instances`). Its outbox ends with it, what it still owes let go as
+    /// `retain_ms` lets an entry go and told to the session that sent it (SCE_MESH.md section
+    /// 16.7 row 15). The keys answered are the sessions to run. The host calls this on its clock
+    /// loop's schedule, as it calls [`Self::expire`].
     pub fn end_members(&self) -> Vec<String> {
         let Some(members) = &self.members else {
             return Vec::new();
@@ -1249,10 +1251,15 @@ where
             }
         };
         let mut keys = BTreeSet::new();
+        let mut senders = BTreeSet::new();
         for ended in ended {
             let (instance, holders) = {
                 let mut known = lock(&self.known);
                 let Some(instance) = known.entries.remove(&ended.member) else {
+                    // No session here holds it: its outbox, named by the entry a store that keeps
+                    // names as they are given keeps it under, ends all the same.
+                    drop(known);
+                    self.end_outbox(&ended.member, &mut senders);
                     continue;
                 };
                 let holders = known.holders.remove(&instance).unwrap_or_default();
@@ -1264,14 +1271,18 @@ where
                 (instance, holders)
             };
             lock(&self.ready).remove(&instance);
-            let table = hold(&self.table);
-            for key in holders {
-                if let Some(slot) = table.get(&key) {
-                    hold(&slot.inbox).tell(Input::EndMember(instance.clone()));
-                    keys.insert(key);
+            {
+                let table = hold(&self.table);
+                for key in holders {
+                    if let Some(slot) = table.get(&key) {
+                        hold(&slot.inbox).tell(Input::EndMember(instance.clone()));
+                        keys.insert(key);
+                    }
                 }
             }
+            self.end_outbox(&instance, &mut senders);
         }
+        keys.extend(self.tell_notes(senders));
         keys.into_iter().collect()
     }
 
@@ -1911,30 +1922,34 @@ where
         };
         let now = self.wall_now();
         let mut senders = BTreeSet::new();
-        let clients: Vec<String> = outboxes
-            .bindings()
-            .map(|(client, _)| client.to_string())
-            .collect();
-        for client in clients {
-            let expiry = match outboxes.expire(&client, now, WAKE_BATCH) {
-                Ok(expiry) => expiry,
-                Err(failure) => {
-                    self.error(PoolError::Store { key: None, failure });
-                    continue;
-                }
-            };
-            for expired in expiry.expired {
-                if let Some(sender) = &expired.entry.sender {
-                    senders.insert(sender.clone());
-                }
-                self.error(PoolError::OutboxExpired {
-                    client: expired.client,
-                    number: expired.entry.number,
-                    at_ms: expired.entry.at_ms,
-                    sender: expired.entry.sender,
-                });
+        for client in outboxes.clients() {
+            match outboxes.expire(&client, now, WAKE_BATCH) {
+                Ok(expiry) => self.expired(expiry, &mut senders),
+                Err(failure) => self.error(PoolError::Store { key: None, failure }),
             }
         }
+        self.tell_notes(senders)
+    }
+
+    /// Tell the host each entry `expiry` let go of an outbox ([`PoolError::OutboxExpired`]), and
+    /// note the session that sent it among `senders`, which read their notes at their next run.
+    fn expired(&self, expiry: Expiry, senders: &mut BTreeSet<String>) {
+        for expired in expiry.expired {
+            if let Some(sender) = &expired.entry.sender {
+                senders.insert(sender.clone());
+            }
+            self.error(PoolError::OutboxExpired {
+                client: expired.client,
+                number: expired.entry.number,
+                at_ms: expired.entry.at_ms,
+                sender: expired.entry.sender,
+            });
+        }
+    }
+
+    /// Queue the reading of their notes for each of `senders` in memory, and answer their keys,
+    /// the sessions to run; one out of memory was made due by the store.
+    fn tell_notes(&self, senders: BTreeSet<String>) -> Vec<String> {
         let table = hold(&self.table);
         let mut keys = Vec::new();
         for sender in senders {
@@ -1944,6 +1959,30 @@ where
             }
         }
         keys
+    }
+
+    /// End the outbox of the instance `client`, whose membership ended (docs/adr/0113, D4;
+    /// [`Outboxes::end`]): what it still owes is let go, each entry told the host and noted for
+    /// the session that sent it, among `senders`, and the outbox is closed.
+    fn end_outbox(&self, client: &str, senders: &mut BTreeSet<String>) {
+        let Some(outboxes) = self.outboxes.as_ref() else {
+            return;
+        };
+        loop {
+            match outboxes.end(client, WAKE_BATCH) {
+                Ok(expiry) => {
+                    let done = expiry.closed || expiry.expired.is_empty();
+                    self.expired(expiry, senders);
+                    if done {
+                        return;
+                    }
+                }
+                Err(failure) => {
+                    self.error(PoolError::Store { key: None, failure });
+                    return;
+                }
+            }
+        }
     }
 
     /// Stop the pool in order (docs/adr/0109, D10): admit nothing from now on (what arrives is
@@ -2346,6 +2385,27 @@ where
                             ),
                         })?;
                 }
+            }
+            // docs/adr/0113, D4: each instance of an open machine whose binding is durable has an
+            // outbox of its own, whose window it takes when the router binds it.
+            for open in self.machine.open_peers {
+                let machine = open.peer.name;
+                if !outboxes.keeps_instances_of(machine) {
+                    continue;
+                }
+                let outboxes = Arc::clone(outboxes);
+                router
+                    .open_windows(
+                        machine,
+                        Arc::new(move |instance: &str| outboxes.window(instance)),
+                    )
+                    .map_err(|error| Refusal {
+                        status: RpcStatus::InternalError,
+                        reason: alloc::format!(
+                            "the session's router cannot keep the outbox windows of {machine}'s \
+                             instances: {error:?}"
+                        ),
+                    })?;
             }
         }
         let transport = SessionTransport {
@@ -2826,8 +2886,8 @@ where
         } else if let Some(outboxes) = &self.outboxes {
             // No lease, no write: what it held for a durable client is let go.
             let endpoint = lock(&finished.endpoint);
-            for (client, _) in outboxes.bindings() {
-                outboxes.unreserve(client, endpoint.held_for(client));
+            for client in outboxes.clients() {
+                outboxes.unreserve(&client, endpoint.held_for(&client));
             }
         }
         let fate = if ended { Fate::Settled } else { Fate::Lost };
@@ -2868,8 +2928,8 @@ where
         settle_all(&mut dropped.unsaved, Fate::Lost);
         if let Some(outboxes) = &self.outboxes {
             let endpoint = lock(&dropped.endpoint);
-            for (client, _) in outboxes.bindings() {
-                outboxes.unreserve(client, endpoint.held_for(client));
+            for client in outboxes.clients() {
+                outboxes.unreserve(&client, endpoint.held_for(&client));
             }
         }
     }
@@ -5214,8 +5274,13 @@ mod tests {
 
     /// The envelopes the store's outbox of the client holds, as `(number, event)`.
     fn outboxed(store: &MemoryStore) -> Vec<(u64, String)> {
+        outboxed_of(store, "client")
+    }
+
+    /// The envelopes the store's outbox of `client` holds, as `(number, event)`.
+    fn outboxed_of(store: &MemoryStore, client: &str) -> Vec<(u64, String)> {
         store
-            .outbox("client")
+            .outbox(client)
             .expect("the outbox read")
             .map(|outbox| {
                 outbox
@@ -6073,10 +6138,12 @@ mod tests {
         pool.run("r1");
         assert_eq!(taken.fate(), Fate::Settled);
         assert_eq!(stored_members(&store, "r1"), 1);
-        let replies = wire.take();
+        assert!(
+            wire.take().is_empty(),
+            "an instance's replies are kept in its outbox"
+        );
+        let replies = outboxed_of(&store, "phone/a1");
         assert_eq!(replies.len(), 1, "{replies:?}");
-        assert_eq!(replies[0].peer, "phone/a1");
-        assert_eq!(replies[0].wire_id, Some(id(0x44, 1)));
 
         // The instance joins again, which ends its first incarnation, while its next request,
         // taken in by the edge under the first, waits for its session.
@@ -6098,8 +6165,9 @@ mod tests {
             )),
             "the refused write is told"
         );
-        assert!(
-            wire.take().is_empty(),
+        assert_eq!(
+            outboxed_of(&store, "phone/a1").len(),
+            1,
             "no reply left for what was not kept"
         );
 
@@ -6179,6 +6247,49 @@ mod tests {
         pool.run("r1");
         assert_eq!(next.fate(), Fate::Settled, "{:?}", pool.take_errors());
         assert_eq!(stored_members(&store, "r1"), 2);
+    }
+
+    /// docs/adr/0113, D4, and docs/adr/0109, D10: an instance of an open machine whose binding is
+    /// durable keeps its replies in an outbox of its own, which ends with its membership: what it
+    /// still owes is let go and told to the session that sent it, as SCE_MESH.md section 16.7 row
+    /// 15, and the outbox is closed, so the instance's next incarnation is handed nothing the one
+    /// before was owed. Red if `end_members` leaves the outbox standing, or if the pool sends an
+    /// instance's reply on the transport instead of keeping it.
+    #[test]
+    fn an_instances_outbox_ends_with_its_membership() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = open_pool(&store, &clock, &probe);
+        let a1 = joined(&store, "phone/a1", "n1", &clock);
+        pool.peer_ready("phone/a1");
+        let (key, taken) = pool.receive_member(
+            "phone/a1",
+            a1,
+            Standing {
+                incarnation: a1,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 1),
+        );
+        pool.run(key.as_deref().expect("placed"));
+        assert_eq!(taken.fate(), Fate::Settled, "{:?}", pool.take_errors());
+        assert!(wire.take().is_empty(), "kept in its outbox, not sent");
+        assert_eq!(outboxed_of(&store, "phone/a1").len(), 1);
+
+        clock.advance(PHONE.members.lease_ms + 1);
+        let run = pool.end_members();
+        assert!(run.contains(&"r1".to_string()), "{run:?}");
+        assert!(
+            store.outbox("phone/a1").expect("the outbox read").is_none(),
+            "the outbox ended with the member"
+        );
+        assert!(
+            pool.take_errors().iter().any(|error| matches!(
+                error,
+                PoolError::OutboxExpired { client, sender, .. }
+                    if client == "phone/a1" && sender.as_deref() == Some("r1")
+            )),
+            "what it still owed is told"
+        );
     }
 
     /// docs/adr/0113, D4: a pool keeps the members of the open machines its machine is bound to,

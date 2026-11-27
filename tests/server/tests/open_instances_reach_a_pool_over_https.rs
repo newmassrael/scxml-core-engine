@@ -228,6 +228,12 @@ impl Served {
         )
         .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
         let served = Arc::new(served);
+        // docs/adr/0113, D4: an instance's replies are kept in its own outbox, which the server
+        // answers its exchanges from and which ends with its membership.
+        let outboxes = served
+            .outboxes()
+            .expect("each instance of a durable binding keeps an outbox");
+        server.keep_outboxes(Arc::clone(outboxes));
         assert!(
             pool.set(Arc::clone(&served)).is_ok(),
             "the pool is set once"
@@ -627,6 +633,9 @@ fn an_instance_acts_for_the_person_its_proof_bound_in_the_pools_session() {
         WallClock::default(),
     )
     .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+    if let Some(outboxes) = witnessed.outboxes() {
+        server.keep_outboxes(Arc::clone(outboxes));
+    }
     assert!(
         pool.set(Arc::new(witnessed)).is_ok(),
         "the pool is set once"
