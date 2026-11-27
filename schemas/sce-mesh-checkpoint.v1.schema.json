@@ -141,7 +141,7 @@
     "sender": {
       "description": "One sender's receive state (SCE_MESH.md sections 10.5 and 10.6).",
       "type": "object",
-      "required": ["source", "window", "next", "held", "replies", "durable"],
+      "required": ["source", "window", "next", "held", "replies", "durable", "records"],
       "additionalProperties": false,
       "properties": {
         "source": { "type": "string", "minLength": 1 },
@@ -171,7 +171,35 @@
             }
           }
         },
-        "durable": { "description": "Whether its stream has durable receipt: none of its gaps times out.", "type": "boolean" }
+        "durable": { "description": "Whether its stream has durable receipt: none of its gaps times out.", "type": "boolean" },
+        "records": {
+          "description": "Null unless the sender is an instance of an open machine whose binding receives durably (docs/adr/0113, D5): then the incarnation its records are of, the member's low-water mark the store held, and a completion record of each request taken in at or above it, by its number, with its wire invoke_id when a reply answers it and its reply, or null while it is handled or when it has none.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["incarnation", "mark", "kept"],
+              "additionalProperties": false,
+              "properties": {
+                "incarnation": { "$ref": "#/definitions/count" },
+                "mark": { "$ref": "#/definitions/count" },
+                "kept": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["number", "invoke", "reply"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "number": { "$ref": "#/definitions/count" },
+                      "invoke": { "oneOf": [{ "$ref": "#/definitions/id" }, { "type": "null" }] },
+                      "reply": { "oneOf": [{ "$ref": "#/definitions/bytes" }, { "type": "null" }] }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
       }
     },
     "eventCall": {

@@ -41,7 +41,9 @@ use sce_forge_runtime::algorithm::AlgorithmError;
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 use sce_portable_bytes::SceOwnedList;
 
-use crate::checkpoint::{CheckpointError, Clocks, HeldState, ReplyState, SenderState};
+use crate::checkpoint::{
+    CheckpointError, Clocks, HeldState, RecordState, RecordsState, ReplyState, SenderState,
+};
 use crate::generated::dedup_admit::dedup_admit;
 use crate::generated::dedup_holds::dedup_holds;
 use crate::generated::envelope::Envelope;
@@ -141,6 +143,109 @@ pub(crate) struct Cached {
     pub kept: Kept,
 }
 
+/// What the store holds of a member of an open machine, as the host was last told it
+/// (docs/adr/0113, D4 and D5): the incarnation it stands under, and its low-water mark, the lowest
+/// number of that incarnation whose answer the instance has not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Standing {
+    pub incarnation: u64,
+    pub mark: u64,
+}
+
+/// What a responder keeps of one instance of an open machine whose binding receives durably
+/// (docs/adr/0113, D5): a completion record of each request of its incarnation that was taken in,
+/// by the number the instance gave it, with the answer it was given. A repeat is answered from
+/// its record, however long ago it was taken in, so no window of ids is what makes it at most
+/// once; a record is dropped when the store's mark passes it, since the instance has its answer,
+/// and with every other one when the store holds the member under a later incarnation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Records {
+    /// The incarnation the records are of: the latest the host told.
+    incarnation: u64,
+    /// The member's low-water mark as the store holds it: a mark a process saw and a crash may
+    /// take back drops nothing, or a repeat taken in under the earlier one would run again.
+    mark: u64,
+    /// The records, by number.
+    kept: BTreeMap<u64, Record>,
+    /// Whether an envelope was taken in since the checkpoint last sealed: the write that keeps the
+    /// checkpoint is made under the incarnation.
+    unsealed: bool,
+}
+
+/// A completion record: the request's wire `invoke_id`, when it is a request a reply answers, and
+/// what the responder keeps of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Record {
+    invoke: Option<[u8; 16]>,
+    kept: Kept,
+}
+
+/// Where a request a reply may answer is kept: in its sender's window, by its envelope id
+/// (SCE_MESH.md section 10.5), or among its sender's completion records, by its number
+/// (docs/adr/0113, D5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Entry {
+    Window([u8; 16]),
+    Record(u64),
+}
+
+impl Records {
+    fn new(standing: Standing) -> Self {
+        Self {
+            incarnation: standing.incarnation,
+            mark: standing.mark,
+            kept: BTreeMap::new(),
+            unsealed: false,
+        }
+    }
+
+    /// Take `standing`, the store's answer for the member. A later incarnation drops every record
+    /// of the one before, whose requests are fenced; a higher mark drops the records below it. An
+    /// earlier incarnation is news of the past and changes nothing, and a mark never falls.
+    fn stand(&mut self, standing: Standing, answering: &mut BTreeMap<[u8; 16], (String, Entry)>) {
+        if standing.incarnation < self.incarnation {
+            return;
+        }
+        if standing.incarnation > self.incarnation {
+            self.incarnation = standing.incarnation;
+            self.mark = standing.mark;
+            self.drop_where(|_| true, answering);
+            return;
+        }
+        self.mark = self.mark.max(standing.mark);
+        let mark = self.mark;
+        self.drop_where(|number| number < mark, answering);
+    }
+
+    /// Drop the records whose number `dropped` holds of, and where a reply would find them.
+    fn drop_where(
+        &mut self,
+        dropped: impl Fn(u64) -> bool,
+        answering: &mut BTreeMap<[u8; 16], (String, Entry)>,
+    ) {
+        self.kept.retain(|number, record| {
+            let drop = dropped(*number);
+            if drop {
+                if let Some(invoke) = record.invoke {
+                    answering.remove(&invoke);
+                }
+            }
+            !drop
+        });
+    }
+}
+
+/// What became of an envelope of an instance judged by its completion records
+/// ([`Inbound::admit_member`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Judged {
+    /// Taken in, or answered or dropped as a repeat: what it released.
+    Admitted(Outcome),
+    /// It was made under an incarnation that is not the one the member stands under, `current`:
+    /// nothing of it is taken in.
+    Fenced { current: u64 },
+}
+
 /// Why an envelope was not admitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmitError {
@@ -191,6 +296,9 @@ struct Sender {
     /// 10.11): a gap in it is an envelope its sender still holds and will send
     /// again, so it never times out.
     durable: bool,
+    /// The completion records of an instance of an open machine whose binding
+    /// receives durably (docs/adr/0113, D5), in place of a window.
+    records: Option<Records>,
 }
 
 /// Replace `list` with what `rule` writes from it, or leave it as it was when
@@ -222,6 +330,7 @@ impl Sender {
             held: BTreeMap::new(),
             replies: BTreeMap::new(),
             durable: false,
+            records: None,
         }
     }
 
@@ -248,8 +357,8 @@ pub struct Inbound {
     gap_timeout_ms: i64,
     senders: BTreeMap<String, Sender>,
     /// Where each cached request is, by its wire `invoke_id`: its sender and
-    /// its envelope id. What a reply finds its request's entry by.
-    answering: BTreeMap<[u8; 16], (String, [u8; 16])>,
+    /// its entry there. What a reply finds its request's entry by.
+    answering: BTreeMap<[u8; 16], (String, Entry)>,
 }
 
 impl Inbound {
@@ -381,7 +490,8 @@ impl Inbound {
                         kept: Kept::Handling,
                     },
                 );
-                self.answering.insert(invoke, (source.clone(), raw_id));
+                self.answering
+                    .insert(invoke, (source.clone(), Entry::Window(raw_id)));
             }
             // The cache is bounded by the window: a request whose id the
             // window let go takes its reply with it.
@@ -432,7 +542,110 @@ impl Inbound {
             for cached in sender.replies.values() {
                 self.answering.remove(&cached.invoke);
             }
+            for record in sender
+                .records
+                .iter()
+                .flat_map(|records| records.kept.values())
+            {
+                if let Some(invoke) = record.invoke {
+                    self.answering.remove(&invoke);
+                }
+            }
         }
+    }
+
+    /// Admit the envelope `bytes` of the instance whose link is `link`, an instance of an open
+    /// machine whose binding receives durably (docs/adr/0113, D5), which its edge took in under
+    /// the incarnation `made_under`, while the store holds its member as `standing`: the latest
+    /// answer the host has, at least as late as the one the edge took it in under.
+    ///
+    /// The incarnation and the mark are judged again here, as the envelope runs, since either may
+    /// have moved while it waited: one made under an incarnation the member no longer stands under
+    /// is fenced, and one numbered below the mark is one whose answer the instance has, and is
+    /// dropped. A repeat of one taken in is answered from its completion record when its reply
+    /// left, and dropped while it is handled or when it has none; any other is taken in, and its
+    /// record made, in the state the next checkpoint holds. Every envelope of the stream carries
+    /// its number, and is released as it arrives: what orders a stream spread over sessions is no
+    /// one receiver's.
+    pub(crate) fn admit_member(
+        &mut self,
+        link: &str,
+        bytes: Vec<u8>,
+        made_under: u64,
+        standing: Standing,
+    ) -> Result<Judged, AdmitError> {
+        let (number, request) = {
+            let envelope =
+                Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
+            let request = (envelope.pattern == PatternKind::RpcRequest)
+                .then_some(envelope.invoke_id)
+                .flatten()
+                .map(<[u8; 16]>::from);
+            (envelope.sequence_no, request)
+        };
+        let number = number.ok_or(AdmitError::Unstamped)?;
+        let Self {
+            senders, answering, ..
+        } = self;
+        let sender = senders.entry(link.to_string()).or_insert_with(Sender::new);
+        sender.durable = true;
+        let records = sender.records.get_or_insert_with(|| Records::new(standing));
+        records.stand(standing, answering);
+        if made_under != records.incarnation {
+            return Ok(Judged::Fenced {
+                current: records.incarnation,
+            });
+        }
+        let mut out = Outcome::default();
+        if number < records.mark {
+            return Ok(Judged::Admitted(out));
+        }
+        if let Some(record) = records.kept.get(&number) {
+            if let Kept::Sent(reply) = &record.kept {
+                out.replays.push(reply.clone());
+            }
+            return Ok(Judged::Admitted(out));
+        }
+        records.kept.insert(
+            number,
+            Record {
+                invoke: request,
+                kept: Kept::Handling,
+            },
+        );
+        if let Some(invoke) = request {
+            answering.insert(invoke, (link.to_string(), Entry::Record(number)));
+        }
+        records.unsealed = true;
+        out.released.push(Received { bytes });
+        Ok(Judged::Admitted(out))
+    }
+
+    /// Take `standing`, the store's latest answer for the member whose instance's link is `link`
+    /// (docs/adr/0113, D5): its records below the mark are dropped, and all of them when it
+    /// stands under a later incarnation. A link that keeps no records keeps none from this.
+    pub(crate) fn stand(&mut self, link: &str, standing: Standing) {
+        let Self {
+            senders, answering, ..
+        } = self;
+        if let Some(records) = senders
+            .get_mut(link)
+            .and_then(|sender| sender.records.as_mut())
+        {
+            records.stand(standing, answering);
+        }
+    }
+
+    /// What every request entry, of a window or a record, keeps of the reply to it.
+    fn kept_mut(&mut self) -> impl Iterator<Item = &mut Kept> + '_ {
+        self.senders.values_mut().flat_map(|sender| {
+            let windows = sender.replies.values_mut().map(|cached| &mut cached.kept);
+            let records = sender
+                .records
+                .iter_mut()
+                .flat_map(|records| records.kept.values_mut().map(|record| &mut record.kept));
+            windows.chain(records)
+        })
     }
 
     /// The machine answered the request whose wire `invoke_id` is `invoke`
@@ -444,18 +657,28 @@ impl Inbound {
     /// until a checkpoint that holds it is durable (SCE_MESH.md section
     /// 10.11): the reply has not left, so a duplicate is still dropped.
     pub(crate) fn answered(&mut self, invoke: &[u8; 16], reply: &[u8], held: bool) {
-        let Some((source, request)) = self.answering.get(invoke) else {
+        let Some((source, entry)) = self.answering.get(invoke) else {
             return;
         };
-        let Some(cached) = self
-            .senders
-            .get_mut(source)
-            .and_then(|sender| sender.replies.get_mut(request))
-        else {
+        let Some(sender) = self.senders.get_mut(source) else {
             return;
         };
-        if cached.kept == Kept::Handling {
-            cached.kept = if held {
+        let kept = match entry {
+            Entry::Window(request) => sender
+                .replies
+                .get_mut(request)
+                .map(|cached| &mut cached.kept),
+            Entry::Record(number) => sender
+                .records
+                .as_mut()
+                .and_then(|records| records.kept.get_mut(number))
+                .map(|record| &mut record.kept),
+        };
+        let Some(kept) = kept else {
+            return;
+        };
+        if *kept == Kept::Handling {
+            *kept = if held {
                 Kept::Held {
                     reply: reply.to_vec(),
                     sealed: None,
@@ -467,30 +690,32 @@ impl Inbound {
     }
 
     /// The checkpoint `sequence` was sealed: it holds every reply made since
-    /// the one before.
-    pub(crate) fn seal(&mut self, sequence: u64) {
-        for cached in self
-            .senders
-            .values_mut()
-            .flat_map(|sender| sender.replies.values_mut())
-        {
-            if let Kept::Held { sealed, .. } = &mut cached.kept {
+    /// the one before. Answers each incarnation of an instance whose envelope
+    /// was taken in since the seal before, with the instance's link: what the
+    /// run the checkpoint keeps was made under (docs/adr/0113, D5).
+    pub(crate) fn seal(&mut self, sequence: u64) -> Vec<(String, u64)> {
+        for kept in self.kept_mut() {
+            if let Kept::Held { sealed, .. } = kept {
                 if sealed.is_none() {
                     *sealed = Some(sequence);
                 }
             }
         }
+        self.senders
+            .iter_mut()
+            .filter_map(|(source, sender)| {
+                let records = sender.records.as_mut()?;
+                core::mem::take(&mut records.unsealed)
+                    .then(|| (source.clone(), records.incarnation))
+            })
+            .collect()
     }
 
     /// The checkpoint `sequence` is durable: every reply it and the ones
     /// before it hold has left, and answers a duplicate from now on.
     pub(crate) fn released_through(&mut self, sequence: u64) {
-        for cached in self
-            .senders
-            .values_mut()
-            .flat_map(|sender| sender.replies.values_mut())
-        {
-            let left = match &mut cached.kept {
+        for kept in self.kept_mut() {
+            let left = match &mut *kept {
                 Kept::Held {
                     reply,
                     sealed: Some(at),
@@ -498,7 +723,7 @@ impl Inbound {
                 _ => None,
             };
             if let Some(reply) = left {
-                cached.kept = Kept::Sent(reply);
+                *kept = Kept::Sent(reply);
             }
         }
     }
@@ -537,6 +762,22 @@ impl Inbound {
                     })
                     .collect(),
                 durable: sender.durable,
+                records: sender.records.as_ref().map(|records| RecordsState {
+                    incarnation: records.incarnation,
+                    mark: records.mark,
+                    kept: records
+                        .kept
+                        .iter()
+                        .map(|(number, record)| RecordState {
+                            number: *number,
+                            invoke: record.invoke,
+                            reply: match &record.kept {
+                                Kept::Handling => None,
+                                Kept::Held { reply, .. } | Kept::Sent(reply) => Some(reply.clone()),
+                            },
+                        })
+                        .collect(),
+                }),
             })
             .collect()
     }
@@ -596,8 +837,32 @@ impl Inbound {
                         kept,
                     },
                 );
-                self.answering
-                    .insert(reply.invoke, (state.source.clone(), reply.request));
+                self.answering.insert(
+                    reply.invoke,
+                    (state.source.clone(), Entry::Window(reply.request)),
+                );
+            }
+            if let Some(held) = &state.records {
+                let mut records = Records::new(Standing {
+                    incarnation: held.incarnation,
+                    mark: held.mark,
+                });
+                for record in &held.kept {
+                    // A reply the checkpoint holds is released by its restore.
+                    let kept = record.reply.clone().map_or(Kept::Handling, Kept::Sent);
+                    records.kept.insert(
+                        record.number,
+                        Record {
+                            invoke: record.invoke,
+                            kept,
+                        },
+                    );
+                    if let Some(invoke) = record.invoke {
+                        self.answering
+                            .insert(invoke, (state.source.clone(), Entry::Record(record.number)));
+                    }
+                }
+                sender.records = Some(records);
             }
             self.senders.insert(state.source.clone(), sender);
         }

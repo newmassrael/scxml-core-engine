@@ -33,7 +33,7 @@ use sce_rust_runtime::{
 use crate::causal::{CausalLayer, Dot, Refusal, Start};
 use crate::checkpoint::{Checkpoint, CheckpointError, Clocks, EndpointSection, RetryState};
 use crate::outbound::{AfterFailure, Attempts};
-use crate::router::{Effect, Invoked, Router, RouterError};
+use crate::router::{Effect, Invoked, Router, RouterError, Standing};
 use crate::signal::Signal;
 
 /// The `<send type>` a Mesh send is lowered to — the runtime's constant, so
@@ -431,7 +431,43 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// Envelope `bytes` the transport received from `peer`.
     pub fn receive(&mut self, peer: &str, bytes: Vec<u8>) {
         let now = self.environment.now_ms();
-        let mut effects = self.router.receive(peer, bytes, now);
+        let effects = self.router.receive(peer, bytes, now);
+        self.take_in(peer, effects);
+    }
+
+    /// Envelope `bytes` the transport received from `peer`, an instance of an open machine
+    /// whose binding receives durably, which its edge took in under the incarnation `made_under`
+    /// while the store held its member as `standing` (see [`Router::receive_member`]).
+    pub fn receive_member(
+        &mut self,
+        peer: &str,
+        made_under: u64,
+        standing: Standing,
+        bytes: Vec<u8>,
+    ) {
+        let now = self.environment.now_ms();
+        let effects = self
+            .router
+            .receive_member(peer, made_under, standing, bytes, now);
+        self.take_in(peer, effects);
+    }
+
+    /// Take `standing`, the store's latest answer for the member whose instance is `peer` (see
+    /// [`Router::stand`]).
+    pub fn stand(&mut self, peer: &str, standing: Standing) {
+        self.router.stand(peer, standing);
+    }
+
+    /// The incarnations the run the last checkpoint sealed keeps was made under (see
+    /// [`Router::sealed_under`]).
+    pub fn sealed_under(&self) -> &[(String, u64)] {
+        self.router.sealed_under()
+    }
+
+    /// Apply what the router made of what arrived on `peer`'s link, past the events the link may
+    /// not deliver ([`Self::forbid_events_from`]) and the host's admission
+    /// ([`Self::set_admission`]).
+    fn take_in(&mut self, peer: &str, mut effects: Result<Vec<Effect>, RouterError>) {
         let mut refused: Vec<RouterError> = Vec::new();
         if let Ok(list) = effects.as_mut() {
             let forbidden = self.forbidden.get(peer);

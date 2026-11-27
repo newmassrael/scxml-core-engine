@@ -166,6 +166,28 @@ pub(crate) struct SenderState {
     pub replies: Vec<ReplyState>,
     /// Whether the stream is durable: none of its gaps ever times out.
     pub durable: bool,
+    /// The completion records of an instance of an open machine whose binding receives durably
+    /// (docs/adr/0113, D5), `None` for any other sender.
+    pub records: Option<RecordsState>,
+}
+
+/// An instance's completion records: the incarnation they are of, the member's low-water mark the
+/// store held, and a record of each request taken in at or above it, by its number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordsState {
+    pub incarnation: u64,
+    pub mark: u64,
+    pub kept: Vec<RecordState>,
+}
+
+/// A completion record: the request's number, its wire `invoke_id` when a reply answers it, and
+/// its reply, `None` while it is handled or when it has none. A reply a checkpoint holds is one its
+/// restore releases, so it is restored as sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordState {
+    pub number: u64,
+    pub invoke: Option<[u8; 16]>,
+    pub reply: Option<Vec<u8>>,
 }
 
 /// An envelope held past an ordering gap, with its sequence and the moment it arrived.
@@ -709,6 +731,41 @@ impl SenderState {
                 ),
             ),
             ("durable", Value::Bool(self.durable)),
+            (
+                "records",
+                match &self.records {
+                    None => Value::Null,
+                    Some(records) => object(alloc::vec![
+                        ("incarnation", count(records.incarnation)),
+                        ("mark", count(records.mark)),
+                        (
+                            "kept",
+                            Value::Array(
+                                records
+                                    .kept
+                                    .iter()
+                                    .map(|record| {
+                                        object(alloc::vec![
+                                            ("number", count(record.number)),
+                                            (
+                                                "invoke",
+                                                record
+                                                    .invoke
+                                                    .as_ref()
+                                                    .map_or(Value::Null, |id| hex(id)),
+                                            ),
+                                            (
+                                                "reply",
+                                                record.reply.as_deref().map_or(Value::Null, hex)
+                                            ),
+                                        ])
+                                    })
+                                    .collect(),
+                            ),
+                        ),
+                    ]),
+                },
+            ),
         ])
     }
 
@@ -755,6 +812,35 @@ impl SenderState {
             held,
             replies,
             durable: as_flag(field("durable")?, &path("durable"))?,
+            records: match field("records")? {
+                Value::Null => None,
+                records => {
+                    let at = path("records");
+                    let kept = as_items(member(records, "kept", &at)?, &at)?
+                        .iter()
+                        .enumerate()
+                        .map(|(i, item)| {
+                            let at = format!("{at}.kept[{i}]");
+                            Ok(RecordState {
+                                number: as_count(member(item, "number", &at)?, &at)?,
+                                invoke: match member(item, "invoke", &at)? {
+                                    Value::Null => None,
+                                    invoke => Some(as_id(invoke, &at)?),
+                                },
+                                reply: match member(item, "reply", &at)? {
+                                    Value::Null => None,
+                                    reply => Some(as_bytes(reply, &at)?),
+                                },
+                            })
+                        })
+                        .collect::<Result<_, CheckpointError>>()?;
+                    Some(RecordsState {
+                        incarnation: as_count(member(records, "incarnation", &at)?, &at)?,
+                        mark: as_count(member(records, "mark", &at)?, &at)?,
+                        kept,
+                    })
+                }
+            },
         })
     }
 }
@@ -2033,29 +2119,56 @@ mod tests {
                             above: vec![4, 6],
                         }),
                     }],
-                    senders: vec![SenderState {
-                        source: "client".to_string(),
-                        window: vec![[1; 16], [2; 16]],
-                        next: Some(5),
-                        held: vec![HeldState {
-                            sequence: 6,
-                            arrived: 1_000_060,
-                            envelope: vec![0x10],
-                        }],
-                        replies: vec![
-                            ReplyState {
-                                request: [1; 16],
-                                invoke: [9; 16],
-                                reply: Some(vec![0x20, 0x21]),
-                            },
-                            ReplyState {
-                                request: [2; 16],
-                                invoke: [8; 16],
-                                reply: None,
-                            },
-                        ],
-                        durable: true,
-                    }],
+                    senders: vec![
+                        SenderState {
+                            source: "client".to_string(),
+                            window: vec![[1; 16], [2; 16]],
+                            next: Some(5),
+                            held: vec![HeldState {
+                                sequence: 6,
+                                arrived: 1_000_060,
+                                envelope: vec![0x10],
+                            }],
+                            replies: vec![
+                                ReplyState {
+                                    request: [1; 16],
+                                    invoke: [9; 16],
+                                    reply: Some(vec![0x20, 0x21]),
+                                },
+                                ReplyState {
+                                    request: [2; 16],
+                                    invoke: [8; 16],
+                                    reply: None,
+                                },
+                            ],
+                            durable: true,
+                            records: None,
+                        },
+                        SenderState {
+                            source: "phone/a1".to_string(),
+                            window: Vec::new(),
+                            next: None,
+                            held: Vec::new(),
+                            replies: Vec::new(),
+                            durable: true,
+                            records: Some(RecordsState {
+                                incarnation: 12,
+                                mark: 3,
+                                kept: vec![
+                                    RecordState {
+                                        number: 3,
+                                        invoke: Some([7; 16]),
+                                        reply: Some(vec![0x22, 0x23]),
+                                    },
+                                    RecordState {
+                                        number: 4,
+                                        invoke: None,
+                                        reply: None,
+                                    },
+                                ],
+                            }),
+                        },
+                    ],
                     unreleased: vec![
                         Unreleased {
                             peer: "client".to_string(),

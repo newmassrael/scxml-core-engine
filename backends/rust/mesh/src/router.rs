@@ -46,7 +46,9 @@ use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
-use crate::inbound::{sequenced, AdmitError, ConfigError, Delivery, Inbound, Outcome};
+use crate::inbound::{sequenced, AdmitError, ConfigError, Delivery, Inbound, Judged, Outcome};
+
+pub use crate::inbound::Standing;
 use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
 use crate::peers::{instance_of, instance_peer};
 use crate::rpc::{self, Answer, Correlation, Pending, MESH_DEADLINE_PARAM, MESH_EVENT_PARAM};
@@ -336,6 +338,9 @@ struct Persist {
     /// The last checkpoint sealed, and the last reported durable.
     sealed_through: u64,
     durable_through: u64,
+    /// The incarnations the run the last checkpoint sealed keeps was made under, each with its
+    /// instance's link (docs/adr/0113, D5).
+    under: Vec<(String, u64)>,
 }
 
 impl Persist {
@@ -364,6 +369,9 @@ struct OpenMachine {
     config: PeerConfig,
     /// The most of its instances bound at once.
     max_instances: usize,
+    /// Whether its instances send to this machine with durable receipt: each is then judged by
+    /// its completion records (docs/adr/0113, D5; [`Router::receive_member`]).
+    durable: bool,
 }
 
 /// One machine's Mesh endpoint.
@@ -432,6 +440,7 @@ impl Router {
             OpenMachine {
                 config,
                 max_instances,
+                durable: false,
             },
         );
         Ok(())
@@ -602,7 +611,20 @@ impl Router {
     /// still held by its sender), and each checkpoint that becomes durable
     /// acknowledges what it holds. Needs the router to checkpoint; refused for
     /// a causal peer.
+    ///
+    /// For an open machine (docs/adr/0113, D5), each of its instances: what
+    /// one instance sends goes to several sessions, so no receiver sees its
+    /// numbers one after another, and each envelope is judged by the
+    /// completion records of its instance's incarnation instead
+    /// ([`Self::receive_member`]).
     pub fn receive_durably(&mut self, peer: &str) -> Result<(), RouterError> {
+        if let Some(open) = self.open.get_mut(peer) {
+            if self.persist.is_none() {
+                return Err(RouterError::NotCheckpointed);
+            }
+            open.durable = true;
+            return Ok(());
+        }
         self.durable_peer(peer)?.durable_in = Some(DurableIn::default());
         Ok(())
     }
@@ -638,6 +660,19 @@ impl Router {
         self.persist
             .as_ref()
             .map_or(0, |persist| persist.sealed_through)
+    }
+
+    /// The incarnations the run the last checkpoint sealed keeps was made
+    /// under, each with the link of its instance (docs/adr/0113, D5): every
+    /// one an envelope taken in since the seal before was judged under
+    /// ([`Self::receive_member`]). The write that keeps the checkpoint names
+    /// each, and keeps nothing once the store no longer holds one
+    /// (`sce_rust_session_store::Write::under`), so nothing of a run is kept
+    /// after its incarnation ended.
+    pub fn sealed_under(&self) -> &[(String, u64)] {
+        self.persist
+            .as_ref()
+            .map_or(&[], |persist| persist.under.as_slice())
     }
 
     /// The last checkpoint the host reported durable, `0` before the first.
@@ -685,7 +720,10 @@ impl Router {
             .iter()
             .flat_map(|(_, batch)| batch.iter().cloned())
             .collect();
-        self.inbound.seal(sequence);
+        let under = self.inbound.seal(sequence);
+        if let Some(persist) = self.persist.as_mut() {
+            persist.under = under;
+        }
         Ok(RouterState {
             peers: self
                 .peers
@@ -857,10 +895,13 @@ impl Router {
         let mut effects = Vec::new();
         if !clean {
             for saved in &state.senders {
+                // docs/adr/0113, D5: an instance judged by its completion
+                // records holds what it sent until it has its answer.
                 let durable = self
                     .peers
                     .get(&saved.source)
-                    .is_some_and(|bound| bound.durable_in.is_some());
+                    .is_some_and(|bound| bound.durable_in.is_some())
+                    || self.open_of(&saved.source).is_some_and(|open| open.durable);
                 if !durable {
                     effects.push(Effect::Raise {
                         peer: None,
@@ -1469,6 +1510,52 @@ impl Router {
         bytes: Vec<u8>,
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
+        self.receive_from(peer, None, bytes, now_ms)
+    }
+
+    /// Envelope `bytes` the transport received from `peer`, an instance of
+    /// an open machine whose binding receives durably (docs/adr/0113, D5;
+    /// [`Self::receive_durably`]), at `now_ms`: its edge took it in under
+    /// the incarnation `made_under`, and `standing` is the store's latest
+    /// answer for its member, as late as that one at least.
+    ///
+    /// As [`Self::receive`], but judged by the instance's completion records
+    /// in place of a window: one made under an incarnation its member no
+    /// longer stands under is fenced ([`RouterError::Fenced`]), one below the
+    /// mark is one whose answer the instance has, and a repeat of one taken in
+    /// is answered from its record. The judgement is made again here, as the
+    /// envelope runs, and the last one is the store's: the write that keeps
+    /// the checkpoint names the incarnation ([`Self::sealed_under`]).
+    pub fn receive_member(
+        &mut self,
+        peer: &str,
+        made_under: u64,
+        standing: Standing,
+        bytes: Vec<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<Effect>, RouterError> {
+        self.receive_from(peer, Some((made_under, standing)), bytes, now_ms)
+    }
+
+    /// Take `standing`, the store's latest answer for the member whose instance
+    /// is `peer` (docs/adr/0113, D5 and D6): the completion records below its
+    /// mark are dropped, since the instance has their answers, and all of them
+    /// when it stands under a later incarnation. What the router keeps of an
+    /// instance is then at most what it has in flight.
+    pub fn stand(&mut self, peer: &str, standing: Standing) {
+        self.inbound.stand(peer, standing);
+    }
+
+    /// Envelope `bytes` from `peer`, with the incarnation it was taken in
+    /// under and the standing of its member when its instance is judged by
+    /// its completion records.
+    fn receive_from(
+        &mut self,
+        peer: &str,
+        judged: Option<(u64, Standing)>,
+        bytes: Vec<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<Effect>, RouterError> {
         self.bind(peer)?;
         let config = self
             .peers
@@ -1529,6 +1616,39 @@ impl Router {
         }
         if let Some(signal) = self.undeclared_reply(&bytes, peer) {
             return raise(signal);
+        }
+        // docs/adr/0113, D5: an instance of an open machine whose binding
+        // receives durably is judged by its completion records, under the
+        // incarnation its edge took the envelope in under and the standing the
+        // store holds its member at.
+        let by_records = self.open_of(peer).is_some_and(|open| open.durable);
+        match (by_records, judged) {
+            (true, Some((made_under, standing))) => {
+                return match self.inbound.admit_member(peer, bytes, made_under, standing) {
+                    Ok(Judged::Admitted(outcome)) => {
+                        Ok(self.effects_of(outcome, Some(peer), now_ms))
+                    }
+                    Ok(Judged::Fenced { current }) => Err(RouterError::Fenced {
+                        peer: peer.to_string(),
+                        incarnation: made_under,
+                        current,
+                    }),
+                    Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt {
+                        source: None,
+                        codec: "cbor",
+                    }),
+                    Err(AdmitError::Unstamped) => raise(Signal::MissingSequence {
+                        source: peer.to_string(),
+                    }),
+                    Err(AdmitError::Rule(error)) => Err(RouterError::Rule(error)),
+                    Err(AdmitError::HoldFull) => Err(RouterError::HoldFull {
+                        peer: Some(peer.to_string()),
+                    }),
+                };
+            }
+            (true, None) => return Err(RouterError::Unjudged(peer.to_string())),
+            (false, Some(_)) => return Err(RouterError::NotDurable(peer.to_string())),
+            (false, None) => {}
         }
         // SCE_MESH.md section 10.11: on a durable stream a repeat is told by
         // its sequence number, exactly, and is answered with the
@@ -1895,6 +2015,20 @@ pub enum RouterError {
         machine: String,
         max_instances: usize,
     },
+    /// An envelope of the instance `peer`, taken in under the incarnation
+    /// `incarnation`, was not run: its member stands under `current` now
+    /// (docs/adr/0113, D4 and D5). Nothing of it was taken in; the host
+    /// answers its instance that its incarnation is fenced (`412`).
+    Fenced {
+        peer: String,
+        incarnation: u64,
+        current: u64,
+    },
+    /// An envelope of the instance `peer`, whose binding receives durably,
+    /// was handed to [`Router::receive`] without the incarnation it was taken
+    /// in under: only [`Router::receive_member`] judges it (docs/adr/0113,
+    /// D5). Nothing of it was taken in.
+    Unjudged(String),
     /// An open machine whose instances cannot be told apart was asked to be
     /// bound ([`Router::open_machine`]); `reason` says why.
     BadOpenMachine {
@@ -3432,6 +3566,268 @@ mod tests {
                 "{target}"
             );
         }
+    }
+
+    /// The wall and monotonic clocks the checkpoints of these tests are taken against.
+    const CLOCKS: Clocks = Clocks {
+        monotonic_ms: 0,
+        wall_ms: 1_000_000,
+    };
+
+    /// `cloud`, checkpointing, whose instances of `phone` send to it with durable receipt and
+    /// are judged by their completion records (docs/adr/0113, D5).
+    fn durable_open_server() -> Router {
+        let mut cloud = open_server(4);
+        cloud.enable_checkpoints();
+        cloud.receive_durably("phone").unwrap();
+        cloud
+    }
+
+    /// The request `service.request.force` the instance `a1` of `phone` numbered `number` in
+    /// its incarnation, with the wire invokeid `[number; 16]`.
+    fn numbered(number: u8) -> Vec<u8> {
+        Envelope {
+            id: (&[0x40 + number; 16]).into(),
+            source: within("phone").unwrap(),
+            instance: Some(within("a1").unwrap()),
+            event_type: within("service.request.force").unwrap(),
+            pattern: PatternKind::RpcRequest,
+            datacontenttype: PayloadCodec::Json,
+            data: within(r#"{"n":3}"#.as_bytes()).unwrap(),
+            invoke_id: Some((&[number; 16]).into()),
+            sequence_no: Some(u64::from(number)),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    /// docs/formal/OpenInstances.tla, `OpenInstances_without_records`: a repeat of a request is
+    /// answered from its completion record however many requests came between, where a window
+    /// of ids (eight here) would have let it go and run it again. Red with a window in place of
+    /// the records: the repeat is delivered a second time.
+    #[test]
+    fn a_repeat_is_answered_from_its_record_however_many_came_between() {
+        let mut cloud = durable_open_server();
+        let standing = Standing {
+            incarnation: 7,
+            mark: 1,
+        };
+        let first = cloud
+            .receive_member("phone/a1", 7, standing, numbered(1), 0)
+            .unwrap();
+        assert!(
+            matches!(first.as_slice(), [Effect::Deliver { .. }]),
+            "{first:?}"
+        );
+        let held = cloud
+            .send(
+                &HostSendRequest {
+                    invoke_id: rpc::uuid_text(&[1; 16]),
+                    ..request("mesh://phone/a1", "service.response.force", "{}")
+                },
+                [5; 16],
+                1,
+            )
+            .unwrap();
+        assert!(held.is_empty(), "a reply waits for its checkpoint");
+        cloud.seal(1, CLOCKS).unwrap();
+        let released = cloud.durable(1, 2).unwrap();
+        let [Effect::Transmit { peer, bytes: reply }] = released.as_slice() else {
+            panic!("expected the reply to leave, got {released:?}");
+        };
+        assert_eq!(peer, "phone/a1");
+        for number in 2..=20 {
+            let taken = cloud
+                .receive_member("phone/a1", 7, standing, numbered(number), 3)
+                .unwrap();
+            assert!(
+                matches!(taken.as_slice(), [Effect::Deliver { .. }]),
+                "{number}: {taken:?}"
+            );
+        }
+        assert_eq!(
+            cloud
+                .receive_member("phone/a1", 7, standing, numbered(1), 4)
+                .unwrap(),
+            alloc::vec![Effect::Transmit {
+                peer: "phone/a1".to_string(),
+                bytes: reply.clone(),
+            }],
+            "the repeat is answered from its record, nineteen requests later"
+        );
+    }
+
+    /// docs/formal/OpenInstances.tla, `OpenInstances_without_recheck`: the incarnation and the
+    /// mark are judged again as a request runs, since either may have moved while it waited. One
+    /// taken in under an incarnation its member no longer stands under is fenced; one whose
+    /// number the mark passed is one whose answer the instance has, and is not run. Red without
+    /// the second judgement: a request that takes effect twice.
+    #[test]
+    fn a_request_is_judged_again_as_it_runs() {
+        let mut cloud = durable_open_server();
+        assert_eq!(
+            cloud.receive_member(
+                "phone/a1",
+                7,
+                Standing {
+                    incarnation: 9,
+                    mark: 1
+                },
+                numbered(1),
+                0
+            ),
+            Err(RouterError::Fenced {
+                peer: "phone/a1".to_string(),
+                incarnation: 7,
+                current: 9,
+            })
+        );
+        let now = Standing {
+            incarnation: 9,
+            mark: 1,
+        };
+        assert!(matches!(
+            cloud
+                .receive_member("phone/a1", 9, now, numbered(1), 1)
+                .unwrap()
+                .as_slice(),
+            [Effect::Deliver { .. }]
+        ));
+        assert_eq!(
+            cloud
+                .receive_member(
+                    "phone/a1",
+                    9,
+                    Standing {
+                        incarnation: 9,
+                        mark: 3
+                    },
+                    numbered(2),
+                    2
+                )
+                .unwrap(),
+            Vec::new(),
+            "the mark passed it while it waited"
+        );
+        assert_eq!(
+            cloud.receive_member(
+                "phone/a1",
+                7,
+                Standing {
+                    incarnation: 7,
+                    mark: 1
+                },
+                numbered(3),
+                3
+            ),
+            Err(RouterError::Fenced {
+                peer: "phone/a1".to_string(),
+                incarnation: 7,
+                current: 9,
+            }),
+            "a standing of the past changes nothing"
+        );
+    }
+
+    /// docs/formal/OpenInstances.tla, `OpenInstances_without_durable_mark` and `SCrash`: the
+    /// records are in the checkpoint with the mark the store held, so a process that restores it
+    /// answers a repeat from them and does not run it again; a record is dropped only once the
+    /// store's mark passes it, never by what a process saw. The checkpoint names the incarnation
+    /// its run was made under, and one that took nothing in names none. Red if the records are
+    /// not checkpointed, or are dropped by another mark.
+    #[test]
+    fn the_records_are_checkpointed_and_dropped_by_the_stores_mark() {
+        let mut cloud = durable_open_server();
+        let standing = Standing {
+            incarnation: 7,
+            mark: 1,
+        };
+        cloud
+            .receive_member("phone/a1", 7, standing, numbered(3), 0)
+            .unwrap();
+        let state = cloud.seal(1, CLOCKS).unwrap();
+        assert_eq!(cloud.sealed_under(), [("phone/a1".to_string(), 7)]);
+        cloud.seal(2, CLOCKS).unwrap();
+        assert!(
+            cloud.sealed_under().is_empty(),
+            "a run that took nothing in"
+        );
+
+        let mut restored = durable_open_server();
+        assert_eq!(
+            restored.restore(&state, 1, false, CLOCKS),
+            Ok(Vec::new()),
+            "an instance judged by its records holds what it sent: no restored row"
+        );
+        assert_eq!(
+            restored
+                .receive_member("phone/a1", 7, standing, numbered(3), 1)
+                .unwrap(),
+            Vec::new(),
+            "a repeat after a restore is not run again"
+        );
+        let records = |router: &mut Router, sequence: u64| {
+            router
+                .seal(sequence, CLOCKS)
+                .unwrap()
+                .senders
+                .into_iter()
+                .find(|sender| sender.source == "phone/a1")
+                .and_then(|sender| sender.records)
+                .expect("the instance's records")
+        };
+        let kept = records(&mut restored, 2);
+        assert_eq!((kept.mark, kept.kept.len()), (1, 1));
+        restored.stand(
+            "phone/a1",
+            Standing {
+                incarnation: 7,
+                mark: 4,
+            },
+        );
+        let kept = records(&mut restored, 3);
+        assert_eq!(
+            (kept.mark, kept.kept.len()),
+            (4, 0),
+            "the store's mark passed it"
+        );
+        restored.stand(
+            "phone/a1",
+            Standing {
+                incarnation: 7,
+                mark: 2,
+            },
+        );
+        assert_eq!(records(&mut restored, 4).mark, 4, "a mark never falls");
+    }
+
+    /// docs/adr/0113, D5: an instance whose binding receives durably is judged only with the
+    /// incarnation it was taken in under, and a peer judged by no records is given none; an open
+    /// machine's instances receive durably only on a router that checkpoints.
+    #[test]
+    fn only_an_instance_that_receives_durably_is_judged_by_records() {
+        let mut cloud = durable_open_server();
+        assert_eq!(
+            cloud.receive("phone/a1", numbered(1), 0),
+            Err(RouterError::Unjudged("phone/a1".to_string()))
+        );
+        assert_eq!(
+            cloud.receive_member(
+                "alice",
+                7,
+                Standing {
+                    incarnation: 7,
+                    mark: 1
+                },
+                force_request_by("alice"),
+                0
+            ),
+            Err(RouterError::NotDurable("alice".to_string()))
+        );
+        assert_eq!(
+            open_server(4).receive_durably("phone"),
+            Err(RouterError::NotCheckpointed)
+        );
     }
 
     /// docs/adr/0113, D6 and D7: an open machine is bound only with room for
