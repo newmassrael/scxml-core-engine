@@ -202,7 +202,22 @@ Each step lands with a test that fails without it.
    join, the incarnation and the number of a request are rows of the store the client's join adds (ADR 0113 step 5),
    which the core of this step does not make. The engines' versions the kit runs in are the pins of
    `scripts/install_chrome.sh` and `scripts/install_firefox.sh`, which is where Ed25519 in WebCrypto is measured.
-5. The generated surface, with the test that must not compile.
+5. The generated surface, with the test that must not compile. Landed 2026-11-28: `sce-codegen surface`
+   (`sce-build/src/page_surface.rs`, the templates `tools/codegen/templates/surface`) writes, from a
+   `datamodel="sce-static"` document, `<name>.mjs` and its declaration `<name>.d.mts`. Decided in the landing:
+   the events are those the machine takes from outside, the platform's own left out, each typed by the payload
+   schema its schema unit declares (ADR 0087, section 1) and checked at run time by that very text, so the module
+   and the machine's reader of a payload hold one language; every value is in that wire form (ADR 0086, section
+   3.1), a 64-bit integer the text of its digits; what it publishes is the snapshot a host of every backend reads
+   (every active state, the published variables, `truncated`); and the machine is reached through a port,
+   `MachinePort` (`raise(name, data)` with the JSON text of the payload, `subscribe(listener)` with the JSON text of
+   each snapshot), which the page's node gives and the surface does not implement, since it is not a backend. The
+   test that must not compile is `backends/rust/browser-node/surface/pages/wrong.mts`: under the TypeScript
+   `scripts/install_typescript.sh` pins (5.9.3, the last line of the compiler written in TypeScript, one archive
+   that runs on the lane's Node), each line it marks wrong is an error and no other line is, beside `right.mts`,
+   which compiles; Node runs the module's refusals of what a page in JavaScript hands it; both in the lane
+   `wasm32-scenarios`. The documents named in "Amends" moved in the same landing: `SCE_MESH.md` §18 and §22.6, ADR
+   0115, and `docs/SCE_ACCEPTED_SUBSET.md` section 2.15.
 
 Steps 3 and 4 need ADR 0113 step 4.
 

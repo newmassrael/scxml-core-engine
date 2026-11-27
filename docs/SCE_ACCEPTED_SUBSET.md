@@ -8064,6 +8064,36 @@ it can borrow the engine only between two of them — a macrostep boundary —
 so no snapshot is ever taken between two microsteps. A host holding one keeps
 what it saw, since it owns its copy.
 
+**A page's surface.** Amended by ADR 0117, decision D7. A page is written
+against a surface generated from its document, which is not a backend:
+`sce-codegen surface <document> --out-dir <dir>` writes, for a
+`datamodel="sce-static"` statechart, `<name>.mjs`, a JavaScript module, and
+`<name>.d.mts`, its TypeScript declaration, `<name>` the stem of the
+document's file. It declares the events the machine takes from outside (each
+event a schema the document imports declares where a transition takes it, with
+that schema's payload, and every other event a transition takes, with no data;
+the platform's own are not among them), a function that raises one
+(`bind(port).raise(event)`), the snapshot a host of every backend reads (every
+active state, the published variables, `truncated`) and a subscription to it.
+Each value is in its wire form, the one a payload schema states
+(docs/adr/0086, section 3.1): a 64-bit integer is the text of its digits, a
+byte string a text of one character for each byte, an absent value `null`.
+No rule of the document is in it: the machine the page holds is reached
+through a port the page's node gives (`MachinePort`: `raise(name, data)` with
+the JSON text of the payload, `subscribe(listener)` with the JSON text of each
+snapshot). A page in TypeScript that raises an event the machine does not
+take, or data its payload does not hold, does not compile; a page in
+JavaScript is refused at the boundary, by the payload schema the event's
+schema unit declares (docs/adr/0087, section 1, the text `payload-schema`
+prints), with `SurfaceRefused` and the JSON Pointer of the place, before
+anything reaches the port. A document of another data model, and a published
+value or a payload with no wire form (a map or a set, docs/adr/0108, D7; a
+value of an open enum), are refused by name. The lane `wasm32-scenarios` holds
+the surface of `static_optional` to a page that uses it right and to one
+whose every wrong use must not compile, under the TypeScript
+`scripts/install_typescript.sh` pins, and runs the module's refusals under
+Node.
+
 **Saving and restoring.** A host whose process can be killed saves the
 machine at a macrostep boundary and restores it into a new process in place
 of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not

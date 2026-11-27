@@ -5,6 +5,8 @@
   owner's order. Amended 2026-11-22 by the owner: D15, with what it changes of D7 and D8. Amended 2026-11-23 by the
   owner, at a consumer's requirements for a proof made at the level of a design: D7 takes a codec by its values and
   refusals, a connector of every kind by its promise, and the faults of a channel as parameters; D8 gains its converse.
+- Amended by: ADR 0117 (D1): D13's first module is the `https` client's core, separated from its native shell
+  (`https/client_core.rs`), and its numbers (`https/client_mailbox.rs`) are the first proof.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
