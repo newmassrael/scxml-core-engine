@@ -116,19 +116,25 @@ impl Machine {
         machine
     }
 
-    /// Built with `bounded` attached as its one inbox, served, and entered and
-    /// driven once. A session has one inbox (docs/adr/0084, D2), so this one has
-    /// none of its own, and its invoker, handed none, answers nothing on a start.
-    fn booted_with(bounded: &'static BoundedInbox<Policy, 4, StdHal>) -> Self {
+    /// Built with `bounded` attached as its one inbox and served, not yet run.
+    /// A session has one inbox (docs/adr/0084, D2), so this one has none of its
+    /// own, and its invoker, handed none, answers nothing on a start.
+    fn built_with(bounded: &'static BoundedInbox<Policy, 4, StdHal>) -> Self {
         let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
         let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
         engine.attach_inbox(bounded);
         let host = serve(&mut engine, || None);
-        let mut machine = Self {
+        Self {
             engine,
             script_engine,
             host,
-        };
+        }
+    }
+
+    /// Built with `bounded` attached as its one inbox, served, and entered and
+    /// driven once.
+    fn booted_with(bounded: &'static BoundedInbox<Policy, 4, StdHal>) -> Self {
+        let mut machine = Self::built_with(bounded);
         machine.boot();
         machine
     }
@@ -616,9 +622,7 @@ fn a_bounded_inbox_attached_to_another_engine_answers_for_that_engines_session()
 fn an_ending_a_bounded_inbox_took_for_an_earlier_engine_is_refused_by_the_token_check() {
     // Attached before its run starts: a session has one inbox (docs/adr/0084, D2),
     // so the bounded one is handed over before the engine would make its own.
-    let mut first = Machine::built();
-    first.engine.attach_inbox(&BOUNDED_RESTARTED);
-    first.boot();
+    let mut first = Machine::booted_with(&BOUNDED_RESTARTED);
     let late = first.latest_token();
     let answer = BOUNDED_RESTARTED.post(ending_of(
         Some(session_of(&first).as_str()),
@@ -634,9 +638,7 @@ fn an_ending_a_bounded_inbox_took_for_an_earlier_engine_is_refused_by_the_token_
 
     // Attached before its run starts, as a deployment hands its inbox to the
     // engine that stands in for the one before.
-    let mut second = Machine::built();
-    second.engine.attach_inbox(&BOUNDED_RESTARTED);
-    second.boot();
+    let mut second = Machine::booted_with(&BOUNDED_RESTARTED);
     let token = second.latest_token();
     assert_ne!(
         token, late,
