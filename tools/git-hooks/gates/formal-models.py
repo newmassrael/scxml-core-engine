@@ -44,6 +44,7 @@
     "inputs": INPUTS_ARE_TRIGGERS,
     "commits": [],
     "peak_gb": 8,
-    # TLC runs as many workers as the machine has cores (`-workers auto`).
+    # TLC runs as many workers as the unit is granted (`--workers` from
+    # `sce_build_jobs` in scripts/gates/formal-models.sh), one run at a time.
     "parallelism": PARALLELISM_COMPILE,
 }

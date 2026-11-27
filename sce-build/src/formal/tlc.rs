@@ -5,7 +5,16 @@
 //! workers and, when asked, the state graph TLC writes. Every level that runs
 //! TLC runs it here, and its answer is read here: the exit status, the count of
 //! distinct states, the invariant it names violated, and the graph.
+//!
+//! The workers are a count, never TLC's `auto`: a judge is given a share of a
+//! machine (a build machine's grant, a hosted runner's processors), and TLC's
+//! `auto` is every processor the machine has, whatever share the judge was
+//! given. On 2026-11-27 a unit granted one core ran TLC with `auto` on a
+//! machine of many and did not end within the hour. The Java virtual machine
+//! TLC runs on is told the same count, so its own threads (the collector's
+//! among them) stay within it too.
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::process::Command;
 
@@ -67,6 +76,24 @@ pub fn violated_invariants(output: &str) -> Vec<String> {
     found
 }
 
+/// Read the workers a judge is given: a count of at least one, or `auto`,
+/// every processor this process may run on
+/// ([`std::thread::available_parallelism`], which reads the processors the
+/// process is confined to). Either way the answer is a count, so TLC is never
+/// handed its own `auto`.
+pub fn workers_spec(text: &str) -> Result<NonZeroUsize, String> {
+    if text == "auto" {
+        return Ok(available_workers());
+    }
+    text.parse::<NonZeroUsize>()
+        .map_err(|_| format!("workers is a count of at least 1, or auto, got {text:?}"))
+}
+
+/// Every processor this process may run on, and one when that cannot be read.
+pub fn available_workers() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
+}
+
 /// One run: the modules of `sources` (every `.tla` there), the configuration
 /// `config_text` written as `config_name`, `extra` modules written beside them,
 /// and `module` checked under it. `library`, when given, is a directory of
@@ -80,7 +107,7 @@ pub struct Run<'a> {
     pub config_name: &'a str,
     pub config_text: &'a str,
     pub extra: &'a [(String, String)],
-    pub workers: &'a str,
+    pub workers: NonZeroUsize,
     pub write_graph: bool,
 }
 
@@ -90,28 +117,13 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
     let mut staged = run.extra.to_vec();
     staged.push((run.config_name.to_string(), run.config_text.to_string()));
     stage_modules(run.sources, work.path(), &staged)?;
-    let mut command = Command::new("java");
-    command.current_dir(work.path()).arg("-XX:+UseParallelGC");
-    if let Some(library) = run.library {
-        let mut property = std::ffi::OsString::from("-DTLA-Library=");
-        property.push(library);
-        command.arg(property);
-    }
-    command
-        .arg("-cp")
-        .arg(run.jar)
-        .arg("tlc2.TLC")
-        .args(["-workers", run.workers]);
-    if run.write_graph {
-        command.args(["-dump", "dot", "graph.dot"]);
-    }
-    command
-        .args(["-config", run.config_name])
-        .arg(format!("{}.tla", run.module));
-    let ran = command.output().map_err(|e| FormalError::ToolUnavailable {
-        tool: "Java".to_string(),
-        detail: format!("cannot run java (Java 11 or later on PATH runs TLC): {e}"),
-    })?;
+    let ran =
+        java_command(run, work.path())
+            .output()
+            .map_err(|e| FormalError::ToolUnavailable {
+                tool: "Java".to_string(),
+                detail: format!("cannot run java (Java 11 or later on PATH runs TLC): {e}"),
+            })?;
     let graph = if run.write_graph {
         std::fs::read_to_string(work.path().join("graph.dot")).ok()
     } else {
@@ -130,9 +142,84 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
     })
 }
 
+/// The command of `run`, in the directory `work` it was staged in.
+///
+/// `-workers` is the count the judge was given, and
+/// `-XX:ActiveProcessorCount` makes it the processors the virtual machine
+/// sees, which sizes the collector's threads and any pool TLC sizes by them.
+fn java_command(run: &Run<'_>, work: &Path) -> Command {
+    let workers = run.workers.to_string();
+    let mut command = Command::new("java");
+    command
+        .current_dir(work)
+        .arg("-XX:+UseParallelGC")
+        .arg(format!("-XX:ActiveProcessorCount={workers}"));
+    if let Some(library) = run.library {
+        let mut property = std::ffi::OsString::from("-DTLA-Library=");
+        property.push(library);
+        command.arg(property);
+    }
+    command
+        .arg("-cp")
+        .arg(run.jar)
+        .arg("tlc2.TLC")
+        .args(["-workers", workers.as_str()]);
+    if run.write_graph {
+        command.args(["-dump", "dot", "graph.dot"]);
+    }
+    command
+        .args(["-config", run.config_name])
+        .arg(format!("{}.tla", run.module));
+    command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_workers_are_a_count_and_never_tlcs_auto() {
+        assert_eq!(
+            workers_spec("3"),
+            Ok(NonZeroUsize::new(3).expect("3 is not 0"))
+        );
+        assert_eq!(workers_spec("auto"), Ok(available_workers()));
+        for refused in ["0", "-1", "", "two", "1.5"] {
+            assert!(workers_spec(refused).is_err(), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn tlc_and_its_virtual_machine_are_given_the_workers_the_judge_was() {
+        let run = Run {
+            jar: Path::new("tla2tools.jar"),
+            library: None,
+            sources: Path::new("."),
+            module: "M",
+            config_name: "M.cfg",
+            config_text: "",
+            extra: &[],
+            workers: NonZeroUsize::new(2).expect("2 is not 0"),
+            write_graph: false,
+        };
+        let built = java_command(&run, Path::new("."));
+        let args: Vec<String> = built
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let after = |flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .and_then(|at| args.get(at + 1))
+                .cloned()
+        };
+        assert_eq!(after("-workers").as_deref(), Some("2"), "{args:?}");
+        assert!(
+            args.iter().any(|arg| arg == "-XX:ActiveProcessorCount=2"),
+            "{args:?}"
+        );
+        assert!(!args.iter().any(|arg| arg == "auto"), "{args:?}");
+    }
 
     #[test]
     fn the_last_count_of_distinct_states_is_read() {

@@ -37,6 +37,7 @@
 //! of a declared run is declared, so a run dropped from the manifest is seen.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -534,7 +535,7 @@ fn judge_run(
     decl: &TraceDecl,
     config_text: &str,
     trace: &RunTrace,
-    workers: &str,
+    workers: NonZeroUsize,
 ) -> Result<(Judged, String), FormalError> {
     let carried = format!("{}Trace", decl.module);
     let extra = vec![(format!("{carried}.tla"), trace_module(&decl.module, trace))];
@@ -569,10 +570,11 @@ fn step_named(trace: &RunTrace, at: usize) -> String {
 }
 
 /// Check every run `manifest_path` declares, against the models beside it, as
-/// it declares them. Each run's line goes to `report` as it is judged.
+/// it declares them. Each run's line goes to `report` as it is judged. Each
+/// run of TLC is given the `workers` the judge was, one run after another.
 pub fn check(
     manifest_path: &Path,
-    workers: &str,
+    workers: NonZeroUsize,
     report: &mut Report<'_>,
 ) -> Result<(), FormalError> {
     let shown = manifest_path.display().to_string();

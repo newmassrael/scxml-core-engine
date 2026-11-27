@@ -42,6 +42,7 @@
 //! manifest whole, and the parts are every run once.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -954,7 +955,9 @@ pub struct Report<'a> {
 pub struct Options<'a> {
     pub only: Option<&'a str>,
     pub shard: Option<(usize, usize)>,
-    pub workers: &'a str,
+    /// The processors the judge was given: each run of TLC is given them all,
+    /// and runs one after another, so no more are ever busy at once.
+    pub workers: NonZeroUsize,
     pub record: bool,
 }
 
@@ -971,7 +974,7 @@ fn run_possible(
     module: &str,
     config_text: &str,
     predicate: &str,
-    workers: &str,
+    workers: NonZeroUsize,
 ) -> Result<Result<bool, String>, FormalError> {
     let carried = format!("{module}Possible");
     let extra = vec![(format!("{carried}.tla"), possible_module(module, predicate))];

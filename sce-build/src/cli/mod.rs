@@ -16507,9 +16507,11 @@ enum FormalCommand {
         /// recorded weight (ADR 0120, D3).
         #[arg(long, value_parser = crate::formal::models::shard_spec)]
         shard: Option<(usize, usize)>,
-        /// TLC's `-workers`.
-        #[arg(long, default_value = "auto")]
-        workers: String,
+        /// The processors the judge is given, a count or `auto` (every one
+        /// this process may run on): TLC's `-workers` and the processors its
+        /// virtual machine sees, one run at a time.
+        #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
+        workers: std::num::NonZeroUsize,
         /// Write the counts of distinct states TLC found into the manifest,
         /// after a change that moves a count on purpose; read the diff.
         #[arg(long)]
@@ -16541,9 +16543,11 @@ enum FormalCommand {
         /// The traces manifest (`schemas/sce-formal-traces.v1.schema.json`).
         #[arg(long)]
         manifest: PathBuf,
-        /// TLC's `-workers`.
-        #[arg(long, default_value = "auto")]
-        workers: String,
+        /// The processors the judge is given, a count or `auto` (every one
+        /// this process may run on): TLC's `-workers` and the processors its
+        /// virtual machine sees, one run at a time.
+        #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
+        workers: std::num::NonZeroUsize,
     },
     /// Print the tools the judges run, as `sce-build/src/formal/toolchain.json`
     /// pins them (`schemas/sce-formal-toolchain.v1.schema.json`).
@@ -16607,7 +16611,7 @@ fn cmd_formal(judge: FormalCommand) {
             let options = models::Options {
                 only: only.as_deref(),
                 shard,
-                workers: &workers,
+                workers,
                 record,
             };
             if let Err(err) = models::check(&manifest, &options, &mut report) {
@@ -16632,7 +16636,7 @@ fn cmd_formal(judge: FormalCommand) {
                 out: &mut out,
                 detail: &mut detail,
             };
-            if let Err(err) = crate::formal::traces::check(&manifest, &workers, &mut report) {
+            if let Err(err) = crate::formal::traces::check(&manifest, workers, &mut report) {
                 leave(err);
             }
         }

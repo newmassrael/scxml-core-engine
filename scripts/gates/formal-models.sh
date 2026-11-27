@@ -55,9 +55,16 @@ for tool in tlc apalache; do
     esac
 done
 
+# The processors this unit was given (`sce_build_jobs`: a build machine's
+# grant, `BX_GRANT_CORES`, before anything the machine reads of itself), each
+# run of TLC given them one after another. Never TLC's `auto`, which is every
+# processor of the machine whatever the unit was granted: a unit granted one
+# core ran so on 2026-11-27 and did not end within the hour.
+WORKERS="$(sce_build_jobs)"
+
 judge() {
     local status=0
-    target/debug/sce-codegen formal models --manifest "$@" || status=$?
+    target/debug/sce-codegen formal models --workers "$WORKERS" --manifest "$@" || status=$?
     case "$status" in
         0) ;;
         15) sce_gate_cannot_run "no Java, or not the pinned TLC or Apalache: sce-codegen formal install" ;;
