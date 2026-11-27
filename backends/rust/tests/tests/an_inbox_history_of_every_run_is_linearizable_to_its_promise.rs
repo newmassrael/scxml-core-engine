@@ -83,16 +83,17 @@ struct Recording {
     clock: Arc<Clock>,
     owner: Vec<OwnerOperation>,
     /// The clock reading taken before the owner began to put an event of its
-    /// own on a queue, ahead of the drain it begins with (`raise_own`), which
-    /// is the event's enqueue's invoked.
+    /// own on a queue, ahead of the drain it begins with (`raise_own`): the
+    /// invoked of the event's enqueue and of each posted enqueue of that drain.
     own_invoked: Option<u64>,
-    /// What runs between the drain before the next event of the owner's own and
-    /// the instant the event enters: a post a test makes there.
+    /// What runs between the read of the drain before the next event of the
+    /// owner's own and the first push that raise makes: a post a test makes
+    /// there.
     before_own_push: Option<OwnPush>,
 }
 
-/// What runs on the owner thread between the drain before an event of the
-/// owner's own and the instant the event enters.
+/// What runs on the owner thread between the read of the drain before an event
+/// of the owner's own and the first push that raise makes.
 type OwnPush = Box<dyn FnOnce()>;
 
 thread_local! {
@@ -161,8 +162,10 @@ struct Tag {
     own: bool,
 }
 
-/// Run `push` on the owner thread between the drain before the next event of
-/// the owner's own and the instant that event enters its queue.
+/// Run `push` on the owner thread after the drain before the next event of the
+/// owner's own has read the inbox, at the first push that raise makes: the
+/// push of the first input the drain applies, or the event's when it applies
+/// none.
 fn before_own_push(push: OwnPush) {
     RECORDING.with(|recording| {
         recording
@@ -181,11 +184,12 @@ fn before_own_push(push: OwnPush) {
 ///
 /// An event of the owner's own is put there by an operation that begins with
 /// the drain before it (docs/adr/0084, D2 as amended at step 9), whose read of
-/// the inbox is where the event linearizes: its enqueue is invoked at the
-/// reading `raise_own` took before that drain, and the posted enqueues of the
-/// drain lie within it. Read at the push instead, it would leave out where the
-/// event linearized, and a post that returned between the drain and the push
-/// would be held to enter ahead of the event.
+/// the inbox is where the event linearizes, and where what the drain applies
+/// leaves the inbox: its enqueue, and each posted enqueue of that drain, is
+/// invoked at the reading `raise_own` took before the drain. Read at the push
+/// instead, it would leave out where the enqueue linearized, and a post that
+/// returned between the drain and the push would be held to enter ahead of the
+/// event.
 #[derive(Default)]
 struct RecordingQueue<const SESSION: u64> {
     inner: EventQueue<Tag>,
@@ -215,15 +219,24 @@ impl<const SESSION: u64> EventQueueStorage<Tag> for RecordingQueue<SESSION> {
                 EventQueueStorage::push_payload(&mut self.inner, payload);
                 return;
             };
-            let invoked = if payload.own {
+            // Inside the raise of an own event, after the drain before it read
+            // the inbox: the first push it makes runs what a test put there.
+            if recording.own_invoked.is_some() {
                 if let Some(push) = recording.before_own_push.take() {
                     push();
                 }
+            }
+            // An input the drain before an own event applies left the inbox at
+            // the drain's read, which is where the event's raise began.
+            let invoked = if payload.own {
                 recording.own_invoked.take().expect(
                     "an own event is raised through `raise_own`, which reads the clock first",
                 )
             } else {
-                recording.clock.tick()
+                match recording.own_invoked {
+                    Some(raised) => raised,
+                    None => recording.clock.tick(),
+                }
             };
             EventQueueStorage::push_payload(&mut self.inner, payload);
             let returned = recording.clock.tick();
@@ -1073,6 +1086,109 @@ fn a_bounded_inbox_drain_takes_past_a_post_under_way() {
         "the drain before the own event did not take input 2 past the post of input 1 under way"
     );
     assert_run_is_linearizable("a bounded inbox with a post under way", &history);
+}
+
+// docs/adr/0147, D3, as a second run of this lane found it: the drain before
+// an event of the owner's own reads the inbox, takes the input a post left
+// there, and puts it on the queue; a post made after the read and before that
+// push stays in the inbox, and may linearize after the event. The drained
+// input left the inbox at the drain's read, so its enqueue is invoked where the
+// event's raise began, and the later post overlaps it and the event. Read at
+// its push, the drained input's enqueue is invoked after the later post
+// returned, which holds that post ahead of the event, and the run is refused.
+#[test]
+fn an_input_the_drain_before_an_own_event_applies_is_invoked_with_the_event() {
+    let clock = Arc::new(Clock::new());
+    start_recording(Arc::clone(&clock));
+    let mut root = Engine::new(HistoryPolicy::<0>);
+    let Ok(()) = root.initialize();
+    let inbox: EngineInbox<HistoryPolicy<0>> = root.inbox();
+    let first = std::thread::scope(|scope| {
+        scope
+            .spawn(|| record_post(&clock, 0, 1, Door::Handle, || inbox.post(posted(1))))
+            .join()
+            .expect("the posting thread")
+    });
+    let behind: Arc<Mutex<Vec<Post>>> = Arc::default();
+    {
+        let (clock, behind, inbox) = (Arc::clone(&clock), Arc::clone(&behind), inbox.clone());
+        before_own_push(Box::new(move || {
+            let post = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| record_post(&clock, 0, 2, Door::Handle, || inbox.post(posted(2))))
+                    .join()
+                    .expect("the posting thread")
+            });
+            behind.lock().expect("the post behind the drain").push(post);
+        }));
+    }
+    raise_own(&mut root, OWN_BASE);
+    root.step();
+    record_end(0, || root.stop());
+    root.step();
+    let later = std::mem::take(&mut *behind.lock().expect("the post behind the drain"));
+    assert_eq!(
+        later.len(),
+        1,
+        "no post was made between the drain's read and its push"
+    );
+    let history = History {
+        sessions: vec![0],
+        closes: false,
+        capacity: None,
+        owner: finish_recording(),
+        posters: vec![vec![first], later],
+    };
+    let drained = history
+        .owner
+        .iter()
+        .position(|op| {
+            matches!(
+                op.call,
+                OwnerCall::Enqueue {
+                    item: 1,
+                    source: Source::Posted,
+                    ..
+                }
+            )
+        })
+        .expect("the drain before the own event applied the first input");
+    assert!(
+        matches!(
+            history.owner.get(drained + 1).map(|op| op.call),
+            Some(OwnerCall::Enqueue {
+                source: Source::Own,
+                ..
+            })
+        ),
+        "the first input did not enter right ahead of the own event"
+    );
+    assert_run_is_linearizable("an own event whose drain applied an input", &history);
+
+    // Every reading doubled, so a reading fits between two of them, and the
+    // drained input's enqueue invoked just after the later post returned, as at
+    // its push.
+    let later_returned = 2 * history.posters[1][0].returned;
+    let mut at_the_push = history.clone();
+    for op in &mut at_the_push.owner {
+        op.invoked *= 2;
+        op.returned *= 2;
+    }
+    for post in at_the_push.posters.iter_mut().flatten() {
+        post.invoked *= 2;
+        post.returned *= 2;
+    }
+    let enqueue = &mut at_the_push.owner[drained];
+    assert!(
+        enqueue.invoked < later_returned && later_returned < enqueue.returned,
+        "the later post did not return inside the drained input's enqueue"
+    );
+    enqueue.invoked = later_returned + 1;
+    let verdict = check(&through_the_wire(&at_the_push));
+    assert!(
+        matches!(verdict, Verdict::NotLinearizable { .. }),
+        "the run with the drained input read at its push was judged {verdict:?}"
+    );
 }
 
 // The checker refuses a recorded run of this lane that lost an enqueue: the

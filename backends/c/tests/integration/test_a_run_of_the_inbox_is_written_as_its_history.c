@@ -143,6 +143,11 @@ static bool g_recording;
    from the inbox at [1]. Two, because the inputs the drain before an event of the
    machine's own applies are told between that event's two calls. */
 static uint64_t g_enqueue_invoked[2];
+/* An event of the machine's own is being put on the queue: its port's first
+   call came and its second has not. An input its drain applies left the inbox
+   at the drain's read, which comes after that first call, so its enqueue is
+   invoked at the event's reading (docs/adr/0147, D3). */
+static bool g_own_open;
 
 /* The value an event carries as its data: the digits of `"<value>"`; 0, which
    no input or own event of a run has, when it carries none. */
@@ -166,6 +171,9 @@ void inbox_probe_external_enqueue(const inbox_probe_t *sm, const inbox_probe_eve
     }
     if (!entered) {
         g_enqueue_invoked[posted ? 1 : 0] = tick();
+        if (!posted) {
+            g_own_open = true;
+        }
         return;
     }
     op.kind = OP_ENQUEUE;
@@ -174,9 +182,12 @@ void inbox_probe_external_enqueue(const inbox_probe_t *sm, const inbox_probe_eve
     op.outcome = POST_TAKEN;
     op.addressed = false;
     op.own = !posted;
-    op.invoked = g_enqueue_invoked[posted ? 1 : 0];
+    op.invoked = posted && !g_own_open ? g_enqueue_invoked[1] : g_enqueue_invoked[0];
     op.returned = tick();
     log_add(&g_owner, &op);
+    if (!posted) {
+        g_own_open = false;
+    }
 }
 
 /* ── The machine and its posts ─────────────────────────────────────── */
@@ -357,6 +368,8 @@ static void raise_own(uint64_t value) {
     /* A view of the data, which the machine's queue copies. */
     meta.data = data;
     inbox_probe_raise_external(&g_sm, &meta);
+    /* An event the queue did not take is told before and not after. */
+    g_own_open = false;
 }
 
 /* Stop the machine, recorded as the end of its run with the clock read

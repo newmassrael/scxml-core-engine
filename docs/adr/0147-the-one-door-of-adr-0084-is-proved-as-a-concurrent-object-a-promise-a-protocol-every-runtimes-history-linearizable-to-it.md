@@ -127,9 +127,11 @@ is the external queue's (D1), and the history says where each item entered that 
 before the drain the owner begins putting its event on the queue with (D2, the drain before an event of the owner's
 own), and returns once the event has entered: that drain's read of the inbox is where the event linearizes, so what
 the inbox held then enters ahead of it and a post made after the read may follow it. The drain's posted `enqueue`s
-are listed before the event's and lie within it. Read only at the push, the event's interval would leave out where it
-linearized, and a post that returned between the drain's read and the push would be held to enter ahead of it,
-which no runtime promises (found 2026-11-27 by a run of the Rust lane).
+are listed before the event's and are invoked as early, since what the drain applies leaves the inbox at its read.
+Read only at its push, an `enqueue` of either kind would leave out where it linearized, and a post that returned
+between the drain's read and the push would be held to enter ahead of the event, which no runtime promises (found
+2026-11-27 by two runs of the Rust lane, the first with the event read at its push, the second with the drain's
+inputs read at theirs).
 
 `sce-codegen check-inbox-history` decides whether the history is linearizable to D1's sequential reading. It shares
 the search of the queue and broadcast-log checkers, and only the specification differs. Each runtime's inbox

@@ -20,8 +20,10 @@
 //!   from the inbox (`posted`), or an event of the owner's own (`own`). An
 //!   own enqueue is invoked when the owner begins to put its event on the
 //!   queue, ahead of the drain that applies what the inbox holds first
-//!   (ADR 0084, D2 as amended at step 9), whose posted enqueues are listed
-//!   before it and lie within it, and returns once the event has entered.
+//!   (ADR 0084, D2 as amended at step 9), and returns once the event has
+//!   entered. The drain's posted enqueues are listed before it, and each may
+//!   be invoked as early as it is: what the drain applies leaves the inbox at
+//!   the drain's read.
 //! - The owner's `end(session)` is the end of that session's run.
 //!
 //! Beside the operations, a history says what the run was given: the sessions
@@ -664,13 +666,16 @@ fn posts_each_post_must_follow(participants: &[Vec<Step>]) -> Vec<Vec<Vec<usize>
 
 /// Whether the clock readings can be those of a run: each operation returned
 /// after it was invoked, and a participant's next operation was invoked after
-/// its previous one returned, but for an event of the owner's own. Putting
-/// one on a queue begins with the drain before it (ADR 0084, D2 as amended at
-/// step 9), whose read of the inbox is where the event linearizes: what the
-/// inbox held then enters ahead of the event, and a post made after it may
-/// follow the event. So an own enqueue is invoked before that drain, and the
-/// posted enqueues of its session listed right before it, the drain's, lie
-/// within it; it is invoked after the owner's operation before them returned.
+/// its previous one returned, but for an event of the owner's own. Putting one
+/// on a queue begins with the drain before it (ADR 0084, D2 as amended at step
+/// 9), whose read of the inbox is where the event linearizes, and where what
+/// the drain applies leaves the inbox: what the inbox held then enters ahead of
+/// the event, and a post made after it may follow the event. So an own enqueue
+/// and the posted enqueues of its session listed right before it, the
+/// drain's, may each be invoked as early as before that drain: each is invoked
+/// after the owner's operation before all of them returned. The owner's
+/// operations return in the order they are listed, which keeps the earliest
+/// to return of what is left of them first, as the search reads them.
 /// Participant 0 is the owner.
 fn check_run_clock(participants: &[Vec<Step>]) -> Result<(), String> {
     for (who, ops) in participants.iter().enumerate() {
@@ -695,34 +700,50 @@ fn check_run_clock(participants: &[Vec<Step>]) -> Result<(), String> {
                     ));
                 }
             }
+            if let Some(previous) = at.checked_sub(1).map(|place| &ops[place]) {
+                if op.returned <= previous.returned {
+                    return Err(format!(
+                        "participant {who} operation {at} returned at {} before its previous \
+                         operation returned at {}",
+                        op.returned, previous.returned
+                    ));
+                }
+            }
         }
     }
     Ok(())
 }
 
 /// The place of the owner's operation an operation of the owner at `at` must
-/// be invoked after: the one before it, or, for an own enqueue, the one before
-/// the posted enqueues of its session listed right before it, which the drain
-/// it began with made. `None` when there is none.
+/// be invoked after: the one before it, or, for an own enqueue and the posted
+/// enqueues of its session listed right before it, which the drain it began
+/// with made, the one before all of them. `None` when there is none.
 fn before_the_drain(owner: &[Step], at: usize) -> Option<usize> {
-    let Act::Enqueue {
-        session,
-        source: Source::Own,
-        ..
-    } = owner[at].act
-    else {
+    let Act::Enqueue { session, .. } = owner[at].act else {
         return at.checked_sub(1);
     };
+    let drained = |op: &Step| {
+        matches!(
+            op.act,
+            Act::Enqueue { session: of, source: Source::Posted, .. } if of == session
+        )
+    };
+    let own = |op: &Step| {
+        matches!(
+            op.act,
+            Act::Enqueue { session: of, source: Source::Own, .. } if of == session
+        )
+    };
+    let mut last = at;
+    while drained(&owner[last]) && last + 1 < owner.len() {
+        last += 1;
+    }
+    if !own(&owner[last]) {
+        return at.checked_sub(1);
+    }
     let mut first = at;
-    while let Some(previous) = first.checked_sub(1) {
-        match owner[previous].act {
-            Act::Enqueue {
-                session: drained,
-                source: Source::Posted,
-                ..
-            } if drained == session => first = previous,
-            _ => break,
-        }
+    while first > 0 && drained(&owner[first - 1]) {
+        first -= 1;
     }
     first.checked_sub(1)
 }
