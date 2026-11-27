@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lane": "go",
+  "steps": [
+    {"kind": "start", "entered": ["p0", "p0s1", "p0s11", "p0s2", "p0s21"], "configuration": ["p0", "p0s1", "p0s11", "p0s2", "p0s21"]},
+    {"kind": "internal", "event": "e1", "fired": [{"source": "p0s11", "index": 0}], "exited": ["p0s11"], "entered": ["p0s1final"], "configuration": ["p0", "p0s1", "p0s1final", "p0s2", "p0s21"]},
+    {"kind": "internal", "event": "e2", "fired": [{"source": "p0s21", "index": 0}], "exited": ["p0s21"], "entered": ["p0s2final"], "configuration": ["p0", "p0s1", "p0s1final", "p0s2", "p0s2final"]},
+    {"kind": "internal", "event": "done.state.p0s1", "fired": [{"source": "p0", "index": 0}], "exited": [], "entered": [], "configuration": ["p0", "p0s1", "p0s1final", "p0s2", "p0s2final"]},
+    {"kind": "internal", "event": "done.state.p0s2", "fired": [{"source": "p0", "index": 1}], "exited": ["p0s2final", "p0s2", "p0s1final", "p0s1", "p0"], "entered": ["s1"], "configuration": ["s1"]},
+    {"kind": "internal", "event": "done.state.p0", "fired": [{"source": "s1", "index": 0}], "exited": ["s1"], "entered": ["pass"], "configuration": ["pass"]},
+    {"kind": "stop", "exited": ["pass"], "outcome": "pass"}
+  ]
+}
