@@ -25,8 +25,10 @@ description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 # write their diagnostics to it only with the facade (docs/adr/0053, amendment
 # of 2026-11-25). `trace-port`: the tests that record a run of a W3C document
 # as the trace `sce-codegen formal traces` judges against the document's model
-# (docs/adr/0115, D4 and D8).
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor", "log", "trace-port"] }
+# (docs/adr/0115, D4 and D8). `inbox-preemption`: the inbox history test that
+# preempts a post to a bounded inbox between the write of its input and its
+# publication, and holds that run to the promise (docs/adr/0147, D5).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor", "log", "trace-port", "inbox-preemption"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).

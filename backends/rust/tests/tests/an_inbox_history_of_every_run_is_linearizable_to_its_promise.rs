@@ -40,6 +40,7 @@
 // enqueue is recorded there.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -1001,6 +1002,77 @@ fn an_own_event_is_invoked_before_the_drain_it_makes() {
         matches!(verdict, Verdict::NotLinearizable { .. }),
         "the run with the own event read at its push was judged {verdict:?}"
     );
+}
+
+/// The bounded inbox of the run with a post under way: its own, so no other
+/// case's run, on another thread at the same time, shares it.
+static UNDER_WAY: BoundedInbox<HistoryPolicy<0>, CAPACITY, StdHal> = BoundedInbox::new();
+
+// docs/adr/0147, D5: a post stopped between the write of its input and its
+// publication does not stop the owner. On one thread, as on one core, the post
+// of input 1 to a bounded inbox is preempted there, by what an interrupt
+// handler that preempts it does: another context posts input 2 and returns, and
+// the owner raises an event of its own, whose drain takes input 2 past input 1
+// and answers that the inbox holds nothing more, rather than waiting for a post
+// that cannot run until the owner returns. Input 1 overlaps the own event and
+// linearizes after it, and the next boundary takes it. The record of that run
+// is one history, and it is linearizable.
+#[test]
+fn a_bounded_inbox_drain_takes_past_a_post_under_way() {
+    let clock = Arc::new(Clock::new());
+    start_recording(Arc::clone(&clock));
+    let engine = Rc::new(RefCell::new(Engine::new(HistoryPolicy::<0>)));
+    engine.borrow_mut().attach_inbox(&UNDER_WAY);
+    let Ok(()) = engine.borrow_mut().initialize();
+    engine.borrow_mut().step();
+    let behind: Rc<RefCell<Vec<Post>>> = Rc::default();
+    {
+        let (clock, engine, behind) = (Arc::clone(&clock), Rc::clone(&engine), Rc::clone(&behind));
+        sce_rust_runtime::preempt_next_post(move || {
+            let post = record_post(&clock, 0, 2, Door::Handle, || {
+                delivery(UNDER_WAY.post(posted(2)))
+            });
+            behind.borrow_mut().push(post);
+            raise_own::<0>(&mut engine.borrow_mut(), OWN_BASE);
+        });
+    }
+    let under_way = record_post(&clock, 0, 1, Door::Handle, || {
+        delivery(UNDER_WAY.post(posted(1)))
+    });
+    engine.borrow_mut().step();
+    record_end(0, || engine.borrow_mut().stop());
+    engine.borrow_mut().step();
+    let behind = behind.take();
+    assert_eq!(
+        behind.len(),
+        1,
+        "nothing was posted while the post of input 1 was under way"
+    );
+    let history = History {
+        sessions: vec![0],
+        closes: false,
+        capacity: Some(CAPACITY as u64),
+        owner: finish_recording(),
+        posters: vec![vec![under_way], behind],
+    };
+    let entered: Vec<(u64, Source)> = history
+        .owner
+        .iter()
+        .filter_map(|op| match op.call {
+            OwnerCall::Enqueue { item, source, .. } => Some((item, source)),
+            OwnerCall::End { .. } => None,
+        })
+        .collect();
+    assert_eq!(
+        entered,
+        [
+            (2, Source::Posted),
+            (OWN_BASE, Source::Own),
+            (1, Source::Posted)
+        ],
+        "the drain before the own event did not take input 2 past the post of input 1 under way"
+    );
+    assert_run_is_linearizable("a bounded inbox with a post under way", &history);
 }
 
 // The checker refuses a recorded run of this lane that lost an enqueue: the
