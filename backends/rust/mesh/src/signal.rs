@@ -88,6 +88,19 @@ pub enum Signal {
     /// 22.9) was answered with a response whose signature did not verify,
     /// and took nothing of it. Raised once per edge, on the dialing side.
     ResponseUnauthenticated,
+    /// `outcomeUnknown` (row 20): an instance of an open machine was
+    /// fenced (docs/adr/0113, D4): its server answered an exchange made
+    /// under the incarnation it held `412`, that incarnation having ended
+    /// with what the server kept of it. Raised on the dialing side once for
+    /// the request `invoke_id` (the wire id, RFC 4122 text) that waited on
+    /// the server, which is forgotten as row 5 forgets one, and once for
+    /// each other envelope `envelope_id` (RFC 4122 text) the server had not
+    /// acknowledged, which is not sent again: whether either took effect is
+    /// not known, and the document decides whether to ask again.
+    OutcomeUnknown {
+        invoke_id: Option<String>,
+        envelope_id: Option<String>,
+    },
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -119,6 +132,7 @@ impl Signal {
             Signal::CausalViewMismatch { .. } => ErrorReason::CausalViewMismatch,
             Signal::Restored { .. } => ErrorReason::Restored,
             Signal::ResponseUnauthenticated => ErrorReason::ResponseUnauthenticated,
+            Signal::OutcomeUnknown { .. } => ErrorReason::OutcomeUnknown,
         }
     }
 
@@ -156,9 +170,9 @@ impl Signal {
             | Signal::SendFailed { .. }
             | Signal::DeliveryExhausted { .. }
             | Signal::ResponseUnauthenticated => (None, true, true),
-            // Row 5 names its own `target` column below, after `invoke_id`,
-            // where the C++ core's field order puts it.
-            Signal::InvokeChildLost { .. } => (None, false, false),
+            // Rows 5 and 20 name their own `target` column below, after
+            // `invoke_id`, where the C++ core's field order puts it.
+            Signal::InvokeChildLost { .. } | Signal::OutcomeUnknown { .. } => (None, false, false),
         };
         if let Some(source) = source {
             json.string("source", source);
@@ -210,6 +224,26 @@ impl Signal {
             Signal::InvokeChildLost { invoke_id, target } => {
                 json.string("invoke_id", invoke_id);
                 json.string("target", target);
+            }
+            // Row 20's columns in the C++ core's field order: the envelope
+            // or the request whose outcome is unknown, then the binding it
+            // was sent on.
+            Signal::OutcomeUnknown {
+                invoke_id,
+                envelope_id,
+            } => {
+                if let Some(envelope_id) = envelope_id {
+                    json.string("envelope_id", envelope_id);
+                }
+                if let Some(invoke_id) = invoke_id {
+                    json.string("invoke_id", invoke_id);
+                }
+                if let Some(binding) = binding {
+                    json.string("target", binding.peer);
+                    if let Some(transport) = binding.transport {
+                        json.string("transport", transport);
+                    }
+                }
             }
             // Row 18's columns: `source`, then the epoch the envelope was
             // tagged with and the replica that tagged it.
@@ -407,6 +441,34 @@ mod tests {
             }
             .event_data(WSS_TO_HMI),
             r#"{"errorName":"communication","reason":"restored","source":"ecu"}"#
+        );
+    }
+
+    /// Row 20 names the request or the envelope whose outcome a fence
+    /// left unknown, then the binding it was sent on, in the C++ core's
+    /// field order. Red if it is rendered as a sending row (`target`
+    /// before the ids) or drops the transport.
+    #[test]
+    fn an_outcome_a_fence_left_unknown_names_what_and_where_it_was_sent() {
+        let https = Some(Binding {
+            peer: "cloud",
+            transport: Some("https"),
+        });
+        assert_eq!(
+            Signal::OutcomeUnknown {
+                invoke_id: Some("01920000-0000-7000-8000-0000000000ab".to_string()),
+                envelope_id: None,
+            }
+            .event_data(https),
+            r#"{"errorName":"communication","reason":"outcomeUnknown","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"cloud","transport":"https"}"#
+        );
+        assert_eq!(
+            Signal::OutcomeUnknown {
+                invoke_id: None,
+                envelope_id: Some("01920000-0000-7000-8000-0000000000cd".to_string()),
+            }
+            .event_data(https),
+            r#"{"errorName":"communication","reason":"outcomeUnknown","envelope_id":"01920000-0000-7000-8000-0000000000cd","target":"cloud","transport":"https"}"#
         );
     }
 
