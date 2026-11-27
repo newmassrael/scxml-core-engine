@@ -50,7 +50,13 @@
    built, or `&mut` it where the parameter is `inout`. The harness keeps it
    inline (D4 "Storage"), whatever features the build turns on, so the lane
    holds a generated algorithm to a map that never allocates; a machine lends
-   the default storage, which the static scenarios replay. #}
+   the default storage, which the static scenarios replay. A fixture lent a map
+   runs each case again on maps whose slots the harness lends from its own
+   stack, as a host lends a run (docs/adr/0154, D1): `Lent`, and
+   `LentIndexed` with its index cells, each run as long as the bound, so the
+   generated algorithm, generic over the storage of each map, is held to the
+   same answers whatever storage its caller keeps the map in, and builds its
+   own maps and copies in the owned storage of the one it is lent (D3). #}
 {% set arguments %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% elif arg_ty.map is defined %}&{% if arg_ty.inout %}mut {% endif %}arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set call %}{ let mut sce_out = sce_portable_bytes::{% if f.output.type == "bytes" %}SceBytes{% else %}SceOwnedList{% endif %}::new(); let written = fixtures::{{ f.name }}::{{ f.function }}({{ arguments }}{% if f.args %}, {% endif %}&mut sce_out); written.map(|()| sce_out) }{% endset %}
@@ -61,6 +67,9 @@
     let tol = tolerance(&reference);
 {% endif %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+{% set lent = namespace(maps=false) %}
+{% for arg_ty in f.args %}{% if arg_ty.map is defined %}{% set lent.maps = true %}{% endif %}{% endfor %}
+{% for storage in (["Inline", "Lent", "LentIndexed"] if lent.maps else ["Inline"]) %}
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
 {% set i = loop.index0 %}
@@ -98,11 +107,31 @@
             .map(|x| {{ "x" | rust_unmarshal(arg_ty.list_of) }})
             .collect();
 {% elif arg_ty.map is defined %}
+{% if storage == "Lent" %}
+        let mut arg{{ i }}_slots: [::sce_portable_bytes::LentSlot<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}>; {{ arg_ty.capacity }}] =
+            ::core::array::from_fn(|_| ::sce_portable_bytes::LentSlot::empty());
+        let mut arg{{ i }} = ::sce_portable_bytes::BoundedMap::<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}, ::sce_portable_bytes::Lent<'_>>::over(
+            ::sce_portable_bytes::MapSeed::from_halves(0x5CE0_0000_0000_0001, 0x5CE0_0000_0000_0002),
+            &mut arg{{ i }}_slots,
+        )
+        .expect("{{ f.name }} arg{{ i }}: a run as long as the bound");
+{% elif storage == "LentIndexed" %}
+        let mut arg{{ i }}_slots: [::sce_portable_bytes::LentIndexedSlot<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}>; {{ arg_ty.capacity }}] =
+            ::core::array::from_fn(|_| ::sce_portable_bytes::LentIndexedSlot::empty());
+        let mut arg{{ i }}_cells = [::sce_portable_bytes::LentCell::EMPTY; {{ arg_ty.capacity * 2 }}];
+        let mut arg{{ i }} = ::sce_portable_bytes::BoundedMap::<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}, ::sce_portable_bytes::LentIndexed<'_>>::over(
+            ::sce_portable_bytes::MapSeed::from_halves(0x5CE0_0000_0000_0001, 0x5CE0_0000_0000_0002),
+            &mut arg{{ i }}_slots,
+            &mut arg{{ i }}_cells,
+        )
+        .expect("{{ f.name }} arg{{ i }}: a run as long as the bound, its index twice as long");
+{% else %}
         let mut arg{{ i }}: ::sce_portable_bytes::BoundedMap<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}, ::sce_portable_bytes::Inline> =
             ::sce_portable_bytes::BoundedMap::with_seed(::sce_portable_bytes::MapSeed::from_halves(
                 0x5CE0_0000_0000_0001,
                 0x5CE0_0000_0000_0002,
             ));
+{% endif %}
         for entry in case["args"][{{ i }}]
             .as_array()
             .expect("a map argument is the array of its saved entries")
@@ -113,7 +142,7 @@
                     {{ values.saved_part(arg_ty.map.value, "entry[1]") }},
                 ),
                 ::sce_portable_bytes::PutOutcome::Inserted,
-                "{{ f.name }} arg{{ i }}: a saved map holds each key once, within its bound"
+                "{{ f.name }} arg{{ i }} ({{ storage }}): a saved map holds each key once, within its bound"
             );
         }
 {% elif arg_ty.enum is defined %}
@@ -221,19 +250,20 @@
         let left = case["after"][{{ arg_ty.after_at }}]
             .as_array()
             .expect("{{ f.name }}: a case states the map each inout slot is left holding");
-        assert_eq!(arg{{ i }}.len(), left.len(), "{{ f.name }} arg{{ i }}: the entries left");
+        assert_eq!(arg{{ i }}.len(), left.len(), "{{ f.name }} arg{{ i }} ({{ storage }}): the entries left");
         for ((key, value), entry) in arg{{ i }}.iter().zip(left.iter()) {
             assert_eq!(
                 *key,
                 {{ values.saved_part(arg_ty.map.key, "entry[0]") }},
-                "{{ f.name }} arg{{ i }}: a key left, in the map's order"
+                "{{ f.name }} arg{{ i }} ({{ storage }}): a key left, in the map's order"
             );
             assert_eq!(
                 *value,
                 {{ values.saved_part(arg_ty.map.value, "entry[1]") }},
-                "{{ f.name }} arg{{ i }}: the value left at a key"
+                "{{ f.name }} arg{{ i }} ({{ storage }}): the value left at a key"
             );
         }
 {% endif %}
 {% endfor %}
     }
+{% endfor %}
