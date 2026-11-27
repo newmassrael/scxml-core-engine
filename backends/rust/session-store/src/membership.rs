@@ -223,6 +223,8 @@ pub struct Under<'a> {
 /// held for it ends with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
+    /// The entry the store kept the member under ([`MembershipStore::member_entry`]): its name,
+    /// for a store that keeps names as they are given.
     pub member: String,
     pub incarnation: u64,
 }
@@ -331,12 +333,14 @@ pub trait MembershipStore: SessionStore {
     /// Remove at most `limit` members and at most `limit` offers that ran out at or before
     /// `before_ms` (a member at the end of its lease or of its delegation, [`Member::ends_ms`]),
     /// those that ran out first first, and answer the members removed, in that order: what a host
-    /// held for each (its window, its outbox) ends with it.
+    /// held for each (its window, its outbox) ends with it. Each is named by the entry the store
+    /// kept it under ([`Self::member_entry`]).
     fn end_expired(&self, before_ms: u64, limit: usize) -> Result<Vec<Ended>, Failure>;
 
     /// End every incarnation `revocation` names, standing or run out and not yet removed, in one
-    /// write, and answer the members removed, in the order of their names' UTF-8 bytes: what a
-    /// host held for each ends with it. An offer is no incarnation yet, and stays.
+    /// write, and answer the members removed, each by the entry the store kept it under
+    /// ([`Self::member_entry`]), in the order of those entries' UTF-8 bytes: what a host held for
+    /// each ends with it. An offer is no incarnation yet, and stays.
     fn end_revoked(&self, revocation: Revocation<'_>) -> Result<Vec<Ended>, Failure>;
 
     /// Renew the delegation of `member` under `incarnation` for `person` until `until_ms`, at
@@ -355,10 +359,11 @@ pub trait MembershipStore: SessionStore {
         now_ms: u64,
     ) -> Result<Renewal, Failure>;
 
-    /// At most `limit` names of the members that act for a person, standing or run out and not
-    /// yet removed, in the order of their UTF-8 bytes, each after `after` when it is given. A pass
-    /// over every delegation (the re-seal of ADR 0109, D8) reads them a page at a time, each page
-    /// after the last name of the one before.
+    /// At most `limit` of the members that act for a person, standing or run out and not yet
+    /// removed, each by the entry the store keeps it under ([`Self::member_entry`]), in the order
+    /// of their UTF-8 bytes, each after `after` when it is given. A pass over every delegation (the
+    /// re-seal of ADR 0109, D8) reads them a page at a time, each page after the last entry of the
+    /// one before.
     fn delegated_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure>;
 
     /// Replace the [`Delegation::sealed`] bytes of the member `member` under `incarnation` with
@@ -373,6 +378,15 @@ pub trait MembershipStore: SessionStore {
         held: &[u8],
         sealed: &[u8],
     ) -> Result<bool, Failure>;
+
+    /// The entry the store keeps the member named `member` under, as [`Self::end_expired`],
+    /// [`Self::end_revoked`] and [`Self::delegated_after`] name it: the name itself for a store
+    /// that keeps names as they are given; a store that keeps each as a keyed digest (ADR 0109, D8)
+    /// answers the digest, which a host matches the members it knows by, as it matches a session by
+    /// `SessionStore::indexed`.
+    fn member_entry(&self, member: &str) -> String {
+        member.to_string()
+    }
 }
 
 /// The refusal of a store that keeps no members, given a write made under an incarnation: it

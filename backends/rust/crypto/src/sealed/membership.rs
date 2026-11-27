@@ -4,11 +4,15 @@
 //! The members of open machines (ADR 0113, D4) and the person each incarnation acts for (ADR
 //! 0116, D1), sealed (ADR 0109, D8; ADR 0116, D7).
 //!
-//! - A member is kept under its name, the name its binding gives the pair (machine, instance), as
-//!   a write's incarnations name it (`Write::under`); its incarnation, its mark, its lease and its
-//!   delegation's `until` are the wrapped store's, which compares them.
+//! - A member and its offer are kept under the entry of its name (ADR 0113, D4), the name its
+//!   binding gives the pair (machine, instance), so the medium holds no instance's name; a write's
+//!   incarnations name it by the same entry (module `sessions`, `Write::under`), and a member
+//!   that ran out or was revoked is answered by it ([`MembershipStore::member_entry`]), which a
+//!   host matches the members it knows by. Its incarnation, its mark, its lease, its delegation's
+//!   `until` and the nonce of the join an offer answers (a value the instance drew, which names
+//!   no one) are the wrapped store's, which compares them.
 //! - The person an incarnation acts for is the record of the payload `[issuer, subject,
-//!   proved_ms, method, sealed]`, sealed for [`STORE_MEMBERS`] and the entry of the member's name,
+//!   proved_ms, method, sealed]`, sealed for [`STORE_MEMBERS`] and the member's entry,
 //!   a colon and the incarnation in decimal, so a person moved to another incarnation, or to
 //!   another member, does not open. In the wrapped store the person's subject is the entry of the
 //!   person's key, by which a revocation or a renewal finds them, its issuer and its method are
@@ -69,9 +73,9 @@ fn person_of(plaintext: &[u8]) -> Result<(Person, Vec<u8>), SealError> {
     })
 }
 
-/// The entry the delegation of `member` under `incarnation` is sealed for.
-fn delegation_entry(member: &str, incarnation: u64) -> String {
-    format!("{member}:{incarnation}")
+/// The entry the delegation of the member kept under `entry` under `incarnation` is sealed for.
+fn delegation_entry(entry: &str, incarnation: u64) -> String {
+    format!("{entry}:{incarnation}")
 }
 
 impl<S> Sealed<S> {
@@ -86,7 +90,8 @@ impl<S> Sealed<S> {
         ))
     }
 
-    /// `delegation` of `member` under `incarnation`, as the wrapped store keeps it.
+    /// `delegation` of the member kept under `member` (its entry) under `incarnation`, as the
+    /// wrapped store keeps it.
     fn seal_delegation(
         &self,
         member: &str,
@@ -110,8 +115,9 @@ impl<S> Sealed<S> {
         })
     }
 
-    /// The delegation the wrapped store keeps as `held` for `member` under `incarnation`, opened,
-    /// and refused when its person is not the one the wrapped store finds it by.
+    /// The delegation the wrapped store keeps as `held` for the member kept under `member` (its
+    /// entry) under `incarnation`, opened, and refused when its person is not the one the wrapped
+    /// store finds it by.
     fn open_delegation(
         &self,
         member: &str,
@@ -134,7 +140,7 @@ impl<S> Sealed<S> {
         })
     }
 
-    /// `member`, as the wrapped store keeps it under `name`, its delegation opened.
+    /// `member`, as the wrapped store keeps it under the entry `name`, its delegation opened.
     fn opened_member(&self, name: &str, member: Member) -> Result<Member, Failure> {
         let delegation = member
             .delegation
@@ -195,7 +201,8 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Offered, Failure> {
-        self.inner.offer_as(member, nonce, joining, ttl_ms, now_ms)
+        self.inner
+            .offer_as(&self.digest_of(member), nonce, joining, ttl_ms, now_ms)
     }
 
     /// The person sealed for the incarnation it would bind, so that it opens for no other; the
@@ -209,29 +216,34 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
         terms: Terms,
         now_ms: u64,
     ) -> Result<Admission, Failure> {
+        let entry = self.digest_of(member);
         let sealed = delegation
-            .map(|delegation| self.seal_delegation(member, incarnation, delegation))
+            .map(|delegation| self.seal_delegation(&entry, incarnation, delegation))
             .transpose()?;
         self.inner
-            .admit_as(member, incarnation, mark, sealed.as_ref(), terms, now_ms)
+            .admit_as(&entry, incarnation, mark, sealed.as_ref(), terms, now_ms)
     }
 
     fn membership(&self, member: &str) -> Result<Membership, Failure> {
-        let held = self.inner.membership(member)?;
+        let entry = self.digest_of(member);
+        let held = self.inner.membership(&entry)?;
         Ok(Membership {
             member: held
                 .member
-                .map(|kept| self.opened_member(member, kept))
+                .map(|kept| self.opened_member(&entry, kept))
                 .transpose()?,
             offer: held.offer,
         })
     }
 
+    /// The members the wrapped store removed, each by the entry it kept it under: the wrapped
+    /// store's entry of the member's digest ([`Self::member_entry`]).
     fn end_expired(&self, before_ms: u64, limit: usize) -> Result<Vec<Ended>, Failure> {
         self.inner.end_expired(before_ms, limit)
     }
 
-    /// A person's revocation by the entry the wrapped store finds them by.
+    /// A person's revocation by the entry the wrapped store finds them by, and an instance's or an
+    /// incarnation's by the entry of the member's name.
     fn end_revoked(&self, revocation: Revocation<'_>) -> Result<Vec<Ended>, Failure> {
         match revocation {
             Revocation::Person(person) => {
@@ -241,7 +253,16 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
                     subject: &entry,
                 }))
             }
-            named => self.inner.end_revoked(named),
+            Revocation::Instance(member) => self
+                .inner
+                .end_revoked(Revocation::Instance(&self.digest_of(member))),
+            Revocation::Incarnation {
+                member,
+                incarnation,
+            } => self.inner.end_revoked(Revocation::Incarnation {
+                member: &self.digest_of(member),
+                incarnation,
+            }),
         }
     }
 
@@ -255,7 +276,7 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
     ) -> Result<Renewal, Failure> {
         let entry = self.person_entry(person);
         self.inner.renew_delegation(
-            member,
+            &self.digest_of(member),
             incarnation,
             PersonKey {
                 issuer: "",
@@ -266,6 +287,7 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
         )
     }
 
+    /// The members that act for a person, by the entries the wrapped store keeps them under.
     fn delegated_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
         self.inner.delegated_after(after, limit)
     }
@@ -279,6 +301,8 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
         held: &[u8],
         sealed: &[u8],
     ) -> Result<bool, Failure> {
+        let entry = self.digest_of(member);
+        let member = entry.as_str();
         let Some(kept) = self
             .inner
             .membership(member)?
@@ -304,5 +328,9 @@ impl<S: MembershipStore> MembershipStore for Sealed<S> {
         )?;
         self.inner
             .reseal_delegation(member, incarnation, &stored.sealed, &replacement)
+    }
+
+    fn member_entry(&self, member: &str) -> String {
+        self.inner.member_entry(&self.digest_of(member))
     }
 }

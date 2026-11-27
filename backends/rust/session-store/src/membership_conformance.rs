@@ -121,6 +121,12 @@ fn admit(
         .expect("an exchange is judged")
 }
 
+/// `ended` in the order of their entries' UTF-8 bytes, the order a store answers them in.
+fn in_entry_order(mut ended: Vec<Ended>) -> Vec<Ended> {
+    ended.sort_by(|a, b| a.member.cmp(&b.member));
+    ended
+}
+
 fn held(store: &impl MembershipStore, member: &str) -> Membership {
     store.membership(member).expect("reading a membership")
 }
@@ -538,7 +544,8 @@ pub fn no_member_is_taken_past_the_bound(harness: &impl MembershipHarness) {
 }
 
 /// Members and offers that ran out by a moment are removed, those that ran out first first, at
-/// most a limit of each, and the members are answered; what still stands is kept.
+/// most a limit of each, and the members are answered by the entries they were kept under; what
+/// still stands is kept.
 pub fn what_ran_out_is_swept_and_told(harness: &impl MembershipHarness) {
     let store = harness.handle();
     let phone = joined(&store, PHONE, "n1", 0);
@@ -549,7 +556,7 @@ pub fn what_ran_out_is_swept_and_told(harness: &impl MembershipHarness) {
     assert_eq!(
         store.end_expired(1_000, 10).expect("sweeping"),
         vec![Ended {
-            member: PHONE.to_string(),
+            member: store.member_entry(PHONE),
             incarnation: phone
         }]
     );
@@ -568,7 +575,7 @@ pub fn what_ran_out_is_swept_and_told(harness: &impl MembershipHarness) {
     assert_eq!(
         store.end_expired(2_000, 1).expect("sweeping"),
         vec![Ended {
-            member: OTHER.to_string(),
+            member: store.member_entry(OTHER),
             incarnation: other
         }]
     );
@@ -730,7 +737,7 @@ pub fn a_delegation_ends_its_incarnation_at_until(harness: &impl MembershipHarne
     assert_eq!(
         store.end_expired(2_000, 10).expect("sweeping"),
         vec![Ended {
-            member: PHONE.to_string(),
+            member: store.member_entry(PHONE),
             incarnation: first
         }],
         "a delegation that ran out is swept as a lease that ran out is"
@@ -758,17 +765,17 @@ pub fn a_revocation_ends_what_it_names_in_one_write(harness: &impl MembershipHar
         store
             .end_revoked(Revocation::Person(person("alice")))
             .expect("revoking"),
-        vec![
+        in_entry_order(vec![
             Ended {
-                member: PHONE.to_string(),
+                member: store.member_entry(PHONE),
                 incarnation: phone
             },
             Ended {
-                member: OTHER.to_string(),
+                member: store.member_entry(OTHER),
                 incarnation: other
             },
-        ],
-        "every incarnation of the person ends, in the order of the members' names"
+        ]),
+        "every incarnation of the person ends, in the order of the members' entries"
     );
     let another = harness.handle();
     assert_eq!(
@@ -813,7 +820,7 @@ pub fn a_revocation_ends_what_it_names_in_one_write(harness: &impl MembershipHar
             .end_revoked(Revocation::Instance(PHONE))
             .expect("revoking"),
         vec![Ended {
-            member: PHONE.to_string(),
+            member: store.member_entry(PHONE),
             incarnation: nobodys
         }],
         "an instance's revocation ends its incarnation, whoever it acts for"
@@ -826,7 +833,7 @@ pub fn a_revocation_ends_what_it_names_in_one_write(harness: &impl MembershipHar
             })
             .expect("revoking"),
         vec![Ended {
-            member: THIRD.to_string(),
+            member: store.member_entry(THIRD),
             incarnation: third
         }]
     );
@@ -924,7 +931,7 @@ pub fn a_delegations_bytes_are_replaced_only_from_what_they_hold(harness: &impl 
     let other = joined(&store, OTHER, "n1", 100);
     assert_eq!(
         store.delegated_after(None, 10).expect("listing"),
-        vec![PHONE.to_string()],
+        vec![store.member_entry(PHONE)],
         "a member that acts for nobody is not listed"
     );
     assert!(
@@ -937,16 +944,22 @@ pub fn a_delegations_bytes_are_replaced_only_from_what_they_hold(harness: &impl 
         .end_revoked(Revocation::Instance(OTHER))
         .expect("revoking");
     joined_as(&store, THIRD, "n1", &delegation("bob", 50_000), 200);
+    let listed = {
+        let mut entries = vec![store.member_entry(PHONE), store.member_entry(THIRD)];
+        entries.sort();
+        entries
+    };
     assert_eq!(
         store.delegated_after(None, 1).expect("listing"),
-        vec![PHONE.to_string()]
+        vec![listed[0].clone()]
     );
     assert_eq!(
-        store.delegated_after(Some(PHONE), 1).expect("listing"),
-        vec![THIRD.to_string()]
+        store.delegated_after(Some(&listed[0]), 1).expect("listing"),
+        vec![listed[1].clone()],
+        "a page is listed after the last entry of the one before"
     );
     assert_eq!(
-        store.delegated_after(Some(THIRD), 1).expect("listing"),
+        store.delegated_after(Some(&listed[1]), 1).expect("listing"),
         Vec::<String>::new()
     );
     assert!(

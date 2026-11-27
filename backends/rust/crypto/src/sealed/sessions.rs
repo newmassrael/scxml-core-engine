@@ -5,13 +5,15 @@
 //! key, and its value is the record of the payload `[key, state]`, a CBOR array of the key's text
 //! and the saved state's bytes. Its version, earliest due and lease are the wrapped store's, which
 //! compares and orders them. What its write appends to an outbox is sealed as module `outbox`
-//! says, and the facts it appends to the journal as module `journal` says, in the same write.
+//! says, and the facts it appends to the journal as module `journal` says, in the same write. The
+//! members a write names the incarnations of (ADR 0113, D5) are named by their entries, as module
+//! `membership` keeps them.
 
 use sce_forge_runtime::cbor::{read_bytes, read_text, write_array_head, write_bytes, write_text};
 use sce_rust_session_store::{
     AcquireError, Append, Appended, Batched, Change, Committed, Decided, Due, Expiry, Fact,
-    Failure, Journal, Lease, LeaseError, Note, Outbox, SessionStore, Stored, Write, WriteError,
-    Written,
+    Failure, Journal, Lease, LeaseError, Note, Outbox, SessionStore, Stored, Under, Write,
+    WriteError, Written,
 };
 use zeroize::Zeroizing;
 
@@ -44,14 +46,16 @@ fn session_of(plaintext: &[u8]) -> Result<(String, Vec<u8>), SealError> {
 
 /// A write as the wrapped store keeps it: the entry of its session's key, the session's record
 /// when it keeps one, its appends sealed (module `outbox`), the facts it appends to the journal, to
-/// be sealed at their positions (module `journal`), and the entries of the sessions a removal ends,
-/// as the wrapped store keeps their identities (module `kv`).
+/// be sealed at their positions (module `journal`), the entries of the sessions a removal ends,
+/// as the wrapped store keeps their identities (module `kv`), and the incarnations the write was
+/// made under, each with its member's entry (module `membership`).
 struct SealedWrite<'s, S> {
     entry: String,
     record: Option<Vec<u8>>,
     appends: Vec<SealedAppend>,
     journal: Option<SealedJournal<'s, S>>,
     ended: Vec<String>,
+    under: Vec<(String, u64)>,
 }
 
 impl<S: SessionStore> SealedWrite<'_, S> {
@@ -76,14 +80,26 @@ impl<S: SessionStore> SealedWrite<'_, S> {
         self.ended.iter().map(String::as_str).collect()
     }
 
-    /// The write the wrapped store is given: `write`, with the session's record, `appends`, `facts`
-    /// and `ended` in place of what it names in the clear.
+    /// The incarnations the write was made under, each named by its member's entry.
+    fn unders(&self) -> Vec<Under<'_>> {
+        self.under
+            .iter()
+            .map(|(member, incarnation)| Under {
+                member: member.as_str(),
+                incarnation: *incarnation,
+            })
+            .collect()
+    }
+
+    /// The write the wrapped store is given: `write`, with the session's record, `appends`, `facts`,
+    /// `ended` and `under` in place of what it names in the clear.
     fn given<'a>(
         &'a self,
         write: &Write<'a>,
         appends: &'a [Append<'a>],
         facts: &'a [Fact<'a>],
         ended: &'a [&'a str],
+        under: &'a [Under<'a>],
     ) -> Write<'a> {
         let change = match (write.change, &self.record) {
             (Change::Keep { earliest_due, .. }, Some(record)) => Change::Keep {
@@ -100,6 +116,7 @@ impl<S: SessionStore> SealedWrite<'_, S> {
                 facts,
             }),
             sessions: ended,
+            under,
             ..*write
         }
     }
@@ -163,6 +180,11 @@ impl<S: SessionStore> Sealed<S> {
                 .sessions
                 .iter()
                 .map(|session| self.digest_of(session))
+                .collect(),
+            under: write
+                .under
+                .iter()
+                .map(|under| (self.digest_of(under.member), under.incarnation))
                 .collect(),
             entry,
             record,
@@ -306,9 +328,10 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
         let appends = sealed.appends(write);
         let facts = sealed.facts();
         let ended = sealed.ended();
+        let under = sealed.unders();
         let written = self.inner.write(
             &sealed.entry,
-            &sealed.given(write, &appends, &facts, &ended),
+            &sealed.given(write, &appends, &facts, &ended, &under),
         )?;
         Ok(Written {
             version: written.version,
@@ -345,13 +368,20 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
                 SealedItem::Acknowledge { .. } => Vec::new(),
             })
             .collect();
+        let under: Vec<Vec<Under<'_>>> = sealed
+            .iter()
+            .map(|item| match item {
+                SealedItem::Write { held, .. } => held.unders(),
+                SealedItem::Acknowledge { .. } => Vec::new(),
+            })
+            .collect();
         let given: Vec<Batched<'_>> = sealed
             .iter()
-            .zip(appends.iter().zip(&facts).zip(&ended))
-            .map(|(item, ((appends, facts), ended))| match item {
+            .zip(appends.iter().zip(&facts).zip(&ended).zip(&under))
+            .map(|(item, (((appends, facts), ended), under))| match item {
                 SealedItem::Write { held, write } => Batched::Write {
                     key: &held.entry,
-                    write: held.given(write, appends, facts, ended),
+                    write: held.given(write, appends, facts, ended, under),
                 },
                 SealedItem::Acknowledge {
                     client,

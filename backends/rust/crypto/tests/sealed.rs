@@ -29,8 +29,9 @@ use sce_rust_session_store::kv_conformance::{self, KvHarness};
 use sce_rust_session_store::membership_conformance::{self, MembershipHarness};
 use sce_rust_session_store::outbox_conformance;
 use sce_rust_session_store::{
-    Append, CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
-    MemoryStore, PinStore, SessionStore, SqliteStore, TokenRow, TokenStore, Write, LATEST_MOMENT,
+    Admission, Append, Conflict, CredentialStore, KeyRow, KeyState, KeyStore, KeyUse,
+    MembershipStore, MemoryCredentials, MemoryKeys, MemoryStore, PinStore, SessionStore,
+    SqliteStore, Terms, TokenRow, TokenStore, Under, Write, WriteError, LATEST_MOMENT,
 };
 use serde_json::Value;
 
@@ -478,6 +479,88 @@ mod outbox_on_sqlite {
     );
 }
 
+/// ADR 0113, D4 and D5, under ADR 0109, D8: a member of an open machine is kept under the entry of
+/// its name, a write made under its incarnation names it by the same entry and is judged by it, and
+/// the file holds no member's name. Red if the sealing store hands the wrapped store a member's
+/// name in the clear, in a join, an exchange or a write.
+#[test]
+fn a_member_is_kept_under_the_entry_of_its_name_and_a_write_names_it_so() {
+    const TERMS: Terms = Terms {
+        lease_ms: 10_000,
+        provisional_ms: 1_000,
+        max_members: 4,
+    };
+    let scratch = Scratch::new("membership-entry");
+    let sealed = Sealed::new(
+        SqliteStore::open(scratch.database()).expect("opening the store"),
+        first_keys(),
+    );
+    let member = "phone/an-instance-named-by-its-host";
+    let offered = sealed
+        .offer(member, "n1", TERMS.provisional_ms, 100)
+        .expect("a join is answered");
+    assert!(matches!(
+        sealed
+            .admit(member, offered.incarnation, 1, TERMS, 100)
+            .expect("an exchange is judged"),
+        Admission::Confirmed { .. }
+    ));
+    let clear = sealed.inner().membership(member).expect("reading");
+    assert!(
+        clear.member.is_none() && clear.offer.is_none(),
+        "nothing is kept under the name"
+    );
+    assert!(sealed
+        .inner()
+        .membership(&sealed.digest_of(member))
+        .expect("reading")
+        .member
+        .is_some());
+    assert_eq!(sealed.member_entry(member), sealed.digest_of(member));
+    let lease = sealed
+        .acquire("k", "p", 60_000, 100)
+        .expect("a lease on a free key");
+    let standing = [Under {
+        member,
+        incarnation: offered.incarnation,
+    }];
+    let written = sealed
+        .write(
+            "k",
+            &Write {
+                now_ms: 200,
+                under: &standing,
+                ..Write::put(b"state", None, 0, lease.fence)
+            },
+        )
+        .expect("a write under the incarnation the member stands under is kept");
+    let other = [Under {
+        member,
+        incarnation: offered.incarnation + 1,
+    }];
+    assert!(matches!(
+        sealed.write(
+            "k",
+            &Write {
+                now_ms: 300,
+                under: &other,
+                ..Write::put(b"state", None, written.version, lease.fence)
+            },
+        ),
+        Err(WriteError::Conflict(Conflict::Incarnation {
+            current: Some(current),
+            ..
+        })) if current == offered.incarnation
+    ));
+    let medium = scratch.every_byte();
+    assert!(
+        !medium
+            .windows(member.len())
+            .any(|window| window == member.as_bytes()),
+        "the file holds no member's name"
+    );
+}
+
 mod credentials_in_memory {
     use super::credential_conformance;
     kit!(
@@ -819,10 +902,10 @@ mod members_sealed {
                 .end_revoked(Revocation::Person(alice))
                 .expect("revoking"),
             vec![Ended {
-                member: "phone/a1".to_string(),
+                member: store.member_entry("phone/a1"),
                 incarnation: phone
             }],
-            "and so does a revocation"
+            "and so does a revocation, which names the member by its entry"
         );
     }
 
@@ -833,10 +916,11 @@ mod members_sealed {
         joined(&store, "phone/a1", "alice");
         let other = joined(&store, "phone/b2", "bob");
         let inner: &SqliteStore = store.inner();
-        let of_phone = person_of(inner, "phone/a1").expect("a person in the wrapped row");
-        let of_other = person_of(inner, "phone/b2").expect("a person in the wrapped row");
+        let (phone_entry, other_entry) = (store.digest_of("phone/a1"), store.digest_of("phone/b2"));
+        let of_phone = person_of(inner, &phone_entry).expect("a person in the wrapped row");
+        let of_other = person_of(inner, &other_entry).expect("a person in the wrapped row");
         assert!(inner
-            .reseal_delegation("phone/b2", other, &of_other.sealed, &of_phone.sealed)
+            .reseal_delegation(&other_entry, other, &of_other.sealed, &of_phone.sealed)
             .expect("the record copied over another member's"));
         assert!(
             store.membership("phone/b2").is_err(),
@@ -865,7 +949,8 @@ mod members_sealed {
             (2, 0, 0)
         );
         for (member, subject) in [("phone/a1", "alice"), ("phone/b2", "bob")] {
-            let held = person_of(rotated.inner(), member).expect("a person in the wrapped row");
+            let held = person_of(rotated.inner(), &rotated.digest_of(member))
+                .expect("a person in the wrapped row");
             assert_eq!(record_key_id(&held.sealed).expect("a record"), ID_2);
             assert_eq!(person_of(&rotated, member), Some(delegation(subject)));
         }

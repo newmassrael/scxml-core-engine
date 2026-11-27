@@ -13,8 +13,9 @@
 //! of D14 (`AuditStore`), whose entries and checkpoint signatures are sealed and whose chain a
 //! reader verifies without the sealing keys, the event journal of ADR 0114 (`JournalStore`),
 //! whose entries are sealed for their stream and their position, and the members of open
-//! machines of ADR 0113 (`MembershipStore`), the person each incarnation acts for (ADR 0116, D7)
-//! sealed for that incarnation and found by the entry of their key.
+//! machines of ADR 0113 (`MembershipStore`), each kept under the entry of its name, with the
+//! person each incarnation acts for (ADR 0116, D7) sealed for that incarnation and found by the
+//! entry of their key.
 //!
 //! - **Every value is a sealed record** ([`seal_record`]): `SCE-SEALED-1`, the id of the key that
 //!   sealed it, a 192-bit random nonce and the XChaCha20-Poly1305 ciphertext with its tag. The
