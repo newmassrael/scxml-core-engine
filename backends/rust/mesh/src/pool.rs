@@ -769,7 +769,9 @@ where
     members: Option<Arc<dyn MembershipStore>>,
     /// The instances the sessions hold (docs/adr/0113, D6).
     known: Mutex<Known>,
-    /// Set by [`Pool::stop`]: nothing is admitted from then on.
+    /// Set by [`Pool::stop`] with the table held, and read with it held by
+    /// every admit: nothing is admitted from then on. Read without it only by
+    /// [`Pool::health`], which reports it.
     stopping: AtomicBool,
     /// Set once [`Pool::stop`] ended.
     stopped: AtomicBool,
@@ -1441,6 +1443,11 @@ where
             }
         }
         let mut table = lock(&self.table);
+        // Read again with the table held, as `Self::stop` sets it: a stop
+        // decided while the store was read admits no session named here.
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         for (key, indexed) in named {
             if table.contains_key(&key) {
                 continue;
@@ -1702,6 +1709,7 @@ where
         key: &str,
         input: Input,
     ) -> Result<SharedSlot<F::Machine, T, E>, (Input, Full)> {
+        // Read with the table held, as `Self::stop` sets it.
         let stopping = self.stopping.load(Ordering::SeqCst);
         let (live, max_live, max_inbox) =
             (table.len(), self.sessions.max_live, self.sessions.max_inbox);
@@ -1810,11 +1818,12 @@ where
     /// Put an input made by `input` in every session's inbox, and answer their
     /// keys.
     fn broadcast(&self, input: impl Fn() -> Input) -> Vec<String> {
-        // A stopping pool admits nothing: its sessions are being saved as they stand.
+        let table = lock(&self.table);
+        // A stopping pool admits nothing: its sessions are being saved as they
+        // stand. Read with the table held, as `Self::stop` sets it.
         if self.stopping.load(Ordering::SeqCst) {
             return Vec::new();
         }
-        let table = lock(&self.table);
         for slot in table.values() {
             lock(&slot.inbox).tell(input());
         }
@@ -1882,7 +1891,13 @@ where
     /// taken in while the sessions are saved, and catches the signal that asks it to stop
     /// (docs/SCE_SERVER_DEPLOY.md, section 4).
     pub fn stop(&self, deadline: Instant) -> StopReport {
-        self.stopping.store(true, Ordering::SeqCst);
+        {
+            // Set with the table held, as every admit reads it: an admit that
+            // found the pool running put its input in an inbox before the
+            // inboxes below are read, and one after it is refused.
+            let _table = lock(&self.table);
+            self.stopping.store(true, Ordering::SeqCst);
+        }
         // What the inboxes hold, run to completion; a run made on another thread meanwhile is
         // waited for by `run`, which takes the session's lock.
         loop {
@@ -5356,6 +5371,108 @@ mod tests {
             lock(&probe.unhandled)
         );
         assert_eq!(probe.restored.load(Ordering::SeqCst), 2);
+    }
+
+    /// The pool a [`StopsWhileNaming`] store stops, once it is armed.
+    type Stopper = Mutex<Option<std::sync::Weak<Pool<Rooms, Wire, Clock>>>>;
+
+    /// A store that stops the pool it is armed with the first time it is asked which key an
+    /// entry names: a stop decided while `Pool::due` reads the store, outside the table's lock.
+    struct StopsWhileNaming {
+        inner: MemoryStore,
+        pool: Stopper,
+    }
+
+    impl SessionStore for StopsWhileNaming {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            self.inner.write(key, write)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            self.inner.indexed(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            let armed = lock(&self.pool).take();
+            if let Some(pool) = armed.and_then(|pool| pool.upgrade()) {
+                pool.stop(Instant::now() + Duration::from_secs(5));
+            }
+            self.inner.key_of(indexed)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// docs/adr/0109, D10: a stop decided while `Pool::due` names from the store what came due,
+    /// outside the table's lock, admits no session it named: the stop is read with the table
+    /// held, as every admit reads it, and the session stays out of memory for the process that
+    /// serves the key next. Red if `Pool::due` reads the stop only before it reads the store.
+    #[test]
+    fn a_stop_decided_while_due_reads_the_store_admits_nothing_it_named() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(StopsWhileNaming {
+            inner: MemoryStore::new(),
+            pool: Mutex::new(None),
+        });
+        let (pool, _wire) = pool_over(
+            "p1",
+            Arc::clone(&store) as Arc<dyn SessionStore>,
+            &clock,
+            &probe,
+        );
+        deliver(
+            &pool,
+            from_client("remind", r#"{"room":"r1","after_ms":5000}"#, 1, false),
+        );
+        clock.advance(1_000);
+        assert_eq!(pool.evict_idle(), vec!["r1".to_string()]);
+        clock.advance(4_000);
+        let pool = Arc::new(pool);
+        *lock(&store.pool) = Some(Arc::downgrade(&pool));
+        assert!(
+            pool.due().is_empty(),
+            "a session named after the stop was decided was admitted"
+        );
+        assert!(pool.health().stopped(), "{:?}", pool.health());
+        assert!(
+            lock(&pool.table).is_empty(),
+            "the stopped pool holds a session it named"
+        );
+        assert!(!pool.is_live("r1"));
     }
 
     #[test]
