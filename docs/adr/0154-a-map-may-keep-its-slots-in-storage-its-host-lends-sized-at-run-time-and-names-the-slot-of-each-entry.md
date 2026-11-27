@@ -105,7 +105,7 @@ What exists, checked at `0386870fe29`:
   invariants the blocks rest on: the run's address and length are the host's, the map takes no more slots than the
   run holds, and the host's slot and cell are laid out as the slot and the cell the map reads.
 
-### D2. A host reads the slot an entry is held in
+### D2. A host reads the slot an entry is held in, in the storages it lends
 
 - **`MapSlot { index: u32, generation: u32 }`**, `#[repr(C)]`, `Copy`, the shape of ADR 0111's `SlotIndex`. The
   index is below the map's limit, so a host indexes an array of its own of `c` rows by it.
@@ -115,24 +115,30 @@ What exists, checked at `0386870fe29`:
   own slot and frees it; a rebuild of the index and a reseed rewrite cells and stamps and no slot; a `Heap` map that
   grows moves its memory but numbers its slots as before. ADR 0108 D8 says no operation moves an entry; this record
   makes that a promise a host may rely on.
-- **The operations.** `put` keeps its answer. `put_slot` answers `(PutOutcome, Option<MapSlot>)`, the slot the
-  entry is in after the put (`None` with `Full`); `slot_of(key)` answers the slot of a key held; `MapCursor::slot()`
-  the slot of a position of a walk; `at_slot(MapSlot)` the entry in a slot, `Option<(&K, &V)>` (`Option<&K>` for a
-  set).
+- **The generation belongs to the storages that name their slots.** `MapStorage::Generation` is what each slot keeps
+  of how many times it was freed: `u32` for `Lent` and `LentIndexed`, `()` for `Inline`, `Heap` and `Linear`. The
+  slot handle is offered where a host lends the slots and needs it, the request that brought this record; no use of
+  the three storages that hold their own slots asks for one, and such a use, when one comes, adds the generation to
+  its storage then. So an `Inline`, `Heap` or `Linear` slot is as large as before this record and a position
+  (`MapCursor<()>`, the default of `MapCursor<G>`) is one `u32`, which a test holds by `core::mem::size_of`, and
+  nothing they do changes: a clear gives the slots back, and a clone copies the slots and the index as they stand.
+- **The operations, in the lent storages.** `put` keeps its answer everywhere. Where `S::Generation` is `u32`:
+  `put_slot` answers `(PutOutcome, Option<MapSlot>)`, the slot the entry is in after the put (`None` with
+  `Full`); `slot_of(key)` answers the slot of a key held; `MapCursor::<u32>::slot()` the slot of a position of a
+  walk; `at_slot(MapSlot)` the entry in a slot, `Option<(&K, &V)>` (`Option<&K>` for a set). Elsewhere they do not
+  compile.
 - **The generation moves each time a slot is freed** (a remove, a clear). `at_slot` answers `None` for a number of
   another generation, a slot that holds no entry, or a number past the slots the map took; so where a generated
   algorithm removed an entry and put another in its slot, the number the host kept for the first finds nothing. It
-  counts modulo 2^32. A `MapCursor` carries the generation it was read at, and `key_at` and `value_at` of a position
-  whose slot was freed and taken again panic, as a position read before a write of its map already does, rather
+  counts modulo 2^32. A position of a lent map carries the generation it was read at, and `key_at` and `value_at` of
+  one whose slot was freed and taken again panic, as a position read before a write of its map already does, rather
   than read the other entry.
-- **A clear frees every slot it took**, in order, so the slots of the entries it held move their generations and
-  the next puts take the slots from the first; it no longer gives the slots back to the storage.
-- **Where the generation is kept, and what it costs.** One `u32` in every slot of every storage: a `MapSlot` is read
-  of any map a host keeps, and one algorithm serves every storage. A slot never freed is of generation 0, as a link
-  to no slot is 0, so a map built empty in a const context is still all zero bytes. The cost is four bytes a slot
-  before alignment: a slot of a `uint32` key and value with an index (`Inline`) stays 32 bytes, its padding taking
-  the word; one of a `uint64` key and value grows from 40 to 48; one of a `uint32` key and value with no index
-  (`Linear`, `Lent`) from 20 to 24.
+- **A clear of a lent map frees every slot it took**, in order, so the slots of the entries it held move their
+  generations and the next puts take the slots from the first, the order in which a map that gives its slots back
+  takes them again.
+- **What it costs.** A slot of a lent map holds four bytes more than the same slot without a generation before
+  alignment (a `uint32` key and value, no index: 24 bytes where `Linear` holds 20), and a position of a lent map is
+  two `u32`s. A slot never freed is of generation 0, as a link to no slot is 0.
 
 ### D3. A map's copy, and a map an algorithm builds beside one, is kept in the map's owned storage
 
@@ -141,9 +147,11 @@ What exists, checked at `0386870fe29`:
   a key the same way. A run is lent to one map, so a copy has no run of its own; and the lent storages exist for
   hosts with no heap, so `Heap` is no answer.
 - **`to_owned_storage()`** copies a map into its owned storage: each entry in the slot it holds, the free list, the
-  order, the generations and the seed, the index built from the slots' stamps with no key hashed again. `Clone` is
-  that copy where it is of the same type, `S: MapStorage<Owned = S>`, so a map whose host lends its slots is not
-  `Clone`. A clone holds none of the index's tombstones; nothing a document or a host reads depends on them.
+  order and the seed. For a storage that is its own owned storage the copy is the slots and the index copied as they
+  stand, as a clone always was; for a lent storage each slot is copied without its generation, which the copy, naming
+  no slot, does not keep, and `LentIndexed`'s index is built again at twice the bound from the slots' stamps, no key
+  hashed again. `Clone` is that copy where it is of the same type, `S: MapStorage<Owned = S>`, so a map whose host
+  lends its slots is not `Clone`, and a clone of every other map is what it was.
 - **What builds a map from nothing takes storage that holds its slots.** `widened_map`, the saved state's
   `map_from_saved` and `set_from_saved`, and `SavedValue` for a map or a set require `S: MapStorage<Owned = S>`.
   A host writes a lent map's saved form with `map_to_saved`, which takes any storage, and restores one by clearing
@@ -173,8 +181,8 @@ host API of the two lanes that hold a map in bounded storage.
 - A session lends each table exactly the rows its configuration gives, from memory it already holds, allocates
   nothing after it opens, and a table configured empty costs the map's few words and no slot.
 - A host keeps an array of its own beside each table, indexed by `MapSlot::index`, and a stale number reads nothing.
-- Every slot of every storage grows by a `u32` (D2); a `MapCursor` is two `u32`s; a clear walks the slots it took.
-  A footprint budget that weighs a map in bounded storage may move.
+- A map in `Inline`, `Heap` or `Linear` storage is as large and does what it did (D2); a lent map's slot holds a
+  generation, and its clear walks the slots it took.
 - Code generic over `S: MapStorage` that clones a map now names `to_owned_storage()`, or bounds `S: MapStorage<Owned
   = S>`; `widened_map` and the saved-state readers take that bound. The generated Rust of an algorithm that holds a
   map changes as D3 says; no committed generated tree holds one.
@@ -189,8 +197,10 @@ host API of the two lanes that hold a map in bounded storage.
 4. **A host allocator behind the map.** Rust's allocator trait is not stable, and "nothing is allocated after open"
    is a property of memory lent once, not of an allocator's discipline.
 5. **The cursor's slot number alone as the handle.** It is reused once its slot is freed (ADR 0111, alternative 7).
-6. **A generation in the lent storages alone.** A host keeps maps of every storage, and two slot layouts would split
-   the one algorithm (D2).
+6. **A generation in every storage.** It names the slot of a map of any storage, and costs every slot four bytes and
+   every position four, eight where alignment rounds them (a `uint64` key and value with an index, 40 bytes to 48),
+   on maps whose hosts never read a slot. The slot handle is an extension point added where its use is; the second
+   use adds it to its storage (D2).
 7. **`Clone` of a lent map into a map lent nothing, or a panic.** The first loses every entry silently; the second
    fails at run time what the type can refuse.
 
@@ -198,12 +208,14 @@ host API of the two lanes that hold a map in bounded storage.
 
 1. This record.
 2. (Lands beside this record.) Rust: `Lent`, `LentIndexed`, `LentSlot`, `LentIndexedSlot`, `LentCell`,
-   `LendRefused`, `BoundedMap::over`, `limit`; `MapSlot`, `put_slot`, `slot_of`, `at_slot`, `MapCursor::slot`,
-   the generation and the clear that frees; `MapStorage::Owned`, `to_owned_storage` and `Clone` through it; the
+   `LendRefused`, `BoundedMap::over`, `limit`; `MapStorage::Generation`, `MapSlot`, `put_slot`, `slot_of`,
+   `at_slot`, `MapCursor::slot` and the clear that frees, in the lent storages; `MapStorage::Owned`,
+   `to_owned_storage` and `Clone` through it, a clone of the other storages the copy it was; the
    saved-state readers bounded to owned storage; the generator's walk copy and working locals in owned storage; the
    conformance harness on the three storages. The map module's tests hold each lent storage to an inline map's
    answers over a long sequence of operations, the limit, a map lent nothing, the refusals, a slot kept until its
-   remove, a stale number, a run lent again, the drops, and the invariants of the region.
+   remove, a stale number, a run lent again, the drops, the invariants of the region, and the size of a slot and a
+   position in the storages that name no slot.
 3. C11, in `backends/c/forge-runtime/include/sce/forge/map.h`: the same contract.
    - `sce_map_core_t` gains the runs a host lends, the slots and the index cells, and the limit; both runs are null
      for a map that holds its own arrays, which the core reaches by its layout's offsets as now, so a map copied by
@@ -212,7 +224,8 @@ host API of the two lanes that hold a map in bounded storage.
    - `SCE_MAP_DECLARE` and its kin declare `prefix##_init_over(map, slots, len, c)` and its indexed form with the
      run of cells, refusing `c` past the bound, a run shorter than `c` and cells fewer than `2c` (`false`), and the
      map type that holds only the core, which a session keeps.
-   - `sce_map_links_t` gains the generation, moved where a slot is freed, and the header gains
+   - the slot of a lent map type gains the generation, moved where a slot is freed (the slot of a map that holds its
+     own arrays keeps none, as in Rust), and the header gains
      `sce_map_slot_t { uint32_t index; uint32_t generation; }` with `put_slot`, `slot_of` and `at_slot`.
    - The generator: a C11 algorithm already takes each map as `sce_map_core_t *`, the core every map type begins
      with, so its signature does not change, and a lent map is lent to it as any other. A walk's copy and a map
