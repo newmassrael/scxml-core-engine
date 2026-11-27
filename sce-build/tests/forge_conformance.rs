@@ -4164,10 +4164,15 @@ fn a_cold_codec_read_by_its_table_decodes_and_writes_back_its_frames() {
     const HARNESS: &str = r#"// Injected by a_cold_codec_read_by_its_table_*.
 #[cfg(test)]
 mod tests {
-    use crate::codec_zenoh_msg_del::CodecZenohMsgDel;
-    use crate::codec_zenoh_query::CodecZenohQuery;
+    use crate::codec_zenoh_msg_del::CodecZenohMsgDelIn;
+    use crate::codec_zenoh_query::CodecZenohQueryIn;
     use crate::codec_zenoh_wireexpr::CodecZenohWireexpr;
-    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+    use ::sce_forge_runtime::codec::{CodecError, Heap, SceCursor};
+
+    // The delete and the query hold their bodies at a storage profile, and
+    // have no name of a borrowed form.
+    type CodecZenohMsgDel = CodecZenohMsgDelIn<Heap>;
+    type CodecZenohQuery = CodecZenohQueryIn<Heap>;
 
     /// The bytes of an encode, whether it can refuse a value or not.
     trait Written {
