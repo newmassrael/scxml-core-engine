@@ -840,9 +840,9 @@ value.
 | Family (as exposed) | Type | Labels and their values | Moved by |
 |---|---|---|---|
 | `sce_metrics_info` | info | `registry`: `sce-metrics-1` | always 1, rendered by the reference adapter |
-| `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `413`, `415`, `429`, `503` | each exchange the server answered, by the status of its answer |
+| `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `412`, `413`, `415`, `429`, `503` | each exchange the server answered, by the status of its answer |
 | `sce_server_held_exchanges` | gauge | none | an exchange held open while its client's mailbox is empty, from its first wait until it is answered or its connection drops |
-| `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
+| `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source`, `max_instances` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
 | `sce_server_authentication_failures_total` | counter | `authenticator`: `bearer`, `install`, `mtls`, `key` | each `401`, by the authenticator that refused it |
 | `sce_pool_live_sessions` | gauge | none | a session brought into memory, and one dropped from it (finished, evicted, lost, stopped) |
 | `sce_pool_loads_total` | counter | none | each session brought into memory, started or restored |
@@ -857,7 +857,7 @@ value.
 | `sce_host_operation_duration_seconds` | histogram, seconds | `type`: each standard host operation's type (`sce-host-kv-get`, ...) | each start of an operation the reference host answered at once; a start it holds is not observed |
 | `sce_host_operation_failures_total` | counter | `type` as above; `code`: `unavailable`, `quota_exceeded`, `network`, `response_too_large`, `invalid_body`, `destination_refused`, `busy`, `context_exceeded`, `answer_too_large`, `declined`, `unknown_key`, `key_retired`, `unknown_stream`, `invalid_argument`, `other` | each start answered with a failure code, or refused (`invalid_argument`); a code no operation names (one injected) is `other` |
 | `sce_host_audit_appends_total` | counter | none | each entry appended to the audit log; a repeat under one identity appends none |
-| `sce_client_exchanges_total` | counter | `status`: the server's ten, `other` and `none` | each exchange an `https` client made, by the status its server answered; `other` for a status no SCE server answers (an intermediary's), `none` when no response came |
+| `sce_client_exchanges_total` | counter | `status`: the server's eleven, `other` and `none` | each exchange an `https` client made, by the status its server answered; `other` for a status no SCE server answers (an intermediary's), `none` when no response came |
 
 Why a server sheds, each a value of `reason`:
 

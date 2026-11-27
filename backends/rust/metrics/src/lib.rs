@@ -373,6 +373,9 @@ label_set! {
         NotFound => "404",
         MethodNotAllowed => "405",
         RequestTimeout => "408",
+        /// The fence of docs/adr/0113, D4: an exchange made under an incarnation of an instance's
+        /// membership the server does not hold (RFC 9110 section 15.5.13).
+        PreconditionFailed => "412",
         PayloadTooLarge => "413",
         UnsupportedMediaType => "415",
         TooManyRequests => "429",
@@ -392,6 +395,7 @@ impl ResponseStatus {
             ResponseStatus::RequestTimeout => 408,
             ResponseStatus::PayloadTooLarge => 413,
             ResponseStatus::UnsupportedMediaType => 415,
+            ResponseStatus::PreconditionFailed => 412,
             ResponseStatus::TooManyRequests => 429,
             ResponseStatus::ServiceUnavailable => 503,
         }
@@ -416,6 +420,7 @@ label_set! {
         NotFound => "404",
         MethodNotAllowed => "405",
         RequestTimeout => "408",
+        PreconditionFailed => "412",
         PayloadTooLarge => "413",
         UnsupportedMediaType => "415",
         TooManyRequests => "429",
@@ -443,6 +448,7 @@ impl From<ResponseStatus> for ExchangeOutcome {
             ResponseStatus::RequestTimeout => ExchangeOutcome::RequestTimeout,
             ResponseStatus::PayloadTooLarge => ExchangeOutcome::PayloadTooLarge,
             ResponseStatus::UnsupportedMediaType => ExchangeOutcome::UnsupportedMediaType,
+            ResponseStatus::PreconditionFailed => ExchangeOutcome::PreconditionFailed,
             ResponseStatus::TooManyRequests => ExchangeOutcome::TooManyRequests,
             ResponseStatus::ServiceUnavailable => ExchangeOutcome::ServiceUnavailable,
         }
@@ -473,6 +479,9 @@ label_set! {
         Stopping => "stopping",
         /// No incarnation could be drawn from the operating system's random source: `503`.
         RandomSource => "random_source",
+        /// Its instance's offer stands while as many members of its open machine stand as
+        /// `max_instances` allows, none of whom is put out for it (docs/adr/0113, D6): `503`.
+        MaxInstances => "max_instances",
     }
 }
 

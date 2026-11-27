@@ -13,7 +13,7 @@
       "name": "sce_server_exchanges",
       "type": "counter",
       "unit": "",
-      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503"]}],
+      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "412", "413", "415", "429", "503"]}],
       "lanes": ["rust"]
     },
     {
@@ -27,7 +27,7 @@
       "name": "sce_server_sheds",
       "type": "counter",
       "unit": "",
-      "labels": [{"name": "reason", "values": ["rate", "concurrency", "max_clients", "max_connections", "max_connections_per_address", "durability", "store", "stopping", "random_source"]}],
+      "labels": [{"name": "reason", "values": ["rate", "concurrency", "max_clients", "max_connections", "max_connections_per_address", "durability", "store", "stopping", "random_source", "max_instances"]}],
       "lanes": ["rust"]
     },
     {
@@ -135,7 +135,7 @@
       "name": "sce_client_exchanges",
       "type": "counter",
       "unit": "",
-      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503", "other", "none"]}],
+      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "412", "413", "415", "429", "503", "other", "none"]}],
       "lanes": ["rust", "cpp"]
     }
   ]
