@@ -18492,10 +18492,11 @@ int main(void) {
     /// text appearing in a header.
     ///
     /// Each case is a self-contained driver whose exit status encodes
-    /// which assertion failed; `SCE_OWNERSHIP_TRAP` is overridden to
-    /// count hits instead of aborting, which is what makes the trap
-    /// paths observable at all. The cases pin the three facts that
-    /// would otherwise be silently wrong: the default layer selection,
+    /// which assertion failed; the driver defines the ownership seam
+    /// (`_sce_ownership_trap`) to count reports and return, which is
+    /// what makes the trap paths observable at all, and is a definition
+    /// the header allows: the seam may return. The cases pin the three
+    /// facts that would otherwise be silently wrong: the default layer selection,
     /// that debug-poison actually writes the poison byte, and that defensive
     /// actually does not.
     #[test]
@@ -18503,11 +18504,14 @@ int main(void) {
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let include_dir = crate_dir.join("../backends/c/runtime/include");
 
-        // Overriding the trap before the include is the documented
-        // extension point; the header's `#ifndef` honours it.
-        let prologue = r#"static int sce_trap_hits = 0;
-#define SCE_OWNERSHIP_TRAP(msg) (sce_trap_hits++, (void)(msg))
-#include <sce/sample.h>
+        // The driver is the deployment: it defines the seam the header
+        // declares (docs/adr/0110, D2), as a host or a target does.
+        let prologue = r#"#include <sce/sample.h>
+static int sce_trap_hits = 0;
+void _sce_ownership_trap(const char *what) {
+    (void)what;
+    sce_trap_hits++;
+}
 struct sce_keyexpr_t { int dummy; };
 struct sce_timestamp_t { uint64_t lo, hi; };
 
@@ -18676,27 +18680,23 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
         }
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484: the default
-    /// `SCE_OWNERSHIP_TRAP` still fires in an `NDEBUG` build, so turning
-    /// the defensive layer on cannot buy a boundary that checks and then
-    /// says nothing.
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484, with
+    /// docs/adr/0110 D2: the host's definition of the ownership seam
+    /// (`backends/c/runtime/posix/ownership.c`) writes the violation to
+    /// `stderr` and aborts, in a release build as in a debug one, so the
+    /// defensive layer, which ships in release, cannot run every check and
+    /// then say nothing.
     ///
-    /// The defensive layer is the one that ships in release, and release
-    /// builds define `NDEBUG`. A bare `assert` default would compile out
-    /// exactly there — every check would run, every violation would be
-    /// found, and none would be reported. That is the silently-inert
-    /// hook the layered contract exists to prevent, so the default is
-    /// `abort()` under `NDEBUG` instead.
-    ///
-    /// Unlike the boundary-behaviour test above, this one deliberately
-    /// does NOT override `SCE_OWNERSHIP_TRAP`: the default is the thing
-    /// under test. A violating driver must die, and a clean one must
-    /// exit 0 — the second half is what keeps "it died" from being
-    /// satisfied by an unrelated crash.
+    /// Nothing in the header chooses by `NDEBUG`: the release and debug
+    /// arms below link the same seam and must behave alike. A violating
+    /// driver must die by `SIGABRT` having written its one line, and a
+    /// clean one must exit 0 having written nothing; the second half is
+    /// what keeps "it died" from being satisfied by an unrelated crash.
     #[test]
-    fn sample_h_trap_survives_ndebug_so_the_defensive_layer_cannot_go_quiet() {
+    fn the_hosted_ownership_seam_reports_the_violation_and_aborts() {
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let include_dir = crate_dir.join("../backends/c/runtime/include");
+        let hosted_seam = crate_dir.join("../backends/c/runtime/posix/ownership.c");
 
         let prologue = r#"#include <sce/sample.h>
 struct sce_keyexpr_t { int dummy; };
@@ -18711,14 +18711,20 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
     return s;
 }
 "#;
+        // The line `posix/ownership.c` writes for the violation both
+        // violating cases make: a borrow delivered in a state the CPU does
+        // not own.
+        const VIOLATION: &str =
+            "sce ownership violation: sample delivered to a callback while the \
+                                 slot is not CPU-visible\n";
 
         // (case, extra gcc flags, body, must_die)
         let cases: &[(&str, &[&str], &str, bool)] = &[
             (
-                // The case the old `assert` default lost: release build,
+                // The case an `assert` default lost: release build,
                 // defensive layer on, borrow arrives in a state the CPU
                 // does not own.
-                "ndebug-release-violation-still-traps",
+                "release-violation-reports-and-aborts",
                 &["-DNDEBUG", "-DSCE_DEFENSIVE_OWNERSHIP=1"],
                 r#"int main(void) {
     uint8_t buf[8] = { 0 };
@@ -18731,23 +18737,9 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
                 true,
             ),
             (
-                // Same build, well-behaved borrow: the trap must not be
-                // trigger-happy, or the first case would prove nothing.
-                "ndebug-release-clean-borrow-exits-zero",
-                &["-DNDEBUG", "-DSCE_DEFENSIVE_OWNERSHIP=1"],
-                r#"int main(void) {
-    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
-    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
-    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
-    sce_ownership_callback_exit(&sc, &s);
-    return 0;
-}
-"#,
-                false,
-            ),
-            (
-                // Debug build keeps the `assert` path; it must fire too.
-                "debug-build-violation-traps-via-assert",
+                // The same seam without `NDEBUG`: there is no second
+                // program for a debug build.
+                "debug-violation-reports-and-aborts",
                 &["-DSCE_DEFENSIVE_OWNERSHIP=1"],
                 r#"int main(void) {
     uint8_t buf[8] = { 0 };
@@ -18758,6 +18750,21 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
 }
 "#,
                 true,
+            ),
+            (
+                // Same build, well-behaved borrow: the seam must not be
+                // reached, or the violating cases would prove nothing.
+                "release-clean-borrow-exits-zero",
+                &["-DNDEBUG", "-DSCE_DEFENSIVE_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    sce_ownership_callback_exit(&sc, &s);
+    return 0;
+}
+"#,
+                false,
             ),
         ];
 
@@ -18785,6 +18792,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
                 .arg("-I")
                 .arg(&include_dir)
                 .arg(&driver)
+                .arg(&hosted_seam)
                 .arg("-o")
                 .arg(&exe)
                 .output()
@@ -18792,61 +18800,78 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
             if !build.status.success() {
                 let stderr = String::from_utf8_lossy(&build.stderr).into_owned();
                 let _ = std::fs::remove_dir_all(&tmp);
-                panic!("trap case `{case}` failed to compile:\n{stderr}");
+                panic!("trap case `{case}` failed to build:\n{stderr}");
             }
 
             let run = std::process::Command::new(&exe)
                 .output()
                 .expect("run the compiled driver");
-            let code = run.status.code();
             let _ = std::fs::remove_dir_all(&tmp);
+            let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
 
             if *must_die {
-                assert_ne!(
-                    code,
-                    Some(0),
-                    "trap case `{case}` returned 0: the ownership violation was \
-                     detected and then discarded. Under NDEBUG the default \
-                     SCE_OWNERSHIP_TRAP must not reduce to a no-op — that is the \
-                     silently-inert hook the defensive layer exists to avoid.",
+                assert!(
+                    !run.status.success(),
+                    "trap case `{case}` exited cleanly: the ownership violation was \
+                     detected and then discarded, which is the silently-inert hook the \
+                     defensive layer exists to avoid.",
                 );
+                assert_eq!(
+                    stderr, VIOLATION,
+                    "trap case `{case}`: the hosted seam must write the violation, and \
+                     nothing else, before it stops the program",
+                );
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    assert_eq!(
+                        run.status.signal(),
+                        Some(6),
+                        "trap case `{case}` must end by `abort` (SIGABRT), not by some \
+                         other way out: {:?}",
+                        run.status,
+                    );
+                }
             } else {
                 assert_eq!(
-                    code,
+                    run.status.code(),
                     Some(0),
-                    "trap case `{case}` did not exit cleanly ({code:?}); a \
-                     well-formed borrow must pass the boundary untouched, or the \
-                     violating cases prove nothing.",
+                    "trap case `{case}` did not exit cleanly ({:?}); a well-formed borrow \
+                     must pass the boundary untouched, or the violating cases prove \
+                     nothing.\nstderr:\n{stderr}",
+                    run.status,
+                );
+                assert!(
+                    stderr.is_empty(),
+                    "trap case `{case}` reached the seam on a well-formed borrow:\n{stderr}",
                 );
             }
         }
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484, third arm of
-    /// the trap contract: on a freestanding target the default
-    /// `SCE_OWNERSHIP_TRAP` fails the *link* rather than going quiet.
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484, with
+    /// docs/adr/0110 D1 and D2: on a freestanding target the ownership
+    /// boundary references the seam and nothing of a hosted library, so a
+    /// deployment that defines the seam links with no C library at all,
+    /// and one that does not is told which symbol it owes.
     ///
-    /// The two arms above run hosted, where `abort()` always resolves.
-    /// The MCU class this pool API targets links `-ffreestanding
-    /// -nostdlib` and has no `abort`, and the header's answer to that is
-    /// deliberate: the unresolved symbol is how a deployment discovers
-    /// the macro needs pointing at a fault handler. Nothing enforced it,
-    /// so a future edit could swap `abort()` for some locally-defined
-    /// no-op and leave every hosted test green while the boundary went
-    /// inert on the only targets that ship it.
-    ///
-    /// The control arm is what makes the failing arm mean anything:
-    /// `-nostdlib` removes plenty of symbols, so "the link failed" on its
-    /// own says nothing about the trap. Defining `SCE_OWNERSHIP_TRAP`
-    /// against a target fault handler must link the same source clean —
-    /// then the only difference between the arms is the default trap's
-    /// `abort` reference, and the failing arm is attributable to it.
+    /// The header's trap used to default to `abort()` under `NDEBUG` and
+    /// to `assert` without it, which left `abort` or the C library's
+    /// assertion handler in every freestanding object that checked a
+    /// borrow. Every arm links `-ffreestanding -nostdlib`. The two arms
+    /// that define the seam as a target fault handler, one with `NDEBUG`
+    /// and one without, must link clean, which a reference to anything
+    /// hosted would not let them. The arm that defines nothing must fail
+    /// on `_sce_ownership_trap` and name nothing hosted: `-nostdlib`
+    /// removes plenty of symbols, so "the link failed" on its own says
+    /// nothing, and the clean arms are what attribute the failure to the
+    /// seam.
     #[test]
-    fn sample_h_trap_on_a_freestanding_target_fails_the_link_rather_than_going_quiet() {
+    fn sample_h_on_a_freestanding_target_needs_only_the_ownership_seam() {
         let Some(cc) = crate::toolchain::require_or_skip(
             "gcc",
             "link the ownership boundary for a freestanding target and check \
-             that the default trap leaves `abort` unresolved",
+             that it references the ownership seam and nothing hosted",
         ) else {
             return;
         };
@@ -18857,10 +18882,13 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
         // `_start` stands in for the reset vector: `-nostdlib` drops the
         // C runtime's entry point, and leaving it undefined would put an
         // unrelated diagnostic in the arm that must fail.
-        let source = r#"#ifdef SCE_TEST_FAULT_HANDLER
-static void sce_target_fault(void) { for (;;) { } }
+        let source = r#"#include <sce/sample.h>
+#ifdef SCE_TEST_FAULT_HANDLER
+void _sce_ownership_trap(const char *what) {
+    (void)what;
+    for (;;) { }
+}
 #endif
-#include <sce/sample.h>
 struct sce_keyexpr_t { int dummy; };
 struct sce_timestamp_t { uint64_t lo, hi; };
 
@@ -18875,7 +18903,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
 
 void _start(void) {
     static uint8_t buf[8];
-    /* a borrow the CPU does not own — the boundary must trap */
+    /* a borrow the CPU does not own: the boundary must report it */
     sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_DMA_BUSY_RX);
     sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
     (void)sc;
@@ -18894,7 +18922,6 @@ void _start(void) {
             let mut cmd = std::process::Command::new(&cc);
             cmd.arg("-std=c11")
                 .arg("-O2")
-                .arg("-DNDEBUG")
                 .arg("-DSCE_DEFENSIVE_OWNERSHIP=1")
                 .arg("-ffreestanding")
                 .arg("-nostdlib");
@@ -18910,43 +18937,39 @@ void _start(void) {
                 .expect("gcc must be runnable for the build environment")
         };
 
-        let default_trap = build("default", &[]);
-        let overridden_trap = build(
-            "overridden",
-            &[
-                "-DSCE_TEST_FAULT_HANDLER",
-                "-DSCE_OWNERSHIP_TRAP(msg)=((void)(msg), sce_target_fault())",
-            ],
-        );
-
-        let default_ok = default_trap.status.success();
-        let default_stderr = String::from_utf8_lossy(&default_trap.stderr).into_owned();
-        let control_ok = overridden_trap.status.success();
-        let control_stderr = String::from_utf8_lossy(&overridden_trap.stderr).into_owned();
+        let release = build("release", &["-DNDEBUG", "-DSCE_TEST_FAULT_HANDLER"]);
+        let debug = build("debug", &["-DSCE_TEST_FAULT_HANDLER"]);
+        let undefined = build("undefined", &["-DNDEBUG"]);
         let _ = std::fs::remove_dir_all(&tmp);
 
+        for (arm, out) in [("release", &release), ("debug", &debug)] {
+            assert!(
+                out.status.success(),
+                "the {arm} arm must link: it defines the ownership seam as a target \
+                 fault handler, and nothing else in this source needs a C library. It \
+                 failed, so the boundary references something hosted.\nstderr:\n{}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+        let undefined_stderr = String::from_utf8_lossy(&undefined.stderr).into_owned();
         assert!(
-            control_ok,
-            "the control arm must link: with `SCE_OWNERSHIP_TRAP` pointed at a \
-             target fault handler nothing else in this source needs libc. It \
-             failed, so `-nostdlib` is breaking the link on its own and the \
-             assertion below cannot attribute anything to the default trap.\
-             \nstderr:\n{control_stderr}",
+            !undefined.status.success(),
+            "the arm that defines no ownership seam linked on a freestanding target, \
+             so the boundary reports a violation to nothing",
         );
         assert!(
-            !default_ok,
-            "the default `SCE_OWNERSHIP_TRAP` linked on a freestanding target. \
-             It must leave `abort` unresolved — that unresolved symbol is how a \
-             deployment finds out the macro needs a fault handler. A trap that \
-             links clean here is one that runs every check and reports nothing \
-             on exactly the targets this pool API is for.",
+            undefined_stderr.contains("_sce_ownership_trap"),
+            "the arm without the seam failed to link, but not over \
+             `_sce_ownership_trap`, so this test is measuring the wrong thing.\
+             \nstderr:\n{undefined_stderr}",
         );
-        assert!(
-            default_stderr.contains("abort"),
-            "the default arm failed to link, but not over `abort` — so the \
-             failure is some other missing symbol and this test is measuring \
-             the wrong thing.\nstderr:\n{default_stderr}",
-        );
+        for hosted in ["abort", "assert", "memset"] {
+            assert!(
+                !undefined_stderr.contains(hosted),
+                "the arm without the seam names `{hosted}`: the boundary reaches the \
+                 hosted library.\nstderr:\n{undefined_stderr}",
+            );
+        }
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the

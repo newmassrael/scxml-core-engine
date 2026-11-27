@@ -12,6 +12,10 @@
  *     standard output through semihosting. A real is written as the 64 bits it
  *     is, in hexadecimal: the seam formats as it likes, and this one holds no
  *     formatter of reals, so the image weighs none.
+ *   - `_sce_ownership_trap` (sce/sample.h): a violation of a sample's borrow
+ *     contract, written as the line `error ownership: <what>` through the log
+ *     seam, and the run ends with status 4, which no scenario's verdict (0, 1,
+ *     2) and no fault (3) ends with, so a violation names itself.
  */
 
 #include <stddef.h>
@@ -19,10 +23,11 @@
 
 #include <sce/clock.h>
 #include <sce/log.h>
+#include <sce/sample.h>
+/* `sce_text_length`, and `memcpy` as a machine's core declares it. */
+#include <sce/text.h>
 
 #include "sce_mcu_board.h"
-
-void *memcpy(void *restrict to, const void *restrict from, size_t n);
 
 static uint64_t sce_mcu_clock_ms;
 
@@ -85,4 +90,10 @@ void _sce_log_real(sce_log_level_t level, const char *label, size_t label_len, d
     sce_mcu_write(lead, sizeof(lead) - 1u);
     sce_mcu_write(hex, sizeof(hex));
     sce_mcu_write(end, sizeof(end) - 1u);
+}
+
+void _sce_ownership_trap(const char *what) {
+    static const char label[] = "ownership";
+    _sce_log_write(SCE_LOG_ERROR, label, sizeof(label) - 1u, what, sce_text_length(what));
+    sce_mcu_exit(4);
 }

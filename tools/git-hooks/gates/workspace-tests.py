@@ -149,6 +149,10 @@
         # `a_c11_machine_logs_through_the_log_seams` links a machine with
         # and reads the lines of.
         "backends/c/runtime/posix/log.c",
+        # The host's ownership seam, which
+        # `the_hosted_ownership_seam_reports_the_violation_and_aborts` links
+        # the ownership boundary with and reads the line and the abort of.
+        "backends/c/runtime/posix/ownership.c",
         # The runtime's text unit, the real seams' definitions, which the
         # same test links a machine with (docs/adr/0110, D2).
         "backends/c/runtime/text/real_text.c",

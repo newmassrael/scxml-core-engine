@@ -218,6 +218,9 @@ struct Reached {
     /// starts) that this generation did not write: its own generation writes
     /// it, and the walk of that generation judges it.
     other_machines: Vec<String>,
+    /// Every include the walk resolved to a file it read, as the include
+    /// names it, so a caller can tell a header was judged and not skipped.
+    resolved: BTreeSet<String>,
 }
 
 /// What the source `core` reaches through `files` (the generation's own) and
@@ -256,6 +259,7 @@ fn hosted_reached(core: &str, files: &BTreeMap<String, String>) -> Reached {
             });
             match resolved {
                 Some((key, text)) => {
+                    reached.resolved.insert(name.clone());
                     if seen.insert(key) {
                         pending.push((text, next));
                     }
@@ -448,6 +452,52 @@ fn a_test_vector_sidecar_reaches_only_freestanding_headers() {
         "a test-vector sidecar reaches what a freestanding implementation does not \
          provide (docs/adr/0110, D1):\n{}",
         violations.join("\n")
+    );
+}
+
+/// A buffer pool, generated as a build generates it: the contract of its
+/// slots pulls in the ownership contract (`sce/sample.h`).
+const BUFFER_POOL: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>
+"##;
+
+/// docs/adr/0110, D1 and D2: the ownership contract (`sce/sample.h`) reaches
+/// no hosted header from a buffer pool's header, which includes it. It
+/// included `<assert.h>`, `<stdlib.h>` and `<string.h>` for a trap `NDEBUG`
+/// chose between `assert` and `abort`; it declares a seam instead
+/// (`_sce_ownership_trap`), and takes `memset` from `sce/text.h`.
+#[test]
+fn the_ownership_contract_reaches_only_freestanding_headers() {
+    let pool = sce_build::compile_forge_from_string(
+        BUFFER_POOL,
+        sce_build::DocumentLabel {
+            identifier: "rx_pool",
+            diagnostic_label: "rx_pool.scxml",
+        },
+        sce_build::generator::Language::C11,
+    )
+    .unwrap_or_else(|e| panic!("the buffer pool does not generate: {e:?}"));
+    let pool_files: BTreeMap<String, String> = pool.files.into_iter().collect();
+    let reached = hosted_reached("rx_pool.h", &pool_files);
+    assert!(
+        reached.violations.is_empty(),
+        "a buffer pool's header reaches what a freestanding implementation does not \
+         provide:\n{}",
+        reached.violations.join("\n")
+    );
+    assert!(
+        reached.resolved.contains("sce/sample.h"),
+        "the walk of the buffer pool's header never read `sce/sample.h`, so it judged \
+         nothing of the ownership contract: {:?}",
+        reached.resolved
     );
 }
 

@@ -291,8 +291,10 @@ endif()
 # Default ON: the SCE-shipped POSIX reference implementation of
 # `clock.h` (§scxml-6.2 delayed-send clock), `http_client.h`
 # (§scxml-C-2 BasicHTTP fixtures), `log.h` (the log seams, each line to
-# `stderr`, docs/adr/0110 D2) and `directory.h` (the log directory the
-# runner program of a generated test suite makes, docs/SCE_TTCN3_LANE.md §4).
+# `stderr`, docs/adr/0110 D2), the ownership seam of `sample.h` (the
+# violation to `stderr`, then `abort`, docs/adr/0110 D2) and `directory.h`
+# (the log directory the runner program of a generated test suite makes,
+# docs/SCE_TTCN3_LANE.md §4).
 # Bare-metal consumers opt out and supply their own `sce_c_runtime_<target>`
 # providing the same symbols. No generated machine states `directory.h`: the
 # runner program, which is hand-written, requires it of `sce_c_link_runtime`.
@@ -303,6 +305,7 @@ if(SCE_C_RUNTIME_POSIX)
         posix/directory.c
         posix/http_client.c
         posix/log.c
+        posix/ownership.c
     )
     target_link_libraries(sce_c_runtime_posix PUBLIC sce_c_runtime)
     set_target_properties(sce_c_runtime_posix PROPERTIES

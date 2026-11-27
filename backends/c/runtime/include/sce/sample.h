@@ -57,6 +57,11 @@
 //     `tools/codegen/templates/forge/c/buffer_pool.h.jinja2` lines
 //     79-97; the invariants here fire if either side drifts.
 //
+//   * `_sce_ownership_trap` — the seam a violation of the borrow
+//     contract is reported to, declared here and defined by the
+//     deployment (docs/adr/0110, D2), so the header calls no hosted
+//     library function and includes no hosted header.
+//
 // ── What this header is not ────────────────────────────────────
 //
 //   * Concrete `sce_keyexpr_t` / `sce_timestamp_t` definitions —
@@ -92,19 +97,16 @@
 #ifndef SCE_SAMPLE_H
 #define SCE_SAMPLE_H
 
-#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-// `abort` is the release-build default for `SCE_OWNERSHIP_TRAP`, where
-// `assert` would compile out. A freestanding target that has neither
-// takes a link error rather than losing the check silently.
-#include <stdlib.h>
-// `memset` backs the debug-poison fill. Included unconditionally
-// and outside the `extern "C"` block below: a standard header must
-// not be pulled in under C linkage, and gating it on
-// `SCE_DEBUG_OWNERSHIP` would put the `#include` after that macro's
+// `memset`, which backs the debug-poison fill, declared as a machine's
+// core declares it (docs/adr/0110, D1): `sce/text.h` declares the four
+// memory functions in C and takes them from `<cstring>` in C++, so this
+// header reaches no hosted header. Included outside the `extern "C"`
+// block below, which it opens for itself, and unconditionally: gating it
+// on `SCE_DEBUG_OWNERSHIP` would put the `#include` after that macro's
 // definition, which lives further down.
-#include <string.h>
+#include "sce/text.h"
 
 // `SCE_STATIC_ASSERT`, used by the layout invariants at the bottom of
 // this file. Spelled through the macro rather than as `_Static_assert`
@@ -364,8 +366,9 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 // whose definition is supplied downstream: a pool-agnostic runtime
 // header cannot return a slot to a specific pool's static table, so
 // SCE declares the function and the transport binding defines it.
-// `SCE_OWNERSHIP_TRAP` is public precisely so that definition can
-// raise the same way rather than inventing its own failure mode.
+// That definition reports a violation to the same seam
+// (`_sce_ownership_trap`, below) rather than inventing its own failure
+// mode.
 //
 // ── No shadow table ─────────────────────────────────────────────
 //
@@ -411,41 +414,44 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 /// what a poisoned read looks like.
 #define SCE_OWNERSHIP_POISON_BYTE 0xDE
 
-/// Failure action. Overridable so a target that must reach a fault
-/// handler or a safe state, rather than stop, can route the violation
-/// somewhere useful.
+/// The ownership seam: where a violation of the borrow contract goes.
+/// Declared here and defined by the deployment, as `_sce_clock_now_ms`
+/// (`sce/clock.h`) and the log seams (`sce/log.h`) are (docs/adr/0110,
+/// D2). `sce_c_runtime_posix` defines it in
+/// `backends/c/runtime/posix/ownership.c`, writing `what` to `stderr`
+/// and aborting; a bare-metal deployment reports it as it reports a
+/// fault, and stops or brings the system to a safe state. `what` is a
+/// NUL-terminated text naming the violation.
 ///
-/// The default is deliberately not a bare `assert`. `assert` compiles
-/// out under `NDEBUG`, which release builds define, and the defensive
-/// layer is the one that *ships* in release — leaving `assert` as the
-/// default there would mean the boundary runs every check and then
-/// reports nothing, which is the silently-inert hook this contract
-/// exists to prevent. Documenting "the deployment is expected to
-/// define this" would not close it either: an expectation is not an
-/// enforcement.
+/// Every check of the boundary below and every tag check of a generated
+/// pool reports here, and so does a downstream `sce_sample_take` that
+/// finds a violation of its own.
 ///
-/// So under `NDEBUG` the default is `abort()`, which cannot be
-/// optimised into silence. A freestanding target with no `abort` gets
-/// a link error — also loud, and the intended way to discover that
-/// this macro needs defining. Every failure mode here is noisy; none
-/// of them is a quiet pass.
-#ifndef SCE_OWNERSHIP_TRAP
-#if defined(NDEBUG)
-#define SCE_OWNERSHIP_TRAP(msg) ((void)(msg), abort())
-#else
-#define SCE_OWNERSHIP_TRAP(msg) assert(0 && (msg))
-#endif
-#endif
+/// It may return. The boundary is written for that: a check that
+/// reported goes on as release does, so a failing pool call still
+/// returns its failure and a scope closed against a tampered borrow
+/// skips the poison fill. It is therefore not declared noreturn, which
+/// would make a deployment that returns undefined behaviour.
+///
+/// It is one function, not a macro a build overrides, and nothing
+/// chooses between two definitions by `NDEBUG`. The defensive layer is
+/// the one that ships in release, and a default that compiled out there
+/// would run every check and report none; a choice made by the
+/// preprocessor is a second program nothing tests unless it is built
+/// both ways. A deployment that links no definition gets a link error
+/// naming the seam, which is how it learns that the boundary needs one.
+void _sce_ownership_trap(const char *what);
 
 /// Raise a per-pool tag-check failure (spec line 1373, "traps on
 /// double `sce_sample_take`, take-after-callback-return").
 ///
 /// The generated pool API already tag-checks every transition and
 /// returns `false` / `NULL` on a mismatch; that return is the release
-/// behaviour and does not change. This macro is how the debug-poison layer turns the
-/// same condition into a stop, so the offending call site is the one
-/// in the debugger rather than whatever code later mishandles the
-/// failure return.
+/// behaviour and does not change. This macro is how the debug-poison layer
+/// reports the same condition to the ownership seam, so the offending
+/// call site is the one named (and, under a seam that stops, the one in
+/// the debugger) rather than whatever code later mishandles the failure
+/// return.
 ///
 /// Debug-only on purpose: a tag mismatch always indicates a caller
 /// bug, but a release build that defensively probes state and handles
@@ -453,7 +459,7 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 /// therefore leaves this inert and instruments only the callback
 /// boundary, matching spec line 1474 ("skips the heavier checks").
 #if SCE_DEBUG_OWNERSHIP
-#define SCE_OWNERSHIP_TAG_VIOLATION(msg) SCE_OWNERSHIP_TRAP(msg)
+#define SCE_OWNERSHIP_TAG_VIOLATION(msg) _sce_ownership_trap(msg)
 #else
 #define SCE_OWNERSHIP_TAG_VIOLATION(msg) ((void)0)
 #endif
@@ -484,11 +490,11 @@ static inline sce_ownership_scope_t sce_ownership_callback_enter(const sce_sampl
     scope.payload = NULL;
     scope.payload_len = 0;
     if (sample == NULL) {
-        SCE_OWNERSHIP_TRAP("sce_sample_t borrow delivered as NULL");
+        _sce_ownership_trap("sce_sample_t borrow delivered as NULL");
         return scope;
     }
     if (sample->_slot.state != SCE_SLOT_CPU_REF && sample->_slot.state != SCE_SLOT_CPU_MUT) {
-        SCE_OWNERSHIP_TRAP("sample delivered to a callback while the slot is not CPU-visible");
+        _sce_ownership_trap("sample delivered to a callback while the slot is not CPU-visible");
     }
     scope.entry_state = sample->_slot.state;
     scope.payload = sample->payload;
@@ -518,15 +524,15 @@ static inline sce_ownership_scope_t sce_ownership_callback_enter(const sce_sampl
 /// 1473-1475).
 static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scope, const sce_sample_t *sample) {
     if (scope == NULL || sample == NULL) {
-        SCE_OWNERSHIP_TRAP("ownership scope closed against a NULL sample");
+        _sce_ownership_trap("ownership scope closed against a NULL sample");
         return;
     }
     if (sample->payload != scope->payload || sample->payload_len != scope->payload_len) {
-        SCE_OWNERSHIP_TRAP("callback mutated the sample borrow's payload pointer or length");
+        _sce_ownership_trap("callback mutated the sample borrow's payload pointer or length");
         return;
     }
     if (sample->_slot.state != scope->entry_state) {
-        SCE_OWNERSHIP_TRAP("callback mutated the sample borrow's slot tag");
+        _sce_ownership_trap("callback mutated the sample borrow's slot tag");
         return;
     }
 #if SCE_DEBUG_OWNERSHIP

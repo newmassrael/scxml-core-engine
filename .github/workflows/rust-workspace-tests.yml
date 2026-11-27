@@ -207,6 +207,9 @@ on:
       # The host's log seams, which a suite links a machine with and reads the
       # lines of.
       - 'backends/c/runtime/posix/log.c'
+      # The host's ownership seam, which a suite links the ownership boundary
+      # with and reads the line and the abort of.
+      - 'backends/c/runtime/posix/ownership.c'
       # The runtime's text unit, the real seams a suite links a machine with.
       - 'backends/c/runtime/text/real_text.c'
       # The C11 runtime's headers, whose includes a suite walks from every
@@ -409,6 +412,9 @@ on:
       # The host's log seams, which a suite links a machine with and reads the
       # lines of.
       - 'backends/c/runtime/posix/log.c'
+      # The host's ownership seam, which a suite links the ownership boundary
+      # with and reads the line and the abort of.
+      - 'backends/c/runtime/posix/ownership.c'
       # The runtime's text unit, the real seams a suite links a machine with.
       - 'backends/c/runtime/text/real_text.c'
       # The C11 runtime's headers, whose includes a suite walks from every
