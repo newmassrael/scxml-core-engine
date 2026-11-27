@@ -231,9 +231,8 @@ pub struct Row {
     pub gate: Gate,
 }
 
-/// What a number the encode derives is computed from (docs/adr/0058): a
-/// length, a count, the flag a gated field is announced by, or a number the
-/// value of an embedded body answers.
+/// What a number the encode derives is computed from (docs/adr/0058): the
+/// count of bytes a length says or the flag a gated field is announced by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Derived {
     /// 1 where the field of this row is present, 0 where it is not.
@@ -241,15 +240,6 @@ pub enum Derived {
     /// The count of bytes of the field of this row ([`Read::Bytes`],
     /// [`Read::Text`]).
     Count(u8),
-    /// The number `what` the field of the row `row` answers
-    /// ([`TableSource::ask`]): the flag of the arm an embedded variant holds, an
-    /// input an embedded body is read with.
-    Ask {
-        /// The row of the field asked.
-        row: u8,
-        /// Which of its numbers.
-        what: u8,
-    },
 }
 
 /// A number the encode writes into a row's bits rather than reading it from the
@@ -271,9 +261,7 @@ impl Derive {
             Source::Input(_) => false,
         };
         let from = match self.from {
-            Derived::Present(row) | Derived::Count(row) | Derived::Ask { row, .. } => {
-                (row as usize) < rows
-            }
+            Derived::Present(row) | Derived::Count(row) => (row as usize) < rows,
         };
         into && from
     }
@@ -516,13 +504,6 @@ pub trait TableSource<E: core::fmt::Debug> {
         &[]
     }
 
-    /// The number `what` the field of the row `row` answers
-    /// ([`Derived::Ask`]).
-    fn ask(&self, row: usize, what: u8) -> u64 {
-        let _ = (row, what);
-        0
-    }
-
     /// Write the field of the row `row` ([`Read::Body`]) into `sink`, handed
     /// `inputs`: the body, the arm or the list, each by its own codec's write.
     /// The inputs are the row's, read off the numbers the write derived, as
@@ -632,7 +613,6 @@ pub fn write_table<E: core::fmt::Debug>(
         let value = match derive.from {
             Derived::Present(row) => u64::from(src.present(usize::from(row))),
             Derived::Count(row) => src.bytes(usize::from(row)).len() as u64,
-            Derived::Ask { row, what } => src.ask(usize::from(row), what),
         };
         if let Source::Row(row) = derive.into.from {
             if let Some(slot) = frame.get_mut(usize::from(row)) {

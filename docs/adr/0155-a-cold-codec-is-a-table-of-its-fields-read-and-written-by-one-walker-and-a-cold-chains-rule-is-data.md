@@ -106,10 +106,12 @@ The runtime gains the writer of a table, generic over the sink's error type alon
                           src: &dyn TableSource<E>) -> Result<(), E>;
 
 `TableSource` is the read side of `TableOut`: the value's numbers, bytes and texts by row, whether a gated field is
-present, and the write of each body, arm, repeat and chain the value holds. A row the encode derives (ADR 0058: a
-length, a count, a flag a gated field is announced by, the arm flag of an embedded variant, a flag-bind input) is a
+present, and the write of each body, arm, repeat and chain the value holds. A number the encode derives into a row
+(ADR 0058: the count of bytes of a byte string or a text, a flag set exactly where one gated field is present) is a
 row of the table whose value the writer computes from the rows it names, as the encode plan says it
-(`encode_plan::Derive`). A cold codec whose plan derives a value no row states keeps its write printed.
+(`encode_plan::Derive`). A cold codec whose plan derives a value no row states (a count of a list's entries, the
+length of an embedded body, a flag a body or an arm says, the arm flag of an embedded variant, a flag-bind input)
+keeps its write printed: the runtime's `Derived` names the two a row states and no other.
 `{Codec}Wire::write_source` of a cold codec is one call of `write_table` over an adapter of the source, so every
 form of the value writes through it as before.
 
