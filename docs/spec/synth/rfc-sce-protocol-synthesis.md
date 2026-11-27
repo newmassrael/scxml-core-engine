@@ -927,11 +927,11 @@ linux/qnx Rust deploys consume the same `buffer-pool` declarations
 through their `sce_link_runtime_<os>` crate (with `tokio_uring`
 fixed-buffer registration on linux per §5.C codegen contract).
 
-**Problem.** MCU zero-copy requires pool slots placed in specific SRAM
-sections aligned to DMA constraints. No such primitive exists today.
+**Problem.** MCU zero-copy requires pool slots placed in specific SRAM sections aligned to DMA constraints.
+*Amended by: ADR 0111 (D4).* The pool is lent: a run-time count and length under these bounds, storage the caller
+holds, a headroom, a `SlotIndex` with `reclaim`, an `owner` or `shared` book (`<sce:sharing>`), a slot lent to events.
 
-**Proposal.** New `sce:kind="buffer-pool"` and field-level placement
-attributes.
+**Proposal.** New `sce:kind="buffer-pool"` and field-level placement attributes.
 
 ```xml
 <scxml sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">

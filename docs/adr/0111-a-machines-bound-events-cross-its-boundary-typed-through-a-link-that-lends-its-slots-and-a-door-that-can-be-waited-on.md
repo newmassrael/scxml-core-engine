@@ -434,7 +434,10 @@ The supported way for a build outside this repository to generate code is the `s
 1. This record.
 2. The pool (D4), Rust and C11: run-time count and length, `over`, the all-zero empty pool, the headroom,
    `SlotIndex` and `reclaim`, the `owner` and `shared` books, a slot lent to events, with the kind's conformance
-   fixtures; the queue's run-time capacity.
+   fixtures; the queue's run-time capacity. Landed with this step: the pool and its conformance contract,
+   `tests/forge/conformance/buffer_pool/pool_contract.json`, which the Rust and C11 arms both run. The hold count of a
+   slot lent to events and `take_prefixed` are the pool's; the receive coupling (step 5) and the take (step 3) drive
+   them. The queue's run-time capacity has not landed.
 3. The link's transmit side (D3): stages, open, append and arm with their outcomes, the take order, the lending
    `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures of
    `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link.
