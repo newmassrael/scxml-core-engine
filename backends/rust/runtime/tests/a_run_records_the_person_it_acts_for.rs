@@ -260,9 +260,12 @@ fn said_for(person: Option<Principal>) -> EventMetadata {
     }
 }
 
+/// The person each start a host's invoker was handed names, in order.
+type Starts = Arc<Mutex<Vec<Option<Principal>>>>;
+
 /// A running machine standing in `s`, and the person each start its host's invoker was handed
 /// names, in order. The host holds every start: none ends until a case ends it.
-fn started() -> (Engine<Teller>, Arc<Mutex<Vec<Option<Principal>>>>) {
+fn started() -> (Engine<Teller>, Starts) {
     let mut engine = Engine::new(Teller);
     let starts = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&starts);
