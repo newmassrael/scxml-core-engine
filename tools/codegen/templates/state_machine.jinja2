@@ -681,6 +681,18 @@ inline constexpr ::SCE::AnswerSchema ANSWER_SCHEMAS[] = {
 {% endfor %}
 };
 {% endif %}
+{# docs/adr/0115, D4 and D8: the machine's trace port switch, whose default is the
+   build's (`SCE_TRACE_PORT`, core/TracePort.h, which StaticExecutionEngine.h
+   includes, 0 unless set), as the C11 machine's `<PREFIX><NAME>_TRACE_PORT` is.
+   The policy's `TRACE_PORT` below hands it to the engine (`TracePortTrait`).
+   Off, the engine holds no recorder and every hook of the port is a discarded
+   branch, so the machine is what it was before the port existed. #}
+// docs/adr/0115, D4 and D8: whether this machine tells a trace port each step of
+// Appendix D it takes. A build that sets nothing for it takes the build's switch.
+#ifndef {{ model.name | upper }}_TRACE_PORT
+#define {{ model.name | upper }}_TRACE_PORT SCE_TRACE_PORT
+#endif
+
 {# Policy class #}
 // State policy for {{ model.name }}
 {% if _has_tpl %}
@@ -700,6 +712,10 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML Appendix D: Flag indicating parallel state support
     static constexpr bool HAS_PARALLEL_STATES = {{ 'true' if model.has_parallel_states else 'false' }};
+
+    // docs/adr/0115, D4 and D8: whether the engine tells a trace port each step
+    // of Appendix D this machine takes (`StaticExecutionEngine::setTracePort`).
+    static constexpr bool TRACE_PORT = ({{ model.name | upper }}_TRACE_PORT) != 0;
 
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = {{ 'true' if model.needs_script_engine else 'false' }};

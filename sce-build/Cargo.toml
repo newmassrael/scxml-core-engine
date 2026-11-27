@@ -1747,6 +1747,14 @@ name = "a_c11_machine_keeps_no_trace_port_unless_its_build_asks"
 path = "tests/a_c11_machine_keeps_no_trace_port_unless_its_build_asks.rs"
 required-features = ["cli"]
 
+# A C++ machine keeps no trace port unless its build asks (docs/adr/0115, D4 and
+# D8): it holds the switch its policy hands the engine and nothing else of the
+# port. It spawns `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_cpp_machine_keeps_no_trace_port_unless_its_build_asks"
+path = "tests/a_cpp_machine_keeps_no_trace_port_unless_its_build_asks.rs"
+required-features = ["cli"]
+
 # A document declaring `sce:transition-function="emit"` is generated with a
 # runtime-free transition function beside its machine; this compiles the Rust
 # file alone and holds it to the producer, and runs the generated machine on the
