@@ -400,9 +400,14 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
                 self.{{ a.ident }} = {% if a.gated %}Some({% endif %}value{% if a.cast %} as {{ a.cast }}{% endif %}{% if a.gated %}){% endif %};
 {% elif kind == "bytes" or kind == "text" %}
 {% if a.bounded %}
-                let value = {{ a.runtime }}::Bounded::new({{ kind }}).ok_or(CodecError::LengthOutOfRange)?;
+                let stored = match {{ a.runtime }}::Bounded::new({{ kind }}) {
+                    Some(value) => value.store::<{{ a.storage_param }}, {{ a.tag }}>(),
+                    None => Err(CodecError::LengthOutOfRange),
+                };
+{% else %}
+                let stored = {{ kind }}.store::<{{ a.storage_param }}, {{ a.tag }}>();
 {% endif %}
-                match {% if a.bounded %}value{% else %}{{ kind }}{% endif %}.store::<{{ a.storage_param }}, {{ a.tag }}>() {
+                match stored {
                     Ok(stored) => {
                         self.{{ a.ident }} = {% if a.gated %}Some(stored){% else %}stored{% endif %};
                         Ok(())

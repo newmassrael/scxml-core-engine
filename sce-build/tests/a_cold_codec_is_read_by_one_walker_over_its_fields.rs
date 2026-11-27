@@ -261,13 +261,22 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
             "self.id = value;",
             "self.suffix_len = Some(value);",
             "self.suffix = None;",
-            ".store::<S, CodecZenohWireexprSuffixField>() {",
+            "Some(value) => value.store::<S, CodecZenohWireexprSuffixField>(),",
+            "None => Err(CodecError::LengthOutOfRange),",
         ] {
             assert!(
                 wireexpr.contains(printed),
                 "the table of codec_zenoh_wireexpr has no `{printed}` (views: {views}):\n{wireexpr}"
             );
         }
+        // A text past its type's bound and one its storage refuses leave the
+        // field in the one state: absent, as it is gated, with the refusal
+        // the store's answer and no early return past the reset.
+        assert!(
+            !wireexpr.contains(".ok_or(CodecError::LengthOutOfRange)?"),
+            "a refusal of the bound of codec_zenoh_wireexpr's suffix returns before the field is \
+             reset (views: {views}):\n{wireexpr}"
+        );
         assert!(
             !wireexpr.contains("write_table(") && wireexpr.contains("FieldTable::new(ROWS)"),
             "codec_zenoh_wireexpr can refuse a value and is written by the walker \
