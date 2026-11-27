@@ -1631,7 +1631,7 @@ mod tests {
     fn what_the_module_refuses_has_no_model() {
         let logged = ARRIVES.replace(
             r#"<state id="a">"#,
-            r#"<state id="a"><onentry><log expr="1"/></onentry>"#,
+            r#"<state id="a"><onentry><log label="seen"/></onentry>"#,
         );
         let refused = write(
             &model_of(&logged),
