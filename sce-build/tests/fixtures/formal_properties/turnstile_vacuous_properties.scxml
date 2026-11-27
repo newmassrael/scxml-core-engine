@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: a guarantee that holds and passes for nothing: the
+     turnstile is locked again and again whatever it was before, so the
+     condition before the leads-to plays no part, and the judge must refuse
+     it by name. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_vacuous_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:guarantee>
+    <sce:leads-to req="VAC-1" from="In('unlocked')" to="In('locked')"/>
+  </sce:guarantee>
+</scxml>

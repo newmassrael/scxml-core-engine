@@ -16549,6 +16549,41 @@ enum FormalCommand {
         #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
         workers: std::num::NonZeroUsize,
     },
+    /// Judge the properties of one machine with the pinned TLC (docs/adr/0115,
+    /// D15): every guarantee of a properties document over the machine's model,
+    /// within the exploration of the same machine.
+    ///
+    /// A guarantee holds of the whole space, holds within the bounds the
+    /// exploration names and the search reached, is violated by a run, is
+    /// vacuous (it holds though a part of it is made stronger), or is not
+    /// judged; and every macrostep of the machine must end. A construct with
+    /// no translation is `formal/no-translation` (exit 7); an assumption about
+    /// the machine itself, a guarantee that reads nothing of it and a vacuous
+    /// one are `formal/property-refused` (exit 1); a violation, or a guarantee
+    /// not judged, is `formal/verdict` (exit 1).
+    Properties {
+        /// The properties document (`sce:kind="properties"`).
+        #[arg(long)]
+        properties: PathBuf,
+        /// The exploration document (`sce:kind="exploration"`) of the same
+        /// machine.
+        #[arg(long)]
+        exploration: PathBuf,
+        /// The processors the judge is given, a count or `auto` (every one
+        /// this process may run on): TLC's `-workers` and the processors its
+        /// virtual machine sees, one run at a time.
+        #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
+        workers: std::num::NonZeroUsize,
+        /// Write the judgement, with the digests of what it judged, to this
+        /// file (`schemas/sce-formal-verdicts.v1.schema.json`).
+        #[arg(long, conflicts_with = "recorded")]
+        record: Option<PathBuf>,
+        /// Report the judgement recorded in this file instead of judging. A
+        /// judgement of other documents or of another judge is none, and is
+        /// refused naming each digest that moved (`formal/declaration`).
+        #[arg(long)]
+        recorded: Option<PathBuf>,
+    },
     /// Judge every commit of the ranges given: one that changes what a formal
     /// check says changes nothing else but documents, and names its reason in
     /// a bullet `- Spec: <why>` of its message (docs/adr/0115, D11).
@@ -16664,6 +16699,63 @@ fn cmd_formal(judge: FormalCommand) {
             if let Err(err) = crate::formal::traces::check(&manifest, workers, &mut report) {
                 leave(err);
             }
+        }
+        FormalCommand::Properties {
+            properties,
+            exploration,
+            workers,
+            record,
+            recorded,
+        } => {
+            use crate::formal::{properties as judged, verdicts};
+            let documents = match judged::read(&properties, &exploration) {
+                Ok(documents) => documents,
+                Err(judged::Unread::Document(refused)) => {
+                    current_error_format().emit_and_exit(&*refused, "")
+                }
+                Err(judged::Unread::Formal(err)) => leave(err),
+            };
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            let judgement = match &recorded {
+                Some(path) => {
+                    let shown = path.display().to_string();
+                    let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                        leave(FormalError::Declaration {
+                            manifest: shown.clone(),
+                            problems: vec![format!("cannot be read: {e}")],
+                        })
+                    });
+                    match verdicts::read_record(&text, &verdicts::Digests::of(&documents)) {
+                        Ok(judgement) => {
+                            verdicts::report(&judgement, &mut report);
+                            judgement
+                        }
+                        Err(problems) => leave(FormalError::Declaration {
+                            manifest: shown,
+                            problems,
+                        }),
+                    }
+                }
+                None => verdicts::judge(&documents, workers, &mut report)
+                    .unwrap_or_else(|err| leave(err)),
+            };
+            if let Some(path) = &record {
+                std::fs::write(path, judgement.to_text()).unwrap_or_else(|e| {
+                    leave(FormalError::ToolUnavailable {
+                        tool: "the record's file".to_string(),
+                        detail: format!("cannot write {}: {e}", path.display()),
+                    })
+                });
+            }
+            if let Some(err) = judgement.failure(&properties.display().to_string()) {
+                leave(err);
+            }
+            out_line("every property holds as judged");
         }
         FormalCommand::Isolation {
             ranges,

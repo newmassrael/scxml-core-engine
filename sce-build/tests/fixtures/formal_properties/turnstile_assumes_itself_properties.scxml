@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: an assumption about the machine itself, which would
+     excuse it of anything: the judge must refuse it by name before it runs
+     a search. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_assumes_itself_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:assume>
+    <sce:always req="SELF-1" cond="In('locked')"/>
+  </sce:assume>
+  <sce:guarantee>
+    <sce:recurs req="TURN-4" cond="In('locked')"/>
+  </sce:guarantee>
+</scxml>

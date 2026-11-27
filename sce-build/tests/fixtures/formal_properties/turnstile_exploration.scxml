@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: the turnstile searched with coins and pushes from
+     outside, in any order, at most four in one run. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="exploration" name="turnstile_exploration">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:outside most="4">
+    <sce:event name="coin"/>
+    <sce:event name="push"/>
+  </sce:outside>
+</scxml>

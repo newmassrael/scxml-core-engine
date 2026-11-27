@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-verdicts.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal verdicts record (wire schema v1)",
+  "description": "The judgement of one machine's properties (docs/adr/0115, D15), as `sce-codegen formal properties --record` writes it and `--recorded` reads it back: whether every macrostep ends, the assumptions no machine of SCE discharges, and the verdict of each guarantee, by the sce:req token it states. A judgement is of exactly one machine, one properties document with its observers, one exploration and one judge, named by their digests; a record whose digests are not those of the documents and the judge it is read for is no judgement of them, and is refused naming each digest that moved. Authoritative producer and reader is sce-build/src/formal/verdicts.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["record", "v", "digests", "macrosteps", "not_discharged", "verdicts"],
+  "additionalProperties": false,
+  "definitions": {
+    "digest": {
+      "description": "A lowercase hex sha256.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "verdict": {
+      "description": "What was said of a property: it holds of the whole space (every reachable state explored, no bound reached), holds within the bounds named, is violated by the run TLC gives, is vacuous (it holds though the part named is replaced by what makes it stronger), or was not judged, and why.",
+      "type": "object",
+      "required": ["verdict"],
+      "properties": {
+        "verdict": { "enum": ["holds-of-the-whole-space", "holds-within", "violated", "vacuous", "not-judged"] },
+        "bounds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "run": { "type": "string" },
+        "part": { "type": "string" },
+        "by": { "type": "boolean" },
+        "why": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "record": { "const": "sce-formal-verdicts" },
+    "v": { "const": 1 },
+    "digests": {
+      "description": "What the judgement is of: the machine's document, the properties document with each observer's by its name, the exploration, and the judge (the pinned TLC and Java runtime, the generator's sources and the semantics it writes models against).",
+      "type": "object",
+      "required": ["machine", "properties", "exploration", "tool"],
+      "additionalProperties": false,
+      "properties": {
+        "machine": { "$ref": "#/definitions/digest" },
+        "properties": { "$ref": "#/definitions/digest" },
+        "exploration": { "$ref": "#/definitions/digest" },
+        "tool": { "$ref": "#/definitions/digest" }
+      }
+    },
+    "macrosteps": {
+      "description": "Whether every macrostep of the machine ends, so there is always a next observation: a property every machine is held to.",
+      "$ref": "#/definitions/verdict"
+    },
+    "not_discharged": {
+      "description": "The assumptions, by the sce:req token each states, that no machine of SCE discharges in this judgement.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "verdicts": {
+      "description": "Each guarantee's verdict, in document order.",
+      "type": "array",
+      "items": {
+        "allOf": [
+          { "$ref": "#/definitions/verdict" },
+          {
+            "type": "object",
+            "required": ["req", "form"],
+            "properties": {
+              "req": { "type": "string", "minLength": 1 },
+              "form": { "enum": ["always", "step", "recurs", "leads-to", "possible"] }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

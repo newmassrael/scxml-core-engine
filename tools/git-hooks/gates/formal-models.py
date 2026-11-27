@@ -29,7 +29,10 @@
     # The judge and its pins are sce-build's (docs/adr/0146), and the consumer
     # fixture is judged with this repository's models.
     "extra": ["docs/formal/**", "sce-build/src/formal/**",
-              "sce-build/tests/fixtures/formal_consumer/**"],
+              "sce-build/tests/fixtures/formal_consumer/**",
+              # The machine whose properties the gate judges, each form held and
+              # each broken on purpose (docs/adr/0115, D15).
+              "sce-build/tests/fixtures/formal_properties/**"],
     "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
                "states), which takes minutes of a push that has five for everything. "
                "formal-models.yml runs it on every change to a model or its judge.",

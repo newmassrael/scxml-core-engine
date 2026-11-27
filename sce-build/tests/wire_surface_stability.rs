@@ -64,6 +64,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-formal-proofs.v1.schema.json",
     "schemas/sce-formal-traces.v1.schema.json",
     "schemas/sce-formal-toolchain.v1.schema.json",
+    "schemas/sce-formal-verdicts.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];

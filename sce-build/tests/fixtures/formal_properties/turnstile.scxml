@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: the machine of the properties judge's fixture. A
+     turnstile a coin unlocks and a push locks, which locks itself again five
+     seconds after it was unlocked, and counts the coins it took. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="turnstile" initial="locked">
+  <datamodel>
+    <data id="coins" expr="0"/>
+  </datamodel>
+  <state id="locked">
+    <transition event="coin" target="unlocked">
+      <assign location="coins" expr="coins + 1"/>
+    </transition>
+  </state>
+  <state id="unlocked">
+    <onentry>
+      <send event="relock" delay="5s"/>
+    </onentry>
+    <transition event="coin">
+      <assign location="coins" expr="coins + 1"/>
+    </transition>
+    <transition event="push" target="locked"/>
+    <transition event="relock" target="locked"/>
+  </state>
+</scxml>

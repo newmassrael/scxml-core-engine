@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: a possibility of the turnstile broken on purpose: with
+     nothing from outside it is never unlocked, which the judge must find
+     over the whole space. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_unreachable_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:guarantee>
+    <sce:possible req="UNREACH-1" cond="In('unlocked')"/>
+  </sce:guarantee>
+</scxml>

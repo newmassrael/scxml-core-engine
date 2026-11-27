@@ -69,7 +69,67 @@ judge() {
     esac
 }
 
+# The properties judge (docs/adr/0115, D15) on the fixture of one machine: the
+# properties that hold, judged and written with the digests of what was judged,
+# then read back from that record; a guarantee in each form broken on purpose,
+# which must be found; a vacuous guarantee and an assumption about the machine
+# itself, which must be refused by name. `$1` the properties, `$2` the
+# exploration, `$3` the status the judge must end with, and each further
+# argument a line its report must hold; flags for the judge are
+# PROPERTIES_FLAGS.
+PROPERTIES=sce-build/tests/fixtures/formal_properties
+PROPERTIES_FLAGS=()
+judge_properties() {
+    local properties="$PROPERTIES/$1" exploration="$PROPERTIES/$2" expected="$3"
+    local status=0 report line
+    shift 3
+    report="$(target/debug/sce-codegen formal properties --workers "$WORKERS" \
+        --properties "$properties" --exploration "$exploration" \
+        ${PROPERTIES_FLAGS[@]+"${PROPERTIES_FLAGS[@]}"})" || status=$?
+    printf '%s\n' "$report"
+    case "$status" in
+        "$expected") ;;
+        15) sce_gate_cannot_run "not the pinned Java runtime or TLC: sce-codegen formal install" ;;
+        *) sce_gate_fail "$properties ended $status, and must end $expected" ;;
+    esac
+    for line in "$@"; do
+        grep -qxF -- "$line" <<<"$report" \
+            || sce_gate_fail "$properties: the report does not say: $line"
+    done
+}
+
+judge_turnstile() {
+    local within="holds within: the most events from outside (4) reached"
+    judge_properties turnstile_properties.scxml turnstile_exploration.scxml 0 \
+        "every macrostep ends: $within" \
+        "assumed and not discharged: ENV-1" \
+        "TURN-1 (<sce:always>): $within" \
+        "TURN-2 (<sce:step>): $within" \
+        "TURN-3 (<sce:leads-to>): $within" \
+        "TURN-4 (<sce:recurs>): $within" \
+        "TURN-5 (<sce:possible>): $within" \
+        "every property holds as judged"
+}
+
 judge docs/formal/models.json ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"}
 if [[ "$CONSUMER" == 1 ]]; then
     judge sce-build/tests/fixtures/formal_consumer/formal/models.json
+    RECORDED="$(mktemp)"
+    PROPERTIES_FLAGS=(--record "$RECORDED")
+    judge_turnstile
+    PROPERTIES_FLAGS=(--recorded "$RECORDED")
+    judge_turnstile
+    rm -f "$RECORDED"
+    PROPERTIES_FLAGS=()
+    judge_properties turnstile_broken_properties.scxml turnstile_exploration.scxml 1 \
+        "BROKEN-1 (<sce:always>): violated" \
+        "BROKEN-2 (<sce:step>): violated" \
+        "BROKEN-3 (<sce:recurs>): violated" \
+        "BROKEN-4 (<sce:leads-to>): violated"
+    judge_properties turnstile_unreachable_properties.scxml turnstile_quiet_exploration.scxml 1 \
+        "every macrostep ends: holds of the whole space" \
+        "UNREACH-1 (<sce:possible>): violated"
+    judge_properties turnstile_vacuous_properties.scxml turnstile_exploration.scxml 1 \
+        "VAC-1 (<sce:leads-to>): vacuous: it holds though \`In('unlocked')\` is replaced by true, so it passes for nothing in that part"
+    judge_properties turnstile_assumes_itself_properties.scxml turnstile_exploration.scxml 1
 fi

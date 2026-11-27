@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: a guarantee of the turnstile in each form of an
+     invariant or a progress, each broken on purpose: the judge must find a
+     run that violates every one. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_broken_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:guarantee>
+    <sce:always req="BROKEN-1" cond="!In('unlocked') || coins &lt; 2"/>
+    <sce:step req="BROKEN-2" cond="coins == previous(coins)"/>
+    <sce:recurs req="BROKEN-3" cond="In('unlocked')"/>
+    <sce:leads-to req="BROKEN-4" from="In('unlocked')" to="coins &gt; 4"/>
+  </sce:guarantee>
+</scxml>

@@ -145,3 +145,157 @@ fn the_traces_judge_whose_tool_is_not_there_says_so_with_exit_15() {
     let record = record.expect("a diagnostic record");
     assert_eq!(record["code"], "formal/tool-unavailable", "{record}");
 }
+
+fn properties_fixture(name: &str) -> PathBuf {
+    repo_root()
+        .join("sce-build/tests/fixtures/formal_properties")
+        .join(name)
+}
+
+fn shown(path: &Path) -> &str {
+    path.to_str().expect("a path")
+}
+
+/// The properties judge reads its documents and writes the model of what they
+/// say before it admits a tool (docs/adr/0115, D15): with no TLC it says so,
+/// and judges nothing.
+#[test]
+fn the_properties_judge_whose_tool_is_not_there_says_so_with_exit_15() {
+    let missing = repo_root().join("target/no-such-tla2tools.jar");
+    let properties = properties_fixture("turnstile_properties.scxml");
+    let exploration = properties_fixture("turnstile_exploration.scxml");
+    let (status, _, record) = formal(
+        &[
+            "properties",
+            "--properties",
+            shown(&properties),
+            "--exploration",
+            shown(&exploration),
+        ],
+        &missing,
+    );
+    assert_eq!(
+        status,
+        Some(15),
+        "no TLC is \"could not run\", not a verdict"
+    );
+    let record = record.expect("a diagnostic record");
+    assert_eq!(record["code"], "formal/tool-unavailable", "{record}");
+}
+
+/// An assumption about the machine itself would excuse the machine of anything:
+/// it is refused by its name before any search (docs/adr/0115, D15).
+#[test]
+fn an_assumption_about_the_machine_itself_is_refused_by_name_with_exit_1() {
+    let missing = repo_root().join("target/no-such-tla2tools.jar");
+    let properties = properties_fixture("turnstile_assumes_itself_properties.scxml");
+    let exploration = properties_fixture("turnstile_exploration.scxml");
+    let (status, _, record) = formal(
+        &[
+            "properties",
+            "--properties",
+            shown(&properties),
+            "--exploration",
+            shown(&exploration),
+        ],
+        &missing,
+    );
+    assert_eq!(status, Some(1));
+    let record = record.expect("a diagnostic record");
+    assert_eq!(record["code"], "formal/property-refused", "{record}");
+    let message = record["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("`SELF-1` (<sce:always>): an assumption about the machine itself"),
+        "{record}"
+    );
+}
+
+/// A recorded judgement is reported for the documents and the judge it was
+/// made of, and is none for any other: a verdict of another digest is not read
+/// (docs/adr/0115, D15). Neither needs TLC.
+#[test]
+fn a_recorded_judgement_is_read_only_of_what_it_judged() {
+    use sce_build::formal::verdicts::{
+        Digests, Judgement, PropertyVerdict, Verdict, RECORD, VERSION,
+    };
+
+    let missing = repo_root().join("target/no-such-tla2tools.jar");
+    let properties = properties_fixture("turnstile_properties.scxml");
+    let exploration = properties_fixture("turnstile_exploration.scxml");
+    let documents =
+        sce_build::formal::properties::read(&properties, &exploration).expect("the fixture reads");
+    let within = Verdict::HoldsWithin {
+        bounds: vec!["the most events from outside (4)".to_string()],
+    };
+    let judgement = |digests: Digests| Judgement {
+        record: RECORD.to_string(),
+        v: VERSION,
+        digests,
+        macrosteps: within.clone(),
+        not_discharged: vec!["ENV-1".to_string()],
+        verdicts: [
+            ("TURN-1", "always"),
+            ("TURN-2", "step"),
+            ("TURN-3", "leads-to"),
+            ("TURN-4", "recurs"),
+            ("TURN-5", "possible"),
+        ]
+        .into_iter()
+        .map(|(req, form)| PropertyVerdict {
+            req: req.to_string(),
+            form: form.to_string(),
+            verdict: within.clone(),
+        })
+        .collect(),
+    };
+    let dir =
+        std::env::temp_dir().join(format!("sce-formal-properties-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory");
+    let current = Digests::of(&documents);
+    let recorded = dir.join("current.json");
+    std::fs::write(&recorded, judgement(current.clone()).to_text()).expect("written");
+    let other = dir.join("other.json");
+    let moved = Digests {
+        machine: "0".repeat(64),
+        ..current
+    };
+    std::fs::write(&other, judgement(moved).to_text()).expect("written");
+    let run = |record: &Path| {
+        formal(
+            &[
+                "properties",
+                "--properties",
+                shown(&properties),
+                "--exploration",
+                shown(&exploration),
+                "--recorded",
+                shown(record),
+            ],
+            &missing,
+        )
+    };
+    let (status, stdout, _) = run(&recorded);
+    let (other_status, _, other_record) = run(&other);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(status, Some(0), "{stdout}");
+    for line in [
+        "TURN-1 (<sce:always>): holds within: the most events from outside (4) reached",
+        "assumed and not discharged: ENV-1",
+        "every property holds as judged",
+    ] {
+        assert!(
+            stdout.lines().any(|l| l == line),
+            "missing {line:?} in\n{stdout}"
+        );
+    }
+    assert_eq!(other_status, Some(1));
+    let other_record = other_record.expect("a diagnostic record");
+    assert_eq!(other_record["code"], "formal/declaration", "{other_record}");
+    assert!(
+        other_record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("a verdict of another digest is none")),
+        "{other_record}"
+    );
+}

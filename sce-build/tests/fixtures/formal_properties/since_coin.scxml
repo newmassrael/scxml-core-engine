@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: an observer of the turnstile, which remembers whether
+     a coin was taken since the turnstile last locked. It takes the event of
+     every observation as its own and sends nothing. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="since_coin" initial="unpaid">
+  <state id="unpaid">
+    <transition event="coin" target="paid"/>
+  </state>
+  <state id="paid">
+    <transition event="push" target="unpaid"/>
+    <transition event="relock" target="unpaid"/>
+  </state>
+</scxml>

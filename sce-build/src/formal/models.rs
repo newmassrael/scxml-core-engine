@@ -994,13 +994,36 @@ fn run_possible(
     workers: NonZeroUsize,
 ) -> Result<Result<bool, String>, FormalError> {
     let carried = format!("{module}Possible");
-    let extra = vec![(format!("{carried}.tla"), possible_module(module, predicate))];
+    possible_over(
+        tools,
+        formal,
+        (
+            carried.as_str(),
+            possible_module(module, predicate).as_str(),
+        ),
+        &possible_config(config_text),
+        workers,
+    )
+}
+
+/// Decide `AG EF` of the predicate the module `carried` (its name and text)
+/// carries, over the whole graph TLC writes of it under `config_text`, the
+/// modules of `sources` beside it: `Ok(Ok(holds))`, or `Ok(Err(why))` where
+/// TLC wrote no graph that can be read.
+pub(crate) fn possible_over(
+    tools: tlc::Tools<'_>,
+    sources: &Path,
+    (carried, text): (&str, &str),
+    config_text: &str,
+    workers: NonZeroUsize,
+) -> Result<Result<bool, String>, FormalError> {
+    let extra = vec![(format!("{carried}.tla"), text.to_string())];
     let answer = tlc::run(&tlc::Run {
         tools,
-        sources: formal,
-        module: &carried,
+        sources,
+        module: carried,
         config_name: &format!("{carried}.cfg"),
-        config_text: &possible_config(config_text),
+        config_text,
         extra: &extra,
         workers,
         write_graph: true,

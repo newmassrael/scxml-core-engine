@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: what the turnstile promises, each in its form, and each
+     one the judge must find holding and not vacuous. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="properties" name="turnstile_properties">
+  <sce:machine src="turnstile.scxml"/>
+  <sce:observer id="since" src="since_coin.scxml"/>
+  <sce:assume>
+    <sce:always req="ENV-1" cond="_event.name != 'relock'"/>
+  </sce:assume>
+  <sce:guarantee>
+    <sce:always req="TURN-1" cond="!In('unlocked') || since.In('paid')"/>
+    <sce:step req="TURN-2" cond="coins &gt;= previous(coins)"/>
+    <sce:leads-to req="TURN-3" from="since.In('paid')" to="In('unlocked')"/>
+    <sce:recurs req="TURN-4" cond="In('locked')"/>
+    <sce:possible req="TURN-5" cond="In('locked')"/>
+  </sce:guarantee>
+</scxml>

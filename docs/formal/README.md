@@ -60,6 +60,38 @@ as the session store guards it (the store's `rules/lease.rs`, proved by Verus to
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
 
+## A machine's properties (D15)
+
+A document's author states what a machine promises in a document of its own, `sce:kind="properties"`, and the values a
+search of it is made over in another, `sce:kind="exploration"`; neither is part of the machine's document, which a build
+reads and an author edits. `sce-codegen formal properties --properties <document> --exploration <document>` writes the
+machine's model as `sce-codegen model` does, and beside it a module of the properties
+(`sce-build/src/formal/properties.rs`): an observation at the end of each macrostep (the event it took, the states the
+machine is in and the data it publishes), each observer a statechart of its own over Appendix D that takes every
+observation's event as its event, and each guarantee as the formula of its form. Appendix D is compiled into the
+generator (`document_model::SEMANTICS_TEXT`), so the judge stages the semantics the model was written against.
+
+- `<sce:always>` and `<sce:step>` are invariants of the machine with its observations; `<sce:recurs>` and
+  `<sce:leads-to>` temporal properties under the interpreter's fairness and time's (a delayed send that is due comes);
+  `<sce:possible>` is `AG EF` over the whole graph, as in `models.json`.
+- An assumption reads only the event that comes (`_event.name`): an `<sce:always>` of it is a condition each event that
+  comes meets, an `<sce:recurs>` one that keeps coming. One that reads the machine is refused by name
+  (`formal/property-refused`), as is a guarantee that reads nothing of it.
+- Each guarantee that holds is judged again with each part of it made stronger, false under an even count of negations
+  and true elsewhere; one that still holds is vacuous, and refused.
+- A verdict says no more than was judged: *holds of the whole space*, *holds within* the bounds the search reached (the
+  most events from outside), *violated*, *vacuous* or *not judged*. A `<sce:possible>` that fails where a bound was
+  reached is not judged, since the bound may be what cut the way. Every macrostep must end, under every document.
+- `--record` writes the judgement with the digests of the machine, the properties and their observers, the exploration
+  and the judge (`schemas/sce-formal-verdicts.v1.schema.json`); `--recorded` reports a recorded one instead of judging,
+  and refuses it when a digest moved: a verdict of another digest is none.
+
+In this first step an observer reads the name of the event an observation took and its own data, and no more of the
+observation; a property of a deployment (D12), coverage of the machine by its properties, the scenario of a violation
+or a witness replayed on every lane (D8), and the watch beside a lane are the steps after it. The formal-models gate
+judges the fixture under `sce-build/tests/fixtures/formal_properties`: every form held, every form broken on purpose,
+a vacuous guarantee and an assumption about the machine itself.
+
 ## Theorems, bounded and for every size (D3)
 
 An inductive invariant `Inv` of a theorem `P` is three obligations, each checked by Apalache symbolically over every

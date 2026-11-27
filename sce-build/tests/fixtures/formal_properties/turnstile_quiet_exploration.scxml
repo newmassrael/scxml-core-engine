@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: the turnstile searched with nothing from outside: the
+     whole space of what it does alone, which no bound cuts. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="exploration" name="turnstile_quiet_exploration">
+  <sce:machine src="turnstile.scxml"/>
+</scxml>

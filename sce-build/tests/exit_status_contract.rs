@@ -649,6 +649,27 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
         vec![s("model"), fx.path("untranslatable.scxml")],
         None,
     );
+    // A property that says nothing it can be held to: an assumption about the
+    // machine itself, refused before any search (docs/adr/0115, D15).
+    let properties = repo_root().join("sce-build/tests/fixtures/formal_properties");
+    add(
+        "formal/property-refused",
+        vec![
+            s("formal"),
+            s("properties"),
+            s("--properties"),
+            properties
+                .join("turnstile_assumes_itself_properties.scxml")
+                .display()
+                .to_string(),
+            s("--exploration"),
+            properties
+                .join("turnstile_exploration.scxml")
+                .display()
+                .to_string(),
+        ],
+        None,
+    );
     add(
         "cli/check-trace-missing-trace",
         vec![s("check-trace"), runtime_suite, fx.path("nope.json")],

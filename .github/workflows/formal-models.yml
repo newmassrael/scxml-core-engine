@@ -3,7 +3,9 @@ name: Formal Models
 # The TLA+ models of docs/formal under TLC (docs/adr/0115, D5), judged by
 # `sce-codegen formal models` (docs/adr/0146), the command a consumer runs on its
 # own manifest; the consumer-shaped fixture under
-# sce-build/tests/fixtures/formal_consumer is judged by the same command.
+# sce-build/tests/fixtures/formal_consumer is judged by the same command, and the
+# properties of the machine under sce-build/tests/fixtures/formal_properties by
+# `sce-codegen formal properties` (docs/adr/0115, D15).
 #
 # ## Why a lane of its own
 #
@@ -28,6 +30,7 @@ on:
       - 'docs/formal/**'
       - 'sce-build/src/formal/**'
       - 'sce-build/tests/fixtures/formal_consumer/**'
+      - 'sce-build/tests/fixtures/formal_properties/**'
       - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
@@ -39,6 +42,7 @@ on:
       - 'docs/formal/**'
       - 'sce-build/src/formal/**'
       - 'sce-build/tests/fixtures/formal_consumer/**'
+      - 'sce-build/tests/fixtures/formal_properties/**'
       - 'tools/ci-images/host/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
