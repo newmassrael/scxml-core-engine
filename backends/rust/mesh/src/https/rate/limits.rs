@@ -94,11 +94,11 @@ pub(crate) fn interval(interval_ms: u64) -> i64 {
 #[cfg_attr(verus_only, verus_verify)]
 #[cfg_attr(verus_only, verus_spec(judged =>
     ensures
-        decided is None ==> judged.0 == Answer::Refused { wait_ms: interval_ms } && judged.1 is None,
+        decided is None ==> judged.0 == (Answer::Refused { wait_ms: interval_ms }) && judged.1 is None,
         decided matches Some((admits, moved_to, asks)) ==> (if admits {
             judged.0 == Answer::Admitted && judged.1 == Some(moved_to)
         } else {
-            judged.0 == Answer::Refused { wait_ms: if asks < 0 { u64::MAX } else { asks as u64 } }
+            judged.0 == (Answer::Refused { wait_ms: if asks < 0 { u64::MAX } else { asks as u64 } })
                 && judged.1 is None
         }),
 ))]
@@ -148,8 +148,8 @@ pub(crate) fn bound(max_tracked: u32) -> usize {
 #[cfg_attr(verus_only, verus_spec(place =>
     ensures
         held matches Some(kept) ==> place == Room::Held(kept),
-        held is None ==> ((place is Full) == (bound <= tracked)),
-        held is None ==> ((place is Free) == (tracked < bound)),
+        held is None ==> ((place is Full) == (bound <= keys)),
+        held is None ==> ((place is Free) == (keys < bound)),
 ))]
 pub(crate) fn room<T>(keys: usize, bound: usize, held: Option<T>) -> Room<T> {
     match held {
@@ -293,20 +293,20 @@ fn a_fresh_key_dropped_is_judged_as_if_kept(kept: i64, dropped_at: i64, now: i64
 /// A spend that keeps an arrival time leaves the table within its bound, as `Limiter::set` keeps
 /// it: a key the table tracks is replaced; a new one takes a free place; and at the bound the key
 /// of the earliest arrival is dropped first, which a table at a bound of at least one holds.
-fn a_table_stays_within_its_bound(max_tracked: u32, tracked: usize, held: Option<i64>) -> (after: Ghost<int>)
+fn a_table_stays_within_its_bound(max_tracked: u32, keys: usize, held: Option<i64>) -> (after: Ghost<int>)
     requires
-        tracked as int <= at_most(max_tracked),
+        keys as int <= at_most(max_tracked),
     ensures
         after@ <= at_most(max_tracked),
-        held is Some ==> after@ == tracked as int,
-        held is None ==> after@ == tracked as int + 1 || (after@ == tracked as int && after@ == at_most(max_tracked)),
+        held is Some ==> after@ == keys as int,
+        held is None ==> after@ == keys as int + 1 || (after@ == keys as int && after@ == at_most(max_tracked)),
 {
     let most = bound(max_tracked);
-    let place = room(tracked, most, held);
+    let place = room(keys, most, held);
     let ghost after = match place {
-        Room::Held(_) => tracked as int,
-        Room::Free => tracked as int + 1,
-        Room::Full => tracked as int,
+        Room::Held(_) => keys as int,
+        Room::Free => keys as int + 1,
+        Room::Full => keys as int,
     };
     Ghost(after)
 }
