@@ -1252,6 +1252,7 @@ references against a real document and drift silently.
 | `mesh/deploy-invalid-dds-qos` | `mesh-deploy` | no | SCE Mesh §8.2 |
 | `mesh/deploy-invalid-dedup-window` | `mesh-deploy` | no | SCE Mesh §10.5 |
 | `mesh/deploy-invalid-instances` | `mesh-deploy` | no | ADR 0113 D7 |
+| `mesh/deploy-invalid-journal` | `mesh-deploy` | no | ADR 0114 D4 |
 | `mesh/deploy-invalid-liveliness` | `mesh-deploy` | no | SCE Mesh §16.7 |
 | `mesh/deploy-invalid-members` | `mesh-deploy` | no | ADR 0113 D4 |
 | `mesh/deploy-invalid-ordering-timings` | `mesh-deploy` | no | SCE Mesh §10.6 |

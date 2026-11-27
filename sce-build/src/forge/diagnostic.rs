@@ -3166,6 +3166,12 @@ pub enum DiagnosticCode {
     /// cannot be kept, or are written on a machine that runs once.
     #[serde(rename = "mesh/deploy-invalid-members")]
     MeshDeployInvalidMembers,
+    /// A declaration of the event journal (docs/adr/0114) that cannot be
+    /// kept: `journal: true` or `follows:` on what is no keyed pool, a
+    /// machine that follows itself or what keeps no journal, a stream named as
+    /// a machine is.
+    #[serde(rename = "mesh/deploy-invalid-journal")]
+    MeshDeployInvalidJournal,
     /// A machine's `receipt:` block cannot be kept: a field below 1, or no
     /// durable binding on the machine to read it.
     #[serde(rename = "mesh/deploy-invalid-receipt")]
@@ -4566,6 +4572,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidInstances,
         // ADR 0113, D4 and D6: an open machine's terms of membership
         MeshDeployInvalidMembers,
+        // ADR 0114, D1, D4 and D6: a journal, a follower or a stream that cannot be kept
+        MeshDeployInvalidJournal,
         MeshDeploySessionsKeyNotInRequest,
         MeshDeployConfigMissing,
         MeshDeployConfigUnknown,
@@ -5433,6 +5441,9 @@ impl DiagnosticCode {
             MeshDeployInvalidInstances | MeshCodegenOpenInstancesUnsupported => Some("ADR 0113 D7"),
             MeshTopologyOpenMachineNamedLiterally => Some("ADR 0113 D2"),
             MeshDeployInvalidMembers => Some("ADR 0113 D4"),
+
+            // ── The event journal (docs/adr/0114, D1, D4 and D6) ──
+            MeshDeployInvalidJournal => Some("ADR 0114 D4"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -6326,6 +6337,7 @@ impl DiagnosticCode {
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
             | MeshDeployInvalidMembers
+            | MeshDeployInvalidJournal
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
@@ -6956,6 +6968,7 @@ impl DiagnosticCode {
             MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
             MeshDeployInvalidInstances => "mesh/deploy-invalid-instances",
             MeshDeployInvalidMembers => "mesh/deploy-invalid-members",
+            MeshDeployInvalidJournal => "mesh/deploy-invalid-journal",
             MeshDeployInvalidReceipt => "mesh/deploy-invalid-receipt",
             MeshDeployReceiptWithoutPersistence => "mesh/deploy-receipt-without-persistence",
             MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
@@ -19294,6 +19307,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:8f80acff0f95faea","code":"mesh/deploy-invalid-members","stage":"mesh-deploy","spec":"ADR 0113 D4","message":"machine 'phone': `members:` in deploy.yaml cannot be kept — `provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept."}"#,
             ),
             (
+                "mesh/deploy-invalid-journal",
+                DeployError::InvalidJournal {
+                    at: crate::mesh::error::JournalDeclaration::Follows {
+                        machine: "rooms".into(),
+                    },
+                    reason: "the machine follows itself, and its own entries were taken in as they were said, so each would take effect twice".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f528268f2ef08ba9","code":"mesh/deploy-invalid-journal","stage":"mesh-deploy","spec":"ADR 0114 D4","message":"machine 'rooms': `follows:` in deploy.yaml cannot be kept — the machine follows itself, and its own entries were taken in as they were said, so each would take effect twice.","actual":"rooms"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-receipt",
                 DeployError::InvalidReceipt {
                     machine: "calendar".into(),
@@ -22269,6 +22293,7 @@ mod tests {
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
             | MeshDeployInvalidMembers
+            | MeshDeployInvalidJournal
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigInvalid
@@ -23176,6 +23201,7 @@ mod tests {
                 | MeshDeployInvalidSessions
                 | MeshDeployInvalidInstances
                 | MeshDeployInvalidMembers
+                | MeshDeployInvalidJournal
                 | MeshDeploySessionsKeyNotInRequest
                 | MeshDeployConfigMissing
                 | MeshDeployConfigUnknown
@@ -23371,9 +23397,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            571,
+            572,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 571 distinct variants to match the DiagnosticCode \
+             expected 572 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24313,6 +24339,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
             | MeshDeployInvalidMembers
+            | MeshDeployInvalidJournal
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown

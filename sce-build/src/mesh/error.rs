@@ -1153,6 +1153,17 @@ pub enum DeployError {
         reason: String,
     },
 
+    /// A declaration of the event journal (docs/adr/0114) the deployment
+    /// alone shows cannot be kept: `journal: true` or `follows:` on a machine
+    /// that is no keyed pool, a machine that follows itself or what keeps no
+    /// journal, and a stream of `streams:` named as a machine is or with no
+    /// schema. Read off the deployment alone, at parse time.
+    #[error("{at} in deploy.yaml cannot be kept — {reason}.")]
+    InvalidJournal {
+        at: JournalDeclaration,
+        reason: String,
+    },
+
     /// A machine's `receipt: { window, retry_ms }` block cannot be kept (SCE_MESH.md section
     /// 10.11; docs/adr/0109, D10): a field below 1, or a machine none of whose bindings is
     /// durable, which leaves the block reading nothing. Read off the deployment alone.
@@ -3083,6 +3094,11 @@ impl DeployError {
                 Some(field) => P::machine(machine).key("members").key(field),
                 None => P::machine(machine).key("members"),
             },
+            Self::InvalidJournal { at, .. } => match at {
+                JournalDeclaration::Journal { machine } => P::machine(machine).key("journal"),
+                JournalDeclaration::Follows { machine } => P::machine(machine).key("follows"),
+                JournalDeclaration::Stream { stream } => P::root("streams").key(stream),
+            },
             Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
             Self::ReceiptWithoutPersistence {
                 machine, target, ..
@@ -3999,6 +4015,48 @@ pub enum CodegenError {
     PersistenceWithoutSavedState { machine: String },
 }
 
+/// Which declaration of the event journal (docs/adr/0114) a
+/// [`DeployError::InvalidJournal`] refuses, and so where it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JournalDeclaration {
+    /// A machine's `journal: true` (D1).
+    Journal { machine: String },
+    /// A machine's `follows:` (D4).
+    Follows { machine: String },
+    /// An observed stream of the deployment's `streams:` (D6).
+    Stream { stream: String },
+}
+
+impl JournalDeclaration {
+    /// The machine or the stream the declaration is of.
+    pub fn subject(&self) -> &str {
+        match self {
+            Self::Journal { machine } | Self::Follows { machine } => machine,
+            Self::Stream { stream } => stream,
+        }
+    }
+
+    /// A short tag of the declaration, which tells two refusals of one name
+    /// apart in a diagnostic's identity.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::Journal { .. } => "journal",
+            Self::Follows { .. } => "follows",
+            Self::Stream { .. } => "streams",
+        }
+    }
+}
+
+impl std::fmt::Display for JournalDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Journal { machine } => write!(f, "machine '{machine}': `journal: true`"),
+            Self::Follows { machine } => write!(f, "machine '{machine}': `follows:`"),
+            Self::Stream { stream } => write!(f, "stream '{stream}' of `streams:`"),
+        }
+    }
+}
+
 /// What a [`CodegenError::CppRouterUnsupported`] refused: a deployment feature
 /// a host core has and the generated C++ `TransportRouter` does not.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4465,6 +4523,22 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidJournal { at, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidJournal,
+            stage: Stage::MeshDeploy,
+            // The machine or the stream whose declaration cannot be kept.
+            actual: Some(at.subject().to_string()),
+            // The declaration removed, or the machine made a keyed pool, or
+            // another name followed: which depends on what the deployment is
+            // for, so nothing is offered.
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                at.tag().to_string(),
+                at.subject().to_string(),
+                reason.clone(),
+            ],
         },
         DeployError::InvalidReceipt { machine, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidReceipt,

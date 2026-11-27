@@ -1588,6 +1588,26 @@ other backend refuses a document that writes one, by its backend's name
 (`generate/unsupported-feature`), and its runtime refuses a computed one as a
 target it cannot address.
 
+The event journal (docs/adr/0114) is declared by three keys. A machine takes
+`journal: true` (D1): its sessions keep a journal of the facts their document
+says with `<send type="sce:journal">` (§2.15). A machine takes `follows:`, a
+list of names (D4): each a machine of the deployment that keeps a journal, or
+an observed stream, whose entries the pool delivers in order to the session
+`sessions.key_from` names for each. The deployment takes `streams:` (D6),
+observed streams by name, each with `schemas:`, the paths of the event schema
+documents its entries are records of. Refused, as
+`mesh/deploy-invalid-journal`: `journal: true` or `follows:` on a machine
+that declares no `sessions:`; `follows:` on a pool whose `key_from` is
+`client`, since an entry comes on no client's link; a machine that follows
+itself, whose own entries would take effect twice; a name followed twice, one
+that is neither a machine nor a stream, a machine that keeps no journal, and a
+machine of another device, whose journal is in a store no process of this one
+opens; a stream whose name is not a letter followed by letters, digits, `_` or
+`-`, or is a machine's, and one that names no schema, one twice, or one by an
+empty or absolute path. A machine that keeps or follows a journal is a keyed
+pool, which only the Rust host core serves
+(`mesh/codegen-keyed-pool-unsupported`).
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for
@@ -11352,7 +11372,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (571 codes)
+## Appendix — `DiagnosticCode` index (572 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11776,6 +11796,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-sessions` | Mesh Deploy |
 | `mesh/deploy-invalid-instances` | Mesh Deploy |
 | `mesh/deploy-invalid-members` | Mesh Deploy |
+| `mesh/deploy-invalid-journal` | Mesh Deploy |
 | `mesh/deploy-sessions-key-not-in-request` | Mesh Deploy |
 | `mesh/deploy-config-missing` | Mesh Deploy |
 | `mesh/deploy-config-unknown` | Mesh Deploy |

@@ -20,7 +20,8 @@
 
 use crate::forge::model::LinkClass;
 use crate::mesh::error::{
-    DeployError, PartitionTransportBindingFailure, RxBusyPollFault, WorkerThreadsFault,
+    DeployError, JournalDeclaration, PartitionTransportBindingFailure, RxBusyPollFault,
+    WorkerThreadsFault,
 };
 use crate::mesh::target::TargetId;
 use crate::mesh::transport::ServerDeadlineNotice;
@@ -146,6 +147,16 @@ pub struct DeployConfig {
     /// Absent ⇒ `inline`.
     #[serde(default)]
     pub codec_storage: crate::forge::deployment::NodeStorage,
+
+    /// `streams:` (docs/adr/0114, D6): the observed streams of the deployment,
+    /// by name, each another system's facts and the event schemas they are
+    /// records of. No session appends to one: the application's adapter gives
+    /// the store each entry with the id the other system gave it, and a
+    /// machine takes the entries in by naming the stream in `follows:`. A
+    /// stream and a machine of one deployment have different names (D4).
+    /// Checked by [`validate_journal`]. Absent ⇒ none.
+    #[serde(default)]
+    pub streams: BTreeMap<String, StreamConfig>,
 
     /// `build:` block — facts about the build environment that SCE
     /// records but does not act on.
@@ -3121,6 +3132,26 @@ pub struct MachineConfig {
     /// [`validate_instances`].
     #[serde(default)]
     pub members: Option<MembersConfig>,
+    /// The machine's sessions keep a journal of the facts they say
+    /// (docs/adr/0114, D1): a document of the pool makes an entry with
+    /// `<send type="sce:journal">`, and the write that keeps a session's
+    /// checkpoint appends the entries its macrosteps made to the session's
+    /// stream, so an entry exists exactly when the state that made it does.
+    /// Only a keyed pool (`sessions:`) keeps one, since a stream is a session
+    /// (D2). Checked against the deployment at parse time by
+    /// [`validate_journal`], and against the machine's document where it is
+    /// generated.
+    #[serde(default)]
+    pub journal: bool,
+    /// The journals the machine's sessions follow (docs/adr/0114, D4): each a
+    /// machine of the deployment that keeps one (`journal: true`), or an
+    /// observed stream of [`DeployConfig::streams`]. The pool delivers each
+    /// entry, in order, as an external event of the entry's name to the
+    /// session `sessions.key_from` names for it, and the session keeps the
+    /// position it has taken in of each journal in its checkpoint. Checked by
+    /// [`validate_journal`].
+    #[serde(default)]
+    pub follows: Vec<String>,
     /// The values the machine's deployment supplies (docs/adr/0109, D12), by
     /// the id of the `<data sce:from="deployment">` that declares each in the
     /// machine's document. Checked against the document's declarations when
@@ -3376,6 +3407,12 @@ impl MachineConfig {
     pub fn is_open(&self) -> bool {
         matches!(self.instances, Some(Instances::Open))
     }
+
+    /// Whether the machine's sessions keep or follow a journal
+    /// (`journal: true` or `follows:`, docs/adr/0114, D1 and D4).
+    pub fn has_journal(&self) -> bool {
+        self.journal || !self.follows.is_empty()
+    }
 }
 
 /// The `members:` of an open machine (docs/adr/0113, D4 and D6): how long a
@@ -3411,6 +3448,25 @@ pub struct MembersConfig {
 enum Instances {
     /// `instances: open`.
     Open,
+}
+
+/// An observed stream of the deployment's `streams:` (docs/adr/0114, D6):
+/// another system's facts, which an adapter of the application writes to the
+/// journal, each once for the id the other system gave it.
+///
+/// ```yaml
+/// streams:
+///   directory:
+///     schemas: [schemas/member_joined.scxml, schemas/member_left.scxml]
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamConfig {
+    /// The event schemas the stream's entries are records of, each the path
+    /// of a `sce:kind="event-schema"` document relative to deploy.yaml, as a
+    /// machine's `source:` is. An entry is delivered to a follower as the
+    /// event its schema names. At least one, each once.
+    pub schemas: Vec<String>,
 }
 
 /// `invoked_by:` of a machine entry: the site that starts the machine as a
@@ -4148,6 +4204,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_outbound_buffer(&cfg)?;
     validate_sessions(&cfg)?;
     validate_instances(&cfg)?;
+    validate_journal(&cfg)?;
     validate_machine_config_sources(&cfg)?;
     validate_receipt(&cfg)?;
     validate_retry_policy(&cfg)?;
@@ -7712,6 +7769,174 @@ fn members_refusal(members: &MembersConfig) -> Option<(&'static str, String)> {
     })
 }
 
+/// Whether `name` may name an observed stream (docs/adr/0114, D6): a letter,
+/// then letters, digits, `_` or `-`. A follower is told an entry of the
+/// stream by the origin `journal://<stream>/<position>` (D4), which such a
+/// name keeps one segment of the URI.
+fn is_stream_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Refuse, as [`DeployError::InvalidJournal`], what the deployment alone
+/// says of the event journal that cannot be kept (docs/adr/0114):
+///
+/// * `journal: true` on a machine that is no keyed pool: an entry is appended
+///   by the write that keeps a session's checkpoint, and its stream is the
+///   session (D1, D2);
+/// * `follows:` on a machine that is no keyed pool, or one whose
+///   `sessions.key_from` is `client`: an entry is delivered to the session
+///   the key field of its data names, and it comes on no client's link (D4);
+/// * `follows:` naming the machine itself, whose own entries were taken as
+///   they were said and would take effect twice (D4); a name twice; a machine
+///   that keeps no journal; a name that is neither a machine of the
+///   deployment nor a stream of `streams:`; and a machine of another device,
+///   whose journal is kept in a store a process of this one does not open
+///   ("Not in scope": a journal several stores share);
+/// * a stream of `streams:` whose name is no stream name
+///   ([`is_stream_name`]) or is a machine's, since one name is never of both
+///   (D4, D6), that names no schema, or names one twice or by an empty or
+///   absolute path.
+///
+/// What needs the documents (an entry's schema, the key field of a followed
+/// entry) is judged where the machine is generated. Walks streams and machines
+/// in name order, so the refusal reported first is the same on every run.
+fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
+    let machines: BTreeMap<&str, (&str, &MachineConfig)> = cfg
+        .topology
+        .iter()
+        .flat_map(|(device_name, device)| {
+            device
+                .machines
+                .iter()
+                .map(move |(name, machine)| (name.as_str(), (device_name.as_str(), machine)))
+        })
+        .collect();
+    for (stream, declared) in &cfg.streams {
+        let refuse = |reason: String| {
+            Err(DeployError::InvalidJournal {
+                at: JournalDeclaration::Stream {
+                    stream: stream.clone(),
+                },
+                reason,
+            })
+        };
+        if !is_stream_name(stream) {
+            return refuse(
+                "a stream's name is a letter, then letters, digits, `_` or `-`, so that the \
+                 origin `journal://<stream>/<position>` a follower is told keeps it one segment"
+                    .to_string(),
+            );
+        }
+        if machines.contains_key(stream.as_str()) {
+            return refuse(
+                "a machine of the deployment has the same name, and a stream and a machine of \
+                 one deployment have different names, so a name in `follows:` says which it is"
+                    .to_string(),
+            );
+        }
+        if declared.schemas.is_empty() {
+            return refuse(
+                "it names no schema, and an entry of an observed stream is a record of one of \
+                 the stream's schemas"
+                    .to_string(),
+            );
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for schema in &declared.schemas {
+            if schema.trim().is_empty() || Path::new(schema).is_absolute() {
+                return refuse(format!(
+                    "the schema '{schema}' is not the path of a document relative to deploy.yaml"
+                ));
+            }
+            if !seen.insert(schema.as_str()) {
+                return refuse(format!("it names the schema '{schema}' twice"));
+            }
+        }
+    }
+    for (&name, &(device, machine)) in &machines {
+        if machine.journal && machine.sessions.is_none() {
+            return Err(DeployError::InvalidJournal {
+                at: JournalDeclaration::Journal {
+                    machine: name.to_string(),
+                },
+                reason: "the machine declares no `sessions:`, and an entry is appended by the \
+                         write that keeps a keyed session's checkpoint, to the stream that is \
+                         the session"
+                    .to_string(),
+            });
+        }
+        if machine.follows.is_empty() {
+            continue;
+        }
+        let refuse = |reason: String| {
+            Err(DeployError::InvalidJournal {
+                at: JournalDeclaration::Follows {
+                    machine: name.to_string(),
+                },
+                reason,
+            })
+        };
+        match machine.sessions.as_ref().map(SessionsConfig::key_source) {
+            None => {
+                return refuse(
+                    "the machine declares no `sessions:`, and an entry it follows is delivered \
+                     to the session `sessions.key_from` names for it"
+                        .to_string(),
+                )
+            }
+            Some(Ok(SessionKeySource::Client)) => {
+                return refuse(
+                    "`sessions.key_from` is `client`, and an entry it follows comes on no \
+                     client's link: name the field of the entries' data that keys the session \
+                     (`data.<field>`)"
+                        .to_string(),
+                )
+            }
+            // A key source that is neither was refused by `validate_sessions`.
+            Some(_) => {}
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for followed in &machine.follows {
+            if !seen.insert(followed.as_str()) {
+                return refuse(format!("it names '{followed}' twice"));
+            }
+            if followed == name {
+                return refuse(
+                    "the machine follows itself, and its own entries were taken in as they \
+                     were said, so each would take effect twice"
+                        .to_string(),
+                );
+            }
+            match machines.get(followed.as_str()) {
+                Some((_, other)) if !other.journal => {
+                    return refuse(format!(
+                        "machine '{followed}' keeps no journal (`journal: true`), so it makes no \
+                         entry to follow"
+                    ))
+                }
+                Some((other_device, _)) if *other_device != device => {
+                    return refuse(format!(
+                        "machine '{followed}' runs on device '{other_device}' and this one on \
+                         '{device}', and a journal is read from the store its writer keeps, \
+                         which a process of another device does not open"
+                    ))
+                }
+                Some(_) => {}
+                None if cfg.streams.contains_key(followed) => {}
+                None => {
+                    return refuse(format!(
+                        "'{followed}' is neither a machine of the deployment nor a stream of \
+                         `streams:`"
+                    ))
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Refuse what SCE_MESH.md section 10.11 refuses of `persistence:` and
 /// `receipt:` when the deployment is read (docs/adr/0109, D10), each by a code
 /// of its own:
@@ -10079,6 +10304,293 @@ topology:
             .position(|line| line.trim_start().starts_with("instances:"))
             .expect("written");
         assert_eq!(usize::try_from(mark.line).expect("a line"), line + 1);
+    }
+
+    /// A deployment of two keyed pools on the device `cloud`, `rooms` and
+    /// `view`, each keyed by the field `room`, with `rooms_lines` and
+    /// `view_lines` added to their entries and `tail` after the topology.
+    fn journaled(rooms_lines: &str, view_lines: &str, tail: &str) -> String {
+        format!(
+            r##"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: {{ key_from: data.room, idle_ms: 1000 }}
+{rooms_lines}      view:
+        source: view.scxml
+        sessions: {{ key_from: data.room, idle_ms: 1000 }}
+{view_lines}{tail}"##
+        )
+    }
+
+    /// The declaration and the reason `yaml` is refused by
+    /// ([`DeployError::InvalidJournal`]).
+    fn journal_refusal(yaml: &str) -> (JournalDeclaration, String) {
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidJournal { at, reason }) => (at, reason),
+            other => panic!("{yaml}: expected InvalidJournal, got {other:?}"),
+        }
+    }
+
+    const DIRECTORY: &str = "streams:\n  directory:\n    schemas: [schemas/joined.scxml]\n";
+
+    /// docs/adr/0114, D1, D4 and D6: a journal, what a machine follows and
+    /// an observed stream are read, and a machine that declares none keeps
+    /// none. Red if a key is not read.
+    #[test]
+    fn a_journal_its_followers_and_a_stream_are_read() {
+        let cfg = parse_deploy_str(&journaled(
+            "        journal: true\n",
+            "        follows: [rooms, directory]\n",
+            DIRECTORY,
+        ))
+        .expect("a journal, its follower and a stream");
+        let machines = &cfg.topology["cloud"].machines;
+        assert!(machines["rooms"].journal);
+        assert!(machines["rooms"].follows.is_empty());
+        assert!(!machines["view"].journal);
+        assert_eq!(machines["view"].follows, ["rooms", "directory"]);
+        assert!(machines["rooms"].has_journal() && machines["view"].has_journal());
+        assert_eq!(cfg.streams["directory"].schemas, ["schemas/joined.scxml"]);
+
+        let plain = parse_deploy_str(&journaled("", "", "")).expect("two pools");
+        assert!(!plain.topology["cloud"].machines["rooms"].has_journal());
+        assert!(plain.streams.is_empty());
+    }
+
+    /// docs/adr/0114, D1 and D2: an entry is appended by the write that keeps a
+    /// keyed session's checkpoint, so a machine that is no keyed pool keeps no
+    /// journal.
+    #[test]
+    fn a_journal_is_kept_by_a_keyed_pool_alone() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        journal: true
+"#;
+        let (at, reason) = journal_refusal(yaml);
+        assert_eq!(
+            at,
+            JournalDeclaration::Journal {
+                machine: "rooms".into()
+            }
+        );
+        assert!(reason.contains("declares no `sessions:`"), "{reason}");
+    }
+
+    /// docs/adr/0114, D4: a followed entry goes to the session the field of
+    /// its data keys, so a follower is a keyed pool keyed by a field, never by
+    /// the client whose link an input came on.
+    #[test]
+    fn a_follower_is_a_keyed_pool_keyed_by_a_field() {
+        let unpooled = r#"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: { key_from: data.room, idle_ms: 1000 }
+        journal: true
+      view:
+        source: view.scxml
+        follows: [rooms]
+"#;
+        let (at, reason) = journal_refusal(unpooled);
+        assert_eq!(
+            at,
+            JournalDeclaration::Follows {
+                machine: "view".into()
+            }
+        );
+        assert!(reason.contains("declares no `sessions:`"), "{reason}");
+
+        let by_client = journaled("        journal: true\n", "        follows: [rooms]\n", "")
+            .replace(
+                "view.scxml\n        sessions: { key_from: data.room",
+                "view.scxml\n        sessions: { key_from: client",
+            );
+        let (_, reason) = journal_refusal(&by_client);
+        assert!(
+            reason.contains("`sessions.key_from` is `client`"),
+            "{reason}"
+        );
+    }
+
+    /// docs/adr/0114, D4: a machine's own entries were taken in as they were
+    /// said, so following itself would take each twice.
+    #[test]
+    fn a_machine_does_not_follow_itself() {
+        let (at, reason) = journal_refusal(&journaled(
+            "        journal: true\n        follows: [rooms]\n",
+            "",
+            "",
+        ));
+        assert_eq!(
+            at,
+            JournalDeclaration::Follows {
+                machine: "rooms".into()
+            }
+        );
+        assert!(reason.contains("follows itself"), "{reason}");
+    }
+
+    /// docs/adr/0114, D4: what a machine follows is a machine that keeps a
+    /// journal or a stream of the deployment, each named once. Red if a name
+    /// is taken without being looked up.
+    #[test]
+    fn a_follower_names_what_keeps_a_journal_once() {
+        for (rooms, view, tail, said) in [
+            ("", "        follows: [rooms]\n", "", "keeps no journal"),
+            (
+                "        journal: true\n",
+                "        follows: [lobby]\n",
+                "",
+                "neither a machine of the deployment nor a stream",
+            ),
+            (
+                "        journal: true\n",
+                "        follows: [rooms, rooms]\n",
+                "",
+                "names 'rooms' twice",
+            ),
+            (
+                "",
+                "        follows: [directory, directory]\n",
+                DIRECTORY,
+                "names 'directory' twice",
+            ),
+        ] {
+            let (at, reason) = journal_refusal(&journaled(rooms, view, tail));
+            assert_eq!(
+                at,
+                JournalDeclaration::Follows {
+                    machine: "view".into()
+                }
+            );
+            assert!(reason.contains(said), "{reason}");
+        }
+    }
+
+    /// A journal is read from the store its writer keeps, which a process of
+    /// another device does not open (docs/adr/0114, "Not in scope").
+    #[test]
+    fn a_follower_reads_a_journal_of_its_own_device() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: { key_from: data.room, idle_ms: 1000 }
+        journal: true
+  edge:
+    machines:
+      view:
+        source: view.scxml
+        sessions: { key_from: data.room, idle_ms: 1000 }
+        follows: [rooms]
+"#;
+        let (_, reason) = journal_refusal(yaml);
+        assert!(
+            reason.contains("runs on device 'cloud' and this one on 'edge'"),
+            "{reason}"
+        );
+    }
+
+    /// docs/adr/0114, D4 and D6: a stream is named apart from every machine and
+    /// as one segment of its origin, and names each of its schemas once, by a
+    /// path relative to deploy.yaml.
+    #[test]
+    fn a_stream_is_named_apart_and_names_its_schemas() {
+        for (streams, stream, said) in [
+            (
+                "streams:\n  rooms:\n    schemas: [a.scxml]\n",
+                "rooms",
+                "a machine of the deployment has the same name",
+            ),
+            (
+                "streams:\n  1x:\n    schemas: [a.scxml]\n",
+                "1x",
+                "a letter, then letters",
+            ),
+            (
+                "streams:\n  a/b:\n    schemas: [a.scxml]\n",
+                "a/b",
+                "a letter, then letters",
+            ),
+            (
+                "streams:\n  directory:\n    schemas: []\n",
+                "directory",
+                "names no schema",
+            ),
+            (
+                "streams:\n  directory:\n    schemas: [a.scxml, a.scxml]\n",
+                "directory",
+                "names the schema 'a.scxml' twice",
+            ),
+            (
+                "streams:\n  directory:\n    schemas: [/abs/a.scxml]\n",
+                "directory",
+                "not the path of a document relative to deploy.yaml",
+            ),
+        ] {
+            let (at, reason) = journal_refusal(&journaled("", "", streams));
+            assert_eq!(
+                at,
+                JournalDeclaration::Stream {
+                    stream: stream.into()
+                }
+            );
+            assert!(reason.contains(said), "{streams}: {reason}");
+        }
+        assert!(
+            matches!(
+                parse_deploy_str(&journaled(
+                    "",
+                    "",
+                    "streams:\n  directory:\n    schema: [a.scxml]\n"
+                )),
+                Err(DeployError::Yaml { .. })
+            ),
+            "a stream takes `schemas:` and no other key"
+        );
+    }
+
+    /// A refusal of a journal stands on the key it refuses: a machine's
+    /// `follows:`, or the stream's entry under `streams:`.
+    #[test]
+    fn a_refusal_of_a_journal_is_placed_at_its_key() {
+        for (yaml, key) in [
+            (
+                journaled("        journal: true\n        follows: [rooms]\n", "", ""),
+                "follows:",
+            ),
+            (
+                journaled("", "", "streams:\n  rooms:\n    schemas: [a.scxml]\n"),
+                "rooms:",
+            ),
+        ] {
+            let refusal = parse_deploy_str(&yaml).expect_err("refused");
+            let mark = refusal.mark_in(&yaml).expect("a key of the deployment");
+            let line = yaml
+                .lines()
+                .rposition(|line| line.trim_start().starts_with(key))
+                .expect("written");
+            assert_eq!(
+                usize::try_from(mark.line).expect("a line"),
+                line + 1,
+                "{key}"
+            );
+        }
     }
 
     #[test]

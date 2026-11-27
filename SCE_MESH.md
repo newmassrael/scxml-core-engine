@@ -3178,6 +3178,17 @@ topology:
         # how many stand at once.
         members: { lease_ms: <integer>, provisional_ms: <integer>, max_instances: <integer> }
 
+        # The event journal (docs/adr/0114). Optional, on a keyed pool alone.
+        # `journal: true` (D1): the sessions keep a journal of the facts their
+        # document says with `<send type="sce:journal">`, appended by the
+        # write that keeps each checkpoint. `follows:` (D4): the journals the
+        # sessions take in, each a machine of the same device that keeps one,
+        # or a stream of `streams:`, delivered in order to the session
+        # `sessions.key_from` (a `data.<field>`) names. A machine does not
+        # follow itself (`mesh/deploy-invalid-journal`).
+        journal: true | false
+        follows: [<machine or stream>, ...]
+
         bindings:
           "<target_id>":
             transport: someip | can | zenoh_keyexpr | shm | dds | dbus | grpc | ...
@@ -3266,6 +3277,14 @@ partitions:
                                          # a value on a partition with no claim is a rule 12
                                          # configuration error (see §16.5 for the runtime
                                          # consumer that this field gates).
+
+# Observed streams of the event journal (docs/adr/0114, D6): another system's
+# facts, which no session appends to and a machine takes in by `follows:`.
+# Optional. A stream's name is a letter, then letters, digits, `_` or `-`, and
+# no machine's (`mesh/deploy-invalid-journal`).
+streams:
+  <stream_name>:
+    schemas: [<path to an event schema>, ...]   # at least one, each once
 
 events: <path to events.yaml>          # Event payload type definitions
 ```
