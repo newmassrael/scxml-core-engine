@@ -4,6 +4,10 @@
   amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
   by the owner: what is signed (D4), the judgement as a condition of the write (D5), and an offer that waits for a proof
   (D4, ADR 0116). Amended 2026-11-27: a `sce-static` document's route over the instances of an open machine (D2).
+- Amended by: ADR 0116 (D1, D6 and D7): who an incarnation acts for, the "for whom" D1 left to a record of its own, is
+  a delegation the membership holds from the confirmation that bound it to the incarnation's end, ended by D5's
+  condition of the write and the fence as every incarnation is; a fact a session says and an audit entry a run appends
+  record the instance and that person (`Fact::actor`, `HostInvokeRequest::principal`).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,

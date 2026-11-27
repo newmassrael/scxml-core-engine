@@ -9,6 +9,10 @@
   `sce-build`'s; the pool's writes and its follower (step 4) are `sce-rust-mesh`'s `pool` and `pool::follow`; and each
   document "Amends" names carries an "Amended by: ADR 0114" line (step 5), which `sce-build`'s
   `forge::journal::documents` holds it to.
+- Amended by: ADR 0116 (D1 and D7): an entry records who its fact was said for, the instance and the person of the
+  delegation the run that said it was made under (`Fact::actor`, `JournalEntry::actor`; `SqliteStore` layout 13,
+  inside the record under `Sealed`), which the host core writes and no document does; an observed fact names no one.
+  (D6, ADR 0116 D5): groups, roles and relations are facts of an observed stream, which a deciding machine follows.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is

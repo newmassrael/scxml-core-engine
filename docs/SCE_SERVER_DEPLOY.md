@@ -10,6 +10,10 @@ from SCE_MESH.md, and each says where.
 Amended by ADR 0112 (`docs/adr/0112-a-generated-machine-is-served-as-a-pools-session-by-sces-adapter-and-one-kit-holds-every-session-machine-to-the-pools-contract.md`):
 a generated machine is served by SCE's adapter (section 1), and the upgrade in place is held under load (section 4.2).
 
+Amended by ADR 0116 (`docs/adr/0116-a-person-stands-behind-an-instance-by-a-delegation-the-server-holds-and-what-a-document-reads-of-them-no-sender-can-write.md`):
+the store keeps who each fact of the journal was said for (layout 13, section 3), and the audit log who each entry a
+run appended was made for (D7).
+
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 and brought to every step of it that landed by its step 15:
 

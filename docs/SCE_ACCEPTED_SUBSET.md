@@ -7266,6 +7266,13 @@ the rules, and `a_deployment_value_is_no_line_of_the_saved_shape` the shape.
 
 - Amended by: ADR 0116 (D3, D4 and D10, step 4 of its order of work): a document
   reads the person an instance acts for, and every quote is refused.
+- Amended by: ADR 0116 (D7, step 5 of its order of work): who did it is recorded by
+  the platform. A fact a `<send type="sce:journal">` says and an entry a
+  `sce-host-audit-append` appends are recorded as made for the person the macrostep
+  acts for (the one the external event that began it was said for, its internal
+  events included), by the Rust host core and never by the document; an audit entry
+  that names `sce:principal` itself is refused. A page of `sce-host-journal-read`
+  names no person: a document reads a person only of the event it is processing.
 
 `<scxml sce:principal="Person">` names an imported event
 schema the document reads the person an instance of an open machine acts for as, and the

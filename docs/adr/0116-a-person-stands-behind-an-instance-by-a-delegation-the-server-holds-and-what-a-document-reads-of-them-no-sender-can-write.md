@@ -203,8 +203,8 @@ policy language, erasure, and several people behind one instance at a time.
 Each step lands with a test that fails without it.
 
 1. (2026-11-23) This record, accepted, and its model (D9), checked, with its failing configurations.
-2. The person in the membership's store, its conformance kit, sealing and re-sealing.
-3. The offer that waits, the port and the edge; the condition of the write (ADR 0113 step 4 builds it).
+2. (2026-11-28) The person in the membership's store, its conformance kit, sealing and re-sealing.
+3. (2026-11-28) The offer that waits, the port and the edge; the condition of the write (ADR 0113 step 4 builds it).
 4. (2026-11-28) `sce:principal`, `_x.principal`, `_x.quoted` and `sce:on-behalf`, with each refusal's
    appendix row (`validation/principal-record`, `validation/quote-refused`,
    `mesh/codegen-principal-unproved`; every backend but Rust by `generate/unsupported-feature`).
@@ -241,6 +241,39 @@ Each decided by the record's own text and the source it cites, and written here 
    Rust host core's alone; an event of a person in a queue or released and not applied is never run as nobody's
    (D6), so the save and the seal that would hold one refuse, and a host saves after the run that takes the event, as
    the write that keeps a run is made after the run (ADR 0113, D5).
+
+## Decided while landing step 5
+
+D7 landed on 2026-11-28; D5 over ADR 0114's followers is the part of step 5 still to land, so the step is not dated.
+Each decision is the record's own text and the source it cites.
+
+1. **Whose run a fact is.** A macrostep is made for the person the external event that began it was said for
+   (`EngineState::acting`), so a fact said on an internal event the macrostep raised, which carries no `_x.principal`
+   (D3), is still recorded as that person's, and one begun by an event said for nobody (a timer, a completion, an entry
+   of a journal) records nobody. A statement is made on the channel its event came on (Lampson et al. 1992).
+2. **What is recorded.** The instance and the whole person as the delegation names them: issuer, subject,
+   `proved_ms` and `method` (`Fact::actor`, `JournalEntry::actor`; `SqliteStore` layout 13; inside the record
+   under `Sealed`, docs/SCE_SEALED_RECORD.md section 3). An observed fact is another system's and names no one; a store
+   refuses one that does (`ObservedActor`).
+3. **A quote is not recorded yet.** Decision 3 of step 4 refuses every `sce:on-behalf`, so no run is made under a
+   quote and the record keeps no quoting machine; the landing that lists quotes adds it beside `_x.quoted`.
+4. **A page names no person.** A page of `sce-host-journal-read` carries no actor: a machine reads a person only from
+   the delegation its server holds for the link its event came on (invariant 12), and the person of a past entry is
+   a row of a store, not that. Who did what is the host's and an auditor's to read (`JournalStore`).
+5. **The audit row.** The host writes the member `sce:principal` into the entry before its canonical form is taken,
+   so the chain covers it and the bytes of a row, its chain and its checkpoints (docs/SCE_AUDIT_LOG.md) are those of
+   ADR 0109; the subject is written as a personal value is, since it is who the person is, and an entry that names
+   the member itself is refused (`invalid_argument`).
+6. **A running invocation started for a person holds the save.** A restart from a saved state, which holds no
+   person (decision 5 of step 4), would run it for nobody (D6) and record its work as nobody's (D7), so the save
+   refuses while one runs, as it does for a queued event of a person.
+
+For the rest of step 5, D5 over the followers, decided by the record's text and Zanzibar's consistency protocol
+(Pang et al. 2019, the zookie): a fact a follower session says records, beside its actor, the position of each
+journal it follows that its checkpoint holds (the decision's read set); a request carries a position in a field
+the deployment names, as `sessions.key_from` names the key, and the pool holds it in the session's inbox until its
+reader's mark (`JournalStore::keep_read`) has passed that position, refusing a position above the journal's horizon,
+which no answer told.
 
 ## Open questions
 
