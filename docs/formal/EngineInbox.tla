@@ -139,7 +139,7 @@ Spec == Init /\ [][Next]_vars
 \* loop applies what came late.
 LiveSpec == Spec /\ WF_vars(Boundary) /\ \A s \in Sessions : WF_vars(Late(s))
 
-InSeq(x, q) == \E k \in 1..Len(q) : q[k] = x
+InSeq(x, q) == \E k \in DOMAIN q : q[k] = x
 
 \* What each queue took is the order its posts and own events linearized in.
 InOrder ==
@@ -149,14 +149,14 @@ InOrder ==
 
 \* No input enters a queue twice.
 AtMostOnce ==
-    \A t \in Sessions : \A j, k \in 1..Len(extq[t]) : j # k => extq[t][j] # extq[t][k]
+    \A t \in Sessions : \A j, k \in DOMAIN extq[t] : j # k => extq[t][j] # extq[t][k]
 
 \* An input taken is in a queue or in an inbox, never nowhere.
 NoLoss ==
     \A i \in Inputs :
         status[i] = "taken" =>
             \/ \E t \in Sessions : InSeq(i, extq[t])
-            \/ \E s \in Sessions : \E k \in 1..Len(inbox[s]) : inbox[s][k].item = i
+            \/ \E s \in Sessions : InSeq(i, ItemsTo(inbox[s], Tree!Target(i)))
 
 \* Every input taken reaches the queue of the session it names.
 Delivered == \A i \in Inputs : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
