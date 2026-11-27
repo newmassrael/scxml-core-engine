@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "RunTrace",
-  "description": "One run of a machine by one lane, as the steps of Appendix D it took (docs/adr/0115, D4 and D8). Every lane's trace port writes this form and `sce-codegen formal traces` judges it against the model its traces manifest names, so one judge serves all of them. A step is one of the actions `docs/formal/AppendixD.tla` gives the interpreter: `start` (Start, the entry into the initial configuration), `eventless` (Eventless, a microstep on eventless transitions), `internal` and `external` (Internal and External, an event taken off its queue and the microstep it selects, which takes nothing when it selects nothing), and `stop` (Stop, the exit of the interpreter). A macrostep is the steps from a `start` or an `external` step to the next one. Each step says every field its kind has and no other, because a trace that leaves something unsaid may be accepted though the run was wrong: `fired` is the transitions the microstep took in the order they were selected, each by its source state and its position among that state's own transitions in document order (the row of the emitted transition table, docs/adr/0089); `exited` and `entered` are the states in the order they were exited and entered; `configuration` is the states active once the step was over, a set; `event` is the name of the event taken, its tokens separated by `.`, the one `_event.name` holds while it is taken (§scxml-5.10.1): the whole name it was raised or sent under, never a descriptor that matched it (§scxml-3.12.1), the event of the document a runtime resolved it to, nor the wildcard; `outcome` is the top-level final state a stop ended the run in, or null. An event from outside and a delayed send that comes due are the environment's steps (Arrive and Due), which no runtime can tell apart on its external queue: the run does not say them, and the external step that takes such an event names it. The reader is `sce-build/src/run_trace.rs` (`RunTrace::from_json`), which refuses what this schema refuses.",
+  "description": "One run of a machine by one lane, as the steps of Appendix D it took (docs/adr/0115, D4 and D8). Every lane's trace port writes this form and `sce-codegen formal traces` judges it against the model its traces manifest names, so one judge serves all of them. A step is one of the actions `docs/formal/AppendixD.tla` gives the interpreter: `start` (Start, the entry into the initial configuration), `eventless` (Eventless, a microstep on eventless transitions), `internal` and `external` (Internal and External, an event taken off its queue and the microstep it selects, which takes nothing when it selects nothing), and `stop` (Stop, the exit of the interpreter). A macrostep is the steps from a `start` or an `external` step to the next one. Each step says every field its kind has and no other, because a trace that leaves something unsaid may be accepted though the run was wrong: `fired` is the transitions the microstep took in the order they were selected, each by its source state and its position among that state's own transitions in document order (the row of the emitted transition table, docs/adr/0089); `exited` and `entered` are the states in the order they were exited and entered; `configuration` is the states active once the step was over, a set; `event` is the name of the event taken, its tokens separated by `.`, the one `_event.name` holds while it is taken (§scxml-5.10.1): the whole name it was raised or sent under, never a descriptor that matched it (§scxml-3.12.1), the event of the document a runtime resolved it to, nor the wildcard; `outcome` is the top-level final state a stop ended the run in, or null. An event from outside and a delayed send that comes due are the environment's steps (Arrive and Due), which no runtime can tell apart on its external queue: the run does not say them, and the external step that takes such an event names it. A run the model made rather than a lane, a scenario (docs/adr/0115, D15), says what its environment did, which a lane replaying it must do: its `inputs`, and the `cycle` it ends in, if any; a lane's trace port writes neither. The reader is `sce-build/src/run_trace.rs` (`RunTrace::from_json`), which refuses what this schema refuses.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -26,9 +26,46 @@
       "items": {
         "$ref": "#/definitions/step"
       }
+    },
+    "inputs": {
+      "description": "A scenario's events from its environment, in the order they came: each an event from outside (`arrive`, AppendixD's Arrive) or a delayed send that came due (`due`, Due), with the count of steps that were over when it came. The reader also refuses an input that comes after the last step or before the input ahead of it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/input"
+      }
+    },
+    "cycle": {
+      "description": "The place, from 0, of the step a cycle the run takes again and again starts at: the steps from there on and the inputs that came after the step before it, which a lane replays once. The reader also refuses a place past the last step.",
+      "type": "integer",
+      "minimum": 0
     }
   },
   "definitions": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "after",
+        "event"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "arrive",
+            "due"
+          ]
+        },
+        "after": {
+          "description": "How many steps were over when it came: from 1, since an event comes once the interpreter has started.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "event": {
+          "$ref": "#/definitions/event"
+        }
+      }
+    },
     "name": {
       "description": "A state's id.",
       "type": "string",

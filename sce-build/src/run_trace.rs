@@ -41,6 +41,16 @@
 //! its external queue came from; the `external` step that takes one names it,
 //! and the judge lets the model's environment have put it there.
 //!
+//! A run the model made, rather than a lane, is a scenario (docs/adr/0115, D8's
+//! converse and D15): the run TLC gives of a violation or a witness, which every
+//! lane replays. It says, beside its steps, what its environment did, which a
+//! lane must do to replay it: its `inputs`, each event that came from outside
+//! (`arrive`, AppendixD's `Arrive`) or a delayed send that came due (`due`,
+//! `Due`), with the count of steps taken before it came; and, for a run that
+//! ends in a cycle the model takes again and again, the place of the step the
+//! `cycle` starts at, which a lane replays once. A lane's trace port writes
+//! neither: what came to it is the harness's, and is not the run's to say.
+//!
 //! Nothing here knows a language or a model: each lane's trace port writes the
 //! form ([`RunTrace::to_json`] is the writer of reference), described by
 //! `tests/forge/conformance/run_trace.schema.json`, and
@@ -142,13 +152,52 @@ pub fn fields_of(kind: &str) -> Option<&'static [&'static str]> {
 /// Every kind of step the form has.
 pub const KINDS: &[&str] = &["start", "eventless", "internal", "external", "stop"];
 
-/// One run of one machine by one lane.
+/// Where an event that came from the environment came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputKind {
+    /// It came from outside (AppendixD's `Arrive`).
+    Arrive,
+    /// A delayed send the machine made came due (AppendixD's `Due`).
+    Due,
+}
+
+impl InputKind {
+    /// The kind as the form names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InputKind::Arrive => "arrive",
+            InputKind::Due => "due",
+        }
+    }
+}
+
+/// One event the environment put on the external queue during a scenario.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Input {
+    pub kind: InputKind,
+    /// How many steps of the run were over when it came: from 1, since an
+    /// event comes once the interpreter has started.
+    pub after: usize,
+    /// Its name, as `_event.name` holds it once it is taken.
+    pub event: String,
+}
+
+/// One run of one machine by one lane, or by the model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunTrace {
-    /// The lane that ran it: `rust`, `c11`, `cpp`, ...
+    /// The lane that ran it: `rust`, `c11`, `cpp`, ..., or `model` for a
+    /// scenario.
     pub lane: String,
     /// Its steps, in the order the run took them.
     pub steps: Vec<Step>,
+    /// What came from the environment, in the order it came; none in a run a
+    /// lane's trace port wrote.
+    pub inputs: Vec<Input>,
+    /// The place of the step a cycle the run takes again and again starts at:
+    /// the steps from there to the end, and the inputs that came after the
+    /// step before it, are the cycle, replayed once. `None` for a run that
+    /// does not end in one.
+    pub cycle: Option<usize>,
 }
 
 // ─────────────────────────────── The JSON form ───────────────────────────────
@@ -162,6 +211,26 @@ struct TraceDocument {
     version: u64,
     lane: String,
     steps: Vec<StepWire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    inputs: Vec<InputWire>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cycle: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum InputKindWire {
+    Arrive,
+    Due,
+}
+
+/// One input of a scenario.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct InputWire {
+    kind: InputKindWire,
+    after: usize,
+    event: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +290,10 @@ impl RunTrace {
     /// this form does not, or a step that does not say every field its kind has
     /// or says one its kind has not; a name that is empty, an event name with an
     /// empty token, a configuration that names a state twice, and a run of no
-    /// step, which shows nothing.
+    /// step, which shows nothing. Of a scenario's inputs it refuses one that
+    /// comes before the first step is over or after the last, one out of the
+    /// order of the steps, and an event name with an empty token; and a cycle
+    /// that starts at no step.
     pub fn from_json(text: &str) -> Result<RunTrace, TraceError> {
         let document: TraceDocument =
             serde_json::from_str(text).map_err(|e| TraceError(format!("not a run trace: {e}")))?;
@@ -245,9 +317,18 @@ impl RunTrace {
             .enumerate()
             .map(|(at, step)| step.observed(at))
             .collect::<Result<Vec<Step>, TraceError>>()?;
+        let inputs = inputs_read(document.inputs, steps.len())?;
+        if let Some(cycle) = document.cycle.filter(|cycle| *cycle >= steps.len()) {
+            return Err(TraceError(format!(
+                "`cycle` starts at step {cycle}, and the run has {} steps",
+                steps.len()
+            )));
+        }
         Ok(RunTrace {
             lane: document.lane,
             steps,
+            inputs,
+            cycle: document.cycle,
         })
     }
 
@@ -257,9 +338,61 @@ impl RunTrace {
             version: TRACE_FORMAT_VERSION,
             lane: self.lane.clone(),
             steps: self.steps.iter().map(StepWire::of).collect(),
+            inputs: self
+                .inputs
+                .iter()
+                .map(|input| InputWire {
+                    kind: match input.kind {
+                        InputKind::Arrive => InputKindWire::Arrive,
+                        InputKind::Due => InputKindWire::Due,
+                    },
+                    after: input.after,
+                    event: input.event.clone(),
+                })
+                .collect(),
+            cycle: self.cycle,
         };
         serde_json::to_string_pretty(&document).expect("a run trace serialises")
     }
+}
+
+/// The inputs of a scenario of `steps` steps, each held to the run: it comes
+/// once a step is over and before the run is, in the order of the steps.
+fn inputs_read(inputs: Vec<InputWire>, steps: usize) -> Result<Vec<Input>, TraceError> {
+    let mut read = Vec::with_capacity(inputs.len());
+    let mut last = 0usize;
+    for (at, input) in inputs.into_iter().enumerate() {
+        let refuse = |reason: String| TraceError(format!("inputs[{at}]: {reason}"));
+        if input.after == 0 || input.after > steps {
+            return Err(refuse(format!(
+                "comes after step {}, and an event comes after one of the run's {steps} \
+                 steps is over",
+                input.after
+            )));
+        }
+        if input.after < last {
+            return Err(refuse(format!(
+                "comes after step {}, before the input ahead of it, after step {last}",
+                input.after
+            )));
+        }
+        last = input.after;
+        if input.event.is_empty() || input.event.split('.').any(str::is_empty) {
+            return Err(refuse(format!(
+                "`event` {:?} is no event name: its tokens are separated by `.`, none empty",
+                input.event
+            )));
+        }
+        read.push(Input {
+            kind: match input.kind {
+                InputKindWire::Arrive => InputKind::Arrive,
+                InputKindWire::Due => InputKind::Due,
+            },
+            after: input.after,
+            event: input.event,
+        });
+    }
+    Ok(read)
 }
 
 impl StepWire {
@@ -520,6 +653,79 @@ mod tests {
             r#"{START}, {{"kind": "eventless", "event": "e", "fired": [], "exited": [], "entered": [], "configuration": []}}"#
         )))
         .contains("steps[1] (eventless): `event` is no field of this kind"));
+    }
+
+    /// Turns red if a scenario's inputs or its cycle are dropped on the way
+    /// through the form, or one that cannot be the run's is read.
+    #[test]
+    fn a_scenario_says_its_inputs_and_its_cycle() {
+        let microstep = r#""fired": [], "exited": [], "entered": [], "configuration": ["s0"]"#;
+        let scenario = |inputs: &str, cycle: &str| {
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}, {{"kind": "external", "event": "go", {microstep}}}], "inputs": [{inputs}]{cycle}}}"#
+            )
+        };
+        let read = RunTrace::from_json(&scenario(
+            r#"{"kind": "arrive", "after": 1, "event": "go"}, {"kind": "due", "after": 1, "event": "late.one"}"#,
+            r#", "cycle": 1"#,
+        ))
+        .expect("a scenario reads");
+        assert_eq!(
+            read.inputs,
+            vec![
+                Input {
+                    kind: InputKind::Arrive,
+                    after: 1,
+                    event: "go".to_string(),
+                },
+                Input {
+                    kind: InputKind::Due,
+                    after: 1,
+                    event: "late.one".to_string(),
+                },
+            ]
+        );
+        assert_eq!(read.cycle, Some(1));
+        assert_eq!(
+            RunTrace::from_json(&read.to_json()).expect("what is written reads"),
+            read
+        );
+        for (inputs, cycle, refusal) in [
+            (
+                r#"{"kind": "arrive", "after": 0, "event": "go"}"#,
+                "",
+                "inputs[0]: comes after step 0",
+            ),
+            (
+                r#"{"kind": "arrive", "after": 3, "event": "go"}"#,
+                "",
+                "inputs[0]: comes after step 3",
+            ),
+            (
+                r#"{"kind": "arrive", "after": 2, "event": "go"}, {"kind": "arrive", "after": 1, "event": "go"}"#,
+                "",
+                "inputs[1]: comes after step 1, before the input ahead of it",
+            ),
+            (
+                r#"{"kind": "due", "after": 1, "event": "a..b"}"#,
+                "",
+                "is no event name",
+            ),
+            (
+                r#"{"kind": "arrive", "after": 1, "event": "go"}"#,
+                r#", "cycle": 2"#,
+                "`cycle` starts at step 2, and the run has 2 steps",
+            ),
+        ] {
+            let found = refused(&scenario(inputs, cycle));
+            assert!(found.contains(refusal), "{found}");
+        }
+        let lane_run = RunTrace::from_json(&trace(START)).expect("a lane's run reads");
+        assert!(lane_run.inputs.is_empty() && lane_run.cycle.is_none());
+        assert!(
+            !lane_run.to_json().contains("inputs") && !lane_run.to_json().contains("cycle"),
+            "a run with no input and no cycle is written as a lane's run is"
+        );
     }
 
     #[test]

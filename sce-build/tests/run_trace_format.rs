@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::run_trace::{Fired, Microstep, RunTrace, Step, KINDS, TRACE_FORMAT_VERSION};
+use sce_build::run_trace::{
+    Fired, Input, InputKind, Microstep, RunTrace, Step, KINDS, TRACE_FORMAT_VERSION,
+};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -173,6 +175,40 @@ fn corpus() -> Vec<(&'static str, String)> {
             )),
         ),
         (
+            "run_a_scenario_with_its_inputs_and_its_cycle",
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}], "inputs": [{{"kind": "arrive", "after": 1, "event": "go"}}, {{"kind": "due", "after": 1, "event": "a.b"}}], "cycle": 0}}"#
+            ),
+        ),
+        (
+            "an_input_before_the_start",
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}], "inputs": [{{"kind": "arrive", "after": 0, "event": "go"}}]}}"#
+            ),
+        ),
+        (
+            "an_input_of_an_unknown_kind",
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}], "inputs": [{{"kind": "sent", "after": 1, "event": "go"}}]}}"#
+            ),
+        ),
+        (
+            "an_input_with_an_unknown_field",
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}], "inputs": [{{"kind": "arrive", "after": 1, "event": "go", "data": 1}}]}}"#
+            ),
+        ),
+        (
+            "an_input_whose_event_has_an_empty_token",
+            format!(
+                r#"{{"version": 1, "lane": "model", "steps": [{START}], "inputs": [{{"kind": "arrive", "after": 1, "event": "a..b"}}]}}"#
+            ),
+        ),
+        (
+            "a_negative_cycle",
+            format!(r#"{{"version": 1, "lane": "model", "steps": [{START}], "cycle": -1}}"#),
+        ),
+        (
             "an_outcome_of_an_empty_id",
             run(&format!(
                 r#"{START}, {{"kind": "stop", "exited": [], "outcome": ""}}"#
@@ -209,7 +245,7 @@ fn the_schema_accepts_what_the_reader_accepts() {
 }
 
 /// What the writer writes, the reader reads back, every kind of step and an
-/// index past 2^31 among it.
+/// index past 2^31 among it, with a scenario's inputs and its cycle.
 #[test]
 fn a_written_run_reads_back_the_same() {
     let names = |listed: &[&str]| -> Vec<String> { listed.iter().map(|n| n.to_string()).collect() };
@@ -243,6 +279,19 @@ fn a_written_run_reads_back_the_same() {
                 outcome: None,
             },
         ],
+        inputs: vec![
+            Input {
+                kind: InputKind::Arrive,
+                after: 1,
+                event: "go".to_string(),
+            },
+            Input {
+                kind: InputKind::Due,
+                after: 3,
+                event: "late".to_string(),
+            },
+        ],
+        cycle: Some(2),
     };
     let written = run.to_json();
     let read = RunTrace::from_json(&written).expect("the writer's output reads");
