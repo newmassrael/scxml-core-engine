@@ -86,6 +86,23 @@ pub fn journal_events(model: &SCXMLModel) -> std::collections::BTreeSet<String> 
     events
 }
 
+/// The description of the record of `event`, the event of an event schema `model`
+/// imports, by which the runtime's record codec reads an entry of it into the data
+/// the event carries (docs/adr/0114, D1 and D4): what a follower is delivered an
+/// entry it follows by. `None` when no schema `model` imports declares `event`;
+/// the reason, when its record has no deterministic CBOR (docs/adr/0101, section 2).
+pub fn entry_record(model: &SCXMLModel, event: &str) -> Option<Result<String, String>> {
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, schema)| schema.event_name == event)
+        .map(|(alias, _)| alias.clone())?;
+    Some(describe(
+        &ValueType::Record { alias },
+        &model.imported_type_scope,
+    ))
+}
+
 /// What the entry of a fact of one event is made by.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct EntryOf {

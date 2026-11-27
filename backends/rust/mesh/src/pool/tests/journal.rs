@@ -9,7 +9,12 @@ use super::*;
 use sce_rust_session_store::{JournalStore, StreamName};
 
 /// The schema of what a teller says.
-const SAID: &str = "teller.said";
+pub(super) const SAID: &str = "teller.said";
+
+/// The description of the record of [`SAID`] (`sce_build::forge::payload_record::describe`):
+/// the fact, and the room whose session said it.
+pub(super) const SAID_RECORD: &str =
+    r#"{"record":[["fact",false,{"text":32},null],["room",false,{"text":16},null]]}"#;
 
 /// A machine that says a fact for each `say` it is told, the fact the text of its data's `fact`,
 /// and keeps how many it said; `close` ends its session. Written by hand in the shape a generated
@@ -30,18 +35,14 @@ impl SessionMachine for Teller {
             stepped = true;
             match event.name.as_str() {
                 "say" => {
-                    let fact = match json::parse(&event.metadata.data)
-                        .ok()
-                        .and_then(|data| data.member("fact").cloned())
-                    {
-                        Some(Value::Text(fact)) => fact,
-                        _ => String::new(),
-                    };
+                    let data =
+                        sce_rust_runtime::record_cbor::encode(&event.metadata.data, SAID_RECORD)
+                            .unwrap_or_else(|refusal| panic!("a fact of its record: {refusal:?}"));
                     self.said += 1;
                     self.fresh.push(JournalEntry {
                         schema: SAID,
                         revision: 1,
-                        data: fact.into_bytes(),
+                        data,
                         valid_ms: None,
                     });
                 }
@@ -131,7 +132,7 @@ const TELLERS: Machine = Machine {
 };
 
 /// A pool of [`TELLERS`] kept in `store`, its links up.
-fn tellers(store: Arc<dyn SessionStore>, clock: &Clock) -> Pool<Tellers, Wire, Clock> {
+pub(super) fn tellers(store: Arc<dyn SessionStore>, clock: &Clock) -> Pool<Tellers, Wire, Clock> {
     let pool = Pool::new(
         TELLERS,
         PoolConfig {
@@ -150,7 +151,7 @@ fn tellers(store: Arc<dyn SessionStore>, clock: &Clock) -> Pool<Tellers, Wire, C
 }
 
 /// The `n`th thing the client tells the room `room`: `event`, saying `fact`.
-fn told(room: &str, event: &str, fact: &str, n: u32) -> Vec<u8> {
+pub(super) fn told(room: &str, event: &str, fact: &str, n: u32) -> Vec<u8> {
     from_client(
         event,
         &alloc::format!(r#"{{"room":"{room}","fact":"{fact}"}}"#),
@@ -159,7 +160,20 @@ fn told(room: &str, event: &str, fact: &str, n: u32) -> Vec<u8> {
     )
 }
 
-/// The stream and the data of every entry `store`'s journal holds, in the order of their
+/// The fact the data of an entry of [`SAID`] holds.
+pub(super) fn fact_of(data: &[u8]) -> String {
+    let record = sce_rust_runtime::record_cbor::decode(data, SAID_RECORD)
+        .unwrap_or_else(|refusal| panic!("a record of {SAID}: {refusal:?}"));
+    match json::parse(&record)
+        .ok()
+        .and_then(|record| record.member("fact").cloned())
+    {
+        Some(Value::Text(fact)) => fact,
+        other => panic!("a fact of text: {other:?}"),
+    }
+}
+
+/// The stream and the fact of every entry `store`'s journal holds, in the order of their
 /// positions.
 fn entries(store: &impl JournalStore) -> Vec<(StreamName, String)> {
     store
@@ -167,12 +181,7 @@ fn entries(store: &impl JournalStore) -> Vec<(StreamName, String)> {
         .expect("a read of the journal")
         .entries
         .into_iter()
-        .map(|entry| {
-            (
-                entry.stream,
-                String::from_utf8(entry.data).expect("a fact's text"),
-            )
-        })
+        .map(|entry| (entry.stream, fact_of(&entry.data)))
         .collect()
 }
 

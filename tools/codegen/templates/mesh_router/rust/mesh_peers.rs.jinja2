@@ -172,6 +172,24 @@ pub const MACHINE: Machine = Machine {
         max_live: {{ sessions.max_live }},
         max_inbox: {{ sessions.max_inbox }},
         commit_delay_us: {{ sessions.commit_delay_us }},
+{#- deploy.yaml `follows:` (docs/adr/0114, D4): the journals the pool takes
+    the entries of, and the record each kind of entry is read by, as
+    `topology::resolve_keyed_pool_following` read them against the document. -#}
+{%- if sessions.follows %}
+        follows: sce_rust_mesh::peers::Follows {
+            journals: &[{% for journal in sessions.follows %}"{{ journal | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+            entries: &[
+{%- for entry in sessions.followed %}
+                sce_rust_mesh::peers::FollowedEntry {
+                    event: "{{ entry.event | escape_rust }}",
+                    record: "{{ entry.record | escape_rust }}",
+                },
+{%- endfor %}
+            ],
+        },
+{%- else %}
+        follows: sce_rust_mesh::peers::Follows::NONE,
+{%- endif %}
     }),
 {%- else %}
     sessions: None,

@@ -235,6 +235,53 @@ pub struct Sessions {
     /// the pool's committer waits before it takes what was handed to it into
     /// one commit; `0` waits for nothing (docs/adr/0109, D15).
     pub commit_delay_us: u64,
+    /// deploy.yaml's `follows:` (docs/adr/0114, D4): the journals whose
+    /// entries the pool takes in, each delivered to the session its key field
+    /// names ([`crate::pool::Pool::follow`]).
+    pub follows: Follows,
+}
+
+/// The journals a keyed pool follows (deploy.yaml's `follows:`, docs/adr/0114,
+/// D4), as the build read them against the document: each by its name, a
+/// machine of the deployment or an observed stream, and the record each kind
+/// of their entries is, which the pool reads an entry's data by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Follows {
+    /// The machines and observed streams followed, by name.
+    pub journals: &'static [&'static str],
+    /// The kinds of entry they make, by the event each is delivered as.
+    pub entries: &'static [FollowedEntry],
+}
+
+impl Follows {
+    /// A pool that follows no journal.
+    pub const NONE: Follows = Follows {
+        journals: &[],
+        entries: &[],
+    };
+
+    /// The kind of entry of `schema`, the id an entry names its schema by: the
+    /// event the schema declares.
+    pub fn entry(&self, schema: &str) -> Option<&FollowedEntry> {
+        self.entries.iter().find(|entry| entry.event == schema)
+    }
+
+    /// Whether `journal` is one the pool follows.
+    pub fn follows(&self, journal: &str) -> bool {
+        self.journals.contains(&journal)
+    }
+}
+
+/// One kind of entry a pool follows: the event its schema declares, which the
+/// session is told it as, and the description of its record
+/// (`sce_build::forge::payload_record::describe`), by which the entry's
+/// deterministic CBOR is read into the data the event carries
+/// (`sce_rust_runtime::record_cbor::decode`), as the event of a fact the
+/// session said itself carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FollowedEntry {
+    pub event: &'static str,
+    pub record: &'static str,
 }
 
 /// How many copies of a machine the deployment runs (deploy.yaml's

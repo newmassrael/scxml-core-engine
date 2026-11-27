@@ -396,6 +396,31 @@ fn a_value_comes_from_the_deployment_or_the_journal() {
 /// `deploy` as deploy.yaml, [`BOOKED`] and `others` beside it; return
 /// `(exit_ok, output)`.
 fn generate_deployed(doc: &str, deploy: &str, others: &[(&str, &str)]) -> (bool, String) {
+    let (ok, out, _) = generate_deployed_peers(doc, deploy, others);
+    (ok, out)
+}
+
+/// The text of every file under `dir`, at any depth, whose name ends in `suffix`.
+fn written_under(dir: &Path, suffix: &str) -> String {
+    let mut text = String::new();
+    for entry in std::fs::read_dir(dir).expect("read out").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            text.push_str(&written_under(&path, suffix));
+        } else if path.to_string_lossy().ends_with(suffix) {
+            text.push_str(&std::fs::read_to_string(&path).expect("a generated file"));
+        }
+    }
+    text
+}
+
+/// [`generate_deployed`], with the machine's Mesh peer table as it was written
+/// (`*_mesh_peers.rs`), empty when none was.
+fn generate_deployed_peers(
+    doc: &str,
+    deploy: &str,
+    others: &[(&str, &str)],
+) -> (bool, String, String) {
     let dir = tempdir().expect("tempdir");
     std::fs::write(dir.path().join("room_booked.scxml"), BOOKED).expect("write schema");
     for (name, text) in others {
@@ -425,6 +450,7 @@ fn generate_deployed(doc: &str, deploy: &str, others: &[(&str, &str)]) -> (bool,
         output.status.success(),
         String::from_utf8_lossy(&output.stderr).into_owned()
             + &String::from_utf8_lossy(&output.stdout),
+        written_under(&out_dir, "_mesh_peers.rs"),
     )
 }
 
@@ -490,6 +516,40 @@ fn a_follower_is_keyed_by_the_entries_it_follows() {
         !out.contains("mesh/deploy-sessions-key-not-in-request")
             && !out.contains("mesh/codegen-journal-mismatch"),
         "the view is keyed by the entries it follows:\n{out}"
+    );
+}
+
+/// docs/adr/0114, D4: the pool of a machine that follows a journal is told, in
+/// its peer table, the journals it follows and the record each kind of their
+/// entries is read by, the description of the schema's record the document
+/// imports; a pool that follows none is told none. Red if the template writes no
+/// journal, or no record, of what the deployment follows.
+#[test]
+fn a_follower_is_told_the_record_each_entry_it_follows_is_read_by() {
+    let rooms = statechart("sce-static", SAYS);
+    let (ok, out, peers) = generate_deployed_peers(
+        &statechart("sce-static", ""),
+        &pooled("        follows: [rooms]\n"),
+        &[("rooms.scxml", rooms.as_str())],
+    );
+    assert!(ok, "the follower is generated:\n{out}");
+    for expected in [
+        "follows: sce_rust_mesh::peers::Follows {",
+        "journals: &[\"rooms\"],",
+        "event: \"room.booked\",",
+        "record: \"{\\\"record\\\":[",
+    ] {
+        assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
+    }
+    let (ok, out, peers) = generate_deployed_peers(
+        &statechart("sce-static", SAYS),
+        &pooled("        journal: true\n"),
+        &[("rooms.scxml", rooms.as_str())],
+    );
+    assert!(ok, "the writer is generated:\n{out}");
+    assert!(
+        peers.contains("follows: sce_rust_mesh::peers::Follows::NONE,"),
+        "a pool that follows nothing:\n{peers}"
     );
 }
 

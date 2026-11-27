@@ -335,6 +335,7 @@ impl<'s, S: Subject + ?Sized> Run<'s, S> {
             clean: true,
             state,
             endpoints: alloc::vec![section],
+            followed: alloc::collections::BTreeMap::new(),
         }
         .to_json();
         let now = self.clock.at();

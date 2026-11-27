@@ -39,7 +39,8 @@ use sce_rust_mesh::endpoint::{
 };
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::peers::{
-    EdgeRates, HttpsAuthenticator, Instances, KeyFrom, Machine, Peer, PeerLink, Receipt, Sessions,
+    EdgeRates, Follows, HttpsAuthenticator, Instances, KeyFrom, Machine, Peer, PeerLink, Receipt,
+    Sessions,
 };
 use sce_rust_mesh::pool::{SessionEndpoint, SessionFactory, SessionMachine};
 use sce_rust_mesh::router::{PeerConfig, Responders};
@@ -223,6 +224,7 @@ pub fn pooled(
             max_live: 100_000,
             max_inbox: 64,
             commit_delay_us: 0,
+            follows: Follows::NONE,
         }),
     }
 }

@@ -202,4 +202,10 @@ where
     fn finished(&self) -> bool {
         self.engine.is_in_final_state()
     }
+
+    /// The facts the engine's macrosteps said since the last take (docs/adr/0114, D1), which the
+    /// pool appends with the state that said them.
+    fn take_journal(&mut self) -> Vec<sce_rust_runtime::journal::JournalEntry> {
+        self.engine.take_journal()
+    }
 }

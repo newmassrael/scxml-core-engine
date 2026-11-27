@@ -4696,6 +4696,17 @@ pub fn check_journal(
         }
         _ => {}
     }
+    // docs/adr/0114, D4: an entry the machine follows is read into the data its
+    // event carries by its record's deterministic CBOR, so each one the document
+    // imports has one. One it does not import is the keyed pool's to refuse.
+    for event in followed {
+        if let Some(Err(why)) = crate::forge::journal::entry_record(model, event) {
+            return Err(refuse(format!(
+                "the machine follows entries of `{event}`, whose record has no deterministic \
+                 CBOR an entry is kept as (docs/adr/0101, section 2): {why}"
+            )));
+        }
+    }
     let entries: BTreeSet<&str> = said
         .iter()
         .chain(followed.iter())
@@ -4925,6 +4936,23 @@ pub struct KeyedPool {
     /// deploy.yaml's `sessions.commit_delay_us`, `0` when the section sets none
     /// (docs/adr/0109, D15).
     pub commit_delay_us: u64,
+    /// deploy.yaml's `follows:` (docs/adr/0114, D4): the journals the pool
+    /// takes the entries of, by name, in the order written; empty for a pool
+    /// that follows none.
+    pub follows: Vec<String>,
+    /// The record of each kind of entry those journals make, by the event its
+    /// schema declares: what the pool reads an entry's data by.
+    pub followed: Vec<FollowedRecord>,
+}
+
+/// One kind of entry a keyed pool follows (docs/adr/0114, D4): the event its
+/// schema declares, and the description of its record
+/// ([`crate::forge::payload_record::describe`]) the runtime's record codec reads
+/// an entry of it by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FollowedRecord {
+    pub event: String,
+    pub record: String,
 }
 
 /// `machine`'s `sessions:` section resolved against its document `model`
@@ -4982,6 +5010,8 @@ pub fn resolve_keyed_pool_following(
                 max_live: sessions.max_live,
                 max_inbox: sessions.max_inbox,
                 commit_delay_us: sessions.commit_delay_us,
+                follows: Vec::new(),
+                followed: Vec::new(),
             })
         }
         SessionKeySource::Field(field) => field,
@@ -5027,6 +5057,22 @@ pub fn resolve_keyed_pool_following(
         }
         max_key_bytes = max_key_bytes.max(bytes);
     }
+    // docs/adr/0114, D4: each followed entry is read by its record, which
+    // `check_journal` held to having a deterministic CBOR.
+    let mut records = Vec::with_capacity(followed.len());
+    for event in followed {
+        match crate::forge::journal::entry_record(model, event) {
+            Some(Ok(record)) => records.push(FollowedRecord {
+                event: event.clone(),
+                record,
+            }),
+            _ => {
+                return Err(refuse(SessionKeyFault::NoSchema {
+                    event: event.clone(),
+                }))
+            }
+        }
+    }
     Ok(KeyedPool {
         key_field: Some(field),
         max_key_bytes,
@@ -5034,6 +5080,8 @@ pub fn resolve_keyed_pool_following(
         max_live: sessions.max_live,
         max_inbox: sessions.max_inbox,
         commit_delay_us: sessions.commit_delay_us,
+        follows: Vec::new(),
+        followed: records,
     })
 }
 
@@ -8336,6 +8384,8 @@ topology:
                 max_live: 500,
                 max_inbox: 8,
                 commit_delay_us: 250,
+                follows: Vec::new(),
+                followed: Vec::new(),
             }
         );
         let model = rooms_with(
@@ -8359,6 +8409,8 @@ topology:
                 max_live: 500,
                 max_inbox: 8,
                 commit_delay_us: 250,
+                follows: Vec::new(),
+                followed: Vec::new(),
             }
         );
     }

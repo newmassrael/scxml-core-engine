@@ -12128,7 +12128,16 @@ pub fn compile_mesh_transport(
                 &followed_events,
             )
         })
-        .transpose()?;
+        .transpose()?
+        // docs/adr/0114, D4: the journals the pool takes in, as its deployment
+        // names them.
+        .map(|pool| mesh::topology::KeyedPool {
+            follows: device
+                .and_then(|d| d.machines.get(&effective_machine_name))
+                .map(|m| m.follows.clone())
+                .unwrap_or_default(),
+            ..pool
+        });
 
     // docs/adr/0109, D12: the values the machine's deployment supplies,
     // checked against what its document declares before anything is emitted.

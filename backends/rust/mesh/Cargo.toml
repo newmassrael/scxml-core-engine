@@ -107,7 +107,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # shape every generated send site fills rather than a second copy of it.
 # `std`, where that surface lives, and without `http-send`, which is the
 # runtime's own transport and not Mesh's.
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
+# `record-cbor`: a pool that follows a journal reads each entry's deterministic CBOR into the
+# data its event carries, by the record the build described (docs/adr/0114, D4).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "record-cbor"] }
 # The contract of the store a server keeps its machines' checkpoints in, one session per key,
 # and a keyed pool its sessions behind (docs/adr/0107, D3, D5 and D6), without the SQLite store,
 # which the program that hosts the core chooses and links.

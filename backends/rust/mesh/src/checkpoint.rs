@@ -54,6 +54,7 @@
 //! [`Endpoint::durable`]: crate::endpoint::Endpoint::durable
 //! [`Endpoint::restore`]: crate::endpoint::Endpoint::restore
 
+use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -86,6 +87,11 @@ pub struct Checkpoint {
     pub state: SavedState,
     /// One section per endpoint of the tree, by machine name.
     pub endpoints: Vec<EndpointSection>,
+    /// For each journal the session follows (docs/adr/0114, D4), by its name (a machine's or an
+    /// observed stream's), the position of the last of its entries the session took in: written
+    /// with what each entry did, so an entry at or below it is a repeat, which the session drops.
+    /// Empty for a session that follows none, and then not written.
+    pub followed: BTreeMap<String, u64>,
 }
 
 /// What one endpoint holds at a checkpoint, under the machine name it speaks for.
@@ -321,7 +327,7 @@ impl Checkpoint {
 
     /// The checkpoint as `sce-mesh-checkpoint` JSON.
     pub fn to_json(&self) -> String {
-        json::write(&object(alloc::vec![
+        let mut members = alloc::vec![
             ("format", Value::Number(FORMAT.to_string())),
             ("checkpoint", count(self.sequence)),
             ("clean", Value::Bool(self.clean)),
@@ -335,7 +341,21 @@ impl Checkpoint {
                         .collect()
                 ),
             ),
-        ]))
+        ];
+        // docs/adr/0114, D4: written only for a session that follows a journal, so the
+        // checkpoint of one that follows none is what it was.
+        if !self.followed.is_empty() {
+            members.push((
+                "followed",
+                Value::Object(
+                    self.followed
+                        .iter()
+                        .map(|(journal, position)| (journal.clone(), count(*position)))
+                        .collect(),
+                ),
+            ));
+        }
+        json::write(&object(members))
     }
 
     /// Read `sce-mesh-checkpoint` JSON, judged by its `format` before anything else is read.
@@ -364,6 +384,21 @@ impl Checkpoint {
                     EndpointSection::from_value(section, &format!("endpoints[{i}]"))
                 })
                 .collect::<Result<_, _>>()?,
+            followed: match value.member("followed") {
+                None => BTreeMap::new(),
+                Some(Value::Object(journals)) => journals
+                    .iter()
+                    .map(|(journal, position)| {
+                        as_count(position, &format!("followed.{journal}"))
+                            .map(|position| (journal.clone(), position))
+                    })
+                    .collect::<Result<_, _>>()?,
+                Some(_) => {
+                    return Err(CheckpointError::Malformed(
+                        "'followed' is not an object".to_string(),
+                    ))
+                }
+            },
         })
     }
 }
@@ -1588,6 +1623,7 @@ mod tests {
                 clean: false,
                 state: saved(&[], dues.iter().map(|due| tick_at(*due)).collect()),
                 endpoints: Vec::new(),
+                followed: BTreeMap::new(),
             };
             sink(&store, key, 0).write(&checkpoint).unwrap();
         }
@@ -1629,6 +1665,7 @@ mod tests {
             clean: false,
             state,
             endpoints: Vec::new(),
+            followed: BTreeMap::new(),
         };
         assert_eq!(checkpoint.earliest_due(), Some(400));
     }
@@ -2100,6 +2137,7 @@ mod tests {
             sequence: 7,
             clean: true,
             state: saved(&[r#"{"n":1}"#.to_string()], vec![tick_at(1_000_100)]),
+            followed: BTreeMap::from([("directory".to_string(), 3), ("rooms".to_string(), 12)]),
             endpoints: vec![EndpointSection {
                 machine: "server".to_string(),
                 router: RouterState {
@@ -2247,6 +2285,7 @@ mod tests {
             clean: false,
             state: saved(&[], Vec::new()),
             endpoints: Vec::new(),
+            followed: BTreeMap::new(),
         };
         let text = checkpoint.to_json();
         assert!(matches!(

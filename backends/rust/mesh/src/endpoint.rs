@@ -715,6 +715,7 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             clean,
             state,
             endpoints: alloc::vec![self.seal(sequence)?],
+            followed: alloc::collections::BTreeMap::new(),
         })
     }
 

@@ -29,6 +29,11 @@
       "description": "One section per endpoint of the tree, each under the machine name it speaks for.",
       "type": "array",
       "items": { "$ref": "#/definitions/endpoint" }
+    },
+    "followed": {
+      "description": "For each journal the session follows (docs/adr/0114, D4), by its name, the position of the last of its entries the session took in, written with what each entry did: an entry at or below it is a repeat. Absent for a session that follows none.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/count" }
     }
   },
   "definitions": {

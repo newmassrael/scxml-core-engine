@@ -88,6 +88,13 @@
 //! keeps its sessions through a handle of its own machine
 //! (`SessionStore::machine`), or of a store that keeps one machine.
 //!
+//! A pool whose machine follows journals (deploy.yaml's `follows:`, docs/adr/0114,
+//! D4) reads them from the store it is given ([`Pool::follow_from`]) when the
+//! host calls [`Pool::follow`], and hands each entry to the session its key
+//! field names; each session keeps the position it took in of each journal in
+//! its checkpoint, so an entry handed again takes effect once (module
+//! `follow`).
+//!
 //! [`Pool::stop`] stops the pool in order: it admits nothing, runs what each
 //! inbox holds, and saves every session as a clean checkpoint, so a start
 //! after it raises no `restored`.
@@ -129,8 +136,8 @@ use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
-    AcquireError, Append, Change, Fact, FactData, Failure, Held, Journal, LeaseError, SessionStore,
-    Write, WriteError, LATEST_MOMENT,
+    AcquireError, Append, Change, Fact, FactData, Failure, Held, Journal, JournalStore, LeaseError,
+    SessionStore, Write, WriteError, LATEST_MOMENT,
 };
 
 use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
@@ -147,6 +154,10 @@ use crate::inbound::ConfigError;
 use crate::outbox::Outboxes;
 use crate::peers::{KeyFrom, Machine, Sessions};
 use crate::router::{payload_text, within, RouterError};
+
+mod follow;
+
+pub use follow::{FOLLOW_PAGE, FOLLOW_WINDOW, JOURNAL_ORIGIN_TYPE};
 
 /// The most saved sessions one call of [`Pool::due`] loads, and one call of
 /// [`Pool::next_wake_ms`] reads, from the store's index of what comes due.
@@ -298,6 +309,15 @@ pub enum PoolError {
     NotAnswered { peer: String, reason: String },
     /// What the endpoint of the session `key` reported to its host.
     Endpoint { key: String, error: RouterError },
+    /// The entry at `position` of the journal `journal`, which the machine follows
+    /// (docs/adr/0114, D4), can be handed to no session, for `reason`: its schema is no kind of
+    /// entry the build described, its data no value of its record, or its key unreadable. The
+    /// reader passes it.
+    Unfollowed {
+        journal: String,
+        position: u64,
+        reason: String,
+    },
     /// The envelope numbered `number` in `client`'s outbox, appended at `at_ms`, was kept longer
     /// than the binding's `retain_ms` without `client` acknowledging it, and the store let it go
     /// (docs/adr/0109, D10). `sender`, the session that sent it, is told at its next run, as
@@ -427,6 +447,8 @@ enum Input {
     /// An expiry noted an envelope the session sent that its client never acknowledged
     /// (docs/adr/0109, D10): read the session's notes and tell its machine.
     Notes,
+    /// An entry of a journal the machine follows (docs/adr/0114, D4; module `follow`).
+    Followed(follow::Followed),
 }
 
 /// A session's inbox. Closed once the session left the table: nothing is
@@ -506,6 +528,9 @@ struct Live<M, T, E> {
     /// appended yet (docs/adr/0114, D1): the next write of the session, which
     /// keeps the state that made them, appends them.
     facts: Vec<JournalEntry>,
+    /// For each journal the session follows, the position of the last entry it
+    /// took in (docs/adr/0114, D4): written with what it did, in the checkpoint.
+    followed: BTreeMap<String, u64>,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -632,6 +657,10 @@ where
     stopping: AtomicBool,
     /// Set once [`Pool::stop`] ended.
     stopped: AtomicBool,
+    /// The store the journals the machine follows are read from
+    /// ([`Pool::follow_from`], docs/adr/0114, D4), and what its reader holds.
+    journal: Option<Arc<dyn JournalStore>>,
+    reader: Mutex<follow::Reader<F::Machine, T, E>>,
 }
 
 impl<F, T, E> Pool<F, T, E>
@@ -720,6 +749,8 @@ where
             outboxes,
             stopping: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
+            journal: None,
+            reader: Mutex::new(follow::Reader::new()),
         })
     }
 
@@ -1228,6 +1259,12 @@ where
             KeyFrom::Client => peer.to_string(),
             KeyFrom::Field(field) => field_key(envelope, field)?,
         };
+        self.bounded_key(key)
+    }
+
+    /// `key`, or why it names no session of this pool: it is empty, or longer than a key of the
+    /// pool holds.
+    fn bounded_key(&self, key: String) -> Result<String, String> {
         if key.is_empty() {
             return Err("its key is empty".to_string());
         }
@@ -1259,27 +1296,40 @@ where
         if self.stopping.load(Ordering::SeqCst) {
             return Err((input, Full::Stopping));
         }
-        let mut table = lock(&self.table);
+        self.post_in(&mut lock(&self.table), key, input).map(|_| ())
+    }
+
+    /// Put `input` in the inbox of the session `key` in `table`, the pool's table locked, which
+    /// holds the session from now on if it did not, within the pool's bounds; answer the slot it
+    /// was put in, or the bound it met with the input.
+    fn post_in(
+        &self,
+        table: &mut Table<F::Machine, T, E>,
+        key: &str,
+        input: Input,
+    ) -> Result<SharedSlot<F::Machine, T, E>, (Input, Full)> {
         if let Some(slot) = table.get(key) {
             let mut inbox = lock(&slot.inbox);
+            // docs/adr/0114, D4: an entry of a followed journal waits in the inbox as an envelope
+            // does, so a follower that cannot keep up stops the reader at the bound.
             let waiting = inbox
                 .queue
                 .iter()
-                .filter(|input| matches!(input, Input::Envelope { .. }))
+                .filter(|input| matches!(input, Input::Envelope { .. } | Input::Followed(_)))
                 .count();
             if waiting >= self.sessions.max_inbox as usize {
                 return Err((input, Full::Inbox));
             }
             inbox.queue.push_back(input);
-            return Ok(());
+            return Ok(Arc::clone(slot));
         }
         if table.len() >= self.sessions.max_live as usize {
             return Err((input, Full::Live));
         }
         let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
         lock(&slot.inbox).queue.push_back(input);
-        table.insert(key.to_string(), slot);
-        Ok(())
+        table.insert(key.to_string(), Arc::clone(&slot));
+        Ok(slot)
     }
 
     /// Save and drop the session that has gone longest without an event and
@@ -1641,6 +1691,10 @@ where
             provisional: loaded.is_none(),
             notes_through,
             facts: Vec::new(),
+            followed: loaded
+                .as_ref()
+                .map(|loaded| loaded.checkpoint.followed.clone())
+                .unwrap_or_default(),
         })
     }
 
@@ -1849,10 +1903,11 @@ where
                 break;
             };
             let now = self.wall_now();
-            let event = matches!(input, Input::Envelope { .. });
+            let mut event = matches!(input, Input::Envelope { .. });
             let told = session.notes_through;
             let calls = {
                 let mut endpoint = lock(&session.endpoint);
+                let mut followed = None;
                 match input {
                     Input::Envelope {
                         peer,
@@ -1869,8 +1924,28 @@ where
                     Input::Notes => {
                         session.notes_through = self.raise_notes(key, &mut endpoint, told);
                     }
+                    // docs/adr/0114, D4: an entry above the position the session took in of its
+                    // journal is told the machine, and the position written with what it did; one
+                    // at or below it is a repeat, settled once what holds its position is durable.
+                    Input::Followed(entry) => {
+                        let taken = session.followed.get(&entry.journal).copied();
+                        if taken.is_some_and(|taken| entry.position <= taken) {
+                            if session.dirty {
+                                session.unsaved.push(entry.receipt);
+                            } else {
+                                entry.receipt.settle(Fate::Settled);
+                            }
+                        } else {
+                            event = true;
+                            followed = Some(entry.call());
+                            session.followed.insert(entry.journal, entry.position);
+                            session.unsaved.push(entry.receipt);
+                        }
+                    }
                 }
-                endpoint.take_calls()
+                let mut calls = endpoint.take_calls();
+                calls.extend(followed);
+                calls
             };
             if self.drive(key, session, calls, now) || event {
                 session.last_active_ms = now;
@@ -1989,6 +2064,9 @@ where
             Ok(taken) => taken,
             Err(error) => return not_saved(error.to_string()),
         };
+        // docs/adr/0114, D4: the position of each followed journal is written with what its
+        // entries did.
+        taken.followed.clone_from(&session.followed);
         // Sealed: the endpoint is never sealed with this number again, whether
         // or not the write lands, and a later checkpoint holds what this one
         // holds.
@@ -2260,13 +2338,18 @@ where
             core::mem::take(&mut inbox.queue)
         };
         for input in held {
-            let Input::Envelope {
-                peer,
-                bytes,
-                receipt,
-            } = input
-            else {
-                continue;
+            let (peer, bytes, receipt) = match input {
+                Input::Envelope {
+                    peer,
+                    bytes,
+                    receipt,
+                } => (peer, bytes, receipt),
+                // docs/adr/0114, D4: an entry no session took in is handed again by the reader.
+                Input::Followed(entry) => {
+                    entry.receipt.settle(Fate::Lost);
+                    continue;
+                }
+                _ => continue,
             };
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
                 receipt.settle(Fate::Lost);
@@ -2437,7 +2520,14 @@ fn field_key(envelope: &Envelope<'_>, field: &str) -> Result<String, String> {
     let text = payload_text(envelope).map_err(|codec| {
         alloc::format!("its data is in the {codec} codec, which the pool does not read")
     })?;
-    let data = json::parse(&text).map_err(|error| alloc::format!("its data is {error}"))?;
+    key_in(&text, field)
+}
+
+/// The key the field `field` of `text`, a JSON object, holds: a text as it is,
+/// an integer as its digits. What an envelope's data and an entry of a followed
+/// journal (docs/adr/0114, D4) are keyed by alike.
+fn key_in(text: &str, field: &str) -> Result<String, String> {
+    let data = json::parse(text).map_err(|error| alloc::format!("its data is {error}"))?;
     match data.member(field) {
         Some(Value::Text(text)) => Ok(text.clone()),
         Some(Value::Number(digits)) if is_integer(digits) => Ok(digits.clone()),
@@ -2532,6 +2622,7 @@ mod tests {
     use std::sync::Condvar;
     use std::time::{Duration, Instant};
 
+    mod following;
     mod journal;
 
     /// The wall clock every test starts at.
@@ -2981,6 +3072,7 @@ mod tests {
         max_live: 100_000,
         max_inbox: 64,
         commit_delay_us: 0,
+        follows: crate::peers::Follows::NONE,
     };
 
     /// [`ROOMS`] holding at most `max_live` sessions in memory and
