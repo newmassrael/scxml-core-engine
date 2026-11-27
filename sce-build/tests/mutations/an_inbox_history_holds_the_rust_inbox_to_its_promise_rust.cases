@@ -1,0 +1,43 @@
+# Mutation cases for docs/adr/0147, D3 on the Rust runtime: every run of the
+# engine's inboxes is a history linearizable to docs/formal/InboxService.tla.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_inbox_history_holds_the_rust_inbox_to_its_promise_rust.cases`.
+#
+# The test runs a tree's own inboxes and a bounded inbox on real threads,
+# records every post and every item the owner put on a session's external
+# queue, with the end of each session, and judges the record with the checker
+# every runtime's history is judged by. Each mutant takes away one part of the
+# door docs/formal/EngineInbox.tla names, and the history of a run without it is
+# one the promise does not allow:
+#
+#   the drain before an event of the owner's own: an own event enters ahead of
+#   a post taken before it (arrival order, W3C test 201's shape);
+#   the inbox applied where a run ends: an input taken after a session's end
+#   never enters (never lost).
+#
+# The test's own cases hold the checker to a record that lost an enqueue or
+# entered two inputs of one poster in reverse.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test an_inbox_history_of_every_run_is_linearizable_to_its_promise
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/an_inbox_history_of_every_run_is_linearizable_to_its_promise.rs
+
+# ── Arrival order: the drain before an event of the owner's own ────
+
+mutation_case "Rust puts an own event on the external queue ahead of what the inbox holds" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        self.drain_before_own();\n        Self::enqueue(&mut self.external_queue, event);\n",
+     "        Self::enqueue(&mut self.external_queue, event);\n")
+PY
+
+# ── Never lost: the inbox applied where a run ends ─────────────────
+
+mutation_case "Rust leaves what the inbox holds unapplied where a run ends" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        self.host.drain_inbox();\n        while let Some(queued) = self.host.queue(true).pop() {\n",
+     "        while let Some(queued) = self.host.queue(true).pop() {\n")
+PY

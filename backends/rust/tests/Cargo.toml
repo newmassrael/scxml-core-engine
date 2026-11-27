@@ -66,6 +66,10 @@ sce-rust-lua = { path = "../lua" }
 sce-rust-mesh = { path = "../mesh" }
 # The scenario replay of the Rust arm, shared with the wasm32 build of it.
 sce-rust-scenarios = { path = "../scenarios" }
+# The inbox history checker (`sce_build::inbox_history`, docs/adr/0147 D3),
+# which the inbox's history test judges its recorded runs with, as every
+# runtime's inbox history is judged.
+sce-build = { path = "../../../sce-build" }
 
 [lints]
 workspace = true
