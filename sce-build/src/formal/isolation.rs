@@ -640,6 +640,22 @@ fn judged_commit(
                     .extend(behaviour_of(&text));
             }
         }
+        // An inductive invariant, the theorems it implies and the types its runs
+        // start from are what level 3 checks (docs/adr/0115, D3): the
+        // specification, as a configuration's properties are.
+        for stated in listed(model, "inductive") {
+            let names = ["invariant", "types"]
+                .into_iter()
+                .filter_map(|key| stated.get(key).and_then(Value::as_str))
+                .map(str::to_string)
+                .chain(
+                    listed(stated, "implies")
+                        .iter()
+                        .filter_map(|name| name.as_str())
+                        .map(str::to_string),
+                );
+            checked.entry(module.clone()).or_default().extend(names);
+        }
     }
     let abstract_module = |module: &str| {
         listed(&models, "models").iter().any(|model| {
@@ -692,11 +708,15 @@ fn judged_commit(
                 }
                 continue;
             }
-            let names = said_by(
-                &old,
-                checked.get(module).unwrap_or(&no_checks),
-                behaviour.get(module).unwrap_or(&no_checks),
-            );
+            let checks = checked.get(module).unwrap_or(&no_checks);
+            let explored = behaviour.get(module).unwrap_or(&no_checks);
+            let names = said_by(&old, checks, explored);
+            // A definition the change adds that only the checks use is the
+            // checks', as the ones they used before are.
+            let all_said: BTreeSet<String> = names
+                .union(&said_by(new_text, checks, explored))
+                .cloned()
+                .collect();
             let (before, after) = (definitions(&old), definitions(new_text));
             for name in names.iter().filter(|name| before.contains_key(*name)) {
                 if before.get(name).map(|text| layout_free(text))
@@ -705,7 +725,8 @@ fn judged_commit(
                     spec.push(format!("{path}: {name}"));
                 }
             }
-            if layout_free(&rest_of(&old, &names)) != layout_free(&rest_of(new_text, &names)) {
+            if layout_free(&rest_of(&old, &all_said)) != layout_free(&rest_of(new_text, &all_said))
+            {
                 beside.push(format!("{path}: the model itself"));
             }
         } else if path.starts_with(&formal) && path.ends_with(".cfg") {
