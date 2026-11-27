@@ -1403,7 +1403,8 @@
         "TimeoutGap": "TRUE",
         "FirstArrival": "TRUE",
         "WaitWhenDurable": "TRUE",
-        "AnchorDurable": "TRUE"
+        "AnchorDurable": "TRUE",
+        "AnchorFirst": "TRUE"
       },
       "promise": "Refines",
       "refines": "OrderService",
@@ -1489,6 +1490,13 @@
           "expect": "violates",
           "invariant": "NoneTold",
           "without": "WaitWhenDurable",
+          "promise": "broken"
+        },
+        {
+          "config": "OrderingBuffer_without_anchor_first.cfg",
+          "expect": "violates",
+          "invariant": "Accounted",
+          "without": "AnchorFirst",
           "promise": "broken"
         },
         {

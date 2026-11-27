@@ -3,31 +3,38 @@
 (* The receive half's ordering of one sender's stream, the mechanism       *)
 (* (SCE_MESH.md section 10.6.4; backends/rust/mesh/src/inbound.rs, its     *)
 (* rules sce:std/mesh/ordering_hold, ordering_drain, ordering_prune and    *)
-(* ordering_gap_end, and the C++ OrderingBuffer), refining OrderService.   *)
-(* The receiver expects a number (next), anchored by the first envelope    *)
-(* that reaches it. One below it is dropped; one above it is held with the *)
-(* time it has waited since it first arrived; the one it expects is        *)
-(* released with every held envelope that follows on from it. The host's   *)
-(* tick ends a gap whose first held envelope has waited GapTimeout: the    *)
-(* numbers before that envelope are told lost (ORDERING_GAP) and what is   *)
-(* held from it on is released. A durable stream (SCE_MESH.md section      *)
-(* 10.11) is anchored at the number its sender sends first, and its gaps   *)
-(* never time out: its sender holds the missing envelope and sends it      *)
+(* ordering_gap_end, the C++ OrderingBuffer, and the Kotlin and Swift      *)
+(* cores), refining OrderService. The receiver expects a number (next),    *)
+(* which for a stream it has no state for is the first its sender sends,   *)
+(* whatever arrives first. One below it is dropped; one above it is held   *)
+(* with the time it has waited since it first arrived; the one it expects  *)
+(* is released with every held envelope that follows on from it. The       *)
+(* host's tick ends a gap whose first held envelope has waited GapTimeout: *)
+(* the numbers before that envelope are told lost (ORDERING_GAP) and what  *)
+(* is held from it on is released, so a receiver that joined the stream    *)
+(* after its start tells lost the numbers before the first it heard. A     *)
+(* durable stream (SCE_MESH.md section 10.11) is expected where its        *)
+(* receiver resumes it, the number after the last it admitted, and its     *)
+(* gaps never time out: its sender holds the missing envelope and sends it *)
 (* again.                                                                  *)
 (*                                                                         *)
 (* The parts, each a constant that is TRUE in the protocol, and each taken *)
 (* out by a run that must find what it breaks:                             *)
-(*   DropBehind      an envelope below the number expected is dropped      *)
-(*   HoldAhead       an envelope above it is held, not released            *)
-(*   Drain           a release takes every held envelope that follows on   *)
-(*   OldestFirst     a gap ends at the lowest held envelope, and only once *)
-(*                   that one has waited                                   *)
-(*   TimeoutGap      the tick ends a gap that has waited                   *)
-(*   FirstArrival    a copy of a held envelope keeps its first arrival's   *)
-(*                   time, so a gap's wait is not started again            *)
-(*   WaitWhenDurable a durable stream's gap never times out                *)
-(*   AnchorDurable   a durable stream is anchored at the number its sender *)
-(*                   sends first, not at the first envelope that arrives   *)
+(*   DropBehind       an envelope below the number expected is dropped     *)
+(*   HoldAhead        an envelope above it is held, not released           *)
+(*   Drain            a release takes every held envelope that follows on  *)
+(*   OldestFirst      a gap ends at the lowest held envelope, and only     *)
+(*                    once that one has waited                             *)
+(*   TimeoutGap       the tick ends a gap that has waited                  *)
+(*   FirstArrival     a copy of a held envelope keeps its first arrival's  *)
+(*                    time, so a gap's wait is not started again           *)
+(*   WaitWhenDurable  a durable stream's gap never times out               *)
+(*   AnchorFirst      a stream is expected from the first number its       *)
+(*                    sender sends, not from the first envelope that       *)
+(*                    arrives                                              *)
+(*   AnchorDurable    a durable stream is expected where its receiver      *)
+(*                    resumes it (here its first number), not from the     *)
+(*                    first envelope that arrives                          *)
 (*                                                                         *)
 (* seen and late are history variables: the numbers that reached the       *)
 (* receiver, and those that reached it after they were told lost, which    *)
@@ -72,6 +79,8 @@ CONSTANTS
     FirstArrival,
     \* @type: Bool;
     WaitWhenDurable,
+    \* @type: Bool;
+    AnchorFirst,
     \* @type: Bool;
     AnchorDurable
 
@@ -161,10 +170,11 @@ Resend(n) ==
     /\ wire' = wire \cup {n}
     /\ UNCHANGED <<sent, next, pending, released, told, seen, late>>
 
-\* The envelope n reaches the receiver, which may leave a copy in flight. The stream is anchored
-\* at the first that arrives, or, durable, at the number its sender sends first.
+\* The envelope n reaches the receiver, which may leave a copy in flight. The first that arrives
+\* sets the number expected: the first its sender sends, or, without the part, its own.
 Admit(n) ==
-    LET at == IF next # 0 THEN next ELSE IF Durable /\ AnchorDurable THEN 1 ELSE n
+    LET anchored == IF Durable THEN AnchorDurable ELSE AnchorFirst
+        at == IF next # 0 THEN next ELSE IF anchored THEN 1 ELSE n
         d == IF Drain THEN Drained(n + 1) ELSE n + 1
     IN
     /\ n \in wire
@@ -251,6 +261,10 @@ NoneTold == Durable => told = {}
 
 \* A durable stream gives its machine first the number its sender sent first.
 FromFirst == Durable /\ released # <<>> => released[1] = 1
+
+\* Every number from the first its sender sends up to the one expected is given or told lost: the
+\* stream is accounted for from its start.
+Accounted == \A n \in 1..(next - 1) : n \in Elems(released) \cup told
 
 \* No envelope is held for ever: each is released or given up in the end.
 Released == \A n \in Numbers : n \in DOMAIN pending ~> n \notin DOMAIN pending
