@@ -5594,7 +5594,9 @@ writes `stream` and `observed`, and a `<param>` of either is
 `entries`, a list of at most `journal_page` (64, which `--limit` moves) entries,
 each its `position`, `recorded_ms`, `holds_ms` (when the fact holds from),
 `origin` (the id another system gave it, empty for a session's) and `fact`, a value
-of `U`. The host answers the page as its deterministic CBOR, within
+of `U`; as for any payload that holds a union, the statechart imports the
+enum of `U`'s tag, so the machine holds a type for it. The host answers the page
+as its deterministic CBOR, within
 `journal_page_bytes` (65536), and the Rust machine opens it where the completion is
 lifted (`sce_rust_runtime::journal::open_page`); a page that holds a fact no case
 holds, or bytes that are no value of a case's record, makes the completion the

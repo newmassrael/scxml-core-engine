@@ -19453,6 +19453,7 @@ mod tests {
                 DeployError::InvalidJournal {
                     at: crate::mesh::error::JournalDeclaration::Follows {
                         machine: "rooms".into(),
+                        followed: Some("rooms".into()),
                     },
                     reason: "the machine follows itself, and its own entries were taken in as they were said, so each would take effect twice".into(),
                 }

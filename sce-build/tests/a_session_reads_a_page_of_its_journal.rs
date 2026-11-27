@@ -94,7 +94,9 @@ const BOTH: &str = r#"      <sce:case variant="booked" record="Booked"/>
       <sce:case variant="cancelled" record="Cancelled"/>"#;
 
 /// A statechart that reads a page of the journal `invoke` names, its `<invoke>`
-/// carrying `attrs` and `extra` `<param>`s.
+/// carrying `attrs` and `extra` `<param>`s. It imports the enum of the union's
+/// tag, as every statechart that reads a payload holding a union does
+/// (docs/adr/0086, section 7.3): the completion's record holds the union.
 fn reader(attrs: &str, extra: &str) -> String {
     format!(
         r#"<?xml version="1.0"?>
@@ -104,6 +106,7 @@ fn reader(attrs: &str, extra: &str) -> String {
   <sce:import kind="event-schema" src="sce:std/host/journal_read_result.scxml" as="ReadResult"/>
   <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>
   <sce:import kind="union" src="room_facts.scxml" as="Facts"/>
+  <sce:import kind="enum" src="fact_kind.scxml" as="Kind"/>
   <datamodel>
     <data id="room" sce:type="string[256]" expr="''"/>
     <data id="as_of" sce:type="uint64" expr="0"/>

@@ -7870,10 +7870,11 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
         if machine.follows.is_empty() {
             continue;
         }
-        let refuse = |reason: String| {
+        let refuse = |followed: Option<&str>, reason: String| {
             Err(DeployError::InvalidJournal {
                 at: JournalDeclaration::Follows {
                     machine: name.to_string(),
+                    followed: followed.map(str::to_string),
                 },
                 reason,
             })
@@ -7881,6 +7882,7 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
         match machine.sessions.as_ref().map(SessionsConfig::key_source) {
             None => {
                 return refuse(
+                    None,
                     "the machine declares no `sessions:`, and an entry it follows is delivered \
                      to the session `sessions.key_from` names for it"
                         .to_string(),
@@ -7888,6 +7890,7 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
             }
             Some(Ok(SessionKeySource::Client)) => {
                 return refuse(
+                    None,
                     "`sessions.key_from` is `client`, and an entry it follows comes on no \
                      client's link: name the field of the entries' data that keys the session \
                      (`data.<field>`)"
@@ -7900,10 +7903,14 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
         let mut seen = std::collections::BTreeSet::new();
         for followed in &machine.follows {
             if !seen.insert(followed.as_str()) {
-                return refuse(format!("it names '{followed}' twice"));
+                return refuse(
+                    Some(followed.as_str()),
+                    format!("it names '{followed}' twice"),
+                );
             }
             if followed == name {
                 return refuse(
+                    Some(followed.as_str()),
                     "the machine follows itself, and its own entries were taken in as they \
                      were said, so each would take effect twice"
                         .to_string(),
@@ -7911,25 +7918,34 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
             }
             match machines.get(followed.as_str()) {
                 Some((_, other)) if !other.journal => {
-                    return refuse(format!(
+                    return refuse(
+                        Some(followed.as_str()),
+                        format!(
                         "machine '{followed}' keeps no journal (`journal: true`), so it makes no \
                          entry to follow"
-                    ))
+                    ),
+                    )
                 }
                 Some((other_device, _)) if *other_device != device => {
-                    return refuse(format!(
-                        "machine '{followed}' runs on device '{other_device}' and this one on \
+                    return refuse(
+                        Some(followed.as_str()),
+                        format!(
+                            "machine '{followed}' runs on device '{other_device}' and this one on \
                          '{device}', and a journal is read from the store its writer keeps, \
                          which a process of another device does not open"
-                    ))
+                        ),
+                    )
                 }
                 Some(_) => {}
                 None if cfg.streams.contains_key(followed) => {}
                 None => {
-                    return refuse(format!(
-                        "'{followed}' is neither a machine of the deployment nor a stream of \
+                    return refuse(
+                        Some(followed.as_str()),
+                        format!(
+                            "'{followed}' is neither a machine of the deployment nor a stream of \
                          `streams:`"
-                    ))
+                        ),
+                    )
                 }
             }
         }
@@ -10407,7 +10423,8 @@ topology:
         assert_eq!(
             at,
             JournalDeclaration::Follows {
-                machine: "view".into()
+                machine: "view".into(),
+                followed: None,
             }
         );
         assert!(reason.contains("declares no `sessions:`"), "{reason}");
@@ -10436,7 +10453,8 @@ topology:
         assert_eq!(
             at,
             JournalDeclaration::Follows {
-                machine: "rooms".into()
+                machine: "rooms".into(),
+                followed: Some("rooms".into()),
             }
         );
         assert!(reason.contains("follows itself"), "{reason}");
@@ -10447,24 +10465,33 @@ topology:
     /// is taken without being looked up.
     #[test]
     fn a_follower_names_what_keeps_a_journal_once() {
-        for (rooms, view, tail, said) in [
-            ("", "        follows: [rooms]\n", "", "keeps no journal"),
+        for (rooms, view, tail, followed, said) in [
+            (
+                "",
+                "        follows: [rooms]\n",
+                "",
+                "rooms",
+                "keeps no journal",
+            ),
             (
                 "        journal: true\n",
                 "        follows: [lobby]\n",
                 "",
+                "lobby",
                 "neither a machine of the deployment nor a stream",
             ),
             (
                 "        journal: true\n",
                 "        follows: [rooms, rooms]\n",
                 "",
+                "rooms",
                 "names 'rooms' twice",
             ),
             (
                 "",
                 "        follows: [directory, directory]\n",
                 DIRECTORY,
+                "directory",
                 "names 'directory' twice",
             ),
         ] {
@@ -10472,7 +10499,8 @@ topology:
             assert_eq!(
                 at,
                 JournalDeclaration::Follows {
-                    machine: "view".into()
+                    machine: "view".into(),
+                    followed: Some(followed.into()),
                 }
             );
             assert!(reason.contains(said), "{reason}");

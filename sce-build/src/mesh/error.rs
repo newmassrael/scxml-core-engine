@@ -3113,7 +3113,13 @@ impl DeployError {
             },
             Self::InvalidJournal { at, .. } => match at {
                 JournalDeclaration::Journal { machine } => P::machine(machine).key("journal"),
-                JournalDeclaration::Follows { machine } => P::machine(machine).key("follows"),
+                JournalDeclaration::Follows { machine, followed } => {
+                    let follows = P::machine(machine).key("follows");
+                    match followed {
+                        Some(name) => follows.value(name),
+                        None => follows,
+                    }
+                }
                 JournalDeclaration::Stream { stream } => P::root("streams").key(stream),
             },
             Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
@@ -4075,8 +4081,12 @@ pub enum CodegenError {
 pub enum JournalDeclaration {
     /// A machine's `journal: true` (D1).
     Journal { machine: String },
-    /// A machine's `follows:` (D4).
-    Follows { machine: String },
+    /// A machine's `follows:` (D4), and the name of it the refusal is of, when it
+    /// is of one; `None` for a refusal of the key whole.
+    Follows {
+        machine: String,
+        followed: Option<String>,
+    },
     /// An observed stream of the deployment's `streams:` (D6).
     Stream { stream: String },
 }
@@ -4085,8 +4095,20 @@ impl JournalDeclaration {
     /// The machine or the stream the declaration is of.
     pub fn subject(&self) -> &str {
         match self {
-            Self::Journal { machine } | Self::Follows { machine } => machine,
+            Self::Journal { machine } | Self::Follows { machine, .. } => machine,
             Self::Stream { stream } => stream,
+        }
+    }
+
+    /// What the refusal stands on, as the deployment writes it (the record's
+    /// `actual`): the value `true` of `journal:`, the name `follows:` lists that
+    /// is refused, or none for a refusal of `follows:` whole, and the stream's own
+    /// key.
+    pub fn actual(&self) -> Option<String> {
+        match self {
+            Self::Journal { .. } => Some("true".to_string()),
+            Self::Follows { followed, .. } => followed.clone(),
+            Self::Stream { stream } => Some(stream.clone()),
         }
     }
 
@@ -4105,7 +4127,7 @@ impl std::fmt::Display for JournalDeclaration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Journal { machine } => write!(f, "machine '{machine}': `journal: true`"),
-            Self::Follows { machine } => write!(f, "machine '{machine}': `follows:`"),
+            Self::Follows { machine, .. } => write!(f, "machine '{machine}': `follows:`"),
             Self::Stream { stream } => write!(f, "stream '{stream}' of `streams:`"),
         }
     }
@@ -4581,8 +4603,8 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
         DeployError::InvalidJournal { at, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidJournal,
             stage: Stage::MeshDeploy,
-            // The machine or the stream whose declaration cannot be kept.
-            actual: Some(at.subject().to_string()),
+            // What the refusal stands on, as the deployment writes it.
+            actual: at.actual(),
             // The declaration removed, or the machine made a keyed pool, or
             // another name followed: which depends on what the deployment is
             // for, so nothing is offered.
