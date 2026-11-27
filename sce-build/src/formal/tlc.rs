@@ -13,6 +13,10 @@
 //! machine of many and did not end within the hour. The Java virtual machine
 //! TLC runs on is told the same count, so its own threads (the collector's
 //! among them) stay within it too.
+//!
+//! That virtual machine is the pinned runtime's (docs/adr/0146, D3), run by its
+//! path: the `java` a search path finds first is the machine's, whatever its
+//! release.
 
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -94,14 +98,22 @@ pub fn available_workers() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
 }
 
-/// One run: the modules of `sources` (every `.tla` there), the configuration
-/// `config_text` written as `config_name`, `extra` modules written beside them,
-/// and `module` checked under it. `library`, when given, is a directory of
+/// What every run of a judge is given: `java`, the program of the pinned Java
+/// runtime, `jar`, the pinned TLC, and `library`, when given, a directory of
 /// standard modules TLC reads beside its own (SANY's `TLA-Library`): the
 /// pinned Apalache's, for a model that extends the module `Apalache`.
-pub struct Run<'a> {
+#[derive(Debug, Clone, Copy)]
+pub struct Tools<'a> {
+    pub java: &'a Path,
     pub jar: &'a Path,
     pub library: Option<&'a Path>,
+}
+
+/// One run: the modules of `sources` (every `.tla` there), the configuration
+/// `config_text` written as `config_name`, `extra` modules written beside them,
+/// and `module` checked under it, by `tools`.
+pub struct Run<'a> {
+    pub tools: Tools<'a>,
     pub sources: &'a Path,
     pub module: &'a str,
     pub config_name: &'a str,
@@ -122,7 +134,10 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
             .output()
             .map_err(|e| FormalError::ToolUnavailable {
                 tool: "Java".to_string(),
-                detail: format!("cannot run java (Java 11 or later on PATH runs TLC): {e}"),
+                detail: format!(
+                    "cannot run the pinned runtime's {}: {e}",
+                    run.tools.java.display()
+                ),
             })?;
     let graph = if run.write_graph {
         std::fs::read_to_string(work.path().join("graph.dot")).ok()
@@ -147,21 +162,22 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
 /// `-workers` is the count the judge was given, and
 /// `-XX:ActiveProcessorCount` makes it the processors the virtual machine
 /// sees, which sizes the collector's threads and any pool TLC sizes by them.
+/// The program is the pinned runtime's `java`, never one a search path finds.
 fn java_command(run: &Run<'_>, work: &Path) -> Command {
     let workers = run.workers.to_string();
-    let mut command = Command::new("java");
+    let mut command = Command::new(run.tools.java);
     command
         .current_dir(work)
         .arg("-XX:+UseParallelGC")
         .arg(format!("-XX:ActiveProcessorCount={workers}"));
-    if let Some(library) = run.library {
+    if let Some(library) = run.tools.library {
         let mut property = std::ffi::OsString::from("-DTLA-Library=");
         property.push(library);
         command.arg(property);
     }
     command
         .arg("-cp")
-        .arg(run.jar)
+        .arg(run.tools.jar)
         .arg("tlc2.TLC")
         .args(["-workers", workers.as_str()]);
     if run.write_graph {
@@ -192,8 +208,11 @@ mod tests {
     #[test]
     fn tlc_and_its_virtual_machine_are_given_the_workers_the_judge_was() {
         let run = Run {
-            jar: Path::new("tla2tools.jar"),
-            library: None,
+            tools: Tools {
+                java: Path::new("/opt/jre/bin/java"),
+                jar: Path::new("tla2tools.jar"),
+                library: None,
+            },
             sources: Path::new("."),
             module: "M",
             config_name: "M.cfg",
@@ -219,6 +238,44 @@ mod tests {
             "{args:?}"
         );
         assert!(!args.iter().any(|arg| arg == "auto"), "{args:?}");
+    }
+
+    #[test]
+    fn tlc_runs_on_the_pinned_runtime_and_never_a_java_the_search_path_finds() {
+        let run = Run {
+            tools: Tools {
+                java: Path::new("/opt/jre/bin/java"),
+                jar: Path::new("tla2tools.jar"),
+                library: Some(Path::new("/opt/apalache/modules")),
+            },
+            sources: Path::new("."),
+            module: "M",
+            config_name: "M.cfg",
+            config_text: "",
+            extra: &[],
+            workers: NonZeroUsize::MIN,
+            write_graph: false,
+        };
+        let built = java_command(&run, Path::new("."));
+        assert_eq!(
+            Path::new(built.get_program()),
+            Path::new("/opt/jre/bin/java")
+        );
+        let args: Vec<String> = built
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter()
+                .any(|arg| arg == "-DTLA-Library=/opt/apalache/modules"),
+            "{args:?}"
+        );
+        let jar = args.iter().position(|arg| arg == "-cp").map(|at| at + 1);
+        assert_eq!(
+            jar.and_then(|at| args.get(at)).map(String::as_str),
+            Some("tla2tools.jar"),
+            "{args:?}"
+        );
     }
 
     #[test]

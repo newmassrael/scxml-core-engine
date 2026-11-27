@@ -16575,7 +16575,8 @@ enum FormalCommand {
     /// pins them (`schemas/sce-formal-toolchain.v1.schema.json`).
     Toolchain,
     /// Fetch each pinned tool, admit it by its digest and put it where the
-    /// judges look, unless the one pinned is there.
+    /// judges look, unless the one pinned is there. TLC and Apalache are
+    /// installed with the Java runtime they run on.
     Install {
         /// Which tool.
         #[arg(long, value_enum, default_value = "all")]
@@ -16598,6 +16599,8 @@ enum FormalTool {
     Tlc,
     Verus,
     Apalache,
+    /// The Java runtime TLC and Apalache run on, which installing either installs.
+    Java,
 }
 
 /// Run one judge of `sce-codegen formal`. See `Commands::Formal`.
@@ -16701,6 +16704,16 @@ fn cmd_formal(judge: FormalCommand) {
                     out_line(&format!("{what} fetched, admitted, at {}", at.display()))
                 }
             };
+            if matches!(
+                tool,
+                FormalTool::All | FormalTool::Java | FormalTool::Tlc | FormalTool::Apalache
+            ) {
+                let place = toolchain::java_place(&pins.java).unwrap_or_else(|err| leave(err));
+                match toolchain::install_java(&pins.java, &place) {
+                    Ok(installed) => said(&format!("Java {}", pins.java.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
             if matches!(tool, FormalTool::All | FormalTool::Tlc) {
                 match toolchain::install_tlc(&pins.tlc) {
                     Ok(installed) => said(&format!("TLC {}", pins.tlc.version), installed),

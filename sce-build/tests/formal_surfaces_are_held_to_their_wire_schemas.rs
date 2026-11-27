@@ -268,4 +268,16 @@ fn the_toolchain_schema_rejects_what_the_judge_refuses() {
     refused("Apalache given a Rust release", &|v| {
         v["apalache"]["toolchain"] = serde_json::json!("1.99.1")
     });
+    refused("no Java runtime for TLC and Apalache to run on", &|v| {
+        v.as_object_mut().expect("an object").remove("java");
+    });
+    refused("the Java runtime given a Rust release", &|v| {
+        v["java"]["toolchain"] = serde_json::json!("1.99.1")
+    });
+    refused("the Java runtime with no digest", &|v| {
+        v["java"]
+            .as_object_mut()
+            .expect("an object")
+            .remove("sha256");
+    });
 }

@@ -237,8 +237,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     ("src/formal/mod.rs", Why::Operator, &[("stage_modules", 1)]),
     // The configurations the inductive runs of the operator's manifest name, beside it.
     ("src/formal/inductive.rs", Why::Operator, &[("declared", 2)]),
-    // The tools the judge pins (docs/adr/0146, D3), found and admitted by their digest, and the
-    // process's own descriptors a jobserver is named by.
+    // The tools the judge pins (docs/adr/0146, D3), and the Java runtime TLC and Apalache run on,
+    // found and admitted by their digest, and the process's own descriptors a jobserver is named
+    // by.
     (
         "src/formal/toolchain.rs",
         Why::Installation,
@@ -251,6 +252,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("admitted_apalache", 1),
             ("admitted_apalache_modules", 1),
             ("install_apalache", 4),
+            ("admitted_java", 1),
+            ("install_java", 2),
         ],
     ),
     (

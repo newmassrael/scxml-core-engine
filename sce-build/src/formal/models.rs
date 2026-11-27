@@ -968,8 +968,7 @@ fn tail_lines(output: &str, count: usize) -> String {
 
 /// Whether `AG EF predicate` holds of `module` in `config`.
 fn run_possible(
-    jar: &Path,
-    library: Option<&Path>,
+    tools: tlc::Tools<'_>,
     formal: &Path,
     module: &str,
     config_text: &str,
@@ -979,8 +978,7 @@ fn run_possible(
     let carried = format!("{module}Possible");
     let extra = vec![(format!("{carried}.tla"), possible_module(module, predicate))];
     let answer = tlc::run(&tlc::Run {
-        jar,
-        library,
+        tools,
         sources: formal,
         module: &carried,
         config_name: &format!("{carried}.cfg"),
@@ -1067,12 +1065,20 @@ pub fn check(
     };
     let pins = toolchain::pinned();
     let jar = toolchain::admitted_tlc(&pins.tlc)?;
+    // TLC and Apalache run on the pinned Java runtime, never the machine's.
+    let java_home = toolchain::admitted_java(&pins.java)?;
+    let java = toolchain::java_program(&java_home);
     // TLC holds no module `Apalache`; a model that extends it is read with the
     // pinned Apalache's, the one module both tools read.
     let library = if modules_extend_apalache(formal) {
         Some(toolchain::admitted_apalache_modules(&pins.apalache)?)
     } else {
         None
+    };
+    let tools = tlc::Tools {
+        java: &java,
+        jar: &jar,
+        library: library.as_deref(),
     };
     let mut apalache_tool: Option<PathBuf> = None;
     let mut failures = Vec::new();
@@ -1093,8 +1099,7 @@ pub fn check(
             let config_text = read(&formal.join(&run.config));
             let tlc_run = |config: &str| {
                 tlc::run(&tlc::Run {
-                    jar: &jar,
-                    library: library.as_deref(),
+                    tools,
                     sources: formal,
                     module: &model.module,
                     config_name: &run.config,
@@ -1119,8 +1124,7 @@ pub fn check(
             if wrong.is_none() {
                 if let Some(predicate) = &run.possible {
                     wrong = match run_possible(
-                        &jar,
-                        library.as_deref(),
+                        tools,
                         formal,
                         &model.module,
                         &config_text,
@@ -1166,7 +1170,7 @@ pub fn check(
                         found
                     }
                 };
-                match inductive::check_run(&tool, formal, model, stated, run)? {
+                match inductive::check_run(&tool, &java_home, formal, model, stated, run)? {
                     None => (report.out)(&format!("ok   {unit}: {}", run.expect)),
                     Some((why, output)) => {
                         (report.out)(&format!("FAIL {unit}: {why}"));

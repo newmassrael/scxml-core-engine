@@ -3,12 +3,13 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-toolchain.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE formal toolchain (wire schema v1)",
-  "description": "The tools the formal judges run (TLC, Verus and Apalache), each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "description": "The tools the formal judges run (TLC, Verus and Apalache) and the Java runtime TLC and Apalache run on, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": [
     "tlc",
     "verus",
-    "apalache"
+    "apalache",
+    "java"
   ],
   "additionalProperties": false,
   "properties": {
@@ -43,6 +44,19 @@
         ]
       },
       "description": "Apalache, the symbolic checker of level 3 (docs/adr/0115, D3): the release's .tgz, which holds its launcher, its jar and the standard module Apalache that TLC is given for a model extending it."
+    },
+    "java": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "not": {
+        "required": [
+          "toolchain"
+        ]
+      },
+      "description": "The Java runtime TLC and Apalache run on, pinned with them (docs/adr/0146, D3): Eclipse Temurin's JRE for Linux on x64, the release's .tar.gz, which unpacks as jdk-<version>-jre/. The judge runs its bin/java, never one a search path finds."
     }
   },
   "definitions": {

@@ -529,8 +529,7 @@ pub fn declared(manifest: &Manifest, dir: &Path) -> Vec<String> {
 
 /// Judge `trace`, a run of `decl`'s model, by TLC.
 fn judge_run(
-    jar: &Path,
-    library: Option<&Path>,
+    tools: tlc::Tools<'_>,
     dir: &Path,
     decl: &TraceDecl,
     config_text: &str,
@@ -540,8 +539,7 @@ fn judge_run(
     let carried = format!("{}Trace", decl.module);
     let extra = vec![(format!("{carried}.tla"), trace_module(&decl.module, trace))];
     let answer = tlc::run(&tlc::Run {
-        jar,
-        library,
+        tools,
         sources: dir,
         module: &carried,
         config_name: &format!("{carried}.cfg"),
@@ -603,12 +601,19 @@ pub fn check(
     let pins = toolchain::pinned();
     let pin: TlcPin = pins.tlc.clone();
     let jar = toolchain::admitted_tlc(&pin)?;
+    // TLC runs on the pinned Java runtime, never the machine's.
+    let java = toolchain::java_program(&toolchain::admitted_java(&pins.java)?);
     // A model beside the traces that extends Apalache is read with the pinned
     // Apalache's module, as the models judge reads it.
     let library = if super::models::modules_extend_apalache(dir) {
         Some(toolchain::admitted_apalache_modules(&pins.apalache)?)
     } else {
         None
+    };
+    let tools = tlc::Tools {
+        java: &java,
+        jar: &jar,
+        library: library.as_deref(),
     };
     let mut failures = Vec::new();
     let mut judged_runs = 0usize;
@@ -621,15 +626,7 @@ pub fn check(
             problems: vec![format!("{name}: {e}")],
         })?;
         judged_runs += 1;
-        let (verdict, output) = judge_run(
-            &jar,
-            library.as_deref(),
-            dir,
-            decl,
-            &config_text,
-            &trace,
-            workers,
-        )?;
+        let (verdict, output) = judge_run(tools, dir, decl, &config_text, &trace, workers)?;
         let wrong = match verdict {
             Judged::Accepted => None,
             Judged::RefusedAt(at) => Some(format!(
@@ -663,15 +660,8 @@ pub fn check(
                     manifest: shown.clone(),
                     problems: vec![format!("{name}: {problem}")],
                 })?;
-            let (verdict, output) = judge_run(
-                &jar,
-                library.as_deref(),
-                dir,
-                decl,
-                &config_text,
-                &altered_trace,
-                workers,
-            )?;
+            let (verdict, output) =
+                judge_run(tools, dir, decl, &config_text, &altered_trace, workers)?;
             let wrong = match verdict {
                 Judged::RefusedAt(at) if at == altered.step => None,
                 Judged::RefusedAt(at) => Some(format!(

@@ -337,11 +337,12 @@ pub fn declared(model: &Model, formal: &Path) -> Vec<String> {
 }
 
 /// Check `run` of `inductive`, a declared invariant of `model`, with Apalache
-/// at `tool`: each obligation it checks in turn, stopping at the first answer
-/// that is not as declared. None where every answer is; otherwise what is wrong
-/// and what Apalache printed for it.
+/// at `tool` on the Java runtime at `java_home`: each obligation it checks in
+/// turn, stopping at the first answer that is not as declared. None where every
+/// answer is; otherwise what is wrong and what Apalache printed for it.
 pub fn check_run(
     tool: &Path,
+    java_home: &Path,
     formal: &Path,
     model: &Model,
     inductive: &Inductive,
@@ -354,6 +355,7 @@ pub fn check_run(
         let (init, invariants, length) = asked(obligation, inductive);
         let answer = apalache::run(&apalache::Run {
             tool,
+            java_home,
             sources: formal,
             extra: &extra,
             module: &module,

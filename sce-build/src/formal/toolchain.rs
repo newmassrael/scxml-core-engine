@@ -14,6 +14,9 @@
 //! (the fixed-output derivations of Nix, Dolstra 2006). A judge admits what it
 //! finds by the same digest before it runs it, so a tool replaced under the same
 //! name is refused as `formal/tool-unavailable`, never run.
+//!
+//! The Java runtime TLC and Apalache run on is pinned with them: a tool pinned by
+//! its digest that runs on whatever virtual machine a machine has is not pinned.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -65,6 +68,19 @@ pub struct ApalachePin {
     pub sha256: String,
 }
 
+/// The Java runtime TLC and Apalache run on: the archive of Eclipse Temurin's
+/// runtime for Linux on x64, which unpacks as `jdk-<version>-jre/`. Apalache
+/// 0.63.0 is built for Java 21 (class file 65): on 2026-11-27 a build machine
+/// whose `java` was 17 answered `UnsupportedClassVersionError` to every
+/// inductive run, a run that judged nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct JavaPin {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
 /// Every pinned tool.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -72,6 +88,7 @@ pub struct Toolchain {
     pub tlc: TlcPin,
     pub verus: VerusPin,
     pub apalache: ApalachePin,
+    pub java: JavaPin,
 }
 
 /// The pins this binary was built with.
@@ -128,6 +145,24 @@ pub fn verus_rust_place(pin: &VerusPin) -> Result<PathBuf, FormalError> {
 pub fn apalache_place(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
     Ok(home()?.join(".local").join("apalache").join(&pin.version))
 }
+
+/// Where the pinned Java runtime is unpacked: `~/.local/jre/<version>`.
+pub fn java_place(pin: &JavaPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("jre").join(&pin.version))
+}
+
+/// The program `bin/java` of the Java runtime whose home is `home`.
+pub fn java_program(home: &Path) -> PathBuf {
+    home.join("bin").join("java")
+}
+
+/// The directory the archive of the pinned Java runtime holds the runtime in.
+fn java_archive_root(pin: &JavaPin) -> String {
+    format!("jdk-{}-jre", pin.version)
+}
+
+/// What a refusal names as the tool when the Java runtime is missing.
+const JAVA: &str = "the Java runtime TLC and Apalache run on";
 
 /// The directory under an unpacked Apalache that holds the standard module
 /// `Apalache`, taken out of the release's jar by `formal install`.
@@ -213,6 +248,26 @@ pub fn admitted_apalache(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
         ));
     }
     Ok(tool)
+}
+
+/// The pinned Java runtime, found: the directory it was unpacked into, whose
+/// `bin/java` TLC and Apalache are run by. It is not admitted by digest here,
+/// as Verus and Apalache are not: what was admitted is the archive it was
+/// unpacked from, by `formal install`, and the release is in its place's name.
+pub fn admitted_java(pin: &JavaPin) -> Result<PathBuf, FormalError> {
+    let home = java_place(pin)?;
+    let java = java_program(&home);
+    if !java.is_file() {
+        return Err(unavailable(
+            JAVA,
+            format!(
+                "no Java {} at {}: sce-codegen formal install",
+                pin.version,
+                java.display()
+            ),
+        ));
+    }
+    Ok(home)
 }
 
 /// The directory that holds the standard module `Apalache` of the pinned
@@ -400,6 +455,51 @@ pub fn install_verus(pin: &VerusPin, place: &Path) -> Result<Installed, FormalEr
     Ok(Installed::Fetched(place.to_path_buf()))
 }
 
+/// Fetch the pinned Java runtime, admit the archive by its digest and unpack it
+/// into `place` (`java_place`), unless it is there. The archive is unpacked by
+/// `tar`, which keeps each file's mode, beside `place`, and the runtime is moved
+/// into it by one rename, so a runtime at `place` is a whole one.
+pub fn install_java(pin: &JavaPin, place: &Path) -> Result<Installed, FormalError> {
+    if java_program(place).is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    let beside = place.parent().unwrap_or(place);
+    std::fs::create_dir_all(beside)
+        .map_err(|e| unavailable(JAVA, format!("cannot create {}: {e}", beside.display())))?;
+    let scratch = super::WorkDir::new_in(beside, "jre")?;
+    let archive = scratch.path().join("jre.tgz");
+    fetch(JAVA, &pin.url, &archive)?;
+    admit(JAVA, &archive, &pin.url, &pin.sha256)?;
+    let unpacked = scratch.path().join("unpacked");
+    std::fs::create_dir_all(&unpacked)
+        .map_err(|e| unavailable(JAVA, format!("cannot create {}: {e}", unpacked.display())))?;
+    run_for(
+        JAVA,
+        "tar",
+        &[
+            OsStr::new("-xzf"),
+            archive.as_os_str(),
+            OsStr::new("-C"),
+            unpacked.as_os_str(),
+        ],
+    )?;
+    let root = java_archive_root(pin);
+    let tree = unpacked.join(&root);
+    if !java_program(&tree).is_file() {
+        return Err(unavailable(
+            JAVA,
+            format!("{} holds no {root}/bin/java", pin.url),
+        ));
+    }
+    std::fs::rename(&tree, place).map_err(|e| {
+        unavailable(
+            JAVA,
+            format!("cannot move {} to {}: {e}", tree.display(), place.display()),
+        )
+    })?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
 /// The program `bin/apalache` under the unpacked release: the release's own
 /// launcher, `bin/apalache-mc`, which sets the JVM's heap and collector as its
 /// authors run it, behind a line that answers `--version` by itself, so that a
@@ -581,6 +681,7 @@ mod tests {
             ("tlc", &pins.tlc.sha256, &pins.tlc.url),
             ("verus", &pins.verus.sha256, &pins.verus.url),
             ("apalache", &pins.apalache.sha256, &pins.apalache.url),
+            ("java", &pins.java.sha256, &pins.java.url),
         ] {
             assert_eq!(sha256.len(), 64, "{tool}: a sha256 is 64 hex digits");
             assert!(
@@ -605,6 +706,37 @@ mod tests {
                 .ends_with(&format!("/v{0}/apalache-{0}.tgz", pins.apalache.version)),
             "the Apalache fetched is the archive of the release the pin names, \
              which install_apalache unpacks as apalache-<version>/"
+        );
+    }
+
+    #[test]
+    fn the_java_pin_is_the_runtime_its_archive_unpacks_as() {
+        let pins = pinned();
+        let release = &pins.java.version;
+        assert!(
+            release.starts_with("21."),
+            "Apalache {} is built for Java 21, and TLC runs on it too",
+            pins.apalache.version
+        );
+        assert!(
+            pins.java
+                .url
+                .contains(&format!("/jdk-{}/", release.replace('+', "%2B"))),
+            "the runtime fetched is the release the pin names: {}",
+            pins.java.url
+        );
+        assert!(
+            pins.java.url.ends_with(&format!(
+                "-jre_x64_linux_hotspot_{}.tar.gz",
+                release.replace('+', "_")
+            )),
+            "the runtime fetched is the JRE for Linux on x64: {}",
+            pins.java.url
+        );
+        assert_eq!(java_archive_root(&pins.java), format!("jdk-{release}-jre"));
+        assert_eq!(
+            java_program(Path::new("/opt/jre")),
+            Path::new("/opt/jre/bin/java")
         );
     }
 
