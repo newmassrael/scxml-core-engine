@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass, LinkModel,
+    PoolSharing,
 };
 use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc, StageCopyPolicy};
 use sce_build::mesh::error::DeployError;
@@ -50,6 +51,7 @@ fn default_pool(name: &str, slot_count: u32, slot_size: u32) -> BufferPoolModel 
         alignment: 32,
         dma_channel: None,
         cache_policy: CachePolicy::None,
+        sharing: PoolSharing::Owner,
         variant: BufferPoolVariant::Default,
         source_location: None,
     }

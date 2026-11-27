@@ -170,7 +170,9 @@ mod tests {
         // The convenience entry point that callers use when walking
         // every parsed `.forge` document — non-pool documents are
         // no-ops, buffer-pool documents land in the registry.
-        use crate::forge::model::{BufferPoolModel, BufferPoolVariant, CachePolicy, ForgeDocument};
+        use crate::forge::model::{
+            BufferPoolModel, BufferPoolVariant, CachePolicy, ForgeDocument, PoolSharing,
+        };
         let pool = BufferPoolModel {
             name: "rx_pool_sram1".to_string(),
             slot_count: 8,
@@ -179,6 +181,7 @@ mod tests {
             alignment: 32,
             dma_channel: None,
             cache_policy: CachePolicy::None,
+            sharing: PoolSharing::Owner,
             variant: BufferPoolVariant::Default,
             source_location: None,
         };

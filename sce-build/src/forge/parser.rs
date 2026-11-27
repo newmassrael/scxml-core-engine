@@ -12859,6 +12859,29 @@ fn parse_buffer_pool(
     // text → typed `InvalidAttribute` (closed-enum gate).
     let variant = parse_buffer_pool_variant(root, label, doc_name)?;
 
+    // `<sce:sharing>` is optional (docs/adr/0111 D4): a pool that only the
+    // holder of the drive moves says nothing, and one that a driver context
+    // moves too says `shared`. Any other body text is refused against the
+    // closed set, as `<sce:cache-policy>` is.
+    let sharing = match find_sce_child(root, "sharing") {
+        None => PoolSharing::Owner,
+        Some(node) => {
+            let text = node.text().unwrap_or("").trim().to_string();
+            PoolSharing::from_attr(&text).ok_or_else(|| {
+                located(
+                    &node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:sharing>".into(),
+                        attr: "body text".into(),
+                        value: text,
+                        allowed: PoolSharing::ALL_NAMES.iter().map(|s| (*s).into()).collect(),
+                    },
+                )
+            })?
+        }
+    };
+
     Ok(BufferPoolModel {
         name: doc_name.to_string(),
         slot_count,
@@ -12867,6 +12890,7 @@ fn parse_buffer_pool(
         alignment,
         dma_channel,
         cache_policy,
+        sharing,
         variant,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })

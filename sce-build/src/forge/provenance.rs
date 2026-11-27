@@ -545,8 +545,9 @@ mod tests {
             CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, Endian, FilterModel,
             FilterType, ForgeDocument, ForgeField, InboxConfig, InterpolationAxis,
             InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel, MissPolicy,
-            ObserverModel, OutOfBounds, OverflowPolicy, ProcedureModel, SceType, ThresholdMonitor,
-            TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
+            ObserverModel, OutOfBounds, OverflowPolicy, PoolSharing, ProcedureModel, SceType,
+            ThresholdMonitor, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
+            WorkerModel,
         };
         let scalar = ForgeField {
             id: "x".into(),
@@ -705,6 +706,7 @@ mod tests {
                 alignment: 8,
                 dma_channel: None,
                 cache_policy: CachePolicy::None,
+                sharing: PoolSharing::Owner,
                 variant: BufferPoolVariant::Default,
                 source_location: None,
             }),
