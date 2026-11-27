@@ -391,6 +391,66 @@ fn a_c11_machines_core_reaches_only_freestanding_headers() {
     );
 }
 
+/// The forge documents whose `<sce:test-vector>` rows the C11 conformance
+/// harness runs through a sidecar, one of each field a sidecar compares: an
+/// algorithm's value, a codec's integer, its text and its byte string.
+const SIDECAR_DOCUMENTS: [&str; 4] = [
+    "algorithm_crc16",
+    "codec_zenoh_close",
+    "codec_zenoh_locator",
+    "codec_length_ref_uint16_le",
+];
+
+/// docs/adr/0110, D1: a test-vector sidecar (`<stem>_test.h`) compiles wherever
+/// its unit does, so it reaches no hosted header either, and reports a row that
+/// fails through the log seam by the one report both sidecars share
+/// (`sce/forge/test_vector.h`), not through a stream of its own.
+#[test]
+fn a_test_vector_sidecar_reaches_only_freestanding_headers() {
+    let resources = repo_root().join("tests/forge/resources");
+    let mut violations: Vec<String> = Vec::new();
+    for stem in SIDECAR_DOCUMENTS {
+        let path = resources.join(format!("{stem}.scxml"));
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let output = sce_build::compile_forge_with_imports(
+            &content,
+            sce_build::DocumentLabel::symmetric(stem),
+            sce_build::generator::Language::C11,
+            &resources,
+            &sce_build::ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|e| panic!("{stem} generates for C11: {e}"));
+        let files: BTreeMap<String, String> = output.files.into_iter().collect();
+        let sidecar = format!("{stem}_test.h");
+        let text = files.get(&sidecar).unwrap_or_else(|| {
+            panic!(
+                "{stem} writes {sidecar}: {:?}",
+                files.keys().collect::<Vec<_>>()
+            )
+        });
+        assert!(
+            text.contains("sce_forge_test_vector_failed(") && !text.contains("printf"),
+            "{sidecar} reports a failed row through the shared report and no printf:\n{text}"
+        );
+        let reached = hosted_reached(&sidecar, &files);
+        for violation in reached.violations {
+            violations.push(format!("{sidecar}: {violation}"));
+        }
+        assert!(
+            reached.other_machines.is_empty(),
+            "{sidecar} reaches no machine's header: {:?}",
+            reached.other_machines
+        );
+    }
+    assert!(
+        violations.is_empty(),
+        "a test-vector sidecar reaches what a freestanding implementation does not \
+         provide (docs/adr/0110, D1):\n{}",
+        violations.join("\n")
+    );
+}
+
 /// The walk itself: an include only C++ reads is not walked, a hosted header
 /// a C branch names is found, and a hosted unit is not descended into.
 #[test]

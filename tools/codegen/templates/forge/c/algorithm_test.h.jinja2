@@ -10,7 +10,15 @@
    `g_failures` from the harness scope) without leaking the harness
    internal-linkage symbol into this header. The header includes the
    sibling algorithm header so the symbol resolves regardless of
-   include order in the harness TU. #}
+   include order in the harness TU.
+
+   A failed row is reported through `sce/forge/test_vector.h`, the log
+   seam the codec sidecar reports through too, labelled by the
+   algorithm's symbol: the sidecar includes no hosted header and calls no
+   `printf` (docs/adr/0110, D1), so a target's image runs the same rows.
+   A value is written as its row states it: an unsigned one in hex, a
+   signed one in decimal, a boolean as `true` or `false`
+   (`value_text_c` of the row). #}
 
 /* SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2) */
 /* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
@@ -19,12 +27,14 @@
 #define {{ guard }}
 
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "sce/text.h"
+#include "sce/forge/test_vector.h"
 #include "{{ name }}.h"
 
 static inline int test_vector_{{ name }}(void) {
     int failures = 0;
+    /* The one line every failed row's report is built in, in turn. */
+    char _line[SCE_FORGE_TEST_VECTOR_LINE_CAP];
 {% for tv in test_vectors %}
     {
 {% if has_bytes_param %}
@@ -48,17 +58,33 @@ static inline int test_vector_{{ name }}(void) {
         const {{ return_type }} expected = {{ tv.value_literal_c }};
 {% if may_fail %}
         if (!result.ok) {
-            fprintf(stderr,
-                "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: failed with %s\n",
-                sce_forge_algorithm_error_name(result.why));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+            SCE_TEXT_PUT_LITERAL(&_report, "failed with ");
+            sce_text_put_text(&_report, sce_forge_algorithm_error_name(result.why));
+            sce_forge_test_vector_failed("{{ primary_symbol }}", &_report);
             ++failures;
         } else if (actual != expected) {
 {% else %}
         if (actual != expected) {
 {% endif %}
-            fprintf(stderr,
-                "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
-                ({{ tv.printf_cast }})actual, ({{ tv.printf_cast }})expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+{% if tv.value_text_c == "hex" %}
+            SCE_TEXT_PUT_LITERAL(&_report, "actual=0x");
+            sce_text_put_hex(&_report, (uint64_t)actual, 0u);
+            SCE_TEXT_PUT_LITERAL(&_report, " expected=0x");
+            sce_text_put_hex(&_report, (uint64_t)expected, 0u);
+{% elif tv.value_text_c == "signed" %}
+            SCE_TEXT_PUT_LITERAL(&_report, "actual=");
+            sce_text_put_i64(&_report, (int64_t)actual);
+            SCE_TEXT_PUT_LITERAL(&_report, " expected=");
+            sce_text_put_i64(&_report, (int64_t)expected);
+{% elif tv.value_text_c == "bool" %}
+            SCE_TEXT_PUT_LITERAL(&_report, "actual=");
+            sce_text_put_text(&_report, actual ? "true" : "false");
+            SCE_TEXT_PUT_LITERAL(&_report, " expected=");
+            sce_text_put_text(&_report, expected ? "true" : "false");
+{% endif %}
+            sce_forge_test_vector_failed("{{ primary_symbol }}", &_report);
             ++failures;
         }
     }

@@ -5,12 +5,14 @@
 #define SCE_FORGE_CODEC_LENGTH_REF_UINT16_LE_TEST_H
 
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "sce/text.h"
+#include "sce/forge/test_vector.h"
 #include "codec_length_ref_uint16_le.h"
 
 static inline int test_vector_codec_length_ref_uint16_le(void) {
     int failures = 0;
+    /* The one line every failed row's report is built in, in turn. */
+    char _line[SCE_FORGE_TEST_VECTOR_LINE_CAP];
     {
         codec_length_ref_uint16_le_t actual = {0};
         {
@@ -23,36 +25,41 @@ static inline int test_vector_codec_length_ref_uint16_le(void) {
         static const uint8_t _expected[] = { 0x00, 0x00 };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L25: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 25u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_length_ref_uint16_le_t decoded = {0};
         sce_forge_codec_status_t _st = codec_length_ref_uint16_le_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L25: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 25u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L25: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 25u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else {
             {
                 if (decoded.payload_len != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_length_ref_uint16_le test_vector @SCXML L25: "
-                        "field `payload` expected empty bytes, got len=%zu\n",
-                        /* The length companion is `size_t` for a tail field but
-                         * the (possibly narrower) wire length-field for a
-                         * length-ref payload — cast so `%zu` is always valid. */
-                        (size_t)decoded.payload_len);
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 25u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` expected empty bytes, got len=");
+                    /* The length companion is `size_t` for a tail field but
+                     * the (possibly narrower) wire length-field for a
+                     * length-ref payload: widened to the writer's one width. */
+                    sce_text_put_u64(&_report, (uint64_t)decoded.payload_len);
+                    sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
                     ++failures;
                 }
             }
@@ -72,25 +79,30 @@ static inline int test_vector_codec_length_ref_uint16_le(void) {
         static const uint8_t _expected[] = { 0x04, 0x00, 0xaa, 0xbb, 0xcc, 0xdd };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L29: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 29u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_length_ref_uint16_le_t decoded = {0};
         sce_forge_codec_status_t _st = codec_length_ref_uint16_le_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L29: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 29u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L29: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 29u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else {
             {
@@ -99,9 +111,9 @@ static inline int test_vector_codec_length_ref_uint16_le(void) {
                     || memcmp(decoded.payload,
                               _expected_field,
                               decoded.payload_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_length_ref_uint16_le test_vector @SCXML L29: "
-                        "field `payload` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 29u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` (bytes) mismatch");
+                    sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
                     ++failures;
                 }
             }
@@ -121,25 +133,30 @@ static inline int test_vector_codec_length_ref_uint16_le(void) {
         static const uint8_t _expected[] = { 0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L33: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 33u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_length_ref_uint16_le_t decoded = {0};
         sce_forge_codec_status_t _st = codec_length_ref_uint16_le_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L33: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 33u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_length_ref_uint16_le test_vector @SCXML L33: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 33u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
             ++failures;
         } else {
             {
@@ -148,9 +165,9 @@ static inline int test_vector_codec_length_ref_uint16_le(void) {
                     || memcmp(decoded.payload,
                               _expected_field,
                               decoded.payload_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_length_ref_uint16_le test_vector @SCXML L33: "
-                        "field `payload` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 33u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` (bytes) mismatch");
+                    sce_forge_test_vector_failed("codec_length_ref_uint16_le", &_report);
                     ++failures;
                 }
             }

@@ -194,9 +194,18 @@ target_compile_options(numerical_conformance_test_c PRIVATE
     -Wall -Wextra -Wpedantic -Werror
 )
 
+# The host's definition of the log seams (backends/c/runtime/posix/log.c,
+# docs/adr/0110 D2): a fixture's test-vector sidecar reports a failed row
+# through `_sce_log_write` (sce/forge/test_vector.h) and holds no printf of its
+# own, so the program that runs it links a definition, as a host does, each
+# line to stderr. A bare-metal image links its own.
+add_library(sce_conformance_log_posix STATIC "${REPO_ROOT}/backends/c/runtime/posix/log.c")
+target_include_directories(sce_conformance_log_posix PRIVATE "${CORE_RUNTIME_INCLUDE_DIR}")
+target_compile_options(sce_conformance_log_posix PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 # math.h is included by the harness for fabs-style helpers; on most
 # Unix toolchains math is in libc, but glibc requires explicit -lm.
-target_link_libraries(numerical_conformance_test_c PRIVATE m)
+target_link_libraries(numerical_conformance_test_c PRIVATE m sce_conformance_log_posix)
 
 enable_testing()
 add_test(NAME numerical_conformance_c COMMAND numerical_conformance_test_c)
