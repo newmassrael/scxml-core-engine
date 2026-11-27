@@ -1499,6 +1499,12 @@
           "promise": "broken"
         }
       ]
+    },
+    {
+      "module": "ReceiptService",
+      "decision": "docs/adr/0045",
+      "abstract": true,
+      "runs": []
     }
   ]
 }
