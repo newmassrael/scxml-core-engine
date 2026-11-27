@@ -32,7 +32,9 @@ use crate::forge::encode_plan::{
     ParentTag, PresenceFlag, Value, Write,
 };
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::forge::shared_tables::{NotWrittenByTable, UnwrittenField};
 
 pub(super) mod cbor;
 pub(super) mod content_line;
@@ -81,6 +83,10 @@ pub(super) struct Rendered {
     /// table, where its write is the runtime's one writer over the table
     /// (docs/adr/0155 section 3); empty where it is not, or derives none.
     pub(super) derived: Vec<super::field_table::Derive>,
+    /// Why a codec read by its table is written by its printed encode
+    /// (docs/adr/0155 section 3); `None` where it is written by the table, or
+    /// read by none.
+    pub(super) not_written: Option<NotWrittenByTable>,
 }
 
 /// What a function of a codec that writes into the sink `sink` returns, with
@@ -1391,7 +1397,11 @@ pub(super) fn render(input: &Input<'_>) -> Result<Rendered, Unsupported> {
         .as_ref()
         .map(|write| write.derived.clone())
         .unwrap_or_default();
-    Ok(Rendered { text, derived })
+    Ok(Rendered {
+        text,
+        derived,
+        not_written: plan.not_written.clone(),
+    })
 }
 
 /// The write of a cold codec by the runtime's one writer over the table its
@@ -1627,6 +1637,9 @@ struct Plan<'a> {
     /// where the codec is read by one ([`Input::table`]) and its write
     /// lowers to it ([`Plan::lower_write`]); `None` where it is printed.
     table_write: Option<TableWrite>,
+    /// Why the codec read by a table is written by its printed encode, where
+    /// its write does not lower to the table's rows ([`Plan::lower_write`]).
+    not_written: Option<NotWrittenByTable>,
 }
 
 /// Whether `m` has a source interface, given whether each codec it imports has
@@ -2069,12 +2082,17 @@ impl<'a> Plan<'a> {
             trait_name: format!("{}Source", input.struct_name),
             envelope_reads: RefCell::new(None),
             table_write: None,
+            not_written: None,
         };
         // docs/adr/0155 section 3: a codec read by a table is written by the
         // one writer over it where its write lowers to the table's rows, and
         // printed where it does not.
-        let write = input.table.and_then(|table| plan.lower_write(table).ok());
-        plan.table_write = write;
+        if let Some(table) = input.table {
+            match plan.lower_write(table) {
+                Ok(write) => plan.table_write = Some(write),
+                Err(why) => plan.not_written = Some(why),
+            }
+        }
         Ok(plan)
     }
 
@@ -4865,22 +4883,30 @@ impl<'a> Plan<'a> {
     /// derive of a row ([`super::field_table::derives`]), a number the value
     /// says is read off its accessor, and a body is written by the statement
     /// the printed encode writes it by, handed the numbers its row hands.
-    fn lower_write(&self, table: &super::field_table::PrintedTable) -> Result<TableWrite, String> {
+    fn lower_write(
+        &self,
+        table: &super::field_table::PrintedTable,
+    ) -> Result<TableWrite, NotWrittenByTable> {
         use super::field_table::{dispatch, DerivedFrom, Kind, Place};
+        let unwritten = |field: &CodecField, form| NotWrittenByTable::Field {
+            field: field.id.clone(),
+            form,
+        };
         if self.may_fail() {
-            return Err("the encode can refuse a value".to_string());
+            return Err(NotWrittenByTable::MayRefuse);
         }
-        if !self.overridable().is_empty() {
-            return Err("a parent sets a flag of the codec".to_string());
+        let lent = self.overridable();
+        if !lent.is_empty() && self.lowers_to_parts() {
+            return Err(NotWrittenByTable::LowersToParts);
         }
         if !self.encode.said.is_empty() || self.encode.given.len() != self.m().flag_inputs.len() {
-            return Err("the value says an input of the codec".to_string());
+            return Err(NotWrittenByTable::SaysInput);
         }
         if !self.encode.roles.groups.is_empty() || self.m().variant.is_some() {
-            return Err("the codec holds a group or a variant".to_string());
+            return Err(NotWrittenByTable::GroupOrVariant);
         }
         if table.rows.len() != self.m().fields.len() {
-            return Err("a row is no field of the codec".to_string());
+            return Err(NotWrittenByTable::RowNotField);
         }
         if !self
             .encode
@@ -4888,7 +4914,7 @@ impl<'a> Plan<'a> {
             .iter()
             .all(|write| matches!(write, Write::Streamed { .. }))
         {
-            return Err("the encode writes a positional layout".to_string());
+            return Err(NotWrittenByTable::PositionalLayout);
         }
         let derived = super::field_table::derives(&self.encode, table)?;
         // A row whose number is derived whole is written as derived, and
@@ -4900,6 +4926,41 @@ impl<'a> Plan<'a> {
                 _ => None,
             })
             .collect();
+        // A flag a parent sets in place of the one the value presents (the end
+        // flag of a chain whose entries are this codec) is set over the number
+        // of its carrier, as the printed write sets it: in bits no derive
+        // writes, of a number the value says.
+        let mut overrides: BTreeMap<usize, String> = BTreeMap::new();
+        for (carrier, def) in &lent {
+            let refused = || NotWrittenByTable::ParentFlag {
+                field: carrier.id.clone(),
+                flag: def.name.clone(),
+            };
+            let row = self
+                .m()
+                .fields
+                .iter()
+                .position(|f| f.id == carrier.id)
+                .ok_or_else(refused)?;
+            let derived_there = derived.iter().any(|derive| {
+                derive.into.from == Place::Row(row)
+                    && derive.into.width.is_none_or(|width| {
+                        def.bit >= derive.into.shift && def.bit < derive.into.shift + width
+                    })
+            });
+            if derived_there
+                || whole.contains(&row)
+                || !matches!(table.rows[row].kind, Kind::Uint { .. } | Kind::Zint { .. })
+            {
+                return Err(refused());
+            }
+            overrides.entry(row).or_default().push_str(&format!(
+                "                if let Some(_o) = self.1.{member} {{\n                    _n = (_n & !0x{mask:X}) | {placed};\n                }}\n",
+                member = self.override_member(carrier, &def.name),
+                mask = 1u64 << def.bit,
+                placed = shl("u64::from(_o)", def.bit),
+            ));
+        }
         let mut numbers = Vec::new();
         let mut bytes = Vec::new();
         let mut writes = Vec::new();
@@ -4912,34 +4973,30 @@ impl<'a> Plan<'a> {
                         continue;
                     }
                     if !self.has_accessor(field) {
-                        return Err(format!(
-                            "field '{}' is a number the value does not say and the encode \
-                             does not derive whole",
-                            field.id
-                        ));
+                        return Err(unwritten(field, UnwrittenField::NumberNotSaid));
                     }
                     let value = if optional {
                         format!("{read}.map_or(0, u64::from)")
                     } else {
                         format!("u64::from({read})")
                     };
-                    numbers.push((at, format!("                {value}\n")));
+                    let arm = match overrides.get(&at) {
+                        Some(set) => format!(
+                            "                let mut _n: u64 = {value};\n{set}                _n\n"
+                        ),
+                        None => format!("                {value}\n"),
+                    };
+                    numbers.push((at, arm));
                 }
                 Kind::Counted { text, max, .. } => {
                     if !self.has_accessor(field) {
-                        return Err(format!(
-                            "field '{}' is bytes the value does not say",
-                            field.id
-                        ));
+                        return Err(unwritten(field, UnwrittenField::BytesNotSaid));
                     }
                     // The writer cannot refuse a count past the row's bound: the
                     // type the value holds the field in holds it there.
                     let most = encode_plan::byte_bound(field, &self.m().fields).most;
                     if max.is_some_and(|max| !most.is_some_and(|most| most <= max)) {
-                        return Err(format!(
-                            "field '{}' is held by a type whose bound is not within its row's",
-                            field.id
-                        ));
+                        return Err(unwritten(field, UnwrittenField::TypeBound));
                     }
                     let inner = if *text {
                         "into_inner().as_bytes()"
@@ -4963,10 +5020,7 @@ impl<'a> Plan<'a> {
             };
             let field = &self.m().fields[at];
             if !self.has_accessor(field) || !self.encode.presence(field).optional() {
-                return Err(format!(
-                    "the presence of field '{}' is no accessor's of the value",
-                    field.id
-                ));
+                return Err(unwritten(field, UnwrittenField::PresenceNotSaid));
             }
             if present.iter().all(|(row, _)| *row != at) {
                 present.push((
@@ -5011,10 +5065,19 @@ impl<'a> Plan<'a> {
             ));
         }
         let rows = self.rows_name();
+        // The flags a parent sets are the adapter's to set over its carrier.
+        let (held, made) = if lent.is_empty() {
+            ("&'s S".to_string(), format!("{rows}(src)"))
+        } else {
+            (
+                format!("&'s S, &'s {}", self.overrides_name()),
+                format!("{rows}(src, over)"),
+            )
+        };
         let items = format!(
             "\n/// A value of `{name}` as the rows of `{table}` say it, read through\n\
              /// [`{trait_name}`] by the runtime's one writer (docs/adr/0155).\n\
-             struct {rows}<'s, S: ?Sized>(&'s S);\n\n\
+             struct {rows}<'s, S: ?Sized>({held});\n\n\
              impl<S: {trait_name} + ?Sized, E: ::core::fmt::Debug> {RUNTIME_CODEC}::TableSource<E> for {rows}<'_, S> {{\n{methods}}}\n",
             name = self.name(),
             table = table.name,
@@ -5022,7 +5085,7 @@ impl<'a> Plan<'a> {
             methods = methods.join("\n"),
         );
         let call = format!(
-            "\x20       {RUNTIME_CODEC}::write_table(w, &{}, &[{}], &{rows}(src))\n",
+            "\x20       {RUNTIME_CODEC}::write_table(w, &{}, &[{}], &{made})\n",
             table.name, table.inputs
         );
         Ok(TableWrite {
@@ -5041,8 +5104,12 @@ impl<'a> Plan<'a> {
         &self,
         field: &CodecField,
         handed: &[super::field_table::Handed],
-    ) -> Result<String, String> {
+    ) -> Result<String, NotWrittenByTable> {
         use super::field_table::{handed_binding, mentions, Place};
+        let unwritten = |form| NotWrittenByTable::Field {
+            field: field.id.clone(),
+            form,
+        };
         let Some((guard, list)) = self.encode.program.iter().find_map(|write| match write {
             Write::Streamed {
                 field: written,
@@ -5051,10 +5118,7 @@ impl<'a> Plan<'a> {
             } if written.id == field.id => Some((*guard, list.as_ref())),
             _ => None,
         }) else {
-            return Err(format!(
-                "field '{}' is written by no write of its own",
-                field.id
-            ));
+            return Err(unwritten(UnwrittenField::NoWrite));
         };
         let mut derived = Derived::default();
         let mut bindings: Vec<String> = Vec::new();
@@ -5094,19 +5158,16 @@ impl<'a> Plan<'a> {
                 continue;
             };
             if statement.contains(&format!("src.{}()", self.accessor(read))) {
-                return Err(format!(
-                    "field '{}' is written with '{id}', which the encode derives and its row \
-                     does not hand",
-                    field.id
-                ));
+                return Err(unwritten(UnwrittenField::ReadsDerived {
+                    named: id.clone(),
+                }));
             }
         }
         for (at, input) in self.m().flag_inputs.iter().enumerate() {
             if !inputs.contains(&at) && mentions(&statement, &Self::input_name(input)) {
-                return Err(format!(
-                    "field '{}' is written with the input '{}', which its row does not hand",
-                    field.id, input.name
-                ));
+                return Err(unwritten(UnwrittenField::ReadsInput {
+                    named: input.name.clone(),
+                }));
             }
         }
         // A chain whose entries end on a flag is written with its count.

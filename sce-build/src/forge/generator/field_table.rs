@@ -28,7 +28,10 @@ use crate::forge::model::{
     BitSize, CodecEncoding, CodecField, CodecModel, Endian, PresentIfPredicate, PresentIfScope,
     SceType,
 };
-use crate::forge::shared_tables::{CodecShape, NotATable, TableHome, UnstatedField};
+use crate::forge::shared_tables::{
+    CodecShape, NotATable, NotWrittenByTable, TableHome, UnstatedDerive, UnstatedField,
+    UnwrittenField,
+};
 
 use super::{rust_storage_tag, to_upper_snake, RUNTIME_CODEC, STORAGE_PARAM};
 
@@ -846,103 +849,26 @@ impl Derive {
 /// entries is the chain's to set as it writes each, and no number of the
 /// codec's own. Every counted row must be counted by a derived count, or the
 /// value would state a count its bytes need not hold.
-pub(super) fn derives(plan: &EncodePlan<'_>, table: &PrintedTable) -> Result<Vec<Derive>, String> {
+pub(super) fn derives(
+    plan: &EncodePlan<'_>,
+    table: &PrintedTable,
+) -> Result<Vec<Derive>, NotWrittenByTable> {
     let m = plan.model;
-    let row_of = |id: &str, element: &str| {
-        m.fields
-            .iter()
-            .position(|f| f.id == id)
-            .filter(|&row| row < table.rows.len())
-            .ok_or_else(|| format!("'{element}' is derived from a field no row reads"))
-    };
-    let number = |row: usize, element: &str| match table.rows[row].kind {
-        Kind::Uint { .. } | Kind::Zint { .. } => Ok(()),
-        _ => Err(format!(
-            "'{element}' is derived into a field no number row reads"
-        )),
-    };
     let mut derives: Vec<Derive> = Vec::new();
     for planned in &plan.derivations {
         let element = planned.element.to_string();
-        let derive = match (&planned.element, &planned.by) {
-            (_, encode_plan::Derive::ChainContinuation) => continue,
-            (ElementId::Flag { field, flag }, encode_plan::Derive::Presence(presence)) => {
-                let [(gated, when_clear)] = presence.of.as_slice() else {
-                    return Err(format!(
-                        "the flag '{element}' says the presence of several fields"
-                    ));
-                };
-                if *when_clear {
-                    return Err(format!(
-                        "the flag '{element}' is set where its field is absent"
-                    ));
-                }
-                let carrier = row_of(field, &element)?;
-                number(carrier, &element)?;
-                let def = m.fields[carrier]
-                    .flags
-                    .iter()
-                    .find(|def| def.name == *flag)
-                    .ok_or_else(|| format!("'{element}' is no flag of its carrier"))?;
-                Derive {
-                    into: Bits {
-                        from: Place::Row(carrier),
-                        shift: def.bit,
-                        width: Some(def.width),
-                    },
-                    from: DerivedFrom::Present(row_of(&gated.id, &element)?),
-                }
-            }
-            (ElementId::Field(_), encode_plan::Derive::Number(derived)) => {
-                let [measure] = derived.measures.as_slice() else {
-                    return Err(format!("'{element}' is derived from several measures"));
-                };
-                let Measured::Bytes {
-                    field: content,
-                    offset: Offset::None,
-                } = &measure.of
-                else {
-                    return Err(format!(
-                        "'{element}' is derived from a measure no row states"
-                    ));
-                };
-                let NumberInto::Field {
-                    field: into,
-                    narrow,
-                    absent,
-                } = &derived.into
-                else {
-                    return Err(format!("'{element}' is derived into a flag"));
-                };
-                if *narrow == Narrow::Checked {
-                    return Err(format!(
-                        "'{element}' may not hold the count it is derived from"
-                    ));
-                }
-                if !matches!(absent, Absent::Never | Absent::Zero) {
-                    return Err(format!(
-                        "'{element}' holds what the value states where its content is absent"
-                    ));
-                }
-                let count = row_of(&into.id, &element)?;
-                number(count, &element)?;
-                let counted = row_of(&content.id, &element)?;
-                if !matches!(table.rows[counted].kind, Kind::Counted { len, .. } if len == count) {
-                    return Err(format!(
-                        "'{element}' counts a field its row is not counted by"
-                    ));
-                }
-                Derive {
-                    into: Bits::whole(Place::Row(count)),
-                    from: DerivedFrom::Count(counted),
-                }
-            }
-            _ => {
-                return Err(format!("'{element}' is derived as the number of no row"));
-            }
+        let derive = derive_of(m, table, planned).map_err(|form| NotWrittenByTable::Derive {
+            element: element.clone(),
+            form,
+        })?;
+        let Some(derive) = derive else {
+            continue;
         };
         if derives.iter().any(|other| other.into == derive.into) {
-            return Err(format!("'{element}' is derived twice"));
+            return Err(NotWrittenByTable::Derive {
+                element,
+                form: UnstatedDerive::Twice,
+            });
         }
         derives.push(derive);
     }
@@ -953,14 +879,98 @@ pub(super) fn derives(plan: &EncodePlan<'_>, table: &PrintedTable) -> Result<Vec
                 from: DerivedFrom::Count(at),
             };
             if !derives.contains(&counted) {
-                return Err(format!(
-                    "field '{}' is counted by a number the value states",
-                    m.fields[at].id
-                ));
+                return Err(NotWrittenByTable::Field {
+                    field: m.fields[at].id.clone(),
+                    form: UnwrittenField::CountStated,
+                });
             }
         }
     }
     Ok(derives)
+}
+
+/// The derive of a row the derivation `planned` is, `None` where it is no
+/// number of the codec's own (a chain's end flag), or what no row states of it.
+fn derive_of(
+    m: &CodecModel,
+    table: &PrintedTable,
+    planned: &encode_plan::Derived<'_>,
+) -> Result<Option<Derive>, UnstatedDerive> {
+    let row_of = |id: &str| {
+        m.fields
+            .iter()
+            .position(|f| f.id == id)
+            .filter(|&row| row < table.rows.len())
+            .ok_or(UnstatedDerive::NoRow)
+    };
+    let number = |row: usize| match table.rows[row].kind {
+        Kind::Uint { .. } | Kind::Zint { .. } => Ok(()),
+        _ => Err(UnstatedDerive::NoNumberRow),
+    };
+    let derive = match (&planned.element, &planned.by) {
+        (_, encode_plan::Derive::ChainContinuation) => return Ok(None),
+        (ElementId::Flag { field, flag }, encode_plan::Derive::Presence(presence)) => {
+            let [(gated, when_clear)] = presence.of.as_slice() else {
+                return Err(UnstatedDerive::SeveralFields);
+            };
+            if *when_clear {
+                return Err(UnstatedDerive::SetWhereAbsent);
+            }
+            let carrier = row_of(field)?;
+            number(carrier)?;
+            let def = m.fields[carrier]
+                .flags
+                .iter()
+                .find(|def| def.name == *flag)
+                .ok_or(UnstatedDerive::NoFlag)?;
+            Derive {
+                into: Bits {
+                    from: Place::Row(carrier),
+                    shift: def.bit,
+                    width: Some(def.width),
+                },
+                from: DerivedFrom::Present(row_of(&gated.id)?),
+            }
+        }
+        (ElementId::Field(_), encode_plan::Derive::Number(derived)) => {
+            let [measure] = derived.measures.as_slice() else {
+                return Err(UnstatedDerive::SeveralMeasures);
+            };
+            let Measured::Bytes {
+                field: content,
+                offset: Offset::None,
+            } = &measure.of
+            else {
+                return Err(UnstatedDerive::UnstatedMeasure);
+            };
+            let NumberInto::Field {
+                field: into,
+                narrow,
+                absent,
+            } = &derived.into
+            else {
+                return Err(UnstatedDerive::IntoFlag);
+            };
+            if *narrow == Narrow::Checked {
+                return Err(UnstatedDerive::Narrowed);
+            }
+            if !matches!(absent, Absent::Never | Absent::Zero) {
+                return Err(UnstatedDerive::StatedWhereAbsent);
+            }
+            let count = row_of(&into.id)?;
+            number(count)?;
+            let counted = row_of(&content.id)?;
+            if !matches!(table.rows[counted].kind, Kind::Counted { len, .. } if len == count) {
+                return Err(UnstatedDerive::CountsOtherRow);
+            }
+            Derive {
+                into: Bits::whole(Place::Row(count)),
+                from: DerivedFrom::Count(counted),
+            }
+        }
+        _ => return Err(UnstatedDerive::NoRowNumber),
+    };
+    Ok(Some(derive))
 }
 
 #[cfg(test)]
@@ -1202,7 +1212,7 @@ mod tests {
             .unwrap_or_else(|why| panic!("not a table: {why}"));
         let plan = EncodePlan::of(&m, &[]);
         let derived =
-            derives(&plan, &table).unwrap_or_else(|why| panic!("no derive of rows: {why}"));
+            derives(&plan, &table).unwrap_or_else(|why| panic!("no derive of rows: {why:?}"));
         let flag = Derive {
             into: Bits {
                 from: Place::Row(0),
@@ -1292,7 +1302,16 @@ mod tests {
         let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
         let why = derives(&EncodePlan::of(&m, &[]), &table)
             .expect_err("a flag set where its field is absent is no derive");
-        assert!(why.contains("absent"), "{why}");
+        assert!(
+            matches!(
+                why,
+                NotWrittenByTable::Derive {
+                    form: UnstatedDerive::SetWhereAbsent,
+                    ..
+                }
+            ),
+            "{why:?}"
+        );
     }
 
     /// A local is named where it stands alone, not as a member or a part of

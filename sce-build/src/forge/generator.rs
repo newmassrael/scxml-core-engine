@@ -18012,6 +18012,7 @@ fn render_codec(
                         module: filters::to_snake_case(m.name.clone()),
                         name: table.name.clone(),
                         rows,
+                        not_written: rendered.not_written.clone(),
                     },
                 ));
             }

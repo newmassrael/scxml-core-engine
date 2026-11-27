@@ -176,7 +176,7 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
             (
                 "codec_zenoh_msg_del",
                 "::sce_forge_runtime::codec::write_table(w, &CODEC_ZENOH_MSG_DEL_FIELDS, &[], \
-                 &CodecZenohMsgDelRows(src))",
+                 &CodecZenohMsgDelRows(src, over))",
                 &[
                     "Derive { into: Bits::range(Source::Row(0), 5, 1), from: Derived::Present(1) },",
                     "Derive { into: Bits::range(Source::Row(0), 7, 1), from: Derived::Present(2) },",
@@ -214,6 +214,21 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
                     "the table of the cold {name} has no `{derive}` (views: {views}):\n{code}"
                 );
             }
+        }
+        // The delete's `X` flag is a parent's to set (the end flag of a chain
+        // of deletes): the adapter sets it over the header the value says, in a
+        // bit no derive writes, as the printed write does.
+        let delete = rust_with("codec_zenoh_msg_del", &named);
+        for printed in [
+            "struct CodecZenohMsgDelRows<'s, S: ?Sized>(&'s S, &'s CodecZenohMsgDelOverrides);",
+            "let mut _n: u64 = u64::from(self.0.header());",
+            "if let Some(_o) = self.1.header_x {",
+            "_n = (_n & !0x40) | (u64::from(_o) << 6);",
+        ] {
+            assert!(
+                delete.contains(printed),
+                "the delete's adapter has no `{printed}` (views: {views}):\n{delete}"
+            );
         }
         let wireexpr = rust_with("codec_zenoh_wireexpr", &named);
         assert!(
@@ -266,14 +281,21 @@ fn every_cold_codec_says_its_table_or_why_it_has_none() {
             "the cold {name} says something of a table with its cold codecs printed"
         );
     }
-    for name in [
-        "codec_zenoh_msg_del",
-        "codec_zenoh_query",
-        "codec_zenoh_wireexpr",
+    // The delete and the query are written by the one writer over their
+    // tables; the key expression's encode can refuse a value, and it says why
+    // its write stays printed.
+    for (name, written) in [
+        ("codec_zenoh_msg_del", true),
+        ("codec_zenoh_query", true),
+        ("codec_zenoh_wireexpr", false),
     ] {
         assert!(
-            matches!(said.get(name), Some(ColdCodec::Table(table)) if table.codec == name),
-            "{name} is no table: {said:?}"
+            matches!(
+                said.get(name),
+                Some(ColdCodec::Table(table))
+                    if table.codec == name && table.not_written.is_none() == written
+            ),
+            "{name} is no table, or is written otherwise: {said:?}"
         );
     }
     assert_eq!(

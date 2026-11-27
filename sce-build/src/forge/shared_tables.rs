@@ -38,6 +38,10 @@ pub struct SetTable {
     /// What the table is: its rows and the numbers its write derives, as the
     /// `static` holds them, with no name of the codec's.
     pub rows: String,
+    /// Why the codec is written by its printed encode rather than by the
+    /// runtime's one writer over the table (section 3); `None` where the
+    /// writer writes it.
+    pub not_written: Option<NotWrittenByTable>,
 }
 
 /// What the generation of one cold codec of a set says of its table
@@ -215,6 +219,106 @@ impl std::fmt::Display for NotATable {
     }
 }
 
+/// Why a cold codec read by its table is written by its printed encode rather
+/// than by the runtime's one writer over the table (docs/adr/0155 section 3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotWrittenByTable {
+    /// Its encode can refuse a value, and the writer's one error is the
+    /// sink's.
+    MayRefuse,
+    /// A parent sets its flags, and its write lowers to its parts.
+    LowersToParts,
+    /// A parent sets the flag `flag` of `field`, which the writer derives or
+    /// which is no number the value says.
+    ParentFlag {
+        /// The carrier.
+        field: String,
+        /// The flag.
+        flag: String,
+    },
+    /// The value says an input of the codec.
+    SaysInput,
+    /// It holds a group or a variant.
+    GroupOrVariant,
+    /// A row of its table is no field of it.
+    RowNotField,
+    /// Its encode writes a positional layout.
+    PositionalLayout,
+    /// The number its encode derives at `element` is no derive of a row.
+    Derive {
+        /// The element derived, as the encode plan names it.
+        element: String,
+        /// What no row states of it.
+        form: UnstatedDerive,
+    },
+    /// The field `field` is written by nothing the writer hands it.
+    Field {
+        /// The field's id.
+        field: String,
+        /// What the writer does not hand it.
+        form: UnwrittenField,
+    },
+}
+
+/// A number an encode derives that no derive of a row states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnstatedDerive {
+    /// A flag says the presence of several fields.
+    SeveralFields,
+    /// A flag is set where its field is absent.
+    SetWhereAbsent,
+    /// It is derived from or into a field no row reads.
+    NoRow,
+    /// It is derived into a field no number row reads.
+    NoNumberRow,
+    /// It is no flag of its carrier.
+    NoFlag,
+    /// It is derived from several measures.
+    SeveralMeasures,
+    /// It is derived from a measure no row states.
+    UnstatedMeasure,
+    /// It is derived into a flag.
+    IntoFlag,
+    /// It may not hold the count it is derived from.
+    Narrowed,
+    /// It holds what the value states where its content is absent.
+    StatedWhereAbsent,
+    /// It counts a field its row is not counted by.
+    CountsOtherRow,
+    /// It is derived as the number of no row.
+    NoRowNumber,
+    /// It is derived twice.
+    Twice,
+}
+
+/// A field the runtime's one writer hands no value of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnwrittenField {
+    /// A number the value does not say and the encode does not derive whole.
+    NumberNotSaid,
+    /// Bytes the value does not say.
+    BytesNotSaid,
+    /// Held by a type whose bound is not within its row's.
+    TypeBound,
+    /// Its presence is no accessor's of the value.
+    PresenceNotSaid,
+    /// Counted by a number the value states.
+    CountStated,
+    /// Written by no write of its own.
+    NoWrite,
+    /// Its write reads the field `named`, which the encode derives and its row
+    /// does not hand.
+    ReadsDerived {
+        /// The field read.
+        named: String,
+    },
+    /// Its write reads the input `named`, which its row does not hand.
+    ReadsInput {
+        /// The input read.
+        named: String,
+    },
+}
+
 /// Where the table of one cold codec of a set is written.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum TableHome {
@@ -333,6 +437,7 @@ mod tests {
             module: codec.to_string(),
             name: format!("{}_FIELDS", codec.to_uppercase()),
             rows: rows.to_string(),
+            not_written: None,
         }
     }
 
