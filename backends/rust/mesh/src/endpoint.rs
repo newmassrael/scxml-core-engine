@@ -514,6 +514,17 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.router.add_peer(peer, config);
     }
 
+    /// Bind the instances of the open machine `machine` as they arrive, at most `max_instances` at
+    /// once (see [`Router::open_machine`]).
+    pub fn open_machine(
+        &mut self,
+        machine: &str,
+        config: crate::router::PeerConfig,
+        max_instances: usize,
+    ) -> Result<(), RouterError> {
+        self.router.open_machine(machine, config, max_instances)
+    }
+
     /// Unbind `peer`, which has left for good: its link's state, what waited for it, what it
     /// forbids and what is queued to retry to it are let go, and the machine is told what a lost
     /// link tells it. A peer that is not bound is left as it is.
@@ -1405,6 +1416,54 @@ mod tests {
         );
         assert!(event.metadata.sender.is_empty());
         assert_eq!(event.metadata.send_id, "s-7");
+    }
+
+    /// docs/adr/0113, D2: an event from an instance of an open machine carries the instance's own
+    /// origin, `mesh://<machine>/<instance>`, and a send to that origin reaches the instance's
+    /// link. Red if the origin names the machine alone, which every instance shares.
+    #[test]
+    fn an_instances_event_carries_its_origin_and_a_send_to_it_reaches_it() {
+        let mut phone = endpoint("phone", "cloud", None);
+        let mut cloud = Endpoint::new(
+            Router::new("cloud", 8, 50).unwrap(),
+            Recorder::default(),
+            Fixed::default(),
+        );
+        cloud
+            .open_machine(
+                "phone",
+                PeerConfig {
+                    responders: Responders::Instance,
+                    ..config("phone", None)
+                },
+                4,
+            )
+            .unwrap();
+        phone.send(&HostSendRequest {
+            target: "#cloud".to_string(),
+            ..send("go", "s-1")
+        });
+        let (_, sent) = phone.transport.sent.pop().unwrap();
+        // The instance's host names it in the envelope (docs/adr/0113, D1).
+        let mut envelope = crate::generated::envelope::Envelope::decode(
+            &mut sce_forge_runtime::codec::SceCursor::new(&sent),
+        )
+        .unwrap();
+        envelope.instance = Some(crate::router::within("a1").unwrap());
+        cloud.receive("phone/a1", envelope.encode_to_vec());
+        let events = raised(&mut cloud);
+        let [event] = events.as_slice() else {
+            panic!("expected one event, got {events:?}");
+        };
+        assert_eq!(event.metadata.origin_address(), "mesh://phone/a1");
+
+        cloud.peer_ready("phone/a1");
+        cloud.send(&HostSendRequest {
+            target: event.metadata.origin_address().to_string(),
+            ..send("back", "s-2")
+        });
+        let (peer, _) = cloud.transport.sent.pop().unwrap();
+        assert_eq!(peer, "phone/a1");
     }
 
     /// A link the host authenticated may be forbidden some events: they are dropped before the

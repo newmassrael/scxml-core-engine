@@ -48,6 +48,7 @@ use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
 use crate::inbound::{sequenced, AdmitError, ConfigError, Delivery, Inbound, Outcome};
 use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
+use crate::peers::{instance_of, instance_peer};
 use crate::rpc::{self, Answer, Correlation, Pending, MESH_DEADLINE_PARAM, MESH_EVENT_PARAM};
 use crate::signal::{Binding, Signal};
 
@@ -101,13 +102,14 @@ pub enum Responders {
 }
 
 impl Responders {
-    /// Whether a reply that arrived on the link of `peer` may answer the
-    /// request. A machine's name is no instance's, so no name answers under
-    /// [`Self::Instance`].
-    pub(crate) fn admits(self, peer: &str) -> bool {
+    /// Whether a reply that arrived on the link of `peer` may answer a
+    /// request sent to `target`. Under [`Self::Instance`] only the link of
+    /// the instance it was sent to does: a machine's name is no instance's, and
+    /// one instance answers for no other.
+    pub(crate) fn admits(self, peer: &str, target: &str) -> bool {
         match self {
             Self::Named(names) => names.contains(&peer),
-            Self::Instance => false,
+            Self::Instance => peer == target,
         }
     }
 }
@@ -136,7 +138,10 @@ pub enum Effect {
     /// Hand `bytes` to the transport bound to `peer`.
     Transmit { peer: String, bytes: Vec<u8> },
     /// Raise `event` on the engine's external queue with `data` as
-    /// `_event.data`; `source` is the machine that sent it, `send_id` the
+    /// `_event.data`; `source` is the machine that sent it, or the instance
+    /// of an open machine that did as its name `<machine>/<instance>`, whose
+    /// `mesh://<source>` is the event's `_event.origin` (docs/adr/0113,
+    /// D2); `send_id` the
     /// id its `<send>` carried (§mesh-10.7: the envelope's `subject`), and
     /// `invoke_id` the request's wire invokeid as RFC 4122 text when the envelope is an
     /// `RpcRequest` — the one field that comes back on the reply
@@ -351,11 +356,23 @@ struct Causal {
     announced_ms: Option<i64>,
 }
 
+/// An open machine whose instances a router binds as they arrive
+/// ([`Router::open_machine`], docs/adr/0113, D3 and D6).
+#[derive(Clone, Copy)]
+struct OpenMachine {
+    /// The one configuration every instance of it is bound under.
+    config: PeerConfig,
+    /// The most of its instances bound at once.
+    max_instances: usize,
+}
+
 /// One machine's Mesh endpoint.
 pub struct Router {
     machine: String,
     inbound: Inbound,
     peers: BTreeMap<String, Peer>,
+    /// The open machines this router binds the instances of, by name.
+    open: BTreeMap<String, OpenMachine>,
     requests: Correlation,
     /// `Some` when the router checkpoints ([`Router::enable_checkpoints`]).
     persist: Option<Persist>,
@@ -369,9 +386,101 @@ impl Router {
             machine: machine.to_string(),
             inbound: Inbound::new(dedup_window, gap_timeout_ms)?,
             peers: BTreeMap::new(),
+            open: BTreeMap::new(),
             requests: Correlation::default(),
             persist: None,
         })
+    }
+
+    /// Bind the instances of the open machine `machine` (deploy.yaml
+    /// `instances: open`, docs/adr/0113): no peer is bound by its name, and an
+    /// instance is bound under `config`, as `<machine>/<instance>`
+    /// ([`instance_peer`]), the first time it is named: an envelope that
+    /// arrives on its link, a send to its origin, its readiness, a checkpoint
+    /// that holds it (D3). At most `max_instances` are bound at once, the
+    /// deployment's `max_instances`: a new one past it is refused
+    /// ([`RouterError::InstancesFull`]) and none that is bound is put out for
+    /// it (D6); the host unbinds an instance whose membership ended
+    /// ([`Self::remove_peer`]).
+    ///
+    /// Refused for a bound of none, and for a causal binding, whose sender is
+    /// the replica its tag names and not the link (SCE_MESH.md section 10.9,
+    /// invariant 9; D7).
+    pub fn open_machine(
+        &mut self,
+        machine: &str,
+        config: PeerConfig,
+        max_instances: usize,
+    ) -> Result<(), RouterError> {
+        let refuse = |reason| {
+            Err(RouterError::BadOpenMachine {
+                machine: machine.to_string(),
+                reason,
+            })
+        };
+        if max_instances == 0 {
+            return refuse("its bound on instances is none");
+        }
+        if !config.link_names_sender() {
+            return refuse("its binding is a causal route, whose sender is not its link");
+        }
+        if !crate::link::is_path_segment(machine) {
+            return refuse("its name is not a segment of the path its instances post to");
+        }
+        self.open.insert(
+            machine.to_string(),
+            OpenMachine {
+                config,
+                max_instances,
+            },
+        );
+        Ok(())
+    }
+
+    /// The open machine `peer` names an instance of, when it names one.
+    fn open_of(&self, peer: &str) -> Option<&OpenMachine> {
+        let (machine, _) = instance_of(peer)?;
+        self.open.get(machine)
+    }
+
+    /// What the router holds of `peer`: the configuration it is bound under,
+    /// or, for an instance of an open machine not yet bound, its machine's.
+    fn config_of(&self, peer: &str) -> Option<PeerConfig> {
+        self.peers
+            .get(peer)
+            .map(|bound| bound.config)
+            .or_else(|| self.open_of(peer).map(|open| open.config))
+    }
+
+    /// The one lookup that binds (docs/adr/0113, D3): a peer bound by its
+    /// name; else an instance of an open machine, bound now under its
+    /// machine's configuration while fewer than its bound are; else unknown.
+    /// Receiving, sending, readiness and a restore all ask it, so a name is
+    /// bound by one rule.
+    fn bind(&mut self, peer: &str) -> Result<(), RouterError> {
+        if self.peers.contains_key(peer) {
+            return Ok(());
+        }
+        let Some(open) = self.open_of(peer).copied() else {
+            return Err(RouterError::UnknownPeer(peer.to_string()));
+        };
+        let machine = instance_of(peer).map_or(peer, |(machine, _)| machine);
+        if self.instances_of(machine) >= open.max_instances {
+            return Err(RouterError::InstancesFull {
+                machine: machine.to_string(),
+                max_instances: open.max_instances,
+            });
+        }
+        self.add_peer(peer, open.config);
+        Ok(())
+    }
+
+    /// How many instances of the open machine `machine` are bound.
+    fn instances_of(&self, machine: &str) -> usize {
+        self.peers
+            .keys()
+            .filter(|name| instance_of(name).is_some_and(|(of, _)| of == machine))
+            .count()
     }
 
     /// Bind `peer` — the name a document writes as `#peer`. A binding that
@@ -397,6 +506,7 @@ impl Router {
     /// the durable window of an `https` server's outbox (docs/adr/0109, D10), which the sessions
     /// of a pool share. A send that is never accepted is told, and nothing accepted is dropped.
     pub fn bound_window(&mut self, peer: &str, window: Arc<dyn Window>) -> Result<(), RouterError> {
+        self.bind(peer)?;
         let bound = self
             .peers
             .get_mut(peer)
@@ -688,6 +798,14 @@ impl Router {
             ..Persist::default()
         };
         for saved in &state.peers {
+            // docs/adr/0113, D3: an instance the checkpoint holds is bound by
+            // the one lookup, under its open machine's configuration.
+            self.bind(&saved.peer).map_err(|_| {
+                CheckpointError::Unbound(format!(
+                    "it holds state for the peer '{}', which this router does not bind",
+                    saved.peer
+                ))
+            })?;
             let bound = self.peers.get_mut(&saved.peer).ok_or_else(|| {
                 CheckpointError::Unbound(format!(
                     "it holds state for the peer '{}', which this router does not bind",
@@ -754,6 +872,12 @@ impl Router {
             }
         }
         for unreleased in &state.unreleased {
+            self.bind(&unreleased.peer).map_err(|_| {
+                CheckpointError::Unbound(format!(
+                    "it holds an envelope for the peer '{}', which this router does not bind",
+                    unreleased.peer
+                ))
+            })?;
             let bound = self.peers.get_mut(&unreleased.peer).ok_or_else(|| {
                 CheckpointError::Unbound(format!(
                     "it holds an envelope for the peer '{}', which this router does not bind",
@@ -945,9 +1069,12 @@ impl Router {
         id: [u8; 16],
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
-        let peer_name = mesh_peer(&request.target)
+        let peer_name = addressed_peer(&request.target)
             .ok_or_else(|| RouterError::NotMeshTarget(request.target.clone()))?;
-        let Some(peer) = self.peers.get_mut(peer_name) else {
+        // docs/adr/0113, D3: a peer the one lookup cannot bind, unknown or past
+        // its open machine's bound, is unreachable.
+        let bound = self.bind(peer_name);
+        let Some(peer) = self.peers.get_mut(peer_name).filter(|_| bound.is_ok()) else {
             return Ok(alloc::vec![Effect::Raise {
                 peer: Some(peer_name.to_string()),
                 signal: Signal::TransportUnavailable,
@@ -1035,13 +1162,14 @@ impl Router {
         now_ms: i64,
         now_unix_ms: u64,
     ) -> Result<Invoked, RouterError> {
-        let Some(peer_name) = mesh_peer(&request.src) else {
+        let Some(peer_name) = addressed_peer(&request.src) else {
             return Ok(Invoked::Refused(rpc::src_not_found_data(&alloc::format!(
                 "'{}' names no Mesh peer",
                 request.src
             ))));
         };
-        let Some(peer) = self.peers.get_mut(peer_name) else {
+        let bound = self.bind(peer_name);
+        let Some(peer) = self.peers.get_mut(peer_name).filter(|_| bound.is_ok()) else {
             return Ok(Invoked::Refused(rpc::src_not_found_data(&alloc::format!(
                 "no binding for '#{peer_name}'"
             ))));
@@ -1125,6 +1253,7 @@ impl Router {
 
     /// `peer`'s transport became ready: release what waited for it.
     pub fn peer_ready(&mut self, peer: &str, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
+        self.bind(peer)?;
         let bound = self
             .peers
             .get_mut(peer)
@@ -1201,6 +1330,7 @@ impl Router {
     /// its reply still reaches this machine; its reply, its deadline or its
     /// cancel ends it.
     pub fn peer_interrupted(&mut self, peer: &str) -> Result<Vec<Effect>, RouterError> {
+        self.bind(peer)?;
         let bound = self
             .peers
             .get_mut(peer)
@@ -1229,6 +1359,7 @@ impl Router {
     /// request a checkpoint not yet durable still holds has not left, and
     /// leaves when that checkpoint is durable (SCE_MESH.md section 10.11).
     pub fn peer_restarted(&mut self, peer: &str, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
+        self.bind(peer)?;
         let persist = self.persist.as_ref();
         let again: Vec<Vec<u8>> = self
             .requests
@@ -1302,7 +1433,7 @@ impl Router {
     /// The retry policy the host applies when a transmission to `peer`
     /// fails (see [`crate::outbound::Attempts`]).
     pub fn retry_policy(&self, peer: &str) -> Option<RetryPolicy> {
-        self.peers.get(peer).and_then(|bound| bound.config.retry)
+        self.config_of(peer).and_then(|config| config.retry)
     }
 
     /// The machine this router speaks for — the `source` of what it sends.
@@ -1317,7 +1448,7 @@ impl Router {
     pub fn binding<'a>(&'a self, peer: Option<&'a str>) -> Option<Binding<'a>> {
         peer.map(|peer| Binding {
             peer,
-            transport: self.peers.get(peer).map(|bound| bound.config.transport),
+            transport: self.config_of(peer).map(|config| config.transport),
         })
     }
 
@@ -1338,6 +1469,7 @@ impl Router {
         bytes: Vec<u8>,
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
+        self.bind(peer)?;
         let config = self
             .peers
             .get(peer)
@@ -1361,10 +1493,14 @@ impl Router {
         // ordering hold, a durable stream, a request's correlation) and
         // before the machine is told, so no link speaks for a machine it is
         // not.
+        //
+        // Invariant 11 (docs/adr/0113, D1): the link of an instance of an open
+        // machine names the pair, and an envelope on it names both its machine
+        // and its instance; one on any other link names no instance.
         if let Some(source) = decoded
             .as_ref()
-            .filter(|envelope| config.link_names_sender() && envelope.source != peer)
-            .map(|envelope| envelope.source.to_string())
+            .filter(|envelope| config.link_names_sender() && !names_link(envelope, peer))
+            .map(sender_of)
         {
             return Err(RouterError::SourceNotLink {
                 peer: peer.to_string(),
@@ -1698,7 +1834,7 @@ impl Router {
         wire_id: &[u8; 16],
         peer: Option<&str>,
     ) -> Option<Effect> {
-        let source = envelope.source.to_string();
+        let source = sender_name(envelope, peer);
         let status = envelope.rpc_status.unwrap_or(RpcStatus::Ok);
         let completion = match status {
             RpcStatus::Ok => match payload_text(envelope) {
@@ -1747,8 +1883,24 @@ pub enum RouterError {
     /// The host handed [`Router::send`] a target that is not a Mesh peer
     /// reference (see [`mesh_peer`]).
     NotMeshTarget(String),
-    /// The host named a peer it never bound with [`Router::add_peer`].
+    /// The host named a peer it never bound with [`Router::add_peer`], and no
+    /// instance of an open machine ([`Router::open_machine`]).
     UnknownPeer(String),
+    /// An instance of the open machine `machine` was named for the first
+    /// time while `max_instances` of it are bound (docs/adr/0113, D6): it is
+    /// not bound, what arrived on its link is not taken in, and no bound
+    /// instance is put out for it. The host sheds it (`503`, docs/adr/0109,
+    /// D1) and unbinds the instances whose membership ended.
+    InstancesFull {
+        machine: String,
+        max_instances: usize,
+    },
+    /// An open machine whose instances cannot be told apart was asked to be
+    /// bound ([`Router::open_machine`]); `reason` says why.
+    BadOpenMachine {
+        machine: String,
+        reason: &'static str,
+    },
     /// An envelope arrived on the link of `peer` naming another machine, `source`, as its
     /// sender, and was dropped: the link names the machine the host authenticated at its other
     /// end, and an envelope's `source` is only what its writer wrote (SCE_MESH.md section
@@ -1819,6 +1971,54 @@ pub enum RouterError {
 /// predicate, so the router and a generated send site's choice to reach it
 /// are one answer rather than two copies of it.
 pub use sce_rust_runtime::helpers::send::mesh_peer;
+
+/// The peer a `<send>` target or an `<invoke>` `src` names: `#peer`
+/// ([`mesh_peer`]), or the origin of an instance of an open machine,
+/// `mesh://<machine>/<instance>` (docs/adr/0113, D2), the `_event.origin` of
+/// its events, which a document keeps and sends to as `targetexpr`. Both
+/// segments are unreserved characters alone, so the origin's percent-encoding
+/// is the name itself, and a target that encodes one is not this form.
+pub fn addressed_peer(target: &str) -> Option<&str> {
+    mesh_peer(target).or_else(|| {
+        target
+            .strip_prefix(sce_rust_runtime::MESH_ORIGIN_SCHEME)
+            .filter(|name| instance_of(name).is_some())
+    })
+}
+
+/// Whether `envelope` names as its sender the one the link of `peer` names
+/// (SCE_MESH.md section 10.9, invariants 10 and 11): the machine `peer` and
+/// no instance, or, on the link of an instance of an open machine, that
+/// machine and that instance (docs/adr/0113, D1).
+fn names_link(envelope: &Envelope<'_>, peer: &str) -> bool {
+    let instance = envelope.instance.map(|instance| instance.into_inner());
+    match instance_of(peer) {
+        Some((machine, of)) => envelope.source == machine && instance == Some(of),
+        None => envelope.source == peer && instance.is_none(),
+    }
+}
+
+/// The sender `envelope` names, as a link of it would be named: its machine,
+/// or the pair `<machine>/<instance>` when it names an instance.
+fn sender_of(envelope: &Envelope<'_>) -> String {
+    match envelope.instance {
+        Some(instance) => instance_peer(envelope.source.into_inner(), instance.into_inner()),
+        None => envelope.source.to_string(),
+    }
+}
+
+/// The sender a machine is told an event from `envelope` came from: the
+/// machine its `source` names, or, on the link of an instance of an open
+/// machine, the instance itself (`<machine>/<instance>`), whose
+/// `mesh://<machine>/<instance>` is the event's `_event.origin` and the
+/// address a reply is sent to (docs/adr/0113, D2). The link was held to the
+/// envelope on arrival ([`names_link`]).
+fn sender_name(envelope: &Envelope<'_>, peer: Option<&str>) -> String {
+    match peer.filter(|peer| instance_of(peer).is_some()) {
+        Some(instance) => instance.to_string(),
+        None => envelope.source.to_string(),
+    }
+}
 
 /// `envelope` as the bytes that go to `peer`, with the sequence number it is
 /// stamped with: the peer's next, when its binding stamps one (§mesh-10.6.3)
@@ -2079,7 +2279,7 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
         Ok(data) => Effect::Deliver {
             event: envelope.event_type.to_string(),
             data,
-            source: envelope.source.to_string(),
+            source: sender_name(envelope, peer),
             send_id: envelope.subject.map(|subject| subject.to_string()),
             // §mesh-10.7: `_event.invokeid` of an inbound request is its
             // wire invokeid, as RFC 4122 text.
@@ -3052,6 +3252,216 @@ mod tests {
             .receive("alice", force_request_by("alice"), 10_000)
             .is_ok());
         assert_eq!(cloud.inbound.senders(), 1, "alice's link has its one");
+    }
+
+    /// An HTTPS server, `cloud`, bound to the open machine `phone` as well as to
+    /// `alice` and `bob` (docs/adr/0113): no instance of `phone` is listed,
+    /// and at most `max_instances` of them are bound at once.
+    fn open_server(max_instances: usize) -> Router {
+        let mut cloud = https_server();
+        cloud
+            .open_machine(
+                "phone",
+                PeerConfig {
+                    transport: "https",
+                    buffer: None,
+                    responders: Responders::Instance,
+                    reply_events: &["service.response.force"],
+                    ..UNORDERED
+                },
+                max_instances,
+            )
+            .unwrap();
+        cloud
+    }
+
+    /// The request [`force_request_by`] writes, from the instance `instance`
+    /// of `source`, under the envelope id `[id; 16]`.
+    fn force_request_from(source: &str, instance: &str, id: u8) -> Vec<u8> {
+        Envelope {
+            id: (&[id; 16]).into(),
+            source: within(source).unwrap(),
+            instance: Some(within(instance).unwrap()),
+            event_type: within("service.request.force").unwrap(),
+            pattern: PatternKind::RpcRequest,
+            datacontenttype: PayloadCodec::Json,
+            data: within(r#"{"n":3}"#.as_bytes()).unwrap(),
+            invoke_id: Some((&WIRE).into()),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    /// docs/adr/0113, D3: an instance of an open machine is bound by the one
+    /// lookup the first time it is named, under its machine's configuration
+    /// and as its pair, and its event is told as the instance's, whose origin
+    /// is `mesh://phone/a1`. Neither the machine's bare name nor a name that
+    /// holds no instance id binds anything. Red if the router binds only the
+    /// peers it was given, or tells the event as the machine's.
+    #[test]
+    fn an_instance_of_an_open_machine_is_bound_as_it_arrives() {
+        let mut cloud = open_server(4);
+        assert!(!cloud.has_peer("phone/a1"));
+        assert_eq!(
+            cloud
+                .receive("phone/a1", force_request_from("phone", "a1", 1), 0)
+                .unwrap(),
+            alloc::vec![Effect::Deliver {
+                event: "service.request.force".to_string(),
+                data: r#"{"n":3}"#.to_string(),
+                source: "phone/a1".to_string(),
+                send_id: None,
+                invoke_id: Some(WIRE_TEXT.to_string()),
+            }]
+        );
+        assert!(cloud.has_peer("phone/a1"));
+        assert_eq!(
+            cloud
+                .binding(Some("phone/b2"))
+                .and_then(|binding| binding.transport),
+            Some("https"),
+            "an instance not yet bound is named with its machine's transport"
+        );
+        for name in ["phone", "phone/", "phone/a 1", "elsewhere/a1"] {
+            assert_eq!(
+                cloud.receive(name, force_request_by("phone"), 1),
+                Err(RouterError::UnknownPeer(name.to_string())),
+                "{name}"
+            );
+        }
+    }
+
+    /// SCE_MESH.md section 10.9, invariant 11 (docs/adr/0113, D1): the link of
+    /// an instance names the pair, so an envelope on it that names another
+    /// instance, no instance or another machine is refused to the host and
+    /// makes no window; and a link of no instance carries none. Red if the
+    /// instance is not held to the link, or if `source` alone is.
+    #[test]
+    fn an_envelope_on_an_instances_link_names_its_machine_and_its_instance() {
+        let mut cloud = open_server(4);
+        for (bytes, claimed) in [
+            (force_request_from("phone", "b2", 1), "phone/b2"),
+            (force_request_by("phone"), "phone"),
+            (force_request_from("tablet", "a1", 2), "tablet/a1"),
+        ] {
+            assert_eq!(
+                cloud.receive("phone/a1", bytes, 0),
+                Err(RouterError::SourceNotLink {
+                    peer: "phone/a1".to_string(),
+                    source: claimed.to_string(),
+                })
+            );
+        }
+        assert_eq!(cloud.inbound.senders(), 0, "no claim made a window");
+        assert_eq!(
+            cloud.receive("alice", force_request_from("alice", "a1", 3), 1),
+            Err(RouterError::SourceNotLink {
+                peer: "alice".to_string(),
+                source: "alice/a1".to_string(),
+            }),
+            "a link of no instance carries none"
+        );
+    }
+
+    /// docs/adr/0113, D6: no instance is bound past the open machine's bound,
+    /// and none that is bound is put out for a new one; once the host unbinds
+    /// one, a new one is bound. A declared peer is no instance and is not
+    /// counted. Red without the bound, or with an eviction.
+    #[test]
+    fn no_instance_is_bound_past_the_bound_and_none_is_put_out_for_one() {
+        let mut cloud = open_server(1);
+        assert!(cloud
+            .receive("phone/a1", force_request_from("phone", "a1", 1), 0)
+            .is_ok());
+        assert_eq!(
+            cloud.receive("phone/b2", force_request_from("phone", "b2", 2), 1),
+            Err(RouterError::InstancesFull {
+                machine: "phone".to_string(),
+                max_instances: 1,
+            })
+        );
+        assert!(!cloud.has_peer("phone/b2"));
+        assert!(
+            cloud.has_peer("phone/a1"),
+            "the bound instance is not put out"
+        );
+        assert!(
+            cloud.receive("alice", force_request_by("alice"), 2).is_ok(),
+            "a declared peer is no instance"
+        );
+        cloud.remove_peer("phone/a1");
+        assert!(cloud
+            .receive("phone/b2", force_request_from("phone", "b2", 2), 3)
+            .is_ok());
+    }
+
+    /// docs/adr/0113, D2: a document answers an instance at the origin it was
+    /// told, `mesh://phone/a1`, which reaches the instance's link; a target of
+    /// another shape names no peer. Red if a send names only `#peer`.
+    #[test]
+    fn a_document_answers_an_instance_at_its_origin() {
+        let mut cloud = open_server(4);
+        cloud
+            .receive("phone/a1", force_request_from("phone", "a1", 1), 0)
+            .unwrap();
+        let answered = cloud
+            .send(
+                &HostSendRequest {
+                    invoke_id: WIRE_TEXT.to_string(),
+                    ..request(
+                        "mesh://phone/a1",
+                        "service.response.force",
+                        r#"{"force":12}"#,
+                    )
+                },
+                [5; 16],
+                1,
+            )
+            .unwrap();
+        let [Effect::Transmit { peer, bytes }] = answered.as_slice() else {
+            panic!("expected the reply to the instance, got {answered:?}");
+        };
+        assert_eq!(peer, "phone/a1");
+        let reply = Envelope::decode(&mut SceCursor::new(bytes)).unwrap();
+        assert_eq!(reply.pattern, PatternKind::RpcReply);
+        assert_eq!(reply.source, "cloud");
+        for target in ["mesh://phone", "mesh://phone/a%31", "mesh://phone/a1/x"] {
+            assert_eq!(
+                cloud.send(&request(target, "service.response.force", "{}"), [6; 16], 2),
+                Err(RouterError::NotMeshTarget(target.to_string())),
+                "{target}"
+            );
+        }
+    }
+
+    /// docs/adr/0113, D6 and D7: an open machine is bound only with room for
+    /// one instance at least, on a binding whose link names its sender, and
+    /// under a name a path carries. Red if any of the three is taken.
+    #[test]
+    fn an_open_machine_is_bound_only_where_its_instances_can_be_told_apart() {
+        let mut cloud = https_server();
+        let config = PeerConfig {
+            responders: Responders::Instance,
+            ..UNORDERED
+        };
+        for (machine, config, max_instances) in [
+            ("phone", config, 0),
+            (
+                "phone",
+                PeerConfig {
+                    causal: PEOPLE.causal,
+                    ..config
+                },
+                4,
+            ),
+            ("ph/one", config, 4),
+        ] {
+            assert!(matches!(
+                cloud.open_machine(machine, config, max_instances),
+                Err(RouterError::BadOpenMachine { .. })
+            ));
+        }
+        assert!(cloud.open_machine("phone", config, 4).is_ok());
     }
 
     /// §mesh-16.7 row 5: the link a request waits on is lost. The request is

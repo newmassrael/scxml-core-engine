@@ -11,7 +11,10 @@
 //! the C++ router, and lands here as a [`PeerConfig`]. What a host still
 //! does by hand is open the sockets each [`PeerLink`] names.
 
+use alloc::string::String;
+
 use crate::inbound::ConfigError;
+use crate::link::is_path_segment;
 use crate::router::{DurableSend, PeerConfig, Router};
 
 /// How the link to a peer is opened. The core never reads it; the host's
@@ -258,6 +261,22 @@ pub fn is_instance_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+/// The name an instance of the open machine `machine` is bound under (docs/adr/0113, D2 and D3):
+/// the pair as the path its binding posts to carries it, `<machine>/<instance>`, which its origin
+/// `mesh://<machine>/<instance>` names too. A machine's name is a segment of that path
+/// ([`is_path_segment`]) and so is an instance id ([`is_instance_id`]); neither holds a `/`, so
+/// the name is one pair's and no declared peer's.
+pub fn instance_peer(machine: &str, instance: &str) -> String {
+    alloc::format!("{machine}/{instance}")
+}
+
+/// The pair (machine, instance) `name` holds, when it is the name of an instance
+/// ([`instance_peer`]).
+pub fn instance_of(name: &str) -> Option<(&str, &str)> {
+    let (machine, instance) = name.split_once('/')?;
+    (is_path_segment(machine) && is_instance_id(instance)).then_some((machine, instance))
+}
+
 /// One machine's side of a deployment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Machine {
@@ -272,7 +291,8 @@ pub struct Machine {
     /// Every open machine the machine is bound to, by name (docs/adr/0113,
     /// D3): not one peer but any number of them, each an instance under the
     /// one [`PeerConfig`] here, whose responder is the instance itself
-    /// ([`Responders::Instance`]).
+    /// ([`Responders::Instance`]). The host binds each with
+    /// [`Router::open_machine`] and the deployment's `max_instances`.
     ///
     /// [`Responders::Instance`]: crate::router::Responders::Instance
     pub open_peers: &'static [Peer],
@@ -501,6 +521,26 @@ mod tests {
         let long = "a".repeat(MAX_INSTANCE_ID_CHARS + 1);
         for id in ["", "a b", "a/b", "a~b", "a%2Fb", "é", long.as_str()] {
             assert!(!is_instance_id(id), "{id}");
+        }
+    }
+
+    /// docs/adr/0113, D2 and D3: an instance is bound under the pair as its path carries it, and
+    /// the name is read back as that pair alone; a machine's name, a name with no instance id, and
+    /// one with a segment more are no instance's. Red if the pair is read from a name that is not
+    /// its form.
+    #[test]
+    fn an_instance_is_named_by_its_pair_and_no_other_name_reads_as_one() {
+        assert_eq!(instance_peer("phone", "a1"), "phone/a1");
+        assert_eq!(instance_of("phone/a1"), Some(("phone", "a1")));
+        for name in [
+            "phone",
+            "phone/",
+            "/a1",
+            "phone/a1/x",
+            "phone/a 1",
+            "ph one/a1",
+        ] {
+            assert_eq!(instance_of(name), None, "{name}");
         }
     }
 

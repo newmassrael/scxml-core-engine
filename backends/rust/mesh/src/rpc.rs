@@ -78,7 +78,7 @@ impl Correlation {
     pub fn check(&self, wire_id: &[u8; 16], peer: &str) -> Answer {
         match self.pending.get(wire_id) {
             None => Answer::Unknown,
-            Some(pending) if pending.responders.admits(peer) => Answer::Admitted,
+            Some(pending) if pending.responders.admits(peer, &pending.target) => Answer::Admitted,
             Some(_) => Answer::Undeclared,
         }
     }
@@ -324,20 +324,28 @@ mod tests {
     }
 
     /// docs/adr/0113, D3: a request to an instance is answered by the instance
-    /// it was sent to, so a machine's bare name answers none. Red if an empty
-    /// list, or the machine's name, is read for it.
+    /// it was sent to and by no other, so neither a machine's bare name nor
+    /// another instance of it answers. Red if an empty list, the machine's name
+    /// or any instance is read for it.
     #[test]
-    fn no_machine_name_answers_a_request_to_an_instance() {
+    fn only_the_instance_asked_answers_a_request_to_an_instance() {
         let mut table = Correlation::default();
         table.register(
             WIRE,
             Pending {
+                target: "phone/a1".into(),
                 responders: Responders::Instance,
                 ..pending("ask", 1, None)
             },
         );
-        assert!(matches!(table.check(&WIRE, "cloud"), Answer::Undeclared));
+        for other in ["phone", "phone/b2", "cloud"] {
+            assert!(
+                matches!(table.check(&WIRE, other), Answer::Undeclared),
+                "{other}"
+            );
+        }
         assert!(table.is_waiting(&WIRE), "the request stays answerable");
+        assert!(matches!(table.check(&WIRE, "phone/a1"), Answer::Admitted));
     }
 
     /// A cancel forgets only the start it names: a state entered again
