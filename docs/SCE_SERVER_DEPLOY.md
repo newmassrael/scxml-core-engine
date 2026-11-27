@@ -79,9 +79,11 @@ limits. It is a test suite, not a guarantee of a deployment's own composition.
 
 Not built, and a server must not count on them:
 
-- The rest of ADR 0114: the document surface of a journal (`journal:`, `follows:`, `streams:`, `sce:journal` sends,
-  `sce:valid-time`, `sce-host-journal-read`), the pool's write that carries facts, and a follower of a journal. The
-  journal's store is there (above) and nothing of SCE appends to it. It has no retention: a journal keeps every entry.
+- The rest of ADR 0114: `sce-host-journal-read`, the pool's write that carries facts, and a follower of a journal.
+  The build reads `journal:`, `follows:` and `streams:`, `<send type="sce:journal">`, `sce:valid-time` and
+  `sce:from="journal"` (`docs/SCE_ACCEPTED_SUBSET.md` sections 2.8 and 2.15), and a generated Rust machine keeps the
+  entries it says for its host (`EngineState::take_journal`); no pool takes them yet, so nothing of SCE appends to
+  the store (above). It has no retention: a journal keeps every entry.
 - A server program (ADR 0107; ADR 0109, "Not in scope"): each deployment writes its own (section 1).
 - A store on media several machines share, and an exchange routed to the process that holds its key's lease (ADR
   0109, D18): its direction is decided and it is built only once a deployment measures one active process with a

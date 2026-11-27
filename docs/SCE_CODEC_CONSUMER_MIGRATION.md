@@ -4192,3 +4192,23 @@ the one argument below; nothing else a consumer compiles against does.
 - **A length the target cannot hold is refused**: a negative length of a signed field, or one past a 32-bit
   `usize`, is `CodecError::LengthOutOfRange`, where it was cut to its low bits and the frame read another body. On a
   64-bit target an unsigned length decodes as it did.
+
+## A machine says facts into an event journal, and a deployment declares it (ADR 0114, step 3)
+
+Landing: the commits that add this section. Every committed tree generated from the Rust templates changes its
+template digest (`send.rs.jinja2` gained the journal arm); no generated machine's behaviour changes for a document
+that says no fact.
+
+- deploy.yaml takes `journal:` and `follows:` on a machine and `streams:` at the top level
+  (`docs/SCE_ACCEPTED_SUBSET.md` section 2.8), with the codes `mesh/deploy-invalid-journal` and
+  `mesh/codegen-journal-mismatch`. A `DeployConfig` literal adds `streams: BTreeMap::new()`; a `match` over
+  `DeployError` or `CodegenError` names `InvalidJournal` and `JournalMismatch`.
+- A statechart says a fact with `<send type="sce:journal">`, holds a variable to the facts with
+  `sce:from="journal"` (`validation/journal-value-assigned`), and an event schema marks its valid time with
+  `sce:valid-time="from"` (section 2.15). A `ForgeField` literal adds `valid_time: false`, a `Variable` literal
+  `from_journal: false`, and a `match` over `ValidationError` names `JournalValueAssigned`.
+- `sce_rust_runtime::journal::JournalEntry` is an entry a machine made (`schema`, `revision`, `data`,
+  `valid_ms`, the fields of `sce_rust_session_store::Fact`); `EngineState::take_journal` takes the ones made since
+  the last take, which a host appends with the write of the checkpoint that holds them (`Write::journal`). A machine
+  that says a fact needs the runtime's `record-cbor` feature. `mesh::topology::resolve_keyed_pool_following` keys a
+  pool by the entries it follows too.
