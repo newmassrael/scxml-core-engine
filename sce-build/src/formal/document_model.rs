@@ -1547,7 +1547,7 @@ fn is_tla_identifier(name: &str) -> bool {
 }
 
 /// `text` as a TLA+ string literal.
-fn tla_string(text: &str) -> String {
+pub(crate) fn tla_string(text: &str) -> String {
     let mut quoted = String::with_capacity(text.len() + 2);
     quoted.push('"');
     for c in text.chars() {
