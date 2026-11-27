@@ -267,19 +267,16 @@ pub fn root_of(manifest: &Path) -> Result<PathBuf, FormalError> {
     Ok(PathBuf::from(String::from_utf8_lossy(&ran.stdout).trim()))
 }
 
+/// What a file that carries a contract Verus reads holds: the attribute its contracts stand
+/// under. Spelled in two halves, so this judge's own source, which names it, is not one.
+const CONTRACT_MARK: &str = concat!("cfg_attr(verus", "_only");
+
 /// Every Rust file of the work tree at `root` that Verus would read a contract of.
 pub fn contracted_files(root: &Path) -> Result<Vec<String>, FormalError> {
     let ran = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args([
-            "grep",
-            "-l",
-            "--untracked",
-            "cfg_attr(verus_only",
-            "--",
-            "*.rs",
-        ])
+        .args(["grep", "-l", "--untracked", CONTRACT_MARK, "--", "*.rs"])
         .output()
         .map_err(|e| FormalError::ToolUnavailable {
             tool: "git".to_string(),

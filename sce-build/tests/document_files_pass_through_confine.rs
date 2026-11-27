@@ -212,6 +212,46 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Repository,
         &[("load", 1), ("check_aot_header_briefs", 1)],
     ),
+    // The formal judges (docs/adr/0146): the manifest the operator names on the command line,
+    // the models, configurations and proved files it declares in the operator's repository, and
+    // the scratch TLC runs in. A model or a proof is no document a document names.
+    (
+        "src/formal/models.rs",
+        Why::Operator,
+        &[
+            ("read", 1),
+            ("unshown", 1),
+            ("declared", 2),
+            ("files_with", 2),
+            ("check", 1),
+        ],
+    ),
+    (
+        "src/formal/proofs.rs",
+        Why::Operator,
+        &[("declared", 2), ("check", 2)],
+    ),
+    // `run` copies the operator's modules into its scratch and reads back the graph TLC wrote
+    // there.
+    ("src/formal/tlc.rs", Why::Operator, &[("run", 2)]),
+    // The tools the judge pins (docs/adr/0146, D3), found and admitted by their digest, and the
+    // process's own descriptors a jobserver is named by.
+    (
+        "src/formal/toolchain.rs",
+        Why::Installation,
+        &[
+            ("sha256_of", 1),
+            ("admitted_tlc", 1),
+            ("admitted_verus", 2),
+            ("install_tlc", 1),
+            ("install_verus", 3),
+        ],
+    ),
+    (
+        "src/formal/proofs.rs",
+        Why::Installation,
+        &[("descriptor_is_open", 1)],
+    ),
     // The command-line program: what it is given to read, what it writes, and where it is run.
     (
         "src/cli/mod.rs",
