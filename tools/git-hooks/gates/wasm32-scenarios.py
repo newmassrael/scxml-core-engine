@@ -12,8 +12,11 @@
 # And the browser node (docs/adr/0117): its module, the HTTPS binding's
 # client core, held with the page's shell around it to its kit under Node and
 # in headless Chrome and Firefox, against the binding's own server, which the
-# gate builds for the host (`sce-rust-mesh`'s example `https_echo`). Its
-# cost is not in `cost_s` below, which was measured before it was added.
+# gate builds for the host (`sce-rust-mesh`'s example `https_echo`). And the
+# page surface (docs/adr/0117, D7): `sce-codegen surface` writes it from a
+# fixture, the pinned TypeScript compiles a page that uses it right and must
+# refuse each wrong use of one that does not, and Node runs its module's checks.
+# Neither cost is in `cost_s` below, which was measured before they were added.
 #
 # `ci_only` for what it needs rather than for the number alone: the target's
 # standard library, Node, Chrome, and a `wasm-bindgen` tool at exactly the
@@ -35,6 +38,9 @@
     # the hosted job took 11 minutes (job 139040902859). A plan makes one unit
     # per part (`shard_count`).
     "shard_env": "SCE_WASM32_SCENARIOS_SHARD",
+    # The page surface is written by the generator the run builds once
+    # (`codegen-build`), which the replay part obtains for `sce-codegen surface`.
+    "deps": ["codegen-build"],
     "ci_only": "107s measured 2026-10-08 with the dependencies built "
                "(128s on a first dev-profile build before Chrome was "
                "added, 620s in release). wasm32-scenarios.yml runs it, "
@@ -45,7 +51,8 @@
                "the selected Rust with its wasm32 standard library.",
     "cost_s": 107,
     "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome; "
-               "the browser node's kit in Node, Chrome and Firefox",
+               "the browser node's kit in Node, Chrome and Firefox; the page surface "
+               "compiled by TypeScript and run in Node",
     # It runs in the host image wherever it runs (ADR 0145): the runner runs
     # `scripts/gate` inside the image its Containerfile addresses, so the
     # hosted lane, a build machine and a workstation judge it in one

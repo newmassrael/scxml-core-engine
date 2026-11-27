@@ -30,6 +30,13 @@
 # (docs/adr/0117, open question 3): Node on its own fetch, WebCrypto and timers,
 # each browser on its IndexedDB and Web Locks too.
 #
+# The page's surface (docs/adr/0117, D7) is what a page is written against: a
+# module and its TypeScript declaration that `sce-codegen surface` writes from a
+# document. The pinned TypeScript (scripts/install_typescript.sh) compiles a page
+# that uses it right and must refuse, line by line, one whose every use is wrong;
+# Node runs the module's checks of what a page in JavaScript hands it
+# (backends/rust/browser-node/surface).
+#
 # The module is built WITHOUT telling the engine a clock. The replay installs a
 # manual clock only for the scenarios of a delayed send, so the rest run on
 # whatever the engine starts with on this target. That is the point: the check
@@ -50,6 +57,8 @@ CHROME_RUNNER="backends/rust/scenarios/wasm/run_chrome.mjs"
 NODE_CRATE="sce-rust-browser-node"
 KIT_NODE_RUNNER="backends/rust/browser-node/kit/run_node.mjs"
 KIT_BROWSER_RUNNER="backends/rust/browser-node/kit/run_browser.mjs"
+SURFACE_DOCUMENT="sce-build/tests/fixtures/static_datamodel/static_optional.scxml"
+SURFACE_RUNNER="backends/rust/browser-node/surface/check.mjs"
 
 # The target's standard library is a part of a toolchain a compiler can be
 # without: a machine that has a compiler and not this target fails inside cargo
@@ -220,3 +229,27 @@ for engine in chrome firefox; do
         *) sce_gate_fail "the browser node's kit failed in $engine, or the page could not report (each failing case and why, or the reason, are printed above)" ;;
     esac
 done
+
+# The page's surface (docs/adr/0117, D7), written from a document every backend's
+# scenarios already read, so it is the surface of a machine that runs. The
+# compiler is the pinned TypeScript: the package scripts/install_typescript.sh
+# unpacks at TYPESCRIPT_ROOT, as the image sets it, else at the path derived from
+# the release, and only that release judges the declaration, since a page that
+# must not compile is held to one compiler's reading of it.
+sce_gate_step "the page surface of $SURFACE_DOCUMENT, compiled by TypeScript and run under Node"
+typescript_rev="$(sed -n 's/^TYPESCRIPT_REV="\([0-9.][0-9.]*\)"$/\1/p' scripts/install_typescript.sh)"
+[[ -n "$typescript_rev" ]] \
+    || sce_gate_fail "scripts/install_typescript.sh names no TYPESCRIPT_REV, so the compiler that judges the page surface is not defined"
+typescript_package="${TYPESCRIPT_ROOT:-$HOME/.local/share/typescript/${typescript_rev}}/package"
+typescript_found="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$typescript_package/package.json" 2>/dev/null)" \
+    || typescript_found=""
+[[ "$typescript_found" == "$typescript_rev" ]] \
+    || sce_gate_cannot_run "TypeScript $typescript_rev is not at $typescript_package (scripts/install_typescript.sh installs it); the page surface's declaration is judged by that compiler and no other"
+codegen="$(sce_gate_codegen)" \
+    || sce_gate_fail "could not provide sce-codegen, which writes the page surface"
+surface_dir="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$surface_dir'"
+"$codegen" surface "$SURFACE_DOCUMENT" --out-dir "$surface_dir" \
+    || sce_gate_fail "sce-codegen surface refused $SURFACE_DOCUMENT, whose surface a page is written against"
+node "$SURFACE_RUNNER" "$surface_dir" "$typescript_package" \
+    || sce_gate_fail "the page surface failed: a page that uses it right did not compile, a wrong use compiled, or its module admitted or refused what it must not (each is printed above)"
