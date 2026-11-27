@@ -476,7 +476,7 @@ fn an_admit_keeps_the_bounds(
             && (door is None ==> live + 1 <= max_live as usize),
         answer.0 is Err ==> answer.1@ == ledger@,
 {
-    let admitted = admit(stopping, door, live, max_live, max_inbox);
+    let admitted = admission(stopping, door, live, max_live, max_inbox);
     match admitted {
         Ok(_) => (admitted, Ghost(Ledger {
             posted: ledger@.posted + 1,
