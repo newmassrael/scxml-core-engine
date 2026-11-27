@@ -4319,6 +4319,7 @@ dependencies = [
  "sce-build",
  "sce-forge-runtime",
  "sce-portable-bytes",
+ "sce-rust-crypto",
  "sce-rust-host-features",
  "sce-rust-mesh",
  "sce-rust-runtime",

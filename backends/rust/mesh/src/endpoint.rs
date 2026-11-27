@@ -447,12 +447,23 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// it are ([`RouterError::InstancesFull`], docs/adr/0113, D6) is returned rather than
     /// reported, for the host to shed (`503`) as it sheds one judged by completion records
     /// ([`Self::receive_member`]). Nothing of it was taken in.
-    pub fn receive_within_bound(&mut self, peer: &str, bytes: Vec<u8>) -> Result<(), RouterError> {
+    ///
+    /// `acting` is the person the incarnation of an instance acts for, which each event the
+    /// envelope raises on its behalf carries, as [`Self::receive_member_for`] has it; `None` for
+    /// any other sender.
+    pub fn receive_within_bound(
+        &mut self,
+        peer: &str,
+        acting: Option<Principal>,
+        bytes: Vec<u8>,
+    ) -> Result<(), RouterError> {
+        let from = self.to_engine.len();
         let now = self.environment.now_ms();
         match self.router.receive(peer, bytes, now) {
             Err(refused @ RouterError::InstancesFull { .. }) => Err(refused),
             effects => {
                 self.take_in(peer, effects);
+                self.act_for(from, peer, acting);
                 Ok(())
             }
         }
@@ -519,8 +530,15 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     ) -> Result<(), RouterError> {
         let from = self.to_engine.len();
         self.receive_member(peer, made_under, standing, bytes)?;
+        self.act_for(from, peer, acting);
+        Ok(())
+    }
+
+    /// Each event told the engine from `from` on that `peer` raised carries `acting`, the person
+    /// `peer`'s incarnation acts for; a row the endpoint raises as its own machine does not.
+    fn act_for(&mut self, from: usize, peer: &str, acting: Option<Principal>) {
         let Some(person) = acting.map(Box::new) else {
-            return Ok(());
+            return;
         };
         for told in &mut self.to_engine[from..] {
             if let Told::Event {
@@ -532,7 +550,6 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                 }
             }
         }
-        Ok(())
     }
 
     /// Take `standing`, the store's latest answer for the member whose instance is `peer` (see

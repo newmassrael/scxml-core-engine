@@ -102,6 +102,7 @@ use crate::peers::{
 };
 use crate::router::Standing;
 use sce_rust_crypto::equal::same_secret;
+use sce_rust_runtime::Principal;
 use sce_rust_session_store::{MembershipStore, Terms};
 
 // The credentials an authenticator reads (ADR 0109, D3): the pin store of `install`, its memory
@@ -479,7 +480,7 @@ pub enum Durability {
 /// How the edge admitted the exchange of an instance of an open machine (docs/adr/0113, D4 and
 /// D5), which the host hands its pool with each envelope the exchange carried
 /// (`Pool::receive_member`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Judgement {
     /// The incarnation of the instance's membership the exchange was made under.
     pub incarnation: u64,
@@ -488,6 +489,24 @@ pub struct Judgement {
     /// Whether the exchange confirmed an offer, ending the incarnation before it: the host tells
     /// the sessions that hold the instance (`Pool::stand`), which drop its records.
     pub confirmed: bool,
+    /// The person the incarnation acts for, as the server's store holds the delegation
+    /// (docs/adr/0116, D1 and D3), which the host hands its pool with each envelope
+    /// (`Pool::receive_member_for`) and a document reads as `_x.principal`; `None` for an
+    /// incarnation that acts for nobody, or a server that keeps no people
+    /// ([`HttpsServer::keep_principals`]).
+    pub acting: Option<Principal>,
+}
+
+/// The person `person`, behind the instance `instance`, as a document reads them
+/// (docs/adr/0116, D3).
+fn principal_of(person: &sce_rust_session_store::Person, instance: &str) -> Principal {
+    Principal {
+        issuer: person.issuer.clone(),
+        subject: person.subject.clone(),
+        proved_ms: person.proved_ms,
+        method: person.method.clone(),
+        instance: instance.to_string(),
+    }
 }
 
 /// What the server asks of its host (§mesh-22.8): tell the endpoint what the binding observed,
@@ -2156,62 +2175,87 @@ async fn exchange(
                 Asked::Under { incarnation, mark } => {
                     let key = signed_by.clone();
                     let proof = body.to_vec();
+                    let reads_people = people.is_some();
                     // An exchange that names an offer waiting for a proof confirms it only with a
                     // proof in its body, judged for that offer and the key that signed it.
                     let admitted = tokio::task::spawn_blocking(move || {
-                        let admitted = store.admit(&member, incarnation, mark, terms, now)?;
-                        let (
-                            sce_rust_session_store::Admission::Unproved,
-                            Some((port, login)),
-                            Some(key),
-                        ) = (admitted, people, key)
-                        else {
-                            return Ok(Some((admitted, false)));
-                        };
-                        let edge = PersonEdge {
-                            store: &*store,
-                            port: &*port,
-                            server: &server,
-                            terms,
-                            login,
-                        };
-                        let confirming = Confirming {
-                            machine: &machine,
-                            instance: &instance,
-                            key: &key,
-                            incarnation,
-                            mark,
-                            proof: &proof,
-                        };
-                        Ok::<_, sce_rust_session_store::Failure>(
+                        let judged = 'judged: {
+                            let admitted = store.admit(&member, incarnation, mark, terms, now)?;
+                            let (
+                                sce_rust_session_store::Admission::Unproved,
+                                Some((port, login)),
+                                Some(key),
+                            ) = (admitted, people, key)
+                            else {
+                                break 'judged Some((admitted, false));
+                            };
+                            let edge = PersonEdge {
+                                store: &*store,
+                                port: &*port,
+                                server: &server,
+                                terms,
+                                login,
+                            };
+                            let confirming = Confirming {
+                                machine: &machine,
+                                instance: &instance,
+                                key: &key,
+                                incarnation,
+                                mark,
+                                proof: &proof,
+                            };
                             match edge.confirm(&confirming, now)? {
                                 Proved::Judged(admitted) => Some((admitted, true)),
                                 Proved::Refused(_) => None,
-                            },
+                            }
+                        };
+                        // docs/adr/0116, D1 and D3: the person the incarnation the exchange was
+                        // taken in under acts for, as the store holds it, which every event its
+                        // envelopes raise carries; a delegation is bound only where the program
+                        // keeps the people behind instances.
+                        let acting = match judged {
+                            Some((
+                                sce_rust_session_store::Admission::Current { .. }
+                                | sce_rust_session_store::Admission::Confirmed { .. },
+                                _,
+                            )) if reads_people => store
+                                .membership(&member)?
+                                .member
+                                .filter(|held| held.incarnation == incarnation)
+                                .and_then(|held| held.delegation)
+                                .map(|delegation| principal_of(&delegation.person, &instance)),
+                            _ => None,
+                        };
+                        Ok::<_, sce_rust_session_store::Failure>(
+                            judged.map(|(admitted, with_proof)| (admitted, with_proof, acting)),
                         )
                     })
                     .await;
-                    let judgement = |mark, confirmed| Judgement {
+                    let judgement = |mark, confirmed, acting| Judgement {
                         incarnation,
                         standing: Standing { incarnation, mark },
                         confirmed,
+                        acting,
                     };
                     match admitted {
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Current { mark }, _)))) => {
-                            Some(judgement(mark, false))
-                        }
+                        Ok(Ok(Some((
+                            sce_rust_session_store::Admission::Current { mark },
+                            _,
+                            acting,
+                        )))) => Some(judgement(mark, false, acting)),
                         Ok(Ok(Some((
                             sce_rust_session_store::Admission::Confirmed { mark, .. },
                             with_proof,
+                            acting,
                         )))) => {
                             // A body that was a proof of a person carries no envelope.
                             proof_taken = with_proof;
-                            Some(judgement(mark, true))
+                            Some(judgement(mark, true, acting))
                         }
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Fenced { .. }, _)))) => {
+                        Ok(Ok(Some((sce_rust_session_store::Admission::Fenced { .. }, _, _)))) => {
                             return fenced(&shared, answered.as_ref());
                         }
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Full, _)))) => {
+                        Ok(Ok(Some((sce_rust_session_store::Admission::Full, _, _)))) => {
                             return shared.shed(
                                 ServerShed::MaxInstances,
                                 ResponseStatus::ServiceUnavailable,
@@ -2221,7 +2265,7 @@ async fn exchange(
                         // docs/adr/0116, D2: the offer waits for a proof this exchange did not
                         // carry, or the port refused the one it did: nothing was written, and the
                         // offer stands, until it runs out, for a good one.
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Unproved, _))))
+                        Ok(Ok(Some((sce_rust_session_store::Admission::Unproved, _, _))))
                         | Ok(Ok(None)) => return unproved(&shared),
                         _ => {
                             return shared.shed(
@@ -4919,7 +4963,7 @@ mod tests {
         assert_eq!(verified(&confirming, &confirmed), Ok(()));
         {
             let judged = host.judged.lock().expect("held");
-            let (judgement, carried) = judged.last().copied().expect("handed to the host");
+            let (judgement, carried) = judged.last().cloned().expect("handed to the host");
             assert_eq!(carried, 1);
             assert!(judgement.confirmed);
             assert_eq!(judgement.incarnation, first);
@@ -5079,9 +5123,33 @@ mod tests {
                 .map(|delegation| delegation.person.subject),
             Some("alice".to_string())
         );
+        let person = |judgement: &Judgement| {
+            judgement
+                .acting
+                .as_ref()
+                .map(|acting| (acting.subject.clone(), acting.instance.clone()))
+        };
+        let alice = Some(("alice".to_string(), "a1".to_string()));
+        {
+            let judged = host.judged.lock().expect("held");
+            let (judgement, carried) = judged.last().cloned().expect("the host was told");
+            assert!(judgement.confirmed);
+            assert_eq!(carried, 0, "a proof is no envelope");
+            assert_eq!(person(&judgement), alice, "the person the proof bound");
+        }
+
+        // docs/adr/0116, D1 and D3: every later exchange under the incarnation reaches the host
+        // with the person the store holds for it, whatever its body says.
+        let carrying = send(alloc::vec![0x05], &under);
+        assert_eq!(carrying.status, 200);
         let judged = host.judged.lock().expect("held");
-        let (judgement, carried) = judged.last().copied().expect("the host was told");
-        assert!(judgement.confirmed);
-        assert_eq!(carried, 0, "a proof is no envelope");
+        let (judgement, carried) = judged.last().cloned().expect("the host was told");
+        assert!(!judgement.confirmed);
+        assert_eq!(carried, 1);
+        assert_eq!(
+            person(&judgement),
+            alice,
+            "read from the store's delegation"
+        );
     }
 }

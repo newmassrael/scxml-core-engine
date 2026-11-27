@@ -203,6 +203,7 @@ use sce_rust_metrics::{Counter, Eviction, Gauge, Metrics, PoolShed, RestoredFrom
 use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
+use sce_rust_runtime::Principal;
 use sce_rust_session_store::{
     AcquireError, Actor, Append, Change, Conflict, Fact, FactData, Failure, Held, Journal,
     JournalStore, LeaseError, MembershipStore, SessionStore, Under, Write, WriteError,
@@ -529,6 +530,9 @@ enum Input {
         /// its edge took it in under and the store's answer for its member then (docs/adr/0113,
         /// D5).
         judged: Option<(u64, Standing)>,
+        /// For an instance whose incarnation acts for a person, the person, as the edge read the
+        /// delegation its store holds (docs/adr/0116, D1 and D3).
+        acting: Option<Principal>,
     },
     /// The store's latest answer for the member whose instance is the peer named
     /// (docs/adr/0113, D5).
@@ -1062,7 +1066,7 @@ where
     /// `RpcStatus::Unavailable`, which tells its client to try again, and
     /// anything else is dropped and told to the host ([`PoolError::Shed`]).
     pub fn receive(&self, peer: &str, bytes: Vec<u8>) -> Option<String> {
-        self.receive_as(peer, bytes, false, None).0
+        self.receive_as(peer, bytes, false, None, None).0
     }
 
     /// [`Self::receive`], with the envelope's [`Receipt`]: the host reads it
@@ -1076,7 +1080,7 @@ where
     /// who carries it again (the `https` binding's `503`), so no reply tells
     /// a client of a request it will send again and the pool then serves.
     pub fn receive_with_receipt(&self, peer: &str, bytes: Vec<u8>) -> (Option<String>, Receipt) {
-        self.receive_as(peer, bytes, true, None)
+        self.receive_as(peer, bytes, true, None, None)
     }
 
     /// [`Self::receive_with_receipt`] for envelope `bytes` of `peer`, an instance of an open
@@ -1094,19 +1098,38 @@ where
         standing: Standing,
         bytes: Vec<u8>,
     ) -> (Option<String>, Receipt) {
+        self.receive_member_for(peer, made_under, standing, None, bytes)
+    }
+
+    /// [`Self::receive_member`] for an instance whose incarnation `made_under` acts for a person
+    /// (docs/adr/0116, D1 and D3): `acting` is the person of the delegation the server's store
+    /// holds for that incarnation, which the edge read where it took the envelope in
+    /// (`Judgement::acting` of the `https` server), or `None` for one that acts for nobody. Each
+    /// event the envelope raises in its session carries it, and a document reads it as
+    /// `_x.principal` (`Endpoint::receive_member_for`).
+    pub fn receive_member_for(
+        &self,
+        peer: &str,
+        made_under: u64,
+        standing: Standing,
+        acting: Option<Principal>,
+        bytes: Vec<u8>,
+    ) -> (Option<String>, Receipt) {
         self.know(peer);
-        self.receive_as(peer, bytes, true, Some((made_under, standing)))
+        self.receive_as(peer, bytes, true, Some((made_under, standing)), acting)
     }
 
     /// [`Self::receive_with_receipt`], where `acknowledged` says whether the
     /// host reads the receipt: a shed envelope is then lost rather than
-    /// answered; `judged` is what [`Self::receive_member`] was given.
+    /// answered; `judged` and `acting` are what [`Self::receive_member_for`]
+    /// was given.
     fn receive_as(
         &self,
         peer: &str,
         bytes: Vec<u8>,
         acknowledged: bool,
         judged: Option<(u64, Standing)>,
+        acting: Option<Principal>,
     ) -> (Option<String>, Receipt) {
         let placed = {
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
@@ -1125,6 +1148,7 @@ where
                     bytes,
                     receipt: receipt.clone(),
                     judged,
+                    acting,
                 };
                 match self.post_bounded(&key, input) {
                     Ok(()) => (Some(key), receipt),
@@ -2374,8 +2398,11 @@ where
                         bytes,
                         receipt,
                         judged: Some((made_under, standing)),
+                        acting,
                     } if endpoint.judges_by_records(&peer) => {
-                        match endpoint.receive_member(&peer, made_under, standing, bytes) {
+                        match endpoint
+                            .receive_member_for(&peer, made_under, standing, acting, bytes)
+                        {
                             Ok(()) => session.unsaved.push(receipt),
                             // docs/adr/0113, D5: judged again as it runs, it names an incarnation
                             // its member no longer stands under, and nothing of it was taken in.
@@ -2399,8 +2426,9 @@ where
                         peer,
                         bytes,
                         receipt,
+                        acting,
                         ..
-                    } => match endpoint.receive_within_bound(&peer, bytes) {
+                    } => match endpoint.receive_within_bound(&peer, acting, bytes) {
                         Ok(()) => session.unsaved.push(receipt),
                         Err(refused) => {
                             receipt.settle(Fate::Lost);

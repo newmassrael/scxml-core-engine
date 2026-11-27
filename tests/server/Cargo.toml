@@ -57,6 +57,9 @@ sce-build = { path = "../../sce-build", features = ["cli"] }
 # `conformance`: the kit of the session machine's contract (docs/adr/0112), which the ledger and
 # the generated machines' adapter are each run through.
 sce-rust-mesh = { path = "../../backends/rust/mesh", features = ["https-conformance", "conformance"] }
+# The key an instance signs its exchanges with under the `key` authenticator, for the scenario of
+# the person an instance acts for (docs/adr/0116).
+sce-rust-crypto = { path = "../../backends/rust/crypto" }
 # The runtime the HTTPS server and the kit's proxies run on.
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "time"] }
 
