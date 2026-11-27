@@ -104,6 +104,7 @@
         "validation/map-key-type",
         "validation/map-in-wire-position",
         "validation/deployment-value-assigned",
+        "validation/journal-value-assigned",
         "validation/audit-entry-schema",
         "validation/payload-record-schema",
         "validation/encoded-size-overflow",

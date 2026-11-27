@@ -320,6 +320,151 @@ fn locate(
     )
 }
 
+/// Whether a transition on `event` applies a fact: each of its descriptors is the
+/// event of an imported schema, named exactly, so the transition takes no event
+/// that is no entry's. An entry is always a record of a declared schema
+/// (docs/adr/0114, D1); a deployment that runs the machine narrows the events to
+/// the entries the machine says and follows.
+fn applies_a_fact(model: &SCXMLModel, event: &str) -> bool {
+    let mut descriptors = event.split_whitespace().peekable();
+    descriptors.peek().is_some()
+        && descriptors.all(|descriptor| {
+            !descriptor.contains('*') && model.imported_event_schemas.contains_key(descriptor)
+        })
+}
+
+/// Refuse a statement of `model` that writes a value held to the journal's facts
+/// (`<data sce:from="journal">`, docs/adr/0114, D1), or a place inside one, where
+/// no fact is applied: in an `<onentry>`, an `<onexit>`, an initial transition, a
+/// history default, or a transition whose event is not that of an imported schema
+/// named exactly ([`applies_a_fact`]). Its initial value is its own declaration's.
+/// So the value is a fold of the entries the session said or took in, in their
+/// order, which the same entries given to a fresh session compute again.
+pub fn refuse_journal_values_written_elsewhere(
+    model: &SCXMLModel,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let held: Vec<&crate::model::Variable> =
+        model.variables.iter().filter(|v| v.from_journal).collect();
+    if held.is_empty() {
+        return Ok(());
+    }
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    for state in states {
+        for transition in &state.transitions {
+            if applies_a_fact(model, &transition.event) {
+                continue;
+            }
+            let site = if transition.event.trim().is_empty() {
+                format!("a transition of state '{}' that takes no event", state.id)
+            } else {
+                format!(
+                    "the transition of state '{}' on '{}', which is no event of an imported \
+                     schema named exactly",
+                    state.id,
+                    transition.event.trim()
+                )
+            };
+            unwritten(&transition.actions, &held, &site, diag_label)?;
+        }
+        for block in &state.on_entry_blocks {
+            unwritten(
+                block,
+                &held,
+                &format!("the <onentry> of state '{}'", state.id),
+                diag_label,
+            )?;
+        }
+        for block in &state.on_exit_blocks {
+            unwritten(
+                block,
+                &held,
+                &format!("the <onexit> of state '{}'", state.id),
+                diag_label,
+            )?;
+        }
+        unwritten(
+            &state.initial_transition_actions,
+            &held,
+            &format!("the initial transition of state '{}'", state.id),
+            diag_label,
+        )?;
+        unwritten(
+            &state.initial_history_default_actions,
+            &held,
+            &format!("the history default of state '{}'", state.id),
+            diag_label,
+        )?;
+    }
+    Ok(())
+}
+
+/// Refuse the first statement of `actions`, at any depth, that writes one of
+/// `held` or a place inside it, standing in `site`: every place a statement
+/// writes ([`crate::forge::static_datamodel::places_written`]), what an
+/// `<sce:call>` returns into its `location`, and a map or a set of `held` the
+/// call hands an algorithm by name, which writes it in place.
+fn unwritten(
+    actions: &[Action],
+    held: &[&crate::model::Variable],
+    site: &str,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    for action in actions {
+        let mut places = crate::forge::static_datamodel::places_written(action);
+        if action.action_type == "sce_call" {
+            places.push(("<sce:call>", "location", action.location.as_str()));
+            let arguments = action
+                .expr
+                .split_once('(')
+                .and_then(|(_, rest)| rest.rsplit_once(')'))
+                .map_or("", |(arguments, _)| arguments);
+            for argument in arguments.split(',').map(str::trim) {
+                let in_place = held.iter().any(|var| {
+                    var.id == argument
+                        && var
+                            .value_type
+                            .as_ref()
+                            .is_some_and(|ty| ty.map_key().is_some())
+                });
+                if in_place {
+                    places.push(("<sce:call>", "expr", argument));
+                }
+            }
+        }
+        for (element, attr, location) in places {
+            let root = location
+                .trim()
+                .split(['.', '['])
+                .next()
+                .unwrap_or("")
+                .trim();
+            let Some(var) = held.iter().find(|var| !root.is_empty() && var.id == root) else {
+                continue;
+            };
+            let spelling = action.spellings.get(attr);
+            return Err(Located::new(
+                crate::forge::error::ValidationError::JournalValueAssigned {
+                    element: element.to_string(),
+                    attr: attr.to_string(),
+                    location: location.trim().to_string(),
+                    value: var.id.clone(),
+                    site: site.to_string(),
+                }
+                .into(),
+                diag_label,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+            ));
+        }
+        for block in action.nested_blocks() {
+            unwritten(block.actions, held, site, diag_label)?;
+        }
+    }
+    Ok(())
+}
+
 /// Refuse `model` on `lane` when it says a fact into the journal and the lane
 /// keeps none (docs/adr/0114, Scope), or when the Rust lane would make the entry of
 /// a record the build could not describe: a send of a document read without its

@@ -3002,6 +3002,11 @@ fn render_variable_body(v: &crate::model::Variable, out: &mut Out<'_>) {
     if v.from_deployment {
         line.push_str(" from deployment");
     }
+    // docs/adr/0114, D1: a value held to the journal's facts, which keeps its
+    // `= <expr>`.
+    if v.from_journal {
+        line.push_str(" from journal");
+    }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));
     }

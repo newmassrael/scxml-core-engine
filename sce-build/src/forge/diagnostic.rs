@@ -937,6 +937,11 @@ pub enum DiagnosticCode {
     /// machine reads and never writes.
     #[serde(rename = "validation/deployment-value-assigned")]
     ValidationDeploymentValueAssigned,
+    /// A statement that writes a value held to the journal's facts
+    /// (`<data sce:from="journal">`, docs/adr/0114, D1) where no fact is
+    /// applied.
+    #[serde(rename = "validation/journal-value-assigned")]
+    ValidationJournalValueAssigned,
     /// `<invoke sce:entry>` (docs/adr/0109, D14): an audit entry's schema the
     /// build cannot write an entry of, or an append that names none.
     #[serde(rename = "validation/audit-entry-schema")]
@@ -4159,6 +4164,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMapKeyType,
         ValidationMapInWirePosition,
         ValidationDeploymentValueAssigned,
+        ValidationJournalValueAssigned,
         ValidationAuditEntrySchema,
         ValidationPayloadRecordSchema,
         ValidationEncodedSizeOverflow,
@@ -5002,6 +5008,9 @@ impl DiagnosticCode {
 
             // ── A value the deployment supplies (docs/adr/0109, D12) ──
             ValidationDeploymentValueAssigned => Some("ADR 0109 D12"),
+
+            // ── A value held to the journal's facts (docs/adr/0114, D1) ──
+            ValidationJournalValueAssigned => Some("ADR 0114 D1"),
 
             // ── An audit entry's schema (docs/adr/0109, D14) ──
             ValidationAuditEntrySchema => Some("ADR 0109 D14"),
@@ -6013,6 +6022,7 @@ impl DiagnosticCode {
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow
@@ -6586,6 +6596,7 @@ impl DiagnosticCode {
             ValidationMapKeyType => "validation/map-key-type",
             ValidationMapInWirePosition => "validation/map-in-wire-position",
             ValidationDeploymentValueAssigned => "validation/deployment-value-assigned",
+            ValidationJournalValueAssigned => "validation/journal-value-assigned",
             ValidationAuditEntrySchema => "validation/audit-entry-schema",
             ValidationPayloadRecordSchema => "validation/payload-record-schema",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
@@ -9105,6 +9116,29 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 attr.clone(),
                 location.clone(),
                 value.clone(),
+            ],
+        },
+        // docs/adr/0114, D1: the place as written is `actual`; whether what
+        // changes is a fold of the facts or a variable of the machine's own is
+        // the author's, so neither `expected` nor `fix`.
+        ValidationError::JournalValueAssigned {
+            element,
+            attr,
+            location,
+            value,
+            site,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationJournalValueAssigned,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(location.clone()),
+            fix: None,
+            key_fragments: vec![
+                element.clone(),
+                attr.clone(),
+                location.clone(),
+                value.clone(),
+                site.clone(),
             ],
         },
         // docs/adr/0101, section 4.4: the type is `actual`; the repair (which
@@ -15113,6 +15147,21 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:6aa21c0c5f89a5bc","code":"validation/deployment-value-assigned","stage":"validation","spec":"ADR 0109 D12","message":"<assign> location=\"limits.max_rows\": writes 'limits', a value the deployment supplies, which the machine reads and never writes (docs/adr/0109, D12): keep what changes in a variable of the machine's own","actual":"limits.max_rows"}"#,
+            ),
+            (
+                // An assignment to a value held to the journal's facts where no
+                // fact is applied (docs/adr/0114, D1): the place as written is
+                // `actual`.
+                "forge/journal-value-assigned",
+                ValidationError::JournalValueAssigned {
+                    element: "<assign>".into(),
+                    attr: "location".into(),
+                    location: "booked".into(),
+                    value: "booked".into(),
+                    site: "the <onentry> of state 's'".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e042fba40b52e972","code":"validation/journal-value-assigned","stage":"validation","spec":"ADR 0114 D1","message":"<assign> location=\"booked\" in the <onentry> of state 's': writes 'booked', a value held to the journal's facts, which only its initial value and a transition whose event is an entry's write (docs/adr/0114, D1): write it where the fact is applied, or keep what else changes in a variable of the machine's own","actual":"booked"}"#,
             ),
             (
                 // A CBOR entry whose largest encoding is past 2^64 - 1 bytes
@@ -21866,6 +21915,7 @@ mod tests {
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow
@@ -22926,6 +22976,7 @@ mod tests {
                 | ValidationUnionCases | ValidationUnionTagCollision
                 | ValidationMapKeyType | ValidationMapInWirePosition
                 | ValidationDeploymentValueAssigned
+                | ValidationJournalValueAssigned
                 | ValidationAuditEntrySchema
                 | ValidationPayloadRecordSchema
                 | ValidationEncodedSizeOverflow
@@ -23397,9 +23448,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            572,
+            573,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 572 distinct variants to match the DiagnosticCode \
+             expected 573 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24059,6 +24110,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationJournalValueAssigned
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow

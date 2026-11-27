@@ -1604,6 +1604,33 @@ pub enum ValidationError {
         value: String,
     },
 
+    /// docs/adr/0114, D1: a statement that writes a value held to the
+    /// journal's facts (`<data sce:from="journal">`), or a place inside one,
+    /// where no fact is applied: in an `<onentry>`, an `<onexit>`, an initial
+    /// transition, a history default, a transition with no event, or one whose
+    /// event is not the event of an imported schema named exactly. The value is
+    /// then a fold of the entries the session said or took in, which a fresh
+    /// session given the same entries computes again. `element` and `attr`
+    /// name the statement and the attribute that names the place, `location`
+    /// the place as written (the record's `actual`), `value` the variable, and
+    /// `site` where the statement stands. No fix: whether what changes is a
+    /// fold of the facts or a variable of the machine's own is the author's.
+    ///
+    /// Wire code: `validation/journal-value-assigned`.
+    #[error(
+        "{element} {attr}=\"{location}\" in {site}: writes '{value}', a value held to the \
+         journal's facts, which only its initial value and a transition whose event is an \
+         entry's write (docs/adr/0114, D1): write it where the fact is applied, or keep what \
+         else changes in a variable of the machine's own"
+    )]
+    JournalValueAssigned {
+        element: String,
+        attr: String,
+        location: String,
+        value: String,
+        site: String,
+    },
+
     /// docs/adr/0101, section 4.4: the largest encoding of a value of `ty` at
     /// `place` is past 2^64 - 1 bytes, so the build has no number to size an
     /// encode, a buffer or a slot by. Raised where `C` of a CBOR codec's entry

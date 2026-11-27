@@ -194,6 +194,9 @@ pub fn check(
     let Some(scope) = StaticScope::of(model) else {
         return Ok(());
     };
+    // docs/adr/0114, D1: a value held to the journal's facts is written only
+    // where a fact is applied.
+    crate::forge::journal::refuse_journal_values_written_elsewhere(model, diag_label)?;
     let held_enums = model.held_enums();
     // The schemas read one entry per field: every use of one that holds a
     // composition was refused where the document was parsed
@@ -556,6 +559,43 @@ pub(crate) fn record_field_place(
         _ => false,
     };
     holds_a_record.then_some((path, place))
+}
+
+/// Each place `action` writes itself, as the element and the attribute that
+/// names it, and the place as written: what an `<assign>`, an `<sce:append>`,
+/// an `<sce:clear>`, an `<sce:render>` and an `<sce:lift>` replace, the id a
+/// `<send>` writes, the item and index a `<foreach>` binds, and the target and
+/// outcome of a map's `<sce:put>` and `<sce:remove>`. The one list the rules of
+/// what a statement may write read: a value the deployment supplies
+/// (docs/adr/0109, D12) and a value held to the journal's facts
+/// (docs/adr/0114, D1).
+pub(crate) fn places_written(action: &Action) -> Vec<(&'static str, &'static str, &str)> {
+    match action.action_type.as_str() {
+        "assign" => vec![("<assign>", "location", action.location.as_str())],
+        "sce_append" => vec![("<sce:append>", "target", action.location.as_str())],
+        "sce_clear" => vec![("<sce:clear>", "target", action.location.as_str())],
+        "sce_render" => vec![("<sce:render>", "location", action.location.as_str())],
+        "sce_lift" => vec![
+            ("<sce:lift>", "location", action.location.as_str()),
+            ("<sce:lift>", "refusal", action.lift_refusal.as_str()),
+        ],
+        "send" => vec![("<send>", "idlocation", action.idlocation.as_str())],
+        "foreach" => vec![
+            ("<foreach>", "item", action.item.as_str()),
+            ("<foreach>", "index", action.index.as_str()),
+        ],
+        // docs/adr/0108, D3 and D4: a map write, into its target, and the
+        // outcome it writes.
+        "sce_put" => vec![
+            ("<sce:put>", "target", action.location.as_str()),
+            ("<sce:put>", "outcome", action.outcome.as_str()),
+        ],
+        "sce_remove" => vec![
+            ("<sce:remove>", "target", action.location.as_str()),
+            ("<sce:remove>", "outcome", action.outcome.as_str()),
+        ],
+        _ => Vec::new(),
+    }
 }
 
 /// The conditions of `action`'s `<if>` chain in order — its own, then each
@@ -3701,32 +3741,7 @@ impl<'a> Judge<'a> {
     /// `<sce:lift>` replace, the id a `<send>` writes, and the item and index
     /// a `<foreach>` binds.
     fn deployment_values_unwritten(&self, action: &Action) -> Result<(), Located<ForgeError>> {
-        let places: Vec<(&str, &str, &str)> = match action.action_type.as_str() {
-            "assign" => vec![("<assign>", "location", action.location.as_str())],
-            "sce_append" => vec![("<sce:append>", "target", action.location.as_str())],
-            "sce_clear" => vec![("<sce:clear>", "target", action.location.as_str())],
-            "sce_render" => vec![("<sce:render>", "location", action.location.as_str())],
-            "sce_lift" => vec![
-                ("<sce:lift>", "location", action.location.as_str()),
-                ("<sce:lift>", "refusal", action.lift_refusal.as_str()),
-            ],
-            "send" => vec![("<send>", "idlocation", action.idlocation.as_str())],
-            "foreach" => vec![
-                ("<foreach>", "item", action.item.as_str()),
-                ("<foreach>", "index", action.index.as_str()),
-            ],
-            // docs/adr/0108, D3 and D4: a map write, into its target, and the
-            // outcome it writes.
-            "sce_put" => vec![
-                ("<sce:put>", "target", action.location.as_str()),
-                ("<sce:put>", "outcome", action.outcome.as_str()),
-            ],
-            "sce_remove" => vec![
-                ("<sce:remove>", "target", action.location.as_str()),
-                ("<sce:remove>", "outcome", action.outcome.as_str()),
-            ],
-            _ => Vec::new(),
-        };
+        let places = places_written(action);
         for (element, attr, location) in places {
             let spelling = action.spellings.get(attr);
             if let Some(refusal) = self.deployment_value_written(

@@ -300,3 +300,94 @@ fn a_no_std_machine_says_no_fact() {
         "{out}"
     );
 }
+
+/// A statechart that imports [`BOOKED`] and holds `booked` to the journal's
+/// facts, with `elsewhere` written in its state before its transitions and `book`
+/// in its `book` transition; its `room.booked` transition applies the fact.
+fn held(book: &str, elsewhere: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>
+  <datamodel>
+    <data id="booked" sce:type="uint32" expr="0" sce:from="journal"/>
+  </datamodel>
+  <state id="s">
+{elsewhere}
+    <transition event="book" type="internal">
+{book}
+    </transition>
+    <transition event="room.booked" type="internal">
+      <assign location="booked" expr="booked + 1"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// docs/adr/0114, D1: a value held to the journal's facts takes its initial value
+/// and is written by the transition that applies a fact, on every lane that
+/// judges it. Red if the transition on an entry's event is refused.
+#[test]
+fn a_value_held_to_the_facts_is_written_where_a_fact_is_applied() {
+    let doc = held(SAYS, "");
+    for args in [&["check"][..], &["check", "-l", "rust"][..]] {
+        let (ok, out) = check(args, &doc);
+        assert!(ok, "{args:?} takes the fold of the facts:\n{out}");
+    }
+}
+
+/// docs/adr/0114, D1: a value held to the journal's facts is written nowhere a
+/// fact is not applied: a transition on an event of no schema, one that takes no
+/// event, one whose descriptor matches more than an entry's event, and an
+/// `<onentry>`. Each is `validation/journal-value-assigned`, naming where it
+/// stands. Red if any of the walks is dropped.
+#[test]
+fn a_value_held_to_the_facts_is_written_nowhere_else() {
+    let assign = r#"      <assign location="booked" expr="booked + 1"/>"#;
+    for (doc, site) in [
+        (held(assign, ""), "the transition of state 's' on 'book'"),
+        (
+            held(
+                SAYS,
+                r#"    <transition cond="booked &lt; 1" type="internal"><assign location="booked" expr="1"/></transition>"#,
+            ),
+            "a transition of state 's' that takes no event",
+        ),
+        (
+            held(
+                SAYS,
+                r#"    <transition event="room.*" type="internal"><assign location="booked" expr="2"/></transition>"#,
+            ),
+            "the transition of state 's' on 'room.*'",
+        ),
+        (
+            held(
+                SAYS,
+                r#"    <onentry><assign location="booked" expr="1"/></onentry>"#,
+            ),
+            "the <onentry> of state 's'",
+        ),
+    ] {
+        let (ok, out) = check(&["check"], &doc);
+        assert!(
+            !ok && out.contains("\"code\":\"validation/journal-value-assigned\"")
+                && out.contains(site),
+            "refused in {site}:\n{out}"
+        );
+    }
+}
+
+/// docs/adr/0114, D1: `sce:from` names the deployment or the journal, and nothing
+/// else.
+#[test]
+fn a_value_comes_from_the_deployment_or_the_journal() {
+    let doc = held(SAYS, "").replace(r#"sce:from="journal""#, r#"sce:from="ledger""#);
+    let (ok, out) = check(&["check"], &doc);
+    assert!(
+        !ok && out.contains("`journal`, a fold"),
+        "an unknown source is refused, naming both:\n{out}"
+    );
+}

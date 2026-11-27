@@ -3355,6 +3355,7 @@ fn parse_variable(
         record_fields: Vec::new(),
         direction: None,
         from_deployment: false,
+        from_journal: false,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,
         req: Vec::new(),
@@ -3439,13 +3440,20 @@ fn parse_variable(
             Some((s, m)) => (s, m),
             None => (after, ""),
         };
-        if source != "deployment" {
-            return Err(ParseError {
-                line: line.number,
-                why: format!("`{source}` is not where a value comes from: `deployment` is"),
-            });
+        match source {
+            "deployment" => v.from_deployment = true,
+            // docs/adr/0114, D1: a value held to the journal's facts.
+            "journal" => v.from_journal = true,
+            _ => {
+                return Err(ParseError {
+                    line: line.number,
+                    why: format!(
+                        "`{source}` is not where a value comes from: `deployment` or \
+                         `journal` is"
+                    ),
+                })
+            }
         }
-        v.from_deployment = true;
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("src ") {

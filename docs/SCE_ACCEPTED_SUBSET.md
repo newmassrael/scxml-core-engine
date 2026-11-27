@@ -7165,6 +7165,23 @@ Go, Python, Swift, C11 and the Interpreter's lowering refuse the `<data>` by nam
 reader. `sce-build/tests/a_machine_reads_the_values_its_deployment_supplies.rs` holds
 the rules, and `a_deployment_value_is_no_line_of_the_saved_shape` the shape.
 
+**A value held to the journal's facts: `sce:from="journal"`** (docs/adr/0114, D1).
+`<data id="booked" sce:type="uint32" expr="0" sce:from="journal"/>` declares a
+top-level variable whose value is a fold of the entries the session said or took in,
+in their order: it takes its initial value as any variable does, and is written only
+by a transition that applies a fact, one whose every event descriptor is the event of
+an imported event schema named exactly (no `*`, since an entry is always a record of
+a declared schema). Every statement that writes it, or a place inside it, anywhere
+else (an `<onentry>`, an `<onexit>`, an initial transition, a history default, a
+transition that takes no event or another event) is refused at the element as
+`validation/journal-value-assigned`, naming where it stands, its `actual` the place
+as written; so is an `<sce:call>` there that returns into it or hands it, a map, to
+an algorithm that writes it in place. The same entries given to a fresh session give
+the same value, which a scenario can check (docs/adr/0115, D15). A test component
+declares none, and `sce:from` names `deployment` or `journal` and nothing else
+(`scxml/static-datamodel-rule` for each). The value is part of the machine's state as
+any variable is.
+
 **State an algorithm takes and gives back.** A rule that works on what a statechart
 keeps is written once, as an algorithm, and every backend runs the same one:
 `AddEntry(entries, _event.data.id, _event.data.amount)` hands the algorithm the
@@ -11405,7 +11422,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (572 codes)
+## Appendix — `DiagnosticCode` index (573 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11504,6 +11521,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/map-key-type` | Validation |
 | `validation/map-in-wire-position` | Validation |
 | `validation/deployment-value-assigned` | Validation |
+| `validation/journal-value-assigned` | Validation |
 | `validation/audit-entry-schema` | Validation |
 | `validation/payload-record-schema` | Validation |
 | `validation/encoded-size-overflow` | Validation |

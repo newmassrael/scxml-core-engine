@@ -1014,21 +1014,39 @@ fn enforce_static_datamodel(
             // initial value of the document's, so it takes no expr, no
             // `<sce:set>` and no in-line content, and it holds the deployment's
             // value from the start on. Its type is bounded as any variable's.
-            let from_deployment = match attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "from")
-            {
-                None => false,
-                Some(written) if written.trim() == crate::model::DEPLOYMENT_SOURCE => true,
-                Some(written) => {
-                    return Err(refused(
-                        format!("sce:from=\"{written}\""),
-                        "sce:from names where a variable's value comes from, and the one \
-                             source it names is `deployment`: the value the machine's \
-                             deployment supplies",
-                        &node,
-                        Some(written.to_string()),
-                    ))
-                }
-            };
+            // docs/adr/0114, D1: a value held to the journal's facts, a fold
+            // of the entries the session said or took in. It takes its initial
+            // value as any variable does; what writes it after is judged with
+            // the transitions (`crate::forge::journal`).
+            let (from_deployment, from_journal) =
+                match attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "from") {
+                    None => (false, false),
+                    Some(written) if written.trim() == crate::model::DEPLOYMENT_SOURCE => {
+                        (true, false)
+                    }
+                    Some(written) if written.trim() == crate::model::JOURNAL_SOURCE => {
+                        (false, true)
+                    }
+                    Some(written) => {
+                        return Err(refused(
+                            format!("sce:from=\"{written}\""),
+                            "sce:from names where a variable's value comes from: `deployment`, \
+                             the value the machine's deployment supplies, or `journal`, a fold \
+                             of the facts of the session's journal",
+                            &node,
+                            Some(written.to_string()),
+                        ))
+                    }
+                };
+            if from_journal && test_component {
+                return Err(refused(
+                    format!("<data id=\"{id}\" sce:from=\"journal\">"),
+                    "a test component is no session of a keyed pool, and keeps no journal \
+                     whose facts a value could be held to",
+                    &node,
+                    Some(name.to_string()),
+                ));
+            }
             if from_deployment && test_component {
                 return Err(refused(
                     format!("<data id=\"{id}\" sce:from=\"deployment\">"),
@@ -4035,6 +4053,11 @@ impl SCXMLParser {
         let from_deployment = model.datamodel == Datamodel::SceStatic
             && crate::sce_attr::read(data, "from")
                 .is_some_and(|text| text.trim() == crate::model::DEPLOYMENT_SOURCE);
+        // docs/adr/0114, D1: held to the journal's facts, judged with the
+        // transitions that write it.
+        let from_journal = model.datamodel == Datamodel::SceStatic
+            && crate::sce_attr::read(data, "from")
+                .is_some_and(|text| text.trim() == crate::model::JOURNAL_SOURCE);
         // A value the deployment supplies is not built here: the deployment
         // gives it whole.
         let built_whole = !from_deployment
@@ -4107,6 +4130,7 @@ impl SCXMLParser {
             record_fields,
             direction,
             from_deployment,
+            from_journal,
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).
             reader: None,

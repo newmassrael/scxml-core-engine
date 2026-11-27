@@ -1063,6 +1063,7 @@ references against a real document and drift silently.
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/journal-value-assigned` | `validation` | no | ADR 0114 D1 |
 | `validation/kind-basis-malformed` | `validation` | no |  |
 | `validation/kind-not-inline-eligible` | `validation` | `replace_one_of` | SCE Accepted Subset §2.1 |
 | `validation/lift-location` | `validation` | no | ADR 0087 §2.1 |

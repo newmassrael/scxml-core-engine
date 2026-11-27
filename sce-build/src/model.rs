@@ -1598,6 +1598,11 @@ pub struct Param {
 /// (docs/adr/0109, D12): the machine's deployment ([`Variable::from_deployment`]).
 pub const DEPLOYMENT_SOURCE: &str = "deployment";
 
+/// The other source a `<data sce:from>` names under `datamodel="sce-static"`
+/// (docs/adr/0114, D1): the facts of the session's journal, of which the
+/// variable is a fold ([`Variable::from_journal`]).
+pub const JOURNAL_SOURCE: &str = "journal";
+
 /// §scxml-5.2: Datamodel variable
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1663,6 +1668,15 @@ pub struct Variable {
     /// value. `false` for every other variable.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub from_deployment: bool,
+    /// `sce:from="journal"` under `datamodel="sce-static"` (docs/adr/0114,
+    /// D1): the variable is held to the facts of the session's journal, written
+    /// only by its initial value and by a transition whose event is an entry's,
+    /// so its value is a fold of the entries the session said or took in, in
+    /// their order. `false` for every other variable. Judged where the document
+    /// is read ([`crate::forge::journal::refuse_journal_values_written_elsewhere`]);
+    /// not part of the IR.
+    #[serde(skip)]
+    pub from_journal: bool,
     /// §scxml-5.3: each backend's name for this variable's typed reader.
     /// Set only on the entries of [`SCXMLModel::readable_variables`], by
     /// [`crate::reader_names::assign`]; templates spell the reader from
