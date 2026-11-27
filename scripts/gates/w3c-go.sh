@@ -52,8 +52,13 @@ go_failures() {
 # `-v` matches the lane, whose summary step counts the per-case `--- PASS:`
 # lines out of this log. It also gives this gate a case count rather than a
 # package count to hold a floor against.
+#
+# SCE_CODEGEN names the generator built above to the engine inbox's history cases
+# (backends/go/tests/engine_inbox), which hand the runs they record to its
+# `check-inbox-history` (docs/adr/0147, D3).
 status=0
-sce_gate_tested --log "$LOG/go.log" --cwd backends/go/tests -- go test ./... -v -count=1 || status=$?
+sce_gate_tested --log "$LOG/go.log" --cwd backends/go/tests \
+    -- env SCE_CODEGEN="$CODEGEN" go test ./... -v -count=1 || status=$?
 
 if (( status != 0 )); then
     go_failures "$LOG/go.log"
@@ -69,6 +74,18 @@ if (( cases < 200 )); then
 fi
 
 sce_gate_step "$cases Go case(s) passed"
+
+# The inbox history cases skip without SCE_CODEGEN, and a skip is no `--- FAIL:`
+# line and no failing status, so each is held to have passed by name: a run that
+# lost the variable would otherwise judge no history and read as green.
+for history_case in TestEveryRunOfTheInboxIsLinearizableToItsPromise \
+    TestAnOwnEventIsInvokedBeforeTheDrainItMakes \
+    TestARecordedRunWithAnEnqueueLeftOutIsRefused \
+    TestARecordedRunWithTwoInputsOfOnePosterEnteredInReverseIsRefused; do
+    grep -qE "^--- PASS: $history_case " "$LOG/go.log" \
+        || sce_gate_fail "the Go inbox history case $history_case did not pass: it judged no history"
+done
+sce_gate_step "the Go engine inbox's histories were judged by check-inbox-history"
 
 # The engine's own tests, which no gate and no CI lane ran.
 #

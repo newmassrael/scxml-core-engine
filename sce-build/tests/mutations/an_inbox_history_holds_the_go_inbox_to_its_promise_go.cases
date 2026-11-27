@@ -1,0 +1,52 @@
+# Mutation cases for docs/adr/0147, D3 on the Go runtime: every run of the
+# engine's inbox is a history linearizable to docs/formal/InboxService.tla.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_inbox_history_holds_the_go_inbox_to_its_promise_go.cases`.
+#
+# The cases of backends/go/tests/engine_inbox run the probe machine's inbox on
+# real goroutines with the engine's inbox port set, write each run as an inbox
+# history, and hand the files to the `check-inbox-history` of the sce-codegen
+# SCE_CODEGEN names, every runtime's judge; without the variable they skip, so
+# it is set below to the profile every build path of this repository produces.
+# The mutants take one decision away each:
+#
+#   the drain before an event of the owner's own: an own event enters ahead of
+#   a post taken before it (arrival order, W3C test 201's shape);
+#   the inbox applied where a run ends: an input taken before the end never
+#   enters (never lost);
+#   the port tells no event that entered: the history loses every enqueue, so
+#   every input a post took is one that never entered;
+#   the port tells an applied input as an event of the engine's own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./engine_inbox/
+mutation_env "SCE_CODEGEN=$SCE_REPO_ROOT/target/debug/sce-codegen"
+mutation_targets backends/go/runtime/inbox.go
+mutation_oracles backends/go/tests/engine_inbox/an_inbox_history_of_every_run_is_linearizable_to_its_promise_test.go
+
+mutation_case "Go puts an own event on the external queue ahead of what the inbox holds" <<'PY'
+edit("backends/go/runtime/inbox.go",
+     "\te.tellInboxPort(event, posted, false)\n\tif e.isRunning {\n\t\te.drainInbox()\n\t}\n",
+     "\te.tellInboxPort(event, posted, false)\n")
+PY
+
+mutation_case "Go leaves what the inbox holds unapplied where a run ends" <<'PY'
+edit("backends/go/runtime/inbox.go",
+     "\te.inbox.close()\n\te.drainInbox()\n",
+     "\te.inbox.close()\n")
+PY
+
+mutation_case "Go's inbox port tells no event that entered the external queue" <<'PY'
+edit("backends/go/runtime/inbox.go",
+     "\te.externalQueue.Raise(event)\n\te.tellInboxPort(event, posted, true)\n",
+     "\te.externalQueue.Raise(event)\n")
+PY
+
+mutation_case "Go's inbox port tells an applied input as an event of the engine's own" <<'PY'
+edit("backends/go/runtime/inbox.go",
+     "\te.tellInboxPort(event, posted, true)\n",
+     "\te.tellInboxPort(event, false, true)\n")
+PY
