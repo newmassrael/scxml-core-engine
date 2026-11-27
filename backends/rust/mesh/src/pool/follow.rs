@@ -45,7 +45,7 @@ use sce_rust_runtime::{EventMetadata, EventOrigin, EventType};
 use sce_rust_session_store::{JournalEntry as StoredEntry, JournalStore, StreamName};
 
 use super::{
-    checkpoint, key_in, lock, Fate, Full, Input, LoadError, Pool, PoolError, Receipt,
+    checkpoint, hold, key_in, lock, Fate, Full, Input, LoadError, Pool, PoolError, Receipt,
     SessionFactory, SharedSlot, Slot,
 };
 use crate::endpoint::{EngineCall, EngineEvent, Environment, Transport};
@@ -418,7 +418,7 @@ where
             if self.stopping.load(core::sync::atomic::Ordering::SeqCst) {
                 return Err(Unhanded::Full(Full::Stopping));
             }
-            let mut table = lock(&self.table);
+            let mut table = hold(&self.table);
             if let Some(after) = after {
                 let same = after
                     .upgrade()

@@ -148,10 +148,53 @@
 
 mod slot;
 
+/// The locks and the flags that decide who holds a session's slot, and when
+/// (the model `SessionPool`): the table, each slot's inbox, `live` and lease
+/// locks, and the stop's flags.
+///
+/// The `Arc` the table shares a slot by stays `std`'s: its count decides only
+/// when a slot's memory is freed, never who holds the slot, and a followed
+/// journal's reader keeps a `Weak` of the slot it handed an entry to
+/// (module `follow`), which loom's `Arc` has none of.
+///
+/// A build gets `std`'s and `core`'s. The loom models (`loom_models` in the
+/// tests below) build the crate's tests under `--cfg loom` and get loom's,
+/// which is how they explore every interleaving of the text that ships; the
+/// library is never built with loom's. The pool's other locks (a session's
+/// endpoint, the transport, the replies awaited, the clock, the errors) stay
+/// `std`'s: each is held under a slot's `live` lock or for a step that takes
+/// none of these, so no schedule loom explores leaves a thread waiting on one.
+mod sync {
+    #[cfg(all(loom, test))]
+    pub(super) use loom::sync::atomic::AtomicBool;
+    #[cfg(all(loom, test))]
+    pub(super) use loom::sync::{Mutex, MutexGuard};
+
+    #[cfg(not(all(loom, test)))]
+    pub(super) use core::sync::atomic::AtomicBool;
+    #[cfg(not(all(loom, test)))]
+    pub(super) use std::sync::{Mutex, MutexGuard};
+
+    /// Let another thread go on while this one waits for a lock it holds: a
+    /// sleep of a millisecond, and under loom a yield, which is how loom lets
+    /// the holder run.
+    #[cfg(all(loom, test))]
+    pub(super) fn pause() {
+        loom::thread::yield_now();
+    }
+
+    /// Let another thread go on while this one waits for a lock it holds: a
+    /// sleep of a millisecond.
+    #[cfg(not(all(loom, test)))]
+    pub(super) fn pause() {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -578,9 +621,9 @@ struct Slot<M, T, E> {
     /// The entry the store indexes the key under ([`SessionStore::indexed`]):
     /// what its listing of dues names the session by.
     indexed: String,
-    inbox: Mutex<Inbox>,
-    live: Mutex<Option<Live<M, T, E>>>,
-    lease: Mutex<KeyLease>,
+    inbox: sync::Mutex<Inbox>,
+    live: sync::Mutex<Option<Live<M, T, E>>>,
+    lease: sync::Mutex<KeyLease>,
 }
 
 impl<M, T, E> Slot<M, T, E> {
@@ -588,9 +631,9 @@ impl<M, T, E> Slot<M, T, E> {
         Self {
             key: key.to_string(),
             indexed,
-            inbox: Mutex::new(Inbox::new()),
-            live: Mutex::new(None),
-            lease: Mutex::new(KeyLease::unheld()),
+            inbox: sync::Mutex::new(Inbox::new()),
+            live: sync::Mutex::new(None),
+            lease: sync::Mutex::new(KeyLease::unheld()),
         }
     }
 }
@@ -753,7 +796,7 @@ where
     committer: Arc<Committer>,
     transport: Arc<Mutex<T>>,
     environment: Mutex<E>,
-    table: Mutex<Table<F::Machine, T, E>>,
+    table: sync::Mutex<Table<F::Machine, T, E>>,
     /// The peers whose links are ready, which a session's endpoint is told
     /// when it is built.
     ready: Mutex<BTreeSet<String>>,
@@ -773,9 +816,9 @@ where
     /// Set by [`Pool::stop`] with the table held, and read with it held by
     /// every admit: nothing is admitted from then on. Read without it only by
     /// [`Pool::health`], which reports it.
-    stopping: AtomicBool,
+    stopping: sync::AtomicBool,
     /// Set once [`Pool::stop`] ended.
-    stopped: AtomicBool,
+    stopped: sync::AtomicBool,
     /// The store the journals the machine follows are read from
     /// ([`Pool::follow_from`], docs/adr/0114, D4), and what its reader holds.
     journal: Option<Arc<dyn JournalStore>>,
@@ -936,7 +979,7 @@ where
             committer,
             transport: Arc::new(Mutex::new(transport)),
             environment: Mutex::new(environment),
-            table: Mutex::new(BTreeMap::new()),
+            table: sync::Mutex::new(BTreeMap::new()),
             ready: Mutex::new(BTreeSet::new()),
             replies: Arc::new(Mutex::new(BTreeMap::new())),
             deferred: Mutex::new(BTreeMap::new()),
@@ -944,8 +987,8 @@ where
             outboxes,
             members,
             known: Mutex::new(Known::default()),
-            stopping: AtomicBool::new(false),
-            stopped: AtomicBool::new(false),
+            stopping: sync::AtomicBool::new(false),
+            stopped: sync::AtomicBool::new(false),
             journal: None,
             reader: Mutex::new(follow::Reader::new()),
         })
@@ -994,10 +1037,10 @@ where
     /// Whether the session `key` is in memory. Waits for a run of it that is
     /// going on.
     pub fn is_live(&self, key: &str) -> bool {
-        let slot = lock(&self.table).get(key).cloned();
+        let slot = hold(&self.table).get(key).cloned();
         let mut loaded = false;
         if let Some(slot) = slot {
-            loaded = lock(&slot.live).is_some();
+            loaded = hold(&slot.live).is_some();
         }
         loaded
     }
@@ -1197,10 +1240,10 @@ where
                 (instance, holders)
             };
             lock(&self.ready).remove(&instance);
-            let table = lock(&self.table);
+            let table = hold(&self.table);
             for key in holders {
                 if let Some(slot) = table.get(&key) {
-                    lock(&slot.inbox).tell(Input::EndMember(instance.clone()));
+                    hold(&slot.inbox).tell(Input::EndMember(instance.clone()));
                     keys.insert(key);
                 }
             }
@@ -1240,11 +1283,11 @@ where
             .get(peer)
             .map(|keys| keys.iter().cloned().collect())
             .unwrap_or_default();
-        let table = lock(&self.table);
+        let table = hold(&self.table);
         let mut keys = Vec::new();
         for key in holders {
             if let Some(slot) = table.get(&key) {
-                lock(&slot.inbox).tell(input());
+                hold(&slot.inbox).tell(input());
                 keys.push(key);
             }
         }
@@ -1331,10 +1374,10 @@ where
     /// session; two runs of one key take turns, and the second finds the work
     /// done. A key the pool holds no session for is not run.
     pub fn run(&self, key: &str) {
-        let Some(slot) = lock(&self.table).get(key).cloned() else {
+        let Some(slot) = hold(&self.table).get(key).cloned() else {
             return;
         };
-        let mut live = lock(&slot.live);
+        let mut live = hold(&slot.live);
         loop {
             if live.is_none() {
                 if self.retire_if_idle(&slot) {
@@ -1398,7 +1441,7 @@ where
         let now = self.wall_now();
         let mut keys = Vec::new();
         for slot in self.slots() {
-            let Some(live) = try_lock(&slot.live) else {
+            let Some(live) = try_hold(&slot.live) else {
                 continue;
             };
             let due = live.as_ref().and_then(|session| session.earliest_due);
@@ -1415,7 +1458,7 @@ where
         };
         let deferred = lock(&self.deferred).clone();
         let (in_memory, room) = {
-            let table = lock(&self.table);
+            let table = hold(&self.table);
             let in_memory: BTreeSet<String> =
                 table.values().map(|slot| slot.indexed.clone()).collect();
             // The pool holds at most `max_live` sessions (docs/adr/0109, D1):
@@ -1443,7 +1486,7 @@ where
                 Err(failure) => self.error(PoolError::Store { key: None, failure }),
             }
         }
-        let mut table = lock(&self.table);
+        let mut table = hold(&self.table);
         // Read again with the table held, as `Self::stop` sets it: a stop
         // decided while the store was read admits no session named here.
         if self.stopping.load(Ordering::SeqCst) {
@@ -1457,7 +1500,7 @@ where
                 break;
             }
             let slot = Arc::new(Slot::new(&key, indexed));
-            lock(&slot.inbox).tell(Input::Wake);
+            hold(&slot.inbox).tell(Input::Wake);
             table.insert(key.clone(), slot);
             keys.push(key);
         }
@@ -1471,7 +1514,7 @@ where
         let now = self.wall_now();
         let mut lost = Vec::new();
         for slot in self.slots() {
-            let mut lease = lock(&slot.lease);
+            let mut lease = hold(&slot.lease);
             let Some(fence) = lease.renewal_due(now, self.config.renew_every_ms) else {
                 continue;
             };
@@ -1510,7 +1553,7 @@ where
         let now = self.wall_now();
         let mut evicted = Vec::new();
         for slot in self.slots() {
-            let Some(mut live) = try_lock(&slot.live) else {
+            let Some(mut live) = try_hold(&slot.live) else {
                 continue;
             };
             let idle = live.as_ref().is_some_and(|session| {
@@ -1532,7 +1575,7 @@ where
     fn evict(
         &self,
         slot: &SharedSlot<F::Machine, T, E>,
-        live: &mut MutexGuard<'_, Option<Live<F::Machine, T, E>>>,
+        live: &mut sync::MutexGuard<'_, Option<Live<F::Machine, T, E>>>,
         now: u64,
         why: Eviction,
     ) -> bool {
@@ -1549,8 +1592,8 @@ where
             Ok(true) => {}
         }
         let removed = {
-            let mut table = lock(&self.table);
-            let retired = lock(&slot.inbox).retire();
+            let mut table = hold(&self.table);
+            let retired = hold(&slot.inbox).retire();
             if retired {
                 remove_slot(&mut table, slot);
             }
@@ -1586,10 +1629,10 @@ where
         let mut next: Option<u64> = None;
         let mut at = |moment: u64| next = Some(next.map_or(moment, |n| n.min(moment)));
         for slot in self.slots() {
-            if let Some(renewal) = lock(&slot.lease).next_renewal_ms(self.config.renew_every_ms) {
+            if let Some(renewal) = hold(&slot.lease).next_renewal_ms(self.config.renew_every_ms) {
                 at(renewal);
             }
-            let Some(live) = try_lock(&slot.live) else {
+            let Some(live) = try_hold(&slot.live) else {
                 continue;
             };
             let Some(session) = live.as_ref() else {
@@ -1604,7 +1647,7 @@ where
         }
         match self.store.due_before(LATEST_MOMENT, WAKE_BATCH) {
             Ok(listed) => {
-                let table = lock(&self.table);
+                let table = hold(&self.table);
                 let in_memory: BTreeSet<&str> =
                     table.values().map(|slot| slot.indexed.as_str()).collect();
                 let deferred = lock(&self.deferred);
@@ -1697,7 +1740,7 @@ where
 
     /// [`Self::post_bounded`] without making room.
     fn try_post(&self, key: &str, input: Input) -> Result<(), (Input, Full)> {
-        self.post_in(&mut lock(&self.table), key, input).map(|_| ())
+        self.post_in(&mut hold(&self.table), key, input).map(|_| ())
     }
 
     /// Put `input`, an envelope or an entry of a followed journal, in the inbox of the session
@@ -1715,7 +1758,7 @@ where
         let (live, max_live, max_inbox) =
             (table.len(), self.sessions.max_live, self.sessions.max_inbox);
         if let Some(slot) = table.get(key) {
-            let mut inbox = lock(&slot.inbox);
+            let mut inbox = hold(&slot.inbox);
             return match slot::admit(stopping, Some(inbox.door), live, max_live, max_inbox) {
                 Ok(door) => {
                     inbox.admitted(door, input);
@@ -1727,7 +1770,7 @@ where
         match slot::admit(stopping, None, live, max_live, max_inbox) {
             Ok(door) => {
                 let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
-                lock(&slot.inbox).admitted(door, input);
+                hold(&slot.inbox).admitted(door, input);
                 table.insert(key.to_string(), Arc::clone(&slot));
                 Ok(slot)
             }
@@ -1743,7 +1786,7 @@ where
         // Each quiet session's slot, with when it last had an event.
         let mut quiet = Vec::new();
         for slot in self.slots() {
-            let Some(live) = try_lock(&slot.live) else {
+            let Some(live) = try_hold(&slot.live) else {
                 continue;
             };
             if let Some(session) = live
@@ -1755,7 +1798,7 @@ where
         }
         quiet.sort_by_key(|(last_active_ms, _)| *last_active_ms);
         for (_, slot) in quiet {
-            let Some(mut live) = try_lock(&slot.live) else {
+            let Some(mut live) = try_hold(&slot.live) else {
                 continue;
             };
             let still_quiet = live
@@ -1771,7 +1814,7 @@ where
     /// Whether `session` holds nothing a later call acts on: its inbox is
     /// empty and its endpoint is quiet ([`Endpoint::is_quiet`]).
     fn is_quiet(&self, slot: &Slot<F::Machine, T, E>, session: &Live<F::Machine, T, E>) -> bool {
-        lock(&slot.inbox).is_empty() && lock(&session.endpoint).is_quiet()
+        hold(&slot.inbox).is_empty() && lock(&session.endpoint).is_quiet()
     }
 
     /// Tell what became of `input`, an envelope for `key` that no session
@@ -1819,14 +1862,14 @@ where
     /// Put an input made by `input` in every session's inbox, and answer their
     /// keys.
     fn broadcast(&self, input: impl Fn() -> Input) -> Vec<String> {
-        let table = lock(&self.table);
+        let table = hold(&self.table);
         // A stopping pool admits nothing: its sessions are being saved as they
         // stand. Read with the table held, as `Self::stop` sets it.
         if self.stopping.load(Ordering::SeqCst) {
             return Vec::new();
         }
         for slot in table.values() {
-            lock(&slot.inbox).tell(input());
+            hold(&slot.inbox).tell(input());
         }
         table.keys().cloned().collect()
     }
@@ -1868,11 +1911,11 @@ where
                 });
             }
         }
-        let table = lock(&self.table);
+        let table = hold(&self.table);
         let mut keys = Vec::new();
         for sender in senders {
             if let Some(slot) = table.get(&sender) {
-                lock(&slot.inbox).tell(Input::Notes);
+                hold(&slot.inbox).tell(Input::Notes);
                 keys.push(sender);
             }
         }
@@ -1896,7 +1939,7 @@ where
             // Set with the table held, as every admit reads it: an admit that
             // found the pool running put its input in an inbox before the
             // inboxes below are read, and one after it is refused.
-            let _table = lock(&self.table);
+            let _table = hold(&self.table);
             self.stopping.store(true, Ordering::SeqCst);
         }
         // What the inboxes hold, run to completion; a run made on another thread meanwhile is
@@ -1905,7 +1948,7 @@ where
             let waiting: Vec<String> = self
                 .slots()
                 .into_iter()
-                .filter(|slot| !lock(&slot.inbox).is_empty())
+                .filter(|slot| !hold(&slot.inbox).is_empty())
                 .map(|slot| slot.key.clone())
                 .collect();
             if waiting.is_empty() || Instant::now() >= deadline {
@@ -1918,13 +1961,13 @@ where
         let mut report = StopReport::default();
         for slot in self.slots() {
             let mut live = loop {
-                if let Some(live) = try_lock(&slot.live) {
+                if let Some(live) = try_hold(&slot.live) {
                     break Some(live);
                 }
                 if Instant::now() >= deadline {
                     break None;
                 }
-                std::thread::sleep(Duration::from_millis(1));
+                sync::pause();
             };
             let Some(live) = live.as_mut() else {
                 report.not_saved.push((
@@ -1972,15 +2015,15 @@ where
 
     /// Every session the table holds now.
     fn slots(&self) -> Vec<SharedSlot<F::Machine, T, E>> {
-        lock(&self.table).values().cloned().collect()
+        hold(&self.table).values().cloned().collect()
     }
 
     /// Take `slot` out of the table when its inbox holds nothing, so that it
     /// is not loaded for nothing. True when it is out of the table, taken out
     /// now or before.
     fn retire_if_idle(&self, slot: &SharedSlot<F::Machine, T, E>) -> bool {
-        let mut table = lock(&self.table);
-        let retired = lock(&slot.inbox).retire();
+        let mut table = hold(&self.table);
+        let retired = hold(&slot.inbox).retire();
         if retired {
             remove_slot(&mut table, slot);
         }
@@ -2016,7 +2059,7 @@ where
             }
         };
         lock(&self.deferred).remove(&slot.indexed);
-        lock(&slot.lease).granted(lease.fence, now);
+        hold(&slot.lease).granted(lease.fence, now);
         let built = self.build(key, now);
         match built {
             Ok(_) => self.metrics().count(Counter::Loads, 1),
@@ -2304,10 +2347,10 @@ where
     fn serve(&self, slot: &Slot<F::Machine, T, E>, session: &mut Live<F::Machine, T, E>) -> Served {
         let key = slot.key.as_str();
         loop {
-            if lock(&slot.lease).is_lost() {
+            if hold(&slot.lease).is_lost() {
                 return Served::Lost("its lease was not renewed".to_string());
             }
-            let next = lock(&slot.inbox).take();
+            let next = hold(&slot.inbox).take();
             let Some(input) = next else {
                 break;
             };
@@ -2613,7 +2656,7 @@ where
                 Ok(false)
             }
             Err(WriteError::Conflict(conflict)) => {
-                lock(&slot.lease).lose();
+                hold(&slot.lease).lose();
                 let reason = alloc::format!("its save was refused: {conflict}");
                 self.error(PoolError::LeaseLost {
                     key: key.to_string(),
@@ -2772,7 +2815,7 @@ where
             self.metrics().adjust(Gauge::LiveSessions, -1);
             self.let_go(&mut dropped);
         }
-        lock(&slot.lease).forget();
+        hold(&slot.lease).forget();
         self.forget_session(&slot.key);
         self.abandon(slot, &Refusal::unavailable(reason));
     }
@@ -2807,7 +2850,7 @@ where
 
     /// Give up `slot`'s lease, if this process holds it.
     fn release(&self, slot: &Slot<F::Machine, T, E>) {
-        let Some(fence) = lock(&slot.lease).give_up() else {
+        let Some(fence) = hold(&slot.lease).give_up() else {
             return;
         };
         match self.store.release(&slot.key, fence) {
@@ -2825,8 +2868,8 @@ where
     /// it held is dropped, told to the host and lost.
     fn abandon(&self, slot: &SharedSlot<F::Machine, T, E>, refusal: &Refusal) {
         let held = {
-            let mut table = lock(&self.table);
-            let held = lock(&slot.inbox).close();
+            let mut table = hold(&self.table);
+            let held = hold(&slot.inbox).close();
             remove_slot(&mut table, slot);
             held
         };
@@ -3012,7 +3055,7 @@ fn sessions_with_host_starts<M: SessionMachine>(machine: &M, wall_now_ms: u64) -
 
 /// The fence of the lease `slot` holds, if it holds one.
 fn fence_of<M, T, E>(slot: &Slot<M, T, E>) -> Option<u64> {
-    lock(&slot.lease).fence()
+    hold(&slot.lease).fence()
 }
 
 /// Take `slot` out of `table`, if it is still the session the table holds for
@@ -3108,8 +3151,14 @@ fn lock<V>(mutex: &Mutex<V>) -> MutexGuard<'_, V> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// `mutex`'s value, or `None` while another thread holds it.
-fn try_lock<V>(mutex: &Mutex<V>) -> Option<MutexGuard<'_, V>> {
+/// [`lock`], for a lock of [`sync`]: one the loom models explore.
+fn hold<V>(mutex: &sync::Mutex<V>) -> sync::MutexGuard<'_, V> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The value of `mutex`, a lock of [`sync`], or `None` while another
+/// thread holds it.
+fn try_hold<V>(mutex: &sync::Mutex<V>) -> Option<sync::MutexGuard<'_, V>> {
     match mutex.try_lock() {
         Ok(guard) => Some(guard),
         Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
@@ -5470,7 +5519,7 @@ mod tests {
         );
         assert!(pool.health().stopped(), "{:?}", pool.health());
         assert!(
-            lock(&pool.table).is_empty(),
+            hold(&pool.table).is_empty(),
             "the stopped pool holds a session it named"
         );
         assert!(!pool.is_live("r1"));
@@ -5828,9 +5877,9 @@ mod tests {
         deliver(&pool, join("r1", 1));
         wire.take();
         let pool = Arc::new(pool);
-        let slot = lock(&pool.table).get("r1").cloned().expect("r1's slot");
+        let slot = hold(&pool.table).get("r1").cloned().expect("r1's slot");
         // A run of r1 is going on: the stop waits for it until its deadline.
-        let running = lock(&slot.live);
+        let running = hold(&slot.live);
         let stopper = {
             let pool = Arc::clone(&pool);
             std::thread::spawn(move || pool.stop(Instant::now() + Duration::from_millis(300)))
@@ -6182,5 +6231,166 @@ mod tests {
         pool.run(key.as_deref().expect("placed"));
         assert_eq!(taken.fate(), Fate::Settled);
         assert_eq!(stored_members(&store, "r1"), 1, "{:?}", pool.take_errors());
+    }
+
+    /// The loom models of who holds the pool's locks, and when (docs/adr/0115, D13; the model
+    /// `SessionPool`, docs/formal/SessionPool.tla): a stop racing a post, and a stop racing the
+    /// wake of a session that came due, under every interleaving, within three preemptions, of
+    /// the locks and the flags of `sync`, which this build takes from loom. What each asserts
+    /// holds under every schedule: once `Pool::stop` returned nothing more is admitted, every
+    /// input admitted before it was applied or answered once, and no session is left in memory.
+    ///
+    /// Bounded at three preemptions, as the bounded inbox ring's models are
+    /// (`backends/rust/runtime/src/inbox/ring.rs`). Built only as the crate's tests under
+    /// `--cfg loom` and run by name, `pool::tests::loom_models` (`scripts/gates/forge-rust.sh`
+    /// gives the command). The pool's other tests are not run in that build: loom's locks exist
+    /// only inside a model.
+    #[cfg(all(loom, test))]
+    mod loom_models {
+        use super::*;
+        use loom::thread;
+
+        /// Run `body` under every interleaving within the preemption bound.
+        fn model(body: impl Fn() + Sync + Send + 'static) {
+            let mut builder = loom::model::Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(body);
+        }
+
+        /// The client's `n`th envelope, a `remind` of `room` due at once: applied, the room
+        /// sends one `reminded`; not a request, so one the pool does not take in is told to
+        /// the host.
+        fn remind_now(room: &str, n: u32) -> Vec<u8> {
+            from_client(
+                "remind",
+                &alloc::format!(r#"{{"room":"{room}","after_ms":0}}"#),
+                n,
+                false,
+            )
+        }
+
+        /// How many reminders of `room` the transport was handed.
+        fn reminded(sent: &[Sent], room: &str) -> usize {
+            let data = alloc::format!(r#"{{"room":"{room}"}}"#);
+            sent.iter()
+                .filter(|sent| sent.event == "reminded" && sent.data == data)
+                .count()
+        }
+
+        /// How many envelopes for `key` the pool told the host it shed or dropped.
+        fn told(errors: &[PoolError], key: &str) -> usize {
+            errors
+                .iter()
+                .filter(|error| {
+                    matches!(
+                        error,
+                        PoolError::Shed { key: of, .. } | PoolError::Dropped { key: of, .. }
+                            if of == key
+                    )
+                })
+                .count()
+        }
+
+        /// No session of `key` is in memory, and no slot the table holds has an input
+        /// waiting: the stop left nothing behind it.
+        fn assert_nothing_left(pool: &Pool<Rooms, Wire, Clock>, key: &str) {
+            assert!(
+                !pool.is_live(key),
+                "a session was in memory after the stop returned"
+            );
+            assert!(
+                pool.slots().iter().all(|slot| hold(&slot.inbox).is_empty()),
+                "an input waits in a pool that stopped"
+            );
+        }
+
+        /// A post for r1 races a stop. Admitted before the stop, it is applied, by the poster's
+        /// run or the stop's drain, and the stop saves the session and drops it; refused, it is
+        /// told to the host. Either way once, and a post made after the stop returned is refused.
+        /// Fails if a post reads the stop before it holds the table: it is then admitted after
+        /// the stop drained and saved, and its session loaded after the stop returned.
+        #[test]
+        fn a_post_racing_a_stop_is_served_before_it_or_refused_once() {
+            model(|| {
+                let (store, clock, probe) =
+                    (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+                let (pool, wire) = pool("p1", &store, &clock, &probe);
+                let pool = loom::sync::Arc::new(pool);
+                let poster = {
+                    let pool = loom::sync::Arc::clone(&pool);
+                    thread::spawn(move || {
+                        if let Some(key) = pool.receive("client", remind_now("r1", 1)) {
+                            pool.run(&key);
+                        }
+                    })
+                };
+                pool.stop(Instant::now() + Duration::from_secs(30));
+                assert_eq!(
+                    pool.receive("client", remind_now("r2", 2)),
+                    None,
+                    "a post made after the stop returned was admitted"
+                );
+                poster.join().expect("the poster");
+                assert_nothing_left(&pool, "r1");
+                let errors = pool.take_errors();
+                assert_eq!(
+                    reminded(&wire.take(), "r1") + told(&errors, "r1"),
+                    1,
+                    "the post was not applied or told once: {errors:?}"
+                );
+                assert_eq!(told(&errors, "r2"), 1, "{errors:?}");
+            });
+        }
+
+        /// r1 is out of memory and its reminder came due; a call of `Pool::due` and the run of
+        /// what it names race a stop. The wake is admitted before the stop, and the stop's drain
+        /// or the waker's run fires the reminder and the stop saves the session; or it is not,
+        /// and the store still lists the reminder for the process that serves the key next.
+        /// Either way once, and a call of `Pool::due` after the stop returned wakes nothing.
+        /// Fails if `Pool::due` reads the stop only before it reads the store: the wake is then
+        /// admitted after the stop drained and saved, and its session loaded after it returned.
+        #[test]
+        fn a_wake_racing_a_stop_fires_before_it_or_stays_due() {
+            model(|| {
+                let (store, clock, probe) =
+                    (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+                let (pool, wire) = pool("p1", &store, &clock, &probe);
+                deliver(
+                    &pool,
+                    from_client("remind", r#"{"room":"r1","after_ms":5000}"#, 1, false),
+                );
+                clock.advance(1_000);
+                assert_eq!(pool.evict_idle(), vec!["r1".to_string()]);
+                clock.advance(4_000);
+                wire.take();
+                let pool = loom::sync::Arc::new(pool);
+                let waker = {
+                    let pool = loom::sync::Arc::clone(&pool);
+                    thread::spawn(move || {
+                        for key in pool.due() {
+                            pool.run(&key);
+                        }
+                    })
+                };
+                pool.stop(Instant::now() + Duration::from_secs(30));
+                assert!(
+                    pool.due().is_empty(),
+                    "a wake made after the stop returned was admitted"
+                );
+                waker.join().expect("the waker");
+                assert_nothing_left(&pool, "r1");
+                let fired = reminded(&wire.take(), "r1");
+                let listed = store
+                    .due_before(LATEST_MOMENT, 8)
+                    .expect("the listing")
+                    .iter()
+                    .any(|due| due.key == "r1");
+                assert_eq!(
+                    fired + usize::from(listed),
+                    1,
+                    "the reminder fired {fired} times, and the store lists it: {listed}"
+                );
+            });
+        }
     }
 }

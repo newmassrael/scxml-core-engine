@@ -4115,6 +4115,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loom",
  "rcgen",
  "rustls",
  "rustls-platform-verifier",

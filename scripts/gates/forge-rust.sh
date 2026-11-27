@@ -91,6 +91,22 @@ sce_gate_tested -- cargo test --release -p sce-rust-runtime --target-dir target/
     --test loom_inbox_ring \
     || sce_gate_fail "Rust bounded inbox queue loom models"
 
+# The session pool's locks and stop flags under loom (docs/adr/0115, D13): the
+# models `loom_models` of `backends/rust/mesh/src/pool.rs`, which are among the
+# crate's unit tests, since the pool is no file of its own, and are run by name
+# under the same cfg and in the same target directory as the ring's above: the
+# command the casefile `a_session_pool_decides_its_stop_with_its_table_held_rust.cases`
+# spells. A name no test answers to would pass with nothing run, so the count of
+# models that passed is read.
+pool_loom_log="$(mktemp)"
+sce_gate_on_exit "rm -f '$pool_loom_log'"
+sce_gate_tested --log "$pool_loom_log" -- cargo test --release -p sce-rust-mesh --target-dir target/loom \
+    --config 'build.rustflags=["--cfg","loom"]' \
+    --lib pool::tests::loom_models \
+    || sce_gate_fail "Rust session pool loom models"
+grep -q "test result: ok. 2 passed" "$pool_loom_log" \
+    || sce_gate_fail "Rust session pool loom models: the two models did not both run"
+
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,
 # verification layer 5). Both need a nightly, and a floating `nightly` would
 # turn an unrelated compiler regression into a red here at a time nobody chose,
