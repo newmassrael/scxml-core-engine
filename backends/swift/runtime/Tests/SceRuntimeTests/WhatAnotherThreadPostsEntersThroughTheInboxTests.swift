@@ -19,7 +19,15 @@ import Testing
 //   * an ending posted for a start that was cancelled, or started again, is refused by the token
 //     check, as a direct one is (§scxml-6.4);
 //   * a post is taken before the run starts and wakes the owner; the inbox closes with a run that
-//     was stopped or ended, after what it held is applied, and opens with the next run.
+//     was stopped or ended, after what it held is applied, and opens with the next run;
+//   * each run of the inbox under posters on several threads is recorded as an inbox history
+//     (docs/adr/0147, D3): every post with what the inbox answered, every item the owner put on
+//     the external queue as the engine's inbox port tells it, and the end of the run, against one
+//     clock. Each history is held here to the arrival order the drain before an event of the
+//     owner's own keeps, and written where `SCE_INBOX_HISTORY_DIR` names, for
+//     `sce-codegen check-inbox-history` to judge linearizable to docs/formal/InboxService.tla
+//     (`scripts/gates/swift-backend.sh` runs it). The Swift inbox has one door, the session's own
+//     handle: no input it takes names a session, so it keeps no directory.
 
 private let probeType = "x-sce-probe"
 private let probeID = "probe"
@@ -356,4 +364,289 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     #expect(!engine.inbox.post(.externalEvent(.ping)), "an inbox made after the stop took a post")
     try engine.initialize()
     #expect(engine.inbox.post(.externalEvent(.ping)), "the next run's inbox refused a post")
+}
+
+
+// ── Each run of the inbox, as an inbox history (docs/adr/0147, D3) ──────────────────────────────
+
+/// Threads that post in a recorded run, beside the owner, and the posts each makes.
+private let historyPosters = 4
+private let historyPerPoster = 120
+
+/// Own events the owner raises at most in a recorded run, and the first one's value, past every
+/// input a poster posts.
+private let historyOwnPerRun = 40
+private let historyOwnBase = 1_000_000
+
+/// The input of the post made once the run has ended, past every other input of the run.
+private let historyLateInput = 900_000
+
+/// Runs recorded, each written as one history: the schedules that matter are a small fraction of
+/// those a machine gives.
+private let historyRuns = 4
+
+/// The one clock every thread of a recorded run reads, immediately before and immediately after
+/// each operation it records: one read-modify-write chain on one atomic orders the readings with
+/// the calls between them, so "returned before invoked" in the record means it in the run, and no
+/// two readings are equal.
+private final class HistoryClock: Sendable {
+    private let readings = Atomic<Int>(0)
+
+    func tick() -> Int {
+        readings.wrappingAdd(1, ordering: .sequentiallyConsistent).newValue
+    }
+}
+
+/// One post a poster observed, through the session's own handle, taken or refused. The one
+/// reason a Swift inbox refuses a post is that its run has ended.
+private struct RecordedPost {
+    let input: Int
+    let taken: Bool
+    let invoked: Int
+    let returned: Int
+
+    var json: String {
+        let answered = taken ? "\"outcome\":\"taken\"" : "\"outcome\":\"refused\",\"reason\":\"ended\""
+        return "{\"call\":\"post\",\"session\":0,\"input\":\(input),\"door\":\"handle\",\(answered),"
+            + "\"invoked\":\(invoked),\"returned\":\(returned)}"
+    }
+}
+
+/// One operation of the owner: an item that entered the session's external queue, or the end of
+/// its run, which names no item (`item` nil).
+private struct RecordedOwnerOperation {
+    let item: Int?
+    let own: Bool
+    let invoked: Int
+    let returned: Int
+
+    var json: String {
+        let call: String
+        if let item {
+            call = "\"call\":\"enqueue\",\"item\":\(item),\"source\":\"\(own ? "own" : "posted")\""
+        } else {
+            call = "\"call\":\"end\""
+        }
+        return "{\(call),\"session\":0,\"invoked\":\(invoked),\"returned\":\(returned)}"
+    }
+}
+
+/// What the owner of a recorded run did, as its engine's inbox port tells it: each item it put on
+/// the external queue, read from the run's clock around it, and the end of the run, read around
+/// the close of the inbox, from which every post is refused. An event of the owner's own is
+/// invoked where the port is first told it, before the drain it begins with, and the inputs that
+/// drain applies lie within it. Told on the owner only.
+private final class OwnerRecorder: InboxPort {
+    typealias Event = FlatEvent
+
+    private let clock: HistoryClock
+    private(set) var operations: [RecordedOwnerOperation] = []
+    private var ownInvoked = 0
+    private var postedInvoked = 0
+    private var closeInvoked = 0
+
+    init(clock: HistoryClock) {
+        self.clock = clock
+    }
+
+    func enqueueBegins(_ event: EventWithMetadata<FlatEvent>, posted: Bool) {
+        let now = clock.tick()
+        if posted {
+            postedInvoked = now
+        } else {
+            ownInvoked = now
+        }
+    }
+
+    func enqueueEnds(_ event: EventWithMetadata<FlatEvent>, posted: Bool) {
+        operations.append(
+            RecordedOwnerOperation(
+                // -1, which the history format refuses, for an event whose data names no item.
+                item: Int(event.metadata.data) ?? -1, own: !posted, invoked: posted ? postedInvoked : ownInvoked,
+                returned: clock.tick()))
+    }
+
+    func closeBegins() {
+        closeInvoked = clock.tick()
+    }
+
+    func closeEnds() {
+        operations.append(RecordedOwnerOperation(item: nil, own: false, invoked: closeInvoked, returned: clock.tick()))
+    }
+}
+
+/// Posts `ping` carrying `value` through `inbox`, recorded with `clock` read immediately around
+/// the post.
+private func recordPost(_ clock: HistoryClock, _ inbox: EngineInbox<FlatEvent>, _ value: Int) -> RecordedPost {
+    let invoked = clock.tick()
+    let taken = inbox.post(.externalEvent(.ping, eventData: "\(value)"))
+    let returned = clock.tick()
+    return RecordedPost(input: value, taken: taken, invoked: invoked, returned: returned)
+}
+
+/// What the posters of a recorded run share: each one's posts, handed over when it has posted
+/// everything, how many posts were made, and how many posters are still posting.
+private final class HistoryPosters: Sendable {
+    let logs: Mutex<[[RecordedPost]]>
+    let made = Atomic<Int>(0)
+    let running: Atomic<Int>
+
+    init(count: Int) {
+        logs = Mutex(Array(repeating: [], count: count))
+        running = Atomic<Int>(count)
+    }
+}
+
+/// Runs `work` on a thread of its own and answers what it posted; nil, recorded as an issue, when
+/// it never returned.
+private func postsFromAnotherThread(_ work: @escaping @Sendable () -> [RecordedPost]) -> [RecordedPost]? {
+    let answer = Mutex<[RecordedPost]?>(nil)
+    let done = DispatchSemaphore(value: 0)
+    Thread {
+        let posts = work()
+        answer.withLock { $0 = posts }
+        done.signal()
+    }.start()
+    if done.wait(timeout: .now() + .seconds(10)) == .timedOut {
+        Issue.record("the posts on another thread never returned")
+        return nil
+    }
+    return answer.withLock { $0 }
+}
+
+/// One recorded run: the owner's operations and each poster's posts, each in program order; nil
+/// when the run could not be made, with the reason recorded.
+///
+/// A post is taken and returns before the owner raises an event of its own, so every run holds
+/// that order. Then `historyPosters` threads post through the session's own handle while the owner
+/// ticks the machine, raises events of its own and stops the run once half the posts are made. A
+/// post once the run has ended closes the record.
+private func recordInboxRun() throws -> (owner: [RecordedOwnerOperation], posters: [[RecordedPost]])? {
+    let clock = HistoryClock()
+    let recorder = OwnerRecorder(clock: clock)
+    let (engine, _) = makeProbe()
+    let inbox = engine.inbox
+    engine.setInboxPort(recorder)
+    try engine.initialize()
+    guard let first = postsFromAnotherThread({ [recordPost(clock, inbox, 1)] }) else {
+        return nil
+    }
+    var posters = [first]
+    engine.raiseExternal(.ping, eventData: "\(historyOwnBase)")
+
+    let shared = HistoryPosters(count: historyPosters)
+    let total = historyPosters * historyPerPoster
+    for poster in 0..<historyPosters {
+        Thread {
+            var log: [RecordedPost] = []
+            for k in 0..<historyPerPoster {
+                log.append(recordPost(clock, inbox, 2 + poster * historyPerPoster + k))
+                _ = shared.made.wrappingAdd(1, ordering: .releasing)
+            }
+            // Handed over before the poster counts itself out, so the owner reads every post.
+            shared.logs.withLock { $0[poster] = log }
+            _ = shared.running.wrappingSubtract(1, ordering: .releasing)
+        }.start()
+    }
+
+    let deadline = ContinuousClock.now + .seconds(30)
+    var own = historyOwnBase + 1
+    var round = 0
+    var stopped = false
+    while shared.running.load(ordering: .acquiring) > 0 {
+        if ContinuousClock.now > deadline {
+            Issue.record("the posters never finished posting")
+            return nil
+        }
+        if !stopped {
+            engine.tick()
+            round += 1
+            if round % 3 == 0 && own < historyOwnBase + historyOwnPerRun {
+                engine.raiseExternal(.ping, eventData: "\(own)")
+                own += 1
+            }
+            if shared.made.load(ordering: .acquiring) * 2 >= total {
+                engine.stop()
+                stopped = true
+            }
+        }
+        Thread.sleep(forTimeInterval: 0.000_001)
+    }
+    if !stopped {
+        engine.tick()
+        engine.stop()
+    }
+    posters += shared.logs.withLock { $0 }
+    guard let late = postsFromAnotherThread({ [recordPost(clock, inbox, historyLateInput)] }) else {
+        return nil
+    }
+    posters.append(late)
+    return (recorder.operations, posters)
+}
+
+/// The run as an inbox history (`tests/forge/conformance/inbox_history.schema.json`): one
+/// session, whose inbox closes with its run and has no bound.
+private func historyJSON(owner: [RecordedOwnerOperation], posters: [[RecordedPost]]) -> String {
+    let owned = "[" + owner.map(\.json).joined(separator: ",") + "]"
+    let posted = "[" + posters.map { "[" + $0.map(\.json).joined(separator: ",") + "]" }.joined(separator: ",") + "]"
+    return "{\"version\":2,\"sessions\":[0],\"closes\":true,\"owner\":\(owned),\"posters\":\(posted)}"
+}
+
+/// Holds a recorded run, named `what`, to what it was meant to exercise and to the order the door
+/// keeps, as far as one run's record says it: posts taken and refused as ended, own events entered
+/// and the run ended once; every input a post took entered once; and an event of the owner's own
+/// entered behind every input whose post returned before the event's enqueue began (docs/adr/0084,
+/// D2 as amended at step 9). Whether the whole record is linearizable is
+/// `sce-codegen check-inbox-history`'s to judge.
+private func expectRunKeepsTheDoorsOrder(_ what: String, owner: [RecordedOwnerOperation], posters: [[RecordedPost]]) {
+    let posts = posters.flatMap { $0 }
+    #expect(posts.contains { $0.taken }, "\(what): no post was taken")
+    #expect(posts.contains { !$0.taken }, "\(what): no post was refused as ended")
+    #expect(owner.contains { $0.item != nil && $0.own }, "\(what): the owner put no event of its own on the queue")
+    #expect(owner.filter { $0.item == nil }.count == 1, "\(what): the run did not end once")
+
+    let taken = posts.filter(\.taken).map(\.input).sorted()
+    let entered = owner.filter { $0.item != nil && !$0.own }.compactMap(\.item).sorted()
+    #expect(entered == taken, "\(what): the inputs that entered the queue are not the inputs the posts took")
+
+    var enteredAt: [Int: Int] = [:]
+    for (at, op) in owner.enumerated() where !op.own {
+        if let item = op.item {
+            enteredAt[item] = at
+        }
+    }
+    for (at, op) in owner.enumerated() where op.own {
+        for post in posts where post.taken && post.returned < op.invoked {
+            guard let postedAt = enteredAt[post.input] else {
+                Issue.record("\(what): input \(post.input) never entered")
+                continue
+            }
+            #expect(
+                postedAt < at,
+                "\(what): own event \(op.item ?? -1) entered ahead of input \(post.input), whose post returned before the event's enqueue began"
+            )
+        }
+    }
+}
+
+/// docs/adr/0147, D3: each recorded run of the inbox keeps the order the door promises as far as its
+/// own record says it, and is written as an inbox history where `SCE_INBOX_HISTORY_DIR` names, one
+/// file a run, for `sce-codegen check-inbox-history` to judge linearizable to
+/// docs/formal/InboxService.tla. Unset, the runs are held here and written nowhere.
+@Test func eachRunOfTheInboxIsRecordedAsAHistoryThatKeepsTheDoorsOrder() throws {
+    let named = ProcessInfo.processInfo.environment["SCE_INBOX_HISTORY_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+    let directory = named.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    if let directory {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    for run in 0..<historyRuns {
+        guard let recorded = try recordInboxRun() else {
+            return
+        }
+        expectRunKeepsTheDoorsOrder("run \(run)", owner: recorded.owner, posters: recorded.posters)
+        if let directory {
+            try (historyJSON(owner: recorded.owner, posters: recorded.posters) + "\n").write(
+                to: directory.appendingPathComponent("swift_inbox_run_\(run).json"), atomically: true, encoding: .utf8)
+        }
+    }
 }

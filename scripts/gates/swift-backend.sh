@@ -106,9 +106,18 @@ done
 LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
+# The runtime package's recorded runs of the inbox (docs/adr/0147, D3) write their histories into
+# the directory SCE_INBOX_HISTORY_DIR names, emptied first, and the command every runtime's inbox
+# histories are judged by judges them once the packages passed (`sce_gate_judge_inbox_histories`):
+# `historyRuns` of them, four, in WhatAnotherThreadPostsEntersThroughTheInboxTests.
+INBOX_HISTORIES="$SCE_REPO_ROOT/target/inbox-histories/swift"
+rm -rf "$INBOX_HISTORIES"
+mkdir -p "$INBOX_HISTORIES"
+
 # The status of the script, not of the `tee` it is piped to.
 status=0
-sce_gate_tested --log "$LOG" -- scripts/test_swift_backend.sh "${PACKAGES[@]}" || status=$?
+sce_gate_tested --log "$LOG" -- env SCE_INBOX_HISTORY_DIR="$INBOX_HISTORIES" \
+    scripts/test_swift_backend.sh "${PACKAGES[@]}" || status=$?
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 
@@ -122,6 +131,10 @@ if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi
 sce_gate_step "$runs Swift test runs, each of at least one test"
+
+if [[ -n "${RUNNING[runtime]:-}" ]]; then
+    sce_gate_judge_inbox_histories "$INBOX_HISTORIES" 4 "Swift"
+fi
 
 # The two programs `sce-build`'s equivalence tests build in Swift (the `transition-outputs` arm),
 # each read by name: a filter that matched no test runs nothing and exits 0, and a skip is refused
