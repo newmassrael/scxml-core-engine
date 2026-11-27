@@ -596,6 +596,10 @@ pub use engine::{Engine, EngineState};
 /// delivers it writes and a host names in its own terms.
 #[cfg(feature = "std")]
 pub use event::EventOrigin;
+/// docs/adr/0116, D3: the person an instance acts for, which a server's edge
+/// stamps on the event it took in and a document reads as `_x.principal`.
+#[cfg(feature = "std")]
+pub use event::Principal;
 pub use event::{error_name, EventMetadata, EventType, EventWithMetadata};
 /// Why an engine raised `error.execution` or `error.communication`: the one
 /// vocabulary every engine and the Mesh write `_event.data.reason` from

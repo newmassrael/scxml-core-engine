@@ -113,6 +113,35 @@ impl EventOrigin {
     }
 }
 
+/// The person an instance of an open machine acts for, as the server that took
+/// the event in holds it (docs/adr/0116, D1 and D3): what a document that declares
+/// `sce:principal` reads as `_x.principal`. The server's edge writes it from the
+/// delegation its store holds for the incarnation the event was taken in under,
+/// and no field of an envelope does (docs/adr/0116, D1: invariant 12 of SCE_MESH.md section 10.9).
+///
+/// Its fields are the fixed list a document's record takes its fields from by
+/// name: who proved the person (`issuer`, OpenID Connect's `iss`), who they are
+/// to that issuer (`subject`, `sub`, unique within its issuer alone), when and
+/// how they proved it, and the instance that acts for them. No display name,
+/// address or group is among them: those are the application's data.
+///
+/// Only under std, as every `_event` text field is (see [`EventMetadata`]).
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Principal {
+    /// The identity provider's issuer.
+    pub issuer: String,
+    /// Who the person is to their issuer.
+    pub subject: String,
+    /// When they proved it, in milliseconds since the Unix epoch.
+    pub proved_ms: u64,
+    /// How they proved it, as the port that judged the proof names it.
+    pub method: String,
+    /// The instance id of the open machine whose incarnation acts for them
+    /// (docs/adr/0113, D1).
+    pub instance: String,
+}
+
 /// Metadata fields attached to events (§scxml-5.10).
 ///
 /// Ports C++ `SCE::Core::EventMetadata`. Every event flowing through the
@@ -177,6 +206,15 @@ pub struct EventMetadata {
     /// section 1).
     #[cfg(feature = "std")]
     pub sender: SceString,
+    /// The person the event was said for (`_x.principal`, docs/adr/0116, D3): set
+    /// by a server's edge on an event an instance of an open machine sent while
+    /// its incarnation acts for a person, and `None` on every other event, an
+    /// internal event, a timer, a completion and a machine's own send among them
+    /// (D4: nothing passes on by itself). A saved state holds no person, so a
+    /// queued event that carries one refuses the save
+    /// ([`crate::saved_state::save`]).
+    #[cfg(feature = "std")]
+    pub principal: Option<Principal>,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
     #[cfg(feature = "std")]
     pub invoke_id: SceString,

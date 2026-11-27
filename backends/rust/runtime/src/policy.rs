@@ -1248,6 +1248,17 @@ pub trait StatePolicy: Sized + 'static {
     /// can pass them to `set_current_event_in_script_engine`.
     fn populate_event_metadata(&mut self, _metadata: &crate::event::EventMetadata) {}
 
+    /// docs/adr/0116, D3: take the person the event about to be processed was said for
+    /// (`EventMetadata::principal`) into the record the document reads a person as
+    /// (`_x.principal`), or hold none for an event said for nobody. `Err` when a text of the
+    /// person is longer than the record's field holds, naming it: the delivery is then refused
+    /// whole, as one whose data does not fit its type is (docs/adr/0124, D2), and is never run
+    /// as said for nobody (D6). A machine that reads no person takes nothing.
+    #[cfg(feature = "std")]
+    fn admit_principal(&mut self, _metadata: &crate::event::EventMetadata) -> Result<(), String> {
+        Ok(())
+    }
+
     /// §scxml-5.10: Clear pending event metadata after transition processing.
     ///
     /// Ports C++ `EventMetadataHelper::clearPolicyMetadata`. Called by the engine

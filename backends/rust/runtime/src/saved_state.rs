@@ -2594,7 +2594,8 @@ fn clamp_to_i64(ms: u64) -> u64 {
 /// last macrostep stopped at the microstep ceiling: its configuration is not a
 /// settled one, and a restore would resume it as if it were — for one with no
 /// id (a machine on a target with no source of randomness whose host gave it
-/// none), and when `children` are not the children the machine is running.
+/// none), when `children` are not the children the machine is running, and
+/// while an event said for a person waits in its queue (docs/adr/0116, D6).
 pub fn save<P: StatePolicy>(
     engine: &Engine<P>,
     shape: &SavedShape,
@@ -2620,6 +2621,23 @@ pub fn save<P: StatePolicy>(
             "the machine has no session id: on a target with no source of randomness its \
              host gives one when it creates the machine",
         ));
+    }
+    // docs/adr/0116, D6: what is not yet done is not done, and an event said for
+    // a person is never run as nobody's. A saved state holds no person (its format
+    // is written the same on every backend, and none of them holds one), so an
+    // event of a person still queued refuses the save: a host saves after the run
+    // that takes it in, as the write that keeps a run is made after the run
+    // (docs/adr/0113, D5).
+    if let Some(queued) = engine
+        .external_queue
+        .queued()
+        .find(|queued| queued.metadata.principal.is_some())
+    {
+        return Err(StateRefusal::new(format!(
+            "the event '{}' the machine has not run was said for a person, and a saved \
+             state holds no person: save after the run that takes it in",
+            P::get_event_name(P::event_of(queued.event))
+        )));
     }
     // What the generated machine saved is every child it runs, and nothing
     // else: one left out would restore a parent whose child is gone.

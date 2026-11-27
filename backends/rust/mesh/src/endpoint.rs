@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{
     Engine, EventMetadata, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
-    MeshCall, StatePolicy,
+    MeshCall, Principal, StatePolicy,
 };
 
 use crate::causal::{CausalLayer, Dot, Refusal, Start};
@@ -149,6 +149,10 @@ pub(crate) enum Told {
         source: String,
         send_id: String,
         invoke_id: String,
+        /// The person the instance `source` acted for when its edge took the event in
+        /// (`_x.principal`, docs/adr/0116, D3; [`Endpoint::receive_member_for`]), `None` for
+        /// every other event. A checkpoint holds none ([`Endpoint::seal`]).
+        principal: Option<Principal>,
     },
     /// The end of the start `token` of the Mesh request `invoke_id`.
     End {
@@ -169,12 +173,14 @@ impl Told {
                 source,
                 send_id,
                 invoke_id,
+                principal,
             } => EngineCall::Raise(EngineEvent {
                 name,
                 metadata: EventMetadata {
                     // §mesh-10.7: an inbound request's invokeid, which a
                     // reply sent while it is handled carries back.
                     invoke_id,
+                    principal,
                     ..mesh_metadata(data, &source, send_id)
                 },
             }),
@@ -477,6 +483,39 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.router.take_bound()
     }
 
+    /// As [`Self::receive_member`], for an instance whose incarnation `made_under` acts for a
+    /// person (docs/adr/0116, D1 and D3): `acting` is the person of the delegation the server's
+    /// store holds for that incarnation, which the edge read where it took the envelope in, or
+    /// `None` for an incarnation that acts for nobody. Each event the envelope raises on the
+    /// instance's behalf carries it, and a document reads it as `_x.principal`; a row the
+    /// endpoint raises as its own machine does not (docs/adr/0116, D1, invariant 12 of SCE_MESH.md
+    /// section 10.9: what a machine reads of a person comes from the delegation its own server
+    /// holds for the link the event came on, and from no field of an envelope).
+    pub fn receive_member_for(
+        &mut self,
+        peer: &str,
+        made_under: u64,
+        standing: Standing,
+        acting: Option<Principal>,
+        bytes: Vec<u8>,
+    ) {
+        let from = self.to_engine.len();
+        self.receive_member(peer, made_under, standing, bytes);
+        let Some(person) = acting else {
+            return;
+        };
+        for told in &mut self.to_engine[from..] {
+            if let Told::Event {
+                source, principal, ..
+            } = told
+            {
+                if source.as_str() == peer {
+                    *principal = Some(person.clone());
+                }
+            }
+        }
+    }
+
     /// Take `standing`, the store's latest answer for the member whose instance is `peer` (see
     /// [`Router::stand`]).
     pub fn stand(&mut self, peer: &str, standing: Standing) {
@@ -702,6 +741,23 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// released for the machine that the host has not yet applied, every
     /// moment on the environment's wall clock.
     pub fn seal(&mut self, sequence: u64) -> Result<EndpointSection, CheckpointError> {
+        // docs/adr/0116, D6: an event said for a person is never run as nobody's, and a
+        // checkpoint holds no person. Refused before the router is sealed, so the same number
+        // seals once the host has applied and run it.
+        if let Some(Told::Event { name, source, .. }) = self.to_engine.iter().find(|told| {
+            matches!(
+                told,
+                Told::Event {
+                    principal: Some(_),
+                    ..
+                }
+            )
+        }) {
+            return Err(CheckpointError::Person(alloc::format!(
+                "the event '{name}' of the instance '{source}' was said for a person and the host \
+                 has not applied it"
+            )));
+        }
         let clocks = self.clocks();
         let router = self
             .router
@@ -849,6 +905,9 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     source,
                     send_id: send_id.unwrap_or_default(),
                     invoke_id: invoke_id.unwrap_or_default(),
+                    // The person an instance acts for is the edge's to tell
+                    // ([`Self::receive_member_for`]), never the envelope's.
+                    principal: None,
                 }),
                 Effect::Raise { peer, signal } => self.raise(peer.as_deref(), &signal),
                 Effect::Complete {
@@ -959,6 +1018,7 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             source: machine,
             send_id: String::new(),
             invoke_id: String::new(),
+            principal: None,
         });
     }
 }
@@ -1791,6 +1851,114 @@ mod tests {
         assert_eq!(
             ecu.take_host_errors(),
             vec![RouterError::UnknownPeer("stranger".to_string())]
+        );
+    }
+
+    /// `cloud`, checkpointing, whose instances of `phone` send to it with durable receipt
+    /// (docs/adr/0113, D5): the binding a server whose document reads a person is held to.
+    fn open_cloud() -> Endpoint<Recorder, Fixed> {
+        let mut router = Router::new("cloud", 8, 50).unwrap();
+        router
+            .open_machine(
+                "phone",
+                PeerConfig {
+                    transport: "https",
+                    buffer: None,
+                    retry: None,
+                    stamp_sequence: false,
+                    delivery: Delivery {
+                        dedup: true,
+                        ordered: false,
+                    },
+                    responders: Responders::Instance,
+                    deadline_ms: None,
+                    reply_events: &[],
+                    causal: None,
+                },
+                4,
+            )
+            .unwrap();
+        router.enable_checkpoints();
+        router.receive_durably("phone").unwrap();
+        Endpoint::new(router, Recorder::default(), Fixed::default())
+    }
+
+    /// `ping`, which the instance `a1` of `phone` numbered `number` in its incarnation.
+    fn ping_of_a1(number: u8) -> Vec<u8> {
+        use crate::generated::envelope::Envelope;
+        use crate::generated::pattern_kind::PatternKind;
+        use crate::generated::payload_codec::PayloadCodec;
+        use crate::router::within;
+        Envelope {
+            id: (&[0x40 + number; 16]).into(),
+            source: within("phone").unwrap(),
+            instance: Some(within("a1").unwrap()),
+            event_type: within("ping").unwrap(),
+            pattern: PatternKind::FireForget,
+            datacontenttype: PayloadCodec::None,
+            sequence_no: Some(u64::from(number)),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    fn alice() -> Principal {
+        Principal {
+            issuer: "https://id.example".to_string(),
+            subject: "alice".to_string(),
+            proved_ms: 1_000,
+            method: "test".to_string(),
+            instance: "a1".to_string(),
+        }
+    }
+
+    /// docs/adr/0116, D1 and D3: an event an instance
+    /// sent while its incarnation acts for a person carries the person the edge read from the
+    /// store, and one it sent under an incarnation that acts for nobody carries none. Red if
+    /// `receive_member_for` does not stamp the events the envelope raised, or if `Told::call`
+    /// drops the person on the way to the engine.
+    #[test]
+    fn an_instances_event_carries_the_person_its_incarnation_acts_for() {
+        let mut cloud = open_cloud();
+        let standing = Standing {
+            incarnation: 7,
+            mark: 1,
+        };
+        cloud.receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1));
+        cloud.receive_member("phone/a1", 7, standing, ping_of_a1(2));
+        let events = raised(&mut cloud);
+        let people: Vec<(&str, Option<&Principal>)> = events
+            .iter()
+            .map(|event| (event.name.as_str(), event.metadata.principal.as_ref()))
+            .collect();
+        assert_eq!(
+            people,
+            [("ping", Some(&alice())), ("ping", None)],
+            "{:?}",
+            cloud.take_host_errors()
+        );
+    }
+
+    /// docs/adr/0116, D6: a checkpoint holds no person, so an endpoint that holds an event said
+    /// for one and not yet applied refuses to seal, and seals the same number once the host has
+    /// taken it. Red if `seal` writes the event without its person, which a restore would then
+    /// run as nobody's.
+    #[test]
+    fn an_endpoint_that_holds_an_event_of_a_person_seals_only_once_it_is_applied() {
+        let mut cloud = open_cloud();
+        let standing = Standing {
+            incarnation: 7,
+            mark: 1,
+        };
+        cloud.receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1));
+        assert!(
+            matches!(cloud.seal(1), Err(CheckpointError::Person(_))),
+            "an unapplied event of a person is not sealed"
+        );
+        assert_eq!(raised(&mut cloud).len(), 1);
+        assert!(
+            cloud.seal(1).is_ok(),
+            "the same number seals once it is taken"
         );
     }
 }

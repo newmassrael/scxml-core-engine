@@ -274,6 +274,10 @@ pub enum CheckpointError {
     /// or envelopes held for an acknowledgement on a binding that is not durable. Restoring it
     /// would lose what the checkpoint promised to keep.
     Unbound(String),
+    /// The endpoint holds an event said for a person that the host has not applied
+    /// (docs/adr/0116, D6): a checkpoint holds no person, and an event said for one is never run
+    /// as nobody's, so the host applies and runs it before it seals.
+    Person(String),
 }
 
 impl fmt::Display for CheckpointError {
@@ -291,6 +295,7 @@ impl fmt::Display for CheckpointError {
                 )
             }
             Self::Unbound(words) => write!(f, "the checkpoint cannot be restored here: {words}"),
+            Self::Person(words) => write!(f, "the checkpoint cannot hold a person: {words}"),
         }
     }
 }
@@ -937,12 +942,14 @@ impl RetryState {
 
 fn told_value(told: &Told) -> Value {
     match told {
+        // A person is never sealed (`Endpoint::seal` refuses an endpoint that holds one).
         Told::Event {
             name,
             data,
             source,
             send_id,
             invoke_id,
+            principal: _,
         } => object(alloc::vec![
             ("call", text("event")),
             ("event", text(name)),
@@ -980,6 +987,7 @@ fn told_from_value(value: &Value, at: &str) -> Result<Told, CheckpointError> {
             source: words("source")?,
             send_id: words("sendid")?,
             invoke_id: words("invokeid")?,
+            principal: None,
         }),
         "end" => Ok(Told::End {
             invoke_id: words("invokeid")?,
@@ -2234,6 +2242,7 @@ mod tests {
                         source: "client".to_string(),
                         send_id: "s-1".to_string(),
                         invoke_id: "09090909-0909-0909-0909-090909090909".to_string(),
+                        principal: None,
                     },
                     Told::End {
                         invoke_id: "ask".to_string(),

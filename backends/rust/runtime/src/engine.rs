@@ -3145,6 +3145,20 @@ impl<P: StatePolicy> Engine<P> {
                 }
                 Admission::Refused => return (Bound::Refused, payload),
             }
+            // docs/adr/0116, D3 and D6: the person the event was said for is taken
+            // into the record the document reads a person as, and a person a field
+            // of it does not hold refuses the delivery by the one verdict a payload
+            // that does not fit its type takes: never run as said for nobody.
+            if let Err(refusal) = self.policy.admit_principal(&metadata) {
+                let refusal = format!(
+                    "`{}`, said for a person: {refusal}",
+                    P::get_event_name(P::event_of(delivered))
+                );
+                return match P::get_event_from_name("error.execution") {
+                    Some(error) => self.bind_in_place(error, &refusal),
+                    None => (Bound::Refused, payload),
+                };
+            }
         }
         // A `no_std` build has no wire and no refusal: its host side holds lent
         // data (`EngineHost::bind_queued`).
@@ -3200,8 +3214,26 @@ impl<P: StatePolicy> Engine<P> {
                 };
                 #[cfg(not(feature = "std"))]
                 let name = P::get_event_name(P::event_of(delivered));
+                // docs/adr/0116, D4: nothing passes on by itself. The copy is the
+                // event's, and the person it was said for (`_x.principal`, no
+                // field of `_event`) stays with this machine: a child is told
+                // the event as said for nobody.
+                #[cfg(feature = "std")]
+                let stripped;
+                #[cfg(feature = "std")]
+                let forwarded = if metadata.principal.is_some() {
+                    stripped = EventMetadata {
+                        principal: None,
+                        ..metadata.clone()
+                    };
+                    &stripped
+                } else {
+                    &metadata
+                };
+                #[cfg(not(feature = "std"))]
+                let forwarded = &metadata;
                 self.with_policy(|policy, engine| {
-                    policy.forward_to_autoforward_children(name, &metadata, engine)
+                    policy.forward_to_autoforward_children(name, forwarded, engine)
                 });
             }
         }
