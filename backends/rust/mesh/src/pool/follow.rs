@@ -99,9 +99,16 @@ struct Open<M, T, E> {
     event: String,
     data: String,
     origin: String,
-    /// The receipt of its last hand-out and the slot it was put in; `None` while it is to be
-    /// handed out.
-    handed: Option<(Receipt, Weak<Slot<M, T, E>>)>,
+    /// Its last hand-out; `None` while it is to be handed out.
+    handed: Option<Handed<M, T, E>>,
+}
+
+/// The last hand-out of an open entry.
+struct Handed<M, T, E> {
+    /// What tells whether the session took the entry in.
+    receipt: Receipt,
+    /// The slot the entry was put in.
+    slot: Weak<Slot<M, T, E>>,
 }
 
 /// What a pool's reader of the journal holds between its calls.
@@ -241,7 +248,7 @@ where
         // What the sessions took in since the last call is passed; what they lost is to be
         // handed again.
         reader.open.retain(|_, open| {
-            match open.handed.as_ref().map(|(receipt, _)| receipt.fate()) {
+            match open.handed.as_ref().map(|handed| handed.receipt.fate()) {
                 Some(Fate::Settled) => return false,
                 Some(Fate::Lost) => open.handed = None,
                 Some(Fate::Pending) | None => {}
@@ -346,7 +353,7 @@ where
             return;
         };
         let key = open.key.clone();
-        if let Some((_, slot)) = &open.handed {
+        if let Some(Handed { slot, .. }) = &open.handed {
             // Out: the key's later entries follow it into its slot, or wait until its receipt is
             // settled or lost.
             pass.out.insert(key, Weak::clone(slot));
@@ -377,7 +384,10 @@ where
         match self.post_followed(&key, input, pass.out.get(&key)) {
             Ok(slot) => {
                 if let Some(open) = reader.open.get_mut(&position) {
-                    open.handed = Some((receipt, Arc::downgrade(&slot)));
+                    open.handed = Some(Handed {
+                        receipt,
+                        slot: Arc::downgrade(&slot),
+                    });
                 }
                 pass.out.insert(key.clone(), Arc::downgrade(&slot));
                 pass.run.insert(key);
