@@ -37,9 +37,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EngineState,
-    EventId, EventWithMetadata, Hal, HistoryId, InboxInput, InboxRefusal, InboxWaker, NoHistory,
-    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
-    Workspace,
+    EventId, EventWithMetadata, Hal, HistoryId, HostInvokeEnding, InboxInput, InboxRefusal,
+    InboxWaker, NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow, Target,
+    TransitionId, TransitionRow, Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -106,11 +106,22 @@ const S_PONG: TransitionId = TransitionId(1);
 struct InboxPolicy<D = ()> {
     taken: Vec<&'static str>,
     payloads: Vec<D>,
+    /// The session's id: the empty text of a policy written by hand that binds
+    /// none, but in the case that holds a tree of two sessions.
+    id: &'static str,
 }
 
 impl InboxPolicy {
     fn new() -> Self {
         Self::carrying()
+    }
+
+    /// The machine of the session `id`.
+    fn named(id: &'static str) -> Self {
+        Self {
+            id,
+            ..Self::carrying()
+        }
     }
 }
 
@@ -119,6 +130,7 @@ impl<D> InboxPolicy<D> {
         Self {
             taken: Vec::new(),
             payloads: Vec::new(),
+            id: "",
         }
     }
 }
@@ -217,6 +229,11 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
             "s" => Some(St::S),
             _ => None,
         }
+    }
+
+    // A session of a tree is named by its own id.
+    fn own_session_id(&self) -> &str {
+        self.id
     }
 
     // `_is_default_entry` is unused: this policy has no compound states.
@@ -470,6 +487,49 @@ fn a_post_after_the_run_was_stopped_is_counted_as_unseen() {
         "the post was neither taken nor counted: it was dropped in silence"
     );
     assert_eq!(engine.last_unseen_event(), Some(Ev::Ping));
+}
+
+// docs/adr/0084, D2 as amended at step 10: the tree keeps a directory from the id
+// of each of its sessions to that session's inbox, the root's as well as each
+// child's (docs/adr/0147, D2). An ending that names the root, posted through a
+// child's handle, is looked up there and taken for the root; once the root's
+// engine is gone its inbox is named no longer, and the same post is refused as
+// naming a session the tree does not hold.
+#[test]
+fn the_roots_inbox_is_in_its_trees_directory_while_its_engine_lives() {
+    let _posting = posting();
+    let root = Engine::new(InboxPolicy::named("root"));
+    let mut child = Engine::new(InboxPolicy::named("child"));
+    root.share_tree_inboxes_with(&mut child);
+    let _root_inbox = root.inbox();
+    let child_inbox = child.inbox();
+    let ending = || {
+        InboxInput::host_invoke_ending(
+            Some("root"),
+            HostInvokeEnding {
+                processor_type: "x-sce-host",
+                invoke_id: "job",
+                token: 1,
+                done: true,
+                data: "",
+                origin: None,
+            },
+        )
+    };
+    let taken = child_inbox.post(ending());
+    assert!(
+        taken.is_ok(),
+        "an ending naming the root, posted through its child's handle, was answered {taken:?}"
+    );
+
+    drop(root);
+    match child_inbox.post(ending()) {
+        Err(InboxRefusal::UnknownSession(_)) => {}
+        other => panic!(
+            "an ending naming a root whose engine is gone, posted through its child's handle, \
+             was answered {other:?}"
+        ),
+    }
 }
 
 /// Two inputs, so the third post finds it full.

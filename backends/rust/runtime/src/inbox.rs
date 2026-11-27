@@ -333,9 +333,12 @@ pub type InboxWaker = Arc<dyn Fn() + Send + Sync>;
 ///
 /// The engine the host built makes it, and a parent hands its own to each
 /// child it starts or resumes, before the child's first macrostep
-/// ([`EngineState::share_tree_inboxes_with`]); the child leaves it when it ends
-/// ([`Engine::leave_tree_inboxes`]). Opaque: the generated parent only passes
-/// it on.
+/// ([`EngineState::share_tree_inboxes_with`]). Every session's inbox is in the
+/// directory, the root's from the moment it is made as well as each child's
+/// (docs/adr/0084, D2 as amended at step 10), so a post naming any session of
+/// the tree reaches it; a child leaves when it ends
+/// ([`Engine::leave_tree_inboxes`]), and an inbox whose engine is gone is
+/// named no longer. Opaque: the generated parent only passes it on.
 ///
 /// [`EngineState::share_tree_inboxes_with`]: crate::EngineState::share_tree_inboxes_with
 /// [`Engine::leave_tree_inboxes`]: crate::Engine::leave_tree_inboxes
@@ -343,8 +346,8 @@ pub type InboxWaker = Arc<dyn Fn() + Send + Sync>;
 #[derive(Clone, Default)]
 pub struct TreeInboxes(Arc<TreeShared>);
 
-/// The directory of a tree: the inbox of each session it started, by the
-/// session's id.
+/// The directory of a tree: the inbox of each of its sessions, the root and
+/// each child it started, by the session's id.
 #[cfg(feature = "std")]
 type Directory = HashMap<String, Arc<Shared>>;
 
@@ -384,6 +387,26 @@ impl TreeInboxes {
     /// on, and none is pushed onto its inbox once this returns.
     pub(crate) fn remove(&self, session_id: &str) {
         self.directory().remove(session_id);
+    }
+
+    /// The session whose inbox `shared` is, is in this tree from now on: the
+    /// directory names that inbox under the session's id.
+    fn enter(&self, shared: &Arc<Shared>) {
+        self.directory()
+            .insert(shared.session_id.clone(), Arc::clone(shared));
+    }
+
+    /// The inbox `shared` leaves the directory, if the directory still names
+    /// it: a session that has left already, or whose id another inbox took
+    /// since, is left as it is.
+    fn leave_if_named(&self, shared: &Arc<Shared>) {
+        let mut directory = self.directory();
+        if directory
+            .get(&shared.session_id)
+            .is_some_and(|named| Arc::ptr_eq(named, shared))
+        {
+            directory.remove(&shared.session_id);
+        }
     }
 
     /// Push `held`, an input of session `session_id` with its address
@@ -637,30 +660,36 @@ pub(crate) struct OwnedInbox {
 
 #[cfg(feature = "std")]
 impl OwnedInbox {
-    /// An empty inbox of session `session_id`, in `tree`.
+    /// An empty inbox of session `session_id`, in `tree`, whose directory
+    /// names it from now on (docs/adr/0084, D2 as amended at step 10): a post
+    /// through the directory that names the session, the root as well as a
+    /// child, reaches it.
     pub(crate) fn new(session_id: &str, tree: TreeInboxes) -> Self {
         let (sender, receiver) = mpsc::channel();
-        Self {
-            shared: Arc::new(Shared {
-                sender,
-                held: AtomicUsize::new(0),
-                session_id: session_id.to_string(),
-                tree: Mutex::new(tree),
-            }),
-            receiver,
-        }
+        let shared = Arc::new(Shared {
+            sender,
+            held: AtomicUsize::new(0),
+            session_id: session_id.to_string(),
+            tree: Mutex::new(tree.clone()),
+        });
+        tree.enter(&shared);
+        Self { shared, receiver }
     }
 
     /// Put this inbox in `tree`: its session is in that tree from now on, and
-    /// the tree's directory names this inbox under the session's id.
+    /// the tree's directory names this inbox under the session's id. The tree
+    /// it was in before names it no longer.
     pub(crate) fn join(&self, tree: &TreeInboxes) {
-        *self
-            .shared
-            .tree
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = tree.clone();
-        tree.directory()
-            .insert(self.shared.session_id.clone(), Arc::clone(&self.shared));
+        let previous = core::mem::replace(
+            &mut *self
+                .shared
+                .tree
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+            tree.clone(),
+        );
+        previous.leave_if_named(&self.shared);
+        tree.enter(&self.shared);
     }
 
     /// The oldest input posted and not yet taken, if any.
@@ -675,6 +704,16 @@ impl OwnedInbox {
     /// waits for the next boundary.
     pub(crate) fn per_boundary(&self) -> usize {
         self.shared.held.load(Ordering::Acquire)
+    }
+}
+
+/// The engine is gone with its inbox, so the directory names the inbox no
+/// longer: a post naming the session is refused as naming one the tree does
+/// not hold, and the inbox, which the directory held, is freed.
+#[cfg(feature = "std")]
+impl Drop for OwnedInbox {
+    fn drop(&mut self) {
+        self.shared.tree().leave_if_named(&self.shared);
     }
 }
 
