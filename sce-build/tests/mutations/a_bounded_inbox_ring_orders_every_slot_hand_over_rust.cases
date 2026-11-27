@@ -1,0 +1,85 @@
+# Mutation cases for docs/adr/0147, D5 on the Rust runtime's bounded inbox: the
+# queue hands every slot from a poster to the owner, and back, with the
+# ordering the C11 memory model needs.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_bounded_inbox_ring_orders_every_slot_hand_over_rust.cases`.
+#
+# The oracle is the loom models of `backends/rust/runtime/src/inbox/ring.rs`
+# (module `loom_models`, built through `tests/loom_inbox_ring.rs`), which run
+# two posters and the owner under every interleaving within three preemptions
+# and every outcome the memory model allows, and fail when a slot is read or
+# written with no happens-before edge to the access before it. Each case takes
+# one hand-over away:
+#
+#   the release of the swap that puts an index on a ring;
+#   the acquire of the load, and of the swap, that take an index off a ring;
+#   the order of a post's write of its input and the put that publishes it;
+#   the order of a take's read of the input and the put that frees the slot.
+#
+# A weakened hand-over fails a model as loom's report of the unordered slot
+# access, or as an assertion on what came out. Under three preemptions a case
+# that reads SURVIVED is one the bound does not reach, which the runner says,
+# and it is taken off this list with the reason, not made to pass.
+#
+# The models build only under `--cfg loom`. The selector passes it as a cargo
+# `--config`, as the forge queues' casefiles do, with a target directory of its
+# own so that the cfg does not invalidate the ordinary build's.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_inbox_ring
+mutation_targets backends/rust/runtime/src/inbox/ring.rs
+mutation_oracles backends/rust/runtime/src/inbox/ring.rs
+
+mutation_case "a put publishes an index without releasing it" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''.compare_exchange(seen, filled, Ordering::AcqRel, Ordering::Relaxed)''',
+     r'''.compare_exchange(seen, filled, Ordering::Acquire, Ordering::Relaxed)''')
+PY
+
+# The two edits are one case because either alone is covered by the other: the
+# load acquires the cell, and so does the swap that takes it, and the slot is
+# read only after both. Take both away and nothing acquires it.
+mutation_case "a take takes an index without acquiring it" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''            let position = self.head.load(Ordering::Relaxed);
+            let cell = self.cell(position);
+            let seen = cell.load(Ordering::Acquire);''',
+     r'''            let position = self.head.load(Ordering::Relaxed);
+            let cell = self.cell(position);
+            let seen = cell.load(Ordering::Relaxed);''')
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''.compare_exchange(seen, taken, Ordering::AcqRel, Ordering::Relaxed)''',
+     r'''.compare_exchange(seen, taken, Ordering::Release, Ordering::Relaxed)''')
+PY
+
+mutation_case "a post publishes its slot's index before it writes its input" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''        slot.with_mut(|slot| unsafe { slot.cast::<T>().write(item) });
+        #[cfg(any(all(test, feature = "std", not(loom)), feature = "inbox-preemption"))]
+        preemption::point();
+        if self.filled.put(index) {
+            return Ok(());
+        }''',
+     r'''        let published = self.filled.put(index);
+        slot.with_mut(|slot| unsafe { slot.cast::<T>().write(item) });
+        #[cfg(any(all(test, feature = "std", not(loom)), feature = "inbox-preemption"))]
+        preemption::point();
+        if published {
+            return Ok(());
+        }''')
+PY
+
+mutation_case "a take frees its slot before it reads the input" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''        let item = self
+            .slot(index)
+            .with(|slot| unsafe { slot.cast::<T>().read() });
+        let returned = self.free.put(index);''',
+     r'''        let returned = self.free.put(index);
+        let item = self
+            .slot(index)
+            .with(|slot| unsafe { slot.cast::<T>().read() });''')
+PY

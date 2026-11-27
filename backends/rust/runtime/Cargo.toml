@@ -254,5 +254,26 @@ getrandom = "0.2"
 # Env-based log output during tests
 env_logger = "0.11"
 
+# The bounded inbox queue's memory-model checker (docs/adr/0147, D5): present
+# only when the crate's tests are compiled with `--cfg loom`, which swaps the
+# queue's atomics and cells for loom's instrumented ones in the models' build
+# of `src/inbox/ring.rs`. No ordinary build, and no consumer, ever links it.
+[target.'cfg(loom)'.dev-dependencies]
+loom = "0.7"
+
+# The loom models of the bounded inbox's queue. `test = false` keeps them out of
+# `cargo test`, `--all-targets` and every lane that does not ask for them by
+# name, because outside `--cfg loom` they are a compile error rather than an
+# empty pass:
+#
+#   cargo test --release -p sce-rust-runtime --target-dir target/loom \
+#       --config 'build.rustflags=["--cfg","loom"]' --test loom_inbox_ring
+#
+# `scripts/gates/forge-rust.sh` runs exactly that, beside the forge queues'.
+[[test]]
+name = "loom_inbox_ring"
+path = "tests/loom_inbox_ring.rs"
+test = false
+
 [lints]
 workspace = true

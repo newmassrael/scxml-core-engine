@@ -14,8 +14,9 @@
 //! Taken as given, and judged elsewhere: an inbox is a queue of many producers and one consumer,
 //! so what its owner takes is its oldest input and taking it removes it (the channel's and the
 //! ring's own, held to that by the inbox history of docs/adr/0147, D3, and the ring's atomics by
-//! GenMC, D5); and where a drain reads the count it is handed is where the posts behind that count
-//! linearize after it.
+//! its loom models, `loom_models` in `inbox/ring.rs`, run through `tests/loom_inbox_ring.rs`, D5);
+//! and where a drain reads the count it is handed is where the posts behind that count linearize
+//! after it.
 //!
 //! A session has one inbox. Its engine holds the `std` profile's own or one a deployment attached,
 //! never both (`crate::inbox::SessionInbox`): two inboxes drained one after the other would apply

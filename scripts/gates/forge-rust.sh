@@ -80,6 +80,17 @@ sce_gate_tested -- cargo test --release -p sce-forge-runtime --target-dir target
     --test loom_broadcast_log_narrow \
     || sce_gate_fail "Rust forge queue and broadcast-log loom models"
 
+# The Rust runtime's bounded inbox queue under loom (docs/adr/0147, D5): the
+# models beside the queue in `backends/rust/runtime/src/inbox/ring.rs`, built
+# through the `test = false` target `loom_inbox_ring` under the same cfg and in
+# the same target directory as the forge queues' above, and the command the
+# casefile `a_bounded_inbox_ring_orders_every_slot_hand_over_rust.cases` spells.
+# The GenMC lane reads C, so this is what checks the Rust ring's atomics.
+sce_gate_tested -- cargo test --release -p sce-rust-runtime --target-dir target/loom \
+    --config 'build.rustflags=["--cfg","loom"]' \
+    --test loom_inbox_ring \
+    || sce_gate_fail "Rust bounded inbox queue loom models"
+
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,
 # verification layer 5). Both need a nightly, and a floating `nightly` would
 # turn an unrelated compiler regression into a red here at a time nobody chose,

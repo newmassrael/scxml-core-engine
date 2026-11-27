@@ -40,10 +40,14 @@ mutation_oracles backends/rust/runtime/src/inbox/ring.rs
 
 mutation_case "Rust's bounded inbox keeps the slot a take read its input out of" <<'PY'
 edit("backends/rust/runtime/src/inbox/ring.rs",
-     r'''        let item = unsafe { self.slot(index).read() };
-        let returned = self.free.put(index);''',
-     r'''        let item = unsafe { self.slot(index).read() };
-        let returned = true;''')
+     r'''            .with(|slot| unsafe { slot.cast::<T>().read() });
+        let returned = self.free.put(index);
+        debug_assert!(returned, "the free ring has room for an index taken off it");
+        Some(item)''',
+     r'''            .with(|slot| unsafe { slot.cast::<T>().read() });
+        let returned = true;
+        debug_assert!(returned, "the free ring has room for an index taken off it");
+        Some(item)''')
 PY
 
 mutation_case "Rust's bounded inbox starts its free ring one slot short" <<'PY'

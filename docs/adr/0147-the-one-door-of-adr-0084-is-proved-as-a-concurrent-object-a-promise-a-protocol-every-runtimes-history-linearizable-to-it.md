@@ -201,8 +201,12 @@ through 2^24 values.
 
 C11's SCQ rows never had the waiting cell. A take that finds a ticket still unfilled makes it unusable for its
 enqueue, which takes another ticket, and goes on to the next. A post under way therefore holds a slot and no ticket a
-take must wait at, and `inbox_take_past_a_post_under_way.c` holds this under GenMC. Rust's ring has no memory-model
-check of its own yet: its orderings are the SCQ data queue's and are argued in the module, and the GenMC lane reads C.
+take must wait at, and `inbox_take_past_a_post_under_way.c` holds this under GenMC. The GenMC lane reads C, so Rust's
+ring is judged under the C11 memory model by loom instead: the models beside it (`loom_models` in `ring.rs`, run by the
+`forge-rust` gate through the target `loom_inbox_ring`) run two posters and the owner under every interleaving within
+three preemptions. They hold each input taken once, none lost, each poster's order kept, a refusal only while every
+slot is held, and a drain's take of a post that returned past one under way. The casefile
+`a_bounded_inbox_ring_orders_every_slot_hand_over_rust.cases` weakens each hand-over in turn.
 
 ## Consequences
 

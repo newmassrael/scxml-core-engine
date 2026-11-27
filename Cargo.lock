@@ -4228,6 +4228,7 @@ dependencies = [
  "getrandom 0.2.17",
  "heapless",
  "log",
+ "loom",
  "portable-atomic",
  "sce-forge-runtime",
  "sce-portable-bytes",

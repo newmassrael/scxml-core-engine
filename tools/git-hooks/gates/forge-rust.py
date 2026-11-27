@@ -18,7 +18,8 @@
     # Warm reads as 0; the release profile it needs is a separate build
     # tree from every other gate, so a cold run pays that once.
     "ci_only": "96s, a release build of the Rust forge arm, and about "
-               "three minutes more for the queue runtime under loom, "
+               "three minutes more for the queue runtime and the Rust "
+               "runtime's bounded inbox queue under loom, "
                "Miri and ThreadSanitizer. Its siblings are already in CI "
                "for the same reason and they share one workflow, "
                "forge-conformance.yml.",

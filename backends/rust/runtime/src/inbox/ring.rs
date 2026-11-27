@@ -73,9 +73,55 @@
 //! instructions. 32-bit atomics are what every target with compare-and-swap of
 //! a byte has.
 
-use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicU32, Ordering};
+
+use sync::{AtomicU32, Ordering, UnsafeCell};
+
+/// The atomics, the cell and the spin hint the queue is written against.
+///
+/// A build gets `core`'s. The loom models (`loom_models` below, run through
+/// `backends/rust/runtime/tests/loom_inbox_ring.rs`) build this file as a test
+/// under `--cfg loom` and get loom's instrumented ones, which is how they
+/// explore every interleaving, and every outcome the C11 memory model allows,
+/// of the text that ships. The library is never built with loom's: under
+/// `--cfg loom` it is built as the models' dependency, without `test`, and
+/// keeps `core`'s, so `BoundedInbox::new` stays a constant function. A slot is
+/// reached only through `with` and `with_mut`, loom's form, so that loom sees
+/// every access to one.
+mod sync {
+    #[cfg(all(loom, test))]
+    pub(super) use loom::cell::UnsafeCell;
+    #[cfg(all(loom, test))]
+    pub(super) use loom::hint::spin_loop;
+    #[cfg(all(loom, test))]
+    pub(super) use loom::sync::atomic::{AtomicU32, Ordering};
+
+    #[cfg(not(all(loom, test)))]
+    pub(super) use core::hint::spin_loop;
+    #[cfg(not(all(loom, test)))]
+    pub(super) use core::sync::atomic::{AtomicU32, Ordering};
+
+    /// A cell whose contents are reached through a pointer handed to a
+    /// closure, as loom's are.
+    #[cfg(not(all(loom, test)))]
+    #[repr(transparent)]
+    pub(super) struct UnsafeCell<T>(core::cell::UnsafeCell<T>);
+
+    #[cfg(not(all(loom, test)))]
+    impl<T> UnsafeCell<T> {
+        pub(super) const fn new(value: T) -> Self {
+            Self(core::cell::UnsafeCell::new(value))
+        }
+
+        pub(super) fn with<R>(&self, f: impl FnOnce(*const T) -> R) -> R {
+            f(self.0.get())
+        }
+
+        pub(super) fn with_mut<R>(&self, f: impl FnOnce(*mut T) -> R) -> R {
+            f(self.0.get())
+        }
+    }
+}
 
 /// The low bits of a cell's word, which hold the index the cell carries; the
 /// rest hold its stamp.
@@ -128,26 +174,48 @@ impl<const N: usize> IndexRing<N> {
     /// The value an array of cells is first filled with, only for that: an
     /// array of a type that is not Copy is repeated from a constant before Rust
     /// 1.79, the workspace's floor is 1.75, and every cell is set after.
+    #[cfg(not(all(loom, test)))]
     #[allow(clippy::declare_interior_mutable_const)]
     const UNSET: AtomicU32 = AtomicU32::new(0);
 
+    /// The word cell `cell` of the array first holds, in a ring whose positions
+    /// start at `start` and that holds the indices from 0 to `held - 1` at its
+    /// first `held` positions: the cell stands at the position `k` places from
+    /// `start` that it is the cell of.
+    const fn first_word(start: u32, held: u32, cell: u32) -> u32 {
+        let k = cell.wrapping_sub(start) & Self::MASK;
+        let position = ahead(start, k);
+        if k < held {
+            word(ahead(position, 1), k)
+        } else {
+            word(position, 0)
+        }
+    }
+
     /// A ring whose positions start at `start`, holding the indices from 0 to
     /// `held - 1` at its first `held` positions.
+    #[cfg(not(all(loom, test)))]
     const fn starting_at(start: u32, held: u32) -> Self {
         let mut cells = [Self::UNSET; N];
-        let mut k = 0;
-        while k < Self::LEN {
-            let position = ahead(start, k);
-            let cell = if k < held {
-                word(ahead(position, 1), k)
-            } else {
-                word(position, 0)
-            };
-            cells[(position & Self::MASK) as usize] = AtomicU32::new(cell);
-            k += 1;
+        let mut cell = 0;
+        while cell < Self::LEN {
+            cells[cell as usize] = AtomicU32::new(Self::first_word(start, held, cell));
+            cell += 1;
         }
         Self {
             cells,
+            head: AtomicU32::new(start),
+            tail: AtomicU32::new(ahead(start, held)),
+        }
+    }
+
+    /// The same ring, of loom's atomics, which no constant makes.
+    #[cfg(all(loom, test))]
+    fn starting_at(start: u32, held: u32) -> Self {
+        Self {
+            cells: core::array::from_fn(|cell| {
+                AtomicU32::new(Self::first_word(start, held, cell as u32))
+            }),
             head: AtomicU32::new(start),
             tail: AtomicU32::new(ahead(start, held)),
         }
@@ -192,7 +260,10 @@ impl<const N: usize> IndexRing<N> {
                 // Still filled from the lap before: the ring holds N.
                 return false;
             }
-            // Otherwise the tail read was behind: it is read again.
+            // Otherwise the tail read was behind, or another context moved
+            // first: read again. The hint is where a model checker runs the
+            // others, so a stale read is not taken again for ever.
+            sync::spin_loop();
         }
     }
 
@@ -221,7 +292,9 @@ impl<const N: usize> IndexRing<N> {
                 // Taken by a take stopped before it moved the head past it.
                 Self::pass(&self.head, position);
             }
-            // Otherwise the head read was behind: it is read again.
+            // Otherwise the head read was behind, or another context moved
+            // first: read again.
+            sync::spin_loop();
         }
     }
 }
@@ -257,15 +330,18 @@ impl<T, const N: usize> Ring<T, N> {
     );
 
     /// The value an array of slots is filled with: empty.
+    #[cfg(not(all(loom, test)))]
     #[allow(clippy::declare_interior_mutable_const)]
     const EMPTY_SLOT: Slot<T> = Slot(UnsafeCell::new(MaybeUninit::uninit()));
 
     /// An empty queue, for a `static`.
+    #[cfg(not(all(loom, test)))]
     pub(crate) const fn new() -> Self {
         Self::starting_at(0)
     }
 
     /// An empty queue whose rings' positions start at `start`.
+    #[cfg(not(all(loom, test)))]
     const fn starting_at(start: u32) -> Self {
         let () = Self::SHAPE;
         Self {
@@ -275,9 +351,20 @@ impl<T, const N: usize> Ring<T, N> {
         }
     }
 
-    /// The input slot `index` holds, or will.
-    fn slot(&self, index: u8) -> *mut T {
-        self.slots[usize::from(index)].0.get().cast()
+    /// An empty queue of loom's atomics and cells, which no constant makes.
+    #[cfg(all(loom, test))]
+    pub(crate) fn new() -> Self {
+        let () = Self::SHAPE;
+        Self {
+            slots: core::array::from_fn(|_| Slot(UnsafeCell::new(MaybeUninit::uninit()))),
+            free: IndexRing::starting_at(0, N as u32),
+            filled: IndexRing::starting_at(0, 0),
+        }
+    }
+
+    /// The cell of the slot `index`.
+    fn slot(&self, index: u8) -> &UnsafeCell<MaybeUninit<T>> {
+        &self.slots[usize::from(index)].0
     }
 
     /// Put `item` at the back; `item` back when every slot is held, by an
@@ -290,8 +377,8 @@ impl<T, const N: usize> Ring<T, N> {
         let slot = self.slot(index);
         // SAFETY: the index came off the free ring, so the slot is this post's
         // alone until the index is put on a ring again.
-        unsafe { slot.write(item) };
-        #[cfg(any(all(test, feature = "std"), feature = "inbox-preemption"))]
+        slot.with_mut(|slot| unsafe { slot.cast::<T>().write(item) });
+        #[cfg(any(all(test, feature = "std", not(loom)), feature = "inbox-preemption"))]
         preemption::point();
         if self.filled.put(index) {
             return Ok(());
@@ -302,7 +389,7 @@ impl<T, const N: usize> Ring<T, N> {
         // reaches.
         // SAFETY: the slot is still this post's, and holds the input written
         // above.
-        let item = unsafe { slot.read() };
+        let item = slot.with(|slot| unsafe { slot.cast::<T>().read() });
         let returned = self.free.put(index);
         debug_assert!(returned, "the free ring has room for an index taken off it");
         Err(item)
@@ -315,7 +402,9 @@ impl<T, const N: usize> Ring<T, N> {
         // SAFETY: the index came off the filled ring, whose acquire load saw
         // the release that published the input written into the slot; the slot
         // is this take's alone until the index is put back on the free ring.
-        let item = unsafe { self.slot(index).read() };
+        let item = self
+            .slot(index)
+            .with(|slot| unsafe { slot.cast::<T>().read() });
         let returned = self.free.put(index);
         debug_assert!(returned, "the free ring has room for an index taken off it");
         Some(item)
@@ -333,7 +422,7 @@ impl<T, const N: usize> Drop for Ring<T, N> {
 /// The point between a post's write of its input into its slot and the step
 /// that publishes it, where a test preempts the post: as an interrupt handler,
 /// or the owner itself on one core, may stop a poster there.
-#[cfg(any(all(test, feature = "std"), feature = "inbox-preemption"))]
+#[cfg(any(all(test, feature = "std", not(loom)), feature = "inbox-preemption"))]
 pub(super) mod preemption {
     use std::cell::RefCell;
 
@@ -364,7 +453,7 @@ pub(super) mod preemption {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(all(test, feature = "std", not(loom)))]
 mod tests {
     use super::{ahead, preemption, word, IndexRing, Ring, POSITION_MASK};
     use core::sync::atomic::Ordering;
@@ -525,5 +614,195 @@ mod tests {
             [ring.take(), ring.take(), ring.take()],
             [Some(1), Some(0), None]
         );
+    }
+}
+
+/// The loom models of the queue (docs/adr/0147, D5): two posters and the owner,
+/// under every interleaving within a bound of three preemptions and every
+/// outcome the C11 memory model allows their atomics. Loom fails a model where
+/// a slot is read or written with no happens-before edge to the access before
+/// it, so a slot index handed over without the ordering it needs shows up as
+/// a race on the slot. What each model asserts is what holds under every
+/// schedule: each input taken comes out once, none is lost and none that was
+/// refused comes out, each poster's inputs come out in its order, a post is
+/// refused only while every slot is held, and a drain takes a post that
+/// returned before it began whatever a post still under way holds.
+///
+/// No thread waits for another: each makes its attempts once, and what the
+/// queue holds once the threads have joined is drained and counted. Bounded
+/// at three preemptions, as the forge queues' models are
+/// (`backends/rust/forge-runtime/tests/loom_queue_scq.rs` says why): a pass is
+/// "no violation within three preemptions". Built only as a test under
+/// `--cfg loom`, through `backends/rust/runtime/tests/loom_inbox_ring.rs`,
+/// whose manifest entry gives the command.
+#[cfg(all(loom, test))]
+mod loom_models {
+    use super::Ring;
+    use loom::sync::atomic::{AtomicBool, Ordering};
+    use loom::sync::Arc;
+    use loom::thread;
+
+    /// Run `body` under every interleaving within the preemption bound.
+    fn model(body: impl Fn() + Sync + Send + 'static) {
+        let mut builder = loom::model::Builder::new();
+        builder.preemption_bound = Some(3);
+        builder.check(body);
+    }
+
+    /// What `ring` still holds, oldest first: run where nothing else posts
+    /// to it, so the loop ends.
+    fn drain<const N: usize>(ring: &Ring<u32, N>) -> Vec<u32> {
+        let mut left = Vec::new();
+        while let Some(input) = ring.dequeue() {
+            left.push(input);
+        }
+        left
+    }
+
+    /// The inputs a poster's posts in `inputs`, made one after another, had
+    /// taken, in its order.
+    fn post_each<const N: usize>(ring: &Ring<u32, N>, inputs: [u32; 2]) -> Vec<u32> {
+        let mut taken = Vec::new();
+        for input in inputs {
+            match ring.enqueue(input) {
+                Ok(()) => taken.push(input),
+                Err(back) => assert_eq!(back, input, "a refused post handed back another input"),
+            }
+        }
+        taken
+    }
+
+    /// `entered`, what came out in the order it came out, holds each input
+    /// `posted` took once and nothing else, and each poster's in its order.
+    fn assert_each_once_in_each_posters_order(entered: &[u32], posted: &[Vec<u32>]) {
+        let mut taken: Vec<u32> = posted.iter().flatten().copied().collect();
+        let mut came_out = entered.to_vec();
+        taken.sort_unstable();
+        came_out.sort_unstable();
+        assert_eq!(
+            came_out, taken,
+            "what came out is not each input the posts took, once"
+        );
+        for posts in posted {
+            let order: Vec<u32> = entered
+                .iter()
+                .copied()
+                .filter(|input| posts.contains(input))
+                .collect();
+            assert_eq!(&order, posts, "a poster's inputs came out out of its order");
+        }
+    }
+
+    /// Two posters post two inputs each into a queue of two while the owner
+    /// takes twice. Posts may be refused, as the slots are held; every input
+    /// a post took comes out once, in its poster's order, and no refused one
+    /// comes out.
+    #[test]
+    fn two_posters_and_the_owner_keep_each_input_once_in_its_posters_order() {
+        model(|| {
+            let ring: Arc<Ring<u32, 2>> = Arc::new(Ring::new());
+            let posters: Vec<_> = [[10, 11], [20, 21]]
+                .into_iter()
+                .map(|inputs| {
+                    let ring = Arc::clone(&ring);
+                    thread::spawn(move || post_each(&ring, inputs))
+                })
+                .collect();
+            let mut entered: Vec<u32> = (0..2).filter_map(|_| ring.dequeue()).collect();
+            let posted: Vec<Vec<u32>> = posters
+                .into_iter()
+                .map(|poster| poster.join().expect("a poster"))
+                .collect();
+            entered.extend(drain(&ring));
+            assert_each_once_in_each_posters_order(&entered, &posted);
+        });
+    }
+
+    /// A queue of two holds one input; a poster posts two more while the
+    /// owner takes the first out. The poster's first post always finds a free
+    /// slot. Its second may be refused, but only while both slots are held: a
+    /// poster that has heard the owner put its slot back has that slot to post
+    /// into. What came out is the inputs taken, in order.
+    #[test]
+    fn a_post_is_refused_only_while_every_slot_is_held() {
+        model(|| {
+            let ring: Arc<Ring<u32, 2>> = Arc::new(Ring::new());
+            assert_eq!(ring.enqueue(1), Ok(()));
+            let slot_back = Arc::new(AtomicBool::new(false));
+            let poster = {
+                let (ring, slot_back) = (Arc::clone(&ring), Arc::clone(&slot_back));
+                thread::spawn(move || {
+                    assert_eq!(
+                        ring.enqueue(2),
+                        Ok(()),
+                        "a post was refused with a slot free"
+                    );
+                    let heard = slot_back.load(Ordering::SeqCst);
+                    (heard, ring.enqueue(3))
+                })
+            };
+            assert_eq!(
+                ring.dequeue(),
+                Some(1),
+                "the owner did not take an input posted before it began"
+            );
+            slot_back.store(true, Ordering::SeqCst);
+            let (heard, third) = poster.join().expect("the poster");
+            if heard {
+                assert_eq!(
+                    third,
+                    Ok(()),
+                    "a post was refused after the owner had put a slot back"
+                );
+            }
+            let mut entered = vec![1];
+            entered.extend(drain(&ring));
+            match third {
+                Ok(()) => assert_eq!(entered, [1, 2, 3]),
+                Err(back) => {
+                    assert_eq!(back, 3, "a refused post handed back another input");
+                    assert_eq!(entered, [1, 2]);
+                }
+            }
+        });
+    }
+
+    /// The take past a post under way (docs/adr/0147, D1 and D5): the first
+    /// poster posts one input, the second posts one and then says it has
+    /// returned. The owner, having heard it, drains, as the drain before an
+    /// event of its own does: that drain takes the second input, in every
+    /// interleaving, the ones where the first post holds its slot and has not
+    /// published among them, and the take never waits for the first.
+    #[test]
+    fn a_drain_takes_a_post_that_returned_whatever_a_post_under_way_holds() {
+        model(|| {
+            let ring: Arc<Ring<u32, 2>> = Arc::new(Ring::new());
+            let returned = Arc::new(AtomicBool::new(false));
+            let first = {
+                let ring = Arc::clone(&ring);
+                thread::spawn(move || ring.enqueue(1))
+            };
+            let second = {
+                let (ring, returned) = (Arc::clone(&ring), Arc::clone(&returned));
+                thread::spawn(move || {
+                    let posted = ring.enqueue(2);
+                    returned.store(true, Ordering::SeqCst);
+                    posted
+                })
+            };
+            let heard = returned.load(Ordering::SeqCst);
+            let mut entered = drain(&ring);
+            if heard {
+                assert!(
+                    entered.contains(&2),
+                    "a drain begun after a post returned did not take it: {entered:?}"
+                );
+            }
+            assert_eq!(first.join().expect("the first poster"), Ok(()));
+            assert_eq!(second.join().expect("the second poster"), Ok(()));
+            entered.extend(drain(&ring));
+            entered.sort_unstable();
+            assert_eq!(entered, [1, 2], "each input comes out once");
+        });
     }
 }
