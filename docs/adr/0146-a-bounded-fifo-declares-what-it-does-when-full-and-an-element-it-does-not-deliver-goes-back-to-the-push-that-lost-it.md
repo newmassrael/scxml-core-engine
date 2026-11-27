@@ -34,7 +34,7 @@ a bounded FIFO that one side removes from does something other than refuse when 
 
 | Census row | What it does when full | Who pushes, who removes |
 |---|---|---|
-| S7 #61, the channels of the consumer's C ABI in its no-heap MCU edition | the ring evicts its oldest element and releases it through the caller's release function after its lock is dropped; the fifo drops the new one (single-threaded arm) or blocks the producer (multi-threaded arm) | what peers send is pushed by whoever reads the network (a read task, where the edition runs one), and the thread that called into the session pushes, inside that call, the session's delivery to its own local subscriber or queryable; the application's receive moves an element out |
+| S7 #61, the channels of the consumer's C ABI in its no-heap edition (its whole small-footprint C ABI, hosted builds included; a channel's `c` slots are taken once from the capacity the C program gives and never grown) | the ring evicts its oldest element and releases it through the caller's release function after its lock is dropped; the fifo drops the new one (single-threaded arm) or blocks the producer (multi-threaded arm) | what peers send is pushed by whoever reads the network (a read task, where the edition runs one), and the thread that called into the session pushes, inside that call, the session's delivery to its own local subscriber or queryable; the application's receive moves an element out |
 | S8 #38, the RING handler of the consumer's C ABI in its heap edition | drops its oldest value to make room, released inside its lock | the drive thread pushes what peers send, and the thread that called a put pushes, inside that call, the session's delivery to its own subscriber; the application's try-receive removes |
 | S11 #31, the sends its session holds while it answers a replay | the event-send queue of `max(1, depth / 2)` evicts its oldest, and counts it | inside one session's state, one thread |
 
@@ -458,7 +458,7 @@ answered `Popped`, and every waiter after a `close`.
    `lost` counted before a failed claim; the publish made a plain store on a closable queue; the waiter's re-check
    (step 2) removed; a ring list's eviction made a shift rather than a move of the start (caught by a test that counts
    element writes, since the outcomes do not change).
-6. **A reference that is not ours**: the channel handler of the consumer's C ABI in its no-heap MCU edition, as a
+6. **A reference that is not ours**: the channel handler of the consumer's C ABI in its no-heap edition, as a
    differential oracle for the outcomes of the same push, pop and close sequences, in the manner of
    `tools/reference-oracles/`. It releases an evicted element after its lock is dropped, so its eviction is D1's
    hand-back one for one: the element leaves the queue as a value and its caller releases it. The heap edition's RING
