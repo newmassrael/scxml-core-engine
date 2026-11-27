@@ -90,12 +90,12 @@ PY
 mutation_case "the aot drain selects a targetless microstep and runs none of it" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """            // content in place, and the chain it opens is walked like any other.
-            microstep(enabled);""",
+            // docs/adr/0115, D4: a microstep on eventless transitions is a step.""",
      """            // content in place, and the chain it opens is walked like any other.
             if (std::all_of(enabled.begin(), enabled.end(), [](const TransitionInfo &t) { return t.isTargetless(); })) {
                 break;
             }
-            microstep(enabled);""")
+            // docs/adr/0115, D4: a microstep on eventless transitions is a step.""")
 PY
 
 # ── C++ AOT: the self transition that still has work ───────────────

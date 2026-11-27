@@ -57,6 +57,9 @@
 // about the event rather than about that interface.
 #include "core/PayloadReading.h"
 #include "core/StatePolicyConcepts.h"
+// docs/adr/0115, D4 and D8: the trace port a machine whose build asks tells
+// each step of Appendix D it takes, and the writer of the run trace format.
+#include "core/TracePort.h"
 // docs/adr/0084, D2 as amended at step 10: the tree's directory of sessions, which
 // hands an input that names a session to that session's inbox when it is posted.
 #include "core/TreeSessions.h"
@@ -341,7 +344,11 @@ struct EventOutcome {
     bool configurationChanged = false;
 };
 
-template <typename StatePolicy> class StaticExecutionEngine {
+// docs/adr/0115, D4 and D8: the recorder of the trace port is an empty base of
+// an engine whose machine tells none (core/TracePort.h), so a build that does not
+// ask for the port pays no byte for it.
+template <typename StatePolicy>
+class StaticExecutionEngine : private SCE::Core::TracePortSlot<SCE::Core::TracePortTrait<StatePolicy>::value> {
     static_assert(SCE::Core::EventNamingPolicyTrait<StatePolicy>::value,
                   "StatePolicy must be an event naming policy: a base state policy (document tree, initial and "
                   "history targets, final states) whose events convert to and from their names "
@@ -382,6 +389,14 @@ public:
 
     /// What `setTransitionObserver` takes.
     using TransitionObserver = std::function<void(const TransitionTaken &)>;
+
+    /// Whether this machine tells a trace port each step of Appendix D it takes
+    /// (docs/adr/0115, D4 and D8; core/TracePort.h): its policy's `TRACE_PORT`,
+    /// which a generated machine takes from its build, `<NAME>_TRACE_PORT`
+    /// whose default is `SCE_TRACE_PORT`. When false the engine holds no
+    /// recorder, has no `setTracePort`, and every hook of the port is a
+    /// discarded branch.
+    static constexpr bool HAS_TRACE_PORT = SCE::Core::TracePortTrait<StatePolicy>::value;
 
     /// How many links an `error.*` chain may have before the engine stops
     /// feeding it — see `errorCascadeEvents()`. The number, and why it is that
@@ -698,6 +713,8 @@ private:
         }
 
         void exitState(const State &s, const std::vector<State> &configurationBeforeExit) {
+            // docs/adr/0115, D4: the step being told exits it, in this order.
+            engine.traceExited(s);
             engine.policy_.executeExitActions(s, engine, configurationBeforeExit);
         }
 
@@ -706,6 +723,8 @@ private:
         }
 
         void enterState(const State &s, bool isDefaultEntry) {
+            // docs/adr/0115, D4: the step being told enters it, in this order.
+            engine.traceEntered(s);
             engine.policy_.executeEntryActions(s, engine, isDefaultEntry);
             // §scxml-D-enterStates: a <final> whose parent is the <scxml>
             // element ends the run. Recorded as the run's terminal state, so
@@ -743,6 +762,14 @@ private:
             for (const TransitionInfo &transition : transitions) {
                 transitionObserver_(
                     TransitionTaken{transition.source, static_cast<std::uint32_t>(transition.transitionIndex)});
+            }
+        }
+        // docs/adr/0115, D4: the rows the step being told takes, in selection
+        // order, by the same pairs the transition observer is told.
+        if constexpr (HAS_TRACE_PORT) {
+            for (const TransitionInfo &transition : transitions) {
+                this->traceRecorder_.fired(StatePolicy::getStateName(transition.source),
+                                           static_cast<std::uint32_t>(transition.transitionIndex));
             }
         }
         MicrostepHost host{*this};
@@ -834,6 +861,11 @@ private:
     EventOutcome executeTransition(Event event, PostTransitionFn &&postTransition) {
         const State oldState = currentState_;
         const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+        // docs/adr/0115, D4: the event step the caller opened when it took the
+        // event off its queue (`traceEventTaken`) is over with the microstep the
+        // event selected, or with none. The eventless microsteps and internal
+        // events that follow are steps of their own.
+        traceStepOver();
         if (taken.empty()) {
             return EventOutcome{};
         }
@@ -972,6 +1004,8 @@ private:
             // place is answered as one off the internal queue is (docs/adr/0086,
             // section 4.2), and the loop runs after it as after the host's own
             // event, with one spent.
+            // docs/adr/0115, D4: an external step, taken in the delivery's place.
+            traceEventTaken(SCE::Core::TraceStepKind::External, *inPlace);
             outcome = answerInPlace(inPlace->event);
             if (outcome.selected) {
                 runMainEventLoop(1);
@@ -980,6 +1014,8 @@ private:
             // The host's own event is the first of this invocation's budget: it is
             // handled here, directly, and the loop that follows starts with one spent
             // (ARCHITECTURE.md "External-Event Budget", rule 1).
+            // docs/adr/0115, D4: the host's event is an external step.
+            traceEventTaken(SCE::Core::TraceStepKind::External, eventWithMeta);
             outcome = executeTransition(event, [this] { runMainEventLoop(1); });
             // §scxml-3.1.2: this entry point takes an event straight from the host,
             // so it is the same fact `processNextExternalEvent` records — unlike
@@ -997,6 +1033,74 @@ private:
         // top-level-final only.
         if (stateChanged && isInFinalState() && completionCallback_) {
             completionCallback_();
+        }
+    }
+
+    /**
+     * @brief Open the step of the run's trace that takes @p taken off a queue
+     *        (docs/adr/0115, D4)
+     *
+     * The step names the event by the name `_event.name` holds while it is
+     * taken: the longer name a door resolved to the member, which rides in
+     * `name`, or else the member's own. `executeTransition` closes it once the
+     * microstep the event selects, or none, is over. Nothing when the machine
+     * tells no trace port, and no name is spelled when none is set.
+     */
+    void traceEventTaken([[maybe_unused]] SCE::Core::TraceStepKind kind,
+                         [[maybe_unused]] const EventWithMetadata &taken) {
+        if constexpr (HAS_TRACE_PORT) {
+            if (this->traceRecorder_.hasPort()) {
+                this->traceRecorder_.begin(kind, taken.name.empty() ? std::string(policy_.getEventName(taken.event))
+                                                                    : taken.name);
+            }
+        }
+    }
+
+    /// Open a step of the run's trace that takes no event: the start, a
+    /// microstep on eventless transitions, or the stop (docs/adr/0115, D4).
+    void traceBegin([[maybe_unused]] SCE::Core::TraceStepKind kind) {
+        if constexpr (HAS_TRACE_PORT) {
+            this->traceRecorder_.begin(kind);
+        }
+    }
+
+    /// The step being told exits @p s (docs/adr/0115, D4).
+    void traceExited([[maybe_unused]] const State &s) {
+        if constexpr (HAS_TRACE_PORT) {
+            this->traceRecorder_.exited(StatePolicy::getStateName(s));
+        }
+    }
+
+    /// The step being told enters @p s (docs/adr/0115, D4).
+    void traceEntered([[maybe_unused]] const State &s) {
+        if constexpr (HAS_TRACE_PORT) {
+            this->traceRecorder_.entered(StatePolicy::getStateName(s));
+        }
+    }
+
+    /**
+     * @brief The step being told is over: tell the port it (docs/adr/0115, D4)
+     *
+     * With the configuration it left, the states active in document order, or,
+     * for a stop, the top-level `<final>` the run ended in. Nothing when no step
+     * is open.
+     */
+    void traceStepOver() {
+        if constexpr (HAS_TRACE_PORT) {
+            if (!this->traceRecorder_.isOpen()) {
+                return;
+            }
+            std::vector<State> active = getActiveStates();
+            std::sort(active.begin(), active.end(), [](const State &a, const State &b) {
+                return StatePolicy::getDocumentOrder(a) < StatePolicy::getDocumentOrder(b);
+            });
+            std::vector<const char *> configuration;
+            configuration.reserve(active.size());
+            for (const State &s : active) {
+                configuration.push_back(StatePolicy::getStateName(s));
+            }
+            this->traceRecorder_.end(std::move(configuration),
+                                     terminalState_ ? StatePolicy::getStateName(*terminalState_) : nullptr);
         }
     }
 
@@ -2783,6 +2887,9 @@ protected:
         if (interpreterExited_) {
             return;
         }
+        // docs/adr/0115, D4: the exit is a step of the run, once: a call after
+        // it exits nothing and is no step of Appendix D.
+        traceBegin(SCE::Core::TraceStepKind::Stop);
         const std::vector<State> configuration = getActiveStates();
         std::vector<State> statesToExit = configuration;
         // §scxml-D-exitInterpreter: `configuration.toList().sort(exitOrder)`
@@ -2797,6 +2904,7 @@ protected:
         }
         interpreterExited_ = true;
         isRunning_ = false;
+        traceStepOver();
     }
 
     /**
@@ -3021,6 +3129,9 @@ protected:
                 // needs no such guard, because it only ever rises while an
                 // error handler is running.
                 handlingErrorEvent_ = isError;
+                // docs/adr/0115, D4: the event taken off the internal queue is a
+                // step, with the microstep it selects or none.
+                traceEventTaken(SCE::Core::TraceStepKind::Internal, inPlace ? *inPlace : eventWithMeta);
                 const EventOutcome outcome = executeTransition(event);
                 handlingErrorEvent_ = false;
                 recordInternalEventOutcome(event, outcome);
@@ -3212,9 +3323,15 @@ protected:
                 recordEventOutcome(event, EventOutcome{});
                 break;
             case Admission::InPlace:
+                // docs/adr/0115, D4: an external step, taken in the delivery's
+                // place.
+                traceEventTaken(SCE::Core::TraceStepKind::External, *inPlace);
                 (void)answerInPlace(inPlace->event);
                 break;
             case Admission::Admitted:
+                // docs/adr/0115, D4: the event taken off the external queue is
+                // a step, with the microstep it selects or none.
+                traceEventTaken(SCE::Core::TraceStepKind::External, eventWithMeta);
                 recordEventOutcome(event, executeTransition(event));
                 break;
             }
@@ -3298,7 +3415,10 @@ protected:
             ++macrostepMicrostepsTaken_;
             // A targetless transition takes a microstep too: it runs its
             // content in place, and the chain it opens is walked like any other.
+            // docs/adr/0115, D4: a microstep on eventless transitions is a step.
+            traceBegin(SCE::Core::TraceStepKind::Eventless);
             microstep(enabled);
+            traceStepOver();
         }
 
         // §scxml-3.13: a macrostep that entered a top-level final state halts
@@ -3427,8 +3547,12 @@ public:
         // set, a deep initial, an initial naming a <history>: the entry
         // procedures answer all of them, so nothing here resolves a leaf
         // first.
+        // docs/adr/0115, D4: the entry into the initial configuration is the
+        // run's first step.
+        traceBegin(SCE::Core::TraceStepKind::Start);
         enterStates({SCE::Core::EntryTransition<State, History>{std::nullopt, StatePolicy::getDocumentInitialTargets(),
                                                                 /*isInternal=*/false}});
+        traceStepOver();
 
         // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
         // completes on eventless transitions and internal events, then the
@@ -4098,6 +4222,41 @@ public:
      */
     void setTransitionObserver(TransitionObserver observer) {
         transitionObserver_ = std::move(observer);
+    }
+
+    /**
+     * @brief Tell @p port each step of Appendix D this engine takes from now on
+     *        (docs/adr/0115, D4 and D8; core/TracePort.h)
+     *
+     * A step is told once it is over: the entry into the initial
+     * configuration, each microstep on eventless transitions, each event taken
+     * off the internal or the external queue with the microstep it selects
+     * (none when it selects nothing), and the exit of the interpreter, each
+     * with the transitions it took by their rows, the states it exited and
+     * entered in that order, and the configuration it left or the top-level
+     * `<final>` the run ended in. `SCE::Core::RunTrace` keeps what it is told
+     * and writes the file `sce-codegen formal traces` judges. The port reads
+     * and is asked nothing, so a machine with one set takes the steps one
+     * without takes; it runs on the thread that drives the engine, inside the
+     * call that drove it, and must not call back into the engine. Set it
+     * before `initialize()` to be told the start.
+     *
+     * A member only of a machine whose build asks for the port
+     * (`HAS_TRACE_PORT`).
+     *
+     * @param port Told each step (an empty function to stop)
+     */
+    template <bool Traced = HAS_TRACE_PORT, std::enable_if_t<Traced, int> = 0>
+    void setTracePort(SCE::Core::TracePort port) {
+        this->traceRecorder_.set(std::move(port));
+    }
+
+    /**
+     * @brief Tell no trace port anything; the engine is then as it was before
+     *        one was set
+     */
+    template <bool Traced = HAS_TRACE_PORT, std::enable_if_t<Traced, int> = 0> void clearTracePort() {
+        this->traceRecorder_.clear();
     }
 
     /**

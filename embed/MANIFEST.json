@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "7e2bae6",
+  "embed_version": "e161fed",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 811,
+  "symbol_count": 822,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1878,6 +1878,90 @@
       "kind": "typedef",
       "name": "SCE::Core::detail::PolicyStateLvalue",
       "type": "typename P::State &"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::RunTrace"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::TraceRecorder"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "enum",
+      "name": "SCE::Core::TraceStepKind",
+      "values": [
+        "Start",
+        "Eventless",
+        "Internal",
+        "External",
+        "Stop"
+      ]
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "function",
+      "name": "SCE::Core::detail::appendTraceNames",
+      "signature": "void SCE::Core::detail::appendTraceNames(std::string &, const char *, const std::vector<const char *> &)"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "function",
+      "name": "SCE::Core::detail::appendTraceText",
+      "signature": "void SCE::Core::detail::appendTraceText(std::string &, const char *)"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "function",
+      "name": "SCE::Core::traceStepKindName",
+      "signature": "const char * SCE::Core::traceStepKindName(TraceStepKind) noexcept"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "struct",
+      "members": [
+        "field TraceStepKind kind",
+        "field const char * outcome",
+        "field std::optional<std::string> event",
+        "field std::vector<TraceFired> fired",
+        "field std::vector<const char *> configuration",
+        "field std::vector<const char *> entered",
+        "field std::vector<const char *> exited",
+        "method std::string () const toJson"
+      ],
+      "name": "SCE::Core::TraceStep"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "struct",
+      "members": [
+        "field const char * source",
+        "field std::uint32_t index"
+      ],
+      "name": "SCE::Core::TraceFired"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::TracePortSlot<T>"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::TracePortTrait<T>"
+    },
+    {
+      "header": "core/TracePort.h",
+      "kind": "typedef",
+      "name": "SCE::Core::TracePort",
+      "type": "std::function<void (const TraceStep &)>"
     },
     {
       "header": "core/TransitionHelper.h",

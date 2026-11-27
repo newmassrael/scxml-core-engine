@@ -104,13 +104,11 @@ PY
 
 mutation_case "an unrelated internal event ends the cpp chain again" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                handlingErrorEvent_ = isError;
-                const EventOutcome outcome = executeTransition(event);""",
+     """                handlingErrorEvent_ = isError;""",
      """                if (!isError) {
                     errorCascadeDepth_ = 0;
                 }
-                handlingErrorEvent_ = isError;
-                const EventOutcome outcome = executeTransition(event);""")
+                handlingErrorEvent_ = isError;""")
 PY
 
 # ── Interpreter: the refusal ───────────────────────────────────────

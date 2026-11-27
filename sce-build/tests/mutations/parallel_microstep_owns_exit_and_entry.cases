@@ -60,11 +60,11 @@ mutation_oracles tests/integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
 
 mutation_case "a parallel transition exits and enters a second time" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+     """        traceStepOver();
         if (taken.empty()) {
             return EventOutcome{};
         }""",
-     """        const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+     """        traceStepOver();
         if (taken.empty()) {
             return EventOutcome{};
         }
