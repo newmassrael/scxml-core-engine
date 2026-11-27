@@ -380,16 +380,29 @@ impl SharedTables {
     }
 
     /// Of the set of `documents`, each generated for Rust under `options` in
-    /// the set's order, as each will be generated: the tables they print, read
-    /// as [`Self::of`] reads them. A document that does not generate prints no
-    /// table here, and is refused where it is generated.
+    /// the set's order, as each will be generated: [`Self::of_compiled`] of
+    /// one value of options for every document.
     pub fn of_documents(documents: &[String], options: &ForgeCompileOptions) -> Self {
-        let mut census = options.clone();
-        census.shared_tables = Self::default();
+        let compiled: Vec<(String, ForgeCompileOptions)> = documents
+            .iter()
+            .map(|document| (document.clone(), options.clone()))
+            .collect();
+        Self::of_compiled(&compiled)
+    }
+
+    /// Of the set of `documents`, each generated for Rust in the set's order
+    /// under the options it is paired with, the options its own generation
+    /// compiles it with (deploy capacities and source hash among them), so
+    /// the rows read here are the rows each module prints: the tables they
+    /// print, read as [`Self::of`] reads them. A document that does not
+    /// generate prints no table here, and is refused where it is generated.
+    pub fn of_compiled(documents: &[(String, ForgeCompileOptions)]) -> Self {
         let mut tables = Vec::new();
-        for document in documents {
+        for (document, options) in documents {
+            let mut census = options.clone();
+            census.shared_tables = Self::default();
             let path = Path::new(document);
-            let Ok(loaded) = crate::load_forge_source(path, &options.include_dirs) else {
+            let Ok(loaded) = crate::load_forge_source(path, &census.include_dirs) else {
                 continue;
             };
             let base = path.parent().unwrap_or_else(|| Path::new(""));
@@ -465,6 +478,87 @@ mod tests {
             );
         }
         assert_eq!(shared.home("e", "rows 1"), TableHome::Own);
+    }
+
+    /// Each document of a set is read under the options it is paired with, as
+    /// its own generation compiles it: two codecs of the same rows are one
+    /// table where both are read by tables, and none where the build of one
+    /// prints its cold codecs.
+    #[test]
+    fn each_document_is_read_under_the_options_it_is_paired_with() {
+        use crate::forge::body_reads::{BodyReadSites, ColdCodecs, InlineDecode};
+        const GATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="NAME">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="P" bit="0"/>
+    </sce:flags>
+    <sce:field id="count" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
+               sce:present-if="flags.P"/>
+    <sce:field id="content" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="count" sce:max-size="64" sce:present-if="flags.P"/>
+  </datamodel>
+</scxml>
+"#;
+        const ROOT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_paired_root">
+  <datamodel>
+    <sce:field id="value" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>
+"#;
+        let dir = std::env::temp_dir().join(format!("sce_paired_tables_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a directory for the set");
+        let names = ["codec_paired_root", "codec_paired_a", "codec_paired_b"];
+        let documents: Vec<String> = names
+            .iter()
+            .map(|name| {
+                let path = dir.join(format!("{name}.scxml"));
+                let text = if *name == "codec_paired_root" {
+                    ROOT.to_string()
+                } else {
+                    GATED.replace("NAME", name)
+                };
+                std::fs::write(&path, text).expect("a document of the set");
+                path.display().to_string()
+            })
+            .collect();
+        let sites = BodyReadSites::of_documents(&documents, &[], |_| false);
+        let hot = sites
+            .hot_codecs(["codec_paired_root"])
+            .unwrap_or_else(|e| panic!("codec_paired_root is a codec of the set: {e}"));
+        let tables = ForgeCompileOptions {
+            inline_decode: InlineDecode::Codecs(hot),
+            body_reads: sites,
+            ..ForgeCompileOptions::default()
+        };
+        let printed = ForgeCompileOptions {
+            cold_codecs: ColdCodecs::Printed,
+            ..tables.clone()
+        };
+        let (a, b) = (documents[1].clone(), documents[2].clone());
+        let same =
+            SharedTables::of_compiled(&[(a.clone(), tables.clone()), (b.clone(), tables.clone())]);
+        let apart = SharedTables::of_compiled(&[(a, printed), (b, tables)]);
+        std::fs::remove_dir_all(&dir).expect("the set's directory is removed");
+        assert_eq!(
+            same.homes.get("codec_paired_a"),
+            Some(&TableHome::Lent),
+            "{same:?}"
+        );
+        assert!(
+            matches!(
+                same.homes.get("codec_paired_b"),
+                Some(TableHome::Borrowed { .. })
+            ),
+            "{same:?}"
+        );
+        assert!(
+            apart.homes.is_empty(),
+            "a printed codec lends a table: {apart:?}"
+        );
     }
 
     /// A codec whose rows are not the rows the set found keeps its own table.
