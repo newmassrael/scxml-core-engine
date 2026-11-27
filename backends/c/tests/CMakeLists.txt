@@ -184,6 +184,48 @@ if(NOT "${_sce_c_w3c_unlinkable}" STREQUAL "")
         "what this configuration does not build: ${_sce_c_w3c_unlinkable_text}")
 endif()
 
+# docs/adr/0115, D4 and D8: a run of each W3C document docs/formal has a model of
+# (W3CTest388, W3CTest570 and W3CTest403c, over AppendixD.tla), recorded through
+# its machine's trace port and held to the recorded run docs/formal/traces.json
+# declares of that model, byte for byte (integration/run_trace_recording.h), which
+# `sce-codegen formal traces` judges against the model the Rust lane's run of the
+# document is judged against. Each program builds the machine its conformance
+# runner above builds, with SCE_TRACE_PORT=1, and a driver that defines the hook;
+# the runner defines none, which links only because nothing of the port is left
+# in it. Recording again after a change that moves a run on purpose:
+# `UPDATE_EXPECT=1 ctest -R c11_a_run_of_test_`. A configuration that does not
+# build what a fixture's machines require leaves its program out, as it leaves
+# out the runner.
+foreach(_TRACE_ID 388 570 403c)
+    set(_trace_test c11_a_run_of_test_${_TRACE_ID}_is_the_recorded_run_of_its_model)
+    sce_c_runtime_libraries(_libraries _unmet ${W3C_C_AOT_TEST_${_TRACE_ID}_REQUIRES} clock)
+    if(NOT "${_unmet}" STREQUAL "")
+        string(REPLACE ";" " " _unmet_text "${_unmet}")
+        message(STATUS "Skipping ${_trace_test}: it requires what this configuration does not build "
+                       "(${_unmet_text})")
+        continue()
+    endif()
+    set(_trace_target sce_c_a_run_of_test_${_TRACE_ID}_is_the_recorded_run_of_its_model)
+    add_executable(${_trace_target}
+        integration/test_a_run_of_test_${_TRACE_ID}_is_the_recorded_run_of_its_model.c
+        ${W3C_C_AOT_TEST_${_TRACE_ID}_SOURCES})
+    target_compile_definitions(${_trace_target} PRIVATE
+        SCE_TRACE_PORT=1
+        SCE_FORMAL_TRACES_DIR="${CMAKE_SOURCE_DIR}/docs/formal/traces")
+    sce_c_link_runtime(${_trace_target} REQUIRES clock)
+    target_include_directories(${_trace_target} PRIVATE "${SCE_C_GENERATED_DIR}")
+    set_target_properties(${_trace_target} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME ${_trace_test} COMMAND ${_trace_target})
+    set_tests_properties(${_trace_test} PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+endforeach()
+
 # Each program below links what the machines it compiles require
 # (`sce_c_link_runtime`), and most of those machines embed the Lua engine or
 # schedule on the platform clock: the block is bounded by the two options

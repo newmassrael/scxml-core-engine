@@ -68,7 +68,12 @@
               # `test_a_received_message_is_made_in_the_machines_types.c`
               # runs.
               "sce-build/tests/fixtures/test_profile/trace_forms/**",
-              "sce-build/tests/fixtures/test_profile/received/**"],
+              "sce-build/tests/fixtures/test_profile/received/**",
+              # The recorded runs of the C11 lane, which the
+              # `c11_a_run_of_test_*_is_the_recorded_run_of_its_model`
+              # programs hold their runs to at run time (docs/adr/0115, D4
+              # and D8).
+              "docs/formal/traces/**"],
     "deps": ["codegen-build"],
     "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                "is the point. The same 245 tests read 85s and 95s run on "
