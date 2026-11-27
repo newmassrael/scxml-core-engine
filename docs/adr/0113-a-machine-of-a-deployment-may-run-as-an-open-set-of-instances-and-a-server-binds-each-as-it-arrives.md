@@ -4,6 +4,8 @@
   amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
   by the owner: what is signed (D4), the judgement as a condition of the write (D5), and an offer that waits for a proof
   (D4, ADR 0116). Amended 2026-11-27: a `sce-static` document's route over the instances of an open machine (D2).
+  Steps 3 to 6 of the order of work landed (2026-11-22 to 2026-11-28); one refusal of step 3 and a client's restore of
+  its own stay open, each stated there.
 - Amended by: ADR 0116 (D1, D6 and D7): who an incarnation acts for, the "for whom" D1 left to a record of its own, is
   a delegation the membership holds from the confirmation that bound it to the incarnation's end, ended by D5's
   condition of the write and the fence as every incarnation is; a fact a session says and an audit entry a run appends
@@ -250,11 +252,39 @@ Each step lands with a test that fails without it.
 
 1. (2026-11-22) This record, accepted.
 2. (2026-11-22) The model of D8, checked, with its failing configurations.
-3. Parser, topology, refusals and the envelope key (D1, D2, D7).
-4. Router, endpoint, checkpoint (D3, D5, D6) and the store's membership (D4).
-5. Pool and outboxes (D4, D6); the `https` server and client (D4, D7). Test in the server suite: 200 instances never
-   listed, lost responses, a killed server, an expired lease and the client's unknown outcome.
-6. The documents named in "Amends".
+3. (2026-11-22 to 2026-11-27) Parser, topology, refusals and the envelope key (D1, D2, D7). One refusal of D4 is
+   not built: an open machine's binding under `authenticator: key` that names no `sign:` on the server's side or no
+   `verify:` on the instance's is refused only where a document reads the person an instance acts for
+   (`mesh/codegen-principal-unproved`, ADR 0116), and taken otherwise. `docs/SCE_SERVER_DEPLOY.md` section 0 lists it
+   under what is not built.
+4. (2026-11-27) Router, endpoint, checkpoint (D3, D5, D6) and the store's membership (D4).
+5. (2026-11-28) Pool and outboxes (D4, D6); the `https` server and client (D4, D7). Test in the server suite: 200
+   instances never listed, lost responses, a killed server, an expired lease and the client's unknown outcome
+   (`tests/server/tests/open_instances_reach_a_pool_over_https.rs`). The killed server is one whose runtime is dropped
+   with every task on it and started again on its store, in the test's process; the suite's campaigns that kill a
+   server process with `SIGKILL` serve listed clients.
+6. (2026-11-28) The documents named in "Amends".
+
+What step 5 decided while it landed, each by the record's sources:
+
+- **The mark a client carries** is the lowest number of what it carried that no `200` it took covered, or of what
+  waits to be carried, and one past the highest number carried when nothing is (`Mark(i)` of the model). A `200`
+  covers only what the server's durable checkpoint holds, whose answer the completion record and the instance's
+  outbox keep (RIFL's completion record), so the mark passes nothing whose answer is lost. A join repeated carries the
+  nonce of the first until an offer is taken (`SameOffer`).
+- **A fence ends what left, and nothing else.** The core tells its host every envelope its server had not
+  acknowledged (`LinkEvent::Fenced`); the router forgets each request still waiting that left and raises the row of
+  its own (`outcomeUnknown`, row 20 of §16.7) with its `invoke_id`, and each other envelope it held with its
+  `envelope_id`, and lets go of what durable receipt held of them, so none is carried under the next incarnation,
+  where it would be a request of its own (`CFenced`: what waited becomes unknown, and a new request is new). A request
+  that has not left (a checkpoint not yet durable holds it, or it waits for readiness) waits on.
+- **An instance names itself.** Its router writes the instance into every envelope it makes
+  (`Router::speak_as_instance`), since the server holds the pair to the link (invariant 11).
+- **An outbox per instance ends with its membership** as `retain_ms` ends an entry: what it owes is told to its
+  senders as row 15 and the outbox is closed (D4, "what is forgotten together is dropped together").
+- **Left open**, stated so: an instance's host that restores its router from a checkpoint of its own carries no
+  incarnation across the restore. Its client joins anew, and what the restored router held under the incarnation
+  before is not ended as a fence ends it (the model's `CCrash` keeps nothing of its own).
 
 ## Open questions
 
