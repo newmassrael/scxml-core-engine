@@ -11,7 +11,12 @@
 //! drain; a core that never sends has no such race to guard, and runs under
 //! a test exactly as under a socket. Every decision — send now or queue,
 //! drop on a full queue, drop a stale envelope, retry or give up, how long
-//! to wait — is a call into the generated rules (`sce:std/mesh`).
+//! to wait — is a call into the generated rules (`sce:std/mesh`), and what
+//! is done with their verdicts (the order they are asked in, the readiness
+//! edge, the count of sends) is the module `gate`'s, a core proved by Verus
+//! (docs/adr/0115, D13).
+
+mod gate;
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -26,6 +31,9 @@ use crate::generated::retry_exhausted::retry_exhausted;
 use crate::generated::retry_jittered::retry_jittered;
 use crate::generated::retry_next_backoff::retry_next_backoff;
 use crate::signal::Signal;
+
+pub use gate::Attempts;
+use gate::{Admission, Gate};
 
 /// What became of an envelope handed to [`Outbound::admit`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +77,7 @@ pub struct Outbound {
     /// §mesh-10.10 dispatches every envelope directly, ready or not, and the
     /// transport reports what it could not send.
     buffer: Option<OutboundBuffer>,
-    ready: bool,
+    gate: Gate,
     queue: VecDeque<Queued>,
 }
 
@@ -80,7 +88,7 @@ impl Outbound {
     pub fn new(buffer: Option<OutboundBuffer>) -> Self {
         Self {
             buffer,
-            ready: false,
+            gate: Gate::new(),
             queue: VecDeque::new(),
         }
     }
@@ -90,21 +98,22 @@ impl Outbound {
     /// only when the target is ready and nothing waits ahead of it — an
     /// envelope sent past a queue would overtake the ones waiting.
     pub fn admit(&mut self, bytes: Vec<u8>, now_ms: i64) -> Admitted {
-        let Some(buffer) = self.buffer else {
-            return Admitted::Send(bytes);
-        };
         let depth = self.depth();
-        if outbound_sends_now(self.ready, depth) {
-            return Admitted::Send(bytes);
+        let sends_now = outbound_sends_now(self.gate.is_ready(), depth);
+        let overflows = self
+            .buffer
+            .is_some_and(|buffer| outbound_overflows(depth, buffer.max_pending));
+        match Gate::admission(self.buffer.is_some(), sends_now, overflows) {
+            Admission::Send => Admitted::Send(bytes),
+            Admission::Drop => Admitted::Dropped(Signal::BackpressureDrop { depth }),
+            Admission::Queue => {
+                self.queue.push_back(Queued {
+                    bytes,
+                    enqueued_at_ms: now_ms,
+                });
+                Admitted::Queued
+            }
         }
-        if outbound_overflows(depth, buffer.max_pending) {
-            return Admitted::Dropped(Signal::BackpressureDrop { depth });
-        }
-        self.queue.push_back(Queued {
-            bytes,
-            enqueued_at_ms: now_ms,
-        });
-        Admitted::Queued
     }
 
     /// The target became ready at `now_ms`: release the queue in order, less
@@ -112,7 +121,7 @@ impl Outbound {
     /// queue is empty, since admit only queues behind a queue or while not
     /// ready.
     pub fn mark_ready(&mut self, now_ms: i64) -> Result<Drained, AlgorithmError> {
-        self.ready = true;
+        self.gate.ready();
         let mut out = Drained::default();
         // Without a buffer nothing was queued, so there is nothing to release.
         let max_age_ms = self.buffer.map_or(0, |b| b.max_age_ms);
@@ -132,20 +141,21 @@ impl Outbound {
     /// The target stopped being ready. Signals only on the ready-to-not-ready
     /// edge: a target that was never ready had no connection to lose.
     pub fn mark_not_ready(&mut self) -> Option<Signal> {
-        let was_ready = core::mem::replace(&mut self.ready, false);
-        was_ready.then_some(Signal::TransportUnavailable)
+        self.gate
+            .not_ready()
+            .then_some(Signal::TransportUnavailable)
     }
 
-    /// Envelopes waiting.
+    /// Envelopes waiting, as the rules read them: a queue past what a u32
+    /// counts (only a checkpoint can put one back that long) reads as full.
     pub fn depth(&self) -> u32 {
-        // The queue never exceeds `max_pending`, a u32.
-        self.queue.len() as u32
+        Gate::depth(self.queue.len())
     }
 
     /// Whether the target is ready: something said it is, and nothing since
     /// said it stopped.
     pub fn is_ready(&self) -> bool {
-        self.ready
+        self.gate.is_ready()
     }
 
     /// What waits for the target, oldest first, each with when it was
@@ -187,14 +197,6 @@ pub enum AfterFailure {
     GiveUp(Signal),
 }
 
-/// One envelope's retry history: the sends made and the wait last chosen
-/// before jitter. Starts empty at the first send.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Attempts {
-    made: u32,
-    last_backoff_ms: Option<i64>,
-}
-
 impl Attempts {
     /// The send just made failed. `retryable` is the transport's reading of
     /// its failure; `draw` is a non-negative number the host drew uniformly
@@ -206,44 +208,37 @@ impl Attempts {
         transport_error: Option<String>,
         draw: i64,
     ) -> Result<AfterFailure, AlgorithmError> {
-        self.made += 1;
+        let counted = self.failed();
         let Some(policy) = policy else {
             return Ok(AfterFailure::GiveUp(Signal::SendFailed { transport_error }));
         };
-        if retry_exhausted(self.made, policy.max_retries, retryable)? {
+        // A count that cannot go on is past the last retry of every policy.
+        let exhausted = match counted {
+            Some(made) => retry_exhausted(made, policy.max_retries, retryable)?,
+            None => true,
+        };
+        if exhausted {
             return Ok(AfterFailure::GiveUp(Signal::DeliveryExhausted {
-                attempts: self.made,
+                attempts: self.made(),
                 transport_error,
             }));
         }
-        let backoff = match self.last_backoff_ms {
+        let backoff = match self.last_backoff_ms() {
             None => policy.initial_backoff_ms,
             Some(prev) => {
                 retry_next_backoff(prev, policy.backoff_multiplier, policy.max_backoff_ms)?
             }
         };
-        self.last_backoff_ms = Some(backoff);
+        self.chose(backoff);
         let wait_ms = retry_jittered(backoff, policy.jitter_pct, draw)?;
         Ok(AfterFailure::RetryIn { wait_ms })
     }
+}
 
-    /// Sends made so far.
-    pub fn made(&self) -> u32 {
-        self.made
-    }
-
-    /// The wait last chosen before jitter, `None` before the first.
-    pub(crate) fn last_backoff_ms(&self) -> Option<i64> {
-        self.last_backoff_ms
-    }
-
-    /// The history a checkpoint held: `made` sends, the last wait chosen
-    /// `last_backoff_ms`.
-    pub(crate) fn resumed(made: u32, last_backoff_ms: Option<i64>) -> Self {
-        Self {
-            made,
-            last_backoff_ms,
-        }
+/// An envelope's history before its first send: none made, no wait chosen.
+impl Default for Attempts {
+    fn default() -> Self {
+        Attempts::new()
     }
 }
 
@@ -377,6 +372,47 @@ mod tests {
                 transport_error: None
             }))
         );
+    }
+
+    /// docs/adr/0115, D13: a count of sends never wraps. As many sends made
+    /// as a u32 counts is past the last retry of every policy, the largest
+    /// included, and the envelope is given up with that count; without a
+    /// policy, as any failed send is. Red if the count is taken one further.
+    #[test]
+    fn a_count_of_sends_that_cannot_go_on_gives_up() {
+        let policy = RetryPolicy {
+            max_retries: u32::MAX,
+            ..POLICY
+        };
+        let mut attempts = Attempts::resumed(u32::MAX, Some(300));
+        assert_eq!(
+            attempts.after_failure(Some(&policy), true, None, 0),
+            Ok(AfterFailure::GiveUp(Signal::DeliveryExhausted {
+                attempts: u32::MAX,
+                transport_error: None
+            }))
+        );
+        assert_eq!(attempts.made(), u32::MAX);
+        assert_eq!(attempts.last_backoff_ms(), Some(300), "no wait was chosen");
+        let mut alone = Attempts::resumed(u32::MAX, None);
+        assert_eq!(
+            alone.after_failure(None, true, None, 0),
+            Ok(AfterFailure::GiveUp(Signal::SendFailed {
+                transport_error: None
+            }))
+        );
+    }
+
+    /// docs/adr/0115, D13: what waits is read by the rules as a u32, and a
+    /// queue longer than that reads as full, never as empty: an envelope
+    /// admitted behind it waits or is dropped, and never overtakes it. Red
+    /// if the length is cut to its low 32 bits.
+    #[test]
+    fn a_queue_too_long_to_count_reads_as_full() {
+        assert_eq!(Gate::depth(0), 0);
+        assert_eq!(Gate::depth(3), 3);
+        assert_eq!(Gate::depth(u32::MAX as usize), u32::MAX);
+        assert_eq!(Gate::depth(usize::MAX), u32::MAX);
     }
 
     #[test]

@@ -20,7 +20,8 @@
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
     "extra": ["docs/formal/proofs.json", "sce-build/src/formal/**",
-              "backends/rust/mesh/src/https/**", "backends/rust/runtime/src/inbox.rs",
+              "backends/rust/mesh/src/https/**", "backends/rust/mesh/src/outbound.rs",
+              "backends/rust/mesh/src/outbound/**", "backends/rust/runtime/src/inbox.rs",
               "backends/rust/runtime/src/inbox/**"],
     "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the push set runs "
                "on a developer's machine, which need not carry it or the Rust release it "

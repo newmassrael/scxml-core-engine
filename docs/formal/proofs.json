@@ -139,6 +139,59 @@
           "to": ""
         }
       ]
+    },
+    {
+      "file": "backends/rust/mesh/src/outbound/gate.rs",
+      "compiled_by": "backends/rust/mesh/src/outbound.rs",
+      "decision": "docs/adr/0115",
+      "verified": 19,
+      "mutants": [
+        {
+          "breaks": "an envelope is sent past the ones that wait for its target",
+          "from": "        if !buffered || sends_now {",
+          "to": "        if !buffered || !overflows {"
+        },
+        {
+          "breaks": "a queue longer than a u32 counts reads as empty, and an envelope overtakes it",
+          "from": "if waiting > u32::MAX as usize {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "an admit puts an envelope behind a queue at its bound",
+          "from": "        if overflows {",
+          "to": "        if false {"
+        },
+        {
+          "breaks": "without a buffer an envelope waits for a target nothing said is ready",
+          "from": "        if !buffered || sends_now {",
+          "to": "        if sends_now {"
+        },
+        {
+          "breaks": "losing a readiness the target never had is told",
+          "from": "        self.ready = false;\n        lost\n",
+          "to": "        self.ready = false;\n        true\n"
+        },
+        {
+          "breaks": "a target said to be ready is not taken as ready, and holds what it is sent",
+          "from": "self.ready = true;",
+          "to": "self.ready = false;"
+        },
+        {
+          "breaks": "the count of sends wraps",
+          "from": "if self.made == u32::MAX {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "a failed send is not counted, so its retries never run out",
+          "from": "        self.made += 1;\n",
+          "to": ""
+        },
+        {
+          "breaks": "the next wait does not grow from the last one chosen",
+          "from": "self.last_backoff_ms = Some(backoff);",
+          "to": "self.last_backoff_ms = None;"
+        }
+      ]
     }
   ]
 }
