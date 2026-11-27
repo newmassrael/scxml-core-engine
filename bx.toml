@@ -552,6 +552,21 @@ install = "CHROME_ROOT={prefix} bash scripts/install_chrome.sh"
 install_inputs = ["scripts/install_chrome.sh"]
 needed_by = ["wasm32-scenarios"]
 
+# Headless Firefox, the second engine the browser node's kit runs in (docs/adr/0117, open question
+# 3), pinned as a Mozilla release (`scripts/install_firefox.sh`, which says why and how it is
+# checked). `prefix_link` makes the unpacked archive the store entry, because the binary loads the
+# files beside it. `check` is the default, the version: the binary prints `Mozilla Firefox
+# <version>`. Its shared libraries are system packages, as Chrome's are, listed in the script's
+# header; a machine without them fails the install's postcondition and takes no unit of the gate.
+[platform.linux.tools.firefox]
+version_file = "scripts/install_firefox.sh"
+version_pattern = '^FIREFOX_REV="([0-9.]+)"'
+path = "~/.local/share/firefox/{version}/firefox/firefox"
+prefix_link = "~/.local/share/firefox/{version}"
+install = "FIREFOX_ROOT={prefix} bash scripts/install_firefox.sh"
+install_inputs = ["scripts/install_firefox.sh"]
+needed_by = ["wasm32-scenarios"]
+
 # THE PYTHON THE PYTHON SUITES RUN IN: a virtual environment holding the Python runtime's
 # dependencies as `backends/python/runtime/pyproject.toml` pins them (`lupa>=2.0`), and pytest and
 # the packages tools/authoring and tools/targets import. The runtime imports `lupa.lua54`, which

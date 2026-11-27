@@ -60,7 +60,8 @@
 # backends/go/forge-runtime/go.mod and scripts/install_go.sh, the Arm
 # toolchain to scripts/install_arm_gnu_toolchain.sh, emsdk to
 # scripts/install_emsdk.sh, GenMC to scripts/install_genmc.sh, Chrome to
-# scripts/install_chrome.sh, wasm-bindgen to scripts/install_wasm_bindgen.sh,
+# scripts/install_chrome.sh, Firefox to scripts/install_firefox.sh,
+# wasm-bindgen to scripts/install_wasm_bindgen.sh,
 # Bazel to scripts/install_bazel.sh, the mesh SDKs to
 # scripts/install_mesh_transports.sh, and the Python packages to
 # scripts/install_sce_python.sh and backends/python/runtime/pyproject.toml.
@@ -128,6 +129,9 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sourc
 #   8. The shared libraries Chrome for Testing links against, as
 #      scripts/install_chrome.sh lists them for Ubuntu 24.04: wasm32-scenarios
 #      replays its scenarios in it.
+#   9. What Firefox links against beside them, as scripts/install_firefox.sh
+#      lists it for Ubuntu 24.04: wasm32-scenarios runs the browser node's kit
+#      in Firefox as well as in Chrome.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl git xz-utils unzip zstd file lsof psmisc procps tzdata \
@@ -138,6 +142,7 @@ RUN apt-get update \
         python3 python3-dev python3-venv python3-pip \
         qemu-system-arm \
         libnss3 libgbm1 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 libdrm2 libpango-1.0-0 libcairo2 libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libatspi2.0-0t64 libgtk-3-0t64 \
+        libdbus-glib-1-2 libx11-xcb1 libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── The mesh transport SDKs, built apart ────────────────────────────────
@@ -318,6 +323,21 @@ RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/chrome-linux64.zip \
     && rm /tmp/chrome-linux64.zip \
     && /opt/chrome-for-testing/chrome-linux64/chrome --version | grep -F " ${CHROME_REV}" >/dev/null
 
+# Firefox, the second engine wasm32-scenarios runs the browser node's kit in,
+# at the release scripts/install_firefox.sh pins and with the SHA-256 Mozilla
+# publishes for its linux-x86_64 archive, which that script records, unpacked
+# at FIREFOX_ROOT below as that script unpacks it. Its shared libraries are
+# groups 8 and 9 above.
+ARG FIREFOX_REV=161.0
+ARG FIREFOX_SHA256=3e9b1e5132d7b53b1ad968c7300281e90e6a0ef57d0656b1516202d686d25733
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/firefox.tar.xz \
+        "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_REV}/linux-x86_64/en-US/firefox-${FIREFOX_REV}.tar.xz" \
+    && echo "${FIREFOX_SHA256}  /tmp/firefox.tar.xz" | sha256sum --check --strict - \
+    && mkdir -p /opt/firefox \
+    && tar -xJf /tmp/firefox.tar.xz -C /opt/firefox \
+    && rm /tmp/firefox.tar.xz \
+    && /opt/firefox/firefox/firefox --version | grep -F " ${FIREFOX_REV}" >/dev/null
+
 # wasm-bindgen, the tool wasm32-scenarios binds the module with, at the release
 # scripts/install_wasm_bindgen.sh pins (the version Cargo.lock holds, which the
 # gate refuses any other than). The script builds it from source, which needs a
@@ -393,6 +413,8 @@ ENV PATH=/opt/sce-python/bin:/opt/arm-gnu-toolchain/bin:/opt/node/bin:/opt/jdk-1
     GENMC_ROOT=/opt/genmc \
     CHROME_ROOT=/opt/chrome-for-testing \
     CHROME_BIN=/opt/chrome-for-testing/chrome-linux64/chrome \
+    FIREFOX_ROOT=/opt/firefox \
+    FIREFOX_BIN=/opt/firefox/firefox/firefox \
     WASM_BINDGEN_ROOT=/opt/wasm-bindgen \
     BAZEL_ROOT=/opt/bazel \
     CMAKE_PREFIX_PATH=/opt/sce-mesh-transports \

@@ -1017,6 +1017,11 @@ def image_release_failures(repo_root: Path) -> list[str]:
     held(host, args, "CHROME_REV", first(r'^CHROME_REV="([^"]+)"', chrome), "scripts/install_chrome.sh")
     held(host, args, "CHROME_ZIP_SHA256", first(r'^CHROME_ZIP_SHA256="([0-9a-f]{64})"', chrome),
          "scripts/install_chrome.sh")
+    firefox = read("scripts/install_firefox.sh")
+    held(host, args, "FIREFOX_REV", first(r'^FIREFOX_REV="([^"]+)"', firefox),
+         "scripts/install_firefox.sh")
+    held(host, args, "FIREFOX_SHA256", first(r'^FIREFOX_SHA256="([0-9a-f]{64})"', firefox),
+         "scripts/install_firefox.sh")
     held(host, args, "WASM_BINDGEN_REV",
          first(r'^WASM_BINDGEN_REV="([^"]+)"', read("scripts/install_wasm_bindgen.sh")),
          "scripts/install_wasm_bindgen.sh")
