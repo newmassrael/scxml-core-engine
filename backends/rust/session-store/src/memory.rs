@@ -17,6 +17,10 @@ use crate::journal::{
     Observation, ObservedStream, SessionsStream, Stream, StreamName,
 };
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
+use crate::membership::judge::{self, Judged};
+use crate::membership::{
+    Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms,
+};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
 };
@@ -86,6 +90,10 @@ struct Records {
     journal_origins: BTreeMap<(String, String), u64>,
     journal_last: u64,
     journal_recorded_ms: u64,
+    /// The members of open machines and the offers that wait for an exchange to confirm them
+    /// (module [`crate::membership`]), by the member's name.
+    members: BTreeMap<String, Member>,
+    offers: BTreeMap<String, Offer>,
 }
 
 impl Records {
@@ -161,6 +169,13 @@ impl Records {
             self.version_of(key),
             write.expected_version,
         )?;
+        for under in write.under {
+            judge::admit_under(
+                self.members.get(under.member),
+                under.incarnation,
+                write.now_ms,
+            )?;
+        }
         // Before anything is changed, since a fact's bytes may fail to be made.
         let journaled = match &write.journal {
             Some(journal) => self.journaled(key, journal, write.now_ms)?,
@@ -196,6 +211,11 @@ impl Records {
         let appended = self.append(write.outbox, write.now_ms);
         for entry in journaled {
             self.keep_journaled(entry);
+        }
+        for under in write.under {
+            if let Some(member) = self.members.get_mut(under.member) {
+                *member = judge::kept(member, write.now_ms);
+            }
         }
         Ok(Written { version, appended })
     }
@@ -630,6 +650,124 @@ impl SessionStore for MemoryStore {
             }
             _ => false,
         })
+    }
+}
+
+/// The members, kept beside the sessions so that a write made under an incarnation is judged
+/// against them under the one lock that is its transaction.
+impl MembershipStore for MemoryStore {
+    fn offer(
+        &self,
+        member: &str,
+        nonce: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<Offered, Failure> {
+        let mut records = self.records();
+        if let Some(offer) = records
+            .offers
+            .get(member)
+            .filter(|offer| judge::offers_again(Some(*offer), nonce, now_ms))
+        {
+            return Ok(Offered {
+                incarnation: offer.incarnation,
+                expires_ms: offer.expires_ms,
+            });
+        }
+        let offered = Offered {
+            incarnation: records.next_number(),
+            expires_ms: rules::expiry(now_ms, ttl_ms),
+        };
+        records.offers.insert(
+            member.to_string(),
+            Offer {
+                incarnation: offered.incarnation,
+                nonce: nonce.to_string(),
+                expires_ms: offered.expires_ms,
+            },
+        );
+        Ok(offered)
+    }
+
+    fn admit(
+        &self,
+        member: &str,
+        incarnation: u64,
+        mark: u64,
+        terms: Terms,
+        now_ms: u64,
+    ) -> Result<Admission, Failure> {
+        let mut records = self.records();
+        let others = records
+            .members
+            .iter()
+            .filter(|(name, held)| {
+                name.as_str() != member && judge::stands(held.expires_ms, now_ms)
+            })
+            .count() as u64;
+        let judged = judge::admit(
+            records.members.get(member),
+            records.offers.get(member),
+            others,
+            incarnation,
+            mark,
+            terms,
+            now_ms,
+        );
+        match judged {
+            Judged::Renew { member: renewed } => {
+                records.members.insert(member.to_string(), renewed);
+            }
+            Judged::Confirm {
+                member: confirmed, ..
+            } => {
+                records.members.insert(member.to_string(), confirmed);
+                records.offers.remove(member);
+            }
+            Judged::Refuse(_) => {}
+        }
+        Ok(judged.admission())
+    }
+
+    fn membership(&self, member: &str) -> Result<Membership, Failure> {
+        let records = self.records();
+        Ok(Membership {
+            member: records.members.get(member).copied(),
+            offer: records.offers.get(member).cloned(),
+        })
+    }
+
+    fn end_expired(&self, before_ms: u64, limit: usize) -> Result<Vec<Ended>, Failure> {
+        let mut records = self.records();
+        let mut members: Vec<(u64, String, u64)> = records
+            .members
+            .iter()
+            .filter(|(_, held)| held.expires_ms <= before_ms)
+            .map(|(name, held)| (held.expires_ms, name.clone(), held.incarnation))
+            .collect();
+        members.sort();
+        members.truncate(limit);
+        let mut offers: Vec<(u64, String)> = records
+            .offers
+            .iter()
+            .filter(|(_, offer)| offer.expires_ms <= before_ms)
+            .map(|(name, offer)| (offer.expires_ms, name.clone()))
+            .collect();
+        offers.sort();
+        offers.truncate(limit);
+        for (_, name, _) in &members {
+            records.members.remove(name);
+        }
+        for (_, name) in &offers {
+            records.offers.remove(name);
+        }
+        Ok(members
+            .into_iter()
+            .map(|(_, member, incarnation)| Ended {
+                member,
+                incarnation,
+            })
+            .collect())
     }
 }
 

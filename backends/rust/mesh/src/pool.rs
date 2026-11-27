@@ -1990,6 +1990,7 @@ where
                     notes_through: session.notes_through,
                     now_ms: now,
                     sessions: &[],
+                    under: &[],
                 },
             )
         };

@@ -317,6 +317,7 @@ impl Observed {
                 refusal: match conflict {
                     Conflict::Fence { .. } => Refusal::Fence,
                     Conflict::Version { .. } => Refusal::Version,
+                    Conflict::Incarnation { .. } => Refusal::Incarnation,
                 },
             }),
             Err(WriteError::Failed(_)) => {}

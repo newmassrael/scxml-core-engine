@@ -26,6 +26,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::journal::Journal;
+use crate::membership::Under;
 
 /// One envelope a write appends to a client's outbox.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +150,10 @@ pub struct Write<'a> {
     /// and one that keeps an audit log (module [`crate::audit`]) the identities its appends were
     /// kept under, never a row. A keep takes none.
     pub sessions: &'a [&'a str],
+    /// The incarnations the run this write keeps was made under (ADR 0113, D5; module
+    /// [`crate::membership`]): the write is refused whole, writing nothing, unless the store holds
+    /// each at [`Self::now_ms`]. A run of no open machine's instance names none.
+    pub under: &'a [Under<'a>],
 }
 
 impl<'a> Write<'a> {
@@ -171,6 +176,7 @@ impl<'a> Write<'a> {
             notes_through: 0,
             now_ms: 0,
             sessions: &[],
+            under: &[],
         }
     }
 
@@ -185,6 +191,7 @@ impl<'a> Write<'a> {
             notes_through: 0,
             now_ms: 0,
             sessions: &[],
+            under: &[],
         }
     }
 }

@@ -23,6 +23,10 @@ use crate::journal::{
 };
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
+use crate::membership::judge::{self, Judged};
+use crate::membership::{
+    Admission, Ended, Member, Membership, MembershipStore, Offer, Offered, Terms,
+};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
 };
@@ -34,7 +38,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 8;
+const LAYOUT_VERSION: i64 = 9;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -236,6 +240,30 @@ const LAYOUT_8: &str = "
         WHERE origin IS NOT NULL;
 ";
 
+/// What layout 9 adds to layout 8: the members of open machines (ADR 0113, D4 and D5). A member is
+/// one row by its name, its incarnation a number of the store's counter, so no two rows share one;
+/// an offer that waits is a row of its own beside it, which its confirmation deletes. Both are
+/// found by when they run out, which a sweep of what ended reads.
+const LAYOUT_9: &str = "
+    CREATE TABLE members (
+        member TEXT PRIMARY KEY NOT NULL,
+        incarnation INTEGER NOT NULL,
+        mark INTEGER NOT NULL,
+        expires_ms INTEGER NOT NULL,
+        kept INTEGER NOT NULL,
+        lease_ms INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX members_by_incarnation ON members (incarnation);
+    CREATE INDEX members_by_expiry ON members (expires_ms, member);
+    CREATE TABLE member_offers (
+        member TEXT PRIMARY KEY NOT NULL,
+        incarnation INTEGER NOT NULL,
+        nonce TEXT NOT NULL,
+        expires_ms INTEGER NOT NULL
+    );
+    CREATE INDEX member_offers_by_expiry ON member_offers (expires_ms, member);
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -319,8 +347,8 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 8] = [
-        LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8,
+    const ADDITIONS: [&str; 9] = [
+        LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8, LAYOUT_9,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -736,6 +764,13 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
         version_of(connection, key)?,
         write.expected_version,
     )?;
+    for under in write.under {
+        judge::admit_under(
+            member_of(connection, under.member)?.as_ref(),
+            under.incarnation,
+            write.now_ms,
+        )?;
+    }
     let version = match write.change {
         Change::Keep {
             state,
@@ -775,7 +810,65 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
     if let Some(journal) = &write.journal {
         journal_in(connection, key, journal, write.now_ms)?;
     }
+    for under in write.under {
+        if let Some(held) = member_of(connection, under.member)? {
+            put_member(connection, under.member, &judge::kept(&held, write.now_ms))?;
+        }
+    }
     Ok(Written { version, appended })
+}
+
+/// The member `member` names, whether or not it still stands.
+fn member_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<Member>> {
+    connection
+        .prepare_cached(
+            "SELECT incarnation, mark, expires_ms, kept, lease_ms FROM members WHERE member = ?1",
+        )?
+        .query_row((member,), |row| {
+            Ok(Member {
+                incarnation: row.get(0)?,
+                mark: row.get(1)?,
+                expires_ms: row.get(2)?,
+                kept: row.get(3)?,
+                lease_ms: row.get(4)?,
+            })
+        })
+        .optional()
+}
+
+/// The offer that waits for `member`, whether or not it still stands.
+fn offer_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<Offer>> {
+    connection
+        .prepare_cached(
+            "SELECT incarnation, nonce, expires_ms FROM member_offers WHERE member = ?1",
+        )?
+        .query_row((member,), |row| {
+            Ok(Offer {
+                incarnation: row.get(0)?,
+                nonce: row.get(1)?,
+                expires_ms: row.get(2)?,
+            })
+        })
+        .optional()
+}
+
+/// Keep `held` as the member `member` names, in place of the one before.
+fn put_member(connection: &Connection, member: &str, held: &Member) -> rusqlite::Result<()> {
+    connection
+        .prepare_cached(
+            "INSERT OR REPLACE INTO members \
+             (member, incarnation, mark, expires_ms, kept, lease_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )?
+        .execute((
+            member,
+            held.incarnation,
+            held.mark,
+            held.expires_ms,
+            held.kept,
+            held.lease_ms,
+        ))?;
+    Ok(())
 }
 
 /// What [`SessionStore::acknowledge`] does, in the transaction (or the savepoint of one)
@@ -1335,6 +1428,121 @@ fn keep_first_in(
             result.version(),
         ))?;
     Ok(())
+}
+
+/// The members, in the same file as the sessions, so that a write made under an incarnation is
+/// judged against them in its own transaction.
+impl MembershipStore for SqliteStore {
+    fn offer(
+        &self,
+        member: &str,
+        nonce: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<Offered, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(offer) = offer_of(&transaction, member)?
+            .filter(|offer| judge::offers_again(Some(offer), nonce, now_ms))
+        {
+            return Ok(Offered {
+                incarnation: offer.incarnation,
+                expires_ms: offer.expires_ms,
+            });
+        }
+        let offered = Offered {
+            incarnation: next_number(&transaction)?,
+            expires_ms: rules::expiry(now_ms, ttl_ms),
+        };
+        transaction
+            .prepare_cached(
+                "INSERT OR REPLACE INTO member_offers (member, incarnation, nonce, expires_ms) \
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?
+            .execute((member, offered.incarnation, nonce, offered.expires_ms))?;
+        transaction.commit()?;
+        Ok(offered)
+    }
+
+    fn admit(
+        &self,
+        member: &str,
+        incarnation: u64,
+        mark: u64,
+        terms: Terms,
+        now_ms: u64,
+    ) -> Result<Admission, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let held = member_of(&transaction, member)?;
+        let offered = offer_of(&transaction, member)?;
+        let others: i64 = transaction
+            .prepare_cached("SELECT count(*) FROM members WHERE expires_ms > ?1 AND member <> ?2")?
+            .query_row((moment(now_ms), member), |row| row.get(0))?;
+        let judged = judge::admit(
+            held.as_ref(),
+            offered.as_ref(),
+            u64::try_from(others).unwrap_or(0),
+            incarnation,
+            mark,
+            terms,
+            now_ms,
+        );
+        match judged {
+            Judged::Renew { member: renewed } => put_member(&transaction, member, &renewed)?,
+            Judged::Confirm {
+                member: confirmed, ..
+            } => {
+                put_member(&transaction, member, &confirmed)?;
+                transaction
+                    .prepare_cached("DELETE FROM member_offers WHERE member = ?1")?
+                    .execute((member,))?;
+            }
+            Judged::Refuse(_) => {}
+        }
+        transaction.commit()?;
+        Ok(judged.admission())
+    }
+
+    fn membership(&self, member: &str) -> Result<Membership, Failure> {
+        let connection = self.connection();
+        Ok(Membership {
+            member: member_of(&connection, member)?,
+            offer: offer_of(&connection, member)?,
+        })
+    }
+
+    fn end_expired(&self, before_ms: u64, limit: usize) -> Result<Vec<Ended>, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let ended = {
+            let mut statement = transaction.prepare_cached(
+                "SELECT member, incarnation FROM members WHERE expires_ms <= ?1 \
+                 ORDER BY expires_ms, member LIMIT ?2",
+            )?;
+            let rows = statement.query_map((moment(before_ms), limit), |row| {
+                Ok(Ended {
+                    member: row.get(0)?,
+                    incarnation: row.get(1)?,
+                })
+            })?;
+            rows.collect::<rusqlite::Result<Vec<Ended>>>()?
+        };
+        for ended in &ended {
+            transaction
+                .prepare_cached("DELETE FROM members WHERE member = ?1")?
+                .execute((&ended.member,))?;
+        }
+        transaction
+            .prepare_cached(
+                "DELETE FROM member_offers WHERE member IN (SELECT member FROM member_offers \
+                 WHERE expires_ms <= ?1 ORDER BY expires_ms, member LIMIT ?2)",
+            )?
+            .execute((moment(before_ms), limit))?;
+        transaction.commit()?;
+        Ok(ended)
+    }
 }
 
 impl KvStore for SqliteStore {

@@ -41,7 +41,7 @@ use std::time::{Duration, Instant};
 use sce_rust_metrics::{Histogram, Metrics};
 use sce_rust_session_store::{
     Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal, SessionStore,
-    Write, WriteError, Written,
+    Under, Write, WriteError, Written,
 };
 
 /// The committer of one store. See the module documentation.
@@ -97,6 +97,8 @@ struct HeldWrite {
     notes_through: u64,
     now_ms: u64,
     sessions: Vec<String>,
+    /// The incarnations the write was made under (docs/adr/0113, D5), each with its member's name.
+    under: Vec<(String, u64)>,
 }
 
 /// A [`Journal`] as the committer holds it (docs/adr/0114).
@@ -174,6 +176,11 @@ impl HeldWrite {
             notes_through: write.notes_through,
             now_ms: write.now_ms,
             sessions: write.sessions.iter().map(|id| id.to_string()).collect(),
+            under: write
+                .under
+                .iter()
+                .map(|under| (under.member.to_string(), under.incarnation))
+                .collect(),
         })
     }
 
@@ -209,13 +216,25 @@ impl HeldWrite {
         self.sessions.iter().map(String::as_str).collect()
     }
 
-    /// The [`Write`] it is, with `appends`, `facts` and `ended` as [`Self::appends`],
-    /// [`Self::facts`] and [`Self::ended`] gave them.
+    /// The incarnations it was made under, as a [`Write`] names them.
+    fn unders(&self) -> Vec<Under<'_>> {
+        self.under
+            .iter()
+            .map(|(member, incarnation)| Under {
+                member: member.as_str(),
+                incarnation: *incarnation,
+            })
+            .collect()
+    }
+
+    /// The [`Write`] it is, with `appends`, `facts`, `ended` and `under` as [`Self::appends`],
+    /// [`Self::facts`], [`Self::ended`] and [`Self::unders`] gave them.
     fn written<'a>(
         &'a self,
         appends: &'a [Append<'a>],
         facts: &'a [Fact<'a>],
         ended: &'a [&'a str],
+        under: &'a [Under<'a>],
     ) -> Write<'a> {
         Write {
             change: match &self.keep {
@@ -235,6 +254,7 @@ impl HeldWrite {
             notes_through: self.notes_through,
             now_ms: self.now_ms,
             sessions: ended,
+            under,
         }
     }
 }
@@ -428,26 +448,35 @@ impl Committer {
                 Item::Acknowledge { .. } => Vec::new(),
             })
             .collect();
+        let unders: Vec<Vec<Under<'_>>> = batch
+            .iter()
+            .map(|(_, item)| match item {
+                Item::Write { write, .. } => write.unders(),
+                Item::Acknowledge { .. } => Vec::new(),
+            })
+            .collect();
         let given: Vec<Batched<'_>> = batch
             .iter()
-            .zip(appends.iter().zip(&facts).zip(&ended))
-            .map(|((_, item), ((appends, facts), ended))| match item {
-                Item::Write { key, write } => Batched::Write {
-                    key: key.as_str(),
-                    write: write.written(appends, facts, ended),
+            .zip(appends.iter().zip(&facts).zip(&ended).zip(&unders))
+            .map(
+                |((_, item), (((appends, facts), ended), under))| match item {
+                    Item::Write { key, write } => Batched::Write {
+                        key: key.as_str(),
+                        write: write.written(appends, facts, ended, under),
+                    },
+                    Item::Acknowledge {
+                        client,
+                        incarnation,
+                        through,
+                        now_ms,
+                    } => Batched::Acknowledge {
+                        client: client.as_str(),
+                        incarnation: incarnation.as_str(),
+                        through: *through,
+                        now_ms: *now_ms,
+                    },
                 },
-                Item::Acknowledge {
-                    client,
-                    incarnation,
-                    through,
-                    now_ms,
-                } => Batched::Acknowledge {
-                    client: client.as_str(),
-                    incarnation: incarnation.as_str(),
-                    through: *through,
-                    now_ms: *now_ms,
-                },
-            })
+            )
             .collect();
         // docs/adr/0109, D16: how long the store took to make the batch durable, and how many
         // items it held, whatever it answered.

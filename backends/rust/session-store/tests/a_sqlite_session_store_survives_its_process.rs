@@ -44,28 +44,36 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 8;
+const LAYOUT: i64 = 9;
 
-/// The tables layout 8 added (ADR 0114), dropped from a file this build made so that it is left as
-/// a build of layout 7 left it.
-const WITHOUT_LAYOUT_8: &str = "DROP TABLE journal_entries; DROP TABLE journal_head;";
+/// The tables layout 9 added (ADR 0113), dropped from a file this build made so that it is left as
+/// a build of layout 8 left it.
+const WITHOUT_LAYOUT_9: &str = "DROP TABLE member_offers; DROP TABLE members;";
 
-/// The tables layouts 7 (ADR 0109, D14) and 8 (ADR 0114) added, dropped from a file this build made
-/// so that it is left as a build of layout 6 left it: the later layout's first.
-const WITHOUT_LAYOUT_7: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+/// The tables layouts 8 (ADR 0114) and 9 (ADR 0113) added, dropped from a file this build made so
+/// that it is left as a build of layout 7 left it: the later layout's first.
+const WITHOUT_LAYOUT_8: &str = "DROP TABLE member_offers; DROP TABLE members; \
+     DROP TABLE journal_entries; DROP TABLE journal_head;";
+
+/// The tables layouts 7 (ADR 0109, D14) to 9 (ADR 0113) added, dropped from a file this build made
+/// so that it is left as a build of layout 6 left it: the later layouts' first.
+const WITHOUT_LAYOUT_7: &str = "DROP TABLE member_offers; DROP TABLE members; \
+     DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads;";
 
-/// The tables layouts 6 (ADR 0109, D13) to 8 (ADR 0114) added, dropped from a file this build made
+/// The tables layouts 6 (ADR 0109, D13) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 5 left it: the later layouts' first.
-const WITHOUT_LAYOUT_6: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+const WITHOUT_LAYOUT_6: &str = "DROP TABLE member_offers; DROP TABLE members; \
+     DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
      DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values;";
 
-/// The tables layouts 5 (ADR 0109, D10) to 8 (ADR 0114) added, dropped from a file this build made
+/// The tables layouts 5 (ADR 0109, D10) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 4 or earlier left it: the later layouts' first.
-const WITHOUT_LAYOUT_5: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+const WITHOUT_LAYOUT_5: &str = "DROP TABLE member_offers; DROP TABLE members; \
+     DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
      DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values; \
@@ -1417,5 +1425,132 @@ mod journal {
             assert_eq!(last.len(), 1);
             assert!(last[0].position > before);
         }
+    }
+}
+
+/// The members of open machines (ADR 0113, D4 and D5) in a file of its own.
+mod members {
+    use rusqlite::Connection;
+    use sce_rust_session_store::{
+        Admission, Conflict, MembershipStore, SessionStore, SqliteStore, Terms, Under, Write,
+        WriteError,
+    };
+
+    use super::{LAYOUT, WITHOUT_LAYOUT_9};
+    use crate::common::Scratch;
+
+    const TERMS: Terms = Terms {
+        lease_ms: 10_000,
+        provisional_ms: 1_000,
+        max_members: 4,
+    };
+
+    /// ADR 0113: a file of layout 8 is brought to this build's layout when it is opened, in place,
+    /// its sessions kept, and members are then kept in it.
+    #[test]
+    fn a_file_of_layout_8_is_brought_to_this_layout_and_keeps_members() {
+        let scratch = Scratch::new("layout-8");
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
+            store
+                .put("k", b"of layout 8", None, 0, lease.fence)
+                .expect("a session");
+        }
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 8");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_9)
+                .expect("the file without layout 9's tables");
+            connection
+                .pragma_update(None, "user_version", 8)
+                .expect("the file as layout 8 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 8");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        assert_eq!(
+            store
+                .get("k")
+                .expect("its session")
+                .map(|stored| stored.state),
+            Some(b"of layout 8".to_vec())
+        );
+        let offered = store
+            .offer("phone/a1", "n1", 1_000, 0)
+            .expect("a join in the upgraded file");
+        assert!(matches!(
+            store.admit("phone/a1", offered.incarnation, 1, TERMS, 0),
+            Ok(Admission::Confirmed { .. })
+        ));
+    }
+
+    /// docs/formal/OpenInstances.tla, `SCrash`: what the store holds of a member is there when
+    /// its file is opened again, its mark the one it held, and the condition of a write is judged
+    /// against it; an incarnation drawn after is above every one drawn before.
+    #[test]
+    fn the_members_are_there_when_the_file_is_opened_again() {
+        let scratch = Scratch::new("members-reopen");
+        let (incarnation, fence) = {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let offered = store.offer("phone/a1", "n1", 1_000, 0).expect("a join");
+            store
+                .admit("phone/a1", offered.incarnation, 4, TERMS, 0)
+                .expect("a confirmation");
+            assert_eq!(
+                store
+                    .admit("phone/a1", offered.incarnation, 6, TERMS, 100)
+                    .expect("an exchange"),
+                Admission::Current { mark: 6 }
+            );
+            let lease = store.acquire("k", "a", 60_000, 0).expect("a lease");
+            (offered.incarnation, lease.fence)
+        };
+        let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+        let member = store
+            .membership("phone/a1")
+            .expect("reading")
+            .member
+            .expect("the member outlives the process");
+        assert_eq!((member.incarnation, member.mark), (incarnation, 6));
+        let under = [Under {
+            member: "phone/a1",
+            incarnation,
+        }];
+        let written = store
+            .write(
+                "k",
+                &Write {
+                    now_ms: 200,
+                    under: &under,
+                    ..Write::put(b"kept", None, 0, fence)
+                },
+            )
+            .expect("a write under the member's incarnation");
+        let next = store
+            .offer("phone/a1", "n2", 1_000, 300)
+            .expect("another join");
+        assert!(next.incarnation > incarnation);
+        store
+            .admit("phone/a1", next.incarnation, 1, TERMS, 300)
+            .expect("its confirmation");
+        assert!(matches!(
+            store.write(
+                "k",
+                &Write {
+                    now_ms: 400,
+                    under: &under,
+                    ..Write::put(b"late", None, written.version, fence)
+                },
+            ),
+            Err(WriteError::Conflict(Conflict::Incarnation { .. }))
+        ));
     }
 }

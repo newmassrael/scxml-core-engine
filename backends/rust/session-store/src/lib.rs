@@ -74,6 +74,12 @@
 //! for each id the other system gave. [`MemoryStore`] in memory, and `SqliteStore` in the same file
 //! (layout 8), held to [`journal_conformance`]. A removal of a session removes none of it.
 //!
+//! The members of an open machine (ADR 0113, D4 and D5; module [`membership`]) are kept behind
+//! [`MembershipStore`]: an offer per joining instance, a member per confirmed one with its lease
+//! and its low-water mark, and the condition every write made under an incarnation is kept on
+//! ([`Write::under`]): [`MemoryStore`] in memory, and `SqliteStore` in the same file (layout 9),
+//! held to [`membership_conformance`].
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -110,6 +116,8 @@ pub mod key_conformance;
 pub mod keys;
 pub mod kv;
 pub mod kv_conformance;
+pub mod membership;
+pub mod membership_conformance;
 mod memory;
 pub mod outbox;
 pub mod outbox_conformance;
@@ -131,6 +139,10 @@ pub use journal::{
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};
+pub use membership::{
+    Admission, Ended, Member, Membership, MembershipStore, NoMembership, Offer, Offered, Terms,
+    Under,
+};
 pub use memory::MemoryStore;
 pub use outbox::{
     Append, Appended, Change, Expired, Expiry, NoOutbox, Note, Outbox, OutboxEntry, Write, Written,
@@ -169,11 +181,15 @@ pub trait SessionStore: Send + Sync {
     ///
     /// Refused, writing nothing of any of it, unless [`Write::fence`] is the fence of the lease
     /// currently held on `key` ([`Conflict::Fence`], checked first: a fenced-out writer's view of
-    /// the version says nothing) and the session's version is [`Write::expected_version`], `0`
-    /// meaning it holds no session ([`Conflict::Version`]). The lease's expiry is not checked:
-    /// while a lease that ran out is not taken over, no one else can write the key and its holder
-    /// still may; the moment another process takes it, the new fence refuses the old holder's
-    /// writes. Removing a session the store holds none of, from version `0`, removes nothing and
+    /// the version says nothing), the session's version is [`Write::expected_version`], `0`
+    /// meaning it holds no session ([`Conflict::Version`]), and each incarnation of
+    /// [`Write::under`] is the one its member stands under at [`Write::now_ms`]
+    /// ([`Conflict::Incarnation`], ADR 0113 D5). A write that is kept makes each of those members
+    /// kept, leased from [`Write::now_ms`] for its lease (module [`membership`]); a store that
+    /// keeps no members fails a write that names one with [`NoMembership`], writing nothing. The
+    /// lease's expiry is not checked: while a lease that ran out is not taken over, no one else
+    /// can write the key and its holder still may; the moment another process takes it, the new
+    /// fence refuses the old holder's writes. Removing a session the store holds none of, from version `0`, removes nothing and
     /// succeeds; a removal takes every note of the session. The lease is not touched: it is the
     /// holder's to release.
     ///
@@ -455,7 +471,7 @@ pub struct Held {
     pub expires_ms: u64,
 }
 
-/// Why a store refused [`SessionStore::put`] or [`SessionStore::delete`].
+/// Why a store refused [`SessionStore::write`], [`SessionStore::put`] or [`SessionStore::delete`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Conflict {
     /// `presented` is not the fence of the lease held on the key; `current` is that lease's fence,
@@ -467,6 +483,13 @@ pub enum Conflict {
     /// The session's version is `current`, not the `expected` the write was made from: another
     /// write came between.
     Version { expected: u64, current: u64 },
+    /// The write was made under the incarnation `presented`, which the store no longer holds:
+    /// its member stands under `current`, or under none (ADR 0113, D5). Nothing of a run is kept
+    /// once its incarnation ended, whichever process ended it.
+    Incarnation {
+        presented: u64,
+        current: Option<u64>,
+    },
 }
 
 /// Why a store refused [`SessionStore::renew`] or [`SessionStore::release`].
@@ -544,6 +567,21 @@ impl fmt::Display for Conflict {
             Self::Version { expected, current } => write!(
                 f,
                 "the session is at version {current}, not the {expected} the write was made from"
+            ),
+            Self::Incarnation {
+                presented,
+                current: Some(current),
+            } => write!(
+                f,
+                "the write was made under incarnation {presented}, and its member stands under \
+                 {current}"
+            ),
+            Self::Incarnation {
+                presented,
+                current: None,
+            } => write!(
+                f,
+                "the write was made under incarnation {presented}, and its member stands no more"
             ),
         }
     }

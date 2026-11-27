@@ -119,6 +119,9 @@ pub enum Refusal {
     Fence,
     /// The session's version moved since the writer read it.
     Version,
+    /// The write was made under an incarnation of an open machine's member that the store no
+    /// longer holds (docs/adr/0113, D5).
+    Incarnation,
 }
 
 impl Refusal {
@@ -126,6 +129,7 @@ impl Refusal {
         match self {
             Refusal::Fence => "fence",
             Refusal::Version => "version",
+            Refusal::Incarnation => "incarnation",
         }
     }
 }
@@ -213,6 +217,7 @@ impl Report {
                 refusal: match fields.next()? {
                     "fence" => Refusal::Fence,
                     "version" => Refusal::Version,
+                    "incarnation" => Refusal::Incarnation,
                     _ => return None,
                 },
             }),
@@ -470,6 +475,11 @@ mod tests {
                 key: "v0".to_string(),
                 fence: 3,
                 refusal: Refusal::Version,
+            },
+            Report::Refused {
+                key: "v0".to_string(),
+                fence: 3,
+                refusal: Refusal::Incarnation,
             },
             Report::Halted(Halt {
                 stage: Stage::CheckpointAfter,
