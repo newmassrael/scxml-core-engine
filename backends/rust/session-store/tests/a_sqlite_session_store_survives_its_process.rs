@@ -44,27 +44,102 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 11;
+const LAYOUT: i64 = 12;
+
+/// What layout 12 changed (ADR 0114, D2), undone in a file this build made so that it is left as a
+/// build of layout 11 left it: a session, its lease and its notes by the key alone, an outbox entry
+/// with no machine, and no reader of the journal. Every `WITHOUT_LAYOUT_` below begins with it, the
+/// later layout's first.
+const WITHOUT_LAYOUT_12: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine;";
 
 /// The tables layout 9 added (ADR 0113), dropped from a file this build made so that it is left as
 /// a build of layout 8 left it.
-const WITHOUT_LAYOUT_9: &str = "DROP TABLE member_offers; DROP TABLE members;";
+const WITHOUT_LAYOUT_9: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine; \
+     DROP TABLE member_offers; DROP TABLE members;";
 
 /// The tables layouts 8 (ADR 0114) and 9 (ADR 0113) added, dropped from a file this build made so
 /// that it is left as a build of layout 7 left it: the later layout's first.
-const WITHOUT_LAYOUT_8: &str = "DROP TABLE member_offers; DROP TABLE members; \
+const WITHOUT_LAYOUT_8: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine; \
+     DROP TABLE member_offers; DROP TABLE members; \
      DROP TABLE journal_entries; DROP TABLE journal_head;";
 
 /// The tables layouts 7 (ADR 0109, D14) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 6 left it: the later layouts' first.
-const WITHOUT_LAYOUT_7: &str = "DROP TABLE member_offers; DROP TABLE members; \
+const WITHOUT_LAYOUT_7: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine; \
+     DROP TABLE member_offers; DROP TABLE members; \
      DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads;";
 
 /// The tables layouts 6 (ADR 0109, D13) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 5 left it: the later layouts' first.
-const WITHOUT_LAYOUT_6: &str = "DROP TABLE member_offers; DROP TABLE members; \
+const WITHOUT_LAYOUT_6: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine; \
+     DROP TABLE member_offers; DROP TABLE members; \
      DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
@@ -72,7 +147,21 @@ const WITHOUT_LAYOUT_6: &str = "DROP TABLE member_offers; DROP TABLE members; \
 
 /// The tables layouts 5 (ADR 0109, D10) to 9 (ADR 0113) added, dropped from a file this build made
 /// so that it is left as a build of layout 4 or earlier left it: the later layouts' first.
-const WITHOUT_LAYOUT_5: &str = "DROP TABLE member_offers; DROP TABLE members; \
+const WITHOUT_LAYOUT_5: &str = "DROP TABLE journal_readers; \
+     CREATE TABLE sessions_9 (session TEXT PRIMARY KEY NOT NULL, state BLOB NOT NULL, \
+     version INTEGER NOT NULL, earliest_due INTEGER); \
+     INSERT INTO sessions_9 SELECT session, state, version, earliest_due FROM sessions; \
+     DROP TABLE sessions; ALTER TABLE sessions_9 RENAME TO sessions; \
+     CREATE INDEX sessions_by_due ON sessions (earliest_due, session) \
+     WHERE earliest_due IS NOT NULL; \
+     CREATE TABLE leases_9 (session TEXT PRIMARY KEY NOT NULL, owner TEXT NOT NULL, \
+     fence INTEGER NOT NULL, expires_ms INTEGER NOT NULL); \
+     INSERT INTO leases_9 SELECT session, owner, fence, expires_ms FROM leases; \
+     DROP TABLE leases; ALTER TABLE leases_9 RENAME TO leases; \
+     DROP INDEX outbox_notes_by_session; ALTER TABLE outbox_notes DROP COLUMN machine; \
+     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id); \
+     ALTER TABLE outbox_entries DROP COLUMN machine; \
+     DROP TABLE member_offers; DROP TABLE members; \
      DROP TABLE journal_entries; DROP TABLE journal_head; \
      DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
@@ -1673,5 +1762,89 @@ mod members {
             ),
             Err(WriteError::Conflict(Conflict::Incarnation { .. }))
         ));
+    }
+}
+
+/// ADR 0114, D2: a session is its machine and its key, from layout 12.
+mod machines {
+    use rusqlite::Connection;
+    use sce_rust_session_store::{Due, SessionStore, SqliteStore, LATEST_MOMENT};
+
+    use super::{LAYOUT, WITHOUT_LAYOUT_12};
+    use crate::common::Scratch;
+
+    /// A file of layout 11 is brought to this build's layout when it is opened, in place: each
+    /// session and lease it kept is the one machine's it kept, which the empty name stands for, and
+    /// the sessions of another machine are then kept beside them, an equal key apart. Red if the
+    /// upgrade loses a session or a lease, or keeps a session by its key alone.
+    #[test]
+    fn a_file_of_layout_11_is_brought_to_this_layout_and_keeps_machines_apart() {
+        let scratch = Scratch::new("layout-11");
+        let fence = {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 60_000, 0).expect("a lease");
+            store
+                .put("k", b"of layout 11", Some(5), 0, lease.fence)
+                .expect("a session");
+            lease.fence
+        };
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 11");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_12)
+                .expect("the file as layout 11 laid it out");
+            connection
+                .pragma_update(None, "user_version", 11)
+                .expect("the file as layout 11 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 11");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        let stored = store
+            .get("k")
+            .expect("its session")
+            .expect("the session layout 11 kept");
+        assert_eq!(stored.state, b"of layout 11".to_vec());
+        assert_eq!(
+            store.due_before(LATEST_MOMENT, 8).expect("its dues"),
+            [Due {
+                key: "k".to_string(),
+                due: 5,
+            }]
+        );
+        let version = store
+            .put("k", b"written again", None, stored.version, fence)
+            .expect("a write under the lease layout 11 granted");
+        let rooms = store.of_machine("rooms");
+        assert_eq!(
+            rooms.get("k").expect("a read of another machine's key"),
+            None,
+            "a session of layout 11 is the one machine's it kept"
+        );
+        let lease = rooms
+            .acquire("k", "b", 60_000, 0)
+            .expect("a lease on another machine's key, while the first is held");
+        rooms
+            .put("k", b"a room", None, 0, lease.fence)
+            .expect("another machine's session of the key");
+        assert_eq!(
+            store.get("k").expect("a read").map(|stored| stored.version),
+            Some(version),
+            "a session of another machine wrote over the first"
+        );
+        assert!(
+            rooms
+                .due_before(LATEST_MOMENT, 8)
+                .expect("the other machine's dues")
+                .is_empty(),
+            "a machine lists another's dues"
+        );
     }
 }

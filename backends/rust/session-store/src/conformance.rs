@@ -51,6 +51,8 @@
 //! * [`a_batch_sees_its_earlier_items_and_is_seen_whole_on_return`] (ADR 0109, D15): each item
 //!   is judged against what the items before it left, and once the batch answered every handle
 //!   sees all it kept.
+//! * [`a_session_is_its_machine_and_its_key`] (ADR 0114, D2): through handles of two machines on
+//!   one store, an equal key names two sessions, each with its own state, lease, due and listing.
 //!
 //! Each function needs a harness whose store holds nothing when it starts, since it reads the whole
 //! index of dues. The clock is the one the functions give; nothing here waits on time. A failed
@@ -860,6 +862,66 @@ pub fn a_batch_sees_its_earlier_items_and_is_seen_whole_on_return(harness: &impl
 }
 
 /// What a kept write of a batch answered.
+/// A session is its machine and its key (ADR 0114, D2): through `rooms` and `view`, two handles
+/// on one store, each of a machine of its own ([`SessionStore::machine`]), an equal key names two
+/// sessions, each with its own state, version, lease and due, each handle lists only its own
+/// machine's, and a fence of one is no fence of the other. Red if a store keys a session, or its
+/// lease, by its key alone.
+pub fn a_session_is_its_machine_and_its_key(rooms: &impl SessionStore, view: &impl SessionStore) {
+    assert_ne!(
+        rooms.machine(),
+        view.machine(),
+        "two handles of one machine"
+    );
+    let room = granted(rooms.acquire("k", "a", 1_000, 0));
+    let viewed = granted(view.acquire("k", "b", 1_000, 0));
+    assert_ne!(room.fence, viewed.fence, "one fence given twice");
+    let first = rooms
+        .put("k", b"room", Some(10), 0, room.fence)
+        .expect("the first put of one machine's session");
+    let second = view
+        .put("k", b"view", Some(20), 0, viewed.fence)
+        .expect("the first put of the other machine's session, made from none of its own");
+    assert_eq!(
+        read(rooms, "k").map(|stored| stored.state),
+        Some(b"room".to_vec())
+    );
+    assert_eq!(
+        read(view, "k").map(|stored| stored.state),
+        Some(b"view".to_vec())
+    );
+    assert_eq!(listed(rooms, LATEST_MOMENT, 8), dues(rooms, &[("k", 10)]));
+    assert_eq!(listed(view, LATEST_MOMENT, 8), dues(view, &[("k", 20)]));
+    assert_eq!(
+        rooms
+            .indexed_after(None, 8)
+            .expect("a listing of one machine's sessions"),
+        [rooms.indexed("k")]
+    );
+    assert!(
+        matches!(
+            conflict(view.put("k", b"taken", None, second, room.fence)),
+            Conflict::Fence { .. }
+        ),
+        "a fence of one machine's lease wrote the other's session"
+    );
+    rooms
+        .delete("k", first, room.fence)
+        .expect("the removal of one machine's session");
+    assert_eq!(read(rooms, "k"), None);
+    assert_eq!(
+        read(view, "k").map(|stored| stored.version),
+        Some(second),
+        "a removal took the other machine's session"
+    );
+    released(rooms.release("k", room.fence));
+    assert_eq!(
+        held(view.acquire("k", "c", 1_000, 0)).owner,
+        "b",
+        "a release of one machine's lease let the other's go"
+    );
+}
+
 fn written(decided: &Decided) -> &Written {
     match decided {
         Ok(Committed::Written(written)) => written,

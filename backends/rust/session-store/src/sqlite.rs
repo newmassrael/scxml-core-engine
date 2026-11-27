@@ -4,7 +4,7 @@
 //! The reference session store: SQLite in WAL mode.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -19,7 +19,7 @@ use crate::credentials::{
 };
 use crate::journal::{
     holds_from, recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage,
-    JournalStore, Observation, ObservedStream, SessionsStream, Stream, StreamName,
+    JournalStore, Observation, ObservedStream, PastHorizon, SessionsStream, Stream, StreamName,
 };
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
@@ -39,7 +39,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 11;
+const LAYOUT_VERSION: i64 = 12;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -293,6 +293,49 @@ const LAYOUT_11: &str = "
     ALTER TABLE member_offers ADD COLUMN proof INTEGER NOT NULL DEFAULT 0;
 ";
 
+/// What layout 12 changes of layout 11: a session is its machine and its key (ADR 0114, D2), so the
+/// rows of a session, its lease and the notes an expiry wrote for it are each found by both, and an
+/// outbox entry keeps the machine of the session that sent it, which its note is written for. The
+/// rows a file of an earlier layout holds are the machine the empty name stands for, the one
+/// machine of a store that kept one. Beside them, how far each reader of the journal has taken
+/// in every entry it reads (D4), which only rises.
+const LAYOUT_12: &str = "
+    CREATE TABLE sessions_of_machines (
+        machine TEXT NOT NULL,
+        session TEXT NOT NULL,
+        state BLOB NOT NULL,
+        version INTEGER NOT NULL,
+        earliest_due INTEGER,
+        PRIMARY KEY (machine, session)
+    );
+    INSERT INTO sessions_of_machines (machine, session, state, version, earliest_due)
+        SELECT '', session, state, version, earliest_due FROM sessions;
+    DROP TABLE sessions;
+    ALTER TABLE sessions_of_machines RENAME TO sessions;
+    CREATE INDEX sessions_by_due ON sessions (machine, earliest_due, session)
+        WHERE earliest_due IS NOT NULL;
+    CREATE TABLE leases_of_machines (
+        machine TEXT NOT NULL,
+        session TEXT NOT NULL,
+        owner TEXT NOT NULL,
+        fence INTEGER NOT NULL,
+        expires_ms INTEGER NOT NULL,
+        PRIMARY KEY (machine, session)
+    );
+    INSERT INTO leases_of_machines (machine, session, owner, fence, expires_ms)
+        SELECT '', session, owner, fence, expires_ms FROM leases;
+    DROP TABLE leases;
+    ALTER TABLE leases_of_machines RENAME TO leases;
+    ALTER TABLE outbox_notes ADD COLUMN machine TEXT NOT NULL DEFAULT '';
+    DROP INDEX outbox_notes_by_session;
+    CREATE INDEX outbox_notes_by_session ON outbox_notes (machine, session, id);
+    ALTER TABLE outbox_entries ADD COLUMN machine TEXT NOT NULL DEFAULT '';
+    CREATE TABLE journal_readers (
+        reader TEXT PRIMARY KEY NOT NULL,
+        position INTEGER NOT NULL
+    );
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -302,13 +345,21 @@ const LAYOUT_11: &str = "
 ///
 /// A handle is one connection. Several handles may be open on one file, in one process or in
 /// several, which is how two server processes share a store; SQLite's locks keep their
-/// transactions apart, and the leases' fences keep their sessions apart. Every write is an
+/// transactions apart, and the leases' fences keep their sessions apart.
+///
+/// A handle keeps the sessions of one machine ([`SessionStore::machine`]): the one
+/// [`Self::open`] gives is of the machine the empty name stands for, and [`Self::of_machine`]
+/// gives one of another machine on the same connection, so the machines of a deployment keep
+/// their sessions in one file and an equal key of two of them names two sessions (ADR 0114, D2).
+/// Every write is an
 /// `IMMEDIATE` transaction: it takes the database's write lock before it reads the lease and the
 /// version it checks, so that what it read is still what is there when it writes. A deferred
 /// transaction would read first and, when another connection committed in between, fail at its
 /// first write in a way the busy timeout cannot wait out.
 pub struct SqliteStore {
-    connection: Mutex<Connection>,
+    connection: Arc<Mutex<Connection>>,
+    /// The machine whose sessions this handle keeps.
+    machine: String,
 }
 
 impl SqliteStore {
@@ -358,8 +409,19 @@ impl SqliteStore {
             )));
         }
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
+            machine: String::new(),
         })
+    }
+
+    /// A handle on the same connection that keeps the sessions of `machine` (ADR 0114, D2): every
+    /// call that names a key names the session of `machine` and that key, and what the handles
+    /// share (the journal, the outboxes, the counter that numbers versions and fences) is one.
+    pub fn of_machine(&self, machine: &str) -> Self {
+        Self {
+            connection: Arc::clone(&self.connection),
+            machine: machine.to_string(),
+        }
     }
 
     /// The connection, whatever a thread that panicked while it held it left: nothing, since a
@@ -376,9 +438,9 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 11] = [
+    const ADDITIONS: [&str; 12] = [
         LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8, LAYOUT_9,
-        LAYOUT_10, LAYOUT_11,
+        LAYOUT_10, LAYOUT_11, LAYOUT_12,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -419,11 +481,13 @@ fn begin(connection: &mut Connection) -> rusqlite::Result<Transaction<'_>> {
     connection.transaction_with_behavior(TransactionBehavior::Immediate)
 }
 
-/// The lease held on `key`, if one is.
-fn holding(connection: &Connection, key: &str) -> rusqlite::Result<Option<Holding>> {
+/// The lease held on the session of `machine` that `key` names, if one is.
+fn holding(connection: &Connection, machine: &str, key: &str) -> rusqlite::Result<Option<Holding>> {
     connection
-        .prepare_cached("SELECT owner, fence, expires_ms FROM leases WHERE session = ?1")?
-        .query_row((key,), |row| {
+        .prepare_cached(
+            "SELECT owner, fence, expires_ms FROM leases WHERE machine = ?1 AND session = ?2",
+        )?
+        .query_row((machine, key), |row| {
             Ok(Holding {
                 owner: row.get(0)?,
                 fence: row.get(1)?,
@@ -433,11 +497,11 @@ fn holding(connection: &Connection, key: &str) -> rusqlite::Result<Option<Holdin
         .optional()
 }
 
-/// The version of the session `key` names, `0` when there is none.
-fn version_of(connection: &Connection, key: &str) -> rusqlite::Result<u64> {
+/// The version of the session of `machine` that `key` names, `0` when there is none.
+fn version_of(connection: &Connection, machine: &str, key: &str) -> rusqlite::Result<u64> {
     let version = connection
-        .prepare_cached("SELECT version FROM sessions WHERE session = ?1")?
-        .query_row((key,), |row| row.get(0))
+        .prepare_cached("SELECT version FROM sessions WHERE machine = ?1 AND session = ?2")?
+        .query_row((machine, key), |row| row.get(0))
         .optional()?;
     Ok(version.unwrap_or(0))
 }
@@ -453,11 +517,18 @@ fn next_number(connection: &Connection) -> rusqlite::Result<u64> {
 }
 
 impl SessionStore for SqliteStore {
+    fn machine(&self) -> &str {
+        &self.machine
+    }
+
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
         let connection = self.connection();
         let stored = connection
-            .prepare_cached("SELECT state, version, earliest_due FROM sessions WHERE session = ?1")?
-            .query_row((key,), |row| {
+            .prepare_cached(
+                "SELECT state, version, earliest_due FROM sessions \
+                 WHERE machine = ?1 AND session = ?2",
+            )?
+            .query_row((self.machine.as_str(), key), |row| {
                 Ok(Stored {
                     state: row.get(0)?,
                     version: row.get(1)?,
@@ -471,7 +542,7 @@ impl SessionStore for SqliteStore {
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        let written = write_in(&transaction, key, write)?;
+        let written = write_in(&transaction, &self.machine, key, write)?;
         transaction.commit()?;
         Ok(written)
     }
@@ -487,7 +558,7 @@ impl SessionStore for SqliteStore {
             let savepoint = transaction.savepoint()?;
             let done = match *item {
                 Batched::Write { key, write } => {
-                    write_in(&savepoint, key, &write).map(Committed::Written)
+                    write_in(&savepoint, &self.machine, key, &write).map(Committed::Written)
                 }
                 Batched::Acknowledge {
                     client,
@@ -515,12 +586,12 @@ impl SessionStore for SqliteStore {
         let connection = self.connection();
         let mut statement = connection.prepare_cached(
             "SELECT session, earliest_due FROM sessions \
-             WHERE earliest_due IS NOT NULL AND earliest_due <= ?1 \
-             ORDER BY earliest_due, session LIMIT ?2",
+             WHERE machine = ?1 AND earliest_due IS NOT NULL AND earliest_due <= ?2 \
+             ORDER BY earliest_due, session LIMIT ?3",
         )?;
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let listed = statement
-            .query_map((moment(ms), limit), |row| {
+            .query_map((self.machine.as_str(), moment(ms), limit), |row| {
                 Ok(Due {
                     key: row.get(0)?,
                     due: row.get(1)?,
@@ -537,15 +608,18 @@ impl SessionStore for SqliteStore {
         let listed = match after {
             Some(after) => {
                 let mut statement = connection.prepare_cached(
-                    "SELECT session FROM sessions WHERE session > ?1 ORDER BY session LIMIT ?2",
+                    "SELECT session FROM sessions WHERE machine = ?1 AND session > ?2 \
+                     ORDER BY session LIMIT ?3",
                 )?;
-                let rows = statement.query_map((after, limit), |row| row.get(0))?;
+                let rows =
+                    statement.query_map((self.machine.as_str(), after, limit), |row| row.get(0))?;
                 rows.collect::<rusqlite::Result<Vec<String>>>()?
             }
             None => {
-                let mut statement = connection
-                    .prepare_cached("SELECT session FROM sessions ORDER BY session LIMIT ?1")?;
-                let rows = statement.query_map((limit,), |row| row.get(0))?;
+                let mut statement = connection.prepare_cached(
+                    "SELECT session FROM sessions WHERE machine = ?1 ORDER BY session LIMIT ?2",
+                )?;
+                let rows = statement.query_map((self.machine.as_str(), limit), |row| row.get(0))?;
                 rows.collect::<rusqlite::Result<Vec<String>>>()?
             }
         };
@@ -561,17 +635,27 @@ impl SessionStore for SqliteStore {
     ) -> Result<Lease, AcquireError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        rules::admit_acquire(holding(&transaction, key)?.as_ref(), owner, now_ms)?;
+        rules::admit_acquire(
+            holding(&transaction, &self.machine, key)?.as_ref(),
+            owner,
+            now_ms,
+        )?;
         let lease = Lease {
             fence: next_number(&transaction)?,
             expires_ms: rules::expiry(now_ms, ttl_ms),
         };
         transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO leases (session, owner, fence, expires_ms) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT OR REPLACE INTO leases (machine, session, owner, fence, expires_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?
-            .execute((key, owner, lease.fence, lease.expires_ms))?;
+            .execute((
+                self.machine.as_str(),
+                key,
+                owner,
+                lease.fence,
+                lease.expires_ms,
+            ))?;
         transaction.commit()?;
         Ok(lease)
     }
@@ -579,11 +663,17 @@ impl SessionStore for SqliteStore {
     fn renew(&self, key: &str, fence: u64, ttl_ms: u64, now_ms: u64) -> Result<Lease, LeaseError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        rules::admit_renew(holding(&transaction, key)?.as_ref(), fence, now_ms)?;
+        rules::admit_renew(
+            holding(&transaction, &self.machine, key)?.as_ref(),
+            fence,
+            now_ms,
+        )?;
         let expires_ms = rules::expiry(now_ms, ttl_ms);
         transaction
-            .prepare_cached("UPDATE leases SET expires_ms = ?2 WHERE session = ?1")?
-            .execute((key, expires_ms))?;
+            .prepare_cached(
+                "UPDATE leases SET expires_ms = ?3 WHERE machine = ?1 AND session = ?2",
+            )?
+            .execute((self.machine.as_str(), key, expires_ms))?;
         transaction.commit()?;
         Ok(Lease { fence, expires_ms })
     }
@@ -591,10 +681,10 @@ impl SessionStore for SqliteStore {
     fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        rules::admit_release(holding(&transaction, key)?.as_ref(), fence)?;
+        rules::admit_release(holding(&transaction, &self.machine, key)?.as_ref(), fence)?;
         transaction
-            .prepare_cached("DELETE FROM leases WHERE session = ?1")?
-            .execute((key,))?;
+            .prepare_cached("DELETE FROM leases WHERE machine = ?1 AND session = ?2")?
+            .execute((self.machine.as_str(), key))?;
         transaction.commit()?;
         Ok(())
     }
@@ -602,7 +692,7 @@ impl SessionStore for SqliteStore {
     fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        let appended = append_in(&transaction, appends, now_ms)?;
+        let appended = append_in(&transaction, &self.machine, appends, now_ms)?;
         transaction.commit()?;
         Ok(appended)
     }
@@ -645,31 +735,36 @@ impl SessionStore for SqliteStore {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let old = {
             let mut statement = transaction.prepare_cached(
-                "SELECT number, at_ms, sender, envelope FROM outbox_entries \
+                "SELECT number, at_ms, sender, envelope, machine FROM outbox_entries \
                  WHERE client = ?1 AND at_ms < ?2 ORDER BY number LIMIT ?3",
             )?;
-            let rows = statement.query_map((client, moment(before_ms), limit), entry_row)?;
-            rows.collect::<rusqlite::Result<Vec<OutboxEntry>>>()?
+            let rows = statement.query_map((client, moment(before_ms), limit), |row| {
+                Ok((entry_row(row)?, row.get::<_, String>(4)?))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<(OutboxEntry, String)>>>()?
         };
         let mut expiry = Expiry::default();
-        for entry in old {
+        for (entry, machine) in old {
             transaction
                 .prepare_cached("DELETE FROM outbox_entries WHERE client = ?1 AND number = ?2")?
                 .execute((client, entry.number))?;
-            // A note is written for a session the store holds: one that ended has no next run.
+            // A note is written for a session the store holds, of the machine that sent the
+            // entry: one that ended has no next run.
             let noted = match &entry.sender {
-                Some(sender) if version_of(&transaction, sender)? != 0 => Some(sender),
+                Some(sender) if version_of(&transaction, &machine, sender)? != 0 => Some(sender),
                 _ => None,
             };
             if let Some(sender) = noted {
                 let id = next_number(&transaction)?;
                 transaction
                     .prepare_cached(
-                        "INSERT INTO outbox_notes (id, session, client, number, at_ms, envelope) \
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        "INSERT INTO outbox_notes \
+                         (id, machine, session, client, number, at_ms, envelope) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     )?
                     .execute((
                         id,
+                        machine.as_str(),
                         sender,
                         client,
                         entry.number,
@@ -677,8 +772,10 @@ impl SessionStore for SqliteStore {
                         &entry.envelope,
                     ))?;
                 transaction
-                    .prepare_cached("UPDATE sessions SET earliest_due = ?2 WHERE session = ?1")?
-                    .execute((sender, rules::DUE_AT_ONCE))?;
+                    .prepare_cached(
+                        "UPDATE sessions SET earliest_due = ?3 WHERE machine = ?1 AND session = ?2",
+                    )?
+                    .execute((machine.as_str(), sender, rules::DUE_AT_ONCE))?;
             }
             expiry.expired.push(Expired {
                 client: client.to_string(),
@@ -702,10 +799,10 @@ impl SessionStore for SqliteStore {
         let connection = self.connection();
         let mut statement = connection.prepare_cached(
             "SELECT id, client, number, at_ms, envelope FROM outbox_notes \
-             WHERE session = ?1 ORDER BY id",
+             WHERE machine = ?1 AND session = ?2 ORDER BY id",
         )?;
         let notes = statement
-            .query_map((key,), |row| {
+            .query_map((self.machine.as_str(), key), |row| {
                 Ok(Note {
                     id: row.get(0)?,
                     client: row.get(1)?,
@@ -775,23 +872,28 @@ impl SessionStore for SqliteStore {
         let changed = transaction
             .prepare_cached(
                 "UPDATE outbox_notes SET envelope = ?4 \
-                 WHERE id = ?1 AND session = ?2 AND envelope = ?3",
+                 WHERE id = ?1 AND machine = ?5 AND session = ?2 AND envelope = ?3",
             )?
-            .execute((id, key, held, envelope))?;
+            .execute((id, key, held, envelope, self.machine.as_str()))?;
         transaction.commit()?;
         Ok(changed == 1)
     }
 }
 
-/// What [`SessionStore::write`] does with `write` to the session `key` names, in the transaction
-/// (or the savepoint of one) `connection` holds: refused before it writes anything unless the
-/// rules admit it. A statement that fails after that leaves what the ones before it wrote, which
-/// the caller rolls back with the rest of its transaction or savepoint.
-fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+/// What [`SessionStore::write`] does with `write` to the session of `machine` that `key` names,
+/// in the transaction (or the savepoint of one) `connection` holds: refused before it writes
+/// anything unless the rules admit it. A statement that fails after that leaves what the ones
+/// before it wrote, which the caller rolls back with the rest of its transaction or savepoint.
+fn write_in(
+    connection: &Connection,
+    machine: &str,
+    key: &str,
+    write: &Write<'_>,
+) -> Result<Written, WriteError> {
     rules::admit_write(
-        holding(connection, key)?.as_ref(),
+        holding(connection, machine, key)?.as_ref(),
         write.fence,
-        version_of(connection, key)?,
+        version_of(connection, machine, key)?,
         write.expected_version,
     )?;
     for under in write.under {
@@ -809,22 +911,25 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
             let version = next_number(connection)?;
             connection
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO sessions (session, state, version, earliest_due) \
-                     VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT OR REPLACE INTO sessions \
+                     (machine, session, state, version, earliest_due) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
                 )?
-                .execute((key, state, version, earliest_due.map(moment)))?;
+                .execute((machine, key, state, version, earliest_due.map(moment)))?;
             connection
-                .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1 AND id <= ?2")?
-                .execute((key, write.notes_through))?;
+                .prepare_cached(
+                    "DELETE FROM outbox_notes WHERE machine = ?1 AND session = ?2 AND id <= ?3",
+                )?
+                .execute((machine, key, write.notes_through))?;
             version
         }
         Change::Remove => {
             connection
-                .prepare_cached("DELETE FROM sessions WHERE session = ?1")?
-                .execute((key,))?;
+                .prepare_cached("DELETE FROM sessions WHERE machine = ?1 AND session = ?2")?
+                .execute((machine, key))?;
             connection
-                .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1")?
-                .execute((key,))?;
+                .prepare_cached("DELETE FROM outbox_notes WHERE machine = ?1 AND session = ?2")?
+                .execute((machine, key))?;
             for &session in write.sessions {
                 connection
                     .prepare_cached("DELETE FROM kv_first_results WHERE session = ?1")?
@@ -836,7 +941,7 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
             0
         }
     };
-    let appended = append_in(connection, write.outbox, write.now_ms)?;
+    let appended = append_in(connection, machine, write.outbox, write.now_ms)?;
     if let Some(journal) = &write.journal {
         journal_in(connection, key, journal, write.now_ms)?;
     }
@@ -963,9 +1068,11 @@ fn acknowledge_in(
 }
 
 /// Append `appends` at `now_ms` in the transaction `connection` holds, each to its client's
-/// outbox, opened in the append's incarnation when the store holds none for the client.
+/// outbox, opened in the append's incarnation when the store holds none for the client, each sent
+/// by a session of `machine`.
 fn append_in(
     connection: &Connection,
+    machine: &str,
     appends: &[Append<'_>],
     now_ms: u64,
 ) -> rusqlite::Result<Vec<Appended>> {
@@ -988,10 +1095,17 @@ fn append_in(
             .execute((append.client, at_ms))?;
         connection
             .prepare_cached(
-                "INSERT INTO outbox_entries (client, number, at_ms, sender, envelope) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO outbox_entries (client, number, at_ms, sender, envelope, machine) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
-            .execute((append.client, number, at_ms, append.sender, append.envelope))?;
+            .execute((
+                append.client,
+                number,
+                at_ms,
+                append.sender,
+                append.envelope,
+                machine,
+            ))?;
         appended.push(Appended {
             client: append.client.to_string(),
             incarnation,
@@ -2419,6 +2533,39 @@ impl JournalStore for SqliteStore {
             .execute((position, held, data))?;
         transaction.commit()?;
         Ok(changed == 1)
+    }
+
+    fn read_through(&self, reader: &str) -> Result<u64, Failure> {
+        let position: Option<u64> = self
+            .connection()
+            .prepare_cached("SELECT position FROM journal_readers WHERE reader = ?1")?
+            .query_row((reader,), |row| row.get(0))
+            .optional()?;
+        Ok(position.unwrap_or(0))
+    }
+
+    fn keep_read(&self, reader: &str, position: u64) -> Result<u64, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let horizon = journal_horizon_of(&transaction)?;
+        if position > horizon {
+            return Err(Failure::new(PastHorizon {
+                asked: position,
+                horizon,
+            }));
+        }
+        let held: Option<u64> = transaction
+            .prepare_cached("SELECT position FROM journal_readers WHERE reader = ?1")?
+            .query_row((reader,), |row| row.get(0))
+            .optional()?;
+        let kept = held.map_or(position, |held| held.max(position));
+        transaction
+            .prepare_cached(
+                "INSERT OR REPLACE INTO journal_readers (reader, position) VALUES (?1, ?2)",
+            )?
+            .execute((reader, kept))?;
+        transaction.commit()?;
+        Ok(kept)
     }
 }
 

@@ -121,6 +121,23 @@ enum SealedItem<'a, S> {
 }
 
 impl<S: SessionStore> Sealed<S> {
+    /// What the record of the session under `entry` is bound to: the entry of its key, and, for a
+    /// wrapped handle of a named machine, that machine (ADR 0114, D2), so that a record moved to
+    /// the session of another machine's equal key does not open. The machine is told by its
+    /// length, so no two pairs bind alike; a handle of the empty name binds the entry alone, as
+    /// before machines were kept apart.
+    fn session_binding(&self, entry: &str) -> Vec<u8> {
+        let machine = self.inner.machine();
+        if machine.is_empty() {
+            return entry.as_bytes().to_vec();
+        }
+        let mut bound = Vec::with_capacity(8 + machine.len() + entry.len());
+        bound.extend_from_slice(&(machine.len() as u64).to_be_bytes());
+        bound.extend_from_slice(machine.as_bytes());
+        bound.extend_from_slice(entry.as_bytes());
+        bound
+    }
+
     /// `write` to the session `key` names, as the wrapped store keeps it.
     fn seal_write<'a>(
         &'a self,
@@ -129,9 +146,11 @@ impl<S: SessionStore> Sealed<S> {
     ) -> Result<SealedWrite<'a, S>, Failure> {
         let entry = self.digest_of(key);
         let record = match write.change {
-            Change::Keep { state, .. } => {
-                Some(self.seal(STORE_SESSIONS, entry.as_bytes(), &payload(key, state))?)
-            }
+            Change::Keep { state, .. } => Some(self.seal(
+                STORE_SESSIONS,
+                &self.session_binding(&entry),
+                &payload(key, state),
+            )?),
             Change::Remove => None,
         };
         Ok(SealedWrite {
@@ -173,7 +192,7 @@ impl<S: SessionStore> Sealed<S> {
 
     /// The key and the saved state the record `record` of the entry `entry` holds.
     fn open_session(&self, entry: &str, record: &[u8]) -> Result<(String, Vec<u8>), Failure> {
-        let plaintext = self.open(STORE_SESSIONS, entry.as_bytes(), record)?;
+        let plaintext = self.open(STORE_SESSIONS, &self.session_binding(entry), record)?;
         session_of(&plaintext).map_err(Failure::from)
     }
 
@@ -237,7 +256,11 @@ impl<S: SessionStore> Sealed<S> {
         let Some(stored) = self.inner.get(entry)? else {
             return Ok(Some(false));
         };
-        let record = match self.reseal_record(STORE_SESSIONS, entry.as_bytes(), &stored.state)? {
+        let record = match self.reseal_record(
+            STORE_SESSIONS,
+            &self.session_binding(entry),
+            &stored.state,
+        )? {
             Reseal::Current => return Ok(Some(false)),
             Reseal::Refused => return Ok(None),
             Reseal::Record(record) => record,
@@ -254,6 +277,11 @@ impl<S: SessionStore> Sealed<S> {
 }
 
 impl<S: SessionStore> SessionStore for Sealed<S> {
+    /// The wrapped handle's machine, whose sessions this one keeps sealed.
+    fn machine(&self) -> &str {
+        self.inner.machine()
+    }
+
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
         let entry = self.digest_of(key);
         let Some(stored) = self.inner.get(&entry)? else {

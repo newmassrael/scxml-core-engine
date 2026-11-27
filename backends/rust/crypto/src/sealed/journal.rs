@@ -433,4 +433,13 @@ impl<S: JournalStore> JournalStore for Sealed<S> {
         )?;
         self.inner.reseal_journaled(position, &stored.data, &record)
     }
+
+    /// The wrapped store's mark of the reader, kept under the entry of its name as a stream's is.
+    fn read_through(&self, reader: &str) -> Result<u64, Failure> {
+        self.inner.read_through(&self.digest_of(reader))
+    }
+
+    fn keep_read(&self, reader: &str, position: u64) -> Result<u64, Failure> {
+        self.inner.keep_read(&self.digest_of(reader), position)
+    }
 }

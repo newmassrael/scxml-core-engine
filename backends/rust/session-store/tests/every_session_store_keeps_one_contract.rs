@@ -110,6 +110,15 @@ fn in_memory_a_batch_appends_and_acknowledges_item_by_item() {
     outbox_conformance::a_batch_appends_and_acknowledges_item_by_item(&in_memory());
 }
 
+#[test]
+fn in_memory_a_session_is_its_machine_and_its_key() {
+    let store = MemoryStore::new();
+    conformance::a_session_is_its_machine_and_its_key(
+        &store.of_machine("rooms"),
+        &store.of_machine("view"),
+    );
+}
+
 #[cfg(feature = "sqlite")]
 mod common;
 
@@ -233,5 +242,16 @@ mod on_sqlite {
         outbox_conformance::a_batch_appends_and_acknowledges_item_by_item(&on_sqlite(
             "batch-outbox",
         ));
+    }
+
+    /// Each machine through a connection of its own, as two processes serving one machine each
+    /// would hold them.
+    #[test]
+    fn a_session_is_its_machine_and_its_key() {
+        let store = on_sqlite("machines");
+        conformance::a_session_is_its_machine_and_its_key(
+            &store.handle().of_machine("rooms"),
+            &store.handle().of_machine("view"),
+        );
     }
 }

@@ -14,7 +14,7 @@ use crate::audit::{
 use crate::batch::{Batched, Committed, Decided};
 use crate::journal::{
     recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage, JournalStore,
-    Observation, ObservedStream, SessionsStream, Stream, StreamName,
+    Observation, ObservedStream, PastHorizon, SessionsStream, Stream, StreamName,
 };
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
@@ -38,9 +38,23 @@ use crate::{
 /// handle on the same store, as a second connection is on a database, so a test can give each of
 /// its threads one. One lock is a transaction: every call reads and writes under it, and writes
 /// only after the rules admitted the call, so a call refused or failed leaves nothing changed.
+///
+/// A handle keeps the sessions of one machine ([`SessionStore::machine`]): a new store's is of the
+/// machine the empty name stands for, and [`Self::of_machine`] gives a handle on the same store of
+/// another (ADR 0114, D2).
 #[derive(Clone, Default)]
 pub struct MemoryStore {
     shared: Arc<Mutex<Records>>,
+    /// The machine whose sessions this handle keeps.
+    machine: String,
+}
+
+/// What names a session: its machine and its key (ADR 0114, D2).
+type Session = (String, String);
+
+/// The session of `machine` that `key` names.
+fn session(machine: &str, key: &str) -> Session {
+    (machine.to_string(), key.to_string())
 }
 
 /// A client's outbox, without its entries: the incarnation it numbers in, its next number, and
@@ -55,17 +69,20 @@ struct Head {
 /// A note an expiry wrote, with the session it is for.
 #[derive(Clone)]
 struct NoteRow {
-    session: String,
+    session: Session,
     note: Note,
 }
 
 #[derive(Default)]
 struct Records {
-    sessions: BTreeMap<String, Stored>,
-    leases: BTreeMap<String, Holding>,
+    sessions: BTreeMap<Session, Stored>,
+    leases: BTreeMap<Session, Holding>,
     /// Every client's outbox head, and its entries by client and number.
     heads: BTreeMap<String, Head>,
     entries: BTreeMap<(String, u64), OutboxEntry>,
+    /// The machine of the session that sent each entry, by client and number: which machine's
+    /// session an expiry's note is for.
+    senders: BTreeMap<(String, u64), String>,
     /// The notes of expiries, by their number.
     notes: BTreeMap<u64, NoteRow>,
     /// The last number the store handed out, a version, a fence or a note's.
@@ -95,6 +112,8 @@ struct Records {
     /// (module [`crate::membership`]), by the member's name.
     members: BTreeMap<String, Member>,
     offers: BTreeMap<String, Offer>,
+    /// How far each reader of the journal has taken it in, by its name.
+    readers: BTreeMap<String, u64>,
 }
 
 impl Records {
@@ -103,13 +122,15 @@ impl Records {
         self.last
     }
 
-    fn version_of(&self, key: &str) -> u64 {
-        self.sessions.get(key).map_or(0, |stored| stored.version)
+    fn version_of(&self, session: &Session) -> u64 {
+        self.sessions
+            .get(session)
+            .map_or(0, |stored| stored.version)
     }
 
     /// Append `appends` at `now_ms`, each to its client's outbox, opened in the append's
-    /// incarnation when it is not held.
-    fn append(&mut self, appends: &[Append<'_>], now_ms: u64) -> Vec<Appended> {
+    /// incarnation when it is not held, each sent by a session of `machine`.
+    fn append(&mut self, machine: &str, appends: &[Append<'_>], now_ms: u64) -> Vec<Appended> {
         let at_ms = moment(now_ms);
         appends
             .iter()
@@ -126,6 +147,8 @@ impl Records {
                 head.next += 1;
                 head.touched_ms = at_ms;
                 let incarnation = head.incarnation.clone();
+                self.senders
+                    .insert((append.client.to_string(), number), machine.to_string());
                 self.entries.insert(
                     (append.client.to_string(), number),
                     OutboxEntry {
@@ -161,13 +184,19 @@ impl Records {
         self.entries.range(from..=to).map(|(_, entry)| entry)
     }
 
-    /// What [`SessionStore::write`] does, on these records: nothing unless the rules admit it and
-    /// the bytes of each of its facts could be made.
-    fn write(&mut self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+    /// What [`SessionStore::write`] does to the session of `machine` that `key` names, on these
+    /// records: nothing unless the rules admit it and the bytes of each of its facts could be made.
+    fn write(
+        &mut self,
+        machine: &str,
+        key: &str,
+        write: &Write<'_>,
+    ) -> Result<Written, WriteError> {
+        let named = session(machine, key);
         rules::admit_write(
-            self.leases.get(key),
+            self.leases.get(&named),
             write.fence,
-            self.version_of(key),
+            self.version_of(&named),
             write.expected_version,
         )?;
         for under in write.under {
@@ -189,19 +218,19 @@ impl Records {
             } => {
                 let version = self.next_number();
                 self.sessions.insert(
-                    key.to_string(),
+                    named.clone(),
                     Stored {
                         state: state.to_vec(),
                         version,
                         earliest_due: earliest_due.map(moment),
                     },
                 );
-                self.take_notes(key, Some(write.notes_through));
+                self.take_notes(&named, Some(write.notes_through));
                 version
             }
             Change::Remove => {
-                self.sessions.remove(key);
-                self.take_notes(key, None);
+                self.sessions.remove(&named);
+                self.take_notes(&named, None);
                 self.first_results
                     .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
                 self.audit_identities
@@ -209,7 +238,7 @@ impl Records {
                 0
             }
         };
-        let appended = self.append(write.outbox, write.now_ms);
+        let appended = self.append(machine, write.outbox, write.now_ms);
         for entry in journaled {
             self.keep_journaled(entry);
         }
@@ -343,6 +372,7 @@ impl Records {
             .collect();
         for key in &covered {
             self.entries.remove(key);
+            self.senders.remove(key);
         }
         if !covered.is_empty() {
             if let Some(head) = self.heads.get_mut(client) {
@@ -352,11 +382,12 @@ impl Records {
         covered.len() as u64
     }
 
-    /// Take the notes of `key`: those numbered at most `through`, or every one when `through` is
-    /// `None`.
-    fn take_notes(&mut self, key: &str, through: Option<u64>) {
-        self.notes
-            .retain(|id, row| row.session != key || through.is_some_and(|through| *id > through));
+    /// Take the notes of `session`: those numbered at most `through`, or every one when `through`
+    /// is `None`.
+    fn take_notes(&mut self, session: &Session, through: Option<u64>) {
+        self.notes.retain(|id, row| {
+            row.session != *session || through.is_some_and(|through| *id > through)
+        });
     }
 
     /// Keep `value` under `key` at the value counter's next number; that number.
@@ -397,6 +428,21 @@ impl MemoryStore {
         Self::default()
     }
 
+    /// A handle on the same store that keeps the sessions of `machine` (ADR 0114, D2): every call
+    /// that names a key names the session of `machine` and that key, and what the handles share
+    /// (the journal, the outboxes, the counter that numbers versions and fences) is one.
+    pub fn of_machine(&self, machine: &str) -> Self {
+        Self {
+            shared: Arc::clone(&self.shared),
+            machine: machine.to_string(),
+        }
+    }
+
+    /// The session of this handle's machine that `key` names.
+    fn session(&self, key: &str) -> Session {
+        session(&self.machine, key)
+    }
+
     /// The records, whatever a thread that panicked while it held them left: nothing, since every
     /// call changes them only after its checks, in steps that do not panic.
     fn records(&self) -> MutexGuard<'_, Records> {
@@ -405,12 +451,16 @@ impl MemoryStore {
 }
 
 impl SessionStore for MemoryStore {
+    fn machine(&self) -> &str {
+        &self.machine
+    }
+
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
-        Ok(self.records().sessions.get(key).cloned())
+        Ok(self.records().sessions.get(&self.session(key)).cloned())
     }
 
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
-        self.records().write(key, write)
+        self.records().write(&self.machine, key, write)
     }
 
     /// Every item under the one lock that is the batch's transaction, each decided by the same
@@ -420,7 +470,9 @@ impl SessionStore for MemoryStore {
         Ok(batch
             .iter()
             .map(|item| match *item {
-                Batched::Write { key, write } => records.write(key, &write).map(Committed::Written),
+                Batched::Write { key, write } => records
+                    .write(&self.machine, key, &write)
+                    .map(Committed::Written),
                 Batched::Acknowledge {
                     client,
                     incarnation,
@@ -441,7 +493,8 @@ impl SessionStore for MemoryStore {
         let mut listed: Vec<Due> = records
             .sessions
             .iter()
-            .filter_map(|(key, stored)| {
+            .filter(|((machine, _), _)| *machine == self.machine)
+            .filter_map(|((_, key), stored)| {
                 stored.earliest_due.filter(|&due| due <= ms).map(|due| Due {
                     key: key.clone(),
                     due,
@@ -456,12 +509,16 @@ impl SessionStore for MemoryStore {
 
     fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
         let records = self.records();
-        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        let from = match after {
+            Some(after) => Bound::Excluded(self.session(after)),
+            None => Bound::Included(self.session("")),
+        };
         Ok(records
             .sessions
-            .range::<str, _>((from, Bound::Unbounded))
+            .range((from, Bound::Unbounded))
+            .take_while(|((machine, _), _)| *machine == self.machine)
             .take(limit)
-            .map(|(key, _)| key.clone())
+            .map(|((_, key), _)| key.clone())
             .collect())
     }
 
@@ -472,14 +529,15 @@ impl SessionStore for MemoryStore {
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Lease, AcquireError> {
+        let named = self.session(key);
         let mut records = self.records();
-        rules::admit_acquire(records.leases.get(key), owner, now_ms)?;
+        rules::admit_acquire(records.leases.get(&named), owner, now_ms)?;
         let lease = Lease {
             fence: records.next_number(),
             expires_ms: rules::expiry(now_ms, ttl_ms),
         };
         records.leases.insert(
-            key.to_string(),
+            named,
             Holding {
                 owner: owner.to_string(),
                 fence: lease.fence,
@@ -490,24 +548,26 @@ impl SessionStore for MemoryStore {
     }
 
     fn renew(&self, key: &str, fence: u64, ttl_ms: u64, now_ms: u64) -> Result<Lease, LeaseError> {
+        let named = self.session(key);
         let mut records = self.records();
-        rules::admit_renew(records.leases.get(key), fence, now_ms)?;
+        rules::admit_renew(records.leases.get(&named), fence, now_ms)?;
         let expires_ms = rules::expiry(now_ms, ttl_ms);
-        if let Some(held) = records.leases.get_mut(key) {
+        if let Some(held) = records.leases.get_mut(&named) {
             held.expires_ms = expires_ms;
         }
         Ok(Lease { fence, expires_ms })
     }
 
     fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+        let named = self.session(key);
         let mut records = self.records();
-        rules::admit_release(records.leases.get(key), fence)?;
-        records.leases.remove(key);
+        rules::admit_release(records.leases.get(&named), fence)?;
+        records.leases.remove(&named);
         Ok(())
     }
 
     fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
-        Ok(self.records().append(appends, now_ms))
+        Ok(self.records().append(&self.machine, appends, now_ms))
     }
 
     fn outbox(&self, client: &str) -> Result<Option<Outbox>, Failure> {
@@ -551,10 +611,15 @@ impl SessionStore for MemoryStore {
             .collect();
         let mut expiry = Expiry::default();
         for entry in old {
-            records.entries.remove(&(client.to_string(), entry.number));
+            let place = (client.to_string(), entry.number);
+            records.entries.remove(&place);
+            // A note is for the session of the machine that sent the entry, while the store holds
+            // it: one that ended has no next run.
+            let machine = records.senders.remove(&place).unwrap_or_default();
             let noted = entry
                 .sender
-                .clone()
+                .as_deref()
+                .map(|sender| session(&machine, sender))
                 .filter(|sender| records.sessions.contains_key(sender));
             if let Some(sender) = noted {
                 let id = records.next_number();
@@ -593,11 +658,12 @@ impl SessionStore for MemoryStore {
     }
 
     fn notes(&self, key: &str) -> Result<Vec<Note>, Failure> {
+        let named = self.session(key);
         let records = self.records();
         Ok(records
             .notes
             .values()
-            .filter(|row| row.session == key)
+            .filter(|row| row.session == named)
             .map(|row| row.note.clone())
             .collect())
     }
@@ -643,9 +709,10 @@ impl SessionStore for MemoryStore {
         held: &[u8],
         envelope: &[u8],
     ) -> Result<bool, Failure> {
+        let named = self.session(key);
         let mut records = self.records();
         Ok(match records.notes.get_mut(&id) {
-            Some(row) if row.session == key && row.note.envelope == held => {
+            Some(row) if row.session == named && row.note.envelope == held => {
                 row.note.envelope = envelope.to_vec();
                 true
             }
@@ -1252,5 +1319,23 @@ impl JournalStore for MemoryStore {
             }
             _ => false,
         })
+    }
+
+    fn read_through(&self, reader: &str) -> Result<u64, Failure> {
+        Ok(self.records().readers.get(reader).copied().unwrap_or(0))
+    }
+
+    fn keep_read(&self, reader: &str, position: u64) -> Result<u64, Failure> {
+        let mut records = self.records();
+        let horizon = records.journal_horizon();
+        if position > horizon {
+            return Err(Failure::new(PastHorizon {
+                asked: position,
+                horizon,
+            }));
+        }
+        let kept = records.readers.entry(reader.to_string()).or_insert(0);
+        *kept = (*kept).max(position);
+        Ok(*kept)
     }
 }

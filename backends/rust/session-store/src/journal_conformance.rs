@@ -41,6 +41,8 @@
 //! * [`data_is_replaced_only_from_what_it_holds`] (ADR 0109, D8): an entry's data is replaced only
 //!   from the bytes it holds, every other field kept.
 //! * [`handles_share_the_journal`]: what one handle appended, another reads.
+//! * [`a_reader_keeps_how_far_it_read`] (`NonePassed`, D4): a reader's mark is kept by its name,
+//!   only rises, and is refused above the horizon, for a position still open as well.
 //!
 //! Each function needs a harness whose store holds nothing when it starts. The clock is the one
 //! the functions give; nothing here waits on time. A failed expectation panics, as a test's does.
@@ -1336,6 +1338,83 @@ pub fn handles_share_the_journal(harness: &impl JournalHarness) {
     assert_eq!(all(&harness.handle()), entries);
 }
 
+/// A reader's mark (D4): `0` for a reader that kept none, kept by its name and read through any
+/// handle, never lower than one kept before, and refused above the horizon, where an entry can
+/// still appear: past the last position, and, for a store that can be made to hold one open
+/// ([`JournalHarness::begin`]), at a position a transaction took and has not committed. Red if a
+/// store lowers a mark, or keeps one a follower that starts from it would pass an entry by.
+pub fn a_reader_keeps_how_far_it_read(harness: &impl JournalHarness) {
+    let store = harness.handle();
+    assert_eq!(
+        store.read_through("view").expect("a read of a mark"),
+        0,
+        "a reader that kept no mark reads from the start"
+    );
+    let held = lease(&store, "k");
+    let facts = [fact(b"one"), fact(b"two")];
+    let version = store
+        .write("k", &keeps(b"s", 0, held.fence, &facts, 1_000))
+        .expect("a write that appends")
+        .version;
+    let last = last_position(&store);
+    let below = last.saturating_sub(1);
+    assert_eq!(
+        store
+            .keep_read("view", below)
+            .expect("a mark below the horizon"),
+        below
+    );
+    assert_eq!(
+        store
+            .keep_read("view", below.saturating_sub(1))
+            .expect("a lower mark"),
+        below,
+        "a mark fell"
+    );
+    assert_eq!(
+        harness
+            .handle()
+            .read_through("view")
+            .expect("a read of a mark"),
+        below,
+        "a mark is the store's, read through any handle"
+    );
+    assert_eq!(
+        store.read_through("other").expect("a read of a mark"),
+        0,
+        "a mark is its reader's own"
+    );
+    let past = store.keep_read("view", last + 1);
+    assert!(past.is_err(), "a mark above the horizon was kept: {past:?}");
+    assert_eq!(
+        store.read_through("view").expect("a read of a mark"),
+        below,
+        "a refused mark changed what was kept"
+    );
+    let pending = [fact(b"three")];
+    if let Some(commit) = harness.begin("k", keeps(b"s", version, held.fence, &pending, 1_000)) {
+        let open = store.keep_read("view", last + 1);
+        assert!(
+            open.is_err(),
+            "a mark at a position still open was kept: {open:?}"
+        );
+        commit().expect("the commit of the transaction that took it");
+        assert_eq!(
+            store
+                .keep_read("view", last + 1)
+                .expect("a mark at a position committed"),
+            last + 1
+        );
+    } else {
+        assert_eq!(
+            store
+                .keep_read("view", last)
+                .expect("a mark at the horizon"),
+            last
+        );
+    }
+}
+
 /// The kit held to stores whose transactions commit out of the order of their numbers: one that
 /// keeps the contract, which it must accept, and ones that break it, each in one way, which it must
 /// refuse.
@@ -1387,6 +1466,8 @@ mod tests {
         /// What committed.
         entries: BTreeMap<u64, JournalEntry>,
         recorded_ms: u64,
+        /// The marks of the journal's readers.
+        readers: BTreeMap<String, u64>,
     }
 
     impl Numbers {
@@ -1694,6 +1775,24 @@ mod tests {
                 _ => false,
             })
         }
+
+        fn read_through(&self, reader: &str) -> Result<u64, Failure> {
+            Ok(self.numbers().readers.get(reader).copied().unwrap_or(0))
+        }
+
+        fn keep_read(&self, reader: &str, position: u64) -> Result<u64, Failure> {
+            let mut numbers = self.numbers();
+            let horizon = self.horizon(&numbers);
+            if position > horizon {
+                return Err(Failure::new(PastHorizon {
+                    asked: position,
+                    horizon,
+                }));
+            }
+            let kept = numbers.readers.entry(reader.to_string()).or_insert(0);
+            *kept = (*kept).max(position);
+            Ok(*kept)
+        }
     }
 
     /// A transaction that began, ended when its writer is gone.
@@ -1763,6 +1862,7 @@ mod tests {
         a_fact_is_kept_with_the_bytes_made_for_its_position,
         data_is_replaced_only_from_what_it_holds,
         handles_share_the_journal,
+        a_reader_keeps_how_far_it_read,
     );
 
     #[test]

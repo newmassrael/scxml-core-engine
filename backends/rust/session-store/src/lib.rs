@@ -10,7 +10,10 @@
 //! moment it comes due. This crate is the place those states are kept, behind one contract,
 //! [`SessionStore`], so that a deployment can put another store behind it.
 //!
-//! The contract keeps, for each key:
+//! The contract keeps, for each session, which is a machine and a key (ADR 0114, D2), so that
+//! the machines of a deployment keep their sessions in one store and an equal key of two of them
+//! names two sessions; a handle keeps the sessions of one machine ([`SessionStore::machine`]), and
+//! every call that names a key names the session of that machine:
 //!
 //! * the saved state, which the store never reads, with a **version** that every write moves, so
 //!   that a write made from a state read earlier is refused when another write came between
@@ -72,7 +75,8 @@
 //! ([`Write::journal`]), in one order of positions a reader reads up to the horizon, and read as of
 //! an earlier position and a valid time; beside them, what another system's adapter observed, once
 //! for each id the other system gave. [`MemoryStore`] in memory, and `SqliteStore` in the same file
-//! (layout 8), held to [`journal_conformance`]. A removal of a session removes none of it.
+//! (layout 8), held to [`journal_conformance`]. A removal of a session removes none of it. How far
+//! each of its readers has taken it in is kept beside it ([`JournalStore::keep_read`], layout 12).
 //!
 //! The members of an open machine (ADR 0113, D4 and D5; module [`membership`]) are kept behind
 //! [`MembershipStore`]: an offer per joining instance, a member per confirmed one with its lease
@@ -172,6 +176,17 @@ pub fn moment(ms: u64) -> u64 {
 /// even after a session was deleted or a lease released. A handle may be shared between threads;
 /// whether two handles on one store may live in two processes is the implementation's to say.
 pub trait SessionStore: Send + Sync {
+    /// The machine whose sessions this handle keeps (ADR 0114, D2): every call that names a key
+    /// names the session of this machine and that key, its state, its lease and its notes, and an
+    /// equal key of another machine names another session. The empty name is the machine of a
+    /// store that keeps one, which is what a store answers unless it keeps several apart
+    /// ([`MemoryStore::of_machine`], `SqliteStore::of_machine`). What is not a session's (the
+    /// journal, the outboxes, the counter that numbers versions and fences) is one for every
+    /// machine of the store.
+    fn machine(&self) -> &str {
+        ""
+    }
+
     /// The session `key` names, or `None` if it holds none.
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure>;
 
@@ -203,7 +218,8 @@ pub trait SessionStore: Send + Sync {
     /// Each fact takes a position above every one the journal gave before, in the order given. A
     /// store that keeps no journal fails a write that gives facts with [`NoJournal`], writing
     /// nothing, rather than lose them; every store of this crate keeps one ([`JournalStore`]), held
-    /// to [`journal_conformance`].
+    /// to [`journal_conformance`]. The stream is the session's: [`Journal::machine`] names the
+    /// machine of the handle the write is made through, which its host keeps it to.
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError>;
 
     /// Write `batch` in one transaction, durable as a whole when this returns, and decided item by

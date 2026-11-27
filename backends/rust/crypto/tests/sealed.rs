@@ -640,6 +640,7 @@ mod journal_in_memory {
             a_fact_is_kept_with_the_bytes_made_for_its_position,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
+            a_reader_keeps_how_far_it_read,
         ]
     );
 }
@@ -664,6 +665,7 @@ mod journal_on_sqlite {
             a_fact_is_kept_with_the_bytes_made_for_its_position,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
+            a_reader_keeps_how_far_it_read,
         ]
     );
 }
@@ -1421,6 +1423,42 @@ fn a_row_moved_to_another_key_changed_or_read_under_another_key_is_refused() {
     assert!(
         sealed_keys.key("generated:b").is_err(),
         "a key moved to another id"
+    );
+}
+
+/// ADR 0114, D2: a session's record is bound to its machine as well as to its key: one moved, in the
+/// wrapped store, to the session of an equal key of another machine does not open there. Red if the
+/// seal binds the entry of the key alone.
+#[test]
+fn a_record_moved_to_another_machines_session_does_not_open() {
+    let inner = MemoryStore::new();
+    let rooms = Sealed::new(inner.of_machine("rooms"), first_keys());
+    let view = Sealed::new(inner.of_machine("view"), first_keys());
+    saved(&rooms, "k", b"the state of the room");
+    saved(&view, "k", b"the state of the view");
+    let entry = rooms.digest_of("k");
+    assert_eq!(
+        entry,
+        view.digest_of("k"),
+        "one key's entry under one index key"
+    );
+    let (rooms_inner, view_inner) = (inner.of_machine("rooms"), inner.of_machine("view"));
+    let moved = rooms_inner.get(&entry).expect("read").expect("held").state;
+    let held = view_inner.get(&entry).expect("read").expect("held");
+    let lease = view_inner
+        .acquire(&entry, "medium", LATEST_MOMENT, 0)
+        .expect("a lease");
+    view_inner
+        .put(&entry, &moved, None, held.version, lease.fence)
+        .expect("the room's record written as the view's");
+    assert!(
+        view.get("k").is_err(),
+        "a record moved to another machine's session"
+    );
+    assert_eq!(
+        rooms.get("k").expect("the room").map(|stored| stored.state),
+        Some(b"the state of the room".to_vec()),
+        "the record opens where it was sealed"
     );
 }
 

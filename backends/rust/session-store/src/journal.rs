@@ -471,6 +471,21 @@ pub trait JournalStore: SessionStore {
     /// seals what it keeps does when it seals an entry again under its active key (ADR 0109, D8):
     /// an answer already given does not change.
     fn reseal_journaled(&self, position: u64, held: &[u8], data: &[u8]) -> Result<bool, Failure>;
+
+    /// The position through which the reader `reader` has taken in every entry it reads, as it last
+    /// kept it ([`JournalStore::keep_read`]); `0` for a reader that kept none. A follower of the
+    /// journal reads on from here when it starts (ADR 0114, D4), and one under a new name reads
+    /// from the start.
+    fn read_through(&self, reader: &str) -> Result<u64, Failure>;
+
+    /// Keep that the reader `reader` has taken in every entry it reads through `position`, and
+    /// answer the position kept: the greater of `position` and the one kept before, since what a
+    /// reader has taken in stays taken in, and a mark that fell would read again only what it
+    /// already took.
+    ///
+    /// Refused ([`PastHorizon`]) when `position` is above the horizon: an entry can still appear
+    /// at or below it, and a reader that starts past it would never read that entry.
+    fn keep_read(&self, reader: &str, position: u64) -> Result<u64, Failure>;
 }
 
 #[cfg(test)]

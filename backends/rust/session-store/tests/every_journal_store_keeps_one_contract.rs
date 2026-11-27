@@ -26,6 +26,7 @@ macro_rules! kit {
                 a_fact_is_kept_with_the_bytes_made_for_its_position,
                 data_is_replaced_only_from_what_it_holds,
                 handles_share_the_journal,
+                a_reader_keeps_how_far_it_read,
             ]
         );
 
