@@ -498,7 +498,7 @@ impl<'t> Doc<'t> {
                 targets: row
                     .targets
                     .iter()
-                    .map(|id| find(id))
+                    .map(|id| find(id.as_str()))
                     .collect::<Result<_, _>>()?,
                 internal: row.internal,
                 content: row.content.clone(),
@@ -523,7 +523,7 @@ impl<'t> Doc<'t> {
         let deep = tables
             .deep
             .iter()
-            .map(|id| find(id))
+            .map(|id| find(id.as_str()))
             .collect::<Result<_, _>>()?;
         let mut on_entry = vec![None; n];
         let mut on_exit = vec![None; n];
