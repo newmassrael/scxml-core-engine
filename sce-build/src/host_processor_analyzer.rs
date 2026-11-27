@@ -127,9 +127,13 @@ pub fn is_unsupported_scxml_target(target: &str) -> bool {
     if target.starts_with('!') {
         return true;
     }
+    // The origin of an instance of an open machine (docs/adr/0113, D2) is a
+    // Mesh target as `#peer` is: routed by the core that serves an open machine,
+    // and refused by name on every other backend when the document is generated.
     let addressed = target.starts_with("#_")
         || (target.len() >= 2 && target.starts_with('#'))
-        || (target.len() > LOCATION_PREFIX.len() && target.starts_with(LOCATION_PREFIX));
+        || (target.len() > LOCATION_PREFIX.len() && target.starts_with(LOCATION_PREFIX))
+        || instance_origin(target).is_some();
     !addressed
 }
 
@@ -738,6 +742,28 @@ pub fn instance_origin(target: &str) -> Option<&str> {
     (machine_ok && instance_ok).then_some(name)
 }
 
+/// The machine whose instances the `sce:targets` entry `mesh://<machine>/{instance}` admits
+/// (docs/adr/0113, D2, amended): a route over every origin of an instance of the open machine
+/// `<machine>`, written as an RFC 6570 URI template of one variable, `{instance}`, that expands
+/// to an instance id. A computed target is held to it when it is that machine's name and an
+/// instance id ([`instance_origin`]); an instance is no value a document can list, since the set
+/// is open. `None` for an entry of any other form.
+pub fn instance_route(entry: &str) -> Option<&str> {
+    let machine = entry
+        .strip_prefix("mesh://")?
+        .strip_suffix(INSTANCE_ROUTE_VARIABLE)?
+        .strip_suffix('/')?;
+    let segment = !machine.is_empty()
+        && machine
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b));
+    segment.then_some(machine)
+}
+
+/// The one variable of an `sce:targets` route over the instances of an open machine
+/// ([`instance_route`]).
+pub const INSTANCE_ROUTE_VARIABLE: &str = "{instance}";
+
 /// Whether `language`'s Mesh core routes the origin of an instance of an open
 /// machine (docs/adr/0113, D2 and D7): the Rust host core, the one core that
 /// serves an open machine.
@@ -1287,6 +1313,26 @@ mod tests {
             assert_eq!(instance_origin(target), expected, "{target:?}");
         }
         assert!(named >= 2, "the table lost its instance cases: {named}");
+    }
+
+    /// docs/adr/0113, D2 (amended): `mesh://<machine>/{instance}` is one `sce:targets` route
+    /// over every instance of `<machine>`, and an instance's origin is a target the SCXML Event
+    /// I/O Processor addresses. Red if the template form, or the origin, is read otherwise.
+    #[test]
+    fn an_instance_route_names_its_machine_and_an_origin_is_addressed() {
+        assert_eq!(instance_route("mesh://phone/{instance}"), Some("phone"));
+        for entry in [
+            "mesh://phone/a1",
+            "mesh:///{instance}",
+            "mesh://ph one/{instance}",
+            "mesh://phone/{id}",
+            "#phone",
+        ] {
+            assert_eq!(instance_route(entry), None, "{entry}");
+        }
+        assert!(!is_unsupported_scxml_target("mesh://phone/a1"));
+        assert!(is_unsupported_scxml_target("mesh://phone"));
+        assert!(is_unsupported_scxml_target("mesh://phone/{instance}"));
     }
 
     /// docs/adr/0113, D2: a literal `<send target="mesh://<machine>/<instance>">`

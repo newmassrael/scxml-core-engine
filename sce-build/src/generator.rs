@@ -2254,24 +2254,60 @@ fn reject_instance_origins_in_unsupported_lang(
     if crate::host_processor_analyzer::serves_instance_origins(language) {
         return Ok(());
     }
+    use crate::host_processor_analyzer::{instance_origin, instance_route};
     let mut written: Option<(String, Option<crate::forge::error::SourceLocation>)> = None;
     crate::host_processor_analyzer::walk_model_actions(model, &mut |_, action| {
-        if written.is_none()
-            && action.action_type == "send"
-            && action.targetexpr.is_empty()
-            && crate::host_processor_analyzer::instance_origin(&action.target).is_some()
+        if written.is_some() || action.action_type != "send" {
+            return;
+        }
+        // A written target, or a route a computed one is held to (`sce:targets`).
+        if action.targetexpr.is_empty() && instance_origin(&action.target).is_some() {
+            written = Some((
+                format!("<send target=\"{}\">", action.target),
+                action.source_location.clone(),
+            ));
+        } else if let Some(route) = action
+            .targets
+            .iter()
+            .find(|entry| instance_route(entry).is_some() || instance_origin(entry).is_some())
         {
-            written = Some((action.target.clone(), action.source_location.clone()));
+            written = Some((
+                format!("<send sce:targets=\"... {route} ...\">"),
+                action.source_location.clone(),
+            ));
         }
     });
-    let Some((target, at)) = written else {
+    // A Mesh request to one instance, `<invoke type="sce:mesh-rpc" src="mesh://m/i">`, before
+    // or after it is lowered to the host's router.
+    if written.is_none() {
+        written = model.invokes.iter().find_map(|invoke| {
+            let (src, at) = match invoke {
+                crate::model::Invoke::MeshRpc(info) => {
+                    (info.target.src_literal()?, &info.base.source_location)
+                }
+                crate::model::Invoke::Unsupported(info)
+                    if info.invoke_type == crate::host_processor_analyzer::MESH_RPC_INVOKE_TYPE =>
+                {
+                    (info.src.as_str(), &info.base.source_location)
+                }
+                _ => return None,
+            };
+            instance_origin(src).map(|_| {
+                (
+                    format!("<invoke type=\"sce:mesh-rpc\" src=\"{src}\">"),
+                    at.clone(),
+                )
+            })
+        });
+    }
+    let Some((element, at)) = written else {
         return Ok(());
     };
     Err(GenerateError::unsupported_at(
         format!(
-            "<send target=\"{target}\"> in '{}' addresses an instance of an open machine by \
-             its origin, which the {} Mesh core does not route (docs/adr/0113, D2 and D7). \
-             Generate this machine with `--lang rust`, whose host core serves an open machine.",
+            "{element} in '{}' addresses an instance of an open machine by its origin, which the \
+             {} Mesh core does not route (docs/adr/0113, D2 and D7). Generate this machine with \
+             `--lang rust`, whose host core serves an open machine.",
             model.name,
             language.canonical_name()
         ),
@@ -7021,6 +7057,20 @@ mod tests {
         };
         let origin = written("mesh://phone/a1");
         let peer = written("#phone");
+        // A `sce-static` server that answers an instance at its origin, held to the one route
+        // over every instance of `phone`, and a Mesh request to one instance.
+        let routed = parse(include_str!(
+            "../tests/fixtures/host_processor/statechart_static_answers_an_instance.scxml"
+        ));
+        let requested = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s">
+                   <invoke id="ask" type="sce:mesh-rpc" src="mesh://phone/a1">
+                     <param name="_mesh_event" expr="'service.request.force'"/>
+                   </invoke>
+                 </state>
+               </scxml>"#,
+        );
         for &language in Language::ALL {
             let refused = reject_instance_origins_in_unsupported_lang(&origin, language);
             if language == Language::Rust {
@@ -7041,6 +7091,21 @@ mod tests {
                 reject_instance_origins_in_unsupported_lang(&peer, language).is_ok(),
                 "{language:?}"
             );
+            for (model, said) in [
+                (&routed, "mesh://phone/{instance}"),
+                (&requested, "src=\"mesh://phone/a1\""),
+            ] {
+                let refused = reject_instance_origins_in_unsupported_lang(model, language);
+                if language == Language::Rust {
+                    assert!(refused.is_ok(), "{language:?}: {refused:?}");
+                } else {
+                    let detail = match &refused {
+                        Err(GenerateError::UnsupportedFeature { detail, .. }) => detail.as_str(),
+                        other => panic!("{language:?}: expected a refusal, got {other:?}"),
+                    };
+                    assert!(detail.contains(said), "{language:?}: {detail}");
+                }
+            }
         }
     }
 

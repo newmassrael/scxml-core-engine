@@ -1801,10 +1801,13 @@ fn collect_invoke_candidates(
 ///   targets of that processor. A computed target of another one is a separate
 ///   lowering.
 /// * **An entry that names no route this machine can send by.** `#_internal`,
-///   `#_parent`, `#_scxml_<session>`, `#_<invokeid>` and a published
-///   `sce://scxml/<session>` location; a Mesh peer is a service a backend gains
-///   with its own runtime (decision 5), and anything else is a target the
-///   processor cannot address (§scxml-6.2.4).
+///   `#_parent`, `#_scxml_<session>`, `#_<invokeid>`, a published
+///   `sce://scxml/<session>` location, and the instances of an open machine, as
+///   one route `mesh://<machine>/{instance}` (an RFC 6570 URI template over the
+///   instance id) or one instance's origin `mesh://<machine>/<instance>`
+///   (docs/adr/0113, D2, amended); a `#peer` is a service a backend gains with
+///   its own runtime (decision 5), and anything else is a target the processor
+///   cannot address (§scxml-6.2.4).
 /// * **Two entries naming one route, or none at all.** The value is matched
 ///   against the set, so a repeat is two entries claiming one answer, and an
 ///   attribute written and left blank reads as a declaration that declares
@@ -1852,11 +1855,19 @@ fn collect_send_targets(
     let mut out: Vec<String> = Vec::new();
     for entry in raw.split_whitespace() {
         let mesh_peer = entry.starts_with('#') && !entry.starts_with("#_");
-        if crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer {
+        // docs/adr/0113, D2 (amended): every instance of an open machine is one
+        // route, `mesh://<machine>/{instance}`, since the instances are an open
+        // set no document can list; a backend whose core routes no instance
+        // refuses the document by name where it is generated.
+        let instances = crate::host_processor_analyzer::instance_route(entry).is_some();
+        if !instances
+            && (crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer)
+        {
             return Err(incompatible(format!(
                 "sce:targets entry '{entry}' is not a route this machine sends by: the \
                  SCXML Event I/O Processor addresses `#_internal`, `#_parent`, \
-                 `#_scxml_<session>`, `#_<invokeid>` and `sce://scxml/<session>`{}",
+                 `#_scxml_<session>`, `#_<invokeid>`, `sce://scxml/<session>`, and the \
+                 instances of an open machine as `mesh://<machine>/{{instance}}`{}",
                 if mesh_peer {
                     ", and a Mesh peer is not lowered for a computed target yet"
                 } else {
@@ -11911,6 +11922,47 @@ mod tests {
     }
 
     // ── <invoke type="sce:mesh-rpc"> reserved-param rules (§9.5) ────
+
+    /// docs/adr/0113, D2 (amended): the origin of an instance of an open machine is a target the
+    /// SCXML Event I/O Processor addresses, a computed target may be held to the one route over
+    /// every instance of a machine, and a Mesh request names an instance by its origin. Red if the
+    /// parser takes any of them for a target it cannot address.
+    #[test]
+    fn an_instance_origin_is_a_target_a_route_and_a_request_src() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                          version="1.0" initial="s">
+                     <state id="s">
+                       <onentry>
+                         <send target="mesh://phone/a1" event="pong"/>
+                         <send targetexpr="route" sce:targets="mesh://phone/{instance} #_parent"
+                               event="pong"/>
+                       </onentry>
+                       <invoke id="ask" type="sce:mesh-rpc" src="mesh://phone/a1">
+                         <param name="_mesh_event" expr="'service.request.force'"/>
+                       </invoke>
+                     </state>
+                   </scxml>"#,
+                "instance_origin",
+            )
+            .expect("parse");
+        let sends: Vec<&Action> = model.sends().into_iter().map(|(_, send)| send).collect();
+        assert_eq!(sends.len(), 2);
+        assert!(!sends[0].target_unsupported, "the origin is addressed");
+        assert_eq!(sends[1].targets, ["mesh://phone/{instance}", "#_parent"]);
+        let request = first_mesh_rpc_invoke(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s">
+                   <invoke type="sce:mesh-rpc" src="mesh://phone/a1">
+                     <param name="_mesh_event" expr="'service.request.force'"/>
+                   </invoke>
+                 </state>
+               </scxml>"#,
+        );
+        assert_eq!(request.target.src_literal(), Some("mesh://phone/a1"));
+        assert!(model.has_mesh_rpc_invoke());
+    }
 
     /// Helper: parse a fragment and pull the first [`Invoke::MeshRpc`].
     fn first_mesh_rpc_invoke(scxml: &str) -> MeshRpcInvokeInfo {

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0113, D2, amended; docs/adr/0005, decision 3):
+  a server that answers each instance of the open machine `phone` at the origin
+  its request carried, `mesh://phone/<instance>`, with no script engine.
+
+  A computed target is held to the routes the document declares. The instances of
+  an open machine are an open set no document can list, so they are one route,
+  `mesh://phone/{instance}`: an RFC 6570 URI template whose one variable expands
+  to an instance id. `_event.origin` is a string the machine holds while it
+  processes the event (§scxml-5.10).
+
+    answered     1 for each `ping` answered with `pong` at its sender's origin.
+    unreachable  1 for each `ping` whose origin is no instance of `phone`: the
+                 route does not hold it, so the send is error.communication and
+                 nothing is sent (W3C SCXML C.1).
+
+  Generated for Rust alone: every other backend refuses the document by name,
+  since its Mesh core routes no instance.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="serving" datamodel="sce-static"
+       name="statechart_static_answers_an_instance">
+  <datamodel>
+    <data id="answered" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="unreachable" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="serving">
+    <transition event="ping">
+      <send targetexpr="_event.origin" sce:targets="mesh://phone/{instance}" event="pong"/>
+      <assign location="answered" expr="answered + 1"/>
+    </transition>
+    <transition event="error.communication">
+      <assign location="unreachable" expr="unreachable + 1"/>
+    </transition>
+  </state>
+</scxml>
