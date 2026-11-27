@@ -30,6 +30,7 @@ mod c11_test_template;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod field_table;
 mod go_source;
 mod go_test_tables;
 mod go_test_template;
@@ -16549,6 +16550,29 @@ fn render_codec(
         Ok((stored, wire))
     };
     let (stored, wire) = stored_and_wire(fields)?;
+    // docs/adr/0155: a codec of a set whose build names its hot roots, outside
+    // their closure, is read once per event; where every field is of a kind a
+    // row states, it is read by the runtime's one walker over a table of its
+    // fields, and any other codec is printed as it is.
+    if matches!(lang, crate::generator::Language::Rust) && body_read.cold && needs_streaming_path {
+        let struct_name = filters::to_pascal_case(m.name.clone());
+        if let Ok(table) = field_table::lower(&field_table::Input {
+            m,
+            stored: &stored,
+            wire: &wire,
+            struct_name: &struct_name,
+            owned: codec_self_borrowed(m, imports),
+        }) {
+            ctx.insert(
+                "field_table".into(),
+                serde_json::json!({
+                    "name": table.name,
+                    "inputs": table.inputs,
+                    "items": table.items,
+                }),
+            );
+        }
+    }
     ctx.insert("fields".into(), serde_json::json!(stored));
     ctx.insert("wire_fields".into(), serde_json::json!(wire));
     // docs/adr/0140: the same fields as the forms held in place of a hot body

@@ -383,6 +383,12 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
 {% endfor %}
 {% endif %}
+{# docs/adr/0155: a codec outside the hot closure of a build that names its hot
+   roots, every field of a kind a row states, is read by the runtime's one
+   walker over the table of its fields, which the value's stores answer. #}
+{% if field_table is defined %}
+{{ field_table.items }}
+{% endif %}
 #[allow(dead_code)]
 {% if emit_owned %}
 impl{{ owned_generics_impl }} {{ struct_name }}In{{ owned_generics_args }} {
@@ -466,15 +472,22 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// A body on the build's hot path reads the same body by
     /// [`Self::read_into{{ held_suffix }}`], held in place (docs/adr/0140).
 {% endif %}
-{% if body_read_attr %}
+{% if field_table is defined %}
+    /// The body is the table of its fields, read by the runtime's one walker
+    /// (docs/adr/0155): one call, which every site makes.
+{% elif body_read_attr %}
     {{ body_read_attr }}
 {% endif %}
 {% endif %}
     pub fn read_into{{ form }}{{ decode_generics }}(cursor: &mut SceReader<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}){{ decode_where }} {
+{% if field_table is defined and not form %}
+        {{ runtime_codec }}::read_table(cursor, &{{ field_table.name }}, &[{{ field_table.inputs }}], _out);
+{% else %}
 {% set view_decode = false %}
 {% with fields = (held_fields if form else fields), wire_fields = (held_wire_fields if form else wire_fields), site_suffix = form %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
 {% endwith %}
+{% endif %}
     }
 {% endfor %}
 {% for form in read_forms %}

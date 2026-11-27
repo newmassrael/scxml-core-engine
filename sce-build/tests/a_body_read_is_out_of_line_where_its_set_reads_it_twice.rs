@@ -799,12 +799,21 @@ fn a_body_within_a_length_is_read_held_in_place_at_a_hot_site() {
     );
 }
 
-/// A codec outside the hot closure prints exactly what it prints with no codec
-/// named, with its view and without: the forms held in place are printed for
-/// hot bodies alone, a cold scan of a hot entry's chain reads by the list's one
-/// walk, and no golden of a build that names none moves (docs/adr/0140).
+/// A codec outside the hot closure prints what it prints with no codec named,
+/// with its view and without: the forms held in place are printed for hot
+/// bodies alone, a cold scan of a hot entry's chain reads by the list's one
+/// walk, and no golden of a build that names none moves (docs/adr/0140). A cold
+/// codec read by the walker over the table of its fields declares what it
+/// declares with no codec named, and only its read differs (docs/adr/0155).
 #[test]
 fn a_codec_outside_the_hot_closure_prints_what_it_printed() {
+    let declarations = |code: &str| -> Vec<String> {
+        code.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("pub ") || line.starts_with("pub("))
+            .map(str::to_string)
+            .collect()
+    };
     for views in [false, true] {
         let sites = sites_of(&["codec_zenoh_request.scxml"], views);
         let hot = hot_options(&sites, &["codec_zenoh_msg_put"], views);
@@ -819,12 +828,21 @@ fn a_codec_outside_the_hot_closure_prints_what_it_printed() {
             "codec_zenoh_query",
             "codec_zenoh_wireexpr",
         ] {
-            assert_eq!(
-                rust_with(name, &hot),
-                rust_with(name, &cold),
-                "{name}, outside the hot closure, prints otherwise than with no codec named \
-                 (views: {views})"
-            );
+            let (code, plain) = (rust_with(name, &hot), rust_with(name, &cold));
+            if code.contains("::read_table(cursor, &") {
+                assert_eq!(
+                    declarations(&code),
+                    declarations(&plain),
+                    "{name}, a table outside the hot closure, declares otherwise than with no \
+                     codec named (views: {views})"
+                );
+            } else {
+                assert_eq!(
+                    code, plain,
+                    "{name}, outside the hot closure, prints otherwise than with no codec named \
+                     (views: {views})"
+                );
+            }
         }
     }
 }

@@ -440,6 +440,11 @@ pub struct BodyReadForms {
     /// which read them by their forms held in place. No entry point calls a
     /// form held in place.
     pub hot: bool,
+    /// Whether the build names its hot roots and the body is not read on its
+    /// hot path ([`InlineDecode::Codecs`]): read once per event, so where its
+    /// fields allow it the body is read by the runtime's one walker over a
+    /// table of its fields (docs/adr/0155). Never set with [`Self::hot`].
+    pub cold: bool,
     /// Whether every entry point is asked inlined (`--inline-decode`,
     /// [`InlineDecode::Every`]).
     pub every: bool,
@@ -500,6 +505,7 @@ impl InlineDecode {
             },
             Self::Codecs(hot) => BodyReadForms {
                 hot: hot.is_hot(codec),
+                cold: !hot.is_hot(codec),
                 every: false,
                 entry: all.but(hot.sites_of(codec)),
             },
