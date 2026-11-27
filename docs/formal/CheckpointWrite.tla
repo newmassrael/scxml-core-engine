@@ -19,13 +19,19 @@
 (*                                                                         *)
 (* Time is an input where a lease is judged (D12). now is the time, and    *)
 (* each process's clock lags it. A process takes a key once its clock has  *)
-(* passed the deadline of the lease it ends, and is given a lease of Term  *)
-(* from its clock; it runs the key while its own clock is before its own   *)
-(* deadline. A holder whose clock lags, or that pauses, may write after    *)
-(* its deadline, and the fence refuses that write. So no property of the   *)
-(* two protocols is one of a clock, and the one property of a deadline,    *)
-(* TakenWhenDue, is one of time: it stands on the clocks lagging, and on   *)
-(* nothing else. A member's lease, and the retention of the records it     *)
+(* passed the deadline the store records for the lease it ends, and is     *)
+(* given a lease of Term from its clock; it runs the key while its own     *)
+(* clock is before its own deadline. The holder may renew its lease before *)
+(* that deadline, which moves the deadline the store records and its own;  *)
+(* it may give the key up, after which the store holds no lease of it and  *)
+(* the key may be taken at once; and a process that holds the key no more, *)
+(* the one the lease names, may take it again at once under its own name,  *)
+(* as a process that started again does, with a new fence. A holder whose  *)
+(* clock lags, or that pauses, may write after its deadline, and the fence *)
+(* refuses that write. So no property of the two protocols is one of a     *)
+(* clock, and the one property of a deadline, TakenWhenDue, is one of      *)
+(* time: it stands on the clocks lagging and on who may move a lease, and  *)
+(* on nothing else. A member's lease, and the retention of the records it  *)
 (* ends, are judged at any moment (SExpire, SDrop), of which every clock's *)
 (* judgement is one; the journal keeps every entry (docs/adr/0114 has no   *)
 (* retention).                                                             *)
@@ -38,6 +44,14 @@
 (*   OutboxInWrite   the answer leaves from what the write kept            *)
 (*   ClockLags       a clock never runs ahead of time                      *)
 (*   Release         a process that stops ends its transactions            *)
+(*   RenewByHolder   a renewal is the holder's, by its fence               *)
+(*   GiveUpByHolder  a lease is given up by its holder only                *)
+(*   OwnName         only the owner a lease names takes it early           *)
+(*                                                                         *)
+(* MaxGiveUp bounds the leases given up, as MaxCrash bounds the stops: a   *)
+(* key given up once it was taken as often as the journal lets it be is    *)
+(* taken by nobody after, which is the bound's doing and no fault of the   *)
+(* protocol, so a run of progress gives up none.                           *)
 (*                                                                         *)
 (* ran is a history variable: the request each write ran, which the        *)
 (* mapping to the promise needs and no process keeps (docs/adr/0115, D2).  *)
@@ -101,7 +115,19 @@ CONSTANTS
     ClockLags,
     \* a process that stops ends the transactions it had under way
     \* @type: Bool;
-    Release
+    Release,
+    \* a renewal is judged by the fence of the lease the store holds: only its holder renews it
+    \* @type: Bool;
+    RenewByHolder,
+    \* a lease is given up only by its holder
+    \* @type: Bool;
+    GiveUpByHolder,
+    \* a key is taken before the deadline of its lease only by the owner the lease names
+    \* @type: Bool;
+    OwnName,
+    \* leases given up
+    \* @type: Int;
+    MaxGiveUp
 
 VARIABLES
     \* OpenInstances' (its module says what each is)
@@ -189,6 +215,14 @@ VARIABLES
     \* the history variable: ran[<<j, n>>], the request the n-th write of key j ran
     \* @type: <<Int, Int>> -> <<Int, Int>>;
     ran,
+    \* the lease the store holds on key j: the process it names, 0 when it holds none; the deadline
+    \* it records for it, which its holder was given last; and the leases given up so far
+    \* @type: Int -> Int;
+    lessee,
+    \* @type: Int -> Int;
+    until,
+    \* @type: Int;
+    gave,
     \* without RecordInWrite: the records a process has still to write, each of its session
     \* @type: Set({p: Int, s: Int, r: {i: Int, inc: Int, seq: Int, k: Int}});
     prec
@@ -227,7 +261,8 @@ memberVars == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects, cinc
 clientVars == <<cinc, cjn, cwait, cnext, slot, status, got>>
 countVars == <<nCli, nSrv, nExp, nForge>>
 journalVars == <<fence, hold, mem, st, log, open, nextpos, clock, pend, cursor, applied, staged, asked, crashes>>
-own == <<now, due, runs, ran, prec>>
+leaseVars == <<lessee, until, gave>>
+own == <<now, due, runs, ran, prec, leaseVars>>
 vars == <<memberVars, journalVars, own>>
 
 \* What a transaction runs where it runs nothing, and what a write that was not made ran.
@@ -244,6 +279,9 @@ Init ==
     /\ runs = [p \in EJ!Procs |-> [j \in EJ!Sess |-> NoRun]]
     /\ ran = [w \in Writes |-> Unwritten]
     /\ prec = {}
+    /\ lessee = [j \in EJ!Sess |-> 0]
+    /\ until = [j \in EJ!Sess |-> 0]
+    /\ gave = 0
 
 \* A step of one protocol leaves the other's variables, and the write's, as they are.
 \* @type: (Bool) => Bool;
@@ -268,35 +306,69 @@ Journal ==
 Time ==
     /\ now + 1 \in Moments
     /\ now' = now + 1
-    /\ UNCHANGED <<memberVars, journalVars, due, runs, ran, prec>>
+    /\ UNCHANGED <<memberVars, journalVars, due, runs, ran, prec, leaseVars>>
 
 \* A process's clock goes on, and stays behind the time.
 Clock(p) ==
     /\ EJ!Tick(p)
     /\ ClockLags => clock'[p] <= now
-    /\ UNCHANGED <<memberVars, now, due, runs, ran, prec>>
+    /\ UNCHANGED <<memberVars, now, due, runs, ran, prec, leaseVars>>
 
-\* The deadline of the lease key j is held under, as the store records it.
-Due(j) == IF fence[j] = 0 THEN 0 ELSE due[j][fence[j]]
+\* The deadline of the lease key j is held under, as the store records it: none when it holds no
+\* lease of the key, never taken or given up.
+Due(j) == IF lessee[j] = 0 THEN 0 ELSE until[j]
 
 \* Process p holds key j by its own clock: a lease it took, before the deadline it was given.
 Holds(p, j) == hold[p][j] # 0 /\ clock[p] < due[j][hold[p][j]]
 
-\* p takes key j once its clock has passed the deadline of the lease that holds it, and is given
-\* one of Term from its clock. A process takes no key it is writing under: it ends that write first.
+\* p takes key j once its clock has passed the deadline the store records for the lease that holds
+\* it, and at once when the store holds none. Before that deadline, only the owner the lease names
+\* takes it (OwnName), and only once it holds the key no more: a process that started again under
+\* its name, whose new fence refuses what its earlier life would write. p is given a lease of Term
+\* from its clock. A process takes no key it is writing under: it ends that write first.
 Take(p, j) ==
-    /\ clock[p] >= Due(j)
+    /\ \/ clock[p] >= Due(j)
+       \/ /\ lessee[j] # 0 /\ hold[p][j] # fence[j]
+          /\ OwnName => lessee[j] = p
     /\ ~ \E t \in open : t.p = p /\ t.s = j
     /\ EJ!Take(p, j)
     /\ due' = [due EXCEPT ![j][fence[j] + 1] = clock[p] + Term]
-    /\ UNCHANGED <<memberVars, now, runs, ran, prec>>
+    /\ lessee' = [lessee EXCEPT ![j] = p]
+    /\ until' = [until EXCEPT ![j] = clock[p] + Term]
+    /\ UNCHANGED <<memberVars, now, runs, ran, prec, gave>>
+
+\* p renews its lease on key j before the deadline the store records, by p's clock: the store moves
+\* that deadline to Term from p's clock, and p takes it for the deadline of the lease it holds. The
+\* store renews only the lease it holds, and only for the fence of that lease (RenewByHolder); a
+\* holder whose lease ran out takes the key again.
+Renew(p, j) ==
+    /\ lessee[j] # 0
+    /\ RenewByHolder => (lessee[j] = p /\ hold[p][j] = fence[j])
+    /\ clock[p] < until[j]
+    /\ until' = [until EXCEPT ![j] = clock[p] + Term]
+    /\ due' = IF hold[p][j] = 0 THEN due ELSE [due EXCEPT ![j][hold[p][j]] = clock[p] + Term]
+    /\ UNCHANGED <<memberVars, journalVars, now, runs, ran, prec, lessee, gave>>
+
+\* p gives up its lease on key j: the store holds no lease of the key after it, so the key may be
+\* taken at once, and p holds the key no more. The store gives up only the lease it holds, for the
+\* fence of that lease (GiveUpByHolder). A process gives up no key it is writing under: it ends
+\* that write first.
+GiveUp(p, j) ==
+    /\ gave < MaxGiveUp /\ gave' = gave + 1
+    /\ lessee[j] # 0
+    /\ GiveUpByHolder => (lessee[j] = p /\ hold[p][j] = fence[j])
+    /\ ~ \E t \in open : t.p = p /\ t.s = j
+    /\ lessee' = [lessee EXCEPT ![j] = 0]
+    /\ hold' = [hold EXCEPT ![p][j] = 0]
+    /\ UNCHANGED <<memberVars, fence, mem, st, log, open, nextpos, clock, pend, cursor, applied, staged,
+                   asked, crashes, now, due, runs, ran, prec, until>>
 
 \* A process stops, as in EventJournal, and what it had still to write is gone with it.
 Crash(p) ==
     /\ EJ!Crash(p)
     /\ runs' = [runs EXCEPT ![p] = [j \in EJ!Sess |-> NoRun]]
     /\ prec' = {x \in prec : x.p # p}
-    /\ UNCHANGED <<memberVars, now, due, ran>>
+    /\ UNCHANGED <<memberVars, now, due, ran, leaseVars>>
 
 -----------------------------------------------------------------------------
 \* The write.
@@ -328,7 +400,7 @@ Begin(p, s, m) ==
     /\ runs' = [runs EXCEPT ![p][KeyOf(s)] = m]
     /\ net' = IF OutboxInWrite THEN net ELSE net \cup {Reply(m)}
     /\ UNCHANGED <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects, clientVars, countVars,
-                   now, due, ran, prec>>
+                   now, due, ran, prec, leaseVars>>
 
 \* The lease's fence refuses the write of t: the key is another's now.
 \* @type: ({p: Int, s: Int, n: Int, pos: Int, f: Int, at: Int}) => Bool;
@@ -346,11 +418,11 @@ Write(t) ==
     /\ runs' = [runs EXCEPT ![t.p][t.s] = NoRun]
     /\ IF Fenced(t)
        THEN /\ EJ!Commit(t)
-            /\ UNCHANGED <<memberVars, now, due, ran, prec>>
+            /\ UNCHANGED <<memberVars, now, due, ran, prec, leaseVars>>
        ELSE IF ~Under(m)
        THEN /\ open' = open \ {t}
             /\ UNCHANGED <<memberVars, fence, hold, mem, st, log, nextpos, clock, pend, cursor,
-                           applied, staged, asked, crashes, now, due, ran, prec>>
+                           applied, staged, asked, crashes, now, due, ran, prec, leaseVars>>
        ELSE /\ EJ!Commit(t)
             /\ effects' = [effects EXCEPT ![m.i][m.k] = @ + 1]
             /\ inbox' = [inbox EXCEPT ![s] = @ \ {m}]
@@ -361,7 +433,8 @@ Write(t) ==
                ELSE /\ prec' = prec \cup {[p |-> t.p, s |-> s, r |-> Completion(m)]}
                     /\ UNCHANGED rec
             /\ net' = IF OutboxInWrite THEN net \cup {Reply(m)} ELSE net
-            /\ UNCHANGED <<member, offer, ofor, drawn, low, lowD, clientVars, countVars, now, due>>
+            /\ UNCHANGED <<member, offer, ofor, drawn, low, lowD, clientVars, countVars, now, due,
+                           leaseVars>>
 
 \* Without RecordInWrite: the record kept by a write of its own, after the one that took the effect.
 \* @type: ({p: Int, s: Int, r: {i: Int, inc: Int, seq: Int, k: Int}}) => Bool;
@@ -369,14 +442,14 @@ KeepRecord(x) ==
     /\ rec' = [rec EXCEPT ![x.s] = @ \cup {x.r}]
     /\ prec' = prec \ {x}
     /\ UNCHANGED <<member, offer, ofor, drawn, low, lowD, inbox, effects, clientVars, net, countVars,
-                   journalVars, now, due, runs, ran>>
+                   journalVars, now, due, runs, ran, leaseVars>>
 
 -----------------------------------------------------------------------------
 Next ==
     \/ Members
     \/ Journal
     \/ \E p \in EJ!Procs : Clock(p) \/ Crash(p)
-    \/ \E p \in EJ!Procs, j \in EJ!Sess : Take(p, j)
+    \/ \E p \in EJ!Procs, j \in EJ!Sess : Take(p, j) \/ Renew(p, j) \/ GiveUp(p, j)
     \/ \E p \in EJ!Procs, s \in OI!Sess : \E m \in inbox[s] : Begin(p, s, m)
     \/ \E t \in open : Write(t)
     \/ \E x \in prec : KeepRecord(x)

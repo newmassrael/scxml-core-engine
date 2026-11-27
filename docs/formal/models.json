@@ -1195,7 +1195,10 @@
         "RecordInWrite": "TRUE",
         "OutboxInWrite": "TRUE",
         "ClockLags": "TRUE",
-        "Release": "TRUE"
+        "Release": "TRUE",
+        "RenewByHolder": "TRUE",
+        "GiveUpByHolder": "TRUE",
+        "OwnName": "TRUE"
       },
       "promise": "Refines",
       "refines": "CheckpointService",
@@ -1279,6 +1282,30 @@
           "expect": "violates",
           "property": "TakenWhenDue",
           "without": "ClockLags",
+          "promise": "kept",
+          "why": "a deadline is a property of time and the promises are of none: a key taken over early has two holders for a while, the fence lets one of them write, and no effect, answer or entry depends on a clock"
+        },
+        {
+          "config": "CheckpointWrite_without_renew_by_holder.cfg",
+          "expect": "violates",
+          "property": "TakenWhenDue",
+          "without": "RenewByHolder",
+          "promise": "kept",
+          "why": "a deadline is a property of time and the promises are of none: a key taken over early has two holders for a while, the fence lets one of them write, and no effect, answer or entry depends on a clock"
+        },
+        {
+          "config": "CheckpointWrite_without_give_up_by_holder.cfg",
+          "expect": "violates",
+          "property": "TakenWhenDue",
+          "without": "GiveUpByHolder",
+          "promise": "kept",
+          "why": "a deadline is a property of time and the promises are of none: a key taken over early has two holders for a while, the fence lets one of them write, and no effect, answer or entry depends on a clock"
+        },
+        {
+          "config": "CheckpointWrite_without_own_name.cfg",
+          "expect": "violates",
+          "property": "TakenWhenDue",
+          "without": "OwnName",
           "promise": "kept",
           "why": "a deadline is a property of time and the promises are of none: a key taken over early has two holders for a while, the fence lets one of them write, and no effect, answer or entry depends on a clock"
         },

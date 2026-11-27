@@ -53,6 +53,9 @@ request of `OpenInstances` takes effect twice. Its promise, `CheckpointService`,
 them: a request takes effect in the step that makes its entry, and an effect's entry is never passed over. Time is a
 variable there, and each process's clock lags it: no property of either protocol is one of a clock (the run that lets a
 clock run ahead keeps the promise), and the one property of a deadline, `TakenWhenDue`, is one of time.
+A renewal, a lease given up and an owner that takes its own key again are steps of it, each guarded
+as the session store guards it (the store's `rules/lease.rs`, proved by Verus to refine
+`EventJournal`), and a run without each guard finds `TakenWhenDue` broken.
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
