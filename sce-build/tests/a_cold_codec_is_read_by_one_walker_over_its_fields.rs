@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use sce_build::forge::body_reads::{BodyReadSites, ColdCodecs, InlineDecode};
-use sce_build::forge::shared_tables::{CodecShape, ColdCodec, NotATable};
+use sce_build::forge::shared_tables::{CodecShape, ColdCodec, NotATable, NotWrittenByTable};
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -356,6 +356,110 @@ fn every_cold_codec_says_its_table_or_why_it_has_none() {
         said.len(),
         4,
         "the cold codecs of the set are other than the four: {said:?}"
+    );
+}
+
+/// A document of a codec whose field `seq` is gated by a disjunction of two
+/// flags (`a || b`), one of which gates another field: no gate group holds
+/// it, so the codec is a table whose row of `seq` the disjunction opens.
+const DISJUNCTION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_cold_disjunction">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="wants_a" bit="0"/>
+      <sce:flag name="wants_b" bit="1"/>
+    </sce:flags>
+    <sce:field id="extra" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="flags.wants_a"/>
+    <sce:field id="seq" sce:type="uint16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="flags.wants_a || flags.wants_b"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A hot root of the set the disjunction is generated in, which reads no
+/// other codec, so the disjunction is cold.
+const ROOT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_cold_root">
+  <datamodel>
+    <sce:field id="value" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A cold codec with a row a disjunction gates is read by its table, the row
+/// opened where any clause of the gate is, and keeps its write printed for
+/// that reason, said by name (docs/adr/0155 section 2): the flags of a
+/// disjunction do not say alone whether its field is present, and the writer
+/// opens a row by them.
+#[test]
+fn a_cold_codec_gated_by_a_disjunction_keeps_its_write_printed_and_says_why() {
+    let dir = std::env::temp_dir().join(format!("sce_cold_disjunction_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory for the set");
+    let names = ["codec_cold_root.scxml", "codec_cold_disjunction.scxml"];
+    for (name, text) in names.iter().zip([ROOT, DISJUNCTION]) {
+        std::fs::write(dir.join(name), text).expect("a document of the set");
+    }
+    let documents: Vec<String> = names
+        .iter()
+        .map(|name| dir.join(name).display().to_string())
+        .collect();
+    let sites = BodyReadSites::of_documents(&documents, &[], |_| false);
+    let hot = sites
+        .hot_codecs(["codec_cold_root"])
+        .unwrap_or_else(|e| panic!("codec_cold_root is a codec of the set: {e}"));
+    assert!(
+        !hot.is_hot("codec_cold_disjunction"),
+        "the root reads the disjunction"
+    );
+    let named = ForgeCompileOptions {
+        inline_decode: InlineDecode::Codecs(hot),
+        body_reads: sites,
+        ..ForgeCompileOptions::default()
+    };
+    let output = sce_build::compile_forge_with_imports(
+        DISJUNCTION,
+        DocumentLabel::symmetric("codec_cold_disjunction"),
+        Language::Rust,
+        &dir,
+        &named,
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let output =
+        output.unwrap_or_else(|e| panic!("codec_cold_disjunction generates for Rust: {e}"));
+    assert!(
+        matches!(
+            output.cold_codecs.as_slice(),
+            [ColdCodec::Table(table)]
+                if table.codec == "codec_cold_disjunction"
+                    && table.not_written == Some(NotWrittenByTable::Disjunction)
+        ),
+        "the cold codec_cold_disjunction says other than a table whose write a \
+         disjunction keeps printed: {:?}",
+        output.cold_codecs
+    );
+    let code = output
+        .files
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    for printed in [
+        "::sce_forge_runtime::codec::read_table(cursor, &CODEC_COLD_DISJUNCTION_FIELDS, \
+         &[], _out);",
+        "gate: Gate::Any(&[Gate::Set(Bits::range(Source::Row(0), 0, 1)), \
+         Gate::Set(Bits::range(Source::Row(0), 1, 1))]) },",
+    ] {
+        assert!(
+            code.contains(printed),
+            "the table of codec_cold_disjunction has no `{printed}`:\n{code}"
+        );
+    }
+    assert!(
+        !code.contains("write_table(") && code.contains("FieldTable::new(ROWS)"),
+        "codec_cold_disjunction is written by the walker over a row a disjunction gates:\n{code}"
     );
 }
 

@@ -92,6 +92,13 @@ impl PrintedTable {
         })
     }
 
+    /// Whether a row is gated by a disjunction (`a || b`): its flags do not
+    /// say alone whether the row's field is present, so the codec is written
+    /// by its printed encode (docs/adr/0155 section 2).
+    pub(super) fn gates_by_disjunction(&self) -> bool {
+        self.rows.iter().any(|row| matches!(row.gate, Gate::Any(_)))
+    }
+
     /// What the table is, row for row: its rows and the numbers its write
     /// derives (`derived`), with no name of the codec's. Two codecs of a set
     /// whose tables are the same are one table (docs/adr/0155 section 4).
@@ -1307,6 +1314,10 @@ mod tests {
             ),
             "a field a disjunction gates is stored absent where it is closed: {context}"
         );
+        assert!(
+            table.gates_by_disjunction(),
+            "a table with a row a disjunction gates says so, and its write stays printed"
+        );
     }
 
     /// A field gated by a kind of an earlier chain's entries (`<chain>.has(<id>)`)
@@ -1389,6 +1400,10 @@ mod tests {
         assert!(
             table.reads_kinds(),
             "a table whose gates read a chain's kinds says so, and its write stays printed"
+        );
+        assert!(
+            !table.gates_by_disjunction(),
+            "a table whose gates are each one bit says no disjunction"
         );
         let context = table.context(&[], &TableHome::Own);
         let stores = &context["stores"]["read"];

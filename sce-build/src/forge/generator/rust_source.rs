@@ -4879,6 +4879,10 @@ impl<'a> Plan<'a> {
     /// table its read reads (docs/adr/0155 section 3), or why its write stays
     /// printed.
     ///
+    /// No codec with a row a disjunction gates is written by the table: the
+    /// writer opens a row by the flags of its gate, which for a disjunction do
+    /// not say alone whether the field is present.
+    ///
     /// Only a codec whose encode refuses no value is written by the table: the
     /// writer's one error is the sink's, so each byte string and text must be
     /// held to its row's bound by its type, which is checked here, and no
@@ -4895,6 +4899,12 @@ impl<'a> Plan<'a> {
             field: field.id.clone(),
             form,
         };
+        // A value can set a flag of a disjunction and hold its field absent;
+        // the writer would open the row by the flag and write a zero, so the
+        // reason is stated here whatever else the encode does.
+        if table.gates_by_disjunction() {
+            return Err(NotWrittenByTable::Disjunction);
+        }
         if self.may_fail() {
             return Err(NotWrittenByTable::MayRefuse);
         }

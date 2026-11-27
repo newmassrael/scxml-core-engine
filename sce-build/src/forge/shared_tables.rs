@@ -240,6 +240,12 @@ impl std::fmt::Display for NotATable {
 /// than by the runtime's one writer over the table (docs/adr/0155 section 3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotWrittenByTable {
+    /// A row is gated by a disjunction (`a || b`), whose flags do not say
+    /// alone whether its field is present: a value can set one of them and
+    /// hold the field absent, which the printed encode refuses or derives as
+    /// its plan says, and which the writer, opening the row by the flags,
+    /// would write as a zero.
+    Disjunction,
     /// Its encode can refuse a value, and the writer's one error is the
     /// sink's.
     MayRefuse,
