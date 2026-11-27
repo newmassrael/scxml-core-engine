@@ -111,6 +111,12 @@ type Engine[S comparable, E comparable] struct {
 	// nil until a host sets one.
 	transitionObserver func(TransitionTaken[S])
 
+	// trace is the trace port SetTracePort set and the step it is being told
+	// (docs/adr/0115, D4 and D8; trace_port.go). A build without the tag
+	// sce_trace_port holds a field of no size here, and the calls that would
+	// fill it do nothing (trace_port_off.go).
+	trace traceRecorder
+
 	// onHTTPSend is the §scxml-C-2 HTTP send dispatch callback.
 	// Answers the event the receiver replied with (nil for none), or an error
 	// when the request was not delivered (SetHTTPSendCallback).
@@ -475,9 +481,14 @@ func (e *Engine[S, E]) Initialize() error {
 	// own initial transition, whose source is the <scxml> element, entered by
 	// the same procedure every microstep enters by. It may name several states
 	// and a <history>, so it is a target list, not a leaf to walk down to.
+	//
+	// docs/adr/0115, D4: the entry into the initial configuration is the run's
+	// first step.
+	e.traceBeginStart()
 	e.enterStates([]EntryTransition[S, HistoryID]{
 		{Targets: e.policy.GetDocumentInitialTargets()},
 	})
+	e.traceEnd()
 
 	// W3C SCXML Appendix D: hand over to the outer loop. The macrostep
 	// completes on eventless transitions and internal events, then the invokes
@@ -761,6 +772,8 @@ func (e *Engine[S, E]) exitInterpreter() {
 	if e.interpreterExited {
 		return
 	}
+	// docs/adr/0115, D4: the exit is a step of the run, once.
+	e.traceBeginStop()
 	configuration := e.GetActiveStates()
 	statesToExit := append([]S(nil), configuration...)
 	// configuration.toList().sort(exitOrder) — reverse document order.
@@ -768,10 +781,12 @@ func (e *Engine[S, E]) exitInterpreter() {
 		return e.policy.GetDocumentOrder(statesToExit[i]) > e.policy.GetDocumentOrder(statesToExit[j])
 	})
 	for _, state := range statesToExit {
+		e.traceExited(state)
 		e.policy.ExecuteExitActions(state, e, configuration)
 	}
 	e.interpreterExited = true
 	e.isRunning = false
+	e.traceEnd()
 }
 
 // IsRunning returns whether the engine is running (not stopped or awaiting completion).
@@ -2368,7 +2383,10 @@ func (e *Engine[S, E]) completeMacrostep() {
 				return
 			}
 			e.macrostepMicrostepsTaken++
+			// docs/adr/0115, D4: a microstep on eventless transitions is a step.
+			e.traceBeginEventless()
 			e.microstep(enabled)
+			e.traceEnd()
 			continue
 		}
 
@@ -2391,7 +2409,7 @@ func (e *Engine[S, E]) completeMacrostep() {
 		if !ok {
 			return
 		}
-		e.takeInternalEvent(eventWithMeta)
+		e.takeInternalEvent(eventWithMeta, false)
 	}
 }
 
@@ -2410,8 +2428,10 @@ func (e *Engine[S, E]) refuseMacrostep(stoppedIn S) {
 // selects, and takes the microstep it selects (§scxml-D-mainEventLoop).
 //
 // It also answers the error.execution a door took in a refused external
-// delivery's place, which is the engine's own error as any on this queue is.
-func (e *Engine[S, E]) takeInternalEvent(eventWithMeta EventWithMetadata[E]) {
+// delivery's place, which is the engine's own error as any on this queue is;
+// external says that is the event, which was taken off the external queue, and
+// its step of the run's trace is an external one (docs/adr/0115, D4).
+func (e *Engine[S, E]) takeInternalEvent(eventWithMeta EventWithMetadata[E], external bool) {
 	// §scxml-5.10: the door binds it as `_event`, or the error.execution taken
 	// in its place; a delivery refused with nothing to take in its place took
 	// no microstep and moved nothing (docs/adr/0086, section 4.2).
@@ -2447,7 +2467,11 @@ func (e *Engine[S, E]) takeInternalEvent(eventWithMeta EventWithMetadata[E]) {
 	// needs no such guard, because it only ever rises while an error
 	// handler is running.
 	e.handlingErrorEvent = isError
+	// docs/adr/0115, D4: the event taken is a step, with the microstep it
+	// selects or none.
+	e.traceBeginEvent(external, eventWithMeta)
 	outcome := e.takeEvent(eventWithMeta.Event)
+	e.traceEnd()
 	e.handlingErrorEvent = false
 	if outcome == eventTaken {
 		// Appendix D: the loop turn that selects nothing takes no
@@ -2519,7 +2543,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		e.hasDiscarded = true
 		return true
 	case inPlace:
-		e.takeInternalEvent(eventWithMeta)
+		e.takeInternalEvent(eventWithMeta, true)
 		return true
 	}
 	{
@@ -2564,7 +2588,13 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		// party that got the event wrong. Recorded for the external queue
 		// only: an internal <raise> that matches nothing is the document's own
 		// business, and both ends of it are in the document.
-		if e.takeEvent(eventWithMeta.Event) == eventDiscarded {
+		//
+		// docs/adr/0115, D4: the event taken is a step, with the microstep it
+		// selects or none.
+		e.traceBeginEvent(true, eventWithMeta)
+		outcome := e.takeEvent(eventWithMeta.Event)
+		e.traceEnd()
+		if outcome == eventDiscarded {
 			e.discardedExternalEvents++
 			e.lastDiscardedEvent = eventWithMeta.Event
 			e.hasDiscarded = true
@@ -2662,6 +2692,8 @@ func (e *Engine[S, E]) microstep(transitions []EnabledTransition[S, HistoryID]) 
 			})
 		}
 	}
+	// docs/adr/0115, D4: the rows the step being told takes, in selection order.
+	e.traceFired(transitions)
 	entry := Microstep[S, HistoryID, E](e.host(), transitions)
 	targets := make([][]EntryTarget[S, HistoryID], 0, len(transitions))
 	for _, transition := range transitions {
@@ -2788,6 +2820,8 @@ func (h engineHost[S, E]) FirstEnabledTransition(state S, event E) (EnabledTrans
 
 // ExitState implements Run.
 func (h engineHost[S, E]) ExitState(state S, configurationBeforeExit []S) {
+	// docs/adr/0115, D4: the step being told exits it, in this order.
+	h.engine.traceExited(state)
 	h.engine.policy.ExecuteExitActions(state, h.engine, configurationBeforeExit)
 }
 
@@ -2806,6 +2840,8 @@ func (h engineHost[S, E]) ExecuteTransitionContent(transition EnabledTransition[
 
 // EnterState implements Run.
 func (h engineHost[S, E]) EnterState(state S, isDefaultEntry bool) {
+	// docs/adr/0115, D4: the step being told enters it, in this order.
+	h.engine.traceEntered(state)
 	h.engine.policy.ExecuteEntryActions(state, h.engine, isDefaultEntry)
 	// §scxml-D-enterStates: a top-level <final> ends the run, and entering one
 	// is where the run's terminal state is recorded.

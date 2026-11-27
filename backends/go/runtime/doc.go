@@ -12,6 +12,10 @@
 //     and entry sets, history, completion (microstep.go)
 //   - Event descriptor matching (§scxml-3.12.1)
 //   - PullScheduler: delayed event scheduling (§scxml-6.2)
+//   - The trace port, with the build tag sce_trace_port only: each step
+//     Appendix D takes, told to a test and written in the run trace format
+//     `sce-codegen formal traces` judges (docs/adr/0115, D4 and D8;
+//     trace_port.go)
 //
 // This package is a 1:1 port of the Rust runtime at sce-rust-runtime/. Method
 // names, field layouts, and semantics match the Rust (and C++) source. When the
