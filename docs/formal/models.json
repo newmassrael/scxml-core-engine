@@ -1417,20 +1417,24 @@
       "runs": [
         {
           "config": "OrderingBuffer.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 1521
         },
         {
           "config": "OrderingBuffer_durable.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 137
         },
         {
           "config": "OrderingBuffer_live.cfg",
           "expect": "holds",
+          "states": 225,
           "possible": "Idle"
         },
         {
           "config": "OrderingBuffer_live_durable.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 137
         },
         {
           "config": "OrderingBuffer_live_without_fairness.cfg",
@@ -1541,15 +1545,18 @@
       "runs": [
         {
           "config": "DurableReceipt.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 6056
         },
         {
           "config": "DurableReceipt_window.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 25968
         },
         {
           "config": "DurableReceipt_live.cfg",
           "expect": "holds",
+          "states": 920,
           "possible": "Idle"
         },
         {
