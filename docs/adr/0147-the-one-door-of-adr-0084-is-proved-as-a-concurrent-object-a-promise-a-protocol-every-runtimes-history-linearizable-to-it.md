@@ -61,10 +61,13 @@ What a host may rely on, with no mechanism. A tree of sessions, posters on any n
   the directory, and the directory does not hold the session it names: the tree never held it, or its run has ended
   and it has left the directory. A post through a handle is never refused as unknown. `ended`: the session's run
   has ended and the runtime closes its inbox, whichever door the post went through. `full`: the session's bounded
-  inbox holds its capacity, counted as the inputs taken for the session and not yet in its queue. Any other post to
-  a session the tree holds is taken. A post is refused as full only when that count is reached, and may still be
-  taken then, because a drain frees room before what it took out reaches the queue. That an inbox never holds more
-  than its capacity is D2's.
+  inbox holds its capacity, counted as the inputs taken for the session and not yet in its queue together with the
+  other posts to the session still under way (invoked and not yet answered). Any other post to a session the tree
+  holds is taken. A post is refused as full only when that count is reached, so never while the session holds fewer
+  inputs than its capacity and no other post to it is under way, and may still be taken then, because a drain frees
+  room before what it took out reaches the queue. That an inbox never holds more than its capacity is D2's.
+  A post under way counts because it may hold storage before it is taken: an implementation whose owner never waits
+  for a post cannot count it otherwise (amended 2026-11-27; D5 says why).
 - **At most once, and never lost.** A post the inbox takes is applied exactly once, by the session it names, by the
   owner-thread operation of the same name.
 - **Run to completion.** A posted input reaches a session only through that session's external queue, which the

@@ -5,16 +5,18 @@
 (* and each session's events of its own.                                   *)
 (*                                                                         *)
 (* A post is either taken or refused, and which is decided when it is      *)
-(* posted. arrivals[s] is what has arrived for session s, in the order the *)
-(* posts to s and s's own events linearized: the order s's external queue  *)
-(* takes them in. An input taken is appended once and never removed, so it *)
-(* is neither lost nor applied twice. entered[s] is how much of            *)
-(* arrivals[s] the queue has taken; the rest is what s holds, the inputs   *)
-(* taken and not yet in the queue. An own event enters behind every input  *)
-(* taken before it, and what a session holds when its run ends enters      *)
-(* then. Nothing here says when an arrival is consumed: the queue is the   *)
-(* machine's, read at a macrostep boundary, so a posted input never        *)
-(* reaches a running macrostep (ADR 0084, D1).                             *)
+(* posted. A post may be invoked (Begin) before it is decided, and it is   *)
+(* under way until then; a post decided at once is never under way.        *)
+(* arrivals[s] is what has arrived for session s, in the order the posts   *)
+(* to s and s's own events linearized: the order s's external queue takes  *)
+(* them in. An input taken is appended once and never removed, so it is    *)
+(* neither lost nor applied twice. entered[s] is how much of arrivals[s]   *)
+(* the queue has taken; the rest is what s holds, the inputs taken and not *)
+(* yet in the queue. An own event enters behind every input taken before   *)
+(* it, and what a session holds when its run ends enters then. Nothing     *)
+(* here says when an arrival is consumed: the queue is the machine's, read *)
+(* at a macrostep boundary, so a posted input never reaches a running      *)
+(* macrostep (ADR 0084, D1).                                               *)
 (*                                                                         *)
 (* A post goes through one of two doors. Through the tree's directory, by  *)
 (* the id of the session it names: the directory holds the sessions of the *)
@@ -28,8 +30,13 @@
 (*            has left. A post through a handle is never unknown           *)
 (*   ended    the session's run has ended, where the runtime closes its    *)
 (*            inbox (Closes)                                               *)
-(*   full     the session holds Capacity inputs taken and not yet in its   *)
-(*            queue                                                        *)
+(*   full     the inputs the session holds, taken and not yet in its       *)
+(*            queue, with the other posts to it still under way, reach     *)
+(*            Capacity. A post under way may hold storage before it is     *)
+(*            taken, and a runtime whose owner never waits for a post      *)
+(*            cannot count it otherwise (docs/adr/0147, D1 and D5). So no  *)
+(*            post is refused as full while the session holds fewer than   *)
+(*            Capacity and no other post to it is under way                *)
 (* Where the runtime never closes, a post to a session whose run has ended *)
 (* that is not refused is taken, and what it takes enters at the end of    *)
 (* the owner's loop. A post the promise counts full may still be taken: a  *)
@@ -79,6 +86,9 @@ MostArrivals == Cardinality(Inputs) + Cardinality(OwnEvents)
 \* What session s holds: the inputs taken and not yet in its queue.
 Held(s) == Len(arrivals[s]) - entered[s]
 
+\* The posts to session s other than i that are invoked and not yet decided.
+UnderWay(s, i) == Cardinality({j \in Inputs \ {i} : Target(j) = s /\ status[j] = "underway"})
+
 Init ==
     /\ arrivals = [s \in Sessions |-> <<>>]
     /\ entered = [s \in Sessions |-> 0]
@@ -91,17 +101,24 @@ Refuse(i, why) ==
     /\ status' = [status EXCEPT ![i] = why]
     /\ UNCHANGED <<arrivals, entered>>
 
-\* The post of i reaches session s, which may hold its capacity.
+\* The post of i reaches session s, which may hold its capacity, counted with
+\* the other posts to it under way.
 Reach(i, s) ==
-    \/ /\ Held(s) >= Capacity
+    \/ /\ Held(s) + UnderWay(s, i) >= Capacity
        /\ Refuse(i, "full")
     \/ /\ status' = [status EXCEPT ![i] = "taken"]
        /\ arrivals' = [arrivals EXCEPT ![s] = Append(@, i)]
        /\ UNCHANGED entered
 
+\* The post of i is invoked, and is under way until it is decided.
+Begin(i) ==
+    /\ status[i] = "none"
+    /\ status' = [status EXCEPT ![i] = "underway"]
+    /\ UNCHANGED <<arrivals, entered, ownUnsent, ended>>
+
 Post(i) ==
     LET s == Target(i) IN
-    /\ status[i] = "none"
+    /\ status[i] \in {"none", "underway"}
     /\ IF s \notin Sessions
          THEN Refuse(i, "unknown")
          ELSE \/ /\ ended[s]
@@ -136,6 +153,7 @@ End(s) ==
     /\ UNCHANGED <<arrivals, status, ownUnsent>>
 
 Next ==
+    \/ \E i \in Inputs : Begin(i)
     \/ \E i \in Inputs : Post(i)
     \/ \E e \in OwnEvents : Own(e)
     \/ Enter
