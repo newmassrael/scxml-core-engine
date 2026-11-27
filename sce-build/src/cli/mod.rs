@@ -4200,6 +4200,31 @@ enum Commands {
         judge: FormalCommand,
     },
 
+    /// Write a document's model over Appendix D as a TLA+ module on stdout
+    /// (docs/adr/0115, D7).
+    ///
+    /// The module extends `docs/formal/AppendixD.tla` and gives each of its
+    /// constants from the tables the generated code is printed from, in the
+    /// code's numbering of the transitions, and each condition and block of
+    /// executable content as an operator over the integers and booleans the
+    /// document's data start as. A construct with no translation into that
+    /// domain is refused by name, every one of the document at once, with
+    /// `formal/no-translation` (exit 7), and no module is written: never a
+    /// model of part of the document.
+    Model {
+        /// SCXML file path
+        scxml: String,
+        /// The module's name, which is the name of the file TLC reads it from;
+        /// the machine's name when not given.
+        #[arg(long)]
+        module: Option<String>,
+        /// Write the verdict the W3C corpus judges a test by as two properties
+        /// of the module: `NeverFails`, the session never ends in the
+        /// top-level final state `fail`, and `Passes`, it ends in `pass`.
+        #[arg(long)]
+        w3c_verdict: bool,
+    },
+
     /// Judge recorded broadcast-log histories for linearizability (ADR 0062
     /// section 5).
     ///
@@ -4988,6 +5013,11 @@ pub fn main() {
         } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
         Commands::Formal { judge } => cmd_formal(judge),
+        Commands::Model {
+            scxml,
+            module,
+            w3c_verdict,
+        } => cmd_model(&scxml, module.as_deref(), w3c_verdict, error_format),
         Commands::CheckBroadcastHistory { files, method } => {
             cmd_check_broadcast_history(&files, method)
         }
@@ -5252,6 +5282,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::CheckAotBriefs { .. }
         | Commands::CheckQueueHistory { .. }
         | Commands::Formal { .. }
+        | Commands::Model { .. }
         | Commands::CheckBroadcastHistory { .. }
         | Commands::CheckInboxHistory { .. }
         | Commands::ProvenanceRoster
@@ -16597,6 +16628,25 @@ fn cmd_formal(judge: FormalCommand) {
                 }
             }
         }
+    }
+}
+
+/// Write a document's model over Appendix D. See `Commands::Model`.
+fn cmd_model(scxml: &str, module: Option<&str>, w3c_verdict: bool, error_format: ErrorFormat) {
+    let mut parser = crate::parser::SCXMLParser::new();
+    let mut model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    // The model the generator receives, so the tables are the ones its code
+    // is printed from.
+    crate::analyzer::analyze(&mut model, scxml);
+    let options = crate::formal::document_model::Options {
+        module,
+        w3c_verdict,
+    };
+    match crate::formal::document_model::write(&model, scxml, options) {
+        Ok(written) => out_bytes(written.text.as_bytes()),
+        Err(err) => error_format.emit_and_exit(&err, ""),
     }
 }
 

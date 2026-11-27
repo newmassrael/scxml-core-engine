@@ -10,9 +10,12 @@
 //! - [`tlc`]: the one runner of TLC every level uses (ADR 0146, D4).
 //! - [`models`]: the judge of a models manifest (ADR 0115, D5 and D9).
 //! - [`proofs`]: the judge of a proofs manifest, by Verus (ADR 0115, D10 and D13).
+//! - [`document_model`]: the model of one document over Appendix D, which
+//!   `sce-codegen model` writes (ADR 0115, D7).
 //! - [`error`]: the `formal/*` diagnostics a judge leaves through
 //!   (`SCE_ERROR_CONTRACT.md` §6).
 
+pub mod document_model;
 pub mod error;
 pub mod models;
 pub mod proofs;

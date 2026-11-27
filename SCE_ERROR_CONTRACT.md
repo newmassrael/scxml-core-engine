@@ -1356,6 +1356,7 @@ references against a real document and drift silently.
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
 | `formal/declaration` | `formal` | no | ADR 0146 D1 |
+| `formal/no-translation` | `formal` | no | ADR 0115 D7 |
 | `formal/tool-unavailable` | `formal` | no | ADR 0146 D1 |
 | `formal/verdict` | `formal` | no | ADR 0146 D1 |
 
@@ -1389,7 +1390,7 @@ would have to guess; `cli/query-no-match` is the case that exists.
 | `4` | `expression/*` |
 | `5` | `import/*` |
 | `6` | `manifest/*` |
-| `7` | `generate/*` |
+| `7` | `generate/*`, and `formal/no-translation` — `sce-codegen model` read a document that carries a construct with no translation into its model over Appendix D, and wrote no model (docs/adr/0115, D7): the class of a generator's refusal of a construct it does not lower. |
 | `8` | `io/filesystem` (forge I/O) |
 | `10` | `mesh/deploy-*` |
 | `11` | `mesh/topology-*` |

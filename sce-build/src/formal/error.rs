@@ -43,6 +43,22 @@ pub enum FormalError {
     /// manifest.
     #[error("{tool} is not available: {detail}")]
     ToolUnavailable { tool: String, detail: String },
+
+    /// A document carries constructs with no translation into its model over
+    /// Appendix D (`formal/no-translation`; docs/adr/0115, D7), so
+    /// `sce-codegen model` writes no model of it, never a model of part of it.
+    /// `refusals` names each construct and where it is written, in the order
+    /// found.
+    #[error(
+        "{document}: no model is written, since {} construct(s) have no translation into \
+         Appendix D: {}",
+        refusals.len(),
+        refusals.join("; ")
+    )]
+    NoTranslation {
+        document: String,
+        refusals: Vec<String>,
+    },
 }
 
 impl FormalError {
@@ -52,6 +68,10 @@ impl FormalError {
 
     /// The judge could not run (`formal/tool-*`, `SCE_ERROR_CONTRACT.md` §6).
     pub const EXIT_TOOL_UNAVAILABLE: i32 = 15;
+
+    /// A document has no model: the class `SCE_ERROR_CONTRACT.md` §6 gives a
+    /// generator's refusal of a construct it does not lower (`generate/*`).
+    pub const EXIT_NO_TRANSLATION: i32 = 7;
 }
 
 impl ToDiagnostics for FormalError {
@@ -59,6 +79,7 @@ impl ToDiagnostics for FormalError {
         match self {
             FormalError::Declaration { .. } | FormalError::Verdict { .. } => Self::EXIT_ANSWER_NO,
             FormalError::ToolUnavailable { .. } => Self::EXIT_TOOL_UNAVAILABLE,
+            FormalError::NoTranslation { .. } => Self::EXIT_NO_TRANSLATION,
         }
     }
 
@@ -86,6 +107,11 @@ impl SingleDiagnostic for FormalError {
                 DiagnosticCode::FormalToolUnavailable,
                 vec![tool.clone()],
                 Some(detail.clone()),
+            ),
+            FormalError::NoTranslation { document, refusals } => (
+                DiagnosticCode::FormalNoTranslation,
+                refusals.clone(),
+                Some(document.clone()),
             ),
         };
         DiagnosticPayload {

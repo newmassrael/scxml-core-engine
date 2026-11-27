@@ -320,6 +320,19 @@ impl Fixtures {
         )
         .expect("write dangling.scxml");
         std::fs::write(dir.join("bad.json"), "not json at all\n").expect("write bad.json");
+        // A document whose <log> has no translation into its model over
+        // Appendix D, which `sce-codegen model` refuses (docs/adr/0115, D7).
+        std::fs::write(
+            dir.join("untranslatable.scxml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" \
+             name=\"untranslatable\" datamodel=\"ecmascript\" initial=\"s0\">\n\
+             \x20 <state id=\"s0\"><onentry><log expr=\"1\"/></onentry>\
+             <transition event=\"go\" target=\"s1\"/></state>\n\
+             \x20 <final id=\"s1\"/>\n\
+             </scxml>\n",
+        )
+        .expect("write untranslatable.scxml");
         // A manifest that loads, so the sidecar that follows it is what the
         // acceptance report refuses. Copied from the committed pair rather
         // than written here, for the reason the guard fixture below gives:
@@ -627,6 +640,13 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
             s("--manifest"),
             fx.path("bad.json"),
         ],
+        None,
+    );
+    // A document with a construct that has no translation into its model:
+    // the generator's refusal, the class of `generate/*` (docs/adr/0115, D7).
+    add(
+        "formal/no-translation",
+        vec![s("model"), fx.path("untranslatable.scxml")],
         None,
     );
     add(

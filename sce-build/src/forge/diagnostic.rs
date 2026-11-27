@@ -3124,6 +3124,11 @@ pub enum DiagnosticCode {
     /// missing, or is not the one pinned (docs/adr/0146, D1).
     #[serde(rename = "formal/tool-unavailable")]
     FormalToolUnavailable,
+    /// A document with a construct that has no translation into its model
+    /// over Appendix D, which `sce-codegen model` refuses by name and writes
+    /// no model of (docs/adr/0115, D7).
+    #[serde(rename = "formal/no-translation")]
+    FormalNoTranslation,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -4612,6 +4617,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         FormalDeclaration,
         FormalVerdict,
         FormalToolUnavailable,
+        FormalNoTranslation,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4979,6 +4985,7 @@ impl DiagnosticCode {
         match self {
             // ── Formal judges (docs/adr/0146) ───────────────────
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
+            FormalNoTranslation => Some("ADR 0115 D7"),
 
             // ── Forge XSD ────────────────────────────────────────
             XmlSchemaValidation => Some("SCE Forge XSD"),
@@ -6409,6 +6416,7 @@ impl DiagnosticCode {
             | FormalDeclaration
             | FormalVerdict
             | FormalToolUnavailable
+            | FormalNoTranslation
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -7049,6 +7057,7 @@ impl DiagnosticCode {
             FormalDeclaration => "formal/declaration",
             FormalVerdict => "formal/verdict",
             FormalToolUnavailable => "formal/tool-unavailable",
+            FormalNoTranslation => "formal/no-translation",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -21140,6 +21149,14 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:96a37a5b0ddc36d5","code":"formal/tool-unavailable","stage":"formal","spec":"ADR 0146 D1","message":"TLC is not available: no TLC at /home/u/.cache/sce-formal/tla2tools-1.7.4.jar: sce-codegen formal install","actual":"no TLC at /home/u/.cache/sce-formal/tla2tools-1.7.4.jar: sce-codegen formal install"}"#,
             ),
+            (
+                "formal/no-translation",
+                FormalError::NoTranslation {
+                    document: "test.scxml".into(),
+                    refusals: vec!["the <onentry> of state `s0`: <log>, which has no translation".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:5ccc6b7cf6690d46","code":"formal/no-translation","stage":"formal","spec":"ADR 0115 D7","message":"test.scxml: no model is written, since 1 construct(s) have no translation into Appendix D: the <onentry> of state `s0`: <log>, which has no translation","actual":"test.scxml"}"#,
+            ),
         ]
     }
 
@@ -22617,6 +22634,9 @@ mod tests {
             | FormalDeclaration
             | FormalVerdict
             | FormalToolUnavailable
+            // The repair is a document without the constructs the refusal names,
+            // or a translation of them in the generator: no candidate list.
+            | FormalNoTranslation
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -23541,6 +23561,7 @@ mod tests {
                 | CliPseudoUnavailable
                 | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
                 | FormalDeclaration | FormalVerdict | FormalToolUnavailable
+                | FormalNoTranslation
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployChildEntryShape | MeshDeployChildUnknownParent
@@ -23756,9 +23777,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            583,
+            584,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 583 distinct variants to match the DiagnosticCode \
+             expected 584 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24684,6 +24705,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | FormalDeclaration
             | FormalVerdict
             | FormalToolUnavailable
+            // `sce-codegen model` reads a statechart, and its record names every
+            // construct it refuses with the place of each in the text, in one
+            // record: no single node's anchors are its to carry.
+            | FormalNoTranslation
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion

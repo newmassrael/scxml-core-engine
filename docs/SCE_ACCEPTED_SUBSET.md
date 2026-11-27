@@ -11676,6 +11676,7 @@ assertions is held to.
 
 ## Appendix — `DiagnosticCode` index (580 codes)
 ## Appendix — `DiagnosticCode` index (573 codes)
+## Appendix — `DiagnosticCode` index (574 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -12229,6 +12230,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-journal-mismatch` | Mesh Codegen |
 | `mesh/codegen-principal-unproved` | Mesh Codegen |
 | `mesh/codegen-journal-read-refused` | Mesh Codegen |
+| `formal/no-translation` | Formal |
 
 ### Diagnostic-only
 
