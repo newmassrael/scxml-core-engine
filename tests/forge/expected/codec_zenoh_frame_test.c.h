@@ -5,12 +5,14 @@
 #define SCE_FORGE_CODEC_ZENOH_FRAME_TEST_H
 
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "sce/text.h"
+#include "sce/forge/test_vector.h"
 #include "codec_zenoh_frame.h"
 
 static inline int test_vector_codec_zenoh_frame(void) {
     int failures = 0;
+    /* The one line every failed row's report is built in, in turn. */
+    char _line[SCE_FORGE_TEST_VECTOR_LINE_CAP];
     {
         codec_zenoh_frame_t actual = {0};
         actual.sn = (uint64_t)0x0uLL;
@@ -24,42 +26,47 @@ static inline int test_vector_codec_zenoh_frame(void) {
         static const uint8_t _expected[] = { 0x00 };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 38u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_zenoh_frame_t decoded = {0};
         sce_forge_codec_status_t _st = codec_zenoh_frame_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 38u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 38u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else {
             if (decoded.sn != (uint64_t)0x0uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
-                    "field `sn` mismatch\n");
+                sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 38u);
+                SCE_TEXT_PUT_LITERAL(&_report, "field `sn` mismatch");
+                sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                 ++failures;
             }
             {
                 if (decoded.payload_len != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
-                        "field `payload` expected empty bytes, got len=%zu\n",
-                        /* The length companion is `size_t` for a tail field but
-                         * the (possibly narrower) wire length-field for a
-                         * length-ref payload — cast so `%zu` is always valid. */
-                        (size_t)decoded.payload_len);
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 38u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` expected empty bytes, got len=");
+                    /* The length companion is `size_t` for a tail field but
+                     * the (possibly narrower) wire length-field for a
+                     * length-ref payload: widened to the writer's one width. */
+                    sce_text_put_u64(&_report, (uint64_t)decoded.payload_len);
+                    sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                     ++failures;
                 }
             }
@@ -80,31 +87,36 @@ static inline int test_vector_codec_zenoh_frame(void) {
         static const uint8_t _expected[] = { 0x01, 0xca, 0xfe };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 42u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_zenoh_frame_t decoded = {0};
         sce_forge_codec_status_t _st = codec_zenoh_frame_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 42u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 42u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else {
             if (decoded.sn != (uint64_t)0x1uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
-                    "field `sn` mismatch\n");
+                sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 42u);
+                SCE_TEXT_PUT_LITERAL(&_report, "field `sn` mismatch");
+                sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                 ++failures;
             }
             {
@@ -113,9 +125,9 @@ static inline int test_vector_codec_zenoh_frame(void) {
                     || memcmp(decoded.payload,
                               _expected_field,
                               decoded.payload_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
-                        "field `payload` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 42u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` (bytes) mismatch");
+                    sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                     ++failures;
                 }
             }
@@ -136,31 +148,36 @@ static inline int test_vector_codec_zenoh_frame(void) {
         static const uint8_t _expected[] = { 0x7f, 0xaa, 0xbb, 0xcc };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 46u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_zenoh_frame_t decoded = {0};
         sce_forge_codec_status_t _st = codec_zenoh_frame_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 46u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 46u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else {
             if (decoded.sn != (uint64_t)0x7fuLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
-                    "field `sn` mismatch\n");
+                sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 46u);
+                SCE_TEXT_PUT_LITERAL(&_report, "field `sn` mismatch");
+                sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                 ++failures;
             }
             {
@@ -169,9 +186,9 @@ static inline int test_vector_codec_zenoh_frame(void) {
                     || memcmp(decoded.payload,
                               _expected_field,
                               decoded.payload_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
-                        "field `payload` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 46u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` (bytes) mismatch");
+                    sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                     ++failures;
                 }
             }
@@ -192,31 +209,36 @@ static inline int test_vector_codec_zenoh_frame(void) {
         static const uint8_t _expected[] = { 0x80, 0x01, 0xde, 0xad };
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 50u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
         codec_zenoh_frame_t decoded = {0};
         sce_forge_codec_status_t _st = codec_zenoh_frame_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 50u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 50u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
             ++failures;
         } else {
             if (decoded.sn != (uint64_t)0x80uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
-                    "field `sn` mismatch\n");
+                sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 50u);
+                SCE_TEXT_PUT_LITERAL(&_report, "field `sn` mismatch");
+                sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                 ++failures;
             }
             {
@@ -225,9 +247,9 @@ static inline int test_vector_codec_zenoh_frame(void) {
                     || memcmp(decoded.payload,
                               _expected_field,
                               decoded.payload_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
-                        "field `payload` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, 50u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `payload` (bytes) mismatch");
+                    sce_forge_test_vector_failed("codec_zenoh_frame", &_report);
                     ++failures;
                 }
             }

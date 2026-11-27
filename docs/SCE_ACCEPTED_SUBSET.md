@@ -8029,6 +8029,16 @@ What the core does not do itself, a deployment supplies in one of two ways:
   machine that runs a typed host-run `<invoke>` includes the request reader in
   its `.c`, so that machine is hosted.
 
+The test-vector sidecar of an algorithm or a codec (`<stem>_test.h`, the rows
+of its `<sce:test-vector>`) is held to the same rule, so a target runs the rows
+its host does. A row that does not hold is one line through `_sce_log_write` at
+the error level, labelled by the unit, with the line of the document the row
+stands on and what it found (`<unit>: test_vector @SCXML L<line>: <what>`), built
+by the forge runtime's `sce/forge/test_vector.h`; the program that runs a sidecar
+links a definition of the seam, the host's or its own.
+`a_test_vector_sidecar_reaches_only_freestanding_headers` walks a sidecar's
+includes.
+
 An event's data still crosses the core as JSON text (a `<send>`'s params, done
 data, a child's events), written and read by `wire.h` and `event_payload.h` over
 the freestanding headers: an integer digit by digit, a real number only through

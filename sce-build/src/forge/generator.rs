@@ -52437,6 +52437,16 @@ fn render_algorithm_test_vector_sidecar(
             }
         };
 
+        // How the C11 sidecar writes a value into the report of a failed row:
+        // by the routines of `sce/text.h`, since a sidecar compiles where its
+        // unit does and calls no `printf` (docs/adr/0110, D1). The
+        // `printf_*` pair above is the C++ sidecar's.
+        let value_text_c = match &tv.value {
+            crate::forge::model::TestVectorValue::Bool(_) => "bool",
+            crate::forge::model::TestVectorValue::Uint(_) => "hex",
+            crate::forge::model::TestVectorValue::Int(_) => "signed",
+        };
+
         rows.push(serde_json::json!({
             "source_line": tv.source_line,
             "hex": hex_str,
@@ -52453,6 +52463,7 @@ fn render_algorithm_test_vector_sidecar(
             "value_literal_py": value_literal_py,
             "printf_fmt": printf_fmt,
             "printf_cast": printf_cast,
+            "value_text_c": value_text_c,
         }));
     }
 

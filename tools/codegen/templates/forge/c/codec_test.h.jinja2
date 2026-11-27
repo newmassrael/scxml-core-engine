@@ -11,6 +11,11 @@
    reject upstream in `render_codec_test_vector_sidecar` so the
    author sees a precise gate error rather than a broken sidecar).
 
+   A failed row is reported through `sce/forge/test_vector.h`, the log
+   seam the algorithm sidecar reports through too, labelled by the codec's
+   name: the sidecar includes no hosted header and calls no `printf`
+   (docs/adr/0110, D1), so a target's image runs the same rows.
+
    Per-field assertion shapes:
      - integer / bool : `actual.<f> != expected` numeric compare
      - bytes (uint8_t[N] + size_t len): memcmp + length compare
@@ -24,12 +29,14 @@
 #define {{ guard }}
 
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "sce/text.h"
+#include "sce/forge/test_vector.h"
 #include "{{ name }}.h"
 
 static inline int test_vector_{{ name }}(void) {
     int failures = 0;
+    /* The one line every failed row's report is built in, in turn. */
+    char _line[SCE_FORGE_TEST_VECTOR_LINE_CAP];
 {% for tv in test_vectors %}
     {
         {{ name }}_t actual = {0};
@@ -71,19 +78,22 @@ static inline int test_vector_{{ name }}(void) {
         static const uint8_t _expected[] = {{ '{' }} {{ tv.hex_bytes_literal_c }} {{ '}' }};
         if (_encoded_len != sizeof _expected
             || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
-            fprintf(stderr,
-                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                "encode length=%zu (expected %zu)\n",
-                _encoded_len, sizeof _expected);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+            SCE_TEXT_PUT_LITERAL(&_report, "encode length=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            SCE_TEXT_PUT_LITERAL(&_report, " (expected ");
+            sce_text_put_u64(&_report, (uint64_t)sizeof _expected);
+            sce_text_put_char(&_report, ')');
+            sce_forge_test_vector_failed("{{ name }}", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
 {% else %}
         if (_encoded_len != 0) {
-            fprintf(stderr,
-                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                "expected empty encode, got len=%zu\n",
-                _encoded_len);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+            SCE_TEXT_PUT_LITERAL(&_report, "expected empty encode, got len=");
+            sce_text_put_u64(&_report, (uint64_t)_encoded_len);
+            sce_forge_test_vector_failed("{{ name }}", &_report);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(NULL, 0);
@@ -91,15 +101,17 @@ static inline int test_vector_{{ name }}(void) {
         {{ name }}_t decoded = {0};
         sce_forge_codec_status_t _st = {{ name }}_decode(&_cursor, &decoded);
         if (_st != SCE_FORGE_CODEC_OK) {
-            fprintf(stderr,
-                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                "decode status=%d\n", (int)_st);
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode status=");
+            sce_text_put_i64(&_report, (int64_t)_st);
+            sce_forge_test_vector_failed("{{ name }}", &_report);
             ++failures;
         } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
-            fprintf(stderr,
-                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                "decode left %zu bytes unconsumed\n",
-                sce_forge_cursor_remaining(&_cursor));
+            sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+            SCE_TEXT_PUT_LITERAL(&_report, "decode left ");
+            sce_text_put_u64(&_report, (uint64_t)sce_forge_cursor_remaining(&_cursor));
+            SCE_TEXT_PUT_LITERAL(&_report, " bytes unconsumed");
+            sce_forge_test_vector_failed("{{ name }}", &_report);
             ++failures;
         } else {
 {% for f in tv.fields %}
@@ -111,20 +123,20 @@ static inline int test_vector_{{ name }}(void) {
                     || memcmp(decoded.{{ f.name_snake }},
                               _expected_field,
                               decoded.{{ f.name_snake }}_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                        "field `{{ f.name_snake }}` (bytes) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `{{ f.name_snake }}` (bytes) mismatch");
+                    sce_forge_test_vector_failed("{{ name }}", &_report);
                     ++failures;
                 }
 {% else %}
                 if (decoded.{{ f.name_snake }}_len != 0) {
-                    fprintf(stderr,
-                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                        "field `{{ f.name_snake }}` expected empty bytes, got len=%zu\n",
-                        /* The length companion is `size_t` for a tail field but
-                         * the (possibly narrower) wire length-field for a
-                         * length-ref payload — cast so `%zu` is always valid. */
-                        (size_t)decoded.{{ f.name_snake }}_len);
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `{{ f.name_snake }}` expected empty bytes, got len=");
+                    /* The length companion is `size_t` for a tail field but
+                     * the (possibly narrower) wire length-field for a
+                     * length-ref payload: widened to the writer's one width. */
+                    sce_text_put_u64(&_report, (uint64_t)decoded.{{ f.name_snake }}_len);
+                    sce_forge_test_vector_failed("{{ name }}", &_report);
                     ++failures;
                 }
 {% endif %}
@@ -140,17 +152,17 @@ static inline int test_vector_{{ name }}(void) {
                 if (memcmp(decoded.{{ f.name_snake }},
                            _expected_str,
                            _expected_len) != 0) {
-                    fprintf(stderr,
-                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                        "field `{{ f.name_snake }}` (string) mismatch\n");
+                    sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+                    SCE_TEXT_PUT_LITERAL(&_report, "field `{{ f.name_snake }}` (string) mismatch");
+                    sce_forge_test_vector_failed("{{ name }}", &_report);
                     ++failures;
                 }
             }
 {% else %}
             if (decoded.{{ f.name_snake }} != {{ f.value_literal_c }}) {
-                fprintf(stderr,
-                    "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
-                    "field `{{ f.name_snake }}` mismatch\n");
+                sce_text_writer_t _report = sce_forge_test_vector_line(_line, sizeof _line, {{ tv.source_line }}u);
+                SCE_TEXT_PUT_LITERAL(&_report, "field `{{ f.name_snake }}` mismatch");
+                sce_forge_test_vector_failed("{{ name }}", &_report);
                 ++failures;
             }
 {% endif %}
