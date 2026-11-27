@@ -1103,6 +1103,8 @@ fn parse_forge_from_node(
         }
         ForgeKind::TestCase => parse_test_case(root, label).map(ForgeDocument::TestCase),
         ForgeKind::TestSuite => parse_test_suite(root, label).map(ForgeDocument::TestSuite),
+        ForgeKind::Properties => parse_properties(root, label).map(ForgeDocument::Properties),
+        ForgeKind::Exploration => parse_exploration(root, label).map(ForgeDocument::Exploration),
         // A `test-component` is a statechart (docs/SCE_TEST_PROFILE.md
         // §11.5), read by the statechart parser.
         kind @ (ForgeKind::Statechart | ForgeKind::TestComponent) => Err(located(
@@ -3259,6 +3261,376 @@ fn parse_feature_model(
     };
     let at = at.expect("each refusal names a feature the document declares");
     Err(located(&elements[at], label.diagnostic_label, refusal))
+}
+
+/// The one `<sce:machine src>` of a properties or an exploration document
+/// (docs/adr/0115, D15): the document it is of, as written. A second one, or a
+/// missing or empty `src`, is refused at the element that shows it.
+fn read_machine_reference(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    kind: ForgeKind,
+) -> Result<String, Located<ForgeError>> {
+    let doc = label.diagnostic_label;
+    let machines: Vec<roxmltree::Node> = sce_children(root, "machine").collect();
+    let Some(machine) = machines.first() else {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:machine".into(),
+            },
+        ));
+    };
+    if let Some(second) = machines.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:machine>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: format!(
+                    "exactly one <sce:machine> per {kind} document: it is of one machine"
+                ),
+            },
+        ));
+    }
+    required_text(machine, "<sce:machine>", "src", doc)
+}
+
+/// The value of `attr` on `node`, trimmed: refused when it is missing or
+/// empty.
+fn required_text(
+    node: &roxmltree::Node,
+    element: &str,
+    attr: &str,
+    doc: &str,
+) -> Result<String, Located<ForgeError>> {
+    let value = node
+        .attribute(attr)
+        .ok_or_else(|| {
+            located(
+                node,
+                doc,
+                ValidationError::MissingAttribute {
+                    element: element.into(),
+                    attr: attr.into(),
+                },
+            )
+        })?
+        .trim()
+        .to_string();
+    if value.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::EmptyValue {
+                element: element.into(),
+                attr: attr.into(),
+            },
+        ));
+    }
+    Ok(value)
+}
+
+/// The forms a property is written in (docs/adr/0115, D15), as the children of
+/// `<sce:assume>` and `<sce:guarantee>` name them.
+const PROPERTY_FORMS: &[&str] = &["always", "step", "recurs", "leads-to", "possible"];
+
+/// Whether `name` is an identifier an expression can read an observer by: an
+/// ASCII letter or an underscore, then letters, digits and underscores.
+fn is_observer_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Read the properties of one `<sce:assume>` or `<sce:guarantee>`, each named
+/// by its `req`, which no other property of the document shares (`seen`).
+fn read_properties_of(
+    block: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    seen: &mut std::collections::BTreeSet<String>,
+) -> Result<Vec<Property>, Located<ForgeError>> {
+    let doc = label.diagnostic_label;
+    let mut properties = Vec::new();
+    for node in sce_children_among(block, PROPERTY_FORMS) {
+        let local = node.tag_name().name();
+        let element = format!("<sce:{local}>");
+        let req = required_text(&node, &element, "req", doc)?;
+        if req.chars().any(char::is_whitespace) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "req".into(),
+                    value: req,
+                    rule: "one sce:req token, which names the property: no whitespace".into(),
+                },
+            ));
+        }
+        if !seen.insert(req.clone()) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::Properties,
+                    what: "property".into(),
+                    id: req,
+                },
+            ));
+        }
+        let text = |attr: &str| required_text(&node, &element, attr, doc);
+        let form = match local {
+            "always" => PropertyForm::Always {
+                cond: text("cond")?,
+            },
+            "step" => PropertyForm::Step {
+                cond: text("cond")?,
+            },
+            "recurs" => {
+                let unless = match node.attribute("unless") {
+                    Some(_) => Some(text("unless")?),
+                    None => None,
+                };
+                PropertyForm::Recurs {
+                    cond: text("cond")?,
+                    unless,
+                }
+            }
+            "leads-to" => PropertyForm::LeadsTo {
+                from: text("from")?,
+                to: text("to")?,
+            },
+            _ => PropertyForm::Possible {
+                cond: text("cond")?,
+            },
+        };
+        properties.push(Property {
+            req,
+            form,
+            line: Some(row_of(&node)),
+        });
+    }
+    Ok(properties)
+}
+
+/// Read a `sce:kind="properties"` document (docs/adr/0115, D15): the machine
+/// it is of, its observers, its assumptions and its guarantees. A refusal is
+/// placed on the element that shows it.
+fn parse_properties(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<PropertiesModel, Located<ForgeError>> {
+    let kind = ForgeKind::Properties;
+    let doc = label.diagnostic_label;
+    let machine = read_machine_reference(root, label, kind)?;
+
+    let mut observers: Vec<PropertyObserver> = Vec::new();
+    for node in sce_children(root, "observer") {
+        let id = required_text(&node, "<sce:observer>", "id", doc)?;
+        if !is_observer_name(&id) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:observer>".into(),
+                    attr: "id".into(),
+                    value: id,
+                    rule: "an identifier a condition reads the observer by: an ASCII letter or \
+                           an underscore, then letters, digits and underscores"
+                        .into(),
+                },
+            ));
+        }
+        if observers.iter().any(|known| known.id == id) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "observer".into(),
+                    id,
+                },
+            ));
+        }
+        let src = required_text(&node, "<sce:observer>", "src", doc)?;
+        observers.push(PropertyObserver {
+            id,
+            src,
+            line: Some(row_of(&node)),
+        });
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    let assumes: Vec<roxmltree::Node> = sce_children(root, "assume").collect();
+    if let Some(second) = assumes.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:assume>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at most one <sce:assume> per properties document: the assumption is one \
+                       conjunction"
+                    .into(),
+            },
+        ));
+    }
+    let assumptions = match assumes.first() {
+        Some(block) => read_properties_of(block, label, &mut seen)?,
+        None => Vec::new(),
+    };
+
+    let guarantee_blocks: Vec<roxmltree::Node> = sce_children(root, "guarantee").collect();
+    let Some(block) = guarantee_blocks.first() else {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:guarantee".into(),
+            },
+        ));
+    };
+    if let Some(second) = guarantee_blocks.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:guarantee>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "exactly one <sce:guarantee> per properties document: the guarantee is \
+                       one conjunction"
+                    .into(),
+            },
+        ));
+    }
+    let guarantees = read_properties_of(block, label, &mut seen)?;
+    if guarantees.is_empty() {
+        return Err(located(
+            block,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:guarantee>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at least one property: a document that guarantees nothing claims nothing"
+                    .into(),
+            },
+        ));
+    }
+
+    Ok(PropertiesModel {
+        name: label.identifier.to_string(),
+        machine,
+        observers,
+        assumptions,
+        guarantees,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Read a `sce:kind="exploration"` document (docs/adr/0115, D15): the machine
+/// it explores, the events that may come from outside and the most that come.
+/// A refusal is placed on the element that shows it.
+fn parse_exploration(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<ExplorationModel, Located<ForgeError>> {
+    let kind = ForgeKind::Exploration;
+    let doc = label.diagnostic_label;
+    let machine = read_machine_reference(root, label, kind)?;
+
+    let blocks: Vec<roxmltree::Node> = sce_children(root, "outside").collect();
+    if let Some(second) = blocks.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:outside>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at most one <sce:outside> per exploration document".into(),
+            },
+        ));
+    }
+    let mut outside: Vec<String> = Vec::new();
+    let mut most = 0u32;
+    if let Some(block) = blocks.first() {
+        let written = required_text(block, "<sce:outside>", "most", doc)?;
+        most = parse_int(&written).ok_or_else(|| {
+            located(
+                block,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:outside>".into(),
+                    attr: "most".into(),
+                    value: written.clone(),
+                    rule: "a count of events, an integer from 0 to 4294967295".into(),
+                },
+            )
+        })?;
+        for node in sce_children(block, "event") {
+            let name = required_text(&node, "<sce:event>", "name", doc)?;
+            if name.split('.').any(str::is_empty) || name.chars().any(char::is_whitespace) {
+                return Err(located(
+                    &node,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:event>".into(),
+                        attr: "name".into(),
+                        value: name,
+                        rule: "an event name: tokens separated by single dots, none empty, and no \
+                               whitespace"
+                            .into(),
+                    },
+                ));
+            }
+            if outside.contains(&name) {
+                return Err(located(
+                    &node,
+                    doc,
+                    ValidationError::DuplicateId {
+                        kind,
+                        what: "event".into(),
+                        id: name,
+                    },
+                ));
+            }
+            outside.push(name);
+        }
+        if (most == 0) != outside.is_empty() {
+            return Err(located(
+                block,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:outside>".into(),
+                    attr: "most".into(),
+                    value: written,
+                    rule: "events that may come and a most above 0, or neither: a most above 0 \
+                           with no <sce:event> lets nothing come, and an event with a most of 0 \
+                           never comes"
+                        .into(),
+                },
+            ));
+        }
+    }
+
+    Ok(ExplorationModel {
+        name: label.identifier.to_string(),
+        machine,
+        outside,
+        most,
+        source_location: forge_source_location_of(root, doc),
+    })
 }
 
 /// Parse an `sce:kind="enum"` document into an [`EnumModel`].

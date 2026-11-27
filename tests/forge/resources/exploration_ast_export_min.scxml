@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: minimal exploration document for the forge_ast_export
+     round-trip drift guard: two events from outside and the most that come. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="exploration"
+       name="exploration_ast_export_min">
+  <sce:machine src="machine.scxml"/>
+  <sce:outside most="3">
+    <sce:event name="tick"/>
+    <sce:event name="reset"/>
+  </sce:outside>
+</scxml>

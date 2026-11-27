@@ -65,6 +65,10 @@ pub enum KindRole {
     /// documents specify: templates, ports, components, configurations, test
     /// cases, suites (ADR 0091).
     Verification,
+    /// Says what a machine promises and over which values that promise is
+    /// searched: the properties and the exploration a model checker judges
+    /// (docs/adr/0115, D15).
+    Specification,
 }
 
 /// The behaviour that separates a kind from one it is confused with.
@@ -1005,6 +1009,74 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  features",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-suite.scxml")),
+        },
+        K::Properties => KindGuide {
+            role: KindRole::Specification,
+            summary: "What one statechart promises, as its user sees it: the assumptions of its \
+                      environment and the guarantees of the machine under them, each a condition \
+                      over the observation the machine leaves at the end of every macrostep, \
+                      judged by a model checker over the machine's model.",
+            choose_when: &[
+                "the text says what must never happen, whatever the events (two outputs at once, \
+                 a state entered without its permission)",
+                "the text says that after something, something else must come (a request is \
+                 answered, an opened door is closed again)",
+                "the text says what the machine may rely on from the outside (a sensor reports \
+                 again and again, a command never comes twice in a row)",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Statechart,
+                    "a statechart says what the machine does; a properties document says what it \
+                     must and must not do, and is kept apart so who edits the machine does not \
+                     edit what it is held to",
+                ),
+                apart!(
+                    K::Exploration,
+                    "an exploration names the values a search is made over and claims nothing; \
+                     the properties are the claims",
+                ),
+                apart!(
+                    K::TestSuite,
+                    "a suite runs chosen tests against an implementation; a property is judged \
+                     over every behaviour of the machine's model within the exploration",
+                ),
+            ],
+            notes: &[
+                "one <sce:machine src>; any number of <sce:observer id src>, each a statechart \
+                 that takes every observation as its event and remembers what a property needs; \
+                 at most one <sce:assume> and one <sce:guarantee>",
+                "five forms, each named by the sce:req token it states (req): <sce:always cond>, \
+                 <sce:step cond> (previous(...) reads the observation before), <sce:recurs cond \
+                 unless>, <sce:leads-to from to> and <sce:possible cond>",
+                "a condition reads In('s') of the machine, a value the machine publishes by its \
+                 <data> id, the name of the event the macrostep took as _event.name, and an \
+                 observer as id.In('s') or id.x; an assumption reads only the event that comes",
+                "a declaration: it emits nothing; sce-codegen formal properties judges it with \
+                 an exploration of the same machine",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/properties.scxml")),
+        },
+        K::Exploration => KindGuide {
+            role: KindRole::Specification,
+            summary: "The finite values a model checker's search of one statechart is made over: \
+                      the events that may come from outside and the most that come in one run.",
+            choose_when: &[
+                "a properties document of the machine is to be judged, and the events from \
+                 outside and their number have to be made finite",
+            ],
+            distinct_from: &[apart!(
+                K::Properties,
+                "the properties are the claims; an exploration only bounds the search, and a \
+                 bound it reaches is named with every verdict, never read as what cannot happen",
+            )],
+            notes: &[
+                "one <sce:machine src>, the machine the properties document names too",
+                "at most one <sce:outside most>, holding one <sce:event name> per event that may \
+                 come; with none, no event comes",
+                "a declaration: it emits nothing, and a build never reads it",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/exploration.scxml")),
         },
     }
 }

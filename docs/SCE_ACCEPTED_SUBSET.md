@@ -502,7 +502,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-twenty-nine variants of `ForgeKind`, written in the `sce:kind` attribute
+thirty-one variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -517,7 +517,27 @@ queue        feature-model            broadcast-log
 text-template                         union
 test-template          test-port-type test-component
 test-configuration     test-case      test-suite
+properties             exploration
 ```
+
+`properties` and `exploration` are the documents of a formal judgement of one machine
+(docs/adr/0115, D15), declarations that emit nothing on any backend and are read by
+`sce-codegen formal properties`. A `properties` document holds one `<sce:machine src>`,
+the statechart it is of; any number of `<sce:observer id src>`, each a statechart that
+takes every observation of the machine as its event, `id` an identifier a condition
+reads it by; at most one `<sce:assume>`; and one `<sce:guarantee>` of at least one
+property. Each block holds properties in five forms, each named by the `sce:req` token
+it states in `req`, unique in the document: `<sce:always cond>`, `<sce:step cond>`,
+`<sce:recurs cond unless>`, `<sce:leads-to from to>` and `<sce:possible cond>`. An
+`exploration` document holds one `<sce:machine src>` and at most one `<sce:outside
+most>` of one `<sce:event name>` per event that may come from outside, a name of
+non-empty dot-separated tokens, unique in the document, with `most` above 0 exactly when
+an event is named. A missing attribute or element, an empty value, a name or `req`
+written twice, a second `<sce:machine>`, `<sce:assume>`, `<sce:guarantee>` or
+`<sce:outside>`, and a `most` that is no count are refused by the parser with the
+`validation/*` codes those shapes take everywhere. What a condition may read, and which
+forms have a translation into the machine's model, are the judge's
+(`sce-codegen formal properties`).
 
 The six `test-` kinds are the test profile (docs/adr/0091; their forms are
 `docs/SCE_TEST_PROFILE.md` §11). Five are declarations read by the forge parser:

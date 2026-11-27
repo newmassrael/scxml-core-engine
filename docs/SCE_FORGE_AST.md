@@ -221,6 +221,8 @@ The closed enum, in declaration order:
 | `test-configuration` | `TestConfigurationModel` | A test configuration (§11.6): the `mtc` component alias, the `ptcs`, the `system_ports`, and the `maps` and `connects` that join ports. |
 | `test-case` | `TestCaseModel` | A test case (§11.7): the `configuration` alias it runs in. |
 | `test-suite` | `TestSuiteModel` | A test suite (§11.8): the `features` alias, the `module_parameters` and the `executes` in run order, each with its `guard_us` and `requires`. |
+| `properties` | `PropertiesModel` | What one machine promises (docs/adr/0115, D15): the `machine` it is of, the `observers`, and the `assumptions` and `guarantees`, each a property with its `req`, its `form` and the conditions of that form; a declaration that emits nothing. |
+| `exploration` | `ExplorationModel` | The finite values a search of one machine is made over (docs/adr/0115, D15): the `machine`, the `outside` event names and their `most`; a declaration that emits nothing. |
 
 A `test-component` (§11.5) is a statechart and is exported through the `statechart` arm:
 its ports, timers, module parameters, statements and PTC invocations are under

@@ -109,6 +109,12 @@
       <xs:enumeration value="test-configuration"/>
       <xs:enumeration value="test-case"/>
       <xs:enumeration value="test-suite"/>
+      <!-- docs/adr/0115, D15: what one machine promises, and the finite
+           values a search of it is made over. Declarations, read by
+           `sce-codegen formal properties`; they emit nothing of their
+           own. -->
+      <xs:enumeration value="properties"/>
+      <xs:enumeration value="exploration"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -937,6 +943,88 @@
     <xs:complexType>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="requires" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- docs/adr/0115, D15: the documents of a formal judgement of one
+       machine. A properties document names the machine it is of and the
+       observers its conditions read, and holds its assumptions and its
+       guarantees; an exploration names the same machine and the events
+       that may come from outside. Every attribute is optional and a string
+       here: which are required, what a name may be and how many of an
+       element a document holds are the parser's rules
+       (`parse_properties`, `parse_exploration`), held once there so
+       each refusal carries its own diagnostic. -->
+  <xs:element name="machine">
+    <xs:complexType>
+      <xs:attribute name="src" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="observer">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="src" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- One property in one of the five forms of D15, each named by the
+       sce:req token it states. The forms are declared here, local to the
+       two blocks that hold them, because `step` names another element
+       globally (a step of a cycle). -->
+  <xs:complexType name="propertyFormsType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="always">
+        <xs:complexType>
+          <xs:attribute name="req" type="xs:string"/>
+          <xs:attribute name="cond" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="step">
+        <xs:complexType>
+          <xs:attribute name="req" type="xs:string"/>
+          <xs:attribute name="cond" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="recurs">
+        <xs:complexType>
+          <xs:attribute name="req" type="xs:string"/>
+          <xs:attribute name="cond" type="xs:string"/>
+          <xs:attribute name="unless" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="leads-to">
+        <xs:complexType>
+          <xs:attribute name="req" type="xs:string"/>
+          <xs:attribute name="from" type="xs:string"/>
+          <xs:attribute name="to" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="possible">
+        <xs:complexType>
+          <xs:attribute name="req" type="xs:string"/>
+          <xs:attribute name="cond" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:element name="assume" type="sce:propertyFormsType"/>
+
+  <xs:element name="guarantee" type="sce:propertyFormsType"/>
+
+  <!-- The events that may come from outside, one `event` each, and the
+       most that come in one run. `event` is local, as the forms are. -->
+  <xs:element name="outside">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="event" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="name" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="most" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

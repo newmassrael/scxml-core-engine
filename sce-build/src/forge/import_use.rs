@@ -634,11 +634,14 @@ impl Names<'_> {
             }
             // A timer names events, a buffer pool sizes storage, an enum
             // lists values and a feature model lists features: none of them
-            // reads another document.
+            // reads another document. The documents of a formal judgement name
+            // the machine and the observers they are of by file, and no import.
             ForgeDocument::Timer(_)
             | ForgeDocument::BufferPool(_)
             | ForgeDocument::Enum(_)
-            | ForgeDocument::FeatureModel(_) => Ok(()),
+            | ForgeDocument::FeatureModel(_)
+            | ForgeDocument::Properties(_)
+            | ForgeDocument::Exploration(_) => Ok(()),
             // The statechart pipeline owns a statechart's imports; forge
             // rendering never receives one (see `classify_document`).
             ForgeDocument::Statechart(_) => unreachable!(

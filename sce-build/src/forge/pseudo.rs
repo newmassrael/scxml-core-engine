@@ -342,6 +342,7 @@ use crate::forge::model::{
     SceType, TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
     TransformModel, ValidatorModel, WorkerModel,
 };
+use crate::forge::model::{ExplorationModel, PropertiesModel, Property, PropertyForm};
 use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
 use crate::forge::model::{
     TestCaseModel, TestConfigurationModel, TestMatcher, TestMatcherForm, TestPortTypeModel,
@@ -580,6 +581,8 @@ pub fn render_nodes(
         ForgeDocument::TestConfiguration(m) => Ok(render_test_configuration(m)),
         ForgeDocument::TestCase(m) => Ok(render_test_case(m)),
         ForgeDocument::TestSuite(m) => Ok(render_test_suite(m)),
+        ForgeDocument::Properties(m) => Ok(render_properties(m)),
+        ForgeDocument::Exploration(m) => Ok(render_exploration(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -2210,6 +2213,91 @@ fn render_feature_model(m: &FeaturesModel) -> Vec<Node> {
             }
             out.line(&line);
         }
+    });
+    out.nodes
+}
+
+// ── Properties and exploration ─────────────────────────────────
+
+/// A properties document (docs/adr/0115, D15): the machine it is of, each
+/// observer, then the assumptions and the guarantees, one property per line
+/// with its form and its name. A condition is free text, so each is the last
+/// value of a line of its own: a form with one condition writes it after the
+/// name, and a form with two writes each under it.
+fn render_properties(m: &PropertiesModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!(
+        "properties {} of {}",
+        text(&m.name),
+        text(&m.machine)
+    ));
+    out.nested(|out| {
+        for observer in &m.observers {
+            out.line(&format!(
+                "observer {} {}",
+                text(&observer.id),
+                text(&observer.src)
+            ));
+        }
+        for (block, properties) in [("assume", &m.assumptions), ("guarantee", &m.guarantees)] {
+            if properties.is_empty() {
+                continue;
+            }
+            out.line(block);
+            out.nested(|out| {
+                for property in properties {
+                    render_property(out, property);
+                }
+            });
+        }
+    });
+    out.nodes
+}
+
+/// One property of [`render_properties`].
+fn render_property(out: &mut Out<'_>, property: &Property) {
+    let head = format!("{} {}", property.form.element(), text(&property.req));
+    match &property.form {
+        PropertyForm::Always { cond }
+        | PropertyForm::Step { cond }
+        | PropertyForm::Possible { cond } => {
+            out.line(&format!("{head} cond {}", text(cond)));
+        }
+        PropertyForm::Recurs { cond, unless } => {
+            out.line(&head);
+            out.nested(|out| {
+                out.line(&format!("cond {}", text(cond)));
+                if let Some(unless) = unless {
+                    out.line(&format!("unless {}", text(unless)));
+                }
+            });
+        }
+        PropertyForm::LeadsTo { from, to } => {
+            out.line(&head);
+            out.nested(|out| {
+                out.line(&format!("from {}", text(from)));
+                out.line(&format!("to {}", text(to)));
+            });
+        }
+    }
+}
+
+/// An exploration document (docs/adr/0115, D15): the machine it explores, the
+/// most events that come from outside, and one line per event that may come.
+fn render_exploration(m: &ExplorationModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!(
+        "exploration {} of {}",
+        text(&m.name),
+        text(&m.machine)
+    ));
+    out.nested(|out| {
+        out.line(&format!("outside most {}", m.most));
+        out.nested(|out| {
+            for event in &m.outside {
+                out.line(&format!("event {}", text(event)));
+            }
+        });
     });
     out.nodes
 }

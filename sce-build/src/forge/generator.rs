@@ -2548,6 +2548,11 @@ pub fn generate_cpp_with_imports_and_externs(
         }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7, the C++ row: a union is a struct of one
         // `std::variant`, an alternative per case. A backend not in
         // `codegen_matrix::UNION_BACKENDS` refuses its document by name in its
@@ -30362,6 +30367,11 @@ pub fn generate_kotlin_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7: Kotlin lowers a union to a sealed
         // interface, one case per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_kotlin(&env, m, imports, options)?,
@@ -30615,6 +30625,11 @@ pub fn generate_rust_with_imports_and_externs(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7: Rust lowers a union to an enum, one
         // variant per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_rust(&env, m, imports, options)?,
@@ -35103,6 +35118,11 @@ pub fn generate_go_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7, the Go row: a union is a value struct of
         // its tag and one member per case that holds a record.
         ForgeDocument::Union(m) => render_union_go(&env, m, imports, options)?,
@@ -35395,6 +35415,11 @@ pub fn generate_python_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7, the Python row: a union is a class and one
         // frozen dataclass per case derived from it.
         ForgeDocument::Union(m) => render_union_python(&env, m, imports, options)?,
@@ -36690,6 +36715,11 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // The documents of a formal judgement (docs/adr/0115, D15) write no file
+        // (`KindClass::Declaration`).
+        ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
+            return Ok(GeneratedOutput::default())
+        }
         // docs/adr/0092, section 7, the C11 row: a union is a struct of its tag
         // and a C `union` of its cases' records.
         ForgeDocument::Union(m) => render_union_c11(&env, m, imports, options)?,
@@ -49261,6 +49291,10 @@ impl StatelessFunction {
             | ForgeDocument::EventSchema(_)
             // A feature model is read by name in its importer's conditions.
             | ForgeDocument::FeatureModel(_)
+            // The documents of a formal judgement are read by the judge, never
+            // called (docs/adr/0115, D15).
+            | ForgeDocument::Properties(_)
+            | ForgeDocument::Exploration(_)
             // ADR 0062: stateful, as a queue is — reached through its producer
             // handle and its readers' cursors.
             | ForgeDocument::BroadcastLog(_)

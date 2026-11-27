@@ -239,6 +239,11 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_)
+        // A property is named by its `req` and an observer by its `id`, which
+        // the properties parser holds unique; a condition reads them in the
+        // judge's own scope, not this one (docs/adr/0115, D15).
+        | ForgeDocument::Properties(_)
+        | ForgeDocument::Exploration(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

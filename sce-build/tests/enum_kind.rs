@@ -54,13 +54,14 @@ fn forge_kind_enum_is_stateless_zero_runtime_dep() {
 }
 
 #[test]
-fn forge_kind_enum_count_is_twenty_nine() {
+fn forge_kind_enum_count_is_thirty_one() {
     // Pre-existing 16 + Enum = 17; EventSchema is the 18th kind; Queue the
     // 19th; FeatureModel the 20th; BroadcastLog the 21st; TextTemplate the
     // 22nd (docs/adr/0087, section 3); Union the 23rd (docs/adr/0092,
     // section 1); the six kinds of the test profile the 24th to the 29th
-    // (docs/adr/0091, section 2).
-    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 29);
+    // (docs/adr/0091, section 2); Properties and Exploration the 30th and
+    // 31st (docs/adr/0115, D15).
+    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 31);
 }
 
 // ── codegen_matrix gate (6-backend lockstep) ────────────────────

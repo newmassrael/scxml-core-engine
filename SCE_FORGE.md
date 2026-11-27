@@ -226,6 +226,8 @@ Declared on the `<scxml>` root element. The entire file is a single kind. Produc
 <scxml sce:kind="interpolation"> <!-- 1D/2D table interpolation -->
 <scxml sce:kind="timer">         <!-- One periodic timer (no one-shot; see 4.10) -->
 <scxml sce:kind="observer">      <!-- Threshold monitoring with hysteresis -->
+<scxml sce:kind="properties">    <!-- What one machine promises (docs/adr/0115, D15) -->
+<scxml sce:kind="exploration">   <!-- The values a search of it is made over -->
 ```
 
 #### Inline Kind

@@ -423,6 +423,11 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     ),
     ("test-case", "test_case_ast_export_min.scxml"),
     ("test-suite", "test_suite_ast_export_min.scxml"),
+    // docs/adr/0115, D15: a properties document with an observer, an
+    // assumption and a guarantee in each form, and an exploration with two
+    // events from outside.
+    ("properties", "properties_ast_export_min.scxml"),
+    ("exploration", "exploration_ast_export_min.scxml"),
 ];
 
 #[test]

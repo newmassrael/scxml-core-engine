@@ -238,6 +238,19 @@ pub enum ForgeKind {
     /// §11.8. Its test cases in run order, each with its guard and its
     /// selection, and the module parameters the components read.
     TestSuite,
+    /// What one machine promises — docs/adr/0115, D15: the assumptions of its
+    /// environment and the guarantees of the machine under them, each over the
+    /// observations a user of the machine makes, with the observers that
+    /// remember what a property needs. A declaration, read by `sce-codegen
+    /// formal properties`; it emits nothing of its own on any backend
+    /// ([`crate::forge::codegen_matrix::KindClass::Declaration`]).
+    Properties,
+    /// The finite values a search of one machine is made over — docs/adr/0115,
+    /// D15: the events that may come from outside and the most that come. It
+    /// claims nothing and is no part of the specification. A declaration, read
+    /// by `sce-codegen formal properties`; it emits nothing of its own on any
+    /// backend.
+    Exploration,
 }
 
 impl ForgeKind {
@@ -312,6 +325,8 @@ impl ForgeKind {
         "test-configuration",
         "test-case",
         "test-suite",
+        "properties",
+        "exploration",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -356,6 +371,8 @@ impl ForgeKind {
             Self::TestConfiguration => "test-configuration",
             Self::TestCase => "test-case",
             Self::TestSuite => "test-suite",
+            Self::Properties => "properties",
+            Self::Exploration => "exploration",
         }
     }
 
@@ -391,6 +408,8 @@ impl ForgeKind {
             "test-configuration" => Some(Self::TestConfiguration),
             "test-case" => Some(Self::TestCase),
             "test-suite" => Some(Self::TestSuite),
+            "properties" => Some(Self::Properties),
+            "exploration" => Some(Self::Exploration),
             _ => None,
         }
     }
@@ -485,6 +504,9 @@ impl ForgeKind {
             | Self::TestConfiguration
             | Self::TestCase
             | Self::TestSuite => false,
+            // docs/adr/0115, D15: the documents of a formal judgement emit
+            // nothing, so nothing of them is held.
+            Self::Properties | Self::Exploration => false,
         }
     }
 
@@ -587,6 +609,8 @@ impl ForgeKind {
             Self::TestTemplate => RuntimeDep::SceRuntime,
             // A port type writes no file.
             Self::TestPortType => RuntimeDep::None,
+            // A declaration emits nothing, so it depends on nothing.
+            Self::Properties | Self::Exploration => RuntimeDep::None,
         }
     }
 
@@ -623,6 +647,8 @@ impl ForgeKind {
                 | Self::TestConfiguration
                 | Self::TestCase
                 | Self::TestSuite
+                | Self::Properties
+                | Self::Exploration
         )
     }
 }
@@ -659,6 +685,8 @@ impl std::fmt::Display for ForgeKind {
             Self::TestConfiguration => write!(f, "test-configuration"),
             Self::TestCase => write!(f, "test-case"),
             Self::TestSuite => write!(f, "test-suite"),
+            Self::Properties => write!(f, "properties"),
+            Self::Exploration => write!(f, "exploration"),
         }
     }
 }
@@ -7539,6 +7567,13 @@ pub enum ForgeDocument {
     /// A test suite. See [`TestSuiteModel`].
     #[serde(rename = "test-suite")]
     TestSuite(TestSuiteModel),
+    /// What one machine promises. See [`PropertiesModel`].
+    #[serde(rename = "properties")]
+    Properties(PropertiesModel),
+    /// The finite values a search of one machine is made over. See
+    /// [`ExplorationModel`].
+    #[serde(rename = "exploration")]
+    Exploration(ExplorationModel),
 }
 
 impl ForgeDocument {
@@ -7572,6 +7607,8 @@ impl ForgeDocument {
             Self::TestConfiguration(m) => &m.name,
             Self::TestCase(m) => &m.name,
             Self::TestSuite(m) => &m.name,
+            Self::Properties(m) => &m.name,
+            Self::Exploration(m) => &m.name,
         }
     }
 
@@ -7607,6 +7644,8 @@ impl ForgeDocument {
             Self::TestConfiguration(_) => ForgeKind::TestConfiguration,
             Self::TestCase(_) => ForgeKind::TestCase,
             Self::TestSuite(_) => ForgeKind::TestSuite,
+            Self::Properties(_) => ForgeKind::Properties,
+            Self::Exploration(_) => ForgeKind::Exploration,
         }
     }
 
@@ -7697,6 +7736,10 @@ impl ForgeDocument {
             | Self::TestConfiguration(_)
             | Self::TestCase(_)
             | Self::TestSuite(_) => return None,
+            // The documents of a formal judgement name a machine by its file
+            // and are read by the judge, never through an alias
+            // (docs/adr/0115, D15).
+            Self::Properties(_) | Self::Exploration(_) => return None,
         })
     }
 
@@ -7806,8 +7849,141 @@ impl ForgeDocument {
             Self::TestConfiguration(_) | Self::TestCase(_) | Self::TestSuite(_) => {
                 self.kind().max_runtime_dep()
             }
+            // A declaration emits nothing, so it depends on nothing.
+            Self::Properties(_) | Self::Exploration(_) => RuntimeDep::None,
         }
     }
+}
+
+// ── Properties and exploration kinds ───────────────────────────
+
+/// Properties document — docs/adr/0115, D15: what one machine promises, over
+/// the observations a user of it makes, one at the end of each macrostep.
+///
+/// Schema (per `<scxml sce:kind="properties">` body): one `<sce:machine
+/// src>`, the document the properties are of; any number of `<sce:observer id
+/// src>`, each a statechart that takes every observation as its event and
+/// remembers what a property needs; at most one `<sce:assume>`, what the
+/// machine assumes of its environment; and one `<sce:guarantee>`, what the
+/// machine guarantees under it. Each holds properties in the five forms of
+/// D15 ([`PropertyForm`]), each named by the `sce:req` token it states. The
+/// parser holds the document to its shape; what a condition reads, and which
+/// forms the model has a translation for, are judged where the machine is in
+/// hand (`crate::formal::properties`).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct PropertiesModel {
+    pub name: String,
+    /// The `src` of `<sce:machine>`, as written: the document the
+    /// properties are of, relative to this one.
+    pub machine: String,
+    /// The `<sce:observer>` elements in document order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observers: Vec<PropertyObserver>,
+    /// The properties of `<sce:assume>` in document order: what the machine
+    /// assumes of the events that come to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assumptions: Vec<Property>,
+    /// The properties of `<sce:guarantee>` in document order: what the machine
+    /// guarantees while its assumptions hold.
+    pub guarantees: Vec<Property>,
+    /// Post-preprocessor source position of the `<scxml sce:kind="properties">`
+    /// root element, which a refusal of the document as a whole names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// One `<sce:observer>` of a [`PropertiesModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct PropertyObserver {
+    /// The name a condition reads the observer by (`id.In('s')`).
+    pub id: String,
+    /// The observer's document, relative to the properties document.
+    pub src: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// One property of a [`PropertiesModel`], an assumption or a guarantee.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct Property {
+    /// The `sce:req` token the property states, which names it.
+    pub req: String,
+    /// What the property says.
+    #[serde(flatten)]
+    pub form: PropertyForm,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// The forms of a property (docs/adr/0115, D15). Each condition is an
+/// expression of the last observation and of the observers' states, written
+/// as the document writes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "form", rename_all = "kebab-case")]
+pub enum PropertyForm {
+    /// `<sce:always cond>`: the condition holds of every observation.
+    Always { cond: String },
+    /// `<sce:step cond>`: the condition holds between an observation and the
+    /// one before it, which the condition reads through `previous(...)`.
+    Step { cond: String },
+    /// `<sce:recurs cond unless>`: the condition holds again and again,
+    /// unless from some moment `unless` always does.
+    Recurs {
+        cond: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unless: Option<String>,
+    },
+    /// `<sce:leads-to from to>`: after an observation where `from` holds, one
+    /// comes where `to` does.
+    LeadsTo { from: String, to: String },
+    /// `<sce:possible cond>`: from every reachable state a state where the
+    /// condition holds can still be reached.
+    Possible { cond: String },
+}
+
+impl PropertyForm {
+    /// The element the form is written as, without its prefix.
+    pub fn element(&self) -> &'static str {
+        match self {
+            PropertyForm::Always { .. } => "always",
+            PropertyForm::Step { .. } => "step",
+            PropertyForm::Recurs { .. } => "recurs",
+            PropertyForm::LeadsTo { .. } => "leads-to",
+            PropertyForm::Possible { .. } => "possible",
+        }
+    }
+}
+
+/// Exploration document — docs/adr/0115, D15: the finite values a search of
+/// one machine is made over. It claims nothing and is no part of the
+/// specification, and a build never reads it.
+///
+/// Schema (per `<scxml sce:kind="exploration">` body): one `<sce:machine
+/// src>`, the document explored; and at most one `<sce:outside most>`
+/// holding one `<sce:event name>` per event that may come from outside, with
+/// `most` the most of them that come in one run. A document with no
+/// `<sce:outside>` lets none come.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ExplorationModel {
+    pub name: String,
+    /// The `src` of `<sce:machine>`, as written: the document explored,
+    /// relative to this one.
+    pub machine: String,
+    /// The names of the events that may come from outside, in document order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outside: Vec<String>,
+    /// The most events that come from outside in one run.
+    pub most: u32,
+    /// Post-preprocessor source position of the `<scxml
+    /// sce:kind="exploration">` root element, which a refusal of the document
+    /// as a whole names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Union kind ─────────────────────────────────────────────────
@@ -8548,7 +8724,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            29,
+            31,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

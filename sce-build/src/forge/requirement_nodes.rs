@@ -159,7 +159,9 @@ pub fn requirement_nodes(parsed: &ParsedForge) -> Vec<ForgeReqNode> {
         | ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => vec![root()],
+        | ForgeDocument::TestSuite(_)
+        | ForgeDocument::Properties(_)
+        | ForgeDocument::Exploration(_) => vec![root()],
     }
 }
 

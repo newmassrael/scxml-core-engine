@@ -373,6 +373,16 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.name,
             &m.source_location,
         ),
+        ForgeDocument::Properties(m) => (
+            "<scxml sce:kind=\"properties\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::Exploration(m) => (
+            "<scxml sce:kind=\"exploration\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 

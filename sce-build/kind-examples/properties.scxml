@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- properties: what one statechart promises, as its user sees it. The door
+     of the statechart example is closed again after it is opened, and can
+     always be opened again, as long as nobody outside sends the timeout it
+     sends itself. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="properties" name="door_properties" version="1.0">
+  <sce:machine src="statechart.scxml"/>
+  <sce:assume>
+    <sce:always req="DOOR-ENV-1" cond="_event.name != 'door.autoclose'"/>
+  </sce:assume>
+  <sce:guarantee>
+    <sce:leads-to req="DOOR-1" from="In('opened')" to="In('closed')"/>
+    <sce:possible req="DOOR-2" cond="In('opened')"/>
+  </sce:guarantee>
+</scxml>

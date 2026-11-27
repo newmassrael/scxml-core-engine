@@ -151,6 +151,9 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         ForgeKind::Worker => KindClass::McuClass,
         // ADR 0057 §2: the feature model is read by its importers' conditions.
         ForgeKind::FeatureModel => KindClass::Declaration,
+        // docs/adr/0115, D15: the properties of a machine and the values a
+        // search of it is made over are read by `sce-codegen formal`.
+        ForgeKind::Properties | ForgeKind::Exploration => KindClass::Declaration,
     }
 }
 
@@ -336,7 +339,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Swift => false,
         },
         // A declaration has no template on any backend: there is nothing to render.
-        ForgeKind::FeatureModel => match lang {
+        ForgeKind::FeatureModel | ForgeKind::Properties | ForgeKind::Exploration => match lang {
             Language::Rust
             | Language::Cpp
             | Language::Go

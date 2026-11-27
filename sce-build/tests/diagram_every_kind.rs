@@ -41,6 +41,9 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("condition", &["dataflow.svg"]),
     ("enum", &["mapping.svg"]),
     ("event-schema", &["mapping.svg"]),
+    // An exploration is the events that may come and their most; its reading
+    // is the pseudocode page and the field table (docs/adr/0115, D15).
+    ("exploration", &[]),
     // A feature model is a list of features and what each requires; its
     // reading is the pseudocode page.
     ("feature-model", &[]),
@@ -51,6 +54,9 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("observer", &["thresholds.svg"]),
     // A procedure is the statechart figure of its states.
     ("procedure", &["document.svg"]),
+    // A properties document is a list of conditions, each named by its
+    // requirement; its reading is the pseudocode page and the field table.
+    ("properties", &[]),
     // A queue is a contract and not a shape: its reading is the pseudocode
     // page, where the storage, the cardinalities and the progress are each
     // a word, and the field table.

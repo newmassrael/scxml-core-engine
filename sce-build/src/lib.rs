@@ -10629,7 +10629,11 @@ fn discover_stateful_member_methods(
         | ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => Vec::new(),
+        | ForgeDocument::TestSuite(_)
+        // The documents of a formal judgement emit nothing, so nothing is
+        // called on them (docs/adr/0115, D15).
+        | ForgeDocument::Properties(_)
+        | ForgeDocument::Exploration(_) => Vec::new(),
     }
 }
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- exploration: the finite values a search of one statechart is made over.
+     The door of the statechart example, opened and closed from outside, at
+     most four times in one run. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="exploration" name="door_exploration" version="1.0">
+  <sce:machine src="statechart.scxml"/>
+  <sce:outside most="4">
+    <sce:event name="door.open"/>
+    <sce:event name="door.close"/>
+  </sce:outside>
+</scxml>

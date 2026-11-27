@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0115, D15: minimal properties document for the forge_ast_export
+     round-trip drift guard: one observer, one assumption, and a guarantee in
+     each of the five forms, the smallest shape that carries every field. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="properties"
+       name="properties_ast_export_min">
+  <sce:machine src="machine.scxml"/>
+  <sce:observer id="since" src="since.scxml"/>
+  <sce:assume>
+    <sce:recurs req="ENV-1" cond="_event.name == 'tick'"/>
+  </sce:assume>
+  <sce:guarantee>
+    <sce:always req="REQ-1" cond="!In('fail')"/>
+    <sce:step req="REQ-2" cond="count &gt;= previous(count)"/>
+    <sce:recurs req="REQ-3" cond="In('idle')" unless="In('done')"/>
+    <sce:leads-to req="REQ-4" from="In('busy')" to="since.In('seen')"/>
+    <sce:possible req="REQ-5" cond="In('idle')"/>
+  </sce:guarantee>
+</scxml>
