@@ -213,6 +213,11 @@ pub struct Judgement {
     pub record: String,
     /// [`VERSION`].
     pub v: u32,
+    /// The digest of the sources of the generator that judged
+    /// ([`crate::GENERATOR_SOURCE_DIGEST`]), or `unavailable` on a build
+    /// that could not read them: a record read apart from the run that wrote
+    /// it names its producer (`SCE_WIRE_CONTRACTS.md`, policy 1).
+    pub generator: String,
     pub digests: Digests,
     /// Whether every macrostep ends.
     pub macrosteps: Verdict,
@@ -544,6 +549,7 @@ pub fn judge(
     Ok(Judgement {
         record: RECORD.to_string(),
         v: VERSION,
+        generator: crate::GENERATOR_SOURCE_DIGEST.to_string(),
         digests: Digests::of(documents),
         macrosteps,
         not_discharged: written.assumptions.clone(),
@@ -902,6 +908,7 @@ mod tests {
         Judgement {
             record: RECORD.to_string(),
             v: VERSION,
+            generator: crate::GENERATOR_SOURCE_DIGEST.to_string(),
             digests: digests(),
             macrosteps: Verdict::HoldsWithin {
                 bounds: vec!["the most events from outside (4)".to_string()],
@@ -1006,6 +1013,55 @@ mod tests {
             schema["properties"]["v"]["const"].as_u64(),
             Some(u64::from(VERSION))
         );
+    }
+
+    /// Turns red if the schema accepts a record the judge never writes: each
+    /// case changes one field of a record first shown valid, a stamp that
+    /// names no producer among them.
+    #[test]
+    fn the_verdicts_schema_rejects_what_the_judge_does_not_write() {
+        let schema = schema();
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema)
+            .expect("the verdicts schema compiles");
+        let valid: serde_json::Value =
+            serde_json::from_str(&every_verdict().to_text()).expect("the record is JSON");
+        assert!(
+            validator.validate(&valid).is_ok(),
+            "the control record must be valid, or a refusal below shows nothing"
+        );
+        let cases: [(&str, fn(&mut serde_json::Value)); 6] = [
+            ("a record without the generator stamp", |record| {
+                record
+                    .as_object_mut()
+                    .expect("a record is an object")
+                    .remove("generator");
+            }),
+            ("a stamp that is a crate version", |record| {
+                record["generator"] = serde_json::json!("0.1.0");
+            }),
+            ("a digest that is no sha256", |record| {
+                record["digests"]["machine"] = serde_json::json!("abc");
+            }),
+            ("a verdict the judge does not say", |record| {
+                record["verdicts"][0]["verdict"] = serde_json::json!("proved");
+            }),
+            ("a form no property is written in", |record| {
+                record["verdicts"][0]["form"] = serde_json::json!("eventually");
+            }),
+            ("a member the record does not have", |record| {
+                record["note"] = serde_json::json!("x");
+            }),
+        ];
+        for (case, change) in cases {
+            let mut changed = valid.clone();
+            change(&mut changed);
+            assert!(
+                validator.validate(&changed).is_err(),
+                "{case} must be refused"
+            );
+        }
     }
 
     /// Turns red if a recorded judgement is read for documents or a judge it

@@ -347,6 +347,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "this_repositorys_quantities_manifest_validates_against_the_wire_schema",
         "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
     ),
+    (
+        "schemas/sce-formal-verdicts.v1.schema.json",
+        "a_record_validates_against_the_wire_schema",
+        "sce-build/src/formal/verdicts.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -496,6 +501,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-formal-quantities.v1.schema.json",
         "the_quantities_schema_rejects_what_the_judge_refuses",
         "sce-build/tests/formal_surfaces_are_held_to_their_wire_schemas.rs",
+    ),
+    (
+        "schemas/sce-formal-verdicts.v1.schema.json",
+        "the_verdicts_schema_rejects_what_the_judge_does_not_write",
+        "sce-build/src/formal/verdicts.rs",
     ),
 ];
 

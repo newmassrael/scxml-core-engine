@@ -230,6 +230,7 @@ fn a_recorded_judgement_is_read_only_of_what_it_judged() {
     let judgement = |digests: Digests| Judgement {
         record: RECORD.to_string(),
         v: VERSION,
+        generator: sce_build::GENERATOR_SOURCE_DIGEST.to_string(),
         digests,
         macrosteps: within.clone(),
         not_discharged: vec!["ENV-1".to_string()],

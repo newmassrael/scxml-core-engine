@@ -5,7 +5,7 @@
   "title": "SCE formal verdicts record (wire schema v1)",
   "description": "The judgement of one machine's properties (docs/adr/0115, D15), as `sce-codegen formal properties --record` writes it and `--recorded` reads it back: whether every macrostep ends, the assumptions no machine of SCE discharges, and the verdict of each guarantee, by the sce:req token it states, with the scenario of each violation and each witness every lane replays, and, where it was asked for, what altering the machine showed of its guarantees. A judgement is of exactly one machine, one properties document with its observers, one exploration and one judge, named by their digests; a record whose digests are not those of the documents and the judge it is read for is no judgement of them, and is refused naming each digest that moved. Authoritative producer and reader is sce-build/src/formal/verdicts.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["record", "v", "digests", "macrosteps", "not_discharged", "verdicts"],
+  "required": ["record", "v", "generator", "digests", "macrosteps", "not_discharged", "verdicts"],
   "additionalProperties": false,
   "definitions": {
     "digest": {
@@ -35,6 +35,11 @@
   "properties": {
     "record": { "const": "sce-formal-verdicts" },
     "v": { "const": 1 },
+    "generator": {
+      "description": "Digest of the sources of the generator that judged, the value `sce-codegen --version` reports in parentheses, or `unavailable` on a build that could not read its sources. Required because a record is kept and read apart from the run that wrote it, and SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release. The judge's digest in `digests.tool` covers the same sources with the pinned tools, so it says whether a verdict is of this judge; this stamp names the producer.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{64}|unavailable)$"
+    },
     "digests": {
       "description": "What the judgement is of: the machine's document, the properties document with each observer's by its name, the exploration, and the judge (the pinned TLC and Java runtime, the generator's sources and the semantics it writes models against).",
       "type": "object",
