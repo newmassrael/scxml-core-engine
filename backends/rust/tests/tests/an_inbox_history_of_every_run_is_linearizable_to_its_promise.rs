@@ -1105,7 +1105,11 @@ fn an_input_the_drain_before_an_own_event_applies_is_invoked_with_the_event() {
     let inbox: EngineInbox<HistoryPolicy<0>> = root.inbox();
     let first = std::thread::scope(|scope| {
         scope
-            .spawn(|| record_post(&clock, 0, 1, Door::Handle, || inbox.post(posted(1))))
+            .spawn(|| {
+                record_post(&clock, 0, 1, Door::Handle, || {
+                    delivery(inbox.post(posted(1)))
+                })
+            })
             .join()
             .expect("the posting thread")
     });
@@ -1115,7 +1119,11 @@ fn an_input_the_drain_before_an_own_event_applies_is_invoked_with_the_event() {
         before_own_push(Box::new(move || {
             let post = std::thread::scope(|scope| {
                 scope
-                    .spawn(|| record_post(&clock, 0, 2, Door::Handle, || inbox.post(posted(2))))
+                    .spawn(|| {
+                        record_post(&clock, 0, 2, Door::Handle, || {
+                            delivery(inbox.post(posted(2)))
+                        })
+                    })
                     .join()
                     .expect("the posting thread")
             });
