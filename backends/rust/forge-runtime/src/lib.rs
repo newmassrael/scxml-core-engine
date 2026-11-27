@@ -76,6 +76,9 @@ pub mod reader;
 /// are shown to as they are read (docs/adr/0130), re-exported from [`codec`].
 pub mod records;
 pub mod storage;
+/// A cold codec read as a table of its fields by one walker, and a cold chain by
+/// a table of its rule (docs/adr/0155), re-exported from [`codec`].
+pub mod table;
 /// The fence of a text template's untrusted hole (docs/adr/0087, section 3.1):
 /// every marker removed from the value, in place, with no allocator.
 pub mod text_template;

@@ -44,7 +44,7 @@ pub enum ChainEnd {
 impl ChainEnd {
     /// Whether the chain ends with its frame, so that no entry is read once no
     /// byte remains.
-    const fn with_frame(self) -> bool {
+    pub(crate) const fn with_frame(self) -> bool {
         matches!(self, ChainEnd::Frame)
     }
 }
@@ -114,7 +114,7 @@ pub struct ChainScan<const K: usize> {
 
 /// Whether one more entry may be read under `left`, the entries the chain's
 /// depth still allows (`None` where it has none), and that entry counted.
-fn take_one(left: &mut Option<u32>) -> bool {
+pub(crate) fn take_one(left: &mut Option<u32>) -> bool {
     match left {
         Some(0) => false,
         Some(n) => {
@@ -135,7 +135,12 @@ fn take_one(left: &mut Option<u32>) -> bool {
 /// the loop did not take: with no byte left the frame ended inside the chain,
 /// and with bytes left the chain ran past its depth. A chain with no depth has
 /// no entry past it.
-fn close_chain(reader: &mut SceReader<'_>, end: ChainEnd, depth: Option<u32>, more: bool) {
+pub(crate) fn close_chain(
+    reader: &mut SceReader<'_>,
+    end: ChainEnd,
+    depth: Option<u32>,
+    more: bool,
+) {
     match end {
         ChainEnd::Frame => {
             if depth.is_some() && reader.remaining() > 0 {

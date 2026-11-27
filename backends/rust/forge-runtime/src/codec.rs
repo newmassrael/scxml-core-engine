@@ -312,6 +312,12 @@ pub use crate::records::{
 pub use crate::chain::{
     read_chain_into, walk_chain, ChainEnd, ChainEnds, ChainRule, ChainScan, ChainScanRule,
 };
+// The one walker of every cold codec's table and the one read of every chain
+// whose rule is data (docs/adr/0155).
+pub use crate::table::{
+    read_chain_table, read_table, Bits, Carry, ChainEntries, ChainTable, FieldTable, Gate,
+    HeldEntries, Read, Row, Source, Span, TableOut, ROW_INPUTS, TABLE_ROWS,
+};
 // A write whose most bytes the build proves an array holds, and that array
 // (docs/adr/0065 §4, amendment of 2026-11-24), spelled from the same path.
 pub use crate::array_sink::{ArraySink, BoundedWrite, Vle};
