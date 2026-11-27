@@ -26,8 +26,9 @@
  * the queue and has not yet filled its entry among them: Vyukov's bounded queue
  * would answer empty there, in front of the second input, and the event of the
  * owner's own would enter ahead of a post that returned before it (the Rust
- * runtime's bounded inbox did, until its take learnt to wait). Held to
- * docs/adr/0147, D1:
+ * runtime's bounded inbox did, until its post came to put its place in the
+ * order and its input there in one step, so that no place is ever reserved and
+ * left unwritten). Held to docs/adr/0147, D1:
  *
  *   - at most once, and never lost: every post the inbox took is applied exactly
  *     once, and every post it refused never is;

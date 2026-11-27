@@ -60,6 +60,20 @@ std = ["sce-portable-bytes/alloc", "bounded-inbox"]
 # names this feature and still compiles in a build that unifies `std` in.
 bounded-inbox = []
 
+# The point a test preempts a post to a `BoundedInbox` at
+# (`preempt_next_post`): between the write of its input into the slot it
+# holds and the step that publishes it, where an interrupt handler, or the
+# owner on the poster's core, may stop a post (docs/adr/0147, D5). The tests
+# that hold the owner's take to never waiting for such a post, and the history
+# of such a run to the promise, run what the preemption runs there on the
+# poster's own thread.
+#
+# Never on a release path: no default asks for it, and a test crate names it.
+# It only adds (docs/adr/0053): without it a post has no such point, and with it
+# and nothing set each post reads one thread-local slot. It runs a boxed
+# closure on a thread, so it asks for `std`.
+inbox-preemption = ["std", "bounded-inbox"]
+
 # The BasicHTTP event processor (W3C SCXML C.2): the `http` module
 # (`HttpSendRequest`, `HttpSendResponse`) and `Engine::set_http_send_callback`.
 # It needs the `std` profile, so asking for it asks for `std`. A `std` build

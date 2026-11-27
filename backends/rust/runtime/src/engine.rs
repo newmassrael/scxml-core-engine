@@ -1641,7 +1641,7 @@ impl<P: StatePolicy> Engine<P> {
     /// crate's code drives is attached its inbox before anything asks for one.
     #[cfg(all(
         feature = "bounded-inbox",
-        target_has_atomic = "8",
+        target_has_atomic = "32",
         target_has_atomic = "ptr"
     ))]
     pub fn attach_inbox<W: Hal + 'static, const N: usize>(

@@ -647,12 +647,22 @@ pub use host_processor::{
 };
 #[cfg(feature = "http-send")]
 pub use http::{HttpSendFailure, HttpSendOutcome, HttpSendRequest, HttpSendResponse};
+/// docs/adr/0147, D5: run code where the next post this thread makes to a
+/// [`BoundedInbox`] has written its input and not yet published it, as an
+/// interrupt handler that preempts the post there would; with the
+/// `inbox-preemption` feature, which a test names.
+#[cfg(all(
+    feature = "inbox-preemption",
+    target_has_atomic = "32",
+    target_has_atomic = "ptr"
+))]
+pub use inbox::preempt_next_post;
 /// docs/adr/0084: the bare-metal profile's inbox, which a deployment declares
 /// in a `static` and hands to [`Engine::attach_inbox`]; with the
 /// `bounded-inbox` feature, which `std` asks for.
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 pub use inbox::BoundedInbox;

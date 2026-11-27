@@ -19,7 +19,7 @@
 //!   `static`, of the capacity it names, and handed to the engine with
 //!   `Engine::attach_inbox`. A post to a full one is refused. It is present
 //!   with the crate's `bounded-inbox` feature, which `std` asks for, on every
-//!   target with compare-and-swap of a byte and of a pointer, so a bare-metal
+//!   target with compare-and-swap of 32 bits and of a pointer, so a bare-metal
 //!   crate that names the feature still compiles in a build that turns `std`
 //!   on (docs/adr/0053). A bare-metal build that names neither feature has no
 //!   inbox to drain, and its engine carries no drain: no field for an inbox,
@@ -82,10 +82,18 @@ pub(crate) mod drain;
 // The queue of `BoundedInbox`, present where it is.
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 mod ring;
+
+/// docs/adr/0147, D5: where a test preempts a post to a `BoundedInbox`.
+#[cfg(all(
+    feature = "inbox-preemption",
+    target_has_atomic = "32",
+    target_has_atomic = "ptr"
+))]
+pub use ring::preemption::preempt_next_post;
 
 #[cfg(feature = "std")]
 use std::any::Any;
@@ -98,7 +106,7 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
     feature = "std",
     all(
         feature = "bounded-inbox",
-        target_has_atomic = "8",
+        target_has_atomic = "32",
         target_has_atomic = "ptr"
     )
 ))]
@@ -109,7 +117,7 @@ use crate::event::{EventMetadata, EventWithMetadata};
     feature = "std",
     all(
         feature = "bounded-inbox",
-        target_has_atomic = "8",
+        target_has_atomic = "32",
         target_has_atomic = "ptr"
     )
 ))]
@@ -303,11 +311,11 @@ pub(crate) enum SessionInbox<P: StatePolicy> {
     /// One a deployment declared in a `static` and handed to
     /// `Engine::attach_inbox`.
     // Made only by `Engine::attach_inbox`, which a target without
-    // compare-and-swap of a byte and of a pointer does not have, since it has
+    // compare-and-swap of 32 bits and of a pointer does not have, since it has
     // no `BoundedInbox` to attach.
     #[cfg(feature = "bounded-inbox")]
     #[cfg_attr(
-        not(all(target_has_atomic = "8", target_has_atomic = "ptr")),
+        not(all(target_has_atomic = "32", target_has_atomic = "ptr")),
         allow(dead_code)
     )]
     Attached(AttachedInbox<P>),
@@ -843,16 +851,17 @@ impl<P: StatePolicy> EngineInbox<P> {
 /// ```
 ///
 /// `N` is a power of two from 2 to 128; another value fails to compile where the
-/// `static` is declared. The queue is Vyukov's bounded multi-producer queue
-/// (the submodule `ring`): a post takes no lock and never waits, so an
-/// interrupt handler may post. The owner takes at most `N` inputs at one
-/// boundary. A take that finds the oldest input still being written while one
-/// posted after it is written waits for the oldest, so a post that returned is
-/// never left behind an event of the owner's own (docs/adr/0147, D1). The wait
-/// is for a poster to run the few instructions between its reservation and its
-/// publication; a deployment whose owner preempts a poster on its own core, a
-/// task of lower priority, and has another context post behind it, can stop
-/// its owner there (the submodule says why the order asks it).
+/// `static` is declared. The queue (the submodule `ring`) keeps the inputs in
+/// `N` slots and their order in a ring of slot indices, where a post claims
+/// and fills its place in one compare-and-swap: a post takes no lock, so an
+/// interrupt handler may post, and the owner's take never waits for a post,
+/// whatever the post is doing, so a poster the owner preempts on its own core
+/// does not stop it. A post that returned is never left behind an event of the
+/// owner's own, and a post still being written when the owner drains holds its
+/// slot and no place in the order, so it is taken by a later drain once it
+/// returns (docs/adr/0147, D1 and D5). The owner takes at most `N` inputs at
+/// one boundary. A post is refused only when every slot holds an input, one
+/// the owner is reading out or one a post is still writing.
 ///
 /// `W` is the HAL whose `Hal::wake` a post the inbox took calls, on the posting
 /// thread: the waker the deployment installs. A generated bare-metal machine's
@@ -863,7 +872,7 @@ impl<P: StatePolicy> EngineInbox<P> {
 /// it is for, it is never dropped.
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
@@ -885,7 +894,7 @@ pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
 
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
@@ -1026,7 +1035,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
 
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 impl<P: StatePolicy, const N: usize, W: Hal> Default for BoundedInbox<P, N, W> {
@@ -1037,7 +1046,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> Default for BoundedInbox<P, N, W> {
 
 #[cfg(all(
     feature = "bounded-inbox",
-    target_has_atomic = "8",
+    target_has_atomic = "32",
     target_has_atomic = "ptr"
 ))]
 impl<P: StatePolicy, const N: usize, W> InboxSource<InboxInputOf<P>> for BoundedInbox<P, N, W> {

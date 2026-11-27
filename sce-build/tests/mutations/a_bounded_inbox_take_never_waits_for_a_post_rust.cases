@@ -1,0 +1,69 @@
+# Mutation cases for docs/adr/0147, D5 on the Rust runtime's bounded inbox: the
+# owner's take never waits for a post, and a post under way costs the slot it
+# holds and nothing more.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_bounded_inbox_take_never_waits_for_a_post_rust.cases`.
+#
+# The queue keeps its inputs in slots and their order in a ring of slot
+# indices, where a post claims and fills its place in one compare-and-swap, so
+# no place in the order is ever reserved and left unwritten, and there is no
+# cell a take could stop or wait at. The unit tests preempt a post between the
+# write of its input and its publication, on the poster's own thread, post and
+# drain there, and hold what the drain takes; others stop a context between
+# the swap of a cell and the move of the ring's end past it. The mutants take
+# one decision of the queue away each:
+#
+#   a take keeps the slot it read the input out of, so slots leak and posts
+#   are refused with slots that ought to be free (a post under way would then
+#   cost more than its slot);
+#   the free ring starts one slot short;
+#   a take that finds the cell at the head already taken, by a take stopped
+#   before it moved the head, answers that the ring is empty;
+#   a put that finds the cell at the tail already filled, by a put stopped
+#   before it moved the tail, refuses the post.
+#
+# The property the old take was defended for, that it waited at a reserved
+# cell a published one stood behind, has no anchor here: the design has no
+# reserved cell. What would bring it back is a post that takes its place in
+# the order before it writes its input, which is no edit of a line but another
+# queue; the preemption tests are what hold the take to passing a post under
+# way, and they fail on that queue (it answers empty in front of the post, or,
+# with the wait, never returns).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --lib inbox::ring
+mutation_targets backends/rust/runtime/src/inbox/ring.rs
+mutation_oracles backends/rust/runtime/src/inbox/ring.rs
+
+mutation_case "Rust's bounded inbox keeps the slot a take read its input out of" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''        let item = unsafe { self.slot(index).read() };
+        let returned = self.free.put(index);''',
+     r'''        let item = unsafe { self.slot(index).read() };
+        let returned = true;''')
+PY
+
+mutation_case "Rust's bounded inbox starts its free ring one slot short" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''            free: IndexRing::starting_at(start, N as u32),''',
+     r'''            free: IndexRing::starting_at(start, (N - 1) as u32),''')
+PY
+
+mutation_case "Rust's bounded inbox answers empty behind a take that did not move the head" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''                // Taken by a take stopped before it moved the head past it.
+                Self::pass(&self.head, position);''',
+     r'''                // Taken by a take stopped before it moved the head past it.
+                return None;''')
+PY
+
+mutation_case "Rust's bounded inbox refuses a post behind a put that did not move the tail" <<'PY'
+edit("backends/rust/runtime/src/inbox/ring.rs",
+     r'''                // Filled by a put stopped before it moved the tail past it.
+                Self::pass(&self.tail, position);''',
+     r'''                // Filled by a put stopped before it moved the tail past it.
+                return false;''')
+PY

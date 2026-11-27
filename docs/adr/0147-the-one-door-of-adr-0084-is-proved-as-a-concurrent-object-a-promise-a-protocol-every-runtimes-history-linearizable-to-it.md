@@ -158,14 +158,51 @@ assumed, and the assumption is named in the module (ADR 0115, D6).
 **As found (2026-11-27).** Rust's `BoundedInbox` stood on `heapless::mpmc`, Vyukov's bounded queue, whose take
 answers empty when the oldest cell reserved is not yet published, even when a post that reserved a later cell has
 published it and returned. The drain before an event of the owner's own then applied nothing, and the own event
-entered ahead of that post, which D1 does not allow. The inbox now holds a ring of its own
-(`backends/rust/runtime/src/inbox/ring.rs`) whose take waits at such a cell while a cell behind it is published, and
-answers empty only when every input not taken is a post still under way; a unit test parks a post between its
-reservation and its publication to hold it. The wait is for a poster to run the instructions between the two, so a
-deployment whose owner preempts a poster on its own core while another context posts behind it can stop the owner
-there: a ring taken in the order its cells were reserved keeps D1's order no other way. C11's SCQ rows have no such
-cell: a take that finds a ticket still unfilled makes it unusable for its enqueue, which takes another, and goes on
-to the next, which `inbox_take_past_a_post_under_way.c` holds under GenMC.
+entered ahead of that post, which D1 does not allow. A ring of its own first fixed the order by a take that waited at
+such a cell while a cell behind it was published. That wait could stop the owner for good on one core: an owner that
+preempts a poster between its reservation and its publication, with an interrupt posting behind it, waits for a
+poster that cannot run until the owner returns.
+
+**The take never waits (2026-11-27, the owner's decision).** The ring
+(`backends/rust/runtime/src/inbox/ring.rs`) is now the textbook data queue that C11's SCQ rows also are: the inputs
+live in `N` slots, a free ring holds the indices of the slots nobody uses, and a filled ring holds the indices of the
+slots that hold an input, in the order the posts linearized. A post takes a free index, writes its input into that
+slot, which is its own, and puts the index on the filled ring. The take reverses this. Each index ring claims and
+fills a cell in one compare-and-swap at its tail, with a stamp per cell (Vyukov's sequence) and an end any context
+moves past a cell found done with (Tsigas and Zhang). So no place in the order is ever reserved and left unwritten. A
+post under way holds a slot and no position, and the owner's take is a few loads and stores whatever a poster is doing.
+
+It is linearizable to D1. A post linearizes where its index enters the filled ring, or where it finds the free ring
+empty. A take linearizes where it takes an index off the filled ring, or where it reads the empty cell at the head.
+
+- A poster's own posts keep its order. It cannot begin its next post before its previous one returned, so the next
+  index is put at a later position, and positions are taken in order.
+- A post that returned before an own event is taken before it. Its index is at a position before the tail, every
+  such position is filled, and the drain before the own event takes until it reads an empty cell.
+- A post still under way at that drain overlaps the own event and may linearize after it. A later drain takes it.
+- An index is taken once, by one compare-and-swap. A slot returns to the free ring only after its input is read out,
+  and an index on the filled ring stays there until a take takes it.
+
+A post is refused as full only when every slot holds an input the filled ring holds, the input a take is reading out,
+or the input of a post still under way. A post stopped for a long time costs its one slot, and the other `N - 1` go
+round as before.
+
+No design keeps the stricter count D1 first stated (refused only when the session holds the capacity) while the owner
+never waits. Suppose a post A holds storage while it writes, the other posts fill the rest, and a post R is refused.
+The strict count needs A to linearize before R, and so before a post E invoked after R. If E returns before an own
+event, the owner must apply A before E, and so wait for A's write. The old ring kept the strict count only because it
+waited. D1 now counts the posts under way with what a session holds (2026-11-27), which C11's SCQ rows needed too:
+they refuse while other posts hold slots. The deterministic tests that hold the take put a post on its own thread
+between its write and its publication, then post and drain there: the drain takes what was posted behind the stopped
+post and answers empty, and the history of such a run is linearizable
+(`a_bounded_inbox_drain_takes_past_a_post_under_way`). The cells are 32-bit words with 24-bit stamps, so a context is
+misled only if it is stopped between its read of a cell and its compare-and-swap while the ring's positions run
+through 2^24 values.
+
+C11's SCQ rows never had the waiting cell. A take that finds a ticket still unfilled makes it unusable for its
+enqueue, which takes another ticket, and goes on to the next. A post under way therefore holds a slot and no ticket a
+take must wait at, and `inbox_take_past_a_post_under_way.c` holds this under GenMC. Rust's ring has no memory-model
+check of its own yet: its orderings are the SCQ data queue's and are argued in the module, and the GenMC lane reads C.
 
 ## Consequences
 

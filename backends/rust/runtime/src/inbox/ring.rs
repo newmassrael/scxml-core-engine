@@ -1,209 +1,324 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! The queue of a bounded inbox (`BoundedInbox`): Vyukov's bounded queue of
-//! many producers, drained by the session's owner, with a take that never
-//! stops in front of an input still being written while an input posted after
-//! it waits behind it (docs/adr/0147, D1).
+//! The queue of a bounded inbox (`BoundedInbox`): many producers, drained by
+//! the session's owner, whose take never waits for a post (docs/adr/0147, D1
+//! and D5).
 //!
-//! A post reserves the next cell, by moving the enqueue position past it,
-//! writes its input into the cell, and publishes the cell, by stamping its
-//! sequence. Posts finish in any order, and the cells are taken in the order
-//! they were reserved. Vyukov's take, and the `heapless::mpmc` queue that held
-//! the inbox before this one, answers that the queue is empty whenever the
-//! oldest cell reserved is not yet published, even when a post that reserved a
-//! later cell has published it and returned. The drain before an event of the
-//! owner's own then applies nothing, and the own event enters ahead of a post
-//! taken before it was raised, which the promise does not allow
-//! (`docs/formal/InboxService.tla`: an own event enters behind every input
-//! taken before it).
+//! **Two rings make the queue**, as in the data queue of Nikolaev's SCQ, which
+//! the C11 inbox stands on. The inputs live in an array of `N` slots. The
+//! *free* ring holds the indices of the slots nobody uses and starts with all
+//! `N`; the *filled* ring holds the indices of the slots that hold an input, in
+//! the order the posts linearized, and starts empty. A post takes an index off
+//! the free ring (none: the inbox is full), writes its input into that slot,
+//! which is its own until it lets it go, and puts the index on the filled ring.
+//! A take does the reverse: it takes an index off the filled ring, reads the
+//! input out and puts the index back on the free ring.
 //!
-//! So a take that finds the oldest cell reserved and not published looks at the
-//! cells reserved after it. When one of them is published, a post behind the
-//! oldest has written its input and may have returned, and the take waits for
-//! the oldest to be published. When none is, every input reserved and not taken
-//! belongs to a post still under way, which may linearize after whatever the
-//! owner does next, and the take answers that the queue holds nothing it can
-//! reach.
+//! **An index ring claims and fills a cell in one step.** Each cell is one
+//! atomic word: a stamp and the index the cell carries. For the position `p` a
+//! cell stands at, the stamp is `p` while the cell is empty for the put at `p`,
+//! `p + 1` once that put has filled it, and `p + N` once a take has taken it,
+//! which empties it for the put at `p + N` (the sequence of Vyukov's cells). A
+//! put compare-and-swaps the empty cell at the tail to filled with its index, and
+//! a take compare-and-swaps the filled cell at the head to taken; then either
+//! moves its end past the cell, and a context that finds the cell at an end
+//! already done with moves the end for it (Tsigas and Zhang's queue). So a cell
+//! is never reserved and left unwritten: the tail passes a cell only once it is
+//! filled, and a put fills only the cell at the tail, so every position before
+//! the tail is filled, and a take that finds the cell at the head empty finds
+//! the ring empty.
 //!
-//! What the wait asks of a deployment: between its reservation and its
-//! publication a post runs a few instructions and nothing that waits, so the
-//! owner waits at most for a poster to run them. An interrupt handler, another
-//! core, and a thread a preemptive scheduler runs beside the owner always do. A
-//! poster that the owner itself preempts on one core, a task of lower priority,
-//! cannot run them while the owner waits, so a deployment whose posters include
-//! such a task and a context that posts behind it (an interrupt handler) can
-//! stop its owner there; the order the promise asks cannot be kept by a ring
-//! that is taken in the order its cells were reserved without that wait.
+//! **Why the take never waits.** A post that is stopped, by an interrupt or by
+//! the owner itself on one core, holds a slot and no place in the order: its
+//! input has no position in the filled ring until the step that publishes it.
+//! The owner's take is then a few loads and stores on the filled ring and the
+//! free ring, whatever any poster is doing; a long-stopped post costs its one
+//! slot, and the other `N - 1` go round as before.
+//!
+//! **The promise (docs/formal/InboxService.tla).** A post linearizes where it
+//! puts its index on the filled ring, or, refused, where it finds the free ring
+//! empty; a take where it takes an index off the filled ring, or, answering
+//! that there is none, where it reads the empty cell at the head.
+//!
+//! - A poster's own posts keep its order: it begins its next only once its
+//!   previous one has returned, so the next one's index is put at a later
+//!   position, and the positions are taken in order.
+//! - A post that returned before the drain before an event of the owner's own
+//!   began is taken by that drain: it is filled at a position before the tail,
+//!   every position before the tail is filled, and the drain takes until it
+//!   reads an empty cell. A post still under way when the drain reads the
+//!   inbox overlaps the own event, and may linearize after it.
+//! - At most once: one compare-and-swap takes an index off the filled ring, and
+//!   the slot goes back to the free ring only after its input is read out.
+//! - Never lost: an index on the filled ring stays there until a take takes it.
+//! - Full: a post is refused only when every slot holds an input the filled ring
+//!   holds, the input a take is reading out, or the input of a post still under
+//!   way, which the promise counts with what the session holds (docs/adr/0147,
+//!   D1). No post is refused while a slot is free.
+//!
+//! **Ordering.** A cell is loaded with acquire and swapped with
+//! acquire-release, and the ends move with relaxed swaps, which only say where
+//! to look: the cells say what is there. An input's write into its slot
+//! happens-before the take that reads it, through the release of the swap that
+//! fills the index's cell and the acquire of the load the take reads it with;
+//! the read happens-before the slot's next write, through the same pair on the
+//! free ring.
+//!
+//! **Positions are 24 bits.** A cell's word is 32 bits, the index in the low 8,
+//! and the stamps and positions count modulo 2^24. A context that read a cell
+//! and is stopped before its compare-and-swap is misled only if, meanwhile,
+//! the ring's positions run through all 2^24 values and bring the same word
+//! back: at a million posts a second, sixteen seconds of one stop between two
+//! instructions. 32-bit atomics are what every target with compare-and-swap of
+//! a byte has.
 
 use core::cell::UnsafeCell;
-use core::cmp::Ordering as Turn;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
-/// A queue of at most `N` inputs, `N` a power of two from 2 to 128.
-pub(crate) struct Ring<T, const N: usize> {
-    cells: [Cell<T>; N],
-    /// The position the next post reserves.
-    enqueue_pos: AtomicU8,
-    /// The position the next take reads.
-    dequeue_pos: AtomicU8,
+/// The low bits of a cell's word, which hold the index the cell carries; the
+/// rest hold its stamp.
+const INDEX_BITS: u32 = 8;
+
+/// The positions and the stamps count modulo 2^24.
+const POSITION_MASK: u32 = (1 << (32 - INDEX_BITS)) - 1;
+
+/// The position `by` places after `position`.
+const fn ahead(position: u32, by: u32) -> u32 {
+    position.wrapping_add(by) & POSITION_MASK
 }
 
-/// One cell: an input, and the sequence that says whose turn the cell is.
-/// For the position `p` the cell stands at, its sequence is `p` while it is
-/// free for the post that reserves `p`, `p + 1` once that post has published
-/// its input, and `p + N` once the input is taken, which frees the cell for
-/// the position `N` on.
-struct Cell<T> {
-    value: UnsafeCell<MaybeUninit<T>>,
-    sequence: AtomicU8,
+/// The position `by` places before `position`.
+const fn behind(position: u32, by: u32) -> u32 {
+    position.wrapping_sub(by) & POSITION_MASK
 }
 
-impl<T> Cell<T> {
-    const fn new(sequence: u8) -> Self {
+/// The word of a cell stamped `stamp` that carries `index`.
+const fn word(stamp: u32, index: u32) -> u32 {
+    (stamp << INDEX_BITS) | index
+}
+
+/// The stamp of a cell's word.
+fn stamp_of(word: u32) -> u32 {
+    word >> INDEX_BITS
+}
+
+/// The index a cell's word carries.
+fn index_of(word: u32) -> u8 {
+    (word & ((1 << INDEX_BITS) - 1)) as u8
+}
+
+/// A ring of `N` cells that carries slot indices, any context's at either
+/// end.
+struct IndexRing<const N: usize> {
+    cells: [AtomicU32; N],
+    /// The position of the next take, or one a take has done with and not yet
+    /// moved past.
+    head: AtomicU32,
+    /// The position of the next put, or one a put has filled and not yet moved
+    /// past.
+    tail: AtomicU32,
+}
+
+impl<const N: usize> IndexRing<N> {
+    const LEN: u32 = N as u32;
+    const MASK: u32 = Self::LEN - 1;
+
+    /// The value an array of cells is first filled with, only for that: an
+    /// array of a type that is not Copy is repeated from a constant before Rust
+    /// 1.79, the workspace's floor is 1.75, and every cell is set after.
+    #[allow(clippy::declare_interior_mutable_const)]
+    const UNSET: AtomicU32 = AtomicU32::new(0);
+
+    /// A ring whose positions start at `start`, holding the indices from 0 to
+    /// `held - 1` at its first `held` positions.
+    const fn starting_at(start: u32, held: u32) -> Self {
+        let mut cells = [Self::UNSET; N];
+        let mut k = 0;
+        while k < Self::LEN {
+            let position = ahead(start, k);
+            let cell = if k < held {
+                word(ahead(position, 1), k)
+            } else {
+                word(position, 0)
+            };
+            cells[(position & Self::MASK) as usize] = AtomicU32::new(cell);
+            k += 1;
+        }
         Self {
-            value: UnsafeCell::new(MaybeUninit::uninit()),
-            sequence: AtomicU8::new(sequence),
+            cells,
+            head: AtomicU32::new(start),
+            tail: AtomicU32::new(ahead(start, held)),
+        }
+    }
+
+    fn cell(&self, position: u32) -> &AtomicU32 {
+        &self.cells[(position & Self::MASK) as usize]
+    }
+
+    /// Move `end` past `position`, whose cell is done with, unless another
+    /// context has.
+    fn pass(end: &AtomicU32, position: u32) {
+        let _ = end.compare_exchange(
+            position,
+            ahead(position, 1),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Put `index` at the back; false when the ring holds `N` indices.
+    fn put(&self, index: u8) -> bool {
+        loop {
+            let position = self.tail.load(Ordering::Relaxed);
+            let cell = self.cell(position);
+            let seen = cell.load(Ordering::Acquire);
+            let stamp = stamp_of(seen);
+            if stamp == position {
+                // Empty for the put at the tail: claimed and filled in one step.
+                let filled = word(ahead(position, 1), u32::from(index));
+                if cell
+                    .compare_exchange(seen, filled, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    Self::pass(&self.tail, position);
+                    return true;
+                }
+            } else if stamp == ahead(position, 1) {
+                // Filled by a put stopped before it moved the tail past it.
+                Self::pass(&self.tail, position);
+            } else if stamp == behind(ahead(position, 1), Self::LEN) {
+                // Still filled from the lap before: the ring holds N.
+                return false;
+            }
+            // Otherwise the tail read was behind: it is read again.
+        }
+    }
+
+    /// Take the index at the front; `None` when the ring holds none.
+    fn take(&self) -> Option<u8> {
+        loop {
+            let position = self.head.load(Ordering::Relaxed);
+            let cell = self.cell(position);
+            let seen = cell.load(Ordering::Acquire);
+            let stamp = stamp_of(seen);
+            if stamp == ahead(position, 1) {
+                // Filled at the head: taken in one step.
+                let taken = word(ahead(position, Self::LEN), 0);
+                if cell
+                    .compare_exchange(seen, taken, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    Self::pass(&self.head, position);
+                    return Some(index_of(seen));
+                }
+            } else if stamp == position {
+                // Empty for the put at the head: every position before the
+                // tail is filled, so nothing is filled past it either.
+                return None;
+            } else if stamp == ahead(position, Self::LEN) {
+                // Taken by a take stopped before it moved the head past it.
+                Self::pass(&self.head, position);
+            }
+            // Otherwise the head read was behind: it is read again.
         }
     }
 }
 
-// SAFETY: a cell's value is written only by the post that reserved the cell,
-// before it publishes the cell with a release store, and read only by the take
-// that moved the dequeue position past the cell, after an acquire load saw it
-// published; the take frees the cell with a release store that the next post's
-// acquire load sees before it writes. So no two contexts reach one value at
-// once, and a value is handed from the poster's context to the owner's, which
+/// A queue of at most `N` inputs, `N` a power of two from 2 to 128.
+pub(crate) struct Ring<T, const N: usize> {
+    slots: [Slot<T>; N],
+    /// The indices of the slots no post holds and no input fills.
+    free: IndexRing<N>,
+    /// The indices of the slots that hold an input, in the order the posts
+    /// linearized.
+    filled: IndexRing<N>,
+}
+
+/// One slot: an input, or nothing.
+struct Slot<T>(UnsafeCell<MaybeUninit<T>>);
+
+// SAFETY: a slot is written only by the post that took its index off the free
+// ring, before it puts the index on the filled ring with a release swap, and read
+// only by the take that took the index off the filled ring, after an acquire load
+// saw it there; the take puts the index back on the free ring with a release swap
+// that the next post's acquire load sees before it writes. An index is on one
+// ring or held by one context at a time, so no two contexts reach one slot at
+// once, and an input is handed from the poster's context to the owner's, which
 // `T: Send` allows.
 unsafe impl<T: Send, const N: usize> Sync for Ring<T, N> {}
 
 impl<T, const N: usize> Ring<T, N> {
-    const MASK: u8 = (N - 1) as u8;
-
     /// The shapes the queue holds, refused where the queue is declared.
     const SHAPE: () = assert!(
         N >= 2 && N <= 128 && N.is_power_of_two(),
         "a bounded inbox holds a power of two of inputs, from 2 to 128"
     );
 
-    /// The value an array of cells is first filled with, only for that: an array
-    /// of a type that is not Copy is repeated from a constant before Rust 1.79,
-    /// the workspace's floor is 1.75, and no cell is ever read from this one.
+    /// The value an array of slots is filled with: empty.
     #[allow(clippy::declare_interior_mutable_const)]
-    const EMPTY_CELL: Cell<T> = Cell::new(0);
+    const EMPTY_SLOT: Slot<T> = Slot(UnsafeCell::new(MaybeUninit::uninit()));
 
     /// An empty queue, for a `static`.
     pub(crate) const fn new() -> Self {
+        Self::starting_at(0)
+    }
+
+    /// An empty queue whose rings' positions start at `start`.
+    const fn starting_at(start: u32) -> Self {
         let () = Self::SHAPE;
-        let mut cells = [Self::EMPTY_CELL; N];
-        let mut at = 0;
-        while at < N {
-            cells[at] = Cell::new(at as u8);
-            at += 1;
-        }
         Self {
-            cells,
-            enqueue_pos: AtomicU8::new(0),
-            dequeue_pos: AtomicU8::new(0),
+            slots: [Self::EMPTY_SLOT; N],
+            free: IndexRing::starting_at(start, N as u32),
+            filled: IndexRing::starting_at(start, 0),
         }
     }
 
-    fn cell(&self, pos: u8) -> &Cell<T> {
-        &self.cells[usize::from(pos & Self::MASK)]
+    /// The input slot `index` holds, or will.
+    fn slot(&self, index: u8) -> *mut T {
+        self.slots[usize::from(index)].0.get().cast()
     }
 
-    /// Put `item` at the back; `item` back when the queue holds `N` inputs,
-    /// counted with those a take is reading out. Any context's.
+    /// Put `item` at the back; `item` back when every slot is held, by an
+    /// input the queue holds, one a take is reading out or one a post is
+    /// writing. Any context's.
     pub(crate) fn enqueue(&self, item: T) -> Result<(), T> {
-        let mut pos = self.enqueue_pos.load(Ordering::Relaxed);
-        let (cell, reserved) = loop {
-            let cell = self.cell(pos);
-            let sequence = cell.sequence.load(Ordering::Acquire);
-            let lead = (sequence as i8).wrapping_sub(pos as i8);
-            match lead.cmp(&0) {
-                Turn::Equal => match self.enqueue_pos.compare_exchange_weak(
-                    pos,
-                    pos.wrapping_add(1),
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break (cell, pos),
-                    Err(now) => pos = now,
-                },
-                // The cell still holds an input of the lap before: full.
-                Turn::Less => return Err(item),
-                // Another post reserved the position since it was read.
-                Turn::Greater => pos = self.enqueue_pos.load(Ordering::Relaxed),
-            }
+        let Some(index) = self.free.take() else {
+            return Err(item);
         };
-        #[cfg(all(test, feature = "std"))]
-        hook::reserved();
-        // SAFETY: the reservation above made the cell this post's alone: no
-        // other post reserves its position again before a take frees it, and
-        // no take reads it before the store below publishes it.
-        unsafe { (*cell.value.get()).as_mut_ptr().write(item) };
-        cell.sequence
-            .store(reserved.wrapping_add(1), Ordering::Release);
-        Ok(())
-    }
-
-    /// Take the input at the front; `None` when no input is published there
-    /// and none is published behind it. The owner's.
-    pub(crate) fn dequeue(&self) -> Option<T> {
-        loop {
-            let pos = self.dequeue_pos.load(Ordering::Relaxed);
-            let cell = self.cell(pos);
-            let sequence = cell.sequence.load(Ordering::Acquire);
-            let lead = (sequence as i8).wrapping_sub(pos.wrapping_add(1) as i8);
-            match lead.cmp(&0) {
-                Turn::Equal => {
-                    if self
-                        .dequeue_pos
-                        .compare_exchange_weak(
-                            pos,
-                            pos.wrapping_add(1),
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        // SAFETY: the cell's post published its input, which
-                        // the acquire load above saw, and moving the dequeue
-                        // position past the cell made it this take's alone; the
-                        // store below frees it only once the input is read out.
-                        let item = unsafe { (*cell.value.get()).as_ptr().read() };
-                        cell.sequence.store(
-                            pos.wrapping_add(Self::MASK).wrapping_add(1),
-                            Ordering::Release,
-                        );
-                        return Some(item);
-                    }
-                }
-                Turn::Less => {
-                    // The front is free, or reserved and not yet published.
-                    // Behind a published cell it is waited for; otherwise every
-                    // input not taken is a post's still under way.
-                    if !self.published_after(pos) {
-                        return None;
-                    }
-                    #[cfg(all(test, feature = "std"))]
-                    hook::waiting();
-                    core::hint::spin_loop();
-                }
-                // The front was taken since it was read.
-                Turn::Greater => {}
-            }
+        let slot = self.slot(index);
+        // SAFETY: the index came off the free ring, so the slot is this post's
+        // alone until the index is put on a ring again.
+        unsafe { slot.write(item) };
+        #[cfg(any(all(test, feature = "std"), feature = "inbox-preemption"))]
+        preemption::point();
+        if self.filled.put(index) {
+            return Ok(());
         }
+        // The filled ring has room for every index, and this post holds one
+        // that is on neither ring, so the put above is never refused. Were it,
+        // the input goes back to its poster rather than stay in a slot no take
+        // reaches.
+        // SAFETY: the slot is still this post's, and holds the input written
+        // above.
+        let item = unsafe { slot.read() };
+        let returned = self.free.put(index);
+        debug_assert!(returned, "the free ring has room for an index taken off it");
+        Err(item)
     }
 
-    /// Whether a cell reserved after the position `front` is published.
-    fn published_after(&self, front: u8) -> bool {
-        let reserved = self.enqueue_pos.load(Ordering::Acquire).wrapping_sub(front);
-        (1..reserved).any(|behind| {
-            let pos = front.wrapping_add(behind);
-            self.cell(pos).sequence.load(Ordering::Acquire) == pos.wrapping_add(1)
-        })
+    /// Take the input at the front; `None` when the queue holds none. The
+    /// owner's: never waits, whatever a post under way is doing.
+    pub(crate) fn dequeue(&self) -> Option<T> {
+        let index = self.filled.take()?;
+        // SAFETY: the index came off the filled ring, whose acquire load saw
+        // the release that published the input written into the slot; the slot
+        // is this take's alone until the index is put back on the free ring.
+        let item = unsafe { self.slot(index).read() };
+        let returned = self.free.put(index);
+        debug_assert!(returned, "the free ring has room for an index taken off it");
+        Some(item)
     }
 }
 
@@ -215,52 +330,47 @@ impl<T, const N: usize> Drop for Ring<T, N> {
     }
 }
 
-/// What the tests below park a post or a take at: the point between a post's
-/// reservation and its publication, and a take that waits.
-#[cfg(all(test, feature = "std"))]
-mod hook {
+/// The point between a post's write of its input into its slot and the step
+/// that publishes it, where a test preempts the post: as an interrupt handler,
+/// or the owner itself on one core, may stop a poster there.
+#[cfg(any(all(test, feature = "std"), feature = "inbox-preemption"))]
+pub(super) mod preemption {
     use std::cell::RefCell;
 
-    type Hook = Box<dyn FnMut()>;
+    type Preemption = Box<dyn FnOnce()>;
 
     std::thread_local! {
-        static RESERVED: RefCell<Option<Hook>> = const { RefCell::new(None) };
-        static WAITING: RefCell<Option<Hook>> = const { RefCell::new(None) };
+        static NEXT: RefCell<Option<Preemption>> = const { RefCell::new(None) };
     }
 
-    /// Call `hook` on this thread between each reservation and its
-    /// publication.
-    pub(super) fn on_reserved(hook: Hook) {
-        RESERVED.with(|slot| *slot.borrow_mut() = Some(hook));
+    /// Run `preempt` on this thread, once, where the next post this thread
+    /// makes to a [`BoundedInbox`](crate::BoundedInbox) has written its input into
+    /// the slot it holds and has not yet published it: what an interrupt
+    /// handler, or the owner on the poster's core, runs while it stops the
+    /// post there. `preempt` may post and drain as those may, the same inbox
+    /// among them. With the crate's `inbox-preemption` feature, which a test
+    /// names; no release build has it.
+    pub fn preempt_next_post(preempt: impl FnOnce() + 'static) {
+        NEXT.with(|next| *next.borrow_mut() = Some(Box::new(preempt)));
     }
 
-    /// Call `hook` on this thread each time a take waits.
-    pub(super) fn on_waiting(hook: Hook) {
-        WAITING.with(|slot| *slot.borrow_mut() = Some(hook));
-    }
-
-    pub(super) fn reserved() {
-        RESERVED.with(|slot| {
-            if let Some(hook) = slot.borrow_mut().as_mut() {
-                hook();
-            }
-        });
-    }
-
-    pub(super) fn waiting() {
-        WAITING.with(|slot| {
-            if let Some(hook) = slot.borrow_mut().as_mut() {
-                hook();
-            }
-        });
+    /// Run the preemption set for this thread, if any. It is taken out before
+    /// it runs, so a post it makes is not preempted again.
+    pub(super) fn point() {
+        let preempt = NEXT.with(|next| next.borrow_mut().take());
+        if let Some(preempt) = preempt {
+            preempt();
+        }
     }
 }
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use super::{hook, Ring};
-    use std::sync::{mpsc, Arc};
-    use std::thread;
+    use super::{ahead, preemption, word, IndexRing, Ring, POSITION_MASK};
+    use core::sync::atomic::Ordering;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn a_ring_takes_in_order_and_refuses_past_its_capacity() {
@@ -279,11 +389,12 @@ mod tests {
         assert_eq!(ring.dequeue(), None);
     }
 
-    // The positions are eight bits wide and wrap: a ring that went round them
-    // many times still takes in order and answers empty when it is.
+    // The positions are 24 bits wide and wrap: a ring that starts just short of
+    // the wrap and goes past it still takes in order and answers empty when it
+    // is.
     #[test]
     fn a_ring_keeps_its_order_across_the_wrap_of_its_positions() {
-        let ring: Ring<u32, 4> = Ring::new();
+        let ring: Ring<u32, 4> = Ring::starting_at(POSITION_MASK - 5);
         for round in 0..300u32 {
             assert_eq!(ring.enqueue(round), Ok(()));
             assert_eq!(ring.enqueue(round + 1000), Ok(()));
@@ -309,80 +420,110 @@ mod tests {
         );
     }
 
-    // docs/adr/0147, D1: one post reserves the front and is parked before it
-    // publishes; a second post, made after, publishes behind it and returns. A
-    // take now must not answer that the ring is empty, since the second post
-    // was taken and returned: it waits for the first to be published, and then
-    // gives both, in the order they were reserved. Without the wait it answers
-    // at once, and the drain before an own event lets that event in ahead of a
-    // post that returned before it.
+    // docs/adr/0147, D5: a post is preempted on its own thread between the
+    // write of its input and its publication, as an interrupt handler or the
+    // owner on the poster's core preempts it. What runs there posts behind it,
+    // and drains: the take passes the post under way, takes what was posted
+    // behind it, and answers that the ring holds nothing more, all on the
+    // thread the stopped post cannot run on until the take returns. A take that
+    // waited for the stopped post would never return here; one that stopped in
+    // front of it would give nothing. Once the post publishes, the next take
+    // gives it.
     #[test]
-    fn a_take_waits_for_a_reserved_input_that_a_published_one_is_behind() {
-        let ring: Arc<Ring<u32, 4>> = Arc::new(Ring::new());
-        let (parked, is_parked) = mpsc::channel::<()>();
-        let (release, released) = mpsc::channel::<()>();
-        let first = {
-            let ring = Arc::clone(&ring);
-            thread::spawn(move || {
-                hook::on_reserved(Box::new(move || {
-                    parked.send(()).expect("the test listens");
-                    released.recv().expect("the test releases the post");
-                }));
-                ring.enqueue(1)
-            })
-        };
-        is_parked.recv().expect("the first post reserved its cell");
-        assert_eq!(ring.enqueue(2), Ok(()), "the second post was refused");
-
-        let (waits, is_waiting) = mpsc::channel::<()>();
-        let owner = {
-            let ring = Arc::clone(&ring);
-            thread::spawn(move || {
-                let mut told = false;
-                hook::on_waiting(Box::new(move || {
-                    if !told {
-                        told = true;
-                        let _ = waits.send(());
-                    }
-                }));
-                [ring.dequeue(), ring.dequeue(), ring.dequeue()]
-            })
-        };
-        let waited = is_waiting.recv();
-        release
-            .send(())
-            .expect("the first post waits to be released");
-        assert_eq!(first.join().expect("the first post"), Ok(()));
-        let taken = owner.join().expect("the owner");
-        assert!(
-            waited.is_ok(),
-            "the take did not wait for the reserved input a published one was behind: it gave \
-             {taken:?}"
+    fn a_take_passes_a_post_under_way_and_takes_what_was_posted_behind_it() {
+        let ring: Rc<Ring<u32, 4>> = Rc::new(Ring::new());
+        let taken: Rc<RefCell<Vec<Option<u32>>>> = Rc::default();
+        {
+            let (ring, taken) = (Rc::clone(&ring), Rc::clone(&taken));
+            preemption::preempt_next_post(move || {
+                assert_eq!(
+                    ring.enqueue(2),
+                    Ok(()),
+                    "a post behind one under way was refused"
+                );
+                taken.borrow_mut().extend([ring.dequeue(), ring.dequeue()]);
+            });
+        }
+        assert_eq!(ring.enqueue(1), Ok(()), "the preempted post was refused");
+        assert_eq!(
+            *taken.borrow(),
+            [Some(2), None],
+            "the drain did not take what was posted behind a post under way, past it"
         );
-        assert_eq!(taken, [Some(1), Some(2), None]);
+        assert_eq!(
+            [ring.dequeue(), ring.dequeue()],
+            [Some(1), None],
+            "the post that was under way was not taken once it was published"
+        );
     }
 
-    // A reserved input with nothing published behind it is a post still under
-    // way, which may linearize after the take: the take answers at once.
+    // docs/adr/0147, D5: a post stopped for as long as the rest of a run costs
+    // the slot it holds and nothing more. Behind it the other slots go round
+    // lap after lap, the ring refuses a post only when they are all held, and
+    // the stopped post is taken once it publishes.
     #[test]
-    fn a_take_does_not_wait_for_a_reserved_input_with_nothing_published_behind_it() {
-        let ring: Arc<Ring<u32, 4>> = Arc::new(Ring::new());
-        let (parked, is_parked) = mpsc::channel::<()>();
-        let (release, released) = mpsc::channel::<()>();
-        let first = {
-            let ring = Arc::clone(&ring);
-            thread::spawn(move || {
-                hook::on_reserved(Box::new(move || {
-                    parked.send(()).expect("the test listens");
-                    released.recv().expect("the test releases the post");
-                }));
-                ring.enqueue(1)
-            })
-        };
-        is_parked.recv().expect("the post reserved its cell");
-        assert_eq!(ring.dequeue(), None);
-        release.send(()).expect("the post waits to be released");
-        assert_eq!(first.join().expect("the post"), Ok(()));
-        assert_eq!(ring.dequeue(), Some(1));
+    fn a_post_under_way_holds_one_slot_and_never_stops_the_rest() {
+        let ring: Rc<Ring<u32, 4>> = Rc::new(Ring::new());
+        {
+            let ring = Rc::clone(&ring);
+            preemption::preempt_next_post(move || {
+                for lap in 0..100u32 {
+                    let first = 10 + 3 * lap;
+                    for input in first..first + 3 {
+                        assert_eq!(
+                            ring.enqueue(input),
+                            Ok(()),
+                            "lap {lap}: a post was refused with a slot free beside the one under way"
+                        );
+                    }
+                    assert_eq!(
+                        ring.enqueue(9),
+                        Err(9),
+                        "lap {lap}: a ring of four took a fourth input beside a post under way"
+                    );
+                    for input in first..first + 3 {
+                        assert_eq!(ring.dequeue(), Some(input), "lap {lap}");
+                    }
+                    assert_eq!(ring.dequeue(), None, "lap {lap}");
+                }
+            });
+        }
+        assert_eq!(ring.enqueue(1), Ok(()), "the preempted post was refused");
+        assert_eq!([ring.dequeue(), ring.dequeue()], [Some(1), None]);
+    }
+
+    // A context stopped after it filled or took a cell and before it moved the
+    // end past it leaves the end there; the next context at that end moves it
+    // and goes on, rather than refusing a put or answering that a ring that
+    // holds an index is empty.
+    #[test]
+    fn an_index_ring_moves_an_end_a_stopped_context_left_behind() {
+        let ring: IndexRing<4> = IndexRing::starting_at(0, 0);
+        // A put that filled position 0 with index 3 and did not move the tail.
+        ring.cell(0).store(word(ahead(0, 1), 3), Ordering::Release);
+        assert!(
+            ring.put(1),
+            "a put behind a filled cell the tail had not passed was refused"
+        );
+        // A take that took position 0 and did not move the head.
+        ring.cell(0).store(word(ahead(0, 4), 0), Ordering::Release);
+        assert_eq!(
+            ring.take(),
+            Some(1),
+            "a take behind a taken cell the head had not passed did not take the next"
+        );
+        assert_eq!(ring.take(), None);
+    }
+
+    #[test]
+    fn an_index_ring_refuses_a_put_when_it_holds_its_length() {
+        let ring: IndexRing<2> = IndexRing::starting_at(0, 2);
+        assert!(!ring.put(0), "a ring of two holding two took a third index");
+        assert_eq!(ring.take(), Some(0));
+        assert!(ring.put(0));
+        assert_eq!(
+            [ring.take(), ring.take(), ring.take()],
+            [Some(1), Some(0), None]
+        );
     }
 }
