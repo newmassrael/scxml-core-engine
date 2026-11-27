@@ -593,6 +593,18 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    numbers, an element read as a text. Every other lane refuses it by name, by its element, until its own step, and
    an algorithm's slot holds none yet. A map's value that is a list of texts is not held yet either (docs/adr/0108,
    D12 admits a list of numbers, `bool`s or records at a key).
+
+   *An algorithm's record parameter may hold a list* (amended 2026-11-27). A record whose schema holds a list of
+   numbers or `bool`s, every other field one entry, was accepted by `check` and refused by every generated lane where
+   an algorithm named it (`generate/unsupported-feature`), a composition no algorithm's slot held. It is now one
+   position of the table on Rust (`ALGORITHM_LISTED_RECORD_BACKENDS`, `sce-build/src/forge/codegen_matrix.rs`), the
+   algorithm's parameter alone: lent by reference in the type the schema's unit declares (`&OrderPayload`, its list
+   a `BoundedList<T, N>` whose bound is part of its type, as item 4 holds it), read by `len`, an index and a
+   `<sce:foreach>` as a list parameter is, lent whole to another algorithm's list parameter, and handed whole to
+   another algorithm's parameter of its schema. The parameter is read and never written, so a reference is all it
+   needs and no copy of the caller's list is made. A record that holds a list is no local, return, element, optional
+   value or part of a map of an algorithm yet, and each is refused by name; every other lane refuses such a record by
+   name, naming the backends that hold one (SCE_FORGE.md section 4.12, "A record that holds a list").
 4. **A Rust machine holds every bound in its type** (amended 2026-11-04, answer G). The machine row of the table is
    every place a Rust machine has, not only a composed one: a variable, a record the machine declares, the payload
    struct of an event it reads, at the top level and at any depth. A `list<T>[N]` is
