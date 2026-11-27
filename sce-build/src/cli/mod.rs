@@ -2469,7 +2469,8 @@ struct GenerateArgs {
     ///
     /// Not with `--as-child`, `--parent-stem` or `--emit-ast`, which describe
     /// one document's output, nor with `--deploy`: a deployment is a set's
-    /// question, which `orchestrate --deploy` answers.
+    /// question, which `orchestrate --deploy --with-imports` answers for the
+    /// documents named and every document they reach, compiled as one set.
     #[arg(
         long,
         conflicts_with_all = ["as_child", "parent_stem", "emit_ast", "deploy"]
@@ -2722,6 +2723,9 @@ struct GenerateW3cArgs {
 /// no_std validation axis — so a document that checks clean is one
 /// `generate` would accept under the same interpretation.
 #[derive(clap::Args)]
+#[command(group = clap::ArgGroup::new("document_set")
+    .multiple(true)
+    .args(["scxml_set", "forge", "document", "deploy"]))]
 struct CheckArgs {
     /// Input SCXML file path. Shorthand for a single-document run;
     /// `--scxml` names the rest of a set.
@@ -2949,6 +2953,19 @@ struct CheckArgs {
         conflicts_with_all = ["forge"]
     )]
     host_invoker: Vec<String>,
+    /// Judge the set the documents named make with every document they
+    /// reach, each once, mirroring `orchestrate --with-imports`: the same walk
+    /// grows the set, and the set is judged as that run compiles it. A
+    /// refusal raised in a reached document carries the references that
+    /// brought it in.
+    ///
+    /// Document sets only (`--scxml`, `--forge`, `--document` or
+    /// `--deploy`): a lone document is checked against `generate`, whose
+    /// `--with-imports` generates each document it reaches alone, and a
+    /// verdict of that run is each document's own verdict, which `check`
+    /// gives a document named alone.
+    #[arg(long, requires = "document_set")]
+    with_imports: bool,
 }
 
 #[derive(Subcommand)]
@@ -4577,6 +4594,23 @@ struct OrchestrateArgs {
     /// the headers stale and the build reused them.
     #[arg(long, value_name = "PATH")]
     write_deps: Option<String>,
+    /// Take into the set every document the documents named reach, each once,
+    /// found by the walk `generate --with-imports` makes: every
+    /// `<sce:import>` transitively (a local `src` beside the document that
+    /// imports it, an `sce:std/...` name from the standard library built into
+    /// this generator) and the element a collection, a queue or a log names.
+    /// A document named and reached, or named twice, is one member.
+    ///
+    /// Each reached document is a member as a named one is: `--deploy`,
+    /// `--target-machine`, `--emit-ast-dir`, `--go-module-prefix` and every
+    /// other flag apply to it alike, the set is judged and compiled whole,
+    /// and the depfile names it. A refusal raised in a reached document
+    /// carries, as `reached-from` related sites, the references that brought
+    /// it in. A child a statechart of the set starts by its file, or declares
+    /// in `sce:candidates`, is refused: a set generates no child into its
+    /// parent's package, which `generate --with-imports` does.
+    #[arg(long)]
+    with_imports: bool,
 }
 
 /// Recover `--error-format` from the raw argument vector.
@@ -5172,6 +5206,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         format_style,
         no_format,
         write_deps,
+        with_imports,
     } = args;
     let lexicon = check_lexicon(&lexicon);
     // Before anything else is read: an unusable profile is the first thing
@@ -5179,6 +5214,20 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let profile = load_profile(profile_path.as_deref());
     let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
     file_documents(document, &mut scxml, &mut forge, error_format);
+    // The set grown by what it reaches before anything judges it, so every
+    // judgement, the compile, the AST emit and the depfile below take each
+    // reached document as a member.
+    let reach = if with_imports {
+        SetReach::grow(
+            &mut scxml,
+            &mut forge,
+            &include_dirs,
+            input_root.as_deref(),
+            error_format,
+        )
+    } else {
+        SetReach::default()
+    };
     let scxml_paths: &[String] = &scxml;
     let forge_paths: &[String] = &forge;
     let scxml_path_bufs: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
@@ -5267,7 +5316,10 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         deploy_cfg.as_ref(),
     ) {
         Ok(o) => o,
-        Err(e) => error_format.emit_forge_and_exit(&e),
+        Err(e) => {
+            set_reached_from(reach.chain_of(&e.location.file));
+            error_format.emit_forge_and_exit(&e)
+        }
     };
 
     let out_root = Path::new(output_dir);
@@ -6429,6 +6481,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         features: _,
         host_processor,
         host_invoker,
+        with_imports,
         // The flags this route cannot honour are declared to conflict
         // with every argument that reaches it, so clap refuses the
         // combination before dispatch rather than this function accepting
@@ -6448,6 +6501,22 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     let mut scxml_list: Vec<String> = scxml.into_iter().chain(scxml_set).collect();
     let mut forge_list = forge;
     file_documents(document, &mut scxml_list, &mut forge_list, error_format);
+    // Grown by the walk `orchestrate --with-imports` grows its set by, at the
+    // same point, so every judgement below takes the members that run takes.
+    // No `--input-root` here: the walk looks for a candidate beside its
+    // statechart, as `orchestrate` does when it is given none.
+    let reach = if with_imports {
+        let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+        SetReach::grow(
+            &mut scxml_list,
+            &mut forge_list,
+            &include_dirs,
+            None,
+            error_format,
+        )
+    } else {
+        SetReach::default()
+    };
     let scxml_paths: Vec<PathBuf> = scxml_list.into_iter().map(PathBuf::from).collect();
     let forge_paths: Vec<PathBuf> = forge_list.into_iter().map(PathBuf::from).collect();
     let scxml_refs: Vec<&Path> = scxml_paths.iter().map(|p| p.as_path()).collect();
@@ -6542,7 +6611,13 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
             deploy_cfg.as_ref(),
         )
         .map(|_| ());
+        // A refusal in a reached document carries the route to it, as the
+        // run this verdict predicts reports it.
+        if let Err(refused) = &outcome {
+            set_reached_from(reach.chain_of(&refused.location.file));
+        }
         record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+        set_reached_from(Vec::new());
     }
 
     outln!(
@@ -6619,6 +6694,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         features,
         host_processor,
         host_invoker,
+        // Declared to require a document-set argument, so clap refuses it
+        // on this route before dispatch.
+        with_imports: _,
     } = args;
     let features = selected_features(features);
     let lexicon = check_lexicon(&lexicon);
@@ -7361,6 +7439,125 @@ fn write_run_depfile(depfile_path: Option<&str>, report: &GenerateReport) {
     }
 }
 
+/// Every document `named` reaches ([`crate::import_closure::walk`]), each
+/// once: the one walk every run that takes what its documents reach
+/// (`--with-imports`) takes it by, so `generate`, `orchestrate` and `check`
+/// cannot reach two sets from one design (ADR 0094, "The closure and the import
+/// walk are one walk").
+///
+/// A named document that cannot be read is refused as `generate` refuses it,
+/// before any walk: the run's first word about it is the one a run of that
+/// document alone would say. A reference that names no document is refused
+/// where it is written, carrying the references that reached it as
+/// `reached-from` sites.
+fn reach_named_documents(
+    named: &[String],
+    include_dirs: &[PathBuf],
+    input_root: Option<&str>,
+    error_format: ErrorFormat,
+) -> Vec<crate::import_closure::Unit> {
+    for document in named {
+        if let Err(source) = read_named_document(document) {
+            cli_exit(CliError::ReadInput {
+                path: document.clone(),
+                source,
+            });
+        }
+    }
+    crate::import_closure::walk(
+        named,
+        crate::import_closure::WalkOptions {
+            include_dirs,
+            input_root: input_root.map(Path::new),
+        },
+    )
+    .unwrap_or_else(|refusal| {
+        set_reached_from(refusal.reached_from);
+        error_format.emit_forge_and_exit(&refusal.error)
+    })
+}
+
+/// What a document set reached beyond the documents its caller named
+/// (`orchestrate --with-imports`, and `check` on its document-set route):
+/// every unit of the walk, kept for the references that brought each one in.
+/// Empty for a set that takes only what it names.
+#[derive(Default)]
+struct SetReach {
+    units: Vec<crate::import_closure::Unit>,
+}
+
+impl SetReach {
+    /// Grow the set `scxml` and `forge` name into every document they reach
+    /// ([`reach_named_documents`]), each once: a document named twice, or
+    /// named and reached, is one member. A named document stays in the list
+    /// its caller filed it in; a reached one is filed by its pipeline. Each
+    /// reached document is a member as a named one is, so every flag of the
+    /// run applies to it alike.
+    ///
+    /// A document a statechart of the set starts by its file, or declares in
+    /// `sce:candidates`, is refused (`cli/usage`) with the references that
+    /// reached it: a set generates each member as a machine of its own, and a
+    /// child belongs in its parent's package, where `generate --with-imports`
+    /// generates it. Left out, the set would claim a closure it did not
+    /// generate.
+    fn grow(
+        scxml: &mut Vec<String>,
+        forge: &mut Vec<String>,
+        include_dirs: &[PathBuf],
+        input_root: Option<&str>,
+        error_format: ErrorFormat,
+    ) -> Self {
+        let named: Vec<String> = scxml.iter().chain(forge.iter()).cloned().collect();
+        let units = reach_named_documents(&named, include_dirs, input_root, error_format);
+        let started = units.iter().find_map(|unit| match &unit.role {
+            crate::import_closure::Role::Child { parent } => Some((unit, parent)),
+            _ => None,
+        });
+        if let Some((child, parent)) = started {
+            set_reached_from(child.reached_from.clone());
+            cli_exit(CliError::Usage {
+                detail: format!(
+                    "{} is a child the statechart {parent} starts; a document set \
+                     generates each member as a machine of its own and no child into \
+                     its parent's package, so `--with-imports` on a set does not take \
+                     it: generate that statechart with `generate --with-imports`, \
+                     which generates the child with it",
+                    child.document
+                ),
+            });
+        }
+        let mut reached_scxml = Vec::new();
+        let mut reached_forge = Vec::new();
+        for unit in &units {
+            let filed_as_forge = match unit.role {
+                crate::import_closure::Role::Named => !scxml.contains(&unit.document),
+                _ => unit.kind == crate::import_closure::UnitKind::Forge,
+            };
+            if filed_as_forge {
+                reached_forge.push(unit.document.clone());
+            } else {
+                reached_scxml.push(unit.document.clone());
+            }
+        }
+        *scxml = reached_scxml;
+        *forge = reached_forge;
+        Self { units }
+    }
+
+    /// The references that brought into the set the document a refusal
+    /// raised in `file` stands in, the document named on the command line
+    /// first; none for a document the caller named, or one the set did not
+    /// reach.
+    fn chain_of(&self, file: &str) -> Vec<crate::forge::error::RelatedSite> {
+        let identity = crate::forge::stdlib::identity(Path::new(file));
+        self.units
+            .iter()
+            .find(|unit| unit.identity == identity)
+            .map(|unit| unit.reached_from.clone())
+            .unwrap_or_default()
+    }
+}
+
 /// `generate --with-imports`: every document the named ones reach
 /// ([`crate::import_closure::walk`]), each generated by
 /// [`cmd_generate`] exactly as `generate` generates it alone, below one
@@ -7381,29 +7578,13 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             "",
         )
     });
-    // A named document that cannot be read is refused as `generate` refuses
-    // it, before any walk: the run's first word about it is the one a run of
-    // that document alone would say.
-    for named in &args.scxml {
-        if let Err(source) = read_named_document(named) {
-            cli_exit(CliError::ReadInput {
-                path: named.clone(),
-                source,
-            });
-        }
-    }
     let include_dirs: Vec<PathBuf> = args.include_dir.iter().map(PathBuf::from).collect();
-    let units = crate::import_closure::walk(
+    let units = reach_named_documents(
         &args.scxml,
-        crate::import_closure::WalkOptions {
-            include_dirs: &include_dirs,
-            input_root: args.input_root.as_deref().map(Path::new),
-        },
-    )
-    .unwrap_or_else(|refusal| {
-        set_reached_from(refusal.reached_from);
-        error_format.emit_forge_and_exit(&refusal.error)
-    });
+        &include_dirs,
+        args.input_root.as_deref(),
+        error_format,
+    );
 
     // What the set reads of each codec's body is the set's, counted once over
     // every document it generates and handed to each (docs/adr/0137). The

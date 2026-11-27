@@ -39,7 +39,13 @@
 //   - a codec named by `--inline-decode-for`, by its stem or an import alias,
 //     is printed in its form held in place, and a name that is no codec of the
 //     set, or names two, is refused before anything is written;
-//   - `orchestrate --document` takes a standard document by its library name.
+//   - `orchestrate --document` takes a standard document by its library name;
+//   - `orchestrate --with-imports` generates, beside a deploy, every document
+//     the set reaches, a document named and reached, or named twice, once,
+//     and a refusal in a reached document carries the route to it, as
+//     `check --with-imports` over the set reports it;
+//   - a set with imports refuses a child started by its file, which it would
+//     not generate, and `check --with-imports` on a lone document is refused.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -217,6 +223,11 @@ fn record(out: &Output) -> serde_json::Value {
 /// The manifest's artifacts, each relative to `root` with `/` separators, in
 /// the order the manifest lists them.
 fn artifacts(out: &Output, root: &Path) -> Vec<String> {
+    artifacts_of(out, root, "generate")
+}
+
+/// [`artifacts`], of a manifest the command `kind` printed.
+fn artifacts_of(out: &Output, root: &Path, kind: &str) -> Vec<String> {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let line = stdout
         .lines()
@@ -224,7 +235,7 @@ fn artifacts(out: &Output, root: &Path) -> Vec<String> {
         .unwrap_or_else(|| panic!("no manifest on stdout:\n{stdout}"));
     let manifest: serde_json::Value =
         serde_json::from_str(line).unwrap_or_else(|e| panic!("manifest does not parse ({e})"));
-    assert_eq!(manifest["kind"], "generate", "{manifest}");
+    assert_eq!(manifest["kind"], kind, "{manifest}");
     assert!(
         manifest.get("document_kind").is_none(),
         "a run over a set of documents names no one kind: {manifest}"
@@ -454,13 +465,11 @@ fn a_broken_import_is_refused_with_the_chain_that_reached_it() {
     );
 }
 
-#[test]
-fn a_reached_document_its_own_generation_refuses_carries_the_chain() {
-    let tmp = project();
-    // `n + 1` can reach 256, which a uint8 cannot hold, and the algorithm
-    // does not declare `may-fail`: refused when the algorithm itself is
-    // generated, which only this run does.
-    let inner = tmp.path().join("src").join("algorithm_inner.scxml");
+/// Rewrite the inner algorithm so that its own generation refuses it: `n + 1`
+/// can reach 256, which a uint8 cannot hold, and the algorithm does not declare
+/// `may-fail`. Only a run that generates the algorithm itself refuses it.
+fn break_inner(tmp: &Path) {
+    let inner = tmp.join("src").join("algorithm_inner.scxml");
     fs::write(
         &inner,
         ALGORITHM_INNER.replace(
@@ -470,22 +479,12 @@ fn a_reached_document_its_own_generation_refuses_carries_the_chain() {
         ),
     )
     .expect("break the inner algorithm");
-    let out = tmp.path().join("out");
+}
 
-    let run = generate(tmp.path(), &out, "rust", &[]);
-    assert!(
-        !run.status.success(),
-        "the refused algorithm was generated: {}",
-        stderr(&run)
-    );
-    let refusal = record(&run);
-    assert!(
-        refusal["location"]["file"]
-            .as_str()
-            .is_some_and(|f| f.ends_with("algorithm_inner.scxml")),
-        "{refusal}"
-    );
-    let chain: Vec<(String, u64)> = refusal["related"]
+/// The `reached-from` sites `refusal` carries, each as its file's name and
+/// its line, the outermost first.
+fn reached_from_chain(refusal: &serde_json::Value) -> Vec<(String, u64)> {
+    refusal["related"]
         .as_array()
         .expect("the chain rides along")
         .iter()
@@ -499,19 +498,50 @@ fn a_reached_document_its_own_generation_refuses_carries_the_chain() {
                 .into_owned();
             (name, site["location"]["line"].as_u64().expect("a line"))
         })
-        .collect();
-    assert_eq!(
-        chain,
-        [
-            (
-                "closure_machine.scxml".to_string(),
-                MACHINE_IMPORTS_OUTER_AT
-            ),
-            ("algorithm_outer.scxml".to_string(), OUTER_IMPORTS_INNER_AT),
-        ],
-        "the machine's import of the outer algorithm, then the outer one's of the inner: \
-         {refusal}"
+        .collect()
+}
+
+/// The route to the inner algorithm: the machine's import of the outer
+/// algorithm, then the outer one's of the inner.
+fn route_to_inner() -> Vec<(String, u64)> {
+    vec![
+        (
+            "closure_machine.scxml".to_string(),
+            MACHINE_IMPORTS_OUTER_AT,
+        ),
+        ("algorithm_outer.scxml".to_string(), OUTER_IMPORTS_INNER_AT),
+    ]
+}
+
+/// A refusal raised in the broken inner algorithm, carrying the route to it.
+fn refused_in_inner_with_its_route(run: &Output, what: &str) {
+    assert!(
+        !run.status.success(),
+        "{what}: the refused algorithm was generated: {}",
+        stderr(run)
     );
+    let refusal = record(run);
+    assert!(
+        refusal["location"]["file"]
+            .as_str()
+            .is_some_and(|f| f.ends_with("algorithm_inner.scxml")),
+        "{what}: {refusal}"
+    );
+    assert_eq!(
+        reached_from_chain(&refusal),
+        route_to_inner(),
+        "{what}: the machine's import of the outer algorithm, then the outer one's of the \
+         inner: {refusal}"
+    );
+}
+
+#[test]
+fn a_reached_document_its_own_generation_refuses_carries_the_chain() {
+    let tmp = project();
+    break_inner(tmp.path());
+    let out = tmp.path().join("out");
+    let run = generate(tmp.path(), &out, "rust", &[]);
+    refused_in_inner_with_its_route(&run, "generate --with-imports");
 }
 
 #[test]
@@ -1169,4 +1199,235 @@ fn orchestrate_takes_a_standard_document_by_its_library_name() {
         "the standard algorithm was not generated: {:?}",
         tree(&out).keys().collect::<Vec<_>>()
     );
+}
+
+/// A deploy whose one machine is the design's statechart.
+const DEPLOY: &str = r#"
+version: "1.0"
+topology:
+  host:
+    machines:
+      closure_machine:
+        source: closure_machine.scxml
+"#;
+
+/// `sce-codegen --error-format json <command>`, each of `documents` named
+/// with `--document`, `-l <language>`, then `extra`: `orchestrate` or
+/// `check` over the set they name.
+fn over_the_set(command: &str, documents: &[PathBuf], language: &str, extra: &[&str]) -> Output {
+    let mut run = Command::new(codegen());
+    run.args(["--error-format", "json", command]);
+    for document in documents {
+        run.arg("--document").arg(document);
+    }
+    run.args(["-l", language])
+        .args(extra)
+        .output()
+        .expect("run sce-codegen")
+}
+
+fn utf8(path: &Path) -> &str {
+    path.to_str().expect("a UTF-8 path")
+}
+
+#[test]
+fn orchestrate_with_imports_generates_every_document_a_deployed_set_reaches() {
+    let tmp = project();
+    let deploy = tmp.path().join("src").join("deploy.yaml");
+    fs::write(&deploy, DEPLOY).expect("write the deploy");
+    let out = tmp.path().join("out");
+
+    let run = over_the_set(
+        "orchestrate",
+        &[machine(tmp.path())],
+        "rust",
+        &[
+            "--with-imports",
+            "--deploy",
+            utf8(&deploy),
+            "--output-dir",
+            utf8(&out),
+        ],
+    );
+    succeeded(&run, "orchestrate --deploy --with-imports");
+    let written = artifacts_of(&run, &out, "orchestrate");
+    each_once(&written);
+    for name in FORGE_UNITS {
+        let file = format!("{name}.rs");
+        assert!(
+            written.contains(&file) && out.join(&file).is_file(),
+            "{file}, a document the set reaches and the caller never named, was not \
+             generated: {written:?}"
+        );
+    }
+    assert!(
+        written.contains(&"closure_machine_sm.rs".to_string()),
+        "{written:?}"
+    );
+
+    // The control: the same set without the flag is the one document named.
+    let alone = tmp.path().join("alone");
+    let run = over_the_set(
+        "orchestrate",
+        &[machine(tmp.path())],
+        "rust",
+        &["--deploy", utf8(&deploy), "--output-dir", utf8(&alone)],
+    );
+    succeeded(&run, "orchestrate --deploy");
+    for name in ["outer_pick", "days_from_civil", "rpc_status"] {
+        assert!(
+            !alone.join(format!("{name}.rs")).exists(),
+            "{name} was generated by a set that does not take what it reaches"
+        );
+    }
+}
+
+#[test]
+fn orchestrate_with_imports_takes_a_document_named_and_reached_once() {
+    let tmp = project();
+    let outer = tmp.path().join("src").join("algorithm_outer.scxml");
+    // The outer algorithm named twice and reached by the machine, and a
+    // standard algorithm named by its library name and reached through
+    // another standard one.
+    let named = [
+        machine(tmp.path()),
+        outer.clone(),
+        outer,
+        PathBuf::from("sce:std/time/is_leap_year.scxml"),
+    ];
+
+    let reached = tmp.path().join("reached");
+    let run = over_the_set(
+        "orchestrate",
+        &[machine(tmp.path())],
+        "rust",
+        &["--with-imports", "--output-dir", utf8(&reached)],
+    );
+    succeeded(&run, "orchestrate --with-imports over the machine");
+    let reached_files: BTreeSet<String> = artifacts_of(&run, &reached, "orchestrate")
+        .into_iter()
+        .collect();
+
+    let both = tmp.path().join("both");
+    let run = over_the_set(
+        "orchestrate",
+        &named,
+        "rust",
+        &["--with-imports", "--output-dir", utf8(&both)],
+    );
+    succeeded(
+        &run,
+        "orchestrate --with-imports over documents also reached",
+    );
+    let written = artifacts_of(&run, &both, "orchestrate");
+    each_once(&written);
+    assert_eq!(
+        written.into_iter().collect::<BTreeSet<String>>(),
+        reached_files,
+        "naming a document the set reaches adds no member to it"
+    );
+
+    // The control: without the flag a document named twice is two members
+    // declaring one name.
+    let refused = over_the_set(
+        "orchestrate",
+        &named,
+        "rust",
+        &["--output-dir", utf8(&tmp.path().join("refused"))],
+    );
+    assert!(
+        !refused.status.success(),
+        "a set naming one document twice was generated without the flag"
+    );
+    assert_eq!(
+        record(&refused)["code"],
+        "manifest/duplicate-document-name",
+        "{}",
+        stderr(&refused)
+    );
+}
+
+#[test]
+fn a_set_refuses_a_reached_document_with_the_route_to_it() {
+    let tmp = project();
+    break_inner(tmp.path());
+    let documents = [machine(tmp.path())];
+    let out = tmp.path().join("out");
+
+    let run = over_the_set(
+        "orchestrate",
+        &documents,
+        "rust",
+        &["--with-imports", "--output-dir", utf8(&out)],
+    );
+    refused_in_inner_with_its_route(&run, "orchestrate --with-imports");
+
+    let run = over_the_set("check", &documents, "rust", &["--with-imports"]);
+    refused_in_inner_with_its_route(&run, "check --with-imports");
+
+    // The control: the set of the machine alone never generates the inner
+    // algorithm, so nothing refuses it.
+    succeeded(
+        &over_the_set("check", &documents, "rust", &[]),
+        "check over the machine alone",
+    );
+}
+
+#[test]
+fn a_set_with_imports_refuses_a_child_it_would_not_generate() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    fs::write(src.join("worker.scxml"), plain_statechart("worker", "")).expect("write");
+    let parent = src.join("parent_machine.scxml");
+    fs::write(
+        &parent,
+        plain_statechart(
+            "parent_machine",
+            "    <invoke type=\"scxml\" src=\"worker.scxml\"/>\n",
+        ),
+    )
+    .expect("write");
+    let out = tmp.path().join("out");
+    let documents = [parent];
+
+    for (command, extra) in [
+        (
+            "orchestrate",
+            vec!["--with-imports", "--output-dir", utf8(&out)],
+        ),
+        ("check", vec!["--with-imports"]),
+    ] {
+        let run = over_the_set(command, &documents, "rust", &extra);
+        assert_eq!(
+            run.status.code(),
+            Some(20),
+            "{command}: a child the set would not generate is a usage refusal: {}",
+            stderr(&run)
+        );
+        let refusal = record(&run);
+        assert_eq!(refusal["code"], "cli/usage", "{command}: {refusal}");
+        assert_eq!(
+            reached_from_chain(&refusal)
+                .into_iter()
+                .map(|(file, _)| file)
+                .collect::<Vec<_>>(),
+            ["parent_machine.scxml"],
+            "{command}: reached from the parent's <invoke>: {refusal}"
+        );
+        assert!(!out.exists(), "{command}: the refused run wrote");
+    }
+}
+
+#[test]
+fn check_with_imports_is_refused_on_a_lone_document() {
+    let tmp = project();
+    let run = Command::new(codegen())
+        .args(["--error-format", "json", "check"])
+        .arg(machine(tmp.path()))
+        .args(["--with-imports", "-l", "rust"])
+        .output()
+        .expect("run sce-codegen");
+    assert_eq!(run.status.code(), Some(20), "{}", stderr(&run));
+    assert_eq!(record(&run)["code"], "cli/usage", "{}", stderr(&run));
 }
