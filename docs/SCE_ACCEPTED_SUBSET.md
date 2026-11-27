@@ -6732,13 +6732,23 @@ with tombstones, so no put or remove moves an entry. A machine's map is kept in
 the runtime's default storage: with `std` the slots and the index grow as the map
 fills, up to the bound; without it they are inline, the bound reserved. The
 storage is a parameter of the type, not a feature of the build
-(`BoundedMap<K, V, N, S>`, `S` the runtime's `Inline`, `Heap` or `Linear`,
-docs/adr/0108, D4 "Storage"), so a host keeps a map of its own inline, never
-allocating, beside a machine's map that grows; a host's map of a small bound in
-`Linear` storage keeps its slots inline and no index, a lookup comparing the key
-with each key the map holds, at most `N` of them, so it hashes no key and reads
-no seed to find one, and answers, orders, saves and compares as an `Inline` map
-does. The index hashes a key's canonical bytes (the runtime's
+(`BoundedMap<K, V, N, S>`, `S` the runtime's `Inline`, `Heap`, `Linear`, `Lent`
+or `LentIndexed`, docs/adr/0108, D4 "Storage"), so a host keeps a map of its own
+inline, never allocating, beside a machine's map that grows; a host's map of a
+small bound in `Linear` storage keeps its slots inline and no index, a lookup
+comparing the key with each key the map holds, at most `N` of them, so it hashes
+no key and reads no seed to find one, and answers, orders, saves and compares as
+an `Inline` map does. A host's map in `Lent` or `LentIndexed` storage keeps its
+slots, and the second the cells of its index too, in runs of memory the host
+lends for the map's life (`BoundedMap::over`, docs/adr/0154, D1): its limit is
+the run's length, at most `N` and refused past it, a put of an absent key at the
+limit answers `full`, and the map value holds no slot, so a map lent none costs a
+few words whatever its bound; lent `N` slots, it answers, orders, saves and
+compares as an `Inline` map does. Each entry stays in its slot until it is
+removed, and a host reads it as a `MapSlot` (`put_slot`, `slot_of`,
+`MapCursor::slot`, `at_slot`), a number below the limit and a generation that
+moves each time the slot is freed, so a number kept for a removed entry reads
+nothing (docs/adr/0154, D2); a document sees no slot. The index hashes a key's canonical bytes (the runtime's
 `MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
 as one, an enum by its declared number, a text and a byte string by their length
 and their bytes, a record by its fields in order) with SipHash-1-3 under a
@@ -6875,8 +6885,12 @@ the bound its caller's variable states and the storage the caller keeps it in
 (`const N0: usize`, `S0: MapStorage`), takes the map `&` to be read or `&mut`
 where it is `inout`. A map the body returns is written into the caller's
 destination, generic over its storage too (`SR`), and a map the body builds for
-itself is kept in the storage of the map its seed is drawn from, so a caller that
-lends an inline map has nothing allocated for it. C11 lends the address of the caller's
+itself, and the copy a walk that writes its map takes (`to_owned_storage`), is
+kept in the owned storage of the map its seed is drawn from
+(`<S0 as MapStorage>::Owned`, docs/adr/0154, D3): the map's own storage where it
+holds its slots, so a caller that lends an inline map has nothing allocated for
+it, and the storage that holds its slots in the value where the caller's host
+lends them (`Linear` for `Lent`, `Inline` for `LentIndexed`). C11 lends the address of the caller's
 storage, the core every map type of `sce/forge/map.h` begins with
 (`const sce_map_core_t *` for a slot read, `sce_map_core_t *` for one declared
 `inout`), which views a map of any bound, a value read as the type the
