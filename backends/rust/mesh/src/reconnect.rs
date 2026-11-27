@@ -101,8 +101,15 @@ impl Backoff {
         let mut hasher = RandomState::new().build_hasher();
         attempt.hash(&mut hasher);
         Instant::now().hash(&mut hasher);
+        Self::spread(base, hasher.finish())
+    }
+
+    /// `base` scaled by `draw` between 80 and 120 percent: the jitter of [`Self::delay`], for a
+    /// shell that draws its number from a source of its own (a module in a browser, where the
+    /// standard library has no clock to key the hasher with).
+    pub fn spread(base: Duration, draw: u64) -> Duration {
         // A draw in 0..=4000, read as -2000..=2000 ten-thousandths: minus to plus 20 percent.
-        let spread = (hasher.finish() % 4001) as i64 - 2000;
+        let spread = (draw % 4001) as i64 - 2000;
         let scaled = base.as_nanos() * u128::from((10_000 + spread) as u64) / 10_000;
         Duration::from_nanos(u64::try_from(scaled).unwrap_or(u64::MAX))
     }
@@ -500,6 +507,18 @@ mod tests {
         assert_eq!(backoff.initial, Duration::from_millis(250));
         assert_eq!(backoff.max, Duration::from_secs(30));
         assert_eq!(backoff.factor, 2);
+    }
+
+    /// A draw spreads its base from 80 percent (0) through the base itself (2000) to 120 percent
+    /// (4000), and a larger draw wraps into the same range. Red if `spread` reads the draw
+    /// otherwise than `delay` did.
+    #[test]
+    fn a_drawn_number_spreads_its_base_by_a_fifth_either_way() {
+        let base = Duration::from_millis(1000);
+        assert_eq!(Backoff::spread(base, 0), Duration::from_millis(800));
+        assert_eq!(Backoff::spread(base, 2000), base);
+        assert_eq!(Backoff::spread(base, 4000), Duration::from_millis(1200));
+        assert_eq!(Backoff::spread(base, 4001), Duration::from_millis(800));
     }
 
     #[test]

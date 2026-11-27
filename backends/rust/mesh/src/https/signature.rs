@@ -969,6 +969,12 @@ fn signature_fields(
     signature_params: &str,
 ) -> [(String, String); 2] {
     let signature = key.sign(signature_base(covered, signature_params).as_bytes());
+    carrying(signature_params, &signature)
+}
+
+/// The two fields that carry `signature`, made over a base whose `@signature-params` line is
+/// `signature_params`, under [`LABEL`]: `Signature-Input` and `Signature`.
+fn carrying(signature_params: &str, signature: &[u8]) -> [(String, String); 2] {
     let mut value = alloc::format!("{LABEL}=");
     serialize_bare_item(&BareItem::Bytes(signature.to_vec()), &mut value);
     [
@@ -1278,14 +1284,13 @@ fn verify_answer(
 #[derive(Clone, PartialEq, Eq)]
 pub struct RequestSigner {
     key: KeyPair,
-    key_id: String,
-    offer: String,
+    public: RequestKey,
 }
 
 impl fmt::Debug for RequestSigner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RequestSigner")
-            .field("key_id", &self.key_id)
+            .field("key_id", &self.public.key_id)
             .finish_non_exhaustive()
     }
 }
@@ -1293,17 +1298,15 @@ impl fmt::Debug for RequestSigner {
 impl RequestSigner {
     /// The signer of `key`.
     pub fn new(key: KeyPair) -> Self {
-        let public = key.public_key();
         RequestSigner {
-            key_id: key_id_of(&public),
-            offer: offered_key(&public),
+            public: RequestKey::new(&key.public_key()),
             key,
         }
     }
 
     /// The `keyid` its signatures name: the thumbprint of its public key.
     pub fn key_id(&self) -> &str {
-        &self.key_id
+        self.public.key_id()
     }
 
     /// The fields that sign a `POST` to `target_uri` (normalized) whose other fields are
@@ -1317,6 +1320,46 @@ impl RequestSigner {
         headers: &[(String, String)],
         created: i64,
     ) -> Option<[(String, String); 3]> {
+        let unsigned = self.public.prepare(target_uri, headers, created)?;
+        let signature = self.key.sign(unsigned.base());
+        Some(unsigned.fields(&signature))
+    }
+}
+
+/// The public half of a client's key under the `key` authenticator: the `keyid` its signatures
+/// name and the offer of the key, both made from the public key alone. It prepares what the key
+/// signs, so that a key whose secret cannot be read where it is kept (a browser's
+/// `CryptoKey`, made not extractable: docs/adr/0117, D3) signs the same base as
+/// [`RequestSigner`] and nothing of the profile is written twice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestKey {
+    key_id: String,
+    offer: String,
+}
+
+impl RequestKey {
+    /// The public half of the key whose public key is `public_key`.
+    pub fn new(public_key: &[u8; PUBLIC_KEY_BYTES]) -> Self {
+        RequestKey {
+            key_id: key_id_of(public_key),
+            offer: offered_key(public_key),
+        }
+    }
+
+    /// The `keyid` its signatures name: the thumbprint of its public key.
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    /// What the key signs for a `POST` to `target_uri` (normalized) whose other fields are
+    /// `headers`, made at `created` (seconds since the Unix epoch), as [`RequestSigner::sign`]
+    /// reads them; `None` when one of the fields it covers is missing.
+    pub fn prepare(
+        &self,
+        target_uri: &str,
+        headers: &[(String, String)],
+        created: i64,
+    ) -> Option<UnsignedRequest> {
         // §mesh-22.9: the `key` authenticator's request signature, over the request's method,
         // target, body digest, numbering, hold and nonce, made at `created`.
         let field = |name: &str| field_value(headers, name);
@@ -1339,16 +1382,35 @@ impl RequestSigner {
             ("alg".to_string(), BareItem::String(ALGORITHM.to_string())),
             ("tag".to_string(), BareItem::String(TAG.to_string())),
         ];
-        let [input, signature] = signature_fields(
-            &self.key,
-            &covered,
-            &serialize_inner_list(&items, &parameters),
-        );
-        Some([
-            (KEY_HEADER.to_string(), self.offer.clone()),
-            input,
-            signature,
-        ])
+        let signature_params = serialize_inner_list(&items, &parameters);
+        Some(UnsignedRequest {
+            base: signature_base(&covered, &signature_params),
+            signature_params,
+            offer: self.offer.clone(),
+        })
+    }
+}
+
+/// A request's signature before its key made it: the base the key signs (RFC 9421 section 2.5)
+/// and what the fields that carry the signature are made of besides it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsignedRequest {
+    base: String,
+    signature_params: String,
+    offer: String,
+}
+
+impl UnsignedRequest {
+    /// The signature base, the bytes the key signs.
+    pub fn base(&self) -> &[u8] {
+        self.base.as_bytes()
+    }
+
+    /// The fields that sign the request with `signature`, the key's Ed25519 signature of
+    /// [`Self::base`]: `Sce-Mesh-Key`, `Signature-Input` and `Signature`.
+    pub fn fields(self, signature: &[u8]) -> [(String, String); 3] {
+        let [input, carried] = carrying(&self.signature_params, signature);
+        [(KEY_HEADER.to_string(), self.offer), input, carried]
     }
 }
 
