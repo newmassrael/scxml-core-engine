@@ -416,6 +416,43 @@ foreach(_W3C_NUMBER ${W3C_TEST_NUMBERS})
     )
 endforeach()
 
+# docs/adr/0115, D4 and D8: a run of each W3C document docs/formal has a model of
+# (W3CTest388, W3CTest570 and W3CTest403c, over AppendixD.tla), recorded through
+# its machine's trace port and held to the recorded run docs/formal/traces.json
+# declares of that model, byte for byte (w3c/run_traces/RunTraceRecording.h), which
+# `sce-codegen formal traces` judges against the model the Rust lane's run of the
+# document is judged against. Each program builds the machine the program of its
+# test number above builds, with SCE_TRACE_PORT=1, which changes the machine's
+# engine, so no program compiles it both ways. Under the label of the W3C programs,
+# so the lane that runs them (`w3c-cpp`) runs these, and natively only: the engine
+# is one header in every tree, and the run is the engine's. Recording again after
+# a change that moves a run on purpose: `UPDATE_EXPECT=1 ctest -R cpp_a_run_of_test_`.
+if(NOT EMSCRIPTEN)
+    foreach(_TRACE_ID 388 570 403c)
+        set(_trace_test cpp_a_run_of_test_${_TRACE_ID}_is_the_recorded_run_of_its_model)
+        add_executable(${_trace_test}
+            w3c/run_traces/ARunOfTest${_TRACE_ID}IsTheRecordedRunOfItsModelTest.cpp
+            ${W3C_AOT_TEST_${_TRACE_ID}_HEADERS})
+        target_include_directories(${_trace_test} PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/w3c/run_traces
+            ${STATIC_W3C_OUTPUT_DIR})
+        target_compile_definitions(${_trace_test} PRIVATE
+            SCE_TRACE_PORT=1
+            SCE_FORMAL_TRACES_DIR="${CMAKE_SOURCE_DIR}/docs/formal/traces")
+        target_link_libraries(${_trace_test} PRIVATE sce_runtime GTest::gtest_main pthread)
+        apply_sce_test_policies(${_trace_test})
+        list(APPEND W3C_CPP_PROGRAMS ${_trace_test})
+        add_test(NAME ${_trace_test} COMMAND ${_trace_test})
+        set_tests_properties(${_trace_test} PROPERTIES
+            TIMEOUT 60
+            LABELS "w3c;w3c_cpp"
+        )
+    endforeach()
+endif()
+
 # ============================================================================
 # Comprehensive Interactive Debugging Verification Test
 # ============================================================================

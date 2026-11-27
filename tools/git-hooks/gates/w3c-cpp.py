@@ -40,7 +40,12 @@
               # runs, and the mock the runner core compiles.
               "scripts/lib/ctest_shards.py",
               "scripts/lib/ctest_registered_commands.cmake",
-              "tests/mocks/**"],
+              "tests/mocks/**",
+              # The recorded runs of the C++ lane, which the
+              # `cpp_a_run_of_test_*_is_the_recorded_run_of_its_model`
+              # programs hold their runs to at run time (docs/adr/0115, D4
+              # and D8).
+              "docs/formal/traces/**"],
     "deps": ["codegen-build"],
     "ci_only": "55s, and it is the gate that decides whether the budget "
                "is met on a good run or on every run. Without it the set "
