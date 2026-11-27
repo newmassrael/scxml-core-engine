@@ -95,6 +95,10 @@ on:
       # `TraceTests.swift` holds the runtime's to, read at run time; the traces it replays are
       # under `sce-build/tests/fixtures/test_profile/**` above.
       - 'schemas/sce-test-trace.v1.schema.json'
+      # The recorded runs of the lane, which the W3C suite's
+      # `ARunIsABehaviourOfItsModelTests.swift` holds its traced runs of the W3C documents
+      # with a model to, read at run time (docs/adr/0115, D4 and D8).
+      - 'docs/formal/traces/**'
       - 'scripts/regen_swift_ecma262_lowered.sh'
       - 'tools/generate_lowered_ecma262_fixture.py'
       - 'tests/ecmascript/**'

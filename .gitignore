@@ -216,13 +216,16 @@ backends/python/tests/generated/
 # per W3C document the Swift backend lowers, and a test file for each, and the lane regenerates both
 # before it runs them, so a template edit does not rewrite a file per document in git. The one file
 # of the test directory that is written by hand (`W3cSupport.swift`, the run every test gives its
-# machine) is kept, as Kotlin keeps its `W3CTestBase.kt` among its generated tests.
+# machine) is kept, as Kotlin keeps its `W3CTestBase.kt` among its generated tests, and so is the
+# other (`ARunIsABehaviourOfItsModelTests.swift`, the recorded runs of the documents docs/formal has a
+# model of, docs/adr/0115 D8).
 backends/swift/tests/Sources/W3cMachines/
 # The ECMA-262 artifact the `ecma262-lowered-swift` gate runs is written the same way
 # (`scripts/regen_swift_ecma262_lowered.sh`); the test that reads it is tracked.
 backends/swift/tests/Sources/Ecma262LoweredMachines/
 backends/swift/tests/Tests/W3cMachinesTests/*
 !backends/swift/tests/Tests/W3cMachinesTests/W3cSupport.swift
+!backends/swift/tests/Tests/W3cMachinesTests/ARunIsABehaviourOfItsModelTests.swift
 # The machines of the feature conformance lane (docs/adr/0057 §10) are written the same way
 # (`scripts/regen_swift_feature_conformance.sh`); the tests that drive them are tracked.
 backends/swift/feature-conformance/Sources/

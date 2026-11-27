@@ -17,8 +17,11 @@
     "workflows": ["swift-backend.yml"],
     "runner_workflow": True,
     "deps": ["codegen-build"],
-    # An edit of the image is a change the gate judges.
-    "extra": ["tools/ci-images/swift/**"],
+    # An edit of the image is a change the gate judges, and so is one of the
+    # recorded runs of the lane, which `ARunIsABehaviourOfItsModelTests.swift`
+    # holds its runs of the W3C documents to at run time (docs/adr/0115, D4
+    # and D8).
+    "extra": ["tools/ci-images/swift/**", "docs/formal/traces/**"],
     # The swift image (ADR 0145, family `swift`): the pinned Swift toolchain and
     # the packages it links against, the same wherever the gate runs. The
     # runner pulls the image its Containerfile's digest names and runs

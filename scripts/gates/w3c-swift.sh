@@ -16,6 +16,11 @@
 #
 # The floor on how many the generator lowers is `scripts/regen_swift_w3c.sh`'s, and is not said
 # again here.
+#
+# The suite's target also holds, written by hand, one test per run of the lane recorded under
+# `docs/formal/traces` (`ARunIsABehaviourOfItsModelTests.swift`, docs/adr/0115 D8): the run of a W3C
+# document with a model, held byte for byte to the file `sce-codegen formal traces` judges. Those
+# are counted with the fixtures, one per `*.swift.json`, so a recorded run no test holds is red too.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -41,6 +46,8 @@ ran="$(grep -oE 'Test run with [0-9]+ tests?' "$LOG" | tail -n 1 | grep -oE '[0-
     || sce_gate_fail "the lane did not say how many W3C fixtures it wrote"
 [ -n "$ran" ] \
     || sce_gate_fail "no Swift test run was reported: the W3C test target was not discovered"
-[ "$ran" -eq "$written" ] \
-    || sce_gate_fail "the generator wrote $written W3C fixture(s) and $ran test(s) ran: a fixture was written and not run, or run twice"
-sce_gate_step "$ran W3C fixtures settled in their pass state"
+recorded="$(find docs/formal/traces -maxdepth 1 -name '*.swift.json' | wc -l)"
+expected=$((written + recorded))
+[ "$ran" -eq "$expected" ] \
+    || sce_gate_fail "the generator wrote $written W3C fixture(s), $recorded run(s) of the lane are recorded under docs/formal/traces, and $ran test(s) ran where $expected were owed: a fixture or a recorded run was not run, or run twice"
+sce_gate_step "$written W3C fixtures settled in their pass state, and $recorded recorded run(s) held to their files"
