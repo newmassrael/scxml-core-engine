@@ -615,12 +615,18 @@ fn both_machines_compile_and_a_page_of_both_facts_is_read() {
 
     let project = work.join("project");
     std::fs::create_dir_all(project.join("src")).expect("create the project");
+    // A machine that holds typed values names `sce_forge_runtime` beside the
+    // runtime (the fallible closure each value it computes is read in), so the
+    // crate that holds it depends on both, the forge runtime with the heap tier
+    // the runtime's record codec asks of it.
     std::fs::write(
         project.join("Cargo.toml"),
         format!(
             "[package]\nname = \"journal-page-check\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
-             [dependencies]\nsce-rust-runtime = {{ path = {:?}, features = [\"record-cbor\"] }}\n\n[workspace]\n",
-            repo_root().join("backends/rust/runtime").to_str().unwrap()
+             [dependencies]\nsce-rust-runtime = {{ path = {:?}, features = [\"record-cbor\"] }}\n\
+             sce-forge-runtime = {{ path = {:?}, default-features = false, features = [\"alloc\"] }}\n\n[workspace]\n",
+            repo_root().join("backends/rust/runtime").to_str().unwrap(),
+            repo_root().join("backends/rust/forge-runtime").to_str().unwrap()
         ),
     )
     .expect("write the manifest");
