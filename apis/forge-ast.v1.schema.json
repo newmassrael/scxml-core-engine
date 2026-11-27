@@ -4728,6 +4728,112 @@
             "name"
           ],
           "type": "object"
+        },
+        {
+          "description": "What one machine promises. See [`PropertiesModel`].",
+          "properties": {
+            "assumptions": {
+              "description": "The properties of `<sce:assume>` in document order: what the machine assumes of the events that come to it.",
+              "items": {
+                "$ref": "#/definitions/Property"
+              },
+              "type": "array"
+            },
+            "guarantees": {
+              "description": "The properties of `<sce:guarantee>` in document order: what the machine guarantees while its assumptions hold.",
+              "items": {
+                "$ref": "#/definitions/Property"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "properties"
+              ],
+              "type": "string"
+            },
+            "machine": {
+              "description": "The `src` of `<sce:machine>`, as written: the document the properties are of, relative to this one.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "observers": {
+              "description": "The `<sce:observer>` elements in document order.",
+              "items": {
+                "$ref": "#/definitions/PropertyObserver"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"properties\">` root element, which a refusal of the document as a whole names."
+            }
+          },
+          "required": [
+            "guarantees",
+            "kind",
+            "machine",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The finite values a search of one machine is made over. See [`ExplorationModel`].",
+          "properties": {
+            "kind": {
+              "enum": [
+                "exploration"
+              ],
+              "type": "string"
+            },
+            "machine": {
+              "description": "The `src` of `<sce:machine>`, as written: the document explored, relative to this one.",
+              "type": "string"
+            },
+            "most": {
+              "description": "The most events that come from outside in one run.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "outside": {
+              "description": "The names of the events that may come from outside, in document order.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"exploration\">` root element, which a refusal of the document as a whole names."
+            }
+          },
+          "required": [
+            "kind",
+            "machine",
+            "most",
+            "name"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -5191,6 +5297,20 @@
           "description": "A test suite — docs/adr/0091, answer 4; docs/SCE_TEST_PROFILE.md §11.8. Its test cases in run order, each with its guard and its selection, and the module parameters the components read.",
           "enum": [
             "test_suite"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "What one machine promises — docs/adr/0115, D15: the assumptions of its environment and the guarantees of the machine under them, each over the observations a user of the machine makes, with the observers that remember what a property needs. A declaration, read by `sce-codegen formal properties`; it emits nothing of its own on any backend ([`crate::forge::codegen_matrix::KindClass::Declaration`]).",
+          "enum": [
+            "properties"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The finite values a search of one machine is made over — docs/adr/0115, D15: the events that may come from outside and the most that come. It claims nothing and is no part of the specification. A declaration, read by `sce-codegen formal properties`; it emits nothing of its own on any backend.",
+          "enum": [
+            "exploration"
           ],
           "type": "string"
         }
@@ -6959,6 +7079,160 @@
       },
       "required": [
         "target"
+      ],
+      "type": "object"
+    },
+    "Property": {
+      "description": "One property of a [`PropertiesModel`], an assumption or a guarantee.",
+      "oneOf": [
+        {
+          "description": "`<sce:always cond>`: the condition holds of every observation.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "form": {
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cond",
+            "form"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:step cond>`: the condition holds between an observation and the one before it, which the condition reads through `previous(...)`.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "form": {
+              "enum": [
+                "step"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cond",
+            "form"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:recurs cond unless>`: the condition holds again and again, unless from some moment `unless` always does.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "form": {
+              "enum": [
+                "recurs"
+              ],
+              "type": "string"
+            },
+            "unless": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "cond",
+            "form"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:leads-to from to>`: after an observation where `from` holds, one comes where `to` does.",
+          "properties": {
+            "form": {
+              "enum": [
+                "leads-to"
+              ],
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "form",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:possible cond>`: from every reachable state a state where the condition holds can still be reached.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "form": {
+              "enum": [
+                "possible"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cond",
+            "form"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "req": {
+          "description": "The `sce:req` token the property states, which names it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "req"
+      ],
+      "type": "object"
+    },
+    "PropertyObserver": {
+      "description": "One `<sce:observer>` of a [`PropertiesModel`].",
+      "properties": {
+        "id": {
+          "description": "The name a condition reads the observer by (`id.In('s')`).",
+          "type": "string"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "src": {
+          "description": "The observer's document, relative to the properties document.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "src"
       ],
       "type": "object"
     },
