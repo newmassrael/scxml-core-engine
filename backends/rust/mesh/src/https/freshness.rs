@@ -21,7 +21,7 @@
 //! while they are inside its host, and keeps what they signed, is served in the step after they
 //! left and no later. While they are inside they act as the client.
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use core::fmt;
 use core::time::Duration;
 
@@ -86,6 +86,7 @@ impl Freshness {
     /// the cryptography every TLS connection of the bindings runs on ([`crate::tls::provider`]):
     /// a key of the server's own, which it never gives out. A server that starts again draws
     /// another, and each client is refused once and signs the value of the new key.
+    #[cfg(feature = "https")]
     pub fn draw(step: Duration) -> Result<Self, crate::tls::Error> {
         let mut key = [0u8; 32];
         crate::tls::provider()

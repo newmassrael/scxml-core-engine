@@ -12,7 +12,10 @@
 //!   status codes, the authenticators and the message signatures ([`signature`]). They are the
 //!   same in every language, and so every adapter gets them. The client's decisions are a state
 //!   machine of their own, `client_core`, which moves nothing, and [`client`] is the threads that
-//!   move what it decides.
+//!   move what it decides. In a browser, under the feature `browser`, the module `browser` is the
+//!   half of a shell made of the platform's own parts that runs in the page's WebAssembly module:
+//!   it steps the same core and hands the page's script what to carry, sign and wait for
+//!   (docs/adr/0117, D2). Neither the port nor the adapters are built there.
 //! * The port, [`HttpsTransport`]: one exchange at the level of HTTP semantics, a POST with its
 //!   headers and body and a bound on the wait, answered with a response or a failure of a named
 //!   kind. The client reaches the network through it and through nothing else.
@@ -28,7 +31,10 @@
 //! exchange failed at the transport), and the server started again without the mailbox (a
 //! response of a new incarnation).
 
+#[cfg(feature = "https")]
 pub mod adapter;
+#[cfg(feature = "browser")]
+pub mod browser;
 pub mod client;
 mod client_core;
 mod client_mailbox;
@@ -39,10 +45,11 @@ pub mod freshness;
 pub mod principal;
 pub mod principal_conformance;
 pub mod rate;
+#[cfg(feature = "https")]
 pub mod server;
 pub mod signature;
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -285,6 +292,7 @@ impl Credential {
 
 /// A fresh installation secret: 32 bytes from the operating system's random source, through the
 /// cryptography every TLS connection of the bindings runs on ([`crate::tls::provider`]).
+#[cfg(feature = "https")]
 pub fn draw_install_secret() -> Result<[u8; 32], crate::tls::Error> {
     let mut secret = [0u8; 32];
     crate::tls::provider()
@@ -299,6 +307,7 @@ pub fn draw_install_secret() -> Result<[u8; 32], crate::tls::Error> {
 /// A fresh mailbox incarnation (section 22.3): 16 bytes from the operating system's random
 /// source, through the same cryptography as [`draw_install_secret`], written as 32 lowercase
 /// hexadecimal digits.
+#[cfg(feature = "https")]
 pub fn draw_epoch() -> Result<String, crate::tls::Error> {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut bytes = [0u8; 16];

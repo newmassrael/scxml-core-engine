@@ -98,6 +98,12 @@ https = [
 # server, an explicit proxy, a proxy that inspects TLS, a response lost after the server acted and
 # an exchange held past its bound, each under a test authority the kit makes (`rcgen`).
 https-conformance = ["https", "dep:rcgen"]
+# The HTTPS binding's dialing side in a browser (docs/adr/0117, D2): the client's core and the
+# half of the browser shell that runs in the page's WebAssembly module (`https::browser`), which
+# steps the core and hands the page's script, as JSON, what to carry with `fetch`, sign with
+# WebCrypto and wait for. None of the port, the adapter, the server or TLS is built, so it builds
+# for `wasm32-unknown-unknown`; the module itself is `backends/rust/browser-node`.
+browser = ["dep:sha2", "dep:base64", "dep:sce-rust-crypto", "dep:serde_json"]
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }
@@ -153,6 +159,8 @@ base64 = { version = "0.22", optional = true, default-features = false, features
 sce-rust-crypto = { path = "../crypto", optional = true }
 # The `https-conformance` kit's test authority and the certificates it issues.
 rcgen = { version = "0.13", optional = true, default-features = false, features = ["crypto", "ring"] }
+# The `browser` feature: what the page's script and the module hand each other, as JSON.
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }

@@ -57,7 +57,7 @@ pub mod endpoint;
 pub mod generated;
 pub mod generated_rate;
 pub mod health;
-#[cfg(feature = "https")]
+#[cfg(any(feature = "https", feature = "browser"))]
 pub mod https;
 pub mod inbound;
 pub mod inbox;

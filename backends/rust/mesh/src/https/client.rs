@@ -406,7 +406,7 @@ impl Drop for HttpsClient {
 /// Whether `base` is a URL the binding posts to: `https://` with a host, or `http://` with a
 /// loopback host, and in either no query or fragment (§mesh-22.1: `http://` without TLS is for a
 /// loopback test only).
-fn base_is_allowed(base: &str) -> bool {
+pub(super) fn base_is_allowed(base: &str) -> bool {
     if base.contains(['?', '#']) {
         return false;
     }
