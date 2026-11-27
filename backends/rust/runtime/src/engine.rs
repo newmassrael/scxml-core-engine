@@ -3060,13 +3060,17 @@ impl<P: StatePolicy> Engine<P> {
         let mut workspace = <P::Workspace as Buffers>::EMPTY;
         let (enabled, scratch) = workspace.split();
         let host: &mut dyn MainLoop = &mut EngineHost::new(self, lend);
-        Turn {
+        let mut turn = Turn {
             host,
             tables: P::TABLES,
             enabled,
             scratch,
-        }
-        .run(initial);
+        };
+        // A constant of the policy, handed to the one loop body: a program
+        // whose every machine hands it `true` has the loop's general steps
+        // folded away, and a program of both kinds carries one loop
+        // (docs/adr/0148).
+        turn.run(initial, P::REACTIVE_TURN);
     }
 
     /// Bind the event `queued`, just taken off the internal queue or (when
@@ -6602,8 +6606,15 @@ impl Turn<'_> {
     /// Out of line, so it is one body that every machine's `run_turn` calls
     /// and not inlined into the only caller an image of one machine has, where
     /// a second machine would then bring a second copy (docs/adr/0135).
+    ///
+    /// `reactive` is the machine's [`StatePolicy::REACTIVE_TURN`]
+    /// (docs/adr/0148): for a machine of the reactive class the steps of the
+    /// loop that complete a macrostep and start invocations have nothing to do,
+    /// and they are skipped, so each pass takes one external event and its one
+    /// microstep. Every caller hands a constant, so a program whose machines
+    /// all hand the same one has the other branch folded away by the compiler.
     #[inline(never)]
-    fn run(&mut self, initial: bool) {
+    fn run(&mut self, initial: bool, reactive: bool) {
         if initial {
             self.enter_initial_configuration();
         }
@@ -6612,7 +6623,7 @@ impl Turn<'_> {
         // invokes for the states just entered run, and only then is anything
         // taken off the external queue — so an `autoforward` child is live for
         // every event `<onentry>` queued on the way in.
-        self.run_main_event_loop();
+        self.run_main_event_loop(reactive);
     }
 
     /// §scxml-D-interpret: enterStates([doc.initialTransition]) — the
@@ -6634,7 +6645,7 @@ impl Turn<'_> {
     /// the invocations it entered, take one external event, and again, until
     /// the run ends, the external queue is empty, or the call's budget of
     /// external events is spent.
-    fn run_main_event_loop(&mut self) {
+    fn run_main_event_loop(&mut self, reactive: bool) {
         // External events this invocation has taken off the queue, against
         // `max_external_events_per_call`. A local, because the budget is one
         // invocation's: a cut leaves the queue as it is and the next invocation
@@ -6642,8 +6653,15 @@ impl Turn<'_> {
         let mut taken: u32 = 0;
         loop {
             // §scxml-D-mainEventLoop: complete the macrostep on eventless
-            // transitions and internal events alone.
-            self.complete_macrostep();
+            // transitions and internal events alone. A machine of the reactive
+            // class has neither (docs/adr/0148).
+            if !reactive {
+                self.complete_macrostep();
+            }
+            debug_assert!(
+                !reactive || !self.host.queue(false).has_events(),
+                "a machine of the reactive class raised an internal event: its internal queue bound is wrong"
+            );
 
             if !self.loop_state().goes_on() {
                 // §scxml-D-mainEventLoop ends here, and whatever the host put
@@ -6668,24 +6686,28 @@ impl Turn<'_> {
                 break;
             }
 
-            // §scxml-6.4: invokes for states entered during this macrostep.
-            self.host.start_pending_invokes();
+            // §scxml-6.4: invokes for states entered during this macrostep. A
+            // machine of the reactive class invokes nothing, and its internal
+            // queue is proven empty (docs/adr/0148).
+            if !reactive {
+                self.host.start_pending_invokes();
 
-            // §scxml-D-mainEventLoop: invoking may have raised internal error
-            // events (and a child that completed synchronously may already
-            // have raised `done.invoke`); handle them before touching the
-            // external queue.
-            //
-            // Not when this macrostep was already stopped at the ceiling: the
-            // queue is non-empty *because* the drain refused it, so looping
-            // back is a spin that takes no microstep, logs nothing, and never
-            // ends. Falling through to the external dequeue instead is what
-            // keeps a machine inside an endless chain reachable at all — the
-            // event that rescues it is on that queue, and the clause's
-            // internal-first priority would otherwise hold it behind a chain
-            // that never ends.
-            if !self.loop_state().macrostep_truncated && self.host.queue(false).has_events() {
-                continue;
+                // §scxml-D-mainEventLoop: invoking may have raised internal error
+                // events (and a child that completed synchronously may already
+                // have raised `done.invoke`); handle them before touching the
+                // external queue.
+                //
+                // Not when this macrostep was already stopped at the ceiling: the
+                // queue is non-empty *because* the drain refused it, so looping
+                // back is a spin that takes no microstep, logs nothing, and never
+                // ends. Falling through to the external dequeue instead is what
+                // keeps a machine inside an endless chain reachable at all — the
+                // event that rescues it is on that queue, and the clause's
+                // internal-first priority would otherwise hold it behind a chain
+                // that never ends.
+                if !self.loop_state().macrostep_truncated && self.host.queue(false).has_events() {
+                    continue;
+                }
             }
 
             // docs/adr/0084: the macrostep is complete, and this is the point

@@ -5882,6 +5882,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "platformError",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "REACTIVE_TURN",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
