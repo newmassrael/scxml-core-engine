@@ -815,11 +815,22 @@ impl Inbound {
                     .map_err(|_| full("window"))?;
             }
             for held in &state.held {
+                // An arrival is the moment a gap's timeout is measured from, so one these clocks
+                // cannot place exactly is refused, as `Router::restore` refuses the moment an
+                // outbound envelope waits from: a moment moved to the end of the clock would
+                // carry an age `ordering_gap_end` cannot count.
+                let arrived_at_ms = clocks.placed(held.arrived).ok_or_else(|| {
+                    CheckpointError::Malformed(format!(
+                        "the envelope {} held from the sender '{}' arrived at {} ms since the \
+                         Unix epoch, which clocks reading {} ms cannot place",
+                        held.sequence, state.source, held.arrived, clocks.wall_ms
+                    ))
+                })?;
                 sender
                     .pending
                     .push(OrderingSlotPayload {
                         seq: held.sequence,
-                        arrived_at_ms: clocks.to_monotonic(held.arrived),
+                        arrived_at_ms,
                     })
                     .map_err(|_| full("held envelopes"))?;
                 sender.held.insert(
@@ -1323,6 +1334,62 @@ mod tests {
         assert_eq!(inbound.senders(), 2);
         inbound.forget("phone");
         assert_eq!(inbound.senders(), 1);
+    }
+
+    /// An arrival a checkpoint holds is the moment a gap's timeout runs from:
+    /// one the clocks it is restored against cannot place is refused at the
+    /// restore, naming the envelope; one they place is held at it, one before
+    /// the monotonic clock's start included, and its gap ends once the
+    /// timeout has run from there. Red if the restore saturates the moment:
+    /// the restore then succeeds, and the next tick's gap age overflows.
+    #[test]
+    fn a_held_arrival_the_clocks_cannot_place_is_refused_at_the_restore() {
+        let state = |arrived: u64| SenderState {
+            source: "phone".to_string(),
+            window: Vec::new(),
+            next: Some(1),
+            held: vec![HeldState {
+                sequence: 2,
+                arrived,
+                envelope: wire("phone", 2, Some(2)),
+            }],
+            replies: Vec::new(),
+            durable: false,
+        };
+
+        let mut far = core();
+        let refused = far.restore(
+            &[state(0)],
+            Clocks {
+                monotonic_ms: 0,
+                wall_ms: u64::MAX,
+            },
+        );
+        assert!(
+            matches!(&refused, Err(CheckpointError::Malformed(words))
+                if words.starts_with("the envelope 2 held from the sender 'phone'")),
+            "{refused:?}"
+        );
+
+        let near = Clocks {
+            monotonic_ms: 500,
+            wall_ms: 10_000,
+        };
+        let mut before_start = core();
+        assert_eq!(before_start.restore(&[state(0)], near), Ok(()));
+        assert_eq!(before_start.states(near)[0].held[0].arrived, 0);
+
+        let mut inbound = core();
+        assert_eq!(inbound.restore(&[state(9_960)], near), Ok(()));
+        assert!(inbound.tick(509).unwrap().signals.is_empty());
+        assert_eq!(
+            inbound.tick(510).unwrap().signals,
+            vec![Signal::OrderingGap {
+                source: "phone".to_string(),
+                lost_lo: 1,
+                lost_hi: 1,
+            }]
+        );
     }
 
     #[test]
