@@ -13,8 +13,8 @@ this file says what is here and how to read it.
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | | no |
-| 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models; no trace read against them |
-| 5. A run read against a model (D4) | | no |
+| 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
+| 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust lane (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust lane, for three documents; the C11 and C++ ports write the same format |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
 
 ## The models
@@ -76,6 +76,18 @@ What a check says (a promise, a property, a contract, what a run must answer) is
 reason; `pre-push` refuses another (`tools/git-hooks/spec_isolation.py`, ADR 0115 D11).
 
 After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
+
+The recorded runs are `traces.json`'s, judged by `sce-codegen formal traces --manifest docs/formal/traces.json`
+(ADR 0115, D4 and D8). A run is a file of the run trace format (`tests/forge/conformance/run_trace.schema.json`) a
+lane's trace port wrote: each step the interpreter took (`start`, `eventless`, `internal`, `external`, `stop`) with
+the event, the rows fired, the states exited and entered in order, and the configuration. The judge writes a module
+that holds the run as a sequence and constrains the model's next-state relation to it (trace validation), and TLC
+accepts the run or names the first step no behaviour explains. The environment's steps, an event from outside and a
+delayed send that comes due, are not in a run and may come between any two steps. Every kind of step a run holds has an
+altered run, one field given another value, which must be refused at that step: a trace that says too little is
+accepted though the run was wrong. The Rust lane records the runs with
+`UPDATE_EXPECT=1 cargo test -p sce-rust-tests --test a_run_is_a_behaviour_of_its_model`, and the same test holds each
+run to its recorded file.
 
 ## What all of this stands on
 

@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The formal judges' wire surfaces (docs/adr/0146, D5) held to their
-// instances: this repository's models and proofs manifests, the consumer
-// fixture's, and the pinned toolchain, each against its schema, and each schema shown
-// refusing what the judge refuses.
+// instances: this repository's models, proofs and traces manifests, the
+// consumer fixture's, and the pinned toolchain, each against its schema, and
+// each schema shown refusing what the judge refuses.
 
 use std::path::{Path, PathBuf};
 
@@ -136,6 +136,63 @@ fn the_proofs_schema_rejects_what_the_judge_refuses() {
             .as_object_mut()
             .expect("an object")
             .remove("compiled_by");
+    });
+}
+
+const TRACES_SCHEMA: &str = "schemas/sce-formal-traces.v1.schema.json";
+
+#[test]
+fn this_repositorys_traces_manifest_validates_against_the_wire_schema() {
+    let schema = compile(TRACES_SCHEMA);
+    let found = errors(&schema, &instance("docs/formal/traces.json"));
+    assert!(
+        found.is_empty(),
+        "docs/formal/traces.json is not a traces manifest:\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_traces_schema_rejects_what_the_judge_refuses() {
+    let schema = compile(TRACES_SCHEMA);
+    let whole = instance("docs/formal/traces.json");
+    assert!(
+        errors(&schema, &whole).is_empty(),
+        "the control: the manifest as it is validates"
+    );
+    let refused = |what: &str, edit: &dyn Fn(&mut serde_json::Value)| {
+        let mut value = whole.clone();
+        edit(&mut value);
+        assert!(
+            !errors(&schema, &value).is_empty(),
+            "the schema accepts a manifest with {what}"
+        );
+    };
+    refused("TLC pinned in it", &|v| {
+        v["tlc"] = serde_json::json!({"version": "1.7.4"})
+    });
+    refused("another version", &|v| v["v"] = serde_json::json!(2));
+    refused("no run", &|v| v["traces"] = serde_json::json!([]));
+    refused("a run with no altered run", &|v| {
+        v["traces"][0]["altered"] = serde_json::json!([])
+    });
+    refused("a run that names no configuration", &|v| {
+        v["traces"][0]
+            .as_object_mut()
+            .expect("an object")
+            .remove("config");
+    });
+    refused("an unknown key of a run", &|v| {
+        v["traces"][0]["note"] = serde_json::json!("x")
+    });
+    refused("an alteration of a kind the format has not", &|v| {
+        v["traces"][0]["altered"][0]["kind"] = serde_json::json!("pause")
+    });
+    refused("an alteration of a field the format has not", &|v| {
+        v["traces"][0]["altered"][0]["field"] = serde_json::json!("datamodel")
+    });
+    refused("an alteration at no place", &|v| {
+        v["traces"][0]["altered"][0]["step"] = serde_json::json!(-1)
     });
 }
 

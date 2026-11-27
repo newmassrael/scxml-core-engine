@@ -114,3 +114,34 @@ fn the_toolchain_printed_is_the_one_compiled_in() {
         serde_json::from_str(sce_build::formal::toolchain::TOOLCHAIN_JSON).expect("JSON");
     assert_eq!(printed, pinned);
 }
+
+/// This repository's traces manifest (docs/adr/0115, D4 and D8): every recorded
+/// run read, every model and configuration there, an altered run for every kind
+/// of step a run holds, and every recorded run declared. Its runs are judged
+/// with TLC by `sce-codegen formal traces`.
+#[test]
+fn this_repositorys_traces_manifest_is_declared_whole() {
+    let manifest = repo_root().join("docs/formal/traces.json");
+    let text = std::fs::read_to_string(&manifest).expect("the traces manifest");
+    let parsed = sce_build::formal::traces::parse(&text).expect("a manifest");
+    let problems =
+        sce_build::formal::traces::declared(&parsed, manifest.parent().expect("its directory"));
+    assert_eq!(problems, Vec::<String>::new());
+}
+
+#[test]
+fn the_traces_judge_whose_tool_is_not_there_says_so_with_exit_15() {
+    let missing = repo_root().join("target/no-such-tla2tools.jar");
+    let manifest = repo_root().join("docs/formal/traces.json");
+    let (status, _, record) = formal(
+        &["traces", "--manifest", manifest.to_str().expect("a path")],
+        &missing,
+    );
+    assert_eq!(
+        status,
+        Some(15),
+        "no TLC is \"could not run\", not a verdict"
+    );
+    let record = record.expect("a diagnostic record");
+    assert_eq!(record["code"], "formal/tool-unavailable", "{record}");
+}

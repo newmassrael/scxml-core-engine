@@ -404,7 +404,7 @@ pub fn unshown(model: &Model, formal: &Path) -> Vec<String> {
     checked.difference(&shown).cloned().collect()
 }
 
-fn unknown_keys(other: &BTreeMap<String, Value>, known: &[&str]) -> Vec<String> {
+pub(crate) fn unknown_keys(other: &BTreeMap<String, Value>, known: &[&str]) -> Vec<String> {
     other
         .keys()
         .filter(|key| !known.contains(&key.as_str()))
@@ -412,7 +412,7 @@ fn unknown_keys(other: &BTreeMap<String, Value>, known: &[&str]) -> Vec<String> 
         .collect()
 }
 
-fn listed(names: &BTreeSet<String>) -> String {
+pub(crate) fn listed(names: &BTreeSet<String>) -> String {
     let quoted: Vec<String> = names.iter().map(|name| format!("'{name}'")).collect();
     format!("[{}]", quoted.join(", "))
 }
@@ -709,7 +709,7 @@ pub fn declared(manifest: &Manifest, formal: &Path) -> Vec<String> {
     problems
 }
 
-fn files_with(dir: &Path, extension: &str) -> Vec<PathBuf> {
+pub(crate) fn files_with(dir: &Path, extension: &str) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };

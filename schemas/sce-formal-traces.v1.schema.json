@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-traces.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE formal traces manifest (wire schema v1)",
+  "description": "What a repository declares of the recorded runs of its code, judged by `sce-codegen formal traces --manifest <file>` (docs/adr/0146, D1; docs/adr/0115, D4 and D8). Written by the repository beside the models the runs are of, which are read relative to this file's directory, as the runs are; never emitted by SCE. Each run is a file of the run trace format (`tests/forge/conformance/run_trace.schema.json`) a lane's trace port wrote, and must be a behaviour of the module it names under the constants of the configuration it names. Each altered run gives one field of one step another value and must be refused at that step; every kind of step a run holds has one, and every file of the directory of a declared run is declared. No tool is named here: the judge pins its tools (docs/adr/0146, D3). Authoritative reader is sce-build/src/formal/traces.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": [
+    "v",
+    "traces"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "The version of this format."
+    },
+    "traces": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/trace"
+      }
+    }
+  },
+  "definitions": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "trace": {
+      "type": "object",
+      "required": [
+        "trace",
+        "module",
+        "config",
+        "altered"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string",
+          "pattern": "\\.json$",
+          "description": "The recorded run, a file of the run trace format."
+        },
+        "module": {
+          "$ref": "#/definitions/name",
+          "description": "The module the run is of, `<module>.tla` beside the manifest."
+        },
+        "config": {
+          "type": "string",
+          "pattern": "\\.cfg$",
+          "description": "A configuration of that module, whose constants the run is judged under."
+        },
+        "altered": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/altered"
+          }
+        }
+      }
+    },
+    "altered": {
+      "type": "object",
+      "required": [
+        "step",
+        "kind",
+        "field",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "step": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The step's place in the run's `steps`, from 0."
+        },
+        "kind": {
+          "enum": [
+            "start",
+            "eventless",
+            "internal",
+            "external",
+            "stop"
+          ],
+          "description": "The step's kind, which the step at that place must be."
+        },
+        "field": {
+          "enum": [
+            "event",
+            "fired",
+            "exited",
+            "entered",
+            "configuration",
+            "outcome"
+          ],
+          "description": "The field given another value, one the step's kind says."
+        },
+        "value": {
+          "description": "The value it is given, as the run trace format writes that field."
+        }
+      }
+    }
+  }
+}

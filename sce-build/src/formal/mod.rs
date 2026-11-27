@@ -2,8 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! The formal judges of ADR 0115, as one command of the code generator
-//! (docs/adr/0146): `sce-codegen formal models`, `proofs`, `toolchain` and
-//! `install`, run by any repository on a manifest it is given, this one included.
+//! (docs/adr/0146): `sce-codegen formal models`, `proofs`, `traces`, `toolchain`
+//! and `install`, run by any repository on a manifest it is given, this one
+//! included.
 //!
 //! - [`toolchain`]: the tools the judges run, pinned by the judge and compiled
 //!   into it (ADR 0146, D3), and how each is fetched and admitted by its digest.
@@ -12,6 +13,8 @@
 //! - [`proofs`]: the judge of a proofs manifest, by Verus (ADR 0115, D10 and D13).
 //! - [`document_model`]: the model of one document over Appendix D, which
 //!   `sce-codegen model` writes (ADR 0115, D7).
+//! - [`traces`]: the judge of a traces manifest, every recorded run of the code
+//!   a behaviour of its model (ADR 0115, D4 and D8).
 //! - [`error`]: the `formal/*` diagnostics a judge leaves through
 //!   (`SCE_ERROR_CONTRACT.md` §6).
 
@@ -21,6 +24,7 @@ pub mod models;
 pub mod proofs;
 pub mod tlc;
 pub mod toolchain;
+pub mod traces;
 
 pub use error::FormalError;
 

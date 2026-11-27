@@ -4185,8 +4185,9 @@ enum Commands {
 
     /// The formal judges of every level (docs/adr/0115), run on a manifest
     /// it is given (docs/adr/0146): the TLA+ models a models manifest
-    /// declares, the Verus proofs a proofs manifest declares, the tools they
-    /// run, and the installation of those tools.
+    /// declares, the Verus proofs a proofs manifest declares, the recorded
+    /// runs a traces manifest declares, the tools they run, and the
+    /// installation of those tools.
     ///
     /// A judge prints one line per run and per problem of the declaration,
     /// and leaves through the exit statuses of `SCE_ERROR_CONTRACT.md` §6:
@@ -16525,6 +16526,23 @@ enum FormalCommand {
         #[arg(long)]
         manifest: PathBuf,
     },
+    /// Judge every recorded run of the code a traces manifest declares a
+    /// behaviour of the model it names, with the pinned TLC (docs/adr/0115, D4
+    /// and D8).
+    ///
+    /// Each run is a file of the run trace format a lane's trace port wrote; the
+    /// models and their configurations are the ones beside the manifest. A run
+    /// must be accepted, and each altered run, one field of one step changed,
+    /// must be refused at the step that was altered; the manifest declares an
+    /// altered run for every kind of step a run holds.
+    Traces {
+        /// The traces manifest (`schemas/sce-formal-traces.v1.schema.json`).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// TLC's `-workers`.
+        #[arg(long, default_value = "auto")]
+        workers: String,
+    },
     /// Print the tools the judges run, as `sce-build/src/formal/toolchain.json`
     /// pins them (`schemas/sce-formal-toolchain.v1.schema.json`).
     Toolchain,
@@ -16597,6 +16615,17 @@ fn cmd_formal(judge: FormalCommand) {
                 detail: &mut detail,
             };
             if let Err(err) = crate::formal::proofs::check(&manifest, &mut report) {
+                leave(err);
+            }
+        }
+        FormalCommand::Traces { manifest, workers } => {
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            if let Err(err) = crate::formal::traces::check(&manifest, &workers, &mut report) {
                 leave(err);
             }
         }
