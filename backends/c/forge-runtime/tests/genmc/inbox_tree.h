@@ -281,13 +281,15 @@ static inline void inbox_tree_build(inbox_tree_t *tree) {
    the session enters the directory (_macros/c_tree_directory.jinja2, `enter`),
    and its entry walk starts the invocation, which marks it in its own table.
 
-   Of what the zeroing clears, the token check reads only the table's count and
-   the token the next start receives, so those two are what is cleared here: a
-   `memset` of the whole table is one GenMC cannot follow. */
+   Of what the zeroing clears, the token check reads only the table's count, so
+   that is what is cleared here (a `memset` of the whole table is one GenMC
+   cannot follow). The token the next start receives is kept across the
+   restart, as `_init_construct` keeps it for a slot whose tree inboxes it
+   keeps: a token is the slot's for its life, not the start's (docs/adr/0084,
+   D2). */
 static inline uint64_t inbox_tree_start_child(inbox_tree_t *tree, uint64_t session) {
     inbox_session_t *child = &tree->child;
     child->started.count = 0;
-    child->started.next_token = 0u;
     child->session_id = inbox_session_ids[session];
     sce_inbox_directory_enter(&tree->child_directory, child->session_id);
     return sce_host_invocation_mark(&child->started, inbox_processor_type, inbox_invoke_id);
