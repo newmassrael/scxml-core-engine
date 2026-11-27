@@ -22,6 +22,14 @@
 // under the same package root, so a pattern over directory names would have
 // split one population across two modules.
 //
+// One test source is written by hand, in a package the generator never writes
+// (`src/test/kotlin/com/sce/formal/`), outside the two directories that are the
+// generated tree (tools/codegen/trees/kotlin-w3c.toml): `ARunIsABehaviourOfItsModelTest`
+// runs three of these machines with the runtime's trace port set and holds each
+// run to the recorded run `sce-codegen formal traces` judges against the
+// document's model (docs/adr/0115, D4 and D8). It lives here because the
+// machines it runs are this module's and no other module compiles them.
+//
 // ⚠ Two compiles of about 0.8 and 1.3 GB need MORE heap at once than the one
 // they replaced, so `:sce-kotlin-tests` orders its compile and its test task
 // after this module's (its build file states it). The headroom probe in
@@ -120,6 +128,16 @@ val generateScxml by tasks.registering(Exec::class) {
 
 tasks.named("compileKotlin") {
     dependsOn(generateScxml)
+}
+
+// `ARunIsABehaviourOfItsModelTest` reads the recorded runs of this lane at RUN
+// time, by a path relative to the repository root (the suite's `workingDir`),
+// so they are on no classpath. Declared so a recorded run edited to one the
+// engine does not take turns the task red, rather than leaving it UP-TO-DATE.
+tasks.test {
+    inputs.dir(File(rootDir, "docs/formal/traces"))
+        .withPropertyName("recordedRuns")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 kotlin {

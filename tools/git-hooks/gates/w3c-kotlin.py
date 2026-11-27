@@ -38,7 +38,11 @@
               # The traces and expected logs of the corpus's other suites,
               # which `ACorpusSuiteReplaysToItsExpectedLogsTest` replays and
               # reads at run time.
-              "sce-build/tests/fixtures/test_profile/runs/**"],
+              "sce-build/tests/fixtures/test_profile/runs/**",
+              # The recorded runs of the Kotlin lane, which
+              # `com.sce.formal.ARunIsABehaviourOfItsModelTest` holds its runs
+              # to at run time (docs/adr/0115, D4 and D8).
+              "docs/formal/traces/**"],
     "deps": ["codegen-build"],
     # 69s was measured on a push whose Kotlin tree was already current.
     # 152s, pace-normalised, is what it cost on 2026-08-24 when a
