@@ -8,10 +8,13 @@
 (* amended at step 9), one drain at a time; an input that names a session  *)
 (* is posted to that session's inbox when it is posted (step 10); what an  *)
 (* inbox holds when its session ends is applied then, and a runtime that   *)
-(* never closes applies a later post at the end of its loop. A post is     *)
-(* refused when it is posted: one naming a session the tree's directory    *)
-(* does not hold, one to a session whose run has ended where the runtime   *)
-(* closes, and one into an inbox that holds Capacity inputs.               *)
+(* never closes applies a later post at the end of its loop. A post goes   *)
+(* through the tree's directory, which holds each session until its run    *)
+(* ends, or through a session's own handle (ByHandle), which looks nothing *)
+(* up. A post is refused when it is posted: one through the directory      *)
+(* naming a session it does not hold, one to a session whose run has ended *)
+(* where the runtime closes, and one into an inbox that holds Capacity     *)
+(* inputs.                                                                 *)
 (*                                                                         *)
 (* The parts, each a constant that is TRUE in the protocol, and each taken *)
 (* out by a run that must find what it breaks:                             *)
@@ -21,8 +24,8 @@
 (*   TakeOut         a drain takes out of the inbox what it applies        *)
 (*   ApplyAtEnd      what the inbox holds at the end is applied, not left  *)
 (*   Wake            a post wakes the owner                                *)
-(*   Lookup          a post's session is looked up in the directory, and   *)
-(*                   one the tree does not hold is refused                 *)
+(*   Lookup          a post through the directory looks its session up     *)
+(*                   there, and one the directory does not hold is refused *)
 (*   RefuseFull      a post into an inbox that holds Capacity is refused   *)
 (*                                                                         *)
 (* lin is a history variable: the order posts and own events linearized,   *)
@@ -51,6 +54,9 @@ CONSTANTS
     Unknown,
     \* @type: Set(Str);
     UnknownInputs,
+    \* the inputs posted through their session's own handle, the rest through the directory
+    \* @type: Set(Str);
+    ByHandle,
     \* @type: Set(Str);
     RootOwn,
     \* @type: Set(Str);
@@ -103,11 +109,14 @@ VARIABLES
     \* whether the owner is woken
     \* @type: Bool;
     awake,
+    \* the sessions the tree's directory holds: each until its run ends
+    \* @type: Set(Str);
+    directory,
     \* the history variable: the order each session linearized
     \* @type: Str -> Seq(Str);
     lin
 
-vars == <<inbox, extq, status, ownUnsent, ended, awake, lin>>
+vars == <<inbox, extq, status, ownUnsent, ended, awake, directory, lin>>
 
 \* The tree as the promise names it.
 Tree == INSTANCE InboxService
@@ -134,6 +143,7 @@ Init ==
     /\ ownUnsent = OwnEvents
     /\ ended = [s \in Sessions |-> FALSE]
     /\ awake = TRUE
+    /\ directory = Sessions
     /\ lin = [s \in Sessions |-> <<>>]
 
 \* The post of i is refused for the reason why, and changes nothing else.
@@ -142,15 +152,18 @@ Refuse(i, why) ==
     /\ status' = [status EXCEPT ![i] = why]
     /\ UNCHANGED <<inbox, awake, lin>>
 
-\* A thread posts the input i through the tree's handle. The directory says
-\* whether the tree holds the session i names, and the inbox whether it is
-\* full; without the lookup the post is taken, and no inbox holds it.
+\* A thread posts the input i. Through the directory, which says whether it
+\* holds the session i names; without the lookup the post is taken, and no
+\* inbox holds it. Through the session's own handle, which needs no lookup and
+\* is the session's inbox, so its address is resolved whatever the part says.
+\* Then the inbox says whether it is full.
 Post(i) ==
     LET s == Tree!Target(i)
-        at == IF AddressAtPost THEN s ELSE Root
+        handle == i \in ByHandle
+        at == IF AddressAtPost \/ handle THEN s ELSE Root
     IN
     /\ status[i] = "none"
-    /\ IF s \notin Sessions
+    /\ IF ~handle /\ s \notin directory
          THEN IF Lookup
                 THEN Refuse(i, "unknown")
                 ELSE /\ status' = [status EXCEPT ![i] = "taken"]
@@ -163,7 +176,7 @@ Post(i) ==
               /\ inbox' = [inbox EXCEPT ![at] = Append(@, i)]
               /\ awake' = (awake \/ Wake)
               /\ lin' = [lin EXCEPT ![s] = Append(@, i)]
-    /\ UNCHANGED <<extq, ownUnsent, ended>>
+    /\ UNCHANGED <<extq, ownUnsent, ended, directory>>
 
 \* The running owner puts the event e of session s on s's own queue, through
 \* s's chokepoint.
@@ -179,7 +192,7 @@ Own(e) ==
               /\ UNCHANGED inbox
     /\ ownUnsent' = ownUnsent \ {e}
     /\ lin' = [lin EXCEPT ![s] = Append(@, e)]
-    /\ UNCHANGED <<status, ended, awake>>
+    /\ UNCHANGED <<status, ended, awake, directory>>
 
 \* A macrostep boundary of the tree: the owner applies the root's inbox and
 \* then the child's, of the sessions still running, and waits to be woken.
@@ -193,13 +206,14 @@ Boundary ==
     /\ extq' = q2
     /\ inbox' = i2
     /\ awake' = FALSE
-    /\ UNCHANGED <<status, ownUnsent, ended, lin>>
+    /\ UNCHANGED <<status, ownUnsent, ended, directory, lin>>
 
-\* The session s's run ends: what its inbox holds is applied, as a direct call
-\* made then would be, or, without the part, left.
+\* The session s's run ends: it leaves the directory, and what its inbox holds
+\* is applied, as a direct call made then would be, or, without the part, left.
 End(s) ==
     /\ ~ended[s]
     /\ ended' = [ended EXCEPT ![s] = TRUE]
+    /\ directory' = directory \ {s}
     /\ extq' = IF ApplyAtEnd THEN ApplyOf(extq, inbox[s]) ELSE extq
     /\ inbox' = [inbox EXCEPT ![s] = <<>>]
     /\ UNCHANGED <<status, ownUnsent, awake, lin>>
@@ -212,7 +226,7 @@ Late(s) ==
     /\ inbox[s] # <<>>
     /\ extq' = ApplyOf(extq, inbox[s])
     /\ inbox' = [inbox EXCEPT ![s] = <<>>]
-    /\ UNCHANGED <<status, ownUnsent, ended, awake, lin>>
+    /\ UNCHANGED <<status, ownUnsent, ended, awake, directory, lin>>
 
 Next ==
     \/ \E i \in Inputs : Post(i)
@@ -287,6 +301,7 @@ Typed ==
     /\ ownUnsent \in SUBSET OwnEvents
     /\ ended \in [Sessions -> BOOLEAN]
     /\ awake \in BOOLEAN
+    /\ directory \in SUBSET Sessions
     /\ lin = [s \in Sessions |-> Gen(Longest)]
 
 QueueInductive ==
@@ -294,6 +309,9 @@ QueueInductive ==
     /\ ownUnsent \subseteq OwnEvents
     /\ Inputs \cap OwnEvents = {}
     /\ Unknown \notin Sessions
+    /\ ByHandle \subseteq Tree!TreeInputs
+    \* The directory holds sessions of the tree alone.
+    /\ directory \subseteq Sessions
     \* No input naming a session the tree does not hold is taken.
     /\ \A i \in Inputs : Tree!Target(i) \notin Sessions => status[i] # "taken"
     \* What a session linearized is its queue, then its inbox.
@@ -305,5 +323,5 @@ QueueInductive ==
            /\ lin[t][k] \in Inputs => status[lin[t][k]] = "taken"
            /\ lin[t][k] \in OwnEvents => lin[t][k] \notin ownUnsent
     /\ \A t \in Sessions : \A j, k \in DOMAIN lin[t] : j # k => lin[t][j] # lin[t][k]
-    /\ \A i \in Tree!Addressed : status[i] = "taken" => InSeq(i, lin[Tree!Target(i)])
+    /\ \A i \in Tree!TreeInputs : status[i] = "taken" => InSeq(i, lin[Tree!Target(i)])
 ====

@@ -82,10 +82,11 @@ What a host may rely on, with no mechanism. A tree of sessions, posters on any n
 ### D2. The protocol: `EngineInbox.tla`, refining `InboxService`
 
 ADR 0084's mechanism: a multi-producer, single-consumer queue per session; the drain at the boundary and at the one
-chokepoint of the external enqueue, one drain at a time; the directory, which a child enters before its first
-macrostep and leaves after its inbox is closed, and which a post's session is looked up in when it is posted; a
-bounded capacity, where a full inbox refuses; and the waker. Its parts, each with a run that takes it out and the
-promise it breaks (ADR 0115, D5):
+chokepoint of the external enqueue, one drain at a time; the directory, which holds every session of the tree, the
+root from the moment its inbox is made and a child from before its first macrostep, which a session leaves when its
+run ends, and which a post through it looks its session up in when it is posted, while a post through a session's
+own handle looks nothing up and goes to that session's inbox; a bounded capacity, where a full inbox refuses; and
+the waker. Its parts, each with a run that takes it out and the promise it breaks (ADR 0115, D5):
 
 | Part | Taken out | Breaks |
 |---|---|---|

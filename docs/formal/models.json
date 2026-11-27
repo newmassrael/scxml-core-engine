@@ -833,7 +833,7 @@
         {
           "config": "EngineInbox_never_closes.cfg",
           "expect": "holds",
-          "states": 2648
+          "states": 2496
         },
         {
           "config": "EngineInbox_bounded.cfg",
@@ -848,7 +848,7 @@
         {
           "config": "EngineInbox_live_never_closes.cfg",
           "expect": "holds",
-          "states": 2648
+          "states": 2496
         },
         {
           "config": "EngineInbox_without_drain_before_own.cfg",
