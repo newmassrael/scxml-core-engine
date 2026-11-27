@@ -155,7 +155,34 @@ models of D2 do not.
 After ADR 0115 D7 and D8 are built, and after its amendment that makes the environment's choices parameters. Each step
 lands with a test that fails without it.
 
-1. D2 for one machine of ADR 0115 D7's first, with D4.1 and D4.2.
+1. D2 for one machine of ADR 0115 D7's first, with D4.1 and D4.2. Written on 2026-11-27, before this record is
+   accepted; Storm is a dependency the owner has not yet approved (Consequences). ADR 0115's amendment of 2026-11-23
+   (the faults of a channel and the events from outside as parameters of D7) is the one this step waited for.
+   As written:
+   - **The machine.** `W3CTest403c`, whose delayed send coming due is the environment's choice, interleaved with
+     the interpreter's steps. `docs/formal/W3CTest403c.jani`, declared in `docs/formal/quantities.json`.
+   - **D2.** `sce-codegen model --jani` (`sce-build/src/formal/document_jani.rs`) reads the tables and operators the
+     TLA+ module is printed from (`ModelTables` of `document_model.rs`, one translation of each expression).
+     JANI has no sets, sequences or recursion, so Appendix D cannot be given tables in it as `AppendixD.tla` is: the
+     generator evaluates the control of a run (configuration, history, queues, current event, phase, what a step
+     told, the events that came from outside, the outcome) by AppendixD.tla's operators written again over the tables,
+     and leaves the datamodel to the model, each step an edge whose guard is the values of the conditions that select
+     it and whose assignments are what its blocks write. It is partial evaluation of the semantics with the data held
+     symbolic, and D4 checks its output. No distribution is given yet: every edge has probability one, and the
+     environment's edges (`due`, `arrive`) are the ones a distribution will weigh.
+   - **D4.1 and D4.2.** `sce-codegen formal quantities` (`quantities.rs`; ADR 0146 moved the judges out of
+     `scripts/formal`): the model must be what the generator writes of its document now; Storm's explicit space of it,
+     exported with every state's valuation and every choice's action, read as states of the TLA+ module, must be the
+     graph TLC writes under the configuration's constants, with the steps and the initial states; every recorded run of
+     `traces.json` of the module is replayed over that space, and each altered run must be refused at the altered
+     step. The gate is `formal-models`'s first part.
+   - **Storm.** It publishes no static build. Its releases carry source and, from 1.13.0, Debian packages for Debian 12
+     and 13 on x64 and arm64; Docker images (`movesrwth/storm`) and Homebrew are its other channels. The pin is the
+     2.0.0 package for Debian 12 on x64, by its digest: it holds the program and the libraries built with it and asks
+     the system for GMP, CLN, GiNaC, GLPK, Z3 and libarchive, which the host image (ADR 0145) and `bx.toml` name; the
+     Debian 13 package asks the C library for symbols the Ubuntu 24.04 of the image has not. The package is unpacked,
+     never installed. A build from source, pinned by its commit in a stage of the image, is the alternative if a
+     package's libraries stop matching the image's.
 2. D3 with one property per kind (a probability, a deadline, an expected reward), and D4.3's configurations that must
    fail.
 3. D6 for that machine.

@@ -15,6 +15,7 @@ this file says what is here and how to read it.
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
 | 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust, C11, C++, Go, Kotlin, Python and Swift lanes (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust, C11, C++, Go, Kotlin, Python and Swift lanes, for three documents |
+| 4q. Quantity (ADR 0119, proposed) | `quantities.json`: `W3CTest403c.jani`, the second encoding of `W3CTest403c.tla`, a JANI model Storm reads, written by `sce-codegen model --jani` from the same tables; its graph held to TLC's and the recorded runs of the module replayed over it (D4.1, D4.2) | the model and its two checks, for one document; no distribution and no property yet (D3) |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), the session store's lease and write rules refining the store's actions of `EventJournal` and its journal's positions refining `EventJournal`'s numbering, horizon and follower, a target's outbound side and the edge's rate limits, by Verus | yes, for six modules |
 
 ## The models
@@ -169,6 +170,18 @@ which a push's plan and the lane `formal-isolation.yml` hand the ranges they jud
 
 After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
 
+The JANI models are `quantities.json`'s, judged by `sce-codegen formal quantities --manifest docs/formal/quantities.json`
+(ADR 0119, D4), with the pinned TLC and the pinned Storm. A JANI model is the same document's model as its TLA+ module, in
+a second encoding: JANI has no sets, sequences or recursion, so the generator evaluates Appendix D's control (the
+configuration, the history, the queues, the phase, what a step told) over the document's tables and leaves the data to
+the model, each step an edge under the conditions that select it. The judge refuses a model that is not what the
+generator writes of its document now, and holds the rest to the module: the state graph Storm builds of it must be the
+graph TLC writes (`-dump dot`) under the configuration's constants, state by state over the module's variables, and
+every recorded run `traces.json` declares of the module must be a path of it, each altered run refused where it was
+altered. Storm is published as a Debian package and no static build: `sce-codegen formal install --tool storm` unpacks
+the pinned package and runs its program with the libraries it holds, and the system libraries it asks for (GMP, CLN,
+GiNaC, GLPK, Z3, libarchive) are the host image's.
+
 The recorded runs are `traces.json`'s, judged by `sce-codegen formal traces --manifest docs/formal/traces.json`
 (ADR 0115, D4 and D8). A run is a file of the run trace format (`tests/forge/conformance/run_trace.schema.json`) a
 lane's trace port wrote: each step the interpreter took (`start`, `eventless`, `internal`, `external`, `stop`) with
@@ -206,6 +219,9 @@ no choice, so the lanes' runs of one document differ only in their lane.
 - **Apalache**, the pinned release, its Z3 and the pinned Java runtime that runs it; and the types a model names for it, read by a
   person: that they give each variable a value of its type and narrow nothing the invariant does not.
 - **Verus**, the pinned release, its Z3 and the Rust release it runs on; that its reading of Rust is the compiler's.
+- **Storm**, the pinned package, its libraries and the system's it is run with; that its reading of JANI is the
+  format's. What it builds is held to TLC's graph, so a quantity it computes (ADR 0119, D3, when built) is of a model
+  whose behaviour TLC judged.
 - **The bounds** of a configuration: an error past them is not found. A theorem for every size (level 3, TLAPS) is what
   would say so; an inductive invariant says it for every length at the size named, and no more.
 - **That the model is of the code.** No model reads the code. A generated model (level 4) is read from the tables the
