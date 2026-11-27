@@ -614,10 +614,8 @@ fn judge_coverage(
         for guarantee in &held {
             match runner.judged(guarantee.judged, &guarantee.operator, &holding)? {
                 Verdict::Violated { .. } => noticed_by.push(guarantee.req.clone()),
-                Verdict::NotJudged { why } => {
-                    if not_judged.is_none() {
-                        not_judged = Some(format!("`{}`: {why}", guarantee.req));
-                    }
+                Verdict::NotJudged { why } if not_judged.is_none() => {
+                    not_judged = Some(format!("`{}`: {why}", guarantee.req));
                 }
                 _ => {}
             }

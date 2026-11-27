@@ -850,6 +850,8 @@ mod tests {
                     outcome: Some("pass".to_string()),
                 },
             ],
+            inputs: Vec::new(),
+            cycle: None,
         }
     }
 
