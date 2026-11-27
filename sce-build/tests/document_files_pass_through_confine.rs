@@ -234,6 +234,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     // `run` copies the operator's modules into its scratch and reads back the graph TLC wrote
     // there.
     ("src/formal/tlc.rs", Why::Operator, &[("run", 2)]),
+    // The one copy of the operator's modules into a run's scratch, for TLC and Apalache alike.
+    ("src/formal/mod.rs", Why::Operator, &[("stage_modules", 1)]),
+    // The configurations the inductive runs of the operator's manifest name, beside it.
+    ("src/formal/inductive.rs", Why::Operator, &[("declared", 2)]),
     // The tools the judge pins (docs/adr/0146, D3), found and admitted by their digest, and the
     // process's own descriptors a jobserver is named by.
     (
@@ -245,6 +249,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("admitted_verus", 2),
             ("install_tlc", 1),
             ("install_verus", 3),
+            ("admitted_apalache", 1),
+            ("admitted_apalache_modules", 1),
+            ("install_apalache", 5),
         ],
     ),
     (
