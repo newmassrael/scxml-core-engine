@@ -189,7 +189,19 @@ Each step lands with a test that fails without it.
    gives a value) and effect (the request signed again at once, or after its backoff) in `https/client_core.rs`, and
    the rules over their numbers proved by Verus (`https/fresh_step.rs`, ADR 0115 D13). deploy.yaml's `fresh_ms`
    reaches the peer table; the server reads it where it serves an open machine's binding, which is ADR 0113 step 5.
-4. The browser shell: `fetch`, the key, the store, the lock; the kit in Node and two engines.
+4. The browser shell: `fetch`, the key, the store, the lock; the kit in Node and two engines. Landed 2026-11-28: the
+   module's half of the shell (`https/browser.rs`, feature `browser`, built as `sce-rust-browser-node`), which steps
+   the core and makes the signature base the page's key signs (`signature::RequestKey`, the native signer's own
+   code); the page's half (`backends/rust/browser-node/js/node.mjs`): `fetch` in mode `same-origin`, the key of D3
+   in IndexedDB, the outbox of D6 in IndexedDB with durability `strict`, the Web Lock and channel of D5, the page's
+   timers; and the kit (`backends/rust/browser-node/kit`) against the binding's own server, under Node and in
+   pinned headless Chrome and Firefox, in the lane `wasm32-scenarios`. Decided in the landing: a browser node's
+   binding is `receipt: durable` and its credential the `key` authenticator's, refused otherwise when the client is
+   made, since what the page accepted is released only by the server's `200` that carries it (D6, ADR 0109 D10);
+   and what of D5 must be one in the store is, in this step, the outbox and its numbers, the store's. The nonce of a
+   join, the incarnation and the number of a request are rows of the store the client's join adds (ADR 0113 step 5),
+   which the core of this step does not make. The engines' versions the kit runs in are the pins of
+   `scripts/install_chrome.sh` and `scripts/install_firefox.sh`, which is where Ed25519 in WebCrypto is measured.
 5. The generated surface, with the test that must not compile.
 
 Steps 3 and 4 need ADR 0113 step 4.
