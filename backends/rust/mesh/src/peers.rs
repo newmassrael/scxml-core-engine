@@ -727,6 +727,7 @@ mod tests {
                         trusted_proxies: &[],
                         sign: None,
                         max_skew_ms: 300_000,
+                        fresh_ms: None,
                         receipt: Receipt::Durable {
                             window: 1024,
                             retry_ms: 1_000,
