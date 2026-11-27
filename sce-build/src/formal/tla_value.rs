@@ -189,7 +189,7 @@ fn tokens(text: &str) -> Result<Vec<Token>, String> {
             (")", Token::Close(")")),
             (",", Token::Comma),
         ];
-        if let Some((word, token)) = fixed.iter().find(|(word, _)| starts(at, *word)) {
+        if let Some((word, token)) = fixed.iter().find(|(word, _)| starts(at, word)) {
             found.push(token.clone());
             at += word.chars().count();
             continue;
