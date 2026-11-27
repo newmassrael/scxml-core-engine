@@ -19,7 +19,7 @@
 //! never a model of part of it (D7). The constructs translated, and the ones
 //! refused, are the closed list [`Construct`] names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::document_tables::{DocumentTables, StateKind, TargetRef, TransitionOrigin};
@@ -125,11 +125,13 @@ pub struct Options<'a> {
     pub w3c_verdict: bool,
 }
 
-/// A document's model: the module's name and its text.
+/// A document's model: the module's name, its text, and the tables and
+/// operators the text gives Appendix D, as values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentModel {
     pub module: String,
     pub text: String,
+    pub tables: ModelTables,
 }
 
 /// A construct with no translation into the model, by kind. The list is
@@ -319,6 +321,7 @@ pub(super) fn write_with_facts(
             DocumentModel {
                 module: module.to_string(),
                 text,
+                tables: std::mem::take(&mut writer.values),
             },
             facts,
         ))
@@ -378,8 +381,8 @@ enum Role {
 }
 
 /// The type of a value of the model's data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Ty {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Ty {
     Int,
     Bool,
     /// An event's name, the sequence of its tokens: what a property compares
@@ -397,6 +400,162 @@ impl Ty {
     }
 }
 
+/// A comparison of two values of one type, or of two integers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Comparison {
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    LessOrEqual,
+    GreaterOrEqual,
+}
+
+impl Comparison {
+    fn tla(self) -> &'static str {
+        match self {
+            Comparison::Equal => "=",
+            Comparison::NotEqual => "#",
+            Comparison::Less => "<",
+            Comparison::Greater => ">",
+            Comparison::LessOrEqual => "<=",
+            Comparison::GreaterOrEqual => ">=",
+        }
+    }
+}
+
+/// An operation of two integers that gives an integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Arithmetic {
+    Add,
+    Subtract,
+    Multiply,
+}
+
+impl Arithmetic {
+    fn tla(self) -> &'static str {
+        match self {
+            Arithmetic::Add => "+",
+            Arithmetic::Subtract => "-",
+            Arithmetic::Multiply => "*",
+        }
+    }
+}
+
+/// An expression translated into the model's domain, the integers and the
+/// booleans and the names of events, over what it reads (`V`) as the scope
+/// of its translation ([`Scope`]) gives it. It is the one translation of an
+/// expression: of a document's condition, `<assign>` and `<data>` value,
+/// which read the document's `<data>` by name ([`DataScope`]); the module
+/// prints that as TLA+, and the document's second encoding
+/// (`super::document_jani`, docs/adr/0119, D2) prints it as JANI. A
+/// property's condition reads an observation, each reading of it written as
+/// TLA+ by its scope (`super::properties`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Term<V = String> {
+    /// A literal integer, at most `LARGEST_INTEGER`.
+    Int(u64),
+    Bool(bool),
+    /// What the expression reads by a name, a call or a member, as its
+    /// scope gives it: of a document, the value of one of its `<data>`.
+    Var(V),
+    Not(Box<Term<V>>),
+    Negate(Box<Term<V>>),
+    Compare(Comparison, Box<Term<V>>, Box<Term<V>>),
+    Arithmetic(Arithmetic, Box<Term<V>>, Box<Term<V>>),
+    And(Box<Term<V>>, Box<Term<V>>),
+    Or(Box<Term<V>>, Box<Term<V>>),
+}
+
+impl<V> Term<V> {
+    /// The term as TLA+, each value it reads written by `var`.
+    fn tla_over(&self, var: &dyn Fn(&V) -> Tla) -> Tla {
+        let compound = |text: String| Tla {
+            text,
+            binding: Binding::Compound,
+        };
+        match self {
+            Term::Int(value) => Tla::atom(value.to_string()),
+            Term::Bool(value) => Tla::atom(String::from(if *value { "TRUE" } else { "FALSE" })),
+            Term::Var(read) => var(read),
+            Term::Not(term) => compound(format!("~{}", term.tla_over(var).operand())),
+            Term::Negate(term) => compound(format!("-{}", term.tla_over(var).operand())),
+            Term::Compare(op, left, right) => compound(format!(
+                "{} {} {}",
+                left.tla_over(var).operand(),
+                op.tla(),
+                right.tla_over(var).operand()
+            )),
+            Term::Arithmetic(op, left, right) => compound(format!(
+                "{} {} {}",
+                left.tla_over(var).operand(),
+                op.tla(),
+                right.tla_over(var).operand()
+            )),
+            Term::And(left, right) => Tla {
+                text: format!(
+                    "{} /\\ {}",
+                    left.tla_over(var).operand(),
+                    right.tla_over(var).operand()
+                ),
+                binding: Binding::Junction,
+            },
+            Term::Or(left, right) => Tla {
+                text: format!(
+                    "{} \\/ {}",
+                    left.tla_over(var).operand(),
+                    right.tla_over(var).operand()
+                ),
+                binding: Binding::Junction,
+            },
+        }
+    }
+}
+
+impl Term {
+    /// The term with each `<data>` it reads replaced by the term `value`
+    /// gives that name, and kept where `value` gives none.
+    pub fn substitute(&self, value: &dyn Fn(&str) -> Option<Term>) -> Term {
+        let inner = |term: &Term| Box::new(term.substitute(value));
+        match self {
+            Term::Int(_) | Term::Bool(_) => self.clone(),
+            Term::Var(name) => value(name).unwrap_or_else(|| self.clone()),
+            Term::Not(term) => Term::Not(inner(term)),
+            Term::Negate(term) => Term::Negate(inner(term)),
+            Term::Compare(op, left, right) => Term::Compare(*op, inner(left), inner(right)),
+            Term::Arithmetic(op, left, right) => Term::Arithmetic(*op, inner(left), inner(right)),
+            Term::And(left, right) => Term::And(inner(left), inner(right)),
+            Term::Or(left, right) => Term::Or(inner(left), inner(right)),
+        }
+    }
+
+    /// The term as TLA+, each `<data>` read as a field of the datamodel named
+    /// `data`.
+    fn tla(&self, data: &str) -> Tla {
+        self.tla_over(&|name: &String| Tla::atom(format!("{data}.{name}")))
+    }
+}
+
+impl Term<Tla> {
+    /// The term as TLA+, each value it reads as its scope wrote it.
+    pub(super) fn written(&self) -> Tla {
+        self.tla_over(&|read: &Tla| read.clone())
+    }
+}
+
+/// A translated expression and its type.
+#[derive(Debug, Clone)]
+pub(super) struct Typed<V = String> {
+    pub(super) term: Term<V>,
+    pub(super) ty: Ty,
+}
+
+impl<V> Typed<V> {
+    pub(super) fn new(term: Term<V>, ty: Ty) -> Self {
+        Self { term, ty }
+    }
+}
+
 /// How a translated expression binds: an atom stands as an operand, a
 /// compound one is parenthesised there, and a junction is parenthesised also
 /// where it stands alone as the value of a `CASE` arm.
@@ -407,19 +566,17 @@ pub(super) enum Binding {
     Junction,
 }
 
-/// A translated expression.
-#[derive(Debug, Clone)]
+/// A term, or a reading of one, as TLA+ text.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Tla {
     pub(super) text: String,
-    pub(super) ty: Ty,
     pub(super) binding: Binding,
 }
 
 impl Tla {
-    pub(super) fn atom(text: String, ty: Ty) -> Self {
+    pub(super) fn atom(text: String) -> Self {
         Self {
             text,
-            ty,
             binding: Binding::Atom,
         }
     }
@@ -439,6 +596,92 @@ impl Tla {
             Binding::Junction => format!("({})", self.text),
         }
     }
+}
+
+/// The kind of a state, as Appendix D's `Kind` names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Kind {
+    /// A `<state>`, atomic or compound.
+    State,
+    Parallel,
+    Final,
+    History,
+}
+
+/// What a row of the transition table is, as Appendix D's constructors name
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RowKind {
+    /// A `<transition>` the document writes (`Transition`,
+    /// `InternalTransition`).
+    Transition,
+    /// The `<initial>` transition of a compound state, or of the document
+    /// (`Initial`).
+    Initial,
+    /// The default transition of a `<history>` (`HistoryDefault`).
+    Default,
+}
+
+/// One row of `DocTransitions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// The source's id; `None` is the `<scxml>` element (`Root`).
+    pub source: Option<String>,
+    pub kind: RowKind,
+    /// The descriptors of its `event` attribute, each as the sequence of
+    /// tokens `NameMatch` reads: `["*"]` for one that matches every event.
+    pub events: Vec<Vec<String>>,
+    /// The key of its condition among the tables' `guards`, or none.
+    pub cond: Option<String>,
+    /// Its targets, ids of states and of `<history>` elements, in order.
+    pub targets: Vec<String>,
+    /// `type="internal"`.
+    pub internal: bool,
+    /// The name of its block among the tables' `blocks`, or none.
+    pub content: Option<String>,
+}
+
+/// What a block of executable content does, as Appendix D's `Effect` holds
+/// it: the datamodel after it and the events it makes, each event the
+/// sequence of its name's tokens.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Effect {
+    /// Each `<assign>` in order: the `<data>` it writes and its value, which
+    /// reads the datamodel the one before it left.
+    pub assigns: Vec<(String, Term)>,
+    /// What each `<raise>` puts on the internal queue, in order.
+    pub raised: Vec<Vec<String>>,
+    /// What each `<send>` without a delay puts on the external queue.
+    pub sent: Vec<Vec<String>>,
+    /// What each `<send>` with a delay makes, due later.
+    pub later: Vec<Vec<String>>,
+}
+
+/// The tables and operators a document's module gives Appendix D's constants,
+/// as values: the module is printed from them, and the document's second
+/// encoding is generated from the same (docs/adr/0119, D2), so the two read
+/// one translation of the document.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModelTables {
+    /// `DocOrder`: every state and `<history>` once, in document order.
+    pub order: Vec<String>,
+    /// `DocKind`, of every id of `order`.
+    pub kinds: BTreeMap<String, Kind>,
+    /// `DocParent`, of every id of `order`: `None` is the `<scxml>` element.
+    pub parents: BTreeMap<String, Option<String>>,
+    /// The `<history>` elements `DocHistoryType` makes deep.
+    pub deep: BTreeSet<String>,
+    /// `DocTransitions`: row `r` of the module is `rows[r - 1]`.
+    pub rows: Vec<Row>,
+    /// `DocOnEntry` and `DocOnExit`: each state with a block, by its name.
+    pub on_entry: BTreeMap<String, String>,
+    pub on_exit: BTreeMap<String, String>,
+    /// `DocData0`: each `<data>`, its type and the value it starts as.
+    pub data: Vec<(String, Ty, Term)>,
+    /// `DocGuard`: each condition by its key.
+    pub guards: BTreeMap<String, Term>,
+    /// `DocExecute`: each block by its name.
+    pub blocks: BTreeMap<String, Effect>,
 }
 
 /// The handlers of a state, `<onentry>` or `<onexit>`.
@@ -475,6 +718,8 @@ struct Writer<'m> {
     /// Whether an expression needs the integers below zero (`Integers`).
     integers: bool,
     role: Role,
+    /// The tables and operators as values, gathered as the text is written.
+    values: ModelTables,
 }
 
 impl<'m> Writer<'m> {
@@ -488,6 +733,7 @@ impl<'m> Writer<'m> {
             blocks: Vec::new(),
             integers: false,
             role,
+            values: ModelTables::default(),
         }
     }
 
@@ -622,10 +868,17 @@ impl<'m> Writer<'m> {
             let Some(expr) = self.parsed(&place, &variable.expr) else {
                 continue;
             };
-            match self.expression(&expr, None) {
+            match self.expression(&expr, false) {
                 Ok(value) => {
-                    fields.push(format!("{} |-> {}", variable.id, value.alone()));
+                    fields.push(format!(
+                        "{} |-> {}",
+                        variable.id,
+                        value.term.tla("data").alone()
+                    ));
                     self.variables.push((variable.id.clone(), value.ty));
+                    self.values
+                        .data
+                        .push((variable.id.clone(), value.ty, value.term));
                 }
                 Err(why) => self.refuse(place, expression_refusal(&variable.expr, why)),
             }
@@ -655,12 +908,12 @@ impl<'m> Writer<'m> {
         }
     }
 
-    /// `expr` over the data named `data` (`None`: a `<data>` value, which
-    /// reads no variable), or why it has no translation.
-    fn expression(&mut self, expr: &Expr, data: Option<&str>) -> Result<Tla, String> {
+    /// `expr` translated, reading the document's `<data>` where `reads_data`
+    /// (a `<data>` value reads none), or why it has no translation.
+    fn expression(&mut self, expr: &Expr, reads_data: bool) -> Result<Typed, String> {
         let mut scope = DataScope {
             variables: &self.variables,
-            data,
+            reads_data,
             integers: false,
         };
         let translated = translate(expr, &mut scope);
@@ -669,19 +922,23 @@ impl<'m> Writer<'m> {
     }
 
     /// The key of `cond` in `DocGuard`, its translation recorded once, or
-    /// `NoCond` for a transition with none.
-    fn condition(&mut self, place: &str, cond: &str) -> String {
+    /// none for a transition with none (`NoCond`).
+    fn condition(&mut self, place: &str, cond: &str) -> Option<String> {
         let key = cond.split_whitespace().collect::<Vec<_>>().join(" ");
         if key.is_empty() {
-            return "NoCond".to_string();
+            return None;
         }
-        let quoted = self.string(place, &key);
+        self.string(place, &key);
         if self.guards.iter().any(|(known, _)| *known == key) {
-            return quoted;
+            return Some(key);
         }
         if let Some(expr) = self.parsed(place, cond) {
-            match self.expression(&expr, Some("data")) {
-                Ok(guard) if guard.ty == Ty::Bool => self.guards.push((key, guard.alone())),
+            match self.expression(&expr, true) {
+                Ok(guard) if guard.ty == Ty::Bool => {
+                    self.guards
+                        .push((key.clone(), guard.term.tla("data").alone()));
+                    self.values.guards.insert(key.clone(), guard.term);
+                }
                 Ok(guard) => self.refuse(
                     place,
                     expression_refusal(cond, format!("a condition that is {}", guard.ty.word())),
@@ -689,40 +946,47 @@ impl<'m> Writer<'m> {
                 Err(why) => self.refuse(place, expression_refusal(cond, why)),
             }
         }
-        quoted
+        Some(key)
     }
 
-    /// The name of the block `actions`, its `Effect` recorded, or
-    /// `NoContent` for none.
-    fn block(&mut self, place: &str, name: String, actions: &[&Action]) -> String {
+    /// The name of the block `actions`, its `Effect` recorded, or none for
+    /// no actions (`NoContent`).
+    fn block(&mut self, place: &str, name: String, actions: &[&Action]) -> Option<String> {
         if actions.is_empty() {
-            return "NoContent".to_string();
+            return None;
         }
-        let quoted = self.string(place, &name);
-        let effect = self.effect(place, actions);
-        self.blocks.push((name, effect));
-        quoted
+        self.string(place, &name);
+        let (effect, value) = self.effect(place, actions);
+        self.blocks.push((name.clone(), effect));
+        self.values.blocks.entry(name.clone()).or_insert(value);
+        Some(name)
     }
 
     /// What `actions` do, in order, as an `Effect` of `data` and `event`:
     /// each `<assign>` a datamodel after the one before, and the events each
-    /// `<raise>` and `<send>` makes, in the order made.
-    fn effect(&mut self, place: &str, actions: &[&Action]) -> String {
+    /// `<raise>` and `<send>` makes, in the order made. The text of the
+    /// module's arm, and the same as a value.
+    fn effect(&mut self, place: &str, actions: &[&Action]) -> (String, Effect) {
         let mut steps: Vec<String> = Vec::new();
         let mut current = "data".to_string();
         let mut raised: Vec<String> = Vec::new();
         let mut sent: Vec<String> = Vec::new();
         let mut later: Vec<String> = Vec::new();
+        let mut made = Effect::default();
         for action in actions {
             match action.action_type.as_str() {
                 "assign" => {
-                    if let Some(step) = self.assignment(place, action, &current) {
+                    if let Some((step, assigned)) = self.assignment(place, action, &current) {
                         let name = format!("d{}", steps.len() + 1);
                         steps.push(format!("{name} == {step}"));
                         current = name;
+                        made.assigns.push(assigned);
                     }
                 }
-                "raise" => raised.push(self.event_name(place, &action.event)),
+                "raise" => {
+                    raised.push(self.event_name(place, &action.event));
+                    made.raised.push(event_tokens(&action.event));
+                }
                 "send" if self.role == Role::Observer => {
                     self.refuse(place, Construct::ObserverSend);
                 }
@@ -730,8 +994,10 @@ impl<'m> Writer<'m> {
                     if let Some((event, delayed)) = self.send(place, action) {
                         if delayed {
                             later.push(event);
+                            made.later.push(event_tokens(&action.event));
                         } else {
                             sent.push(event);
+                            made.sent.push(event_tokens(&action.event));
                         }
                     }
                 }
@@ -739,7 +1005,7 @@ impl<'m> Writer<'m> {
             }
         }
         let sequence = |events: &[String]| format!("<<{}>>", events.join(", "));
-        match steps.as_slice() {
+        let text = match steps.as_slice() {
             [] => format!(
                 "Effect(data, {}, {}, {})",
                 sequence(&raised),
@@ -764,11 +1030,18 @@ impl<'m> Writer<'m> {
                 sequence(&sent),
                 sequence(&later)
             ),
-        }
+        };
+        (text, made)
     }
 
-    /// One `<assign>` as the datamodel after it, `[data EXCEPT !.v = e]`.
-    fn assignment(&mut self, place: &str, action: &Action, data: &str) -> Option<String> {
+    /// One `<assign>` as the datamodel after it, `[data EXCEPT !.v = e]`,
+    /// and as the `<data>` it writes with its value.
+    fn assignment(
+        &mut self,
+        place: &str,
+        action: &Action,
+        data: &str,
+    ) -> Option<(String, (String, Term))> {
         let location = action.location.trim();
         let Some(ty) = self.type_of(location) else {
             self.refuse(place, Construct::AssignLocation(location.to_string()));
@@ -782,10 +1055,14 @@ impl<'m> Writer<'m> {
             return None;
         }
         let expr = self.parsed(place, &action.expr)?;
-        match self.expression(&expr, Some(data)) {
-            Ok(value) if value.ty == ty => {
-                Some(format!("[{data} EXCEPT !.{location} = {}]", value.alone()))
-            }
+        match self.expression(&expr, true) {
+            Ok(value) if value.ty == ty => Some((
+                format!(
+                    "[{data} EXCEPT !.{location} = {}]",
+                    value.term.tla(data).alone()
+                ),
+                (location.to_string(), value.term),
+            )),
             Ok(value) => {
                 self.refuse(
                     place,
@@ -1009,9 +1286,20 @@ impl<'m> Writer<'m> {
     /// by row, its handlers, `data0` its datamodel when it starts, and its
     /// conditions and blocks. A module of the document and a module that
     /// carries a second document beside it (an observer, `super::properties`)
-    /// write the same tables under two prefixes.
+    /// write the same tables under two prefixes. Each table is gathered as a
+    /// value too ([`ModelTables`]) as it is written.
     fn tables(&mut self, prefix: &str, data0: &str) -> String {
         let order = self.document_order();
+        self.values.kinds = self.kind_values(&order);
+        self.values.parents = self.parent_values(&order);
+        self.values.deep = self
+            .tables
+            .histories
+            .iter()
+            .filter(|row| row.deep)
+            .map(|row| row.id.clone())
+            .collect();
+        self.values.order = order.clone();
         let quoted_order: Vec<String> = order.iter().map(|id| tla_string(id)).collect();
         let kinds = self.kinds(&order);
         let parents = self.parents(&order);
@@ -1141,6 +1429,48 @@ impl<'m> Writer<'m> {
         text
     }
 
+    /// The kind of every state and `<history>` of `order`.
+    fn kind_values(&self, order: &[String]) -> BTreeMap<String, Kind> {
+        order
+            .iter()
+            .map(|id| {
+                let kind = if self.model.history_states.contains_key(id) {
+                    Kind::History
+                } else {
+                    match self
+                        .tables
+                        .state_id(id)
+                        .map(|number| self.tables.states[usize::from(number)].kind)
+                    {
+                        Some(StateKind::Parallel) => Kind::Parallel,
+                        Some(StateKind::Final) => Kind::Final,
+                        Some(StateKind::Atomic | StateKind::Compound) | None => Kind::State,
+                    }
+                };
+                (id.clone(), kind)
+            })
+            .collect()
+    }
+
+    /// The parent of every state and `<history>` of `order`: none for the
+    /// `<scxml>` element.
+    fn parent_values(&self, order: &[String]) -> BTreeMap<String, Option<String>> {
+        order
+            .iter()
+            .map(|id| {
+                let parent = match self.model.history_states.get(id) {
+                    Some(info) => Some(info.parent.clone()),
+                    None => self
+                        .model
+                        .states
+                        .get(id)
+                        .and_then(|state| state.parent.clone()),
+                };
+                (id.clone(), parent)
+            })
+            .collect()
+    }
+
     fn kinds(&self, order: &[String]) -> Vec<(String, String)> {
         order
             .iter()
@@ -1202,8 +1532,14 @@ impl<'m> Writer<'m> {
                 continue;
             }
             let place = format!("the <{kind}> of state `{id}`");
-            let name = self.block(&place, format!("{kind} {id}"), &actions);
-            found.push((id.clone(), name));
+            if let Some(name) = self.block(&place, format!("{kind} {id}"), &actions) {
+                found.push((id.clone(), tla_string(&name)));
+                let handled = match handler {
+                    Handler::Entry => &mut self.values.on_entry,
+                    Handler::Exit => &mut self.values.on_exit,
+                };
+                handled.insert(id.clone(), name);
+            }
         }
         found
     }
@@ -1217,24 +1553,39 @@ impl<'m> Writer<'m> {
                 .into_iter()
                 .map(|record| ((record.from, record.index), record.node_path))
                 .collect();
-        let target_names = |row: &crate::document_tables::TransitionRow| -> String {
-            let targets: Vec<String> = tables.targets[row.targets.range()]
+        let target_ids = |row: &crate::document_tables::TransitionRow| -> Vec<String> {
+            tables.targets[row.targets.range()]
                 .iter()
                 .map(|target| match target {
-                    TargetRef::State(state) => tla_string(&tables.states[usize::from(*state)].id),
+                    TargetRef::State(state) => tables.states[usize::from(*state)].id.clone(),
                     TargetRef::History(history) => {
-                        tla_string(&tables.histories[usize::from(*history)].id)
+                        tables.histories[usize::from(*history)].id.clone()
                     }
                 })
-                .collect();
-            format!("<<{}>>", targets.join(", "))
+                .collect()
+        };
+        let content_text = |content: &Option<String>| {
+            content
+                .as_deref()
+                .map_or("NoContent".to_string(), tla_string)
         };
         let mut rows = Vec::new();
         for row in &tables.transitions {
-            let targets = target_names(row);
+            let target_list = target_ids(row);
+            let quoted: Vec<String> = target_list.iter().map(|id| tla_string(id)).collect();
+            let targets = format!("<<{}>>", quoted.join(", "));
             let source = row
                 .source
                 .map(|state| tables.states[usize::from(state)].id.clone());
+            let value = |source: Option<String>, kind: RowKind, content: Option<String>| Row {
+                source,
+                kind,
+                events: Vec::new(),
+                cond: None,
+                targets: target_list.clone(),
+                internal: false,
+                content,
+            };
             match (row.origin, source) {
                 (TransitionOrigin::Written { index_in_source }, Some(id)) => {
                     let index = usize::from(index_in_source);
@@ -1258,9 +1609,18 @@ impl<'m> Writer<'m> {
                         "Transition"
                     };
                     rows.push(format!(
-                        "{constructor}({}, {events}, {cond}, {targets}, {content})",
-                        tla_string(&id)
+                        "{constructor}({}, {events}, {}, {targets}, {})",
+                        tla_string(&id),
+                        cond.as_deref().map_or("NoCond".to_string(), tla_string),
+                        content_text(&content)
                     ));
+                    let written = Row {
+                        events: descriptor_tokens(&transition.event),
+                        cond,
+                        internal: row.internal,
+                        ..value(Some(id), RowKind::Transition, content)
+                    };
+                    self.values.rows.push(written);
                 }
                 (TransitionOrigin::Initial, Some(id)) => {
                     let place = format!("the <initial> of state `{id}`");
@@ -1271,9 +1631,13 @@ impl<'m> Writer<'m> {
                         .unwrap_or_default();
                     let content = self.block(&place, format!("initial {id}"), &actions);
                     rows.push(format!(
-                        "Initial({}, {targets}, {content})",
-                        tla_string(&id)
+                        "Initial({}, {targets}, {})",
+                        tla_string(&id),
+                        content_text(&content)
                     ));
+                    self.values
+                        .rows
+                        .push(value(Some(id), RowKind::Initial, content));
                 }
                 (TransitionOrigin::HistoryDefault(history), _) => {
                     let id = tables.histories[usize::from(history)].id.clone();
@@ -1285,12 +1649,17 @@ impl<'m> Writer<'m> {
                         .unwrap_or_default();
                     let content = self.block(&place, format!("default {id}"), &actions);
                     rows.push(format!(
-                        "HistoryDefault({}, {targets}, {content})",
-                        tla_string(&id)
+                        "HistoryDefault({}, {targets}, {})",
+                        tla_string(&id),
+                        content_text(&content)
                     ));
+                    self.values
+                        .rows
+                        .push(value(Some(id), RowKind::Default, content));
                 }
                 (TransitionOrigin::Document, _) => {
                     rows.push(format!("Initial(Root, {targets}, NoContent)"));
+                    self.values.rows.push(value(None, RowKind::Initial, None));
                 }
                 (TransitionOrigin::Written { .. } | TransitionOrigin::Initial, None) => {}
             }
@@ -1305,23 +1674,29 @@ impl<'m> Writer<'m> {
 /// ([`DataScope`]); a property's conditions read an observation
 /// (`super::properties`).
 pub(super) trait Scope {
+    /// What a term of this scope reads ([`Term::Var`]).
+    type Var;
     /// The identifier `name`.
-    fn ident(&mut self, name: &str) -> Result<Tla, String>;
+    fn ident(&mut self, name: &str) -> Result<Typed<Self::Var>, String>;
     /// The call `callee(args)`.
-    fn call(&mut self, callee: &Expr, args: &[Expr]) -> Result<Tla, String>;
+    fn call(&mut self, callee: &Expr, args: &[Expr]) -> Result<Typed<Self::Var>, String>;
     /// The member `object.property`, or `object[index]` with `property`
     /// `None` where the index is computed.
-    fn member(&mut self, object: &Expr, property: Option<&str>) -> Result<Tla, String>;
+    fn member(&mut self, object: &Expr, property: Option<&str>)
+        -> Result<Typed<Self::Var>, String>;
     /// The string literal `text`.
-    fn string(&mut self, text: &str) -> Result<Tla, String>;
+    fn string(&mut self, text: &str) -> Result<Typed<Self::Var>, String>;
     /// The translation needs the integers below zero (`Integers`).
     fn needs_integers(&mut self);
 }
 
-/// `expr` as TLA+ over `scope`, or why it has no translation: the integers
+/// `expr` as a term over `scope`, or why it has no translation: the integers
 /// and the booleans with their operators, each name, call, member and string
 /// as `scope` reads it.
-pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, String> {
+pub(super) fn translate<S: Scope + ?Sized>(
+    expr: &Expr,
+    scope: &mut S,
+) -> Result<Typed<S::Var>, String> {
     match &expr.kind {
         ExprKind::Number(spelling) => {
             let decimal = !spelling.is_empty()
@@ -1329,33 +1704,24 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
                 && (spelling == "0" || !spelling.starts_with('0'));
             match spelling.parse::<u64>() {
                 Ok(value) if decimal && value <= LARGEST_INTEGER => {
-                    Ok(Tla::atom(spelling.clone(), Ty::Int))
+                    Ok(Typed::new(Term::Int(value), Ty::Int))
                 }
                 _ => Err(format!(
                     "`{spelling}` is no integer written in decimal up to {LARGEST_INTEGER}"
                 )),
             }
         }
-        ExprKind::Bool(value) => Ok(Tla::atom(
-            String::from(if *value { "TRUE" } else { "FALSE" }),
-            Ty::Bool,
-        )),
+        ExprKind::Bool(value) => Ok(Typed::new(Term::Bool(*value), Ty::Bool)),
         ExprKind::Ident(name) => scope.ident(name),
         ExprKind::Unary { op, operand } => {
             let inner = translate(operand, scope)?;
             match (op, inner.ty) {
-                (UnaryOp::Not, Ty::Bool) => Ok(Tla {
-                    text: format!("~{}", inner.operand()),
-                    ty: Ty::Bool,
-                    binding: Binding::Compound,
-                }),
+                (UnaryOp::Not, Ty::Bool) => {
+                    Ok(Typed::new(Term::Not(Box::new(inner.term)), Ty::Bool))
+                }
                 (UnaryOp::Neg, Ty::Int) => {
                     scope.needs_integers();
-                    Ok(Tla {
-                        text: format!("-{}", inner.operand()),
-                        ty: Ty::Int,
-                        binding: Binding::Compound,
-                    })
+                    Ok(Typed::new(Term::Negate(Box::new(inner.term)), Ty::Int))
                 }
                 (UnaryOp::Not, ty) | (UnaryOp::Neg, ty) => Err(format!(
                     "`{}` is applied to {}",
@@ -1369,16 +1735,20 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
             }
         }
         ExprKind::Binary { op, left, right } => {
-            let tla_op = match op {
-                BinOp::StrictEq | BinOp::LooseEq => "=",
-                BinOp::StrictNeq | BinOp::LooseNeq => "#",
-                BinOp::Lt => "<",
-                BinOp::Gt => ">",
-                BinOp::LtEq => "<=",
-                BinOp::GtEq => ">=",
-                BinOp::Add => "+",
-                BinOp::Sub => "-",
-                BinOp::Mul => "*",
+            enum Operator {
+                Compare(Comparison),
+                Arithmetic(Arithmetic),
+            }
+            let operator = match op {
+                BinOp::StrictEq | BinOp::LooseEq => Operator::Compare(Comparison::Equal),
+                BinOp::StrictNeq | BinOp::LooseNeq => Operator::Compare(Comparison::NotEqual),
+                BinOp::Lt => Operator::Compare(Comparison::Less),
+                BinOp::Gt => Operator::Compare(Comparison::Greater),
+                BinOp::LtEq => Operator::Compare(Comparison::LessOrEqual),
+                BinOp::GtEq => Operator::Compare(Comparison::GreaterOrEqual),
+                BinOp::Add => Operator::Arithmetic(Arithmetic::Add),
+                BinOp::Sub => Operator::Arithmetic(Arithmetic::Subtract),
+                BinOp::Mul => Operator::Arithmetic(Arithmetic::Multiply),
                 BinOp::Div => return Err("`/`, which leaves the integers".to_string()),
                 BinOp::Mod => {
                     return Err("`%`, whose sign TLA+ and ECMAScript take differently".to_string())
@@ -1397,9 +1767,13 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
             };
             let l = translate(left, scope)?;
             let r = translate(right, scope)?;
+            let spelling = match &operator {
+                Operator::Compare(op) => op.tla(),
+                Operator::Arithmetic(op) => op.tla(),
+            };
             let equality = matches!(
-                op,
-                BinOp::StrictEq | BinOp::LooseEq | BinOp::StrictNeq | BinOp::LooseNeq
+                operator,
+                Operator::Compare(Comparison::Equal | Comparison::NotEqual)
             );
             if equality {
                 if l.ty != r.ty {
@@ -1411,16 +1785,17 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
                 }
             } else if l.ty != Ty::Int || r.ty != Ty::Int {
                 let other = if l.ty == Ty::Int { r.ty } else { l.ty };
-                return Err(format!("`{tla_op}` is applied to {}", other.word()));
+                return Err(format!("`{spelling}` is applied to {}", other.word()));
             }
-            if matches!(op, BinOp::Sub) {
-                scope.needs_integers();
-            }
-            let arithmetic = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul);
-            Ok(Tla {
-                text: format!("{} {tla_op} {}", l.operand(), r.operand()),
-                ty: if arithmetic { Ty::Int } else { Ty::Bool },
-                binding: Binding::Compound,
+            let (left, right) = (Box::new(l.term), Box::new(r.term));
+            Ok(match operator {
+                Operator::Compare(op) => Typed::new(Term::Compare(op, left, right), Ty::Bool),
+                Operator::Arithmetic(op) => {
+                    if op == Arithmetic::Subtract {
+                        scope.needs_integers();
+                    }
+                    Typed::new(Term::Arithmetic(op, left, right), Ty::Int)
+                }
             })
         }
         ExprKind::Logical { op, left, right } => {
@@ -1433,15 +1808,14 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
                         .to_string(),
                 );
             }
-            let junction = match op {
-                LogicalOp::And => "/\\",
-                LogicalOp::Or => "\\/",
-            };
-            Ok(Tla {
-                text: format!("{} {junction} {}", l.operand(), r.operand()),
-                ty: Ty::Bool,
-                binding: Binding::Junction,
-            })
+            let (left, right) = (Box::new(l.term), Box::new(r.term));
+            Ok(Typed::new(
+                match op {
+                    LogicalOp::And => Term::And(left, right),
+                    LogicalOp::Or => Term::Or(left, right),
+                },
+                Ty::Bool,
+            ))
         }
         ExprKind::Str(text) => scope.string(text),
         ExprKind::Nullish => {
@@ -1467,44 +1841,63 @@ pub(super) fn translate(expr: &Expr, scope: &mut dyn Scope) -> Result<Tla, Strin
 }
 
 /// A document's data, as its conditions and its blocks read them: each
-/// `<data>` a field of the record named `data`, and nothing else.
+/// `<data>` by its name, and nothing else.
 struct DataScope<'v> {
     /// Each `<data>`'s id and type, in document order.
     variables: &'v [(String, Ty)],
-    /// The record a name is read from; `None` for a `<data>` value, which
-    /// reads no variable.
-    data: Option<&'v str>,
+    /// Whether a name is read; a `<data>` value reads none.
+    reads_data: bool,
     integers: bool,
 }
 
 impl Scope for DataScope<'_> {
-    fn ident(&mut self, name: &str) -> Result<Tla, String> {
-        let Some(data) = self.data else {
+    type Var = String;
+
+    fn ident(&mut self, name: &str) -> Result<Typed, String> {
+        if !self.reads_data {
             return Err(format!(
                 "reads `{name}`, and a <data> value is written with literals alone"
             ));
-        };
+        }
         match self.variables.iter().find(|(id, _)| id == name) {
-            Some((_, ty)) => Ok(Tla::atom(format!("{data}.{name}"), *ty)),
+            Some((_, ty)) => Ok(Typed::new(Term::Var(name.to_string()), *ty)),
             None => Err(format!("`{name}` is no <data> of the document")),
         }
     }
 
-    fn call(&mut self, _callee: &Expr, _args: &[Expr]) -> Result<Tla, String> {
+    fn call(&mut self, _callee: &Expr, _args: &[Expr]) -> Result<Typed, String> {
         Err("a call, In() among them, which has no translation".to_string())
     }
 
-    fn member(&mut self, _object: &Expr, _property: Option<&str>) -> Result<Tla, String> {
+    fn member(&mut self, _object: &Expr, _property: Option<&str>) -> Result<Typed, String> {
         Err("a member of an object, _event among them, which the model does not hold".to_string())
     }
 
-    fn string(&mut self, _text: &str) -> Result<Tla, String> {
+    fn string(&mut self, _text: &str) -> Result<Typed, String> {
         Err("a string, which the model's data do not hold".to_string())
     }
 
     fn needs_integers(&mut self) {
         self.integers = true;
     }
+}
+
+/// An event's name as the sequence of its tokens, as Appendix D holds it.
+fn event_tokens(name: &str) -> Vec<String> {
+    name.split('.').map(str::to_string).collect()
+}
+
+/// The descriptors of a transition's `event` attribute as `NameMatch` reads
+/// them, each a sequence of tokens: `["*"]` for one that matches every event,
+/// else the tokens of its prefix, as [`EventDescriptor`] reduces it.
+fn descriptor_tokens(attribute: &str) -> Vec<Vec<String>> {
+    attribute
+        .split_whitespace()
+        .map(|token| match EventDescriptor::parse(token) {
+            EventDescriptor::Any => vec!["*".to_string()],
+            EventDescriptor::Prefix(prefix) => event_tokens(prefix),
+        })
+        .collect()
 }
 
 /// Why a state id has no place in the model, if it has none.
@@ -2049,5 +2442,83 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("\nDocData0 == "), "{text}");
+    }
+
+    /// Turns red if the tables given as values leave the module's: a row
+    /// numbered otherwise, a condition or a block keyed otherwise, or a term
+    /// other than the one the module prints.
+    #[test]
+    fn the_tables_as_values_are_the_ones_the_module_is_printed_from() {
+        let written = write(&model_of(HISTORY), "doc.scxml", Options::default()).expect("a model");
+        let tables = &written.tables;
+        assert_eq!(
+            tables.order,
+            ["s0", "s01", "s011", "s012", "h", "s1", "pass", "fail"]
+        );
+        assert_eq!(tables.kinds["h"], Kind::History);
+        assert_eq!(tables.kinds["pass"], Kind::Final);
+        assert_eq!(tables.kinds["s01"], Kind::State);
+        assert_eq!(tables.parents["s011"].as_deref(), Some("s01"));
+        assert_eq!(tables.parents["h"].as_deref(), Some("s0"));
+        assert_eq!(tables.parents["s0"], None);
+        assert!(tables.deep.contains("h"));
+        assert_eq!(tables.rows.len(), 7, "{:?}", tables.rows);
+        let first = &tables.rows[0];
+        assert_eq!(first.source.as_deref(), Some("s0"));
+        assert_eq!(first.kind, RowKind::Transition);
+        assert_eq!(
+            first.events,
+            vec![vec!["entering".to_string(), "s012".to_string()]]
+        );
+        assert_eq!(first.cond.as_deref(), Some("Var1 == 1"));
+        assert_eq!(first.targets, ["s1"]);
+        assert_eq!(first.content.as_deref(), Some("states.s0.transitions[0]"));
+        assert_eq!(tables.rows[2].targets, ["h"]);
+        assert_eq!(tables.rows[3].kind, RowKind::Initial);
+        assert_eq!(tables.rows[5].kind, RowKind::Default);
+        assert_eq!(tables.rows[6].source, None);
+        assert_eq!(tables.rows[6].targets, ["s012"]);
+        let var1 = || Box::new(Term::Var("Var1".to_string()));
+        assert_eq!(
+            tables.guards["Var1 == 1"],
+            Term::Compare(Comparison::Equal, var1(), Box::new(Term::Int(1)))
+        );
+        assert_eq!(
+            tables.blocks["onentry s0"].assigns,
+            vec![(
+                "Var1".to_string(),
+                Term::Arithmetic(Arithmetic::Add, var1(), Box::new(Term::Int(1)))
+            )]
+        );
+        assert_eq!(
+            tables.blocks["states.s0.transitions[0]"].later,
+            vec![vec!["timeout".to_string()]]
+        );
+        assert_eq!(
+            tables.blocks["onentry s011"].raised,
+            vec![vec!["entering".to_string(), "s011".to_string()]]
+        );
+        assert_eq!(tables.on_entry["s0"], "onentry s0");
+        assert!(tables.on_exit.is_empty());
+        assert_eq!(
+            tables.data,
+            vec![("Var1".to_string(), Ty::Int, Term::Int(0))]
+        );
+    }
+
+    /// Turns red if a substitution misses a name it is given, or replaces one
+    /// it is not.
+    #[test]
+    fn a_substitution_replaces_each_name_it_is_given() {
+        let n = || Box::new(Term::Var("n".to_string()));
+        let term = Term::And(
+            Box::new(Term::Compare(Comparison::Less, n(), Box::new(Term::Int(0)))),
+            Box::new(Term::Not(Box::new(Term::Var("ok".to_string())))),
+        );
+        let replaced = term.substitute(&|name| {
+            (name == "n")
+                .then(|| Term::Arithmetic(Arithmetic::Subtract, n(), Box::new(Term::Int(1))))
+        });
+        assert_eq!(replaced.tla("d").alone(), "(((d.n - 1) < 0) /\\ (~d.ok))");
     }
 }

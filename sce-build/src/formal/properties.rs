@@ -48,7 +48,8 @@ use crate::forge::model::{ExplorationModel, ForgeDocument, PropertiesModel, Prop
 use crate::model::SCXMLModel;
 
 use super::document_model::{
-    self, tla_string, Binding, DocumentModel, Facts, Scope, Tla, Ty, DOCUMENT_PREFIX, SEMANTICS,
+    self, tla_string, Binding, DocumentModel, Facts, Scope, Term, Tla, Ty, Typed, DOCUMENT_PREFIX,
+    SEMANTICS,
 };
 use super::FormalError;
 
@@ -1045,13 +1046,13 @@ impl Writer {
     }
 
     /// A condition's translation as a boolean, or `None` with why recorded.
-    fn boolean(&mut self, place: &str, translated: Result<Tla, String>) -> Option<String> {
+    fn boolean(&mut self, place: &str, translated: Result<Typed<Tla>, String>) -> Option<String> {
         match translated {
             // Unbracketed: every formula brackets each condition it holds.
-            Ok(tla) if tla.ty == Ty::Bool => Some(tla.text),
-            Ok(tla) => {
+            Ok(typed) if typed.ty == Ty::Bool => Some(typed.term.written().text),
+            Ok(typed) => {
                 self.refusals
-                    .push(format!("{place}: a condition that is {}", tla.ty.word()));
+                    .push(format!("{place}: a condition that is {}", typed.ty.word()));
                 None
             }
             Err(why) => {
@@ -1132,15 +1133,22 @@ impl<'a> PropertyScope<'a> {
     }
 }
 
+/// What a property's condition reads, written as TLA+, and its type.
+fn reads(tla: Tla, ty: Ty) -> Typed<Tla> {
+    Typed::new(Term::Var(tla), ty)
+}
+
 impl Scope for PropertyScope<'_> {
-    fn ident(&mut self, name: &str) -> Result<Tla, String> {
+    type Var = Tla;
+
+    fn ident(&mut self, name: &str) -> Result<Typed<Tla>, String> {
         if self.of_the_machine(format!("`{name}`")) {
             return Err(OF_THE_MACHINE.to_string());
         }
         let (observation, _) = self.records();
         match self.world.facts.data.iter().find(|(id, _)| id == name) {
             Some((_, ty)) if self.world.readable.contains(name) => {
-                Ok(Tla::atom(format!("{observation}.data.{name}"), *ty))
+                Ok(reads(Tla::atom(format!("{observation}.data.{name}")), *ty))
             }
             Some(_) => Err(format!(
                 "`{name}` is a <data> the machine does not publish, and a property reads \
@@ -1150,7 +1158,7 @@ impl Scope for PropertyScope<'_> {
         }
     }
 
-    fn call(&mut self, callee: &Expr, args: &[Expr]) -> Result<Tla, String> {
+    fn call(&mut self, callee: &Expr, args: &[Expr]) -> Result<Typed<Tla>, String> {
         match &callee.kind {
             ExprKind::Ident(name) if name == "In" => {
                 let state = Self::state_argument(args)?;
@@ -1161,11 +1169,13 @@ impl Scope for PropertyScope<'_> {
                     return Err(format!("`{state}` is no state of the machine"));
                 }
                 let (observation, _) = self.records();
-                Ok(Tla {
-                    text: format!("{} \\in {observation}.conf", tla_string(state)),
-                    ty: Ty::Bool,
-                    binding: Binding::Compound,
-                })
+                Ok(reads(
+                    Tla {
+                        text: format!("{} \\in {observation}.conf", tla_string(state)),
+                        binding: Binding::Compound,
+                    },
+                    Ty::Bool,
+                ))
             }
             ExprKind::Ident(name) if name == "previous" => {
                 let Reading::Observation {
@@ -1217,17 +1227,19 @@ impl Scope for PropertyScope<'_> {
                     return Err(format!("`{state}` is no state of the observer `{id}`"));
                 }
                 let (_, observers) = self.records();
-                Ok(Tla {
-                    text: format!("{} \\in {observers}[{number}].conf", tla_string(state)),
-                    ty: Ty::Bool,
-                    binding: Binding::Compound,
-                })
+                Ok(reads(
+                    Tla {
+                        text: format!("{} \\in {observers}[{number}].conf", tla_string(state)),
+                        binding: Binding::Compound,
+                    },
+                    Ty::Bool,
+                ))
             }
             _ => Err("a call other than In() and previous(), which has no translation".to_string()),
         }
     }
 
-    fn member(&mut self, object: &Expr, property: Option<&str>) -> Result<Tla, String> {
+    fn member(&mut self, object: &Expr, property: Option<&str>) -> Result<Typed<Tla>, String> {
         let ExprKind::Ident(name) = &object.kind else {
             let of_event = matches!(
                 &object.kind,
@@ -1243,10 +1255,10 @@ impl Scope for PropertyScope<'_> {
         };
         match (name.as_str(), property) {
             ("_event", Some("name")) => match self.reading {
-                Reading::Arrival => Ok(Tla::atom("e".to_string(), Ty::Name)),
+                Reading::Arrival => Ok(reads(Tla::atom("e".to_string()), Ty::Name)),
                 Reading::Observation { .. } => {
                     let (observation, _) = self.records();
-                    Ok(Tla::atom(format!("{observation}.event"), Ty::Name))
+                    Ok(reads(Tla::atom(format!("{observation}.event")), Ty::Name))
                 }
             },
             ("_event", _) => Err(
@@ -1264,8 +1276,8 @@ impl Scope for PropertyScope<'_> {
                     return Err(format!("`{field}` is no <data> of the observer `{id}`"));
                 };
                 let (_, observers) = self.records();
-                Ok(Tla::atom(
-                    format!("{observers}[{number}].data.{field}"),
+                Ok(reads(
+                    Tla::atom(format!("{observers}[{number}].data.{field}")),
                     *ty,
                 ))
             }
@@ -1273,14 +1285,14 @@ impl Scope for PropertyScope<'_> {
         }
     }
 
-    fn string(&mut self, text: &str) -> Result<Tla, String> {
+    fn string(&mut self, text: &str) -> Result<Typed<Tla>, String> {
         if text.split('.').any(str::is_empty) || !printable(text) || text.contains(' ') {
             return Err(format!(
                 "'{text}' is no event name: tokens of printable characters separated by single \
                  dots"
             ));
         }
-        Ok(Tla::atom(event_name(text), Ty::Name))
+        Ok(reads(Tla::atom(event_name(text)), Ty::Name))
     }
 
     fn needs_integers(&mut self) {
