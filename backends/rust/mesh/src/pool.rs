@@ -143,7 +143,8 @@
 //! it holds and when its session may leave the table, the lease the process
 //! holds on the key and when it comes due) is the module `slot`'s, a core
 //! proved by Verus (docs/adr/0115, D13). What is left here is who holds which
-//! lock and when.
+//! lock and when, judged by the model `SessionPool`
+//! (docs/formal/SessionPool.tla).
 
 mod slot;
 

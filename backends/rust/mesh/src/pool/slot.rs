@@ -15,9 +15,11 @@
 //! a lease keeps the fence it was granted, a lost lease is neither written under nor renewed, and
 //! a release gives up only the lease held; and a renewal comes due when the pool wakes for it.
 //!
-//! Who holds which lock and when is the pool's (`crate::pool`): a post and a removal both hold
-//! the table, so no input reaches an inbox that left it; and a session leaves the table only in a
-//! thread that holds its slot's `live` lock, so never while another serves it.
+//! Who holds which lock and when is the pool's (`crate::pool`), judged by the model
+//! `SessionPool` (docs/formal/SessionPool.tla): a post and a removal both hold the table, so no
+//! input reaches an inbox that left it; a session leaves the table only in a thread that holds its
+//! slot's `live` lock, so never while another serves it; and the stop is set and read with the
+//! table held, so no admit lands after a stop drained the inboxes.
 //!
 //! Taken as given, and judged elsewhere: what the shell posts and takes is what it tells the
 //! [`Door`] (the inbox's queue and its door move together, in `Pool`'s one place for each); an

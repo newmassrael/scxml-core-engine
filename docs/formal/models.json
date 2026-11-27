@@ -1318,6 +1318,73 @@
           "why": "a horizon that stops gives a reader nothing false, and no more"
         }
       ]
+    },
+    {
+      "module": "SessionPool",
+      "decision": "docs/adr/0115",
+      "parts": {
+        "PostHoldsTable": "TRUE",
+        "RemoveIfEmpty": "TRUE",
+        "LiveLock": "TRUE",
+        "BoundInbox": "TRUE",
+        "BoundLive": "TRUE",
+        "StopHoldsTable": "TRUE"
+      },
+      "progress": [
+        "Settled"
+      ],
+      "runs": [
+        {
+          "config": "SessionPool.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "SessionPool_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "SessionPool_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Settled",
+          "against": "the fairness of LiveSpec"
+        },
+        {
+          "config": "SessionPool_without_post_under_table.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "PostHoldsTable"
+        },
+        {
+          "config": "SessionPool_without_remove_if_empty.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "RemoveIfEmpty"
+        },
+        {
+          "config": "SessionPool_without_live_lock.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "LiveLock"
+        },
+        {
+          "config": "SessionPool_without_inbox_bound.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "BoundInbox"
+        },
+        {
+          "config": "SessionPool_without_live_bound.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "BoundLive"
+        },
+        {
+          "config": "SessionPool_without_stop_under_table.cfg",
+          "expect": "violates",
+          "invariant": "StoppedClean",
+          "without": "StopHoldsTable"
+        }
+      ]
     }
   ]
 }
