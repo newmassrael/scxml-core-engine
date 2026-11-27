@@ -42,6 +42,11 @@ pub struct SetTable {
     /// runtime's one writer over the table (section 3); `None` where the
     /// writer writes it.
     pub not_written: Option<NotWrittenByTable>,
+    /// Why the codec's view is printed rather than read by the table
+    /// ([`NotATable::OwnView`]), where the build generates views and the view
+    /// is a type of its own; `None` where the build has no views or the view
+    /// is the codec's value itself, which the table reads.
+    pub view: Option<NotATable>,
 }
 
 /// What the generation of one cold codec of a set says of its table
@@ -61,7 +66,9 @@ pub enum ColdCodec {
 }
 
 /// Why a cold codec is printed rather than read by a table of its fields
-/// (docs/adr/0155 section 2): its shape, or the first field no row states.
+/// (docs/adr/0155 section 2): its shape, or the first field no row states;
+/// or why its view is printed where its value is read by its table
+/// ([`SetTable::view`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotATable {
     /// The codec's shape is no table's.
@@ -74,6 +81,12 @@ pub enum NotATable {
         /// What no row states of it.
         form: UnstatedField,
     },
+    /// The codec's view is a type of its own, which its read builds once as a
+    /// value from the locals its fields are read into, with no default of it
+    /// made first (docs/adr/0137); the walker stores into a value it is
+    /// handed, which would be that default. The view is printed, and the
+    /// codec's value is read by its table.
+    OwnView,
 }
 
 /// A shape of a codec no table states.
@@ -165,6 +178,10 @@ impl std::fmt::Display for NotATable {
                 CodecShape::GateGroup => "a gate group holds fields of the codec as one",
                 CodecShape::NoContext => "a field has no context",
             }),
+            Self::OwnView => f.write_str(
+                "the codec's view is a type of its own, built once as a value from the locals \
+                 its fields are read into, with no default of it made first",
+            ),
             Self::Field { field, form } => {
                 write!(f, "field '{field}' ")?;
                 match form {
@@ -454,6 +471,7 @@ mod tests {
             name: format!("{}_FIELDS", codec.to_uppercase()),
             rows: rows.to_string(),
             not_written: None,
+            view: None,
         }
     }
 

@@ -358,3 +358,60 @@ fn every_cold_codec_says_its_table_or_why_it_has_none() {
         "the cold codecs of the set are other than the four: {said:?}"
     );
 }
+
+/// A view of a type of its own is built once as a value from the locals its
+/// fields are read into, with no default of it made first (docs/adr/0137),
+/// and the walker stores into a value it is handed: a cold codec whose view is
+/// its own type keeps that view printed and says why (docs/adr/0155 section
+/// 2), its value alone answering the table's stores. A codec whose view is its
+/// value says nothing of a view, and neither does a build with no views.
+#[test]
+fn a_cold_view_of_its_own_type_is_printed_and_says_why() {
+    for views in [false, true] {
+        let sites = sites_of(&["codec_zenoh_request.scxml"], views);
+        let hot = sites
+            .hot_codecs(["codec_zenoh_msg_put"])
+            .unwrap_or_else(|e| panic!("codec_zenoh_msg_put is a codec of the set: {e}"));
+        let named = ForgeCompileOptions {
+            views,
+            inline_decode: InlineDecode::Codecs(hot),
+            body_reads: sites,
+            ..ForgeCompileOptions::default()
+        };
+        for (name, struct_name, own_view) in [
+            ("codec_zenoh_msg_del", "CodecZenohMsgDel", true),
+            ("codec_zenoh_query", "CodecZenohQuery", true),
+            ("codec_zenoh_wireexpr", "CodecZenohWireexpr", false),
+        ] {
+            let output = output_with(name, &named);
+            let printed_view = (views && own_view).then_some(NotATable::OwnView);
+            assert!(
+                matches!(
+                    output.cold_codecs.as_slice(),
+                    [ColdCodec::Table(table)] if table.codec == name && table.view == printed_view
+                ),
+                "{name} says other than {printed_view:?} of its view (views: {views}): {:?}",
+                output.cold_codecs
+            );
+            let code = output
+                .files
+                .into_iter()
+                .map(|(_, code)| code)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(
+                code.contains(&format!("pub struct {struct_name}View")),
+                views && own_view,
+                "{name} has a view of its own otherwise than expected (views: {views}):\n{code}"
+            );
+            let stores: Vec<&str> = code
+                .lines()
+                .filter(|line| line.contains("::sce_forge_runtime::codec::TableOut<'f> for "))
+                .collect();
+            assert!(
+                matches!(stores.as_slice(), [one] if one.ends_with(&format!(" for {struct_name}In<S> {{"))),
+                "the stores of {name} are other than its value's alone (views: {views}): {stores:?}"
+            );
+        }
+    }
+}

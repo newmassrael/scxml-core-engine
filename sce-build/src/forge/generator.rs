@@ -18010,6 +18010,12 @@ fn render_codec(
                         name: table.name.clone(),
                         rows,
                         not_written: rendered.not_written.clone(),
+                        // docs/adr/0155 section 2: a view of a type of its
+                        // own is built once from locals (docs/adr/0137) and
+                        // stays printed; a view that is the value is read by
+                        // the table with it.
+                        view: (emit_views && m.has_own_view())
+                            .then_some(crate::forge::shared_tables::NotATable::OwnView),
                     },
                 ));
             }
