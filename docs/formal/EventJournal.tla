@@ -232,10 +232,11 @@ Stable == \A a \in asked : AsOf(a.r) = a.held
 \* cursor.
 Visible == {e \in log : e.pos <= Limit}
 
-\* The i-th entry by position is the one with i - 1 below it.
-ByPos(es) == [i \in 1..Cardinality(es) |->
+\* The i-th entry by position is the one with i - 1 below it: a sequence, as JournalService reads
+\* it. MkSeq types it as one for Apalache, and TLC computes the function it was.
+ByPos(es) == MkSeq(Cardinality(es), LAMBDA i :
     LET e == CHOOSE x \in es : Cardinality({y \in es : y.pos < x.pos}) = i - 1
-    IN <<e.s, e.n>>]
+    IN <<e.s, e.n>>)
 
 Service == INSTANCE JournalService WITH
     Streams <- Sess,
