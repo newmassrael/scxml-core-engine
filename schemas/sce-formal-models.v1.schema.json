@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-models.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE formal models manifest (wire schema v1)",
-  "description": "What a repository declares of its TLA+ models, judged by `sce-codegen formal models --manifest <file>` (docs/adr/0146, D1; docs/adr/0115, D5 and D9). Written by the repository beside its modules and configurations, which are read relative to this file's directory; never emitted by SCE. Every module and configuration in that directory is declared, every part of a model has a run that takes it out, and everything a holding run checks has a run that shows it can fail. No tool is named here: the judge pins its tools (docs/adr/0146, D3). Authoritative reader is sce-build/src/formal/models.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "description": "What a repository declares of its TLA+ models, judged by `sce-codegen formal models --manifest <file>` (docs/adr/0146, D1; docs/adr/0115, D5 and D9). Written by the repository beside its modules and configurations, which are read relative to this file's directory; never emitted by SCE. Every module and configuration in that directory is declared, every part of a model has a run that takes it out, and everything a holding run checks has a run that shows it can fail; an inductive invariant a model states is checked by Apalache for every length of execution at a configuration's parameters, and has a run that shows it can fail (docs/adr/0115, D3). No tool is named here: the judge pins its tools (docs/adr/0146, D3). Authoritative reader is sce-build/src/formal/models.rs, which refuses a key it does not know as `formal/declaration`. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": [
     "v",
@@ -83,6 +83,84 @@
             "type": "string"
           },
           "description": "State predicates p with AG EF p."
+        },
+        "inductive": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inductive"
+          },
+          "description": "Inductive invariants, each checked by Apalache for every length of execution at a configuration's parameters (docs/adr/0115, D3): Init implies it (base), a step from it keeps it (step), and it implies each theorem (implies)."
+        }
+      }
+    },
+    "inductive": {
+      "type": "object",
+      "required": [
+        "invariant",
+        "implies",
+        "runs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "invariant": {
+          "$ref": "#/definitions/name",
+          "description": "The operator of the module that is the inductive invariant."
+        },
+        "types": {
+          "$ref": "#/definitions/name",
+          "description": "The operator that gives every variable a value of its type (Apalache's Gen, for a sequence), conjoined with the invariant where the step and the implication start; absent when the invariant's first conjuncts give every variable one."
+        },
+        "implies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/name"
+          },
+          "description": "The theorems it proves, each a property a holding run of the model checks."
+        },
+        "runs": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/definitions/inductive_run"
+          }
+        }
+      }
+    },
+    "inductive_run": {
+      "type": "object",
+      "required": [
+        "config",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string",
+          "pattern": "\\.cfg$",
+          "description": "The configuration whose CONSTANTS fix the parameters."
+        },
+        "expect": {
+          "enum": [
+            "holds",
+            "violates"
+          ]
+        },
+        "obligation": {
+          "enum": [
+            "base",
+            "step",
+            "implies"
+          ],
+          "description": "The obligation a violating run fails; those before it must hold."
+        },
+        "without": {
+          "$ref": "#/definitions/name",
+          "description": "The part a violating run takes out."
+        },
+        "against": {
+          "type": "string",
+          "description": "The assumption a violating run goes against."
         }
       }
     },

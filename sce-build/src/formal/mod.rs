@@ -9,7 +9,10 @@
 //! - [`toolchain`]: the tools the judges run, pinned by the judge and compiled
 //!   into it (ADR 0146, D3), and how each is fetched and admitted by its digest.
 //! - [`tlc`]: the one runner of TLC every level uses (ADR 0146, D4).
+//! - [`apalache`]: the one runner of Apalache (ADR 0115, D3; ADR 0146, D4).
 //! - [`models`]: the judge of a models manifest (ADR 0115, D5 and D9).
+//! - [`inductive`]: the inductive invariants a models manifest declares, and
+//!   their judgement for every length of execution (ADR 0115, D3).
 //! - [`proofs`]: the judge of a proofs manifest, by Verus (ADR 0115, D10 and D13).
 //! - [`document_model`]: the model of one document over Appendix D, which
 //!   `sce-codegen model` writes (ADR 0115, D7).
@@ -18,8 +21,10 @@
 //! - [`error`]: the `formal/*` diagnostics a judge leaves through
 //!   (`SCE_ERROR_CONTRACT.md` §6).
 
+pub mod apalache;
 pub mod document_model;
 pub mod error;
+pub mod inductive;
 pub mod models;
 pub mod proofs;
 pub mod tlc;
@@ -57,6 +62,37 @@ impl WorkDir {
     pub(crate) fn path(&self) -> &std::path::Path {
         &self.path
     }
+}
+
+/// Copy every module of `sources` (each `.tla` there) into `into`, where a
+/// tool reads them, and write `extra` (name, text) beside them. Both runners
+/// stage a run so: each reads the modules of one directory and the files the
+/// judge writes for that run.
+pub(crate) fn stage_modules(
+    sources: &std::path::Path,
+    into: &std::path::Path,
+    extra: &[(String, String)],
+) -> Result<(), FormalError> {
+    let copy_failed = |e: std::io::Error| FormalError::ToolUnavailable {
+        tool: "a working directory".to_string(),
+        detail: format!(
+            "cannot copy the modules of {} into {}: {e}",
+            sources.display(),
+            into.display()
+        ),
+    };
+    for entry in std::fs::read_dir(sources).map_err(copy_failed)? {
+        let path = entry.map_err(copy_failed)?.path();
+        if path.extension().is_some_and(|ext| ext == "tla") {
+            if let Some(name) = path.file_name() {
+                std::fs::copy(&path, into.join(name)).map_err(copy_failed)?;
+            }
+        }
+    }
+    for (name, text) in extra {
+        std::fs::write(into.join(name), text).map_err(copy_failed)?;
+    }
+    Ok(())
 }
 
 impl Drop for WorkDir {

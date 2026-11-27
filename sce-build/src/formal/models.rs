@@ -26,6 +26,11 @@
 //!   `AG EF p`: from every reachable state a state where p holds can be reached
 //!   (ADR 0115, D9). TLA+ cannot say it, so the judge decides it over the whole
 //!   graph TLC writes.
+//! - A module may state INDUCTIVE invariants, each proving properties its
+//!   holding runs check for every length of execution at a configuration's
+//!   parameters, and each with a run that shows it can fail ([`inductive`],
+//!   ADR 0115, D3). Apalache judges them; a model that extends the standard
+//!   module `Apalache` is read by TLC with the pinned Apalache's.
 //!
 //! The manifest is complete in both directions: every configuration and module
 //! beside it is declared, every PART of a model (a constant whose value switches
@@ -44,8 +49,9 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::inductive::{self, Inductive};
 use super::tlc;
-use super::toolchain::{self, TlcPin};
+use super::toolchain;
 use super::FormalError;
 
 /// The surface's stability (docs/adr/0146, D5; `SCE_WIRE_CONTRACTS.md`), which the
@@ -63,6 +69,7 @@ const MODULE_KEYS: &[&str] = &[
     "progress",
     "no_progress",
     "possible",
+    "inductive",
 ];
 const RUN_KEYS: &[&str] = &[
     "config",
@@ -113,6 +120,10 @@ pub struct Model {
     pub no_progress: Option<String>,
     #[serde(default)]
     pub possible: Vec<String>,
+    /// The inductive invariants of the model, each judged by Apalache for every
+    /// length of execution (docs/adr/0115, D3; [`inductive`]).
+    #[serde(default)]
+    pub inductive: Vec<Inductive>,
     #[serde(flatten)]
     pub other: BTreeMap<String, Value>,
 }
@@ -197,7 +208,7 @@ fn code_of(line: &str) -> &str {
     line.split("\\*").next().unwrap_or("").trim()
 }
 
-fn read(path: &Path) -> String {
+pub(crate) fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
 
@@ -315,6 +326,60 @@ pub fn possible_config(config_text: &str) -> String {
     }
     kept.push("");
     kept.join("\n")
+}
+
+/// `config_text` with its CONSTANTS alone, comments left out: the parameters a
+/// symbolic check is fixed at, read by Apalache as TLC reads them.
+pub fn constants_config(config_text: &str) -> String {
+    let mut kept = Vec::new();
+    let mut inside = false;
+    for line in config_text.lines().map(code_of) {
+        if SECTION.is_match(line) {
+            inside = line.starts_with("CONSTANT");
+        }
+        if inside && !line.is_empty() {
+            kept.push(line);
+        }
+    }
+    kept.push("");
+    kept.join("\n")
+}
+
+/// The parts of a model that a configuration takes out: each whose constant it
+/// does not give the value that keeps the part in.
+pub(crate) fn parts_taken_out(model: &Model, config_text: &str) -> BTreeSet<String> {
+    let held = constants_of(config_text);
+    model
+        .parts
+        .iter()
+        .filter(|(part, whole)| held.get(*part) != Some(*whole))
+        .map(|(part, _)| part.clone())
+        .collect()
+}
+
+static EXTENDS_APALACHE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:EXTENDS\s+(?:\w+\s*,\s*)*|INSTANCE\s+)Apalache\b")
+        .expect("a valid expression")
+});
+
+/// Whether a module, its comments left out, extends or instantiates the
+/// standard module `Apalache`, which TLC does not hold and is given from the
+/// pinned Apalache.
+pub fn extends_apalache(text: &str) -> bool {
+    let blanked = BLOCK_COMMENT.replace_all(text, " ");
+    let code: Vec<&str> = blanked
+        .lines()
+        .map(|line| line.split("\\*").next().unwrap_or(""))
+        .collect();
+    EXTENDS_APALACHE.is_match(&code.join("\n"))
+}
+
+/// Whether a module of the directory `formal` extends the standard module
+/// `Apalache`: then every TLC run of it is given the pinned Apalache's.
+pub fn modules_extend_apalache(formal: &Path) -> bool {
+    files_with(formal, "tla")
+        .iter()
+        .any(|module| extends_apalache(&read(module)))
 }
 
 /// A state graph: each state with whether its predicate holds, and the steps.
@@ -435,6 +500,7 @@ pub fn declared(manifest: &Manifest, formal: &Path) -> Vec<String> {
         ));
     }
     let mut configs: Vec<String> = Vec::new();
+    let mut inductive_configs: BTreeSet<String> = BTreeSet::new();
     let modules: Vec<&str> = manifest
         .models
         .iter()
@@ -472,9 +538,16 @@ pub fn declared(manifest: &Manifest, formal: &Path) -> Vec<String> {
             {
                 problems.push(format!("{name}: an abstract module nothing refines"));
             }
+            if !model.inductive.is_empty() {
+                problems.push(format!(
+                    "{name}: an abstract module has no step to prove an invariant of; what refines it has"
+                ));
+            }
         } else if !model.runs.iter().any(RunDecl::holds) {
             problems.push(format!("{name}: no run says the whole protocol holds"));
         }
+        problems.extend(inductive::declared(model, formal));
+        inductive_configs.extend(inductive::configs(model).map(str::to_string));
         if model.promise.is_some() != model.refines.is_some() {
             problems.push(format!(
                 "{name}: a promise and what it refines are declared together"
@@ -518,13 +591,7 @@ pub fn declared(manifest: &Manifest, formal: &Path) -> Vec<String> {
                     listed(&reductions)
                 ));
             }
-            let held = constants_of(&text);
-            let off: BTreeSet<String> = model
-                .parts
-                .iter()
-                .filter(|(part, whole)| held.get(*part) != Some(*whole))
-                .map(|(part, _)| part.clone())
-                .collect();
+            let off = parts_taken_out(model, &text);
             if run.holds() {
                 if !off.is_empty() {
                     problems.push(format!("{config}: holds, with {} taken out", listed(&off)));
@@ -664,7 +731,11 @@ pub fn declared(manifest: &Manifest, formal: &Path) -> Vec<String> {
             }
         }
     }
-    let declared_configs: BTreeSet<&str> = configs.iter().map(String::as_str).collect();
+    let declared_configs: BTreeSet<&str> = configs
+        .iter()
+        .chain(&inductive_configs)
+        .map(String::as_str)
+        .collect();
     let on_disk_configs: BTreeSet<String> = files_with(formal, "cfg")
         .iter()
         .filter_map(|path| {
@@ -828,7 +899,11 @@ pub fn shard_spec(text: &str) -> Result<(usize, usize), String> {
 /// possible); a run that violates stops at its first violation and weighs one.
 /// Measured on job 138489726305 (2026-11-24): a holding run's time followed its
 /// count, Principals.cfg 248 s for 8.7 million states and its promise, and
-/// BroadcastLog_r1.cfg 116 s for 15.4 million states alone.
+/// BroadcastLog_r1.cfg 116 s for 15.4 million states alone. A run of an
+/// inductive invariant (docs/adr/0115, D3) is a unit named
+/// [`inductive::unit_name`] and weighs one per obligation Apalache checks of it:
+/// its time is the solver's and follows no count the manifest records, and no
+/// run has yet measured it against TLC's.
 pub fn shard_runs(manifest: &Manifest, count: usize) -> Result<Vec<Vec<(String, String)>>, String> {
     if count < 1 {
         return Err(format!("a plan of {count} shard(s)"));
@@ -843,6 +918,14 @@ pub fn shard_runs(manifest: &Manifest, count: usize) -> Result<Vec<Vec<(String, 
             }
             let key = format!("{}/{}", model.module, run.config);
             units.push((weight, key, (model.module.clone(), run.config.clone())));
+        }
+        for stated in &model.inductive {
+            for run in &stated.runs {
+                let unit = inductive::unit_name(&stated.invariant, &run.config);
+                let weight = inductive::obligations(run).len().max(1) as u64;
+                let key = format!("{}/{}", model.module, unit);
+                units.push((weight, key, (model.module.clone(), unit)));
+            }
         }
     }
     units.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
@@ -883,6 +966,7 @@ fn tail_lines(output: &str, count: usize) -> String {
 /// Whether `AG EF predicate` holds of `module` in `config`.
 fn run_possible(
     jar: &Path,
+    library: Option<&Path>,
     formal: &Path,
     module: &str,
     config_text: &str,
@@ -893,6 +977,7 @@ fn run_possible(
     let extra = vec![(format!("{carried}.tla"), possible_module(module, predicate))];
     let answer = tlc::run(&tlc::Run {
         jar,
+        library,
         sources: formal,
         module: &carried,
         config_name: &format!("{carried}.cfg"),
@@ -977,8 +1062,16 @@ pub fn check(
         }
         None => None,
     };
-    let pin: TlcPin = toolchain::pinned().tlc;
-    let jar = toolchain::admitted_tlc(&pin)?;
+    let pins = toolchain::pinned();
+    let jar = toolchain::admitted_tlc(&pins.tlc)?;
+    // TLC holds no module `Apalache`; a model that extends it is read with the
+    // pinned Apalache's, the one module both tools read.
+    let library = if modules_extend_apalache(formal) {
+        Some(toolchain::admitted_apalache_modules(&pins.apalache)?)
+    } else {
+        None
+    };
+    let mut apalache_tool: Option<PathBuf> = None;
     let mut failures = Vec::new();
     let mut judged_runs = 0usize;
     let mut recorded: Vec<(String, u64)> = Vec::new();
@@ -998,6 +1091,7 @@ pub fn check(
             let tlc_run = |config: &str| {
                 tlc::run(&tlc::Run {
                     jar: &jar,
+                    library: library.as_deref(),
                     sources: formal,
                     module: &model.module,
                     config_name: &run.config,
@@ -1023,6 +1117,7 @@ pub fn check(
                 if let Some(predicate) = &run.possible {
                     wrong = match run_possible(
                         &jar,
+                        library.as_deref(),
                         formal,
                         &model.module,
                         &config_text,
@@ -1047,6 +1142,34 @@ pub fn check(
                     (report.out)(&format!("FAIL {}: {why}", run.config));
                     (report.detail)(&tail_lines(&output, 25));
                     failures.push(format!("{}: {why}", run.config));
+                }
+            }
+        }
+        for stated in &model.inductive {
+            for run in &stated.runs {
+                let unit = inductive::unit_name(&stated.invariant, &run.config);
+                if mine
+                    .as_ref()
+                    .is_some_and(|part| !part.contains(&(model.module.clone(), unit.clone())))
+                {
+                    continue;
+                }
+                judged_runs += 1;
+                let tool = match &apalache_tool {
+                    Some(tool) => tool.clone(),
+                    None => {
+                        let found = toolchain::admitted_apalache(&pins.apalache)?;
+                        apalache_tool = Some(found.clone());
+                        found
+                    }
+                };
+                match inductive::check_run(&tool, formal, model, stated, run)? {
+                    None => (report.out)(&format!("ok   {unit}: {}", run.expect)),
+                    Some((why, output)) => {
+                        (report.out)(&format!("FAIL {unit}: {why}"));
+                        (report.detail)(&tail_lines(&output, 25));
+                        failures.push(format!("{unit}: {why}"));
+                    }
                 }
             }
         }
@@ -1246,6 +1369,139 @@ mod tests {
 
     fn run(value: Value) -> RunDecl {
         serde_json::from_value(value).expect("a run")
+    }
+
+    /// The fixture's manifest with an inductive invariant of Safe, which holds
+    /// at M.cfg and whose step fails without the part.
+    fn inductive_manifest(f: &Fixture) -> Value {
+        let mut manifest = f.manifest();
+        manifest["models"][0]["inductive"] = json!([{
+            "invariant": "Ind", "implies": ["Safe"],
+            "runs": [
+                {"config": "M.cfg", "expect": "holds"},
+                {"config": "M_without_part.cfg", "expect": "violates", "obligation": "step", "without": "Part"},
+            ],
+        }]);
+        manifest
+    }
+
+    #[test]
+    fn an_inductive_invariant_that_holds_and_can_fail_is_clean() {
+        let f = Fixture::new();
+        assert_eq!(f.declared(&inductive_manifest(&f)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_inductive_invariant_no_run_shows_to_fail_is_found() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["runs"]
+            .as_array_mut()
+            .expect("runs")
+            .pop();
+        assert!(f.finds(&manifest, "M: inductive Ind: no run shows that it can fail"));
+    }
+
+    #[test]
+    fn an_inductive_invariant_no_run_holds_is_found() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["runs"]
+            .as_array_mut()
+            .expect("runs")
+            .remove(0);
+        assert!(f.finds(&manifest, "M: inductive Ind: no run says it holds"));
+    }
+
+    #[test]
+    fn an_inductive_invariant_of_a_theorem_no_holding_run_checks_is_found() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["implies"] = json!(["Other"]);
+        assert!(f.finds(&manifest, "implies Other, which no holding run of M checks"));
+        manifest["models"][0]["inductive"][0]["implies"] = json!([]);
+        assert!(f.finds(&manifest, "implies nothing"));
+    }
+
+    #[test]
+    fn an_inductive_violation_must_name_its_obligation_and_its_part() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["runs"][1]["obligation"] = json!("induction");
+        assert!(f.finds(&manifest, "names the obligation that fails"));
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["runs"][1]
+            .as_object_mut()
+            .expect("run")
+            .remove("without");
+        assert!(f.finds(&manifest, "says either what part it takes out"));
+        assert!(f.finds(&manifest, "takes out ['Part'] without saying so"));
+    }
+
+    #[test]
+    fn an_inductive_run_that_holds_with_a_part_out_is_found() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["runs"][0]["config"] = json!("M_without_part.cfg");
+        assert!(f.finds(
+            &manifest,
+            "M_without_part.cfg [Ind]: holds, with ['Part'] taken out"
+        ));
+        assert!(f.finds(&manifest, "M_without_part.cfg [Ind]: declared twice"));
+    }
+
+    #[test]
+    fn an_unknown_key_or_name_of_an_inductive_invariant_is_found() {
+        let f = Fixture::new();
+        let mut manifest = inductive_manifest(&f);
+        manifest["models"][0]["inductive"][0]["owner"] = json!("x");
+        manifest["models"][0]["inductive"][0]["runs"][0]["note"] = json!("x");
+        manifest["models"][0]["inductive"][0]["types"] = json!("Typed, Other");
+        assert!(f.finds(&manifest, "M: inductive Ind: unknown keys ['owner']"));
+        assert!(f.finds(&manifest, "M.cfg [Ind]: unknown keys ['note']"));
+        assert!(f.finds(&manifest, "is no name of an operator"));
+    }
+
+    #[test]
+    fn a_configuration_only_an_inductive_run_names_is_declared() {
+        let f = Fixture::new();
+        f.write("M_symbolic.cfg", &[("Part", "TRUE")]);
+        let mut manifest = inductive_manifest(&f);
+        assert!(f.finds(
+            &manifest,
+            "M_symbolic.cfg: a configuration the manifest does not declare"
+        ));
+        manifest["models"][0]["inductive"][0]["runs"][0]["config"] = json!("M_symbolic.cfg");
+        assert_eq!(f.declared(&manifest), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_abstract_module_with_an_inductive_invariant_is_found() {
+        let f = Fixture::new();
+        let mut manifest = f.promising();
+        manifest["models"][1]["inductive"] = json!([]);
+        assert_eq!(f.declared(&manifest), Vec::<String>::new());
+        manifest["models"][1]["inductive"] =
+            json!([{"invariant": "Ind", "implies": [], "runs": []}]);
+        assert!(f.finds(&manifest, "S: an abstract module has no step"));
+    }
+
+    #[test]
+    fn a_symbolic_check_is_fixed_at_the_constants_alone() {
+        let text = "\\* a comment\nSPECIFICATION Spec\nCONSTANTS\n    A = 1 \\* the size\n    B = {p1, p2}\n\nINVARIANTS\n    Safe\nCHECK_DEADLOCK FALSE\n";
+        assert_eq!(constants_config(text), "CONSTANTS\nA = 1\nB = {p1, p2}\n");
+    }
+
+    #[test]
+    fn a_module_that_extends_apalache_is_found_and_a_comment_is_not() {
+        assert!(extends_apalache(
+            "EXTENDS Naturals,\n    Sequences, Apalache\n"
+        ));
+        assert!(extends_apalache("LOCAL INSTANCE Apalache\n"));
+        assert!(!extends_apalache(
+            "EXTENDS Naturals\n\\* EXTENDS Apalache\n(* EXTENDS Apalache *)\n"
+        ));
+        assert!(!extends_apalache("EXTENDS ApalacheLike\n"));
     }
 
     #[test]
@@ -1602,14 +1858,32 @@ mod tests {
             {"module": "B", "runs": [
                 {"config": "B.cfg", "expect": "holds", "states": 4000},
                 {"config": "B_live.cfg", "expect": "holds", "states": 3000},
-                {"config": "B_without.cfg", "expect": "violates", "invariant": "Safe"}]},
+                {"config": "B_without.cfg", "expect": "violates", "invariant": "Safe"}],
+             "inductive": [{"invariant": "Ind", "implies": ["Safe"], "runs": [
+                {"config": "B.cfg", "expect": "holds"},
+                {"config": "B_without.cfg", "expect": "violates", "obligation": "step"}]}]},
         ]}))
         .expect("a manifest");
         let mut every: Vec<(String, String)> = manifest
             .models
             .iter()
             .flat_map(|m| m.runs.iter().map(|r| (m.module.clone(), r.config.clone())))
+            .chain(manifest.models.iter().flat_map(|m| {
+                m.inductive.iter().flat_map(|i| {
+                    i.runs.iter().map(|r| {
+                        (
+                            m.module.clone(),
+                            inductive::unit_name(&i.invariant, &r.config),
+                        )
+                    })
+                })
+            }))
             .collect();
+        assert_eq!(
+            every.len(),
+            7,
+            "a run of TLC and a run of Apalache at one configuration are two units"
+        );
         every.sort();
         for count in [1, 2, 3, 6] {
             let parts = shard_runs(&manifest, count).expect("a plan");

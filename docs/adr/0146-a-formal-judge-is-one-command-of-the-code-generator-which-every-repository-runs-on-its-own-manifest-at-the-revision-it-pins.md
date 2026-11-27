@@ -7,6 +7,8 @@
   depend on that is no contract, and the tools pinned inside manifests that a consumer would copy. This record is
   the improved plan.
 - Amended 2026-11-27 by the owner: Apalache joins the toolchain of D3, approved that day as the tool of ADR 0115 D3.
+  `formal models` judges with it the inductive invariants a manifest states (D1), by one runner (D4), and TLC is given
+  its standard module `Apalache` for a model that extends it.
 - Date: 2026-11-26
 - Also amends `SCE_ERROR_CONTRACT.md` (the stage `formal`, its three codes, and the exit status 15) and
   `docs/SCE_ACCEPTED_SUBSET.md` (its appendix of codes).
@@ -73,7 +75,7 @@ subcommand is:
 
 | Subcommand | Judges | Level of ADR 0115 |
 |---|---|---|
-| `formal models` | a models manifest: every module and configuration, its parts, its promise, its progress, what must stay possible | 2, bounded exploration, D9 |
+| `formal models` | a models manifest: every module and configuration, its parts, its promise, its progress, what must stay possible, its inductive invariants | 2, bounded exploration, D9; 3, by Apalache (D3) |
 | `formal proofs` | a proofs manifest: every file with a contract, verified whole, each mutant refused | 6 |
 | `formal traces` | a traces manifest: every recorded run accepted by the model it names, each altered run refused (built with D4 and D8) | 5 |
 | `formal toolchain` | nothing: prints the pins of D3 as JSON, for a cache key or an installer | — |
@@ -122,7 +124,12 @@ build of `sce-build`, which keeps its one network client behind `remote-cache`.
 
 `formal::tlc` runs TLC: a module, a configuration, the workers, optionally a graph to write. It reads TLC's exit
 status (0, 12, 13, otherwise a run that did not judge), its count of distinct states and the graph it wrote.
-`formal::verus` runs Verus, with the jobserver handoff `proofs.py` has. Level 2 uses these runners now. Level 4
+`formal::verus` runs Verus, with the jobserver handoff `proofs.py` has. `formal::apalache` runs Apalache (amended
+2026-11-27): a module, the CONSTANTS of a configuration, a predicate to start from, the invariants and the number of
+steps, in a directory of its own with an empty settings file in place of the home's; level 3 runs the base, the step
+and the implication of an inductive invariant with it. TLC holds no module `Apalache`, which a model extends for
+Apalache's types (`MkSeq`, `Gen`); TLC is given the pinned release's (SANY's `TLA-Library`), taken out of its jar by
+`formal install`, so both tools read one release's module. Level 2 uses these runners now. Level 4
 (D7's generated module) and level 5 (D4 and D8's trace modules) use the same runners when they are built, and so
 does ADR 0119's comparison of graphs. None of them runs TLC in another way.
 

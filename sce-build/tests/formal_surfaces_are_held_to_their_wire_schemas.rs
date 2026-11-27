@@ -94,6 +94,34 @@ fn the_models_schema_rejects_what_the_judge_refuses() {
     refused("a count that is not a number", &|v| {
         v["models"][0]["runs"][0]["states"] = serde_json::json!("7")
     });
+    let inductive = serde_json::json!([{"invariant": "Ind", "implies": ["Safe"], "runs": [
+        {"config": "M.cfg", "expect": "holds"},
+        {"config": "M_without.cfg", "expect": "violates", "obligation": "step", "without": "Part"},
+    ]}]);
+    let mut stated = whole.clone();
+    stated["models"][0]["inductive"] = inductive.clone();
+    let found = errors(&schema, &stated);
+    assert!(
+        found.is_empty(),
+        "the schema refuses an inductive invariant the judge reads:\n{}",
+        found.join("\n")
+    );
+    refused("an inductive violation of no obligation", &|v| {
+        v["models"][0]["inductive"] = inductive.clone();
+        v["models"][0]["inductive"][0]["runs"][1]["obligation"] = serde_json::json!("induction");
+    });
+    refused("an inductive invariant of no theorem", &|v| {
+        v["models"][0]["inductive"] = inductive.clone();
+        v["models"][0]["inductive"][0]["implies"] = serde_json::json!([]);
+    });
+    refused("an unknown key of an inductive invariant", &|v| {
+        v["models"][0]["inductive"] = inductive.clone();
+        v["models"][0]["inductive"][0]["owner"] = serde_json::json!("x");
+    });
+    refused("types that are no name", &|v| {
+        v["models"][0]["inductive"] = inductive.clone();
+        v["models"][0]["inductive"][0]["types"] = serde_json::json!("Typed, Other");
+    });
 }
 
 const PROOFS_SCHEMA: &str = "schemas/sce-formal-proofs.v1.schema.json";

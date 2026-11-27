@@ -20,6 +20,24 @@
           "invariant": "WithinLimit",
           "without": "Bounded"
         }
+      ],
+      "inductive": [
+        {
+          "invariant": "Inductive",
+          "implies": ["WithinLimit"],
+          "runs": [
+            {
+              "config": "Counter.cfg",
+              "expect": "holds"
+            },
+            {
+              "config": "Counter_without_bound.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "Bounded"
+            }
+          ]
+        }
       ]
     }
   ]

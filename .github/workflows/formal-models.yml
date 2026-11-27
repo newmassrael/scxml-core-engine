@@ -7,7 +7,8 @@ name: Formal Models
 #
 # ## Why a lane of its own
 #
-# It needs Java and the pinned TLC and no other lane does. The gate runs in the
+# It needs Java, the pinned TLC and the pinned Apalache (docs/adr/0115, D3), and
+# no other lane does. The gate runs in the
 # host image (tools/ci-images/host, docs/adr/0145), which carries the JDK and
 # what the generator builds with; the gate fetches the pinned TLC there with
 # `sce-codegen formal install` and admits it by the digest
@@ -90,12 +91,14 @@ jobs:
         uses: ./.github/actions/gate-image
 
       # The image's home (`gate_in_container` in scripts/gate), where the gate's
-      # `sce-codegen formal install` keeps the TLC it admitted.
-      - name: Restore TLC
+      # `sce-codegen formal install` keeps the TLC and the Apalache it admitted.
+      - name: Restore TLC and Apalache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: ~/.cache/sce-gate-containers/formal-models/home/.cache/sce-formal
-          key: tlc-${{ hashFiles('sce-build/src/formal/toolchain.json') }}
+          path: |
+            ~/.cache/sce-gate-containers/formal-models/home/.cache/sce-formal
+            ~/.cache/sce-gate-containers/formal-models/home/.local/apalache
+          key: tlc-apalache-${{ hashFiles('sce-build/src/formal/toolchain.json') }}
 
       - name: Formal models gate
         env:

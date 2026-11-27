@@ -16,11 +16,13 @@
 # repository fails here first (D6). The judge's own checks are its unit tests,
 # which the Rust lanes run.
 #
-# Runs in the host image, which carries the JDK. The pinned TLC is fetched by
-# `sce-codegen formal install --tool tlc` below and admitted by its digest, or
-# found in the image's home and admitted again; the judge itself never fetches.
-# Without Java or TLC the judge exits 15 (`formal/tool-unavailable`), which is
-# "could not run" and no verdict about the models.
+# Runs in the host image, which carries the JDK. The pinned TLC and Apalache are
+# fetched by `sce-codegen formal install` below and admitted by their digests, or
+# found in the image's home; the judge itself never fetches. Apalache checks the
+# inductive invariants a manifest states (docs/adr/0115, D3), and gives TLC the
+# standard module `Apalache` a model extends. Without Java, TLC or Apalache the
+# judge exits 15 (`formal/tool-unavailable`), which is "could not run" and no
+# verdict about the models.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -43,20 +45,22 @@ if [[ -n "${SCE_FORMAL_MODELS_SHARD:-}" ]]; then
     [[ "$SCE_FORMAL_MODELS_SHARD" == 1/* ]] || CONSUMER=0
 fi
 
-install=0
-target/debug/sce-codegen formal install --tool tlc || install=$?
-case "$install" in
-    0) ;;
-    15) sce_gate_cannot_run "the pinned TLC could not be fetched or admitted" ;;
-    *) sce_gate_fail "sce-codegen formal install --tool tlc ended $install" ;;
-esac
+for tool in tlc apalache; do
+    install=0
+    target/debug/sce-codegen formal install --tool "$tool" || install=$?
+    case "$install" in
+        0) ;;
+        15) sce_gate_cannot_run "the pinned $tool could not be fetched or admitted" ;;
+        *) sce_gate_fail "sce-codegen formal install --tool $tool ended $install" ;;
+    esac
+done
 
 judge() {
     local status=0
     target/debug/sce-codegen formal models --manifest "$@" || status=$?
     case "$status" in
         0) ;;
-        15) sce_gate_cannot_run "no Java or not the pinned TLC: sce-codegen formal install --tool tlc" ;;
+        15) sce_gate_cannot_run "no Java, or not the pinned TLC or Apalache: sce-codegen formal install" ;;
         *) sce_gate_fail "a model is not as $1 declares it" ;;
     esac
 }

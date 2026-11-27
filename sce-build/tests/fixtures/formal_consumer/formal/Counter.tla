@@ -8,10 +8,14 @@
 EXTENDS Naturals
 
 CONSTANTS
+    \* @type: Int;
     Limit,      \* the largest value the counter may hold
+    \* @type: Bool;
     Bounded     \* the part: the guard that stops the counter at its limit
 
-VARIABLE n
+VARIABLE
+    \* @type: Int;
+    n
 
 vars == <<n>>
 
@@ -23,4 +27,9 @@ Next == /\ (Bounded => n < Limit)
 Spec == Init /\ [][Next]_vars
 
 WithinLimit == n <= Limit
+
+\* WithinLimit for every length of execution (docs/adr/0115, D3): the counter
+\* starts in its range, and a step from the range stays in it. It gives the
+\* variable a value (n \in S), so Apalache starts the step from it.
+Inductive == n \in 0..Limit
 ====

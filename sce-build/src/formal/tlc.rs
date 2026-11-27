@@ -9,7 +9,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::{FormalError, WorkDir};
+use super::{stage_modules, FormalError, WorkDir};
 
 /// TLC's exit status for a run that found no violation.
 pub const HOLDS: i32 = 0;
@@ -69,9 +69,12 @@ pub fn violated_invariants(output: &str) -> Vec<String> {
 
 /// One run: the modules of `sources` (every `.tla` there), the configuration
 /// `config_text` written as `config_name`, `extra` modules written beside them,
-/// and `module` checked under it.
+/// and `module` checked under it. `library`, when given, is a directory of
+/// standard modules TLC reads beside its own (SANY's `TLA-Library`): the
+/// pinned Apalache's, for a model that extends the module `Apalache`.
 pub struct Run<'a> {
     pub jar: &'a Path,
+    pub library: Option<&'a Path>,
     pub sources: &'a Path,
     pub module: &'a str,
     pub config_name: &'a str,
@@ -84,30 +87,17 @@ pub struct Run<'a> {
 /// Run TLC as `run` says, in a directory of its own.
 pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
     let work = WorkDir::new("tlc")?;
-    let copy_failed = |e: std::io::Error| FormalError::ToolUnavailable {
-        tool: "a working directory".to_string(),
-        detail: format!(
-            "cannot copy the modules of {} into {}: {e}",
-            run.sources.display(),
-            work.path().display()
-        ),
-    };
-    for entry in std::fs::read_dir(run.sources).map_err(copy_failed)? {
-        let path = entry.map_err(copy_failed)?.path();
-        if path.extension().is_some_and(|ext| ext == "tla") {
-            if let Some(name) = path.file_name() {
-                std::fs::copy(&path, work.path().join(name)).map_err(copy_failed)?;
-            }
-        }
-    }
-    std::fs::write(work.path().join(run.config_name), run.config_text).map_err(copy_failed)?;
-    for (name, text) in run.extra {
-        std::fs::write(work.path().join(name), text).map_err(copy_failed)?;
-    }
+    let mut staged = run.extra.to_vec();
+    staged.push((run.config_name.to_string(), run.config_text.to_string()));
+    stage_modules(run.sources, work.path(), &staged)?;
     let mut command = Command::new("java");
+    command.current_dir(work.path()).arg("-XX:+UseParallelGC");
+    if let Some(library) = run.library {
+        let mut property = std::ffi::OsString::from("-DTLA-Library=");
+        property.push(library);
+        command.arg(property);
+    }
     command
-        .current_dir(work.path())
-        .arg("-XX:+UseParallelGC")
         .arg("-cp")
         .arg(run.jar)
         .arg("tlc2.TLC")
