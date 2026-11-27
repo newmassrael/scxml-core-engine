@@ -16611,7 +16611,8 @@ enum FormalCommand {
     Toolchain,
     /// Fetch each pinned tool, admit it by its digest and put it where the
     /// judges look, unless the one pinned is there. TLC and Apalache are
-    /// installed with the Java runtime they run on.
+    /// installed with the Java runtime they run on; Storm's package is
+    /// unpacked, and the system libraries it asks for are the image's.
     Install {
         /// Which tool.
         #[arg(long, value_enum, default_value = "all")]
@@ -16624,6 +16625,10 @@ enum FormalCommand {
         /// build machine's declaration names another.
         #[arg(long)]
         apalache_place: Option<PathBuf>,
+        /// Where Storm is unpacked: `~/.local/storm/<version>` unless a build
+        /// machine's declaration names another.
+        #[arg(long)]
+        storm_place: Option<PathBuf>,
     },
 }
 
@@ -16636,6 +16641,8 @@ enum FormalTool {
     Apalache,
     /// The Java runtime TLC and Apalache run on, which installing either installs.
     Java,
+    /// The probabilistic model checker of the level of quantity (docs/adr/0119).
+    Storm,
 }
 
 /// Run one judge of `sce-codegen formal`. See `Commands::Formal`.
@@ -16786,6 +16793,7 @@ fn cmd_formal(judge: FormalCommand) {
             tool,
             verus_place,
             apalache_place,
+            storm_place,
         } => {
             let pins = toolchain::pinned();
             let said = |what: &str, installed: toolchain::Installed| match installed {
@@ -16833,6 +16841,16 @@ fn cmd_formal(judge: FormalCommand) {
                     Ok(installed) => {
                         said(&format!("Apalache {}", pins.apalache.version), installed)
                     }
+                    Err(err) => leave(err),
+                }
+            }
+            if matches!(tool, FormalTool::All | FormalTool::Storm) {
+                let place = match storm_place {
+                    Some(place) => place,
+                    None => toolchain::storm_place(&pins.storm).unwrap_or_else(|err| leave(err)),
+                };
+                match toolchain::install_storm(&pins.storm, &place) {
+                    Ok(installed) => said(&format!("Storm {}", pins.storm.version), installed),
                     Err(err) => leave(err),
                 }
             }

@@ -450,6 +450,24 @@ install = "cargo run --quiet --bin sce-codegen --features cli -p sce-build -- fo
 install_inputs = ["sce-build/src/formal/toolchain.json", "sce-build/src/formal/toolchain.rs"]
 needed_by = ["formal-models", "formal-traces"]
 
+# STORM, the probabilistic checker of the level of quantity (`scripts/gates/formal-models.sh`: the
+# second encoding of a document's model held to its TLA+ model, docs/adr/0119 D4), at the release
+# sce-build/src/formal/toolchain.json pins by digest; `sce-codegen formal install` is the one place it is
+# installed from, admitting the Debian package by that digest and unpacking it, never installing it.
+# `bin/storm` under the entry runs the package's program with the libraries the package holds, and
+# answers `--version` by itself. The libraries it asks of the system are the packages below, as the host
+# image names them (tools/ci-images/host/Containerfile, group 4).
+[platform.linux.tools.storm]
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "storm": \{"version": "([0-9.]+)"'
+path = "~/.local/storm/{version}/bin/storm"
+check = "storm {version}"
+prefix_link = "~/.local/storm/{version}"
+install = "cargo run --quiet --bin sce-codegen --features cli -p sce-build -- formal install --tool storm --storm-place {prefix}"
+install_inputs = ["sce-build/src/formal/toolchain.json", "sce-build/src/formal/toolchain.rs"]
+packages = ["libgmpxx4ldbl", "libcln6", "libginac11", "libglpk40", "libz3-4", "libarchive13t64"]
+needed_by = ["formal-models"]
+
 # THE RUST RELEASE VERUS RUNS ON, the one it was built with: no package's and not this tree's, read
 # from the same pins, so a move of Verus moves it with it. Verus reads its compiler libraries and
 # its standard library, and no component is added.

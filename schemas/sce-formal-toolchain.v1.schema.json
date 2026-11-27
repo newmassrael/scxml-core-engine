@@ -3,13 +3,14 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-toolchain.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE formal toolchain (wire schema v1)",
-  "description": "The tools the formal judges run (TLC, Verus and Apalache) and the Java runtime TLC and Apalache run on, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "description": "The tools the formal judges run (TLC, Verus, Apalache and Storm) and the Java runtime TLC and Apalache run on, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": [
     "tlc",
     "verus",
     "apalache",
-    "java"
+    "java",
+    "storm"
   ],
   "additionalProperties": false,
   "properties": {
@@ -57,6 +58,19 @@
         ]
       },
       "description": "The Java runtime TLC and Apalache run on, pinned with them (docs/adr/0146, D3): Eclipse Temurin's JRE for Linux on x64, the release's .tar.gz, which unpacks as jdk-<version>-jre/. The judge runs its bin/java, never one a search path finds."
+    },
+    "storm": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "not": {
+        "required": [
+          "toolchain"
+        ]
+      },
+      "description": "Storm, the probabilistic model checker of the level of quantity (docs/adr/0119, D3): the release's Debian 12 package for x64, unpacked and never installed, whose usr/bin/storm-<version> is run with the libraries of its usr/lib; the arithmetic and solver libraries it asks of the system are named by the host image and bx.toml."
     }
   },
   "definitions": {

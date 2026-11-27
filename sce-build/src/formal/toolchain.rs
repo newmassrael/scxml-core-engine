@@ -17,6 +17,14 @@
 //!
 //! The Java runtime TLC and Apalache run on is pinned with them: a tool pinned by
 //! its digest that runs on whatever virtual machine a machine has is not pinned.
+//!
+//! Storm, the probabilistic checker of the level of quantity (docs/adr/0119,
+//! D3), is published as a Debian package and no static build: the package holds
+//! the program and the libraries built with it, and asks the system for the
+//! arithmetic and solver libraries (GMP, CLN, GiNaC, GLPK, Z3, libarchive). Those
+//! are named where a gate's system packages are, in the host image
+//! (docs/adr/0145) and in `bx.toml` for a build machine; the package is
+//! unpacked, never installed, and its program is run with its own libraries.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -81,6 +89,20 @@ pub struct JavaPin {
     pub sha256: String,
 }
 
+/// Storm, the probabilistic model checker of the level of quantity
+/// (docs/adr/0119, D3): the release's Debian 12 package for x64, whose
+/// `usr/bin/storm-<version>` is run with the libraries of its `usr/lib`. The
+/// Debian 12 build and not the Debian 13 one: it asks the C library for no
+/// symbol past GLIBC_2.34, which the Ubuntu 24.04 of the host image has, and the
+/// Debian 13 build asks for a newer one.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StormPin {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
 /// Every pinned tool.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +111,7 @@ pub struct Toolchain {
     pub verus: VerusPin,
     pub apalache: ApalachePin,
     pub java: JavaPin,
+    pub storm: StormPin,
 }
 
 /// The pins this binary was built with.
@@ -149,6 +172,19 @@ pub fn apalache_place(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
 /// Where the pinned Java runtime is unpacked: `~/.local/jre/<version>`.
 pub fn java_place(pin: &JavaPin) -> Result<PathBuf, FormalError> {
     Ok(home()?.join(".local").join("jre").join(&pin.version))
+}
+
+/// Where the pinned Storm is unpacked: `~/.local/storm/<version>`, the place
+/// `bx.toml` declares for a build machine.
+pub fn storm_place(pin: &StormPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("storm").join(&pin.version))
+}
+
+/// The program of the package, under the place it is unpacked in.
+fn storm_program_in_package(pin: &StormPin) -> PathBuf {
+    Path::new("usr")
+        .join("bin")
+        .join(format!("storm-{}", pin.version))
 }
 
 /// The program `bin/java` of the Java runtime whose home is `home`.
@@ -268,6 +304,20 @@ pub fn admitted_java(pin: &JavaPin) -> Result<PathBuf, FormalError> {
         ));
     }
     Ok(home)
+}
+
+/// The pinned Storm, found: the program `bin/storm` under the unpacked
+/// package. It is not admitted by digest here, as Apalache is not: what was
+/// admitted is the package it was unpacked from, by `formal install`.
+pub fn admitted_storm(pin: &StormPin) -> Result<PathBuf, FormalError> {
+    let tool = storm_place(pin)?.join("bin").join("storm");
+    if !tool.is_file() {
+        return Err(unavailable(
+            "Storm",
+            format!("no Storm at {}: sce-codegen formal install", tool.display()),
+        ));
+    }
+    Ok(tool)
 }
 
 /// The directory that holds the standard module `Apalache` of the pinned
@@ -648,6 +698,82 @@ pub fn install_apalache(pin: &ApalachePin, place: &Path) -> Result<Installed, Fo
     Ok(Installed::Fetched(place.to_path_buf()))
 }
 
+/// The program `bin/storm` under the unpacked package: the package's program
+/// run with the libraries the package holds, which it does not find by itself
+/// (its run path names `/usr/local/lib`, where it is not unpacked), behind a
+/// line that answers `--version` by itself, as the wrappers of Verus and
+/// Apalache do. The libraries it asks of the system are found where the system
+/// keeps them.
+pub fn storm_wrapper(pin: &StormPin) -> String {
+    format!(
+        "#!/bin/sh\n\
+         # Written by sce-codegen formal install: Storm {version}, run with the libraries of its package.\n\
+         if [ \"$1\" = --version ]; then\n    echo \"storm {version}\"\n    exit 0\nfi\n\
+         here=\"$(dirname \"$(readlink -f \"$0\")\")/..\"\n\
+         LD_LIBRARY_PATH=\"$here/usr/lib\" exec \"$here/{program}\" \"$@\"\n",
+        version = pin.version,
+        program = storm_program_in_package(pin).display(),
+    )
+}
+
+/// Fetch the pinned Storm, admit the package by its digest and unpack it into
+/// `place` (`storm_place` unless a build machine's declaration names
+/// another), unless it is there. The package is unpacked by `dpkg-deb -x`,
+/// which keeps each file's mode and link, and is never installed: what it asks
+/// of the system it does not get by being unpacked, and the image and the build
+/// machines name those libraries themselves. The wrapper is written last, so
+/// its presence is the mark of a whole installation.
+pub fn install_storm(pin: &StormPin, place: &Path) -> Result<Installed, FormalError> {
+    let wrapper = place.join("bin").join("storm");
+    if wrapper.is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    let beside = place.parent().unwrap_or(place);
+    std::fs::create_dir_all(beside)
+        .map_err(|e| unavailable("Storm", format!("cannot create {}: {e}", beside.display())))?;
+    let scratch = super::WorkDir::new_in(beside, "storm")?;
+    let package = scratch.path().join("storm.deb");
+    fetch("Storm", &pin.url, &package)?;
+    admit("Storm", &package, &pin.url, &pin.sha256)?;
+    let unpacked = scratch.path().join("unpacked");
+    std::fs::create_dir_all(&unpacked).map_err(|e| {
+        unavailable(
+            "Storm",
+            format!("cannot create {}: {e}", unpacked.display()),
+        )
+    })?;
+    run_for(
+        "Storm",
+        "dpkg-deb",
+        &[OsStr::new("-x"), package.as_os_str(), unpacked.as_os_str()],
+    )?;
+    let program = storm_program_in_package(pin);
+    if !unpacked.join(&program).is_file() {
+        return Err(unavailable(
+            "Storm",
+            format!("{} holds no {}", pin.url, program.display()),
+        ));
+    }
+    std::fs::create_dir_all(place.join("bin")).map_err(|e| {
+        unavailable(
+            "Storm",
+            format!("cannot create {}: {e}", place.join("bin").display()),
+        )
+    })?;
+    let tree = unpacked.join("usr");
+    let to = place.join("usr");
+    std::fs::rename(&tree, &to).map_err(|e| {
+        unavailable(
+            "Storm",
+            format!("cannot move {} to {}: {e}", tree.display(), to.display()),
+        )
+    })?;
+    std::fs::write(&wrapper, storm_wrapper(pin))
+        .map_err(|e| unavailable("Storm", format!("cannot write {}: {e}", wrapper.display())))?;
+    make_executable("Storm", &wrapper)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
 #[cfg(unix)]
 fn make_executable(tool: &str, path: &Path) -> Result<(), FormalError> {
     use std::os::unix::fs::PermissionsExt;
@@ -682,6 +808,7 @@ mod tests {
             ("verus", &pins.verus.sha256, &pins.verus.url),
             ("apalache", &pins.apalache.sha256, &pins.apalache.url),
             ("java", &pins.java.sha256, &pins.java.url),
+            ("storm", &pins.storm.sha256, &pins.storm.url),
         ] {
             assert_eq!(sha256.len(), 64, "{tool}: a sha256 is 64 hex digits");
             assert!(
@@ -706,6 +833,15 @@ mod tests {
                 .ends_with(&format!("/v{0}/apalache-{0}.tgz", pins.apalache.version)),
             "the Apalache fetched is the archive of the release the pin names, \
              which install_apalache unpacks as apalache-<version>/"
+        );
+        assert!(
+            pins.storm.url.ends_with(&format!(
+                "/{0}/storm-{0}-debian12-amd64.deb",
+                pins.storm.version
+            )),
+            "the Storm fetched is the Debian 12 package for x64 of the release the pin names, \
+             whose program install_storm finds as usr/bin/storm-<version>: {}",
+            pins.storm.url
         );
     }
 
@@ -774,6 +910,22 @@ mod tests {
             pins.verus.toolchain
         )));
         assert!(text.contains("VERUS_USE_RUSTUP=0"));
+    }
+
+    #[test]
+    fn the_storm_wrapper_runs_the_package_with_its_own_libraries() {
+        let pins = pinned();
+        let text = storm_wrapper(&pins.storm);
+        assert!(text.starts_with("#!/bin/sh\n"));
+        assert!(text.contains(&format!("echo \"storm {}\"", pins.storm.version)));
+        assert!(text.contains("LD_LIBRARY_PATH=\"$here/usr/lib\""), "{text}");
+        assert!(
+            text.contains(&format!(
+                "exec \"$here/usr/bin/storm-{}\" \"$@\"",
+                pins.storm.version
+            )),
+            "{text}"
+        );
     }
 
     #[test]
