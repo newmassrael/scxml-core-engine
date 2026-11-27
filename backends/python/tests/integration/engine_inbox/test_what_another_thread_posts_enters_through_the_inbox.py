@@ -578,6 +578,32 @@ def test_what_the_inbox_holds_when_the_run_is_stopped_is_counted_unseen() -> Non
     assert engine.last_unseen_event() is _Event.PING
 
 
+def test_what_the_inbox_holds_by_name_when_the_run_is_stopped_is_counted_unseen() -> None:
+    # A typed event, one named by text and a Mesh raise, all held when the run is
+    # stopped: each is applied then as a direct call is, counted with the unseen
+    # events, and none is lost (docs/adr/0084; docs/adr/0147, D1). The inbox port
+    # is told each as entering after the end, in the order the inbox took them.
+    engine, policy, _log = _probe()
+    recorder = _OwnerRecorder(_HistoryClock())
+    engine.set_inbox_port(recorder)
+    engine.initialize()
+    assert engine.inbox.post(_ping("1"))
+    assert engine.inbox.post(InboxExternalEventByName("ping", data="2"))
+    assert engine.inbox.post(InboxMeshDelivery(MeshRaise("ping", EventMetadata(data="3"))))
+    engine.stop()
+
+    assert policy.taken == [], "a stopped run took an event"
+    assert engine.unseen_external_events() == 3, "an input the stop found was not applied, or applied twice"
+    assert engine.last_unseen_event() is _Event.PING
+    calls = [(op["call"], op.get("item"), op.get("source")) for op in recorder.operations]
+    assert calls == [
+        ("end", None, None),
+        ("enqueue", 1, "posted"),
+        ("enqueue", 2, "posted"),
+        ("enqueue", 3, "posted"),
+    ], f"what the inbox held at the stop was not applied after the end, each once and in order: {calls}"
+
+
 def test_what_is_posted_while_the_run_ends_is_counted_unseen_and_the_inbox_closes() -> None:
     # The host, told to stop `job` as `finish` leaves `working` for the final
     # `done`, posts from inside that last macrostep.
@@ -899,7 +925,8 @@ def _record_inbox_run() -> Tuple[List[Dict[str, Any]], List[List[_RecordedPost]]
 
     A post is taken and returns before the owner raises an event of its own, so
     every run holds that order. Then `_HISTORY_POSTERS` threads post through the
-    session's own handle and, every fifth post, through the tree's directory,
+    session's own handle, typed events and, every fifth post, one named by text,
+    and, every fifth post too, through the tree's directory,
     naming the session the tree does not hold while the run goes on and the
     probe's own session once it has ended, while the owner drives the machine,
     raises events of its own and stops the run once half the posts are made. A
@@ -925,7 +952,10 @@ def _record_inbox_run() -> Tuple[List[Dict[str, Any]], List[List[_RecordedPost]]
         try:
             for k in range(_HISTORY_PER_POSTER):
                 value = 2 + poster * _HISTORY_PER_POSTER + k
-                if k % 5 != 4:
+                if k % 5 == 2:
+                    named = InboxExternalEventByName("ping", data=str(value))
+                    made_post = _record_post(clock, engine, _HISTORY_SESSION, value, named)
+                elif k % 5 != 4:
                     made_post = _record_post(clock, engine, _HISTORY_SESSION, value, _ping(str(value)))
                 elif stopped.is_set():
                     made_post = _record_post(

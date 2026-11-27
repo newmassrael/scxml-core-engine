@@ -2421,8 +2421,6 @@ class Engine(Generic[S, E]):
         invocation's ``done.invoke`` without it is refused here, by its wire
         name, before the dot-token fallback below could turn it into the
         generic ``done.invoke`` the dequeue check no longer recognises."""
-        if not self._is_running:
-            return
         metadata = EventMetadata(
             send_id=sendid,
             event_type="external",
@@ -2432,20 +2430,32 @@ class Engine(Generic[S, E]):
             sender=sender,
             host_invoke_token=host_invoke_token,
         )
-        if self._refuses_host_invoke_completion(event_name, metadata):
-            return
         # §scxml-3.13 / 6.3.1 — a wire name like `done.invoke._invoke_0`
         # surfaces on a document that only declares the generic
         # `done.invoke` descriptor: the policy resolves it through its
         # dot-token prefixes, and token-prefix matching at the transition
         # layer then catches both forms uniformly.
         event = self._policy.resolve_event_by_name(event_name)
-        if event is None:
-            return
-        if self._policy.get_event_from_name(event_name) is None:
+        if event is not None and self._policy.get_event_from_name(event_name) is None:
             # §scxml-5.10: the machine is told the name the event arrived
             # under, not the shorter descriptor it was matched through.
             metadata.name = event_name
+        if not self._is_running:
+            # Once the run is over the event is counted with the unseen ones,
+            # as a typed one is (`_raise_external`), and as the Kotlin and Rust
+            # engines count what arrives by name then: what the inbox held when
+            # the run was stopped is applied as a direct call would be, and is
+            # never lost unsaid (docs/adr/0084; docs/adr/0147, D1). A name no
+            # event of the document takes is dropped, as it is while the run
+            # goes on. The refusal of a host-run invocation's completion is the
+            # dequeue's, and no dequeue follows.
+            if event is not None:
+                self._raise_external(event, metadata)
+            return
+        if self._refuses_host_invoke_completion(event_name, metadata):
+            return
+        if event is None:
+            return
         self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
     def send_external(

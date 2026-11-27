@@ -15,7 +15,10 @@
 #
 #   the drain before an event of the owner's own: an own event enters ahead of
 #   a post that returned before the event's enqueue began (arrival order, W3C
-#   test 201's shape), which every run makes once before its posters start.
+#   test 201's shape), which every run makes once before its posters start;
+#   what the inbox held when the run ended, applied then: an event named by
+#   text that the stop found is dropped unsaid, and never enters (never lost),
+#   which the stop case posts and the runs post now and then.
 #
 # The runtime is read from disk on every run, which is the evidence the harness
 # asks of a runtime target.
@@ -23,7 +26,7 @@
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_pytest backends/python/tests integration/engine_inbox/test_what_another_thread_posts_enters_through_the_inbox.py::test_each_run_of_the_inbox_is_recorded_as_a_history_that_keeps_the_doors_order
+mutation_pytest backends/python/tests integration/engine_inbox/test_what_another_thread_posts_enters_through_the_inbox.py::test_each_run_of_the_inbox_is_recorded_as_a_history_that_keeps_the_doors_order integration/engine_inbox/test_what_another_thread_posts_enters_through_the_inbox.py::test_what_the_inbox_holds_by_name_when_the_run_is_stopped_is_counted_unseen
 mutation_oracles backends/python/tests/integration/engine_inbox/test_what_another_thread_posts_enters_through_the_inbox.py
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
 
@@ -33,4 +36,12 @@ mutation_case "Python puts an own event on the external queue ahead of what the 
 edit("backends/python/runtime/sce_runtime/engine.py",
      "            port.enqueue_begins(queued.event, queued.metadata, posted)\n        if self._is_running:\n            self._drain_inbox()\n        self._external_queue.append(queued)\n",
      "            port.enqueue_begins(queued.event, queued.metadata, posted)\n        self._external_queue.append(queued)\n")
+PY
+
+# ── Never lost: an input named by text that a stop finds ───────────
+
+mutation_case "Python drops an event named by text that arrives once the run is over" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if event is not None:\n                self._raise_external(event, metadata)\n            return\n",
+     "            return\n")
 PY
