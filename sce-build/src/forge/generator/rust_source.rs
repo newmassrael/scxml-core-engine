@@ -83,6 +83,10 @@ pub(super) struct Rendered {
     /// table, where its write is the runtime's one writer over the table
     /// (docs/adr/0155 section 3); empty where it is not, or derives none.
     pub(super) derived: Vec<super::field_table::Derive>,
+    /// The adapter a source is read through by the runtime's one writer over
+    /// the codec's table (`{Codec}Rows`, docs/adr/0155 section 3), as the codec
+    /// template prints it; `None` where the write is printed.
+    pub(super) table_source: Option<serde_json::Value>,
     /// Why a codec read by its table is written by its printed encode
     /// (docs/adr/0155 section 3); `None` where it is written by the table, or
     /// read by none.
@@ -1400,6 +1404,7 @@ pub(super) fn render(input: &Input<'_>) -> Result<Rendered, Unsupported> {
     Ok(Rendered {
         text,
         derived,
+        table_source: plan.table_write.as_ref().map(|write| write.source.clone()),
         not_written: plan.not_written.clone(),
     })
 }
@@ -1411,9 +1416,10 @@ struct TableWrite {
     derived: Vec<super::field_table::Derive>,
     /// The body of `write_source`: the one call of the writer.
     call: String,
-    /// The adapter of a source the writer reads the rows through, and its
-    /// `TableSource`.
-    items: String,
+    /// The adapter of a source the writer reads the rows through
+    /// (`{Codec}Rows`) and its `TableSource`, as the codec template prints
+    /// them: the arms of each method by the index of each row.
+    source: serde_json::Value,
 }
 
 /// The type a codec named `name` is written through: `{name}Wire`, which holds
@@ -4788,15 +4794,12 @@ impl<'a> Plan<'a> {
         // A codec whose writes before its variant's body are read off its
         // fields alone prints them as a function of their own (docs/adr/0126).
         // A codec written by the runtime's one writer over its table holds the
-        // writer's call and, after its wire, the adapter the writer reads the
-        // value through (docs/adr/0155 section 3).
-        let (body, envelope, adapter) = match (&self.table_write, self.envelope_at()) {
-            (Some(table), _) => (table.call.clone(), String::new(), table.items.clone()),
-            (None, Some(at)) => {
-                let (body, envelope) = self.write_apart(at);
-                (body, envelope, String::new())
-            }
-            (None, None) => (self.write_body(), String::new(), String::new()),
+        // writer's call; the adapter the writer reads the value through is the
+        // codec template's, with the table (docs/adr/0155 section 3).
+        let (body, envelope) = match (&self.table_write, self.envelope_at()) {
+            (Some(table), _) => (table.call.clone(), String::new()),
+            (None, Some(at)) => self.write_apart(at),
+            (None, None) => (self.write_body(), String::new()),
         };
         let write = self.write_functions(&body);
         // A list or an embedded body is written by the codec it holds, which
@@ -4854,7 +4857,7 @@ impl<'a> Plan<'a> {
              {write}{envelope}\n\
              {count}\
              }}\n\
-             {measure}{adapter}",
+             {measure}",
             wire = wire_name(self.name()),
             name = self.name(),
             trait_name = self.trait_name,
@@ -4887,7 +4890,7 @@ impl<'a> Plan<'a> {
         &self,
         table: &super::field_table::PrintedTable,
     ) -> Result<TableWrite, NotWrittenByTable> {
-        use super::field_table::{dispatch, DerivedFrom, Kind, Place};
+        use super::field_table::{DerivedFrom, Kind, Place};
         let unwritten = |field: &CodecField, form| NotWrittenByTable::Field {
             field: field.id.clone(),
             form,
@@ -4930,7 +4933,7 @@ impl<'a> Plan<'a> {
         // flag of a chain whose entries are this codec) is set over the number
         // of its carrier, as the printed write sets it: in bits no derive
         // writes, of a number the value says.
-        let mut overrides: BTreeMap<usize, String> = BTreeMap::new();
+        let mut overrides: BTreeMap<usize, Vec<serde_json::Value>> = BTreeMap::new();
         for (carrier, def) in &lent {
             let refused = || NotWrittenByTable::ParentFlag {
                 field: carrier.id.clone(),
@@ -4954,18 +4957,17 @@ impl<'a> Plan<'a> {
             {
                 return Err(refused());
             }
-            overrides.entry(row).or_default().push_str(&format!(
-                "                if let Some(_o) = self.1.{member} {{\n                    _n = (_n & !0x{mask:X}) | {placed};\n                }}\n",
-                member = self.override_member(carrier, &def.name),
-                mask = 1u64 << def.bit,
-                placed = shl("u64::from(_o)", def.bit),
-            ));
+            overrides.entry(row).or_default().push(serde_json::json!({
+                "member": self.override_member(carrier, &def.name),
+                "mask": format!("0x{:X}", 1u64 << def.bit),
+                "bit": def.bit,
+            }));
         }
         let mut numbers = Vec::new();
         let mut bytes = Vec::new();
         let mut writes = Vec::new();
         for (at, (row, field)) in table.rows.iter().zip(&self.m().fields).enumerate() {
-            let read = format!("self.0.{}()", self.accessor(field));
+            let accessor = self.accessor(field);
             let optional = self.encode.presence(field).optional();
             match &row.kind {
                 Kind::Uint { .. } | Kind::Zint { .. } => {
@@ -4975,18 +4977,12 @@ impl<'a> Plan<'a> {
                     if !self.has_accessor(field) {
                         return Err(unwritten(field, UnwrittenField::NumberNotSaid));
                     }
-                    let value = if optional {
-                        format!("{read}.map_or(0, u64::from)")
-                    } else {
-                        format!("u64::from({read})")
-                    };
-                    let arm = match overrides.get(&at) {
-                        Some(set) => format!(
-                            "                let mut _n: u64 = {value};\n{set}                _n\n"
-                        ),
-                        None => format!("                {value}\n"),
-                    };
-                    numbers.push((at, arm));
+                    numbers.push(serde_json::json!({
+                        "row": at,
+                        "accessor": accessor,
+                        "optional": optional,
+                        "overrides": overrides.remove(&at).unwrap_or_default(),
+                    }));
                 }
                 Kind::Counted { text, max, .. } => {
                     if !self.has_accessor(field) {
@@ -4998,22 +4994,24 @@ impl<'a> Plan<'a> {
                     if max.is_some_and(|max| !most.is_some_and(|most| most <= max)) {
                         return Err(unwritten(field, UnwrittenField::TypeBound));
                     }
-                    let inner = if *text {
-                        "into_inner().as_bytes()"
-                    } else {
-                        "into_inner()"
-                    };
-                    let value = if optional {
-                        format!("{read}.map_or(&[][..], |_v| _v.{inner})")
-                    } else {
-                        format!("{read}.{inner}")
-                    };
-                    bytes.push((at, format!("                {value}\n")));
+                    bytes.push(serde_json::json!({
+                        "row": at,
+                        "accessor": accessor,
+                        "optional": optional,
+                        "text": text,
+                    }));
                 }
-                Kind::Body { handed, .. } => writes.push((at, self.body_write(field, handed)?)),
+                Kind::Body { handed, .. } => {
+                    let (bindings, statement) = self.body_write(field, handed)?;
+                    writes.push(serde_json::json!({
+                        "row": at,
+                        "bindings": bindings,
+                        "statement": statement,
+                    }));
+                }
             }
         }
-        let mut present: Vec<(usize, String)> = Vec::new();
+        let mut present: Vec<usize> = Vec::new();
         for derive in &derived {
             let DerivedFrom::Present(at) = derive.from else {
                 continue;
@@ -5022,68 +5020,38 @@ impl<'a> Plan<'a> {
             if !self.has_accessor(field) || !self.encode.presence(field).optional() {
                 return Err(unwritten(field, UnwrittenField::PresenceNotSaid));
             }
-            if present.iter().all(|(row, _)| *row != at) {
-                present.push((
-                    at,
-                    format!(
-                        "                self.0.{}().is_some()\n",
-                        self.accessor(field)
-                    ),
-                ));
+            if !present.contains(&at) {
+                present.push(at);
             }
         }
-        present.sort_by_key(|(row, _)| *row);
-        let mut methods = Vec::new();
-        if !numbers.is_empty() {
-            methods.push(format!(
-                "    fn number(&self, row: usize) -> u64 {{\n{}    }}\n",
-                dispatch(&numbers, "0")
-            ));
-        }
-        if !present.is_empty() {
-            methods.push(format!(
-                "    fn present(&self, row: usize) -> bool {{\n{}    }}\n",
-                dispatch(&present, "true")
-            ));
-        }
-        if !bytes.is_empty() {
-            methods.push(format!(
-                "    fn bytes(&self, row: usize) -> &[u8] {{\n{}    }}\n",
-                dispatch(&bytes, "&[]")
-            ));
-        }
-        if !writes.is_empty() {
-            methods.push(format!(
-                "    fn write(&self, row: usize, sink: &mut dyn {RUNTIME_CODEC}::SceSink<Error = E>, inputs: &[u64]) -> Result<(), E> {{\n\
-                 \x20       let _ = inputs;\n\
-                 \x20       let src = self.0;\n\
-                 \x20       let w = &mut {RUNTIME_CODEC}::DynSink(sink);\n\
-                 {}\
-                 \x20       Ok(())\n\
-                 \x20   }}\n",
-                dispatch(&writes, "")
-            ));
-        }
+        present.sort_unstable();
+        let present: Vec<serde_json::Value> = present
+            .into_iter()
+            .map(|at| {
+                serde_json::json!({
+                    "row": at,
+                    "accessor": self.accessor(&self.m().fields[at]),
+                })
+            })
+            .collect();
         let rows = self.rows_name();
         // The flags a parent sets are the adapter's to set over its carrier.
-        let (held, made) = if lent.is_empty() {
-            ("&'s S".to_string(), format!("{rows}(src)"))
+        let (overrides, made) = if lent.is_empty() {
+            (None, format!("{rows}(src)"))
         } else {
-            (
-                format!("&'s S, &'s {}", self.overrides_name()),
-                format!("{rows}(src, over)"),
-            )
+            (Some(self.overrides_name()), format!("{rows}(src, over)"))
         };
-        let items = format!(
-            "\n/// A value of `{name}` as the rows of `{table}` say it, read through\n\
-             /// [`{trait_name}`] by the runtime's one writer (docs/adr/0155).\n\
-             struct {rows}<'s, S: ?Sized>({held});\n\n\
-             impl<S: {trait_name} + ?Sized, E: ::core::fmt::Debug> {RUNTIME_CODEC}::TableSource<E> for {rows}<'_, S> {{\n{methods}}}\n",
-            name = self.name(),
-            table = table.name,
-            trait_name = self.trait_name,
-            methods = methods.join("\n"),
-        );
+        let source = serde_json::json!({
+            "rows": rows,
+            "name": self.name(),
+            "table": table.name,
+            "trait_name": self.trait_name,
+            "overrides": overrides,
+            "number": numbers,
+            "present": present,
+            "bytes": bytes,
+            "write": writes,
+        });
         let call = format!(
             "\x20       {RUNTIME_CODEC}::write_table(w, &{}, &[{}], &{made})\n",
             table.name, table.inputs
@@ -5091,20 +5059,21 @@ impl<'a> Plan<'a> {
         Ok(TableWrite {
             derived,
             call,
-            items,
+            source,
         })
     }
 
     /// The write of the body `field`, a row of a table handed `handed`, as
-    /// the arm of the adapter's `write`: the statement the printed encode
-    /// writes it by, each number it reads bound from what the row is handed.
+    /// the arm of the adapter's `write` the codec template prints: the
+    /// bindings of each number the statement reads, from what the row is handed,
+    /// and the statement the printed encode writes it by, indented as the arm.
     /// A statement that reads a number the encode derives and the row does
     /// not hand, or an input the row does not hand, is no arm.
     fn body_write(
         &self,
         field: &CodecField,
         handed: &[super::field_table::Handed],
-    ) -> Result<String, NotWrittenByTable> {
+    ) -> Result<(Vec<String>, String), NotWrittenByTable> {
         use super::field_table::{handed_binding, mentions, Place};
         let unwritten = |form| NotWrittenByTable::Field {
             field: field.id.clone(),
@@ -5174,7 +5143,7 @@ impl<'a> Plan<'a> {
         if mentions(&statement, &self.count_local(field)) {
             bindings.push(self.count_line(field));
         }
-        Ok(format!("{}{statement}", indent(&bindings, 16)))
+        Ok((bindings, statement.trim_end_matches('\n').to_string()))
     }
 
     /// `write_source`: the wire without the guard a parent has already made. A

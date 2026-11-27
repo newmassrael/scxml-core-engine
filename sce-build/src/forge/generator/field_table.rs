@@ -603,28 +603,6 @@ fn row_of(
     Ok(row)
 }
 
-/// `if row == N { .. }` where one row has a store, a `match` otherwise.
-pub(super) fn dispatch(arms: &[(usize, String)], otherwise: &str) -> String {
-    match arms {
-        [(row, body)] if otherwise.is_empty() => {
-            format!("        if row == {row} {{\n{body}        }}\n")
-        }
-        _ => {
-            let mut out = String::from("        match row {\n");
-            for (row, body) in arms {
-                out.push_str(&format!("            {row} => {{\n{body}            }}\n"));
-            }
-            let otherwise = if otherwise.is_empty() {
-                "{}"
-            } else {
-                otherwise
-            };
-            out.push_str(&format!("            _ => {otherwise},\n        }}\n"));
-            out
-        }
-    }
-}
-
 /// The store of a counted row's bytes or text into its member, the field `f`
 /// of the codec named `codec`, as the template prints it.
 fn counted_store(codec: &str, at: usize, f: &CodecField, said: &Said<'_>) -> serde_json::Value {

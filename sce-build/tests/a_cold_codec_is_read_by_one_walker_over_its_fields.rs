@@ -230,6 +230,23 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
                 "the delete's adapter has no `{printed}` (views: {views}):\n{delete}"
             );
         }
+        // The adapter is printed by the codec template from the arms the
+        // generator lowers, as the table and the stores are: a presence for
+        // each flag a gated field is announced by, the bytes of the counted
+        // field, and the write of the chain by its printed statement.
+        let query = rust_with("codec_zenoh_query", &named);
+        for printed in [
+            "struct CodecZenohQueryRows<'s, S: ?Sized>(&'s S);",
+            "::sce_forge_runtime::codec::TableSource<E> for CodecZenohQueryRows<'_, S> {",
+            "fn present(&self, row: usize) -> bool {",
+            "fn bytes(&self, row: usize) -> &[u8] {",
+            "let w = &mut ::sce_forge_runtime::codec::DynSink(sink);",
+        ] {
+            assert!(
+                query.contains(printed),
+                "the query's adapter has no `{printed}` (views: {views}):\n{query}"
+            );
+        }
         let wireexpr = rust_with("codec_zenoh_wireexpr", &named);
         // The template prints the rows, the gates and the stores of the
         // table from the context the generator hands it (docs/adr/0155).

@@ -17998,10 +17998,11 @@ fn render_codec(
             if let Some(table) = &cold_table {
                 let rows = table.rows_key(&rendered.derived);
                 let home = set_tables.home(&m.name, &rows);
-                ctx.insert(
-                    "field_table".into(),
-                    table.context(&rendered.derived, &home),
-                );
+                let mut context = table.context(&rendered.derived, &home);
+                // The adapter the writer reads a source through, where the
+                // codec is written by the table, printed with it.
+                context["source"] = rendered.table_source.clone().unwrap_or_default();
+                ctx.insert("field_table".into(), context);
                 *cold = Some(crate::forge::shared_tables::ColdCodec::Table(
                     crate::forge::shared_tables::SetTable {
                         codec: m.name.clone(),

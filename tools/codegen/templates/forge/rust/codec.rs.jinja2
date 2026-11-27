@@ -391,6 +391,8 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
    method per kind of store, each a `match` on the row's index. #}
 {% macro ft_bits(b) %}{% if b.width is none %}Bits::whole(Source::{{ b.source }}({{ b.index }})){% else %}Bits::range(Source::{{ b.source }}({{ b.index }}), {{ b.shift }}, {{ b.width }}){% endif %}{% endmacro %}
 {% macro ft_read(r) %}{% if r.kind == "Uint" %}Read::Uint { bytes: {{ r.bytes }}, big: {{ r.big }} }{% elif r.kind == "Zint" %}Read::Zint { bits: {{ r.bits }} }{% elif r.kind == "Body" %}Read::Body { inputs: &[{% for b in r.inputs %}{{ ft_bits(b) }}{% if not loop.last %}, {% endif %}{% endfor %}] }{% else %}Read::{{ r.kind }} { len: {{ ft_bits(r.len) }}, max: {{ r.max }} }{% endif %}{% endmacro %}
+{% macro ft_src_number(a) %}{% if a.optional %}self.0.{{ a.accessor }}().map_or(0, u64::from){% else %}u64::from(self.0.{{ a.accessor }}()){% endif %}{% endmacro %}
+{% macro ft_src_bytes(a) %}{% set inner = "into_inner().as_bytes()" if a.text else "into_inner()" %}{% if a.optional %}self.0.{{ a.accessor }}().map_or(&[][..], |_v| _v.{{ inner }}){% else %}self.0.{{ a.accessor }}().{{ inner }}{% endif %}{% endmacro %}
 {% macro ft_gate(g) %}{% if g.kind == "Always" %}Gate::Always{% elif g.kind == "Any" %}Gate::Any(&[{% for c in g.clauses %}Gate::{{ c.kind }}({{ ft_bits(c.bits) }}){% if not loop.last %}, {% endif %}{% endfor %}]){% else %}Gate::{{ g.kind }}({{ ft_bits(g.bits) }}){% endif %}{% endmacro %}
 {% macro ft_arm(kind, a) %}
 {% if kind == "number" %}
@@ -415,6 +417,25 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
                 let _ = {{ b.local }};
 {% endfor %}
                 {{ a.statement }}
+{% elif kind == "src_number" and a.overrides %}
+                let mut _n: u64 = {{ ft_src_number(a) }};
+{% for o in a.overrides %}
+                if let Some(_o) = self.1.{{ o.member }} {
+                    _n = (_n & !{{ o.mask }}) | {% if o.bit %}(u64::from(_o) << {{ o.bit }}){% else %}u64::from(_o){% endif %};
+                }
+{% endfor %}
+                _n
+{% elif kind == "src_number" %}
+                {{ ft_src_number(a) }}
+{% elif kind == "src_present" %}
+                self.0.{{ a.accessor }}().is_some()
+{% elif kind == "src_bytes" %}
+                {{ ft_src_bytes(a) }}
+{% elif kind == "src_write" %}
+{% for b in a.bindings %}
+                {{ b }}
+{% endfor %}
+{{ a.statement }}
 {% else %}
                 self.{{ a.ident }} = None;
 {% endif %}
@@ -489,6 +510,39 @@ impl{{ st.impl_generics }} {{ runtime_codec }}::TableOut<'f> for {{ st.value_typ
 {{ ft_dispatch("absent", st.absent, "") }}    }
 {% endif %}
 }
+{% if ft.source %}
+{% set src = ft.source %}
+
+/// A value of `{{ src.name }}` as the rows of `{{ src.table }}` say it, read through
+/// [`{{ src.trait_name }}`] by the runtime's one writer (docs/adr/0155).
+struct {{ src.rows }}<'s, S: ?Sized>(&'s S{% if src.overrides %}, &'s {{ src.overrides }}{% endif %});
+
+impl<S: {{ src.trait_name }} + ?Sized, E: ::core::fmt::Debug> {{ runtime_codec }}::TableSource<E> for {{ src.rows }}<'_, S> {
+{% if src.number %}
+    fn number(&self, row: usize) -> u64 {
+{{ ft_dispatch("src_number", src.number, "0") }}    }
+{% endif %}
+{% if src.present %}
+
+    fn present(&self, row: usize) -> bool {
+{{ ft_dispatch("src_present", src.present, "true") }}    }
+{% endif %}
+{% if src.bytes %}
+
+    fn bytes(&self, row: usize) -> &[u8] {
+{{ ft_dispatch("src_bytes", src.bytes, "&[]") }}    }
+{% endif %}
+{% if src.write %}
+
+    fn write(&self, row: usize, sink: &mut dyn {{ runtime_codec }}::SceSink<Error = E>, inputs: &[u64]) -> Result<(), E> {
+        let _ = inputs;
+        let src = self.0;
+        let w = &mut {{ runtime_codec }}::DynSink(sink);
+{{ ft_dispatch("src_write", src.write, "") }}        Ok(())
+    }
+{% endif %}
+}
+{% endif %}
 
 {% endif %}
 #[allow(dead_code)]
