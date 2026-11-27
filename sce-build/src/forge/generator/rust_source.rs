@@ -4898,6 +4898,9 @@ impl<'a> Plan<'a> {
         if self.may_fail() {
             return Err(NotWrittenByTable::MayRefuse);
         }
+        if table.reads_kinds() {
+            return Err(NotWrittenByTable::ReadsKinds);
+        }
         let lent = self.overridable();
         if !lent.is_empty() && self.lowers_to_parts() {
             return Err(NotWrittenByTable::LowersToParts);

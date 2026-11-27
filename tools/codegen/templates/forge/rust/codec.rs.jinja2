@@ -393,6 +393,7 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
 {% macro ft_read(r) %}{% if r.kind == "Uint" %}Read::Uint { bytes: {{ r.bytes }}, big: {{ r.big }} }{% elif r.kind == "Zint" %}Read::Zint { bits: {{ r.bits }} }{% elif r.kind == "Body" %}Read::Body { inputs: &[{% for b in r.inputs %}{{ ft_bits(b) }}{% if not loop.last %}, {% endif %}{% endfor %}] }{% else %}Read::{{ r.kind }} { len: {{ ft_bits(r.len) }}, max: {{ r.max }} }{% endif %}{% endmacro %}
 {% macro ft_src_number(a) %}{% if a.optional %}self.0.{{ a.accessor }}().map_or(0, u64::from){% else %}u64::from(self.0.{{ a.accessor }}()){% endif %}{% endmacro %}
 {% macro ft_src_bytes(a) %}{% set inner = "into_inner().as_bytes()" if a.text else "into_inner()" %}{% if a.optional %}self.0.{{ a.accessor }}().map_or(&[][..], |_v| _v.{{ inner }}){% else %}self.0.{{ a.accessor }}().{{ inner }}{% endif %}{% endmacro %}
+{% macro ft_kept(kinds) %}{% for k in kinds %}{% if not loop.first %} | {% endif %}{% if loop.index0 %}(u64::from({{ k }}) << {{ loop.index0 }}){% else %}u64::from({{ k }}){% endif %}{% else %}0{% endfor %}{% endmacro %}
 {% macro ft_gate(g) %}{% if g.kind == "Always" %}Gate::Always{% elif g.kind == "Any" %}Gate::Any(&[{% for c in g.clauses %}Gate::{{ c.kind }}({{ ft_bits(c.bits) }}){% if not loop.last %}, {% endif %}{% endfor %}]){% else %}Gate::{{ g.kind }}({{ ft_bits(g.bits) }}){% endif %}{% endmacro %}
 {% macro ft_arm(kind, a) %}
 {% if kind == "number" %}
@@ -417,6 +418,7 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
                 let _ = {{ b.local }};
 {% endfor %}
                 {{ a.statement }}
+                {{ ft_kept(a.kinds) }}
 {% elif kind == "src_number" and a.overrides %}
                 let mut _n: u64 = {{ ft_src_number(a) }};
 {% for o in a.overrides %}
@@ -500,10 +502,10 @@ impl{{ st.impl_generics }} {{ runtime_codec }}::TableOut<'f> for {{ st.value_typ
 {{ ft_dispatch("text", st.text, "Ok(())") }}    }
 {% endif %}
 {% if st.read %}
-    fn read(&mut self, row: usize, cursor: &mut SceReader<'f>, inputs: &[u64]) {
+    fn read(&mut self, row: usize, cursor: &mut SceReader<'f>, inputs: &[u64]) -> u64 {
         let _ = inputs;
         let _out = self;
-{{ ft_dispatch("read", st.read, "") }}    }
+{{ ft_dispatch("read", st.read, "0") }}    }
 {% endif %}
 {% if st.absent %}
     fn absent(&mut self, row: usize) {

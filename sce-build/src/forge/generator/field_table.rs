@@ -75,6 +75,23 @@ pub(super) struct PrintedTable {
 }
 
 impl PrintedTable {
+    /// Whether a gate or a body's read reads the kinds a chain's read answers,
+    /// the number of a body row: no source of the value says it, so the codec
+    /// is written by its printed encode (docs/adr/0155 section 3).
+    pub(super) fn reads_kinds(&self) -> bool {
+        let body = |place: Place| match place {
+            Place::Row(row) => matches!(self.rows[row].kind, Kind::Body { .. }),
+            Place::Input(_) => false,
+        };
+        self.rows.iter().any(|row| {
+            let hands = match &row.kind {
+                Kind::Body { handed, .. } => handed.iter().any(|h| body(h.from)),
+                _ => false,
+            };
+            hands || row.gate.reads(&body)
+        })
+    }
+
     /// What the table is, row for row: its rows and the numbers its write
     /// derives (`derived`), with no name of the codec's. Two codecs of a set
     /// whose tables are the same are one table (docs/adr/0155 section 4).
@@ -172,6 +189,15 @@ pub(super) enum Gate {
 }
 
 impl Gate {
+    /// Whether a clause of the gate reads a number at a place `at` answers.
+    fn reads(&self, at: &impl Fn(Place) -> bool) -> bool {
+        match self {
+            Gate::Always => false,
+            Gate::Set(bits) | Gate::Clear(bits) => at(bits.from),
+            Gate::Any(clauses) => clauses.iter().any(|clause| clause.reads(at)),
+        }
+    }
+
     /// The gate as the template prints a runtime `Gate` of it.
     fn context(&self) -> serde_json::Value {
         match self {
@@ -192,10 +218,27 @@ impl Gate {
 pub(super) struct Handed {
     /// The local the statement names.
     pub(super) local: String,
-    /// The Rust type of the local.
+    /// The Rust type of the local: `bool` for a kind of a chain's entries.
     pub(super) ty: &'static str,
     /// Where the number is.
     pub(super) from: Place,
+    /// The bit of the number the local is, where it is a kind a chain's read
+    /// answers (`ty` `bool`); `None` where it is the whole number.
+    pub(super) bit: Option<u32>,
+}
+
+impl Handed {
+    /// The range of the number the body is handed.
+    fn bits(&self) -> Bits {
+        match self.bit {
+            Some(bit) => Bits {
+                from: self.from,
+                shift: bit,
+                width: Some(1),
+            },
+            None => Bits::whole(self.from),
+        }
+    }
 }
 
 /// How a row's field is read.
@@ -250,7 +293,7 @@ impl Row {
                 "kind": "Body",
                 "inputs": handed
                     .iter()
-                    .map(|h| Bits::whole(h.from).context())
+                    .map(|h| h.bits().context())
                     .collect::<Vec<_>>(),
             }),
         };
@@ -322,14 +365,9 @@ pub(super) fn mentions(text: &str, name: &str) -> bool {
         })
 }
 
-/// Whether a gate reads the entries of a chain, which no row states.
-fn reads_a_chain(gate: &PresentIfPredicate) -> bool {
-    gate.scope == PresentIfScope::Chain || gate.or_with.as_deref().is_some_and(reads_a_chain)
-}
-
 /// The gate of the field at `at`: each clause a flag of an earlier carrier no
-/// gate decides or an input of the codec, and a disjunction of several clauses
-/// open where any of them is.
+/// gate decides, an input of the codec, or a kind of an earlier chain's entries,
+/// and a disjunction of several clauses open where any of them is.
 fn gate_of(
     m: &CodecModel,
     at: usize,
@@ -348,7 +386,8 @@ fn gate_of(
 }
 
 /// One clause of the gate of the field at `at`, its disjunction aside: the
-/// flag it reads, set or clear.
+/// flag it reads, set or clear. A kind of a chain's entries (`<chain>.has(<id>)`)
+/// is the bit of the chain's row its read answers ([`chain_kinds`]).
 fn clause_of(m: &CodecModel, at: usize, gate: &PresentIfPredicate) -> Result<Gate, UnstatedField> {
     let bits = match gate.scope {
         PresentIfScope::Local => {
@@ -382,7 +421,28 @@ fn clause_of(m: &CodecModel, at: usize, gate: &PresentIfPredicate) -> Result<Gat
                 width: Some(m.flag_inputs[input].width),
             }
         }
-        PresentIfScope::Chain => return Err(UnstatedField::GatedByChain),
+        PresentIfScope::Chain => {
+            let chain = m.fields[..at]
+                .iter()
+                .position(|f| f.id == gate.field_id)
+                .filter(|&chain| matches!(m.fields[chain].bit_size, BitSize::TlvChain { .. }))
+                .ok_or(UnstatedField::GatedByNoCarrier)?;
+            let bit = gate
+                .entry_id
+                .and_then(|id| {
+                    super::chain_has_values(&m.fields, &gate.field_id)
+                        .iter()
+                        .position(|&value| value == id)
+                })
+                .and_then(|bit| u32::try_from(bit).ok())
+                .filter(|&bit| bit < u64::BITS)
+                .ok_or(UnstatedField::GatedByChain)?;
+            Bits {
+                from: Place::Row(chain),
+                shift: bit,
+                width: Some(1),
+            }
+        }
     };
     Ok(if gate.negate {
         Gate::Clear(bits)
@@ -490,7 +550,22 @@ fn body_row(
             local: said[row].local.to_string(),
             ty,
             from: Place::Row(row),
+            bit: None,
         });
+    }
+    // A body gated by a kind of an earlier chain's entries reads the local the
+    // chain's read binds it to, handed as the bit of the chain's row.
+    for chain in 0..rows.len() {
+        for (bit, local) in chain_kinds(m, chain).into_iter().enumerate() {
+            if mentions(statement, &local) {
+                handed.push(Handed {
+                    local,
+                    ty: "bool",
+                    from: Place::Row(chain),
+                    bit: Some(u32::try_from(bit).map_err(|_| UnstatedField::GatedByChain)?),
+                });
+            }
+        }
     }
     for (input, declared) in m.flag_inputs.iter().enumerate() {
         let local = filters::to_snake_case(declared.name.clone());
@@ -499,6 +574,7 @@ fn body_row(
                 local,
                 ty: "u8",
                 from: Place::Input(input),
+                bit: None,
             });
         }
     }
@@ -509,6 +585,22 @@ fn body_row(
         statement: statement.to_string(),
         handed,
     })
+}
+
+/// The locals the read of the field at `at` binds the kinds of its entries to
+/// that later gates ask of it, in the order of the bits its row keeps them in:
+/// one for each identifier a `<chain>.has(<id>)` of the codec names, ascending
+/// (docs/adr/0065 §6 R6). Empty for a field that is no chain, or a chain no gate
+/// asks a kind of.
+fn chain_kinds(m: &CodecModel, at: usize) -> Vec<String> {
+    let chain = &m.fields[at];
+    if !matches!(chain.bit_size, BitSize::TlvChain { .. }) {
+        return Vec::new();
+    }
+    super::chain_has_values(&m.fields, &chain.id)
+        .into_iter()
+        .map(|value| super::chain_has_local(&chain.id, value, crate::generator::Language::Rust))
+        .collect()
 }
 
 /// The table of the codec `input.m`, read at a cold site, or why it is not
@@ -531,16 +623,6 @@ pub(super) fn lower(input: &Input<'_>) -> Result<PrintedTable, NotATable> {
     }
     if input.wire.len() != m.fields.len() || input.stored.len() != m.fields.len() {
         return shape(CodecShape::GateGroup);
-    }
-    if let Some(f) = m
-        .fields
-        .iter()
-        .find(|f| f.present_if.as_ref().is_some_and(reads_a_chain))
-    {
-        return Err(NotATable::Field {
-            field: f.id.clone(),
-            form: UnstatedField::GatedByChain,
-        });
     }
     let Some(said) = input
         .wire
@@ -663,6 +745,7 @@ fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
                     "row": at,
                     "bindings": bindings,
                     "statement": statement,
+                    "kinds": chain_kinds(m, at),
                 }));
             }
         }
@@ -708,17 +791,18 @@ fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
 
 /// `let {local}: {ty} = ..;`: the binding of the number at `i` among those a
 /// body row is handed (`inputs`), by the name its statement reads it by. The
-/// read of a body and its write bind them alike.
+/// read of a body and its write bind them alike. A `bool` is a kind of a
+/// chain's entries, handed as one bit.
 pub(super) fn handed_binding(i: usize, local: &str, ty: &str) -> String {
     let number = if i == 0 {
         "inputs.first().copied().unwrap_or(0)".to_string()
     } else {
         format!("inputs.get({i}).copied().unwrap_or(0)")
     };
-    let number = if ty == "u64" {
-        number
-    } else {
-        format!("{number} as {ty}")
+    let number = match ty {
+        "u64" => number,
+        "bool" => format!("{number} != 0"),
+        _ => format!("{number} as {ty}"),
     };
     format!("let {local}: {ty} = {number};")
 }
@@ -1081,6 +1165,7 @@ mod tests {
             local: "header".to_string(),
             ty: "u8",
             from: Place::Row(0),
+            bit: None,
         }];
         assert_eq!(
             table.rows,
@@ -1118,8 +1203,8 @@ mod tests {
         assert_eq!(
             stores["read"],
             serde_json::json!([
-                { "row": 1, "bindings": [binding.clone()], "statement": embed },
-                { "row": 2, "bindings": [binding], "statement": chain },
+                { "row": 1, "bindings": [binding.clone()], "statement": embed, "kinds": [] },
+                { "row": 2, "bindings": [binding], "statement": chain, "kinds": [] },
             ]),
             "{context}"
         );
@@ -1221,6 +1306,115 @@ mod tests {
                 &serde_json::json!([{ "row": 1, "ident": "seq" }]),
             ),
             "a field a disjunction gates is stored absent where it is closed: {context}"
+        );
+    }
+
+    /// A field gated by a kind of an earlier chain's entries (`<chain>.has(<id>)`)
+    /// is gated by the bit of the chain's row its read answers, and a body gated
+    /// so is handed that bit as the local its statement reads.
+    #[test]
+    fn a_gate_on_a_chain_kind_is_a_bit_the_chain_row_answers() {
+        let m = codec("codec_chain_has_marker");
+        let chain = "let mut _found_extensions = [false; 1];\n\
+                     if (header & 0x80u8) != 0 { _out.extensions = None; }\n\
+                     let _has_extensions_18 = _found_extensions[0];";
+        let slices = "if _has_extensions_18 { _out.slices = None; }";
+        let wire = [
+            context(&[
+                ("id", "header"),
+                (
+                    "present_if_decode_stmt",
+                    "let header = { let raw = cursor.take_array::<1>(); raw[0] };",
+                ),
+            ]),
+            context(&[("id", "extensions"), ("tlv_chain_decode_stmt", chain)]),
+            context(&[
+                ("id", "payload_len"),
+                (
+                    "present_if_decode_stmt",
+                    "let payload_len = if !_has_extensions_18 { Some(cursor.read_vle_u64()) } \
+                     else { None };",
+                ),
+            ]),
+            context(&[
+                ("id", "payload"),
+                ("present_if_decode_stmt", "let payload = None;"),
+                ("bounded_rebind", "let payload = payload;"),
+            ]),
+            context(&[
+                ("id", "slice_count"),
+                (
+                    "present_if_decode_stmt",
+                    "let slice_count = if _has_extensions_18 { Some(cursor.read_vle_u32()) } \
+                     else { None };",
+                ),
+            ]),
+            context(&[("id", "slices"), ("repeat_decode_stmt", slices)]),
+        ];
+        let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
+        let kind = Bits {
+            from: Place::Row(1),
+            shift: 0,
+            width: Some(1),
+        };
+        assert_eq!(
+            table
+                .rows
+                .iter()
+                .map(|row| row.gate.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                Gate::Always,
+                Gate::Always,
+                Gate::Clear(kind),
+                Gate::Clear(kind),
+                Gate::Set(kind),
+                Gate::Always,
+            ],
+            "{:?}",
+            table.rows
+        );
+        assert_eq!(
+            table.rows[5].kind,
+            Kind::Body {
+                statement: slices.to_string(),
+                handed: vec![Handed {
+                    local: "_has_extensions_18".to_string(),
+                    ty: "bool",
+                    from: Place::Row(1),
+                    bit: Some(0),
+                }],
+            }
+        );
+        assert!(
+            table.reads_kinds(),
+            "a table whose gates read a chain's kinds says so, and its write stays printed"
+        );
+        let context = table.context(&[], &TableHome::Own);
+        let stores = &context["stores"]["read"];
+        assert_eq!(
+            (&stores[0]["kinds"], &stores[1]["kinds"]),
+            (
+                &serde_json::json!(["_has_extensions_18"]),
+                &serde_json::json!([]),
+            ),
+            "the chain's read answers the kind its gates ask, the repeat's none: {context}"
+        );
+        assert_eq!(
+            stores[1]["bindings"],
+            serde_json::json!([{
+                "binding": "let _has_extensions_18: bool = inputs.first().copied().unwrap_or(0) != 0;",
+                "local": "_has_extensions_18",
+            }]),
+            "{context}"
+        );
+        assert_eq!(
+            context["rows"][4]["gate"],
+            serde_json::json!({
+                "kind": "Set",
+                "bits": { "source": "Row", "index": 1, "shift": 0, "width": 1 },
+            }),
+            "{context}"
         );
     }
 

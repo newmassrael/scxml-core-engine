@@ -148,7 +148,8 @@ pub enum UnstatedField {
     GatedByNoFlag,
     /// It is gated by no input of the codec.
     GatedByNoInput,
-    /// It is gated by the entries of a chain.
+    /// It is gated by a kind of a chain's entries no bit of the chain's row
+    /// states.
     GatedByChain,
 }
 
@@ -209,7 +210,9 @@ impl std::fmt::Display for NotATable {
                     UnstatedField::GatedByNoInput => {
                         f.write_str("is gated by no input of the codec")
                     }
-                    UnstatedField::GatedByChain => f.write_str("is gated by a chain's entries"),
+                    UnstatedField::GatedByChain => {
+                        f.write_str("is gated by a kind of a chain no bit of its row states")
+                    }
                 }
             }
         }
@@ -223,6 +226,9 @@ pub enum NotWrittenByTable {
     /// Its encode can refuse a value, and the writer's one error is the
     /// sink's.
     MayRefuse,
+    /// A gate or a body reads the kinds of a chain's entries, which the read
+    /// of the chain answers and no source of the value says.
+    ReadsKinds,
     /// A parent sets its flags, and its write lowers to its parts.
     LowersToParts,
     /// A parent sets the flag `flag` of `field`, which the writer derives or

@@ -186,7 +186,10 @@ pub enum Read {
         max: u64,
     },
     /// What the value reads itself, handed `inputs` ([`TableOut::read`]): an
-    /// embedded body, a variant arm by its tag, a list. The row keeps zero.
+    /// embedded body, a variant arm by its tag, a list. The row keeps the number
+    /// the read answers: of a chain, the kinds of entry it holds that a later
+    /// gate asks of it, a bit for each (`<chain>.has(<id>)`); of any other
+    /// body, zero.
     Body {
         /// What the read is handed, at most [`ROW_INPUTS`].
         inputs: &'static [Bits],
@@ -360,9 +363,12 @@ pub trait TableOut<'f> {
 
     /// Read the field of the row `row` from `reader`, handed `inputs`
     /// ([`Read::Body`]): the body, the arm or the list the value holds there,
-    /// each read by its own function.
-    fn read(&mut self, row: usize, reader: &mut SceReader<'f>, inputs: &[u64]) {
+    /// each read by its own function. The answer is the number the row keeps
+    /// for the gates after it: the kinds of entry a chain read holds, a bit for
+    /// each kind a later gate asks of it, and zero for any other body.
+    fn read(&mut self, row: usize, reader: &mut SceReader<'f>, inputs: &[u64]) -> u64 {
         let _ = (row, reader, inputs);
+        0
     }
 
     /// The field of the row `row` is not on the wire: its gate is closed.
@@ -444,8 +450,7 @@ fn read_row<'f>(
         Read::Body { inputs: wanted } => {
             let handed = body_inputs(wanted, frame, inputs);
             let count = wanted.len().min(ROW_INPUTS);
-            out.read(at, reader, &handed[..count]);
-            0
+            out.read(at, reader, &handed[..count])
         }
     }
 }
@@ -603,7 +608,9 @@ impl<E: core::fmt::Debug> SceSink for DynSink<'_, E> {
 /// bits each of the table's derives computes written over it; then each row is
 /// written in order where its gate is open over those numbers and `inputs`,
 /// the one rule [`read_table`] reads it by, so a frame written is read back
-/// row for row. The only error is the sink's (docs/adr/0065): a byte string or
+/// row for row. A body row's number is zero here: a table whose gate reads the
+/// kinds a chain's read answers is read by its table and written by its
+/// printed encode. The only error is the sink's (docs/adr/0065): a byte string or
 /// a text is held to its row's bound by its type in every codec whose encode
 /// refuses no value, which is the only codec a table is written for.
 #[inline(never)]
@@ -912,10 +919,11 @@ mod tests {
             Ok(())
         }
 
-        fn read(&mut self, row: usize, reader: &mut SceReader<'f>, inputs: &[u64]) {
+        fn read(&mut self, row: usize, reader: &mut SceReader<'f>, inputs: &[u64]) -> u64 {
             assert_eq!(row, 4);
             let byte = reader.take_array::<1>()[0];
             self.body = Some(([inputs[0], inputs[1]], byte));
+            0
         }
 
         fn absent(&mut self, row: usize) {
@@ -1249,6 +1257,73 @@ mod tests {
             },
         ];
         let _ = FieldTable::new(&FORWARD);
+    }
+
+    /// A body row that answers the kinds of a chain it read: bit 0 where the
+    /// chain held the kind a later gate asks of it.
+    struct Kinds {
+        held: u64,
+        numbers: [Option<u64>; 3],
+    }
+
+    impl<'f> TableOut<'f> for Kinds {
+        fn number(&mut self, row: usize, value: u64) {
+            self.numbers[row] = Some(value);
+        }
+
+        fn read(&mut self, row: usize, reader: &mut SceReader<'f>, inputs: &[u64]) -> u64 {
+            assert_eq!((row, inputs), (1, &[][..]));
+            let _ = reader.take_array::<1>();
+            self.held
+        }
+    }
+
+    /// A header, a chain whose read answers its kinds, and a number read where
+    /// the chain held the kind at bit 0, and another where it did not.
+    const KINDS_ROWS: &[Row] = &[
+        Row {
+            read: Read::Uint {
+                bytes: 1,
+                big: true,
+            },
+            gate: Gate::Always,
+        },
+        Row {
+            read: Read::Body { inputs: &[] },
+            gate: Gate::Always,
+        },
+        Row {
+            read: Read::Uint {
+                bytes: 1,
+                big: true,
+            },
+            gate: Gate::Set(Bits::range(Source::Row(1), 0, 1)),
+        },
+    ];
+
+    static KINDS: FieldTable = FieldTable::new(KINDS_ROWS);
+
+    #[test]
+    fn a_gate_reads_the_kinds_a_body_row_answers() {
+        let wire = [0x00, 0xAA, 0x07];
+        let mut out = Kinds {
+            held: 0b1,
+            numbers: [None; 3],
+        };
+        let mut reader = SceReader::new(&wire);
+        read_table(&mut reader, &KINDS, &[], &mut out);
+        assert_eq!(reader.verdict(), Ok(()));
+        assert_eq!(out.numbers[2], Some(0x07));
+        // The chain held no such kind: the number is not read.
+        let mut out = Kinds {
+            held: 0b10,
+            numbers: [None; 3],
+        };
+        let mut reader = SceReader::new(&wire);
+        read_table(&mut reader, &KINDS, &[], &mut out);
+        assert_eq!(reader.verdict(), Ok(()));
+        assert_eq!(reader.remaining(), 1);
+        assert_eq!(out.numbers[2], None);
     }
 
     /// The value of [`WRITTEN`] a write reads, by row: the header, the id, the

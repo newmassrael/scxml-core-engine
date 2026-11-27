@@ -65,8 +65,13 @@ A codec's table is a `static` `FieldTable` of rows in wire order. A row says:
 - **its place in the value**: the row's index, which the value's store answers.
 
 The walker keeps the number each row read in a frame of its own (`[u64; TABLE_ROWS]`), so a gate, a length, a count,
-a tag and an input are bit ranges of rows already read. A field whose kind, gate or length no row states (a predicate
-over a member of a body, a chain's kind, a length past an embedded body, DMA alignment) keeps the codec printed; the
+a tag and an input are bit ranges of rows already read. A body's read answers the number its row keeps: a chain's, the
+kinds of entry it holds that a later gate asks of it (`<chain>.has(<id>)`), a bit for each in the order of their
+identifiers, so such a gate is a bit range of the chain's row as a flag is of its carrier, and a body gated so is
+handed that bit; any other body's, zero. The chain keeps its typed rule (section 5), and the codec keeps its write
+printed: the kinds are what the read of the chain found, which no source of the value says. A field whose kind, gate or
+length no row states (a predicate over a member of a body, a length past an embedded body, DMA alignment) keeps the
+codec printed; the
 generator answers which codecs are tables and why the others are not, as the printers of ADR 0081 answer the forms
 they lower, and a generator test lists them for the conformance set.
 
