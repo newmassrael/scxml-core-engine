@@ -533,6 +533,7 @@ AtMostOnceInductive ==
     /\ \A i \in Inst :
            /\ cinc[i] = 0 => \A k \in Ks : status[i][k] # "waiting"
            /\ \A q \in Ks : q >= cnext[i] => slot[i][q] = 0
+           /\ \A p, q \in Ks : (slot[i][p] # 0 /\ slot[i][p] = slot[i][q]) => p = q
            /\ \A k \in Ks :
                   status[i][k] = "new" =>
                       /\ effects[i][k] = 0
