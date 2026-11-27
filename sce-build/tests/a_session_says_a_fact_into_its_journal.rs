@@ -541,10 +541,14 @@ fn a_follower_is_told_the_record_each_entry_it_follows_is_read_by() {
     ] {
         assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
     }
+    // A writer keyed by its clients' names, which serves no request and still keys its
+    // sessions, follows nothing.
     let (ok, out, peers) = generate_deployed_peers(
         &statechart("sce-static", SAYS),
-        &pooled("        journal: true\n"),
-        &[("rooms.scxml", rooms.as_str())],
+        "version: \"1.0\"\ntopology:\n  cloud:\n    machines:\n      probe:\n        \
+         source: probe.scxml\n        sessions: { key_from: client, idle_ms: 1000 }\n        \
+         journal: true\n",
+        &[],
     );
     assert!(ok, "the writer is generated:\n{out}");
     assert!(
