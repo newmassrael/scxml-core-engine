@@ -524,6 +524,25 @@ pub fn of_statechart_under(
     )
 }
 
+/// The open matters of one document of a design of several, each sentence
+/// led by the document it is about.
+///
+/// A sentence names a state or a marker and never the file it is in, which is
+/// enough while a design is one document; in a design of several,
+/// `states.idle` is a place in every statechart, and a person told to settle it
+/// has to be told where. The sentence is this module's, unchanged, so the report
+/// and the record still say one thing in one set of words; only the place is
+/// added before it.
+pub fn in_document(document: &str, matters: Vec<OpenMatter>) -> Vec<OpenMatter> {
+    matters
+        .into_iter()
+        .map(|matter| OpenMatter {
+            kind: matter.kind,
+            message: format!("{document}: {}", matter.message),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -892,6 +911,22 @@ mod tests {
         assert!(
             !records[4].house_rule,
             "a question is not a standing answer"
+        );
+    }
+
+    #[test]
+    fn a_matter_of_one_document_of_several_is_led_by_its_document_and_keeps_its_words() {
+        let matter = OpenMatter {
+            kind: OpenKind::Parent,
+            message: "the machine sends to its parent".to_string(),
+        };
+        let placed = in_document("front.scxml", vec![matter.clone()]);
+        assert_eq!(
+            placed,
+            [OpenMatter {
+                kind: OpenKind::Parent,
+                message: format!("front.scxml: {}", matter.message),
+            }]
         );
     }
 }

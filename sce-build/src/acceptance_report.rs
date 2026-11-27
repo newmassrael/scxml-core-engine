@@ -50,7 +50,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::model::{Action, SCXMLModel};
-use crate::requirement_manifest::{classify, Outcome, RequirementManifest};
+use crate::requirement_manifest::{
+    classify, Classification, Outcome, RequirementEntry, RequirementManifest,
+};
 use crate::requirement_sidecar::RequirementSidecar;
 use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 use crate::transition_table::{transition_table, TransitionRow};
@@ -230,11 +232,7 @@ pub fn render(
     variant: &str,
 ) -> String {
     let classification = classify(model, manifest);
-    let table = transition_table(model);
-    let by_path: BTreeMap<&str, &TransitionRow> = table
-        .iter()
-        .map(|row| (row.node_path.as_str(), row))
-        .collect();
+    let shown = Shown::statechart(model);
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -246,7 +244,124 @@ pub fn render(
     // SUBSET.md §2.10.1). Printed only when present, so a report for a
     // document without one is byte-identical to what it was.
     push_kind_basis(&mut out, model.kind_basis.as_ref());
-    if sidecar.is_some() {
+    push_cautions(&mut out, sidecar.is_some(), &classification);
+
+    out.push_str("\nA. REQUIREMENTS\n");
+    for entry in &manifest.requirements {
+        push_requirement(&mut out, entry, sidecar);
+        push_evidence(&mut out, shown.evidence(&entry.id));
+    }
+
+    let open = crate::open_matters::of_statechart(model);
+    push_attention(&mut out, &open, &classification, shown.unclaimed());
+    push_coverage(&mut out, &classification);
+    out
+}
+
+/// What one document puts on the page: the rows a requirement's evidence is
+/// read from, read once for every requirement of the page.
+enum Shown<'a> {
+    /// A statechart's transition table, and the model its fragments are taken
+    /// over.
+    Statechart {
+        model: &'a SCXMLModel,
+        table: Vec<TransitionRow>,
+    },
+    /// The review-table rows of a document of another kind, its root's first.
+    Forge {
+        nodes: Vec<crate::forge::requirement_nodes::ForgeReqNode>,
+    },
+}
+
+impl<'a> Shown<'a> {
+    fn statechart(model: &'a SCXMLModel) -> Self {
+        Shown::Statechart {
+            model,
+            table: transition_table(model),
+        }
+    }
+
+    fn forge(parsed: &crate::forge::model::ParsedForge) -> Self {
+        Shown::Forge {
+            nodes: crate::forge::requirement_nodes::requirement_nodes(parsed),
+        }
+    }
+
+    /// The lines of evidence the document shows for `id`, or `None` when
+    /// nothing in it depends on the requirement.
+    ///
+    /// A statechart shows the rows of the requirement's [`fragment`], each
+    /// with the relation that put it there; a document of another kind shows
+    /// its own review-table line of each node that claims the requirement,
+    /// which is everything that node decides (a forge node has no transition
+    /// row and no dependency closure).
+    fn evidence(&self, id: &str) -> Option<Vec<String>> {
+        match self {
+            Shown::Statechart { model, table } => {
+                let deps = fragment(model, id);
+                if deps.is_empty() {
+                    return None;
+                }
+                let by_path: BTreeMap<&str, &TransitionRow> = table
+                    .iter()
+                    .map(|row| (row.node_path.as_str(), row))
+                    .collect();
+                Some(
+                    deps.iter()
+                        .filter_map(|dep| {
+                            let row = by_path.get(dep.node_path.as_str())?;
+                            Some(format!(
+                                "      {:<18} {} | {} | {} | {} | {} | {}\n",
+                                format!("{:?}", dep.relation),
+                                row.from,
+                                row.event,
+                                row.guard,
+                                row.after,
+                                row.to,
+                                row.action
+                            ))
+                        })
+                        .collect(),
+                )
+            }
+            Shown::Forge { nodes } => {
+                let lines: Vec<String> = nodes
+                    .iter()
+                    .filter(|row| {
+                        row.requirements
+                            .iter()
+                            .any(|claimed| claimed.as_str() == id)
+                    })
+                    .map(|row| {
+                        format!(
+                            "      {:<18} {:<24} {}\n",
+                            row.node_type, row.node_path, row.detail
+                        )
+                    })
+                    .collect();
+                (!lines.is_empty()).then_some(lines)
+            }
+        }
+    }
+
+    /// How many of the document's rows claim no requirement.
+    fn unclaimed(&self) -> usize {
+        match self {
+            Shown::Statechart { table, .. } => {
+                table.iter().filter(|row| row.is_unclaimed()).count()
+            }
+            Shown::Forge { nodes } => nodes
+                .iter()
+                .filter(|row| row.requirements.is_empty())
+                .count(),
+        }
+    }
+}
+
+/// The warnings under the title: the page carries the source's own words, or
+/// the design cites another revision of the specification than the manifest.
+fn push_cautions(out: &mut String, sidecar: bool, classification: &Classification) {
+    if sidecar {
         out.push_str(
             "⚠ carries verbatim text from the source document. A local artefact \
              for one sitting: do not commit it.\n",
@@ -255,50 +370,52 @@ pub fn render(
     if let Some(note) = &classification.revision_note {
         out.push_str(&format!("⚠ {note}\n"));
     }
+}
 
-    out.push_str("\nA. REQUIREMENTS\n");
-    for entry in &manifest.requirements {
-        out.push_str(&format!("\n  {}", entry.id));
-        if let Some(section) = &entry.section {
-            out.push_str(&format!("   section {section}"));
-        }
-        out.push('\n');
-
-        match sidecar.and_then(|side| side.sentence(&entry.id)) {
-            Some(sentence) => out.push_str(&format!("    says: {sentence}\n")),
-            None if sidecar.is_some() => out.push_str(
-                "    says: (no sentence for this id in the sidecar — check the \
-                 source before accepting)\n",
-            ),
-            None => out.push_str("    says: (no sidecar supplied)\n"),
-        }
-
-        let deps = fragment(model, &entry.id);
-        if deps.is_empty() {
-            out.push_str("    evidence: (this document annotates nothing for it)\n");
-            continue;
-        }
-        out.push_str("    evidence:\n");
-        for dep in &deps {
-            let Some(row) = by_path.get(dep.node_path.as_str()) else {
-                continue;
-            };
-            out.push_str(&format!(
-                "      {:<18} {} | {} | {} | {} | {} | {}\n",
-                format!("{:?}", dep.relation),
-                row.from,
-                row.event,
-                row.guard,
-                row.after,
-                row.to,
-                row.action
-            ));
-        }
+/// A requirement's id, its section, and what the source says for it.
+fn push_requirement(
+    out: &mut String,
+    entry: &RequirementEntry,
+    sidecar: Option<&RequirementSidecar>,
+) {
+    out.push_str(&format!("\n  {}", entry.id));
+    if let Some(section) = &entry.section {
+        out.push_str(&format!("   section {section}"));
     }
+    out.push('\n');
 
+    match sidecar.and_then(|side| side.sentence(&entry.id)) {
+        Some(sentence) => out.push_str(&format!("    says: {sentence}\n")),
+        None if sidecar.is_some() => out.push_str(
+            "    says: (no sentence for this id in the sidecar — check the \
+             source before accepting)\n",
+        ),
+        None => out.push_str("    says: (no sidecar supplied)\n"),
+    }
+}
+
+/// The evidence of one requirement in a page of one document.
+fn push_evidence(out: &mut String, lines: Option<Vec<String>>) {
+    let Some(lines) = lines else {
+        out.push_str("    evidence: (this document annotates nothing for it)\n");
+        return;
+    };
+    out.push_str("    evidence:\n");
+    for line in lines {
+        out.push_str(&line);
+    }
+}
+
+/// Block B: what the design leaves to a person, every requirement that is not
+/// `implemented`, and how many rows claim nothing.
+fn push_attention(
+    out: &mut String,
+    open: &[crate::open_matters::OpenMatter],
+    classification: &Classification,
+    unclaimed: usize,
+) {
     out.push_str("\nB. NEEDING ATTENTION\n");
-    let open = crate::open_matters::of_statechart(model);
-    let mut flagged = push_open_matters(&mut out, &open);
+    let mut flagged = push_open_matters(out, open);
     for outcome in &classification.outcomes {
         if outcome.outcome == Outcome::Implemented {
             continue;
@@ -310,7 +427,6 @@ pub fn render(
             outcome.id
         ));
     }
-    let unclaimed = table.iter().filter(|row| row.is_unclaimed()).count();
     if unclaimed > 0 {
         out.push_str(&format!(
             "  {:<14} {unclaimed} element(s) the source never asked for\n",
@@ -320,14 +436,16 @@ pub fn render(
     if flagged == 0 && unclaimed == 0 {
         out.push_str("  (nothing)\n");
     }
+}
 
+/// Block C: how many requirements each section of the source holds, a
+/// section that holds none marked for opening.
+fn push_coverage(out: &mut String, classification: &Classification) {
     out.push_str("\nC. SOURCE COVERAGE\n");
     for (section, count) in &classification.section_counts {
         let marker = if *count == 0 { "   <- open this" } else { "" };
         out.push_str(&format!("  {section:<12} {count}{marker}\n"));
     }
-
-    out
 }
 
 /// What the design leaves to a person, as the first lines of block B, and
@@ -417,8 +535,7 @@ pub fn render_forge(
 ) -> String {
     let doc = &parsed.document;
     let classification = crate::requirement_manifest::classify_document(parsed, manifest);
-    let nodes = crate::forge::requirement_nodes::requirement_nodes(parsed);
-    let rows: Vec<&crate::forge::requirement_nodes::ForgeReqNode> = nodes.iter().collect();
+    let shown = Shown::forge(parsed);
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -430,81 +547,149 @@ pub fn render_forge(
     out.push_str(&format!("variant: {variant}\n"));
     out.push_str(&format!("kind: {}\n", doc.kind().as_attr()));
     push_kind_basis(&mut out, parsed.kind_basis.as_ref());
-    if sidecar.is_some() {
-        out.push_str(
-            "⚠ carries verbatim text from the source document. A local artefact \
-             for one sitting: do not commit it.\n",
-        );
-    }
-    if let Some(note) = &classification.revision_note {
-        out.push_str(&format!("⚠ {note}\n"));
-    }
+    push_cautions(&mut out, sidecar.is_some(), &classification);
 
     out.push_str("\nA. REQUIREMENTS\n");
     for entry in &manifest.requirements {
-        out.push_str(&format!("\n  {}", entry.id));
-        if let Some(section) = &entry.section {
-            out.push_str(&format!("   section {section}"));
-        }
-        out.push('\n');
-        match sidecar.and_then(|side| side.sentence(&entry.id)) {
-            Some(sentence) => out.push_str(&format!("    says: {sentence}\n")),
-            None if sidecar.is_some() => out.push_str(
-                "    says: (no sentence for this id in the sidecar — check the \
-                 source before accepting)\n",
-            ),
-            None => out.push_str("    says: (no sidecar supplied)\n"),
-        }
-        let citing: Vec<_> = rows
-            .iter()
-            .filter(|row| row.requirements.iter().any(|id| id == &entry.id))
-            .collect();
-        if citing.is_empty() {
-            out.push_str("    evidence: (this document annotates nothing for it)\n");
-            continue;
-        }
-        out.push_str("    evidence:\n");
-        for row in citing {
-            out.push_str(&format!(
-                "      {:<18} {:<24} {}\n",
-                row.node_type, row.node_path, row.detail
-            ));
-        }
+        push_requirement(&mut out, entry, sidecar);
+        push_evidence(&mut out, shown.evidence(&entry.id));
     }
 
-    out.push_str("\nB. NEEDING ATTENTION\n");
-    let mut flagged = push_open_matters(&mut out, open);
-    for outcome in &classification.outcomes {
-        if outcome.outcome == Outcome::Implemented {
-            continue;
-        }
-        flagged += 1;
-        out.push_str(&format!(
-            "  {:<14} {}\n",
-            outcome.outcome.as_str(),
-            outcome.id
-        ));
+    push_attention(&mut out, open, &classification, shown.unclaimed());
+    push_coverage(&mut out, &classification);
+    out
+}
+
+/// One document of the design a report is rendered for.
+pub struct ReportMember<'a> {
+    /// The document as the page names it: the path it was named by, or the
+    /// path its import resolved to.
+    pub label: &'a str,
+    pub document: ReportDocument<'a>,
+}
+
+/// A document of a design, read through the door of its own pipeline.
+#[derive(Clone, Copy)]
+pub enum ReportDocument<'a> {
+    Statechart(&'a SCXMLModel),
+    /// A document of another kind, and what its markers leave open: read by
+    /// the caller from the expanded text, where the markers are, as
+    /// [`render_forge`] is handed them.
+    Forge(
+        &'a crate::forge::model::ParsedForge,
+        &'a [crate::open_matters::OpenMatter],
+    ),
+}
+
+/// The report for a design of one document or several
+/// ([`crate::design_set`]): the page a person reads to accept the design once.
+///
+/// ⚠ One document is answered by [`render`] or [`render_forge`], so its page is
+/// byte for byte the page it always was. Several are answered together, as
+/// `requirements` answers them ([`crate::requirement_manifest::classify_documents`]):
+/// a requirement is met when a node of any document claims it, and an id the
+/// manifest does not hold is `dangling` wherever it is cited. Measured document
+/// by document, a requirement claimed in an algorithm the statechart imports
+/// read "this document annotates nothing for it" on the statechart's page,
+/// which is true of the statechart and says nothing about the design.
+///
+/// Every requirement then shows its evidence document by document, each block
+/// led by the document it is in, since `states.idle` is a place in every
+/// statechart; block B leads each open matter with its document for the same
+/// reason, and counts the rows that claim nothing over the whole design.
+pub fn render_design(
+    members: &[ReportMember<'_>],
+    manifest: &RequirementManifest,
+    sidecar: Option<&RequirementSidecar>,
+    variant: &str,
+) -> String {
+    if let [only] = members {
+        return match only.document {
+            ReportDocument::Statechart(model) => render(model, manifest, sidecar, variant),
+            ReportDocument::Forge(parsed, open) => {
+                render_forge(parsed, manifest, sidecar, variant, open)
+            }
+        };
     }
-    let unclaimed = rows
+    let citations: Vec<(String, Vec<crate::requirement_manifest::OwnedCitation>)> = members
         .iter()
-        .filter(|row| row.requirements.is_empty())
-        .count();
-    if unclaimed > 0 {
-        out.push_str(&format!(
-            "  {:<14} {unclaimed} element(s) the source never asked for\n",
-            "unclaimed"
-        ));
+        .map(|member| {
+            let claims = match member.document {
+                ReportDocument::Statechart(model) => {
+                    crate::requirement_manifest::citations_of_model(model)
+                }
+                ReportDocument::Forge(parsed, _) => {
+                    crate::requirement_manifest::citations_of_document(parsed)
+                }
+            };
+            (member.label.to_string(), claims)
+        })
+        .collect();
+    let classification = crate::requirement_manifest::classify_documents(&citations, manifest);
+    let shown: Vec<Shown<'_>> = members
+        .iter()
+        .map(|member| match member.document {
+            ReportDocument::Statechart(model) => Shown::statechart(model),
+            ReportDocument::Forge(parsed, _) => Shown::forge(parsed),
+        })
+        .collect();
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "ACCEPTANCE REPORT  {}@{}  <->  {} documents\n",
+        manifest.doc_id,
+        manifest.rev,
+        members.len()
+    ));
+    out.push_str(&format!("variant: {variant}\n"));
+    for member in members {
+        let (kind, name, basis) = match member.document {
+            ReportDocument::Statechart(model) => {
+                ("statechart", model.name.as_str(), model.kind_basis.as_ref())
+            }
+            ReportDocument::Forge(parsed, _) => (
+                parsed.document.kind().as_attr(),
+                parsed.document.name(),
+                parsed.kind_basis.as_ref(),
+            ),
+        };
+        out.push_str(&format!("document: {}  ({kind} '{name}')\n", member.label));
+        push_kind_basis(&mut out, basis);
     }
-    if flagged == 0 && unclaimed == 0 {
-        out.push_str("  (nothing)\n");
+    push_cautions(&mut out, sidecar.is_some(), &classification);
+
+    out.push_str("\nA. REQUIREMENTS\n");
+    for entry in &manifest.requirements {
+        push_requirement(&mut out, entry, sidecar);
+        let mut evidenced = false;
+        for (member, shown) in members.iter().zip(&shown) {
+            let Some(lines) = shown.evidence(&entry.id) else {
+                continue;
+            };
+            evidenced = true;
+            out.push_str(&format!("    evidence in {}:\n", member.label));
+            for line in lines {
+                out.push_str(&line);
+            }
+        }
+        if !evidenced {
+            out.push_str("    evidence: (no document of this design annotates anything for it)\n");
+        }
     }
 
-    out.push_str("\nC. SOURCE COVERAGE\n");
-    for (section, count) in &classification.section_counts {
-        let marker = if *count == 0 { "   <- open this" } else { "" };
-        out.push_str(&format!("  {section:<12} {count}{marker}\n"));
-    }
-
+    let open: Vec<crate::open_matters::OpenMatter> = members
+        .iter()
+        .flat_map(|member| {
+            let own = match member.document {
+                ReportDocument::Statechart(model) => crate::open_matters::of_statechart(model),
+                ReportDocument::Forge(_, open) => open.to_vec(),
+            };
+            crate::open_matters::in_document(member.label, own)
+        })
+        .collect();
+    let unclaimed: usize = shown.iter().map(Shown::unclaimed).sum();
+    push_attention(&mut out, &open, &classification, unclaimed);
+    push_coverage(&mut out, &classification);
     out
 }
 

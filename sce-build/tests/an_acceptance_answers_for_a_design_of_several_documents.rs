@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! A design is read as the documents named and what they reach.
+//! An acceptance report answers for a design of several documents.
 //!
 //! `requirements A B C --manifest m` measured the documents of one design
-//! together, and a statechart named alone was measured without what it
-//! imports, so a requirement claimed in an algorithm it imports read
-//! `missing`. With `--with-imports` the design is the documents named and
-//! every document they reach, read by one reader (`sce_build::design_set`).
+//! together, and `acceptance-report` took one document: a requirement claimed
+//! in an algorithm the statechart imports read "this document annotates
+//! nothing for it" on the page a person signs. The page now takes the set
+//! `requirements` takes, read by one reader (`sce_build::design_set`):
+//! several documents, or one with `--with-imports` and every document it
+//! reaches.
 //!
 //! What these hold, each by a case that fails when it stops being true:
 //!   * a claim made in an imported document, one import down or two, is
-//!     credited by `requirements`, and one nothing claims is still `missing`
+//!     credited on the page and by `requirements`
+//!   * several documents named are one page, each named, a claim in any of
+//!     them the design's
+//!   * a standard document the design reaches is no member of it
+//!   * one document's page is the page `render` writes, byte for byte
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -167,6 +173,16 @@ fn stdout(out: &Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8")
 }
 
+fn report(dir: &Path, documents: &[&str], with_imports: bool) -> String {
+    let mut args = vec!["acceptance-report"];
+    args.extend_from_slice(documents);
+    if with_imports {
+        args.push("--with-imports");
+    }
+    args.extend_from_slice(&["--manifest", "spec.manifest.json", "--variant", "base"]);
+    stdout(&run(&args, dir))
+}
+
 fn requirement_outcome(dir: &Path, documents: &[&str], with_imports: bool, id: &str) -> String {
     let mut args = vec!["requirements"];
     args.extend_from_slice(documents);
@@ -186,6 +202,37 @@ fn requirement_outcome(dir: &Path, documents: &[&str], with_imports: bool, id: &
 }
 
 #[test]
+fn a_claim_made_in_an_imported_document_is_credited_on_the_page() {
+    let dir = design();
+    let page = report(dir.path(), &[ENTRY], true);
+    for id in ["REQ-2", "REQ-3"] {
+        assert!(
+            !page.contains(&format!("missing        {id}")),
+            "{id} is claimed in an imported algorithm: {page}"
+        );
+    }
+    assert!(
+        page.contains("evidence in algorithm_outer.scxml:"),
+        "{page}"
+    );
+    assert!(
+        page.contains("evidence in algorithm_inner.scxml:"),
+        "two imports down: {page}"
+    );
+    assert!(
+        page.contains("evidence in closure_machine.scxml:"),
+        "{page}"
+    );
+    // Nothing in the design claims REQ-5, nor REQ-4, which the peer claims
+    // and the peer is no import.
+    assert!(page.contains("missing        REQ-5"), "{page}");
+    assert!(page.contains("missing        REQ-4"), "{page}");
+    // The standard documents the statechart imports are not the owner's.
+    assert!(!page.contains("sce:std"), "{page}");
+    assert!(!page.contains("days_from_civil"), "{page}");
+}
+
+#[test]
 fn requirements_credit_the_claims_of_what_the_entry_imports() {
     let dir = design();
     assert_eq!(
@@ -200,4 +247,42 @@ fn requirements_credit_the_claims_of_what_the_entry_imports() {
         requirement_outcome(dir.path(), &[ENTRY], true, "REQ-5"),
         "missing"
     );
+}
+
+#[test]
+fn the_report_of_several_documents_names_each_and_credits_each() {
+    let dir = design();
+    let page = report(dir.path(), &[ENTRY, "peer.scxml"], false);
+    assert!(page.contains("<->  2 documents"), "{page}");
+    assert!(page.contains("document: peer.scxml"), "{page}");
+    assert!(page.contains("evidence in peer.scxml:"), "{page}");
+    assert!(!page.contains("missing        REQ-4"), "{page}");
+    assert!(page.contains("missing        REQ-2"), "{page}");
+}
+
+/// The page of one statechart is `render`'s page, byte for byte.
+#[test]
+fn a_page_of_one_document_is_the_page_render_writes() {
+    use sce_build::acceptance_report::{render, render_design, ReportDocument, ReportMember};
+    use sce_build::requirement_manifest::RequirementManifest;
+
+    let dir = design();
+    let manifest = RequirementManifest::load(&dir.path().join("spec.manifest.json"))
+        .expect("the requirement set loads");
+    let peer = dir.path().join("peer.scxml");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(peer.to_str().expect("a utf-8 path"))
+        .expect("the peer parses");
+    let alone = render(&model, &manifest, None, "base");
+    let one = render_design(
+        &[ReportMember {
+            label: "peer.scxml",
+            document: ReportDocument::Statechart(&model),
+        }],
+        &manifest,
+        None,
+        "base",
+    );
+    assert_eq!(one, alone);
+    assert!(alone.contains("REQ-4"), "{alone}");
 }

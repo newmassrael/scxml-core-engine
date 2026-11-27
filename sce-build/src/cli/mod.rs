@@ -3218,9 +3218,22 @@ enum Commands {
     /// depends on rather than the nodes that happen to carry its id;
     /// then the risk surface, then what the source says that this
     /// document claims nothing about.
+    ///
+    /// Several documents, or one with `--with-imports`, are one design, read as
+    /// `requirements` reads it: a requirement is met when a node of any of them
+    /// claims it, and its evidence is shown document by document.
     AcceptanceReport {
-        /// SCXML file path
-        scxml: String,
+        /// SCXML file path. Several documents are read as ONE design.
+        #[arg(required = true, num_args = 1..)]
+        scxml: Vec<String>,
+        /// Read the design as the documents named and every document they
+        /// reach: what an `<sce:import>` names, transitively, the element a
+        /// collection names, and a statechart a statechart starts (the set
+        /// `generate --with-imports` generates), so a requirement claimed in an
+        /// imported algorithm is claimed by the design. A standard document is
+        /// not part of it.
+        #[arg(long)]
+        with_imports: bool,
         /// Closed requirement set this document is measured against.
         #[arg(long)]
         manifest: String,
@@ -4739,11 +4752,13 @@ pub fn main() {
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
+            with_imports,
             manifest,
             variant,
             sidecar,
         } => cmd_acceptance_report(
             &scxml,
+            with_imports,
             &manifest,
             &variant,
             sidecar.as_deref(),
@@ -13097,14 +13112,20 @@ fn cmd_pseudo(
 /// what a person accepts against, and without the closed set it could
 /// only show what the document claims about itself — which is the one
 /// question acceptance is not allowed to ask.
+///
+/// The design is the set `requirements` takes ([`read_design_set`]): one
+/// document's page is the page it always was, and several documents are one
+/// page, a requirement credited wherever in the set it is claimed
+/// ([`crate::acceptance_report::render_design`]).
 fn cmd_acceptance_report(
-    scxml: &str,
+    scxml: &[String],
+    with_imports: bool,
     manifest: &str,
     variant: &str,
     sidecar: Option<&str>,
     error_format: ErrorFormat,
 ) {
-    let design = read_design(scxml, error_format);
+    let designs = read_design_set(scxml, with_imports, error_format);
 
     let manifest = load_requirement_manifest(manifest);
 
@@ -13113,32 +13134,46 @@ fn cmd_acceptance_report(
     // than the one asked while looking exactly like the answer.
     let sidecar = sidecar.map(|path| load_requirement_sidecar(path, &manifest));
 
-    let page = match &design {
-        Design::Statechart(model) => {
-            crate::acceptance_report::render(model, &manifest, sidecar.as_ref(), variant)
-        }
-        Design::Forge(parsed) => {
-            // A forge kind has no sends to itself or a parent, so what it
-            // leaves open is its markers: read where the manifest and
-            // `sce-codegen unresolved` read them.
-            //
-            // ⚠ Named `expanded`, not `positions`: the mutation casefile that
-            // anchors on `cmd_unresolved`'s own `let positions = …` line
-            // matches by text, and a second identical line in this file makes
-            // it ambiguous, which it reports as a stale case.
-            let expanded = read_review_input(scxml, error_format);
-            let markers = crate::unresolved_check::unresolved_records_forge(&expanded)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
-            let open = crate::open_matters::of(&markers, &[], &[], &[], &[]);
-            crate::acceptance_report::render_forge(
-                parsed,
-                &manifest,
-                sidecar.as_ref(),
-                variant,
-                &open,
-            )
-        }
-    };
+    // A forge kind has no sends to itself or a parent, so what it leaves
+    // open is its markers: read where the manifest and `sce-codegen
+    // unresolved` read them. A statechart's are read from its model by the
+    // report itself.
+    //
+    // ⚠ Named `expanded`, not `positions`: the mutation casefile that
+    // anchors on `cmd_unresolved`'s own `let positions = …` line matches by
+    // text, and a second identical line in this file makes it ambiguous,
+    // which it reports as a stale case.
+    let open: Vec<Vec<crate::open_matters::OpenMatter>> = designs
+        .iter()
+        .map(|(document, design)| match design {
+            Design::Statechart(_) => Vec::new(),
+            Design::Forge(_) => {
+                let expanded = read_review_input(document, error_format);
+                let markers = crate::unresolved_check::unresolved_records_forge(&expanded)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+                crate::open_matters::of(&markers, &[], &[], &[], &[])
+            }
+        })
+        .collect();
+    let members: Vec<crate::acceptance_report::ReportMember<'_>> = designs
+        .iter()
+        .zip(&open)
+        .map(
+            |((document, design), open)| crate::acceptance_report::ReportMember {
+                label: document.as_str(),
+                document: match design {
+                    Design::Statechart(model) => {
+                        crate::acceptance_report::ReportDocument::Statechart(model)
+                    }
+                    Design::Forge(parsed) => {
+                        crate::acceptance_report::ReportDocument::Forge(parsed, open)
+                    }
+                },
+            },
+        )
+        .collect();
+    let page =
+        crate::acceptance_report::render_design(&members, &manifest, sidecar.as_ref(), variant);
     print!("{page}");
 }
 
@@ -13414,6 +13449,18 @@ fn design_of(documents: &[String], with_imports: bool) -> crate::design_set::Des
             detail: "a design is read from at least one document: name one".to_string(),
         })
     })
+}
+
+/// [`design_members`], each read ([`read_members`]).
+fn read_design_set(
+    documents: &[String],
+    with_imports: bool,
+    error_format: ErrorFormat,
+) -> Vec<(String, Design)> {
+    read_members(
+        design_members(documents, with_imports, error_format),
+        error_format,
+    )
 }
 
 /// Re-check an acceptance record against the tree — Requirement-closure
