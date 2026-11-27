@@ -491,7 +491,8 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// instance's behalf carries it, and a document reads it as `_x.principal`; a row the
     /// endpoint raises as its own machine does not (docs/adr/0116, D1, invariant 12 of SCE_MESH.md
     /// section 10.9: what a machine reads of a person comes from the delegation its own server
-    /// holds for the link the event came on, and from no field of an envelope).
+    /// holds for the link the event came on, and from no field of an envelope). A refusal is
+    /// [`Self::receive_member`]'s, and an envelope refused raises nothing to carry the person.
     pub fn receive_member_for(
         &mut self,
         peer: &str,
@@ -499,11 +500,11 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         standing: Standing,
         acting: Option<Principal>,
         bytes: Vec<u8>,
-    ) {
+    ) -> Result<(), RouterError> {
         let from = self.to_engine.len();
-        self.receive_member(peer, made_under, standing, bytes);
+        self.receive_member(peer, made_under, standing, bytes)?;
         let Some(person) = acting.map(Box::new) else {
-            return;
+            return Ok(());
         };
         for told in &mut self.to_engine[from..] {
             if let Told::Event {
@@ -515,6 +516,7 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                 }
             }
         }
+        Ok(())
     }
 
     /// Take `standing`, the store's latest answer for the member whose instance is `peer` (see
@@ -1925,8 +1927,12 @@ mod tests {
             incarnation: 7,
             mark: 1,
         };
-        cloud.receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1));
-        cloud.receive_member("phone/a1", 7, standing, ping_of_a1(2));
+        cloud
+            .receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1))
+            .expect("an incarnation that stands is taken in");
+        cloud
+            .receive_member("phone/a1", 7, standing, ping_of_a1(2))
+            .expect("an incarnation that stands is taken in");
         let events = raised(&mut cloud);
         let people: Vec<(&str, Option<&Principal>)> = events
             .iter()
@@ -1951,7 +1957,9 @@ mod tests {
             incarnation: 7,
             mark: 1,
         };
-        cloud.receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1));
+        cloud
+            .receive_member_for("phone/a1", 7, standing, Some(alice()), ping_of_a1(1))
+            .expect("an incarnation that stands is taken in");
         assert!(
             matches!(cloud.seal(1), Err(CheckpointError::Person(_))),
             "an unapplied event of a person is not sealed"
