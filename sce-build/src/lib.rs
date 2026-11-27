@@ -73,6 +73,9 @@ pub mod computed_route_analyzer;
 /// (`SCE_FILE_ROOT`), and a file outside it answered as a file that is not there.
 pub mod confine;
 pub mod conformance;
+/// The documents of one design, as the requirement and acceptance commands
+/// read them: the named ones, and with `--with-imports` what they reach.
+pub mod design_set;
 /// What a statechart presents to the outside (events it takes, events it sends
 /// out, states, data) and whether that is the interface its owner accepted. The
 /// generate manifest carries it, a driver copies it into the observation trace,

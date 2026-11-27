@@ -29,8 +29,8 @@ PY
 
 mutation_case "several documents are routed to the one-document path" <<'PY'
 edit("sce-build/src/cli/mod.rs",
-     "    if scxml.len() > 1 {\n        cmd_requirements_of_design(",
-     "    if scxml.len() > 8 {\n        cmd_requirements_of_design(")
+     "    if members.len() > 1 {\n        cmd_requirements_of_design(",
+     "    if members.len() > 8 {\n        cmd_requirements_of_design(")
 PY
 
 # ── …or read together and the places lost ───────────────────────────

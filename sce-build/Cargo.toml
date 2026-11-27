@@ -502,6 +502,15 @@ name = "a_design_of_any_kind_is_accepted"
 path = "tests/a_design_of_any_kind_is_accepted.rs"
 required-features = ["cli"]
 
+# The same flow for a design of several documents: `acceptance-report`,
+# `accept` and `acceptance-check` over the set `requirements` takes, several
+# documents or one with `--with-imports`. Spawns sce-codegen, and a stale binary
+# refuses the flag as a usage error, so the target carries the `cli` gate.
+[[test]]
+name = "an_acceptance_answers_for_a_design_of_several_documents"
+path = "tests/an_acceptance_answers_for_a_design_of_several_documents.rs"
+required-features = ["cli"]
+
 # `<sce:kind-basis>` on the real binary: accepted and published for both
 # pipelines, written under the page's head line, refused when it rules out
 # the document's own kind.

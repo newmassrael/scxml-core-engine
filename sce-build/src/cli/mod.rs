@@ -3459,6 +3459,14 @@ enum Commands {
         /// for the `--scenarios` set.
         #[arg(long, value_name = "PATH", requires = "scenarios")]
         trace: Option<String>,
+        /// Read the design as the documents named and every document they
+        /// reach: what an `<sce:import>` names, transitively, the element a
+        /// collection names, and a statechart a statechart starts (the set
+        /// `generate --with-imports` generates), so a requirement claimed in an
+        /// imported algorithm is claimed by the design. A standard document is
+        /// not part of it.
+        #[arg(long)]
+        with_imports: bool,
     },
     /// Read a scenario set and say whether it is usable.
     ///
@@ -4667,8 +4675,10 @@ pub fn main() {
             manifest,
             scenarios,
             trace,
+            with_imports,
         } => cmd_requirements(
             &scxml,
+            with_imports,
             manifest.as_deref(),
             scenarios.as_deref().zip(trace.as_deref()),
             error_format,
@@ -13343,6 +13353,69 @@ fn read_design(document: &str, error_format: ErrorFormat) -> Design {
     }
 }
 
+/// The documents of the design `documents` name, with what they reach when
+/// `with_imports` ([`crate::design_set`]): the one reader of a design's set for
+/// `requirements`, `acceptance-report` and `accept`, so the three cannot take
+/// one command line as two designs, and `accept` pins the set the report
+/// showed.
+///
+/// A walk that meets a reference naming no document is refused where the
+/// reference is written, with the chain that reached it, as `generate
+/// --with-imports` refuses it. A named document that cannot be read is refused
+/// first, as it is when read alone.
+fn design_members(
+    documents: &[String],
+    with_imports: bool,
+    error_format: ErrorFormat,
+) -> Vec<crate::design_set::Member> {
+    let design = design_of(documents, with_imports);
+    if with_imports {
+        for named in documents {
+            if let Err(source) = fs::read_to_string(named) {
+                error_format.emit_and_exit(
+                    &CliError::ReadInput {
+                        path: named.clone(),
+                        source,
+                    },
+                    "",
+                )
+            }
+        }
+    }
+    design.members().unwrap_or_else(|refusal| {
+        set_reached_from(refusal.reached_from);
+        error_format.emit_forge_and_exit(&refusal.error)
+    })
+}
+
+/// Each member of a design read through its own door ([`read_design`]),
+/// beside the path it was named or reached by. A refusal of a document the
+/// walk reached carries the references that reached it.
+fn read_members(
+    members: Vec<crate::design_set::Member>,
+    error_format: ErrorFormat,
+) -> Vec<(String, Design)> {
+    let read: Vec<(String, Design)> = members
+        .into_iter()
+        .map(|member| {
+            set_reached_from(member.reached_from);
+            let design = read_design(&member.document, error_format);
+            (member.document, design)
+        })
+        .collect();
+    set_reached_from(Vec::new());
+    read
+}
+
+/// The design `documents` name, with what they reach when `with_imports`.
+fn design_of(documents: &[String], with_imports: bool) -> crate::design_set::DesignSet {
+    crate::design_set::DesignSet::new(documents.to_vec(), with_imports).unwrap_or_else(|| {
+        cli_exit(CliError::Usage {
+            detail: "a design is read from at least one document: name one".to_string(),
+        })
+    })
+}
+
 /// Re-check an acceptance record against the tree — Requirement-closure
 /// RFC §8.3.
 fn cmd_acceptance_check(
@@ -13684,16 +13757,17 @@ fn hold_scenarios(
 
 fn cmd_requirements(
     scxml: &[String],
+    with_imports: bool,
     manifest: Option<&str>,
     scenarios: Option<(&str, &str)>,
     error_format: ErrorFormat,
 ) {
-    if scxml.len() > 1 {
-        cmd_requirements_of_design(scxml, manifest, scenarios, error_format);
+    let members = design_members(scxml, with_imports, error_format);
+    if members.len() > 1 {
+        cmd_requirements_of_design(members, manifest, scenarios, error_format);
         return;
     }
-    let scxml = scxml[0].as_str();
-    let design = read_design(scxml, error_format);
+    let design = read_design(&members[0].document, error_format);
     let Some(manifest_path) = manifest else {
         match &design {
             Design::Statechart(model) => {
@@ -13729,11 +13803,15 @@ fn cmd_requirements(
 /// schema that claims nothing reads every requirement `missing`. So the claims
 /// of every document are pooled and classified once against the one manifest.
 ///
+/// The documents are the set [`design_members`] reads: the named ones, and with
+/// `--with-imports` what they reach, so a requirement claimed in an imported
+/// algorithm is the design's.
+///
 /// ⚠ A manifest is required. Without one the command reports what a document
 /// claims, one record per node with no document named, and the claims of
 /// several documents in one stream would not say which file a node is in.
 fn cmd_requirements_of_design(
-    documents: &[String],
+    members: Vec<crate::design_set::Member>,
     manifest: Option<&str>,
     scenarios: Option<(&str, &str)>,
     error_format: ErrorFormat,
@@ -13746,20 +13824,21 @@ fn cmd_requirements_of_design(
         })
     };
     let loaded = load_requirement_manifest(manifest_path);
-    let members: Vec<(String, Vec<crate::requirement_manifest::OwnedCitation>)> = documents
-        .iter()
-        .map(|path| {
-            let claims = match read_design(path, error_format) {
-                Design::Statechart(model) => {
-                    crate::requirement_manifest::citations_of_model(&model)
-                }
-                Design::Forge(parsed) => {
-                    crate::requirement_manifest::citations_of_document(&parsed)
-                }
-            };
-            (path.clone(), claims)
-        })
-        .collect();
+    let members: Vec<(String, Vec<crate::requirement_manifest::OwnedCitation>)> =
+        read_members(members, error_format)
+            .into_iter()
+            .map(|(path, design)| {
+                let claims = match design {
+                    Design::Statechart(model) => {
+                        crate::requirement_manifest::citations_of_model(&model)
+                    }
+                    Design::Forge(parsed) => {
+                        crate::requirement_manifest::citations_of_document(&parsed)
+                    }
+                };
+                (path, claims)
+            })
+            .collect();
     let mut classification = crate::requirement_manifest::classify_documents(&members, &loaded);
     if let Some(examples) = scenarios {
         hold_scenarios(&mut classification, &loaded, examples);
