@@ -74,7 +74,8 @@ The value is reached through `TableOut`, a trait the generated code implements o
 body, a list, an absent field), each a `match` on the row index whose arms are the stores of the fields. The walker
 calls it through `&mut dyn TableOut<'f>`:
 
-    pub fn read_table<'f>(reader: &mut SceReader<'f>, table: &'static FieldTable, out: &mut dyn TableOut<'f>);
+    pub fn read_table<'f>(reader: &mut SceReader<'f>, table: &FieldTable, inputs: &[u64],
+                          out: &mut dyn TableOut<'f>);
 
 An offset into a `repr(C)` value, the form the C table-driven parsers use, is not open to this backend: the owned
 value is generic over its storage profile (ADR 0077 section 7), whose containers decide the layout of each field and
@@ -91,8 +92,8 @@ every read is total, the first refusal recorded in the reader is the frame's ver
 The runtime gains the writer of a table, generic over the sink's error type alone, of which a program has at most two
 (`CodecError` and `Infallible`):
 
-    pub fn write_table<E>(sink: &mut dyn SceSink<Error = E>, table: &'static FieldTable,
-                          src: &dyn TableSource) -> Result<(), E>;
+    pub fn write_table<E>(sink: &mut dyn SceSink<Error = E>, table: &FieldTable,
+                          src: &dyn TableSource<E>) -> Result<(), E>;
 
 `TableSource` is the read side of `TableOut`: the value's numbers, bytes and texts by row, whether a gated field is
 present, and the write of each body, arm, repeat and chain the value holds. A row the encode derives (ADR 0058: a
@@ -115,7 +116,7 @@ A chain of a cold codec whose kinds no gate reads is a `ChainTable`: how it ends
 whose flag is clear), its depth, the bit range of the entry's identifier carrier the flag is, and the bit ranges the
 chain carries from one entry to the next (`<sce:entry-flag-bind>`). It is read by one routine for every such chain:
 
-    pub fn read_chain_table<'f>(reader: &mut SceReader<'f>, chain: &'static ChainTable, args: &mut [u8],
+    pub fn read_chain_table<'f>(reader: &mut SceReader<'f>, chain: &ChainTable, args: &mut [u8],
                                 entries: &mut dyn ChainEntries<'f>) -> Result<(), CodecError>;
 
 `ChainEntries` reads one entry from the reader with the inputs the chain hands it, holds it as `push_keeping` holds

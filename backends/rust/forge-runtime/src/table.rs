@@ -29,7 +29,7 @@
 //! first refusal recorded is the frame's verdict, and no read returns early.
 
 use crate::chain::{close_chain, take_one, ChainEnd};
-use crate::codec::{push_keeping, CodecError, NoKinds};
+use crate::codec::{push_keeping, CodecError, NoKinds, SceSink};
 use crate::reader::SceReader;
 use crate::storage::HeldList;
 
@@ -208,11 +208,61 @@ pub struct Row {
     pub gate: Gate,
 }
 
-/// The fields of a cold codec in wire order, read by [`read_table`]
-/// (docs/adr/0155). Made by [`FieldTable::new`] only, which checks it.
+/// What a number the encode derives is computed from (docs/adr/0058): a
+/// length, a count, the flag a gated field is announced by, or a number the
+/// value of an embedded body answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Derived {
+    /// 1 where the field of this row is present, 0 where it is not.
+    Present(u8),
+    /// The count of bytes of the field of this row ([`Read::Bytes`],
+    /// [`Read::Text`]).
+    Count(u8),
+    /// The number `what` the field of the row `row` answers
+    /// ([`TableSource::ask`]): the flag of the arm an embedded variant holds, an
+    /// input an embedded body is read with.
+    Ask {
+        /// The row of the field asked.
+        row: u8,
+        /// Which of its numbers.
+        what: u8,
+    },
+}
+
+/// A number the encode writes into a row's bits rather than reading it from the
+/// value: `into` (of a [`Source::Row`]) is set to what `from` computes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Derive {
+    /// The bits of the row it is written into.
+    pub into: Bits,
+    /// What it is computed from.
+    pub from: Derived,
+}
+
+impl Derive {
+    /// Whether the derive writes into a row of a table of `rows` rows and is
+    /// computed from rows of it.
+    const fn within(self, rows: usize) -> bool {
+        let into = match self.into.from {
+            Source::Row(row) => (row as usize) < rows,
+            Source::Input(_) => false,
+        };
+        let from = match self.from {
+            Derived::Present(row) | Derived::Count(row) | Derived::Ask { row, .. } => {
+                (row as usize) < rows
+            }
+        };
+        into && from
+    }
+}
+
+/// The fields of a cold codec in wire order, read by [`read_table`] and written
+/// by [`write_table`] (docs/adr/0155), and the numbers its encode derives. Made
+/// by [`FieldTable::new`] or [`FieldTable::with_derived`] only, which check it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldTable {
     rows: &'static [Row],
+    derived: &'static [Derive],
 }
 
 impl FieldTable {
@@ -221,6 +271,13 @@ impl FieldTable {
     /// Made in the `static` that holds a codec's table, so a table that breaks
     /// one of these does not compile.
     pub const fn new(rows: &'static [Row]) -> Self {
+        Self::with_derived(rows, &[])
+    }
+
+    /// [`Self::new`] of a codec whose encode derives the numbers `derived`, each
+    /// checked to write into a row of the table and to be computed from rows of
+    /// it.
+    pub const fn with_derived(rows: &'static [Row], derived: &'static [Derive]) -> Self {
         assert!(
             rows.len() <= TABLE_ROWS,
             "a field table holds at most TABLE_ROWS rows"
@@ -237,7 +294,15 @@ impl FieldTable {
             );
             at += 1;
         }
-        Self { rows }
+        let mut d = 0;
+        while d < derived.len() {
+            assert!(
+                derived[d].within(rows.len()),
+                "a derived number is written into a row of the table from rows of it"
+            );
+            d += 1;
+        }
+        Self { rows, derived }
     }
 
     /// The rows, in wire order.
@@ -390,6 +455,178 @@ fn take_counted<'f>(reader: &mut SceReader<'f>, count: u64, max: u64) -> &'f [u8
     }
     let n = reader.settle(usize::try_from(count).map_err(|_| CodecError::NeedMoreBytes));
     reader.take_slice(n)
+}
+
+/// What a value written by a [`FieldTable`] says, by the index of each row: the
+/// part of a cold codec's write that is the codec's own, read off a source of
+/// the value (docs/adr/0058). A generated codec implements it once over its
+/// source; `E` is the error of the sink it writes to. A method of a kind of field
+/// no row of the codec's table holds is left as provided.
+pub trait TableSource<E: core::fmt::Debug> {
+    /// The number of the row `row` ([`Read::Uint`], [`Read::Zint`]).
+    fn number(&self, row: usize) -> u64 {
+        let _ = row;
+        0
+    }
+
+    /// Whether the field of the row `row`, which a gate reads, is present.
+    fn present(&self, row: usize) -> bool {
+        let _ = row;
+        true
+    }
+
+    /// The bytes of the row `row` ([`Read::Bytes`]), or a text's UTF-8 bytes
+    /// ([`Read::Text`]).
+    fn bytes(&self, row: usize) -> &[u8] {
+        let _ = row;
+        &[]
+    }
+
+    /// The number `what` the field of the row `row` answers
+    /// ([`Derived::Ask`]).
+    fn ask(&self, row: usize, what: u8) -> u64 {
+        let _ = (row, what);
+        0
+    }
+
+    /// Write the field of the row `row` ([`Read::Body`]) into `sink`: the body,
+    /// the arm or the list, each by its own codec's write.
+    fn write(&self, row: usize, sink: &mut dyn SceSink<Error = E>) -> Result<(), E> {
+        let _ = (row, sink);
+        Ok(())
+    }
+}
+
+/// A sink a [`TableSource`] is handed, held as a sized value, so that a codec's
+/// write generic over its sink writes through it: every write is the inner
+/// sink's own.
+pub struct DynSink<'s, E: core::fmt::Debug>(pub &'s mut dyn SceSink<Error = E>);
+
+impl<E: core::fmt::Debug> SceSink for DynSink<'_, E> {
+    type Error = E;
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), E> {
+        self.0.write_bytes(bytes)
+    }
+
+    fn position(&self) -> usize {
+        self.0.position()
+    }
+
+    fn write_u8(&mut self, b: u8) -> Result<(), E> {
+        self.0.write_u8(b)
+    }
+
+    fn write_u16_le(&mut self, v: u16) -> Result<(), E> {
+        self.0.write_u16_le(v)
+    }
+
+    fn write_u16_be(&mut self, v: u16) -> Result<(), E> {
+        self.0.write_u16_be(v)
+    }
+
+    fn write_u32_le(&mut self, v: u32) -> Result<(), E> {
+        self.0.write_u32_le(v)
+    }
+
+    fn write_u32_be(&mut self, v: u32) -> Result<(), E> {
+        self.0.write_u32_be(v)
+    }
+
+    fn write_u64_le(&mut self, v: u64) -> Result<(), E> {
+        self.0.write_u64_le(v)
+    }
+
+    fn write_u64_be(&mut self, v: u64) -> Result<(), E> {
+        self.0.write_u64_be(v)
+    }
+
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), E> {
+        self.0.write_vle_inner(value, max_bits)
+    }
+
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), E> {
+        self.0.write_vle_u16(v)
+    }
+
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), E> {
+        self.0.write_vle_u32(v)
+    }
+
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), E> {
+        self.0.write_vle_u64(v)
+    }
+}
+
+/// Write the fields of `table` that `src` says into `sink`: the write of every
+/// cold codec whose encode refuses no value, one function for every table and
+/// sink error (docs/adr/0155 section 3).
+///
+/// The number of each row is the value's, or the count of its bytes, with the
+/// bits each of the table's derives computes written over it; then each row is
+/// written in order, a row a gate reads only where its field is present. The
+/// only error is the sink's (docs/adr/0065).
+#[inline(never)]
+pub fn write_table<E: core::fmt::Debug>(
+    sink: &mut dyn SceSink<Error = E>,
+    table: &FieldTable,
+    src: &dyn TableSource<E>,
+) -> Result<(), E> {
+    let mut frame = [0u64; TABLE_ROWS];
+    for ((at, row), slot) in table.rows.iter().enumerate().zip(frame.iter_mut()) {
+        *slot = match row.read {
+            Read::Uint { .. } | Read::Zint { .. } => src.number(at),
+            Read::Bytes { .. } | Read::Text { .. } => src.bytes(at).len() as u64,
+            Read::Body { .. } => 0,
+        };
+    }
+    for derive in table.derived {
+        let value = match derive.from {
+            Derived::Present(row) => u64::from(src.present(usize::from(row))),
+            Derived::Count(row) => src.bytes(usize::from(row)).len() as u64,
+            Derived::Ask { row, what } => src.ask(usize::from(row), what),
+        };
+        if let Source::Row(row) = derive.into.from {
+            if let Some(slot) = frame.get_mut(usize::from(row)) {
+                let shift = u32::from(derive.into.shift);
+                let place = derive.into.mask.checked_shl(shift).unwrap_or(0);
+                let bits = (value & derive.into.mask).checked_shl(shift).unwrap_or(0);
+                *slot = (*slot & !place) | bits;
+            }
+        }
+    }
+    for ((at, row), &number) in table.rows.iter().enumerate().zip(frame.iter()) {
+        if !matches!(row.gate, Gate::Always) && !src.present(at) {
+            continue;
+        }
+        match row.read {
+            Read::Uint { bytes, big } => write_uint(sink, number, bytes, big)?,
+            Read::Zint { bits } => sink.write_vle_inner(number, u32::from(bits))?,
+            Read::Bytes { .. } | Read::Text { .. } => sink.write_bytes(src.bytes(at))?,
+            Read::Body { .. } => src.write(at, sink)?,
+        }
+    }
+    Ok(())
+}
+
+/// An unsigned integer of `bytes` bytes, 1 to 8, in its byte order.
+fn write_uint<E: core::fmt::Debug>(
+    sink: &mut dyn SceSink<Error = E>,
+    value: u64,
+    bytes: u8,
+    big: bool,
+) -> Result<(), E> {
+    let n = usize::from(bytes).min(8);
+    if n == 1 {
+        return sink.write_u8(value as u8);
+    }
+    if big {
+        let all = value.to_be_bytes();
+        sink.write_bytes(&all[8 - n..])
+    } else {
+        let all = value.to_le_bytes();
+        sink.write_bytes(&all[..n])
+    }
 }
 
 /// A bit range of an entry's identifier carrier: `(carrier >> shift) & mask`.
@@ -546,6 +783,7 @@ pub fn read_chain_table<'f>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codec::SliceSink;
 
     /// What a test value's stores were handed, by row.
     #[derive(Debug, Default, PartialEq)]
@@ -824,6 +1062,153 @@ mod tests {
             gate: Gate::Always,
         }];
         let _ = FieldTable::new(&ODD);
+    }
+
+    /// The value of [`WRITTEN`] a write reads, by row: the header, the id, the
+    /// text, the body's one byte and the byte string.
+    struct Said {
+        header: u8,
+        id: Option<u16>,
+        name: Option<&'static str>,
+        body: Option<u8>,
+        bytes: &'static [u8],
+    }
+
+    impl<E: core::fmt::Debug> TableSource<E> for Said {
+        fn number(&self, row: usize) -> u64 {
+            match row {
+                0 => u64::from(self.header),
+                1 => self.id.map_or(0, u64::from),
+                _ => 0,
+            }
+        }
+
+        fn present(&self, row: usize) -> bool {
+            match row {
+                1 => self.id.is_some(),
+                2 | 3 => self.name.is_some(),
+                4 => self.body.is_some(),
+                _ => true,
+            }
+        }
+
+        fn bytes(&self, row: usize) -> &[u8] {
+            match row {
+                3 => self.name.map(str::as_bytes).unwrap_or_default(),
+                5 => self.bytes,
+                _ => &[],
+            }
+        }
+
+        fn write(&self, row: usize, sink: &mut dyn SceSink<Error = E>) -> Result<(), E> {
+            assert_eq!(row, 4);
+            match self.body {
+                Some(byte) => sink.write_u8(byte),
+                None => Ok(()),
+            }
+        }
+    }
+
+    /// [`ROWS`] with the numbers its encode derives: the header's bit 7 from
+    /// whether the id is present, the text's length from the text, and the
+    /// header's low nibble from the byte string.
+    const DERIVED: &[Derive] = &[
+        Derive {
+            into: Bits::range(Source::Row(0), 7, 1),
+            from: Derived::Present(1),
+        },
+        Derive {
+            into: Bits::whole(Source::Row(2)),
+            from: Derived::Count(3),
+        },
+        Derive {
+            into: Bits::range(Source::Row(0), 0, 4),
+            from: Derived::Count(5),
+        },
+    ];
+
+    static WRITTEN: FieldTable = FieldTable::with_derived(ROWS, DERIVED);
+
+    #[test]
+    fn a_table_writes_what_its_source_says_and_the_numbers_it_derives() {
+        let said = Said {
+            header: 0x60,
+            id: Some(42),
+            name: Some("ok"),
+            body: Some(0x77),
+            bytes: &[0x99],
+        };
+        let mut buf = [0u8; 16];
+        let mut sink = SliceSink::new(&mut buf);
+        assert_eq!(write_table(&mut sink, &WRITTEN, &said), Ok(()));
+        let n = sink.position();
+        // The bytes the read of the same table reads back.
+        assert_eq!(&buf[..n], &[0xE1, 0x2A, 0x02, b'o', b'k', 0x77, 0x99]);
+        let mut out = Stored::default();
+        assert_eq!(read(&buf[..n], &[1], &mut out), Ok(()));
+        assert_eq!(out.numbers[1], Some(42));
+        assert_eq!(out.text, Some("ok"));
+        assert_eq!(out.body, Some(([3, 1], 0x77)));
+    }
+
+    #[test]
+    fn a_table_writes_no_byte_of_an_absent_field_and_clears_its_flag() {
+        let said = Said {
+            header: 0x90,
+            id: None,
+            name: None,
+            body: None,
+            bytes: &[],
+        };
+        let mut buf = [0u8; 16];
+        let mut sink = SliceSink::new(&mut buf);
+        assert_eq!(write_table(&mut sink, &WRITTEN, &said), Ok(()));
+        let n = sink.position();
+        // Bit 7 is the id's presence, whatever the value's header held.
+        assert_eq!(&buf[..n], &[0x10]);
+    }
+
+    #[test]
+    fn a_table_write_past_its_sinks_room_is_the_sinks_refusal() {
+        let said = Said {
+            header: 0x60,
+            id: Some(42),
+            name: Some("ok"),
+            body: Some(0x77),
+            bytes: &[0x99],
+        };
+        let mut buf = [0u8; 3];
+        let mut sink = SliceSink::new(&mut buf);
+        assert_eq!(
+            write_table(&mut sink, &WRITTEN, &said),
+            Err(CodecError::BufferOverflow)
+        );
+    }
+
+    #[test]
+    fn a_dyn_sink_writes_through_its_inner_sink() {
+        let mut buf = [0u8; 8];
+        let mut inner = SliceSink::new(&mut buf);
+        let mut sink = DynSink(&mut inner);
+        assert_eq!(sink.write_u8(0x42), Ok(()));
+        assert_eq!(sink.write_vle_u16(300), Ok(()));
+        assert_eq!(sink.position(), 3);
+        let n = inner.position();
+        assert_eq!(&buf[..n], &[0x42, 0xAC, 0x02]);
+    }
+
+    #[test]
+    #[should_panic(expected = "a derived number is written into a row of the table")]
+    fn a_derive_into_an_input_is_refused() {
+        static INTO_INPUT: [Derive; 1] = [Derive {
+            into: Bits {
+                from: Source::Input(0),
+                shift: 0,
+                mask: 1,
+            },
+            from: Derived::Present(0),
+        }];
+        let _ = FieldTable::with_derived(ROWS, &INTO_INPUT);
     }
 
     /// An entry of one byte, and one more where its low bit is set; its high
