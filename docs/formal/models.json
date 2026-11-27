@@ -815,7 +815,9 @@
         "OneDrain": "TRUE",
         "TakeOut": "TRUE",
         "ApplyAtEnd": "TRUE",
-        "Wake": "TRUE"
+        "Wake": "TRUE",
+        "Lookup": "TRUE",
+        "RefuseFull": "TRUE"
       },
       "promise": "Refines",
       "refines": "InboxService",
@@ -832,6 +834,11 @@
           "config": "EngineInbox_never_closes.cfg",
           "expect": "holds",
           "states": 1324
+        },
+        {
+          "config": "EngineInbox_bounded.cfg",
+          "expect": "holds",
+          "states": 3040
         },
         {
           "config": "EngineInbox_live.cfg",
@@ -879,6 +886,21 @@
           "promise": "broken"
         },
         {
+          "config": "EngineInbox_without_lookup.cfg",
+          "expect": "violates",
+          "invariant": "NoLoss",
+          "without": "Lookup",
+          "promise": "broken"
+        },
+        {
+          "config": "EngineInbox_without_refuse_full.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "RefuseFull",
+          "promise": "kept",
+          "why": "the bound is what an inbox's memory is promised: an inbox that takes past its capacity still delivers every input in order, once, and never loses one, and tells no poster anything false"
+        },
+        {
           "config": "EngineInbox_without_wake.cfg",
           "expect": "violates",
           "property": "Delivered",
@@ -906,6 +928,10 @@
               "expect": "holds"
             },
             {
+              "config": "EngineInbox_bounded.cfg",
+              "expect": "holds"
+            },
+            {
               "config": "EngineInbox_without_take_out.cfg",
               "expect": "violates",
               "obligation": "step",
@@ -916,6 +942,12 @@
               "expect": "violates",
               "obligation": "step",
               "without": "AddressAtPost"
+            },
+            {
+              "config": "EngineInbox_without_lookup.cfg",
+              "expect": "violates",
+              "obligation": "step",
+              "without": "Lookup"
             }
           ]
         }

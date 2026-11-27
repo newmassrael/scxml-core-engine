@@ -28,7 +28,7 @@ this file says what is here and how to read it.
 | `Principals` | ADR 0116, a person bound to an incarnation: the proof, the end, the write's condition |
 | `BrowserNode` | ADR 0117, the pages of one browser as one node: the lock, the store, a cleared store, a change of person |
 | `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
-| `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted |
+| `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted, a post refused when posted (a session the tree does not hold, an ended one, a full inbox) |
 | `AppendixD`, `W3CTest388`, `W3CTest570`, `W3CTest403c` | ADR 0115 D7, the SCXML recommendation's Appendix D over a document's tables, and three documents of the W3C corpus over it: history recorded and restored, the done events of a parallel state's regions and of the state, the removal of conflicting transitions |
 
 `AppendixD` is declared `abstract`: it is the semantics a document's model instantiates, and is run only by those. A
@@ -59,7 +59,7 @@ part out, in which the obligation they name fails, so it shows what it stands on
 |---|---|---|---|---|
 | a request takes effect at most once (`AtMostOnce`) | ADR 0113, D4 and D5 | `AtMostOnceInductive`, `OpenInstances.tla` | `OpenInstances.cfg` | `Records`, `GcDurable` (step) |
 | a follower misses nothing (`NonePassed`, `FollowedOnce`) | ADR 0114, D3 and D4 | `FollowerInductive`, `EventJournal.tla` | `EventJournal.cfg` | `Horizon`, `CursorAtomic` (step) |
-| each queue in order, once, nothing lost (`InOrder`, `AtMostOnce`, `NoLoss`) | ADR 0147, D2 | `QueueInductive`, `EngineInbox.tla` | `EngineInbox.cfg`, `EngineInbox_never_closes.cfg` | `TakeOut`, `AddressAtPost` (step) |
+| each queue in order, once, nothing lost (`InOrder`, `AtMostOnce`, `NoLoss`) | ADR 0147, D2 | `QueueInductive`, `EngineInbox.tla` | `EngineInbox.cfg`, `EngineInbox_never_closes.cfg`, `EngineInbox_bounded.cfg` | `TakeOut`, `AddressAtPost`, `Lookup` (step) |
 
 What each says, and what is **bounded**:
 

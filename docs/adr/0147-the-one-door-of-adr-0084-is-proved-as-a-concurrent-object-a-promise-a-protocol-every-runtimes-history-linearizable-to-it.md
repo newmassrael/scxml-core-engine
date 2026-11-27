@@ -53,9 +53,16 @@ core (D2, D13), but not this.
 
 What a host may rely on, with no mechanism. A tree of sessions, posters on any number of threads, one owner:
 
+- **Taken or refused, when posted.** Whether a post is taken or refused is decided when it is posted. A refused post
+  is handed back with its reason and never takes effect. The reasons are three. `unknown`: the tree does not hold
+  the session the post names, having never held it or having let it go when its run ended where the runtime closes
+  its inbox. `ended`: the session's run has ended and the runtime closes its inbox. `full`: the session's bounded
+  inbox holds its capacity, counted as the inputs taken for the session and not yet in its queue. Any other post to
+  a session the tree holds is taken. A post is refused as full only when that count is reached, and may still be
+  taken then, because a drain frees room before what it took out reaches the queue. That an inbox never holds more
+  than its capacity is D2's.
 - **At most once, and never lost.** A post the inbox takes is applied exactly once, by the session it names, by the
-  owner-thread operation of the same name. A post it refuses is handed back and is never applied. A post that names
-  a session the tree does not hold is refused when it is posted.
+  owner-thread operation of the same name.
 - **Run to completion.** A posted input reaches a session only through that session's external queue, which the
   running macrostep does not read (ADR 0084, D1). The drain before an event of the owner's own runs inside a
   macrostep, and what it applies enters the queue and waits for the boundary.
@@ -71,8 +78,9 @@ What a host may rely on, with no mechanism. A tree of sessions, posters on any n
 
 ADR 0084's mechanism: a multi-producer, single-consumer queue per session; the drain at the boundary and at the one
 chokepoint of the external enqueue, one drain at a time; the directory, which a child enters before its first
-macrostep and leaves after its inbox is closed; a bounded capacity, where a full inbox refuses; and the waker. Its
-parts, each with a run that takes it out and the promise it breaks (ADR 0115, D5):
+macrostep and leaves after its inbox is closed, and which a post's session is looked up in when it is posted; a
+bounded capacity, where a full inbox refuses; and the waker. Its parts, each with a run that takes it out and the
+promise it breaks (ADR 0115, D5):
 
 | Part | Taken out | Breaks |
 |---|---|---|
@@ -82,18 +90,30 @@ parts, each with a run that takes it out and the promise it breaks (ADR 0115, D5
 | the inbox applied when a run ends | what it holds is left | never lost |
 | the directory entered before the first macrostep | entered after it | refused wrongly, or lost |
 | the waker | a post wakes nobody | progress |
+| the directory looked up when posted | a post naming a session the tree does not hold is taken, into no inbox | never lost, and the refusal of an unknown session |
+| a full inbox refuses | it takes past its capacity | no promise: the bound (`Bounded`), which is what an inbox's memory is promised |
 
-Its bounds are those of a configuration (posters, sessions, capacity, inputs). The inductive invariant of at most
-once and arrival order is the one ADR 0115 D3 proves for every size once Apalache is approved.
+Its bounds are those of a configuration (posters, sessions, a session the tree does not hold, capacity, inputs). The
+inductive invariant of at most once and arrival order is the one ADR 0115 D3 proves for every size once Apalache is
+approved.
 
 ### D3. Every runtime's history is linearizable to the promise
 
-An **inbox history** is a wire surface registered as the queue history is. It records, per thread, the operations in
-program order, each with the two readings of one shared clock it was invoked and returned at:
+An **inbox history** is a wire surface registered as the queue history is
+(`tests/forge/conformance/inbox_history.schema.json`). It says what the run was given: the sessions the tree holds
+(`sessions`), whether the runtime closes a session's inbox when its run ends (`closes`), and the capacity of a
+bounded inbox (`capacity`, left out where the inbox has no bound). It records, per thread, the operations in program
+order, each with the two readings of one shared clock it was invoked and returned at (`invoked`, `returned`):
 
-- a poster's `post(session, input) → taken | refused`;
-- the owner's `enqueue_own(session, event)`, `apply(session, input)`, `macrostep_begin` and `macrostep_end`, and
-  `end(session)`.
+- a poster's `post(session, input)`, whose `outcome` is `taken`, or `refused` with its `reason`: `full`, `ended` or
+  `unknown`;
+- the owner's `enqueue(session, item, source)`, recorded at the instant `item` entered the session's external queue.
+  Its `source` is `posted` for an input a post took, applied from the inbox, and `item` is that input. It is `own`
+  for an event of the owner's own, and `item` is the owner's name for it;
+- the owner's `end(session)`, the end of that session's run.
+
+A drain is recorded as the `enqueue` of each input it applies. No macrostep boundary is recorded: run to completion
+is the external queue's (D1), and the history says where each item entered that queue.
 
 `sce-codegen check-inbox-history` decides whether the history is linearizable to D1's sequential reading. It shares
 the search of the queue and broadcast-log checkers, and only the specification differs. Each runtime's inbox

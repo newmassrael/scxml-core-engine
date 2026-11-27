@@ -209,14 +209,15 @@ NoLoss ==
             \/ \E s \in Sessions : InSeq(i, ItemsTo(inbox[s], Tree!Target(i)))
 
 \* Every input taken reaches the queue of the session it names.
-Delivered == \A i \in Inputs : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
+Delivered == \A i \in Tree!Addressed : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
 
 \* What has arrived, as the promise counts it: what the queue took, then what
 \* the session's inbox holds, then what the root's holds for it.
 Arrived(t) ==
     extq[t] \o ItemsTo(inbox[t], t) \o (IF t = Root THEN <<>> ELSE ItemsTo(inbox[Root], t))
 
-Promise == INSTANCE InboxService WITH arrivals <- [t \in Sessions |-> Arrived(t)]
+Promise == INSTANCE InboxService
+    WITH arrivals <- [t \in Sessions |-> Arrived(t)], entered <- [t \in Sessions |-> Len(extq[t])]
 Refines == Promise!Spec
 -----------------------------------------------------------------------------
 \* InOrder, AtMostOnce and NoLoss for every length of execution (docs/adr/0115, D3; docs/adr/0147,
