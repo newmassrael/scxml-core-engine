@@ -147,6 +147,20 @@ macrostep-diagnostics = []
 # `std` in.
 transition-observer = []
 
+# The trace port (docs/adr/0115, D4 and D8): `EngineState::set_trace_port`,
+# which tells a test each step Appendix D takes (the start, each microstep,
+# each event taken, the exit of the interpreter) with the transitions it took
+# by their rows, the states it exited and entered in order and the
+# configuration it left; and `trace_port::RunTrace`, which writes those steps
+# in the run trace format `sce-codegen formal traces` judges against the
+# document's model.
+#
+# Never on a release path: no default asks for it, and a test crate names it.
+# It only adds (docs/adr/0053): without it the engine has no field, no call and
+# no code for a port, and with it and no port set each step checks one
+# `Option`. It writes the format's JSON, so it asks for `std`.
+trace-port = ["std"]
+
 # The take step of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1):
 # `Behaviour::take_transition`, `StatePolicy::TAKES_TRANSITIONS` and
 # `StatePolicy::take_transition`, and the loop the shared microstep runs over

@@ -94,6 +94,11 @@
 //!   host each transition the engine takes by the row of its emitted
 //!   transition table (docs/adr/0089). Without it the engine holds no field
 //!   and makes no call for it.
+//! - `trace-port`: `EngineState::set_trace_port` and the `trace_port` module,
+//!   which tell a test each step Appendix D takes and write the run in the
+//!   format `sce-codegen formal traces` judges against the document's model
+//!   (docs/adr/0115, D4 and D8); asks for `std`. No default asks for it, and
+//!   without it the engine holds no field and makes no call for it.
 //! - `test-component`: the take step of a test component
 //!   (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), which the shared microstep
 //!   runs over the selected transitions before it exits anything, and the
@@ -575,6 +580,9 @@ pub mod scripting;
 // `std` only, like the saved state its module parameters are read through.
 #[cfg(feature = "std")]
 pub mod test;
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
+#[cfg(feature = "trace-port")]
+pub mod trace_port;
 // Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
 #[cfg(feature = "transition-observer")]
 pub mod transition_observer;

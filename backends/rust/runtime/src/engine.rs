@@ -1293,6 +1293,12 @@ pub struct EngineState<P: StatePolicy> {
     /// carries neither the field nor the check.
     #[cfg(feature = "transition-observer")]
     pub(crate) transition_observer: Option<crate::transition_observer::Observer<P::State>>,
+    /// What [`set_trace_port`](EngineState::set_trace_port) set, told each
+    /// step the engine takes (docs/adr/0115, D4), and the step being told.
+    /// Absent from a build without the feature, so such a build carries
+    /// neither the field nor the calls.
+    #[cfg(feature = "trace-port")]
+    pub(crate) trace: crate::trace_port::Recorder,
 }
 
 /// The policy of a new [`Engine`] and every field of its [`EngineState`] with
@@ -1350,6 +1356,8 @@ macro_rules! engine_initial_fields {
             inbox_drain: crate::inbox::drain::Drain::idle(),
             #[cfg(feature = "transition-observer")]
             transition_observer: None,
+            #[cfg(feature = "trace-port")]
+            trace: crate::trace_port::Recorder::new(),
         }
     };
 }
@@ -4942,6 +4950,36 @@ impl<P: StatePolicy> EngineState<P> {
         self.transition_observer = None;
     }
 
+    /// Tell `port` each step this engine takes from now on, as the run trace
+    /// format says it (docs/adr/0115, D4 and D8): the start, each microstep on
+    /// eventless transitions, each event taken off the internal or the
+    /// external queue with the microstep it selects, and the exit of the
+    /// interpreter, each with the transitions it took by their rows, the states
+    /// it exited and entered in the order it exited and entered them, and the
+    /// configuration it left ([`TraceStep`](crate::trace_port::TraceStep)).
+    ///
+    /// Each step is told once it is over. The port reads and is asked nothing:
+    /// a machine with one set takes the steps one without takes. It runs on the
+    /// thread that drives the engine, inside the macrostep; being `'static`, it
+    /// cannot hold the engine it is told of. Set it before
+    /// [`initialize`](Engine::initialize) to be told the start. A test sets
+    /// one; [`RunTrace`](crate::trace_port::RunTrace) keeps what it is told and
+    /// writes the file `sce-codegen formal traces` judges.
+    #[cfg(feature = "trace-port")]
+    pub fn set_trace_port<F>(&mut self, port: F)
+    where
+        F: FnMut(&crate::trace_port::TraceStep) + Send + 'static,
+    {
+        self.trace.set(Box::new(port));
+    }
+
+    /// Tell no trace port anything; the engine is then as it was before one
+    /// was set (docs/adr/0115, D4).
+    #[cfg(feature = "trace-port")]
+    pub fn clear_trace_port(&mut self) {
+        self.trace.clear();
+    }
+
     /// §scxml-C-2: Register an HTTP send dispatcher callback.
     ///
     /// The callback receives an [`HttpSendRequest`] and answers what became of
@@ -6165,6 +6203,14 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, '_, P> {
     }
 
     fn exit_state(&mut self, state: StateId) {
+        // docs/adr/0115, D4: the step being traced exits it, in this order.
+        #[cfg(feature = "trace-port")]
+        if self.engine.state.trace.is_open() {
+            self.engine
+                .state
+                .trace
+                .exited(P::get_state_name(P::state_of(state)));
+        }
         let event_data = P::event_data(&self.current);
         self.engine
             .with_policy(|policy, engine| policy.execute_exit_actions(state, event_data, engine));
@@ -6182,6 +6228,15 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, '_, P> {
         // transition's content when it is entered by default. Whether the
         // state ends the run is the core's answer from the tables
         // (`Entered::ended_in`), not this machine's.
+        //
+        // docs/adr/0115, D4: the step being traced enters it, in this order.
+        #[cfg(feature = "trace-port")]
+        if self.engine.state.trace.is_open() {
+            self.engine
+                .state
+                .trace
+                .entered(P::get_state_name(P::state_of(state)));
+        }
         let event_data = P::event_data(&self.current);
         self.engine.with_policy(|policy, engine| {
             policy.execute_entry_actions(state, event_data, engine, is_default_entry)
@@ -6652,6 +6707,17 @@ trait MainLoop {
     /// `enabled` by its row of the emitted transition table (docs/adr/0089).
     #[cfg(feature = "transition-observer")]
     fn observe_transitions(&mut self, enabled: &[TransitionId]);
+    /// Begin a step of the run's trace (docs/adr/0115, D4), which took `event`
+    /// when it is an event step; nothing when no trace port is set.
+    #[cfg(feature = "trace-port")]
+    fn trace_begin(&mut self, kind: crate::trace_port::StepKind, event: Option<EventId>);
+    /// The transitions of `enabled`, the step's microstep, by their rows.
+    #[cfg(feature = "trace-port")]
+    fn trace_fired(&mut self, enabled: &[TransitionId]);
+    /// The step is over: tell the trace port it, with the configuration it left
+    /// and, for a stop, the top-level `<final>` the run ended in.
+    #[cfg(feature = "trace-port")]
+    fn trace_end(&mut self);
 }
 
 impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
@@ -6759,6 +6825,48 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
             }
         }
     }
+
+    #[cfg(feature = "trace-port")]
+    fn trace_begin(&mut self, kind: crate::trace_port::StepKind, event: Option<EventId>) {
+        let event = event.map(|event| P::get_event_name(P::event_of(event)));
+        self.engine.state.trace.begin(kind, event);
+    }
+
+    #[cfg(feature = "trace-port")]
+    fn trace_fired(&mut self, enabled: &[TransitionId]) {
+        let trace = &mut self.engine.state.trace;
+        if !trace.is_open() {
+            return;
+        }
+        for &transition in enabled {
+            // The selection returns written transitions only, each with a
+            // source, as the transition observer reads them (docs/adr/0089).
+            if let Some((source, index)) = P::TABLES.position_in_source(transition) {
+                trace.fired(P::get_state_name(P::state_of(source)), index);
+            }
+        }
+    }
+
+    #[cfg(feature = "trace-port")]
+    fn trace_end(&mut self) {
+        let state = &mut self.engine.state;
+        if !state.trace.is_open() {
+            return;
+        }
+        let configuration = state
+            .run_store
+            .view()
+            .configuration()
+            .iter()
+            .map(|active| P::get_state_name(P::state_of(active)))
+            .collect();
+        let outcome = state
+            .core
+            .main_loop
+            .terminal_state
+            .map(|ended| P::get_state_name(P::state_of(ended)));
+        state.trace.end(configuration, outcome);
+    }
 }
 
 /// §scxml-D-exitInterpreter, once per run: every state still active is exited,
@@ -6772,10 +6880,14 @@ fn exit_interpreter(host: &mut dyn MainLoop) {
     if host.core().interpreter_exited {
         return;
     }
+    #[cfg(feature = "trace-port")]
+    host.trace_begin(crate::trace_port::StepKind::Stop, None);
     microstep::exit_interpreter(host.behaviour());
     let core = host.core();
     core.interpreter_exited = true;
     core.main_loop.is_running = false;
+    #[cfg(feature = "trace-port")]
+    host.trace_end();
 }
 
 /// One call of the main event loop: the engine it drives, the document it
@@ -6828,12 +6940,17 @@ impl Turn<'_> {
     /// leaf to walk down to. The configuration starts empty.
     fn enter_initial_configuration(&mut self) {
         self.host.behaviour().store().configuration().clear();
+        #[cfg(feature = "trace-port")]
+        self.host
+            .trace_begin(crate::trace_port::StepKind::Start, None);
         let entered = microstep::enter_initial_configuration(
             self.tables,
             self.host.behaviour(),
             self.scratch.reborrow(),
         );
         self.host.core().settle(entered);
+        #[cfg(feature = "trace-port")]
+        self.host.trace_end();
     }
 
     /// §scxml-D-mainEventLoop, for any machine: complete the macrostep, start
@@ -6934,7 +7051,12 @@ impl Turn<'_> {
                 #[cfg(feature = "std")]
                 ExternalEvent::Refused => {}
                 ExternalEvent::Taken(event) => {
+                    #[cfg(feature = "trace-port")]
+                    self.host
+                        .trace_begin(crate::trace_port::StepKind::External, Some(event.event));
                     let outcome = self.take_event(event.event);
+                    #[cfg(feature = "trace-port")]
+                    self.host.trace_end();
                     self.end_external_event(event, outcome);
                 }
             }
@@ -7002,7 +7124,12 @@ impl Turn<'_> {
             let Some(event) = self.take_internal_event() else {
                 return;
             };
+            #[cfg(feature = "trace-port")]
+            self.host
+                .trace_begin(crate::trace_port::StepKind::Internal, Some(event.event));
             let outcome = self.take_event(event.event);
+            #[cfg(feature = "trace-port")]
+            self.host.trace_end();
             if outcome == EventOutcome::Taken {
                 // Appendix D: the loop turn that selects nothing takes no
                 // microstep, so it spends no budget. Only a turn that answered
@@ -7050,7 +7177,12 @@ impl Turn<'_> {
             return Eventless::Refused;
         }
         self.loop_state().macrostep_microsteps_taken += 1;
+        #[cfg(feature = "trace-port")]
+        self.host
+            .trace_begin(crate::trace_port::StepKind::Eventless, None);
         self.take_microstep();
+        #[cfg(feature = "trace-port")]
+        self.host.trace_end();
         Eventless::Taken
     }
 
@@ -7077,6 +7209,9 @@ impl Turn<'_> {
         // transition once and in selection order, as the Python engine tells it.
         #[cfg(feature = "transition-observer")]
         self.host.observe_transitions(&self.enabled);
+        // docs/adr/0115, D4: the rows the traced step takes, in selection order.
+        #[cfg(feature = "trace-port")]
+        self.host.trace_fired(&self.enabled);
         let entered = microstep::microstep(
             self.tables,
             self.host.behaviour(),
