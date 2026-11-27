@@ -692,6 +692,17 @@ inline constexpr ::SCE::AnswerSchema ANSWER_SCHEMAS[] = {
 #ifndef {{ model.name | upper }}_TRACE_PORT
 #define {{ model.name | upper }}_TRACE_PORT SCE_TRACE_PORT
 #endif
+{# docs/adr/0147, D3: the machine's inbox port switch, whose default is the build's
+   (`SCE_INBOX_PORT`, core/InboxPort.h, which StaticExecutionEngine.h includes, 0
+   unless set), as the C11 machine's `<PREFIX><NAME>_INBOX_PORT` is. The policy's
+   `INBOX_PORT` below hands it to the engine (`InboxPortTrait`). Off, the engine
+   holds no port and each call of it is a discarded branch, so the machine is
+   what it was before the port existed. #}
+// docs/adr/0147, D3: whether this machine tells an inbox port each event it puts
+// on its external queue. A build that sets nothing for it takes the build's switch.
+#ifndef {{ model.name | upper }}_INBOX_PORT
+#define {{ model.name | upper }}_INBOX_PORT SCE_INBOX_PORT
+#endif
 
 {# Policy class #}
 // State policy for {{ model.name }}
@@ -716,6 +727,10 @@ struct {{ model.name }}Policy {
     // docs/adr/0115, D4 and D8: whether the engine tells a trace port each step
     // of Appendix D this machine takes (`StaticExecutionEngine::setTracePort`).
     static constexpr bool TRACE_PORT = ({{ model.name | upper }}_TRACE_PORT) != 0;
+
+    // docs/adr/0147, D3: whether the engine tells an inbox port each event it
+    // puts on this machine's external queue (`StaticExecutionEngine::setInboxPort`).
+    static constexpr bool INBOX_PORT = ({{ model.name | upper }}_INBOX_PORT) != 0;
 
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = {{ 'true' if model.needs_script_engine else 'false' }};
