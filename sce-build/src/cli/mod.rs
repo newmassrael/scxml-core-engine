@@ -8794,6 +8794,18 @@ fn cmd_generate(
                 );
                 error_format.emit_and_exit(&located, "Mesh error: ")
             }
+            // A refusal of a statement of the document the mesh stage judged
+            // stands on that statement, in the document (docs/adr/0114, D1).
+            Err(e) if e.document_location().is_some() => {
+                let at = e.document_location().cloned();
+                let located = Located::new(
+                    ForgeError::from(e),
+                    scxml_path,
+                    at.as_ref().and_then(|at| at.line),
+                    at.as_ref().and_then(|at| at.col),
+                );
+                error_format.emit_and_exit(&located, "Mesh error: ")
+            }
             Err(e) => error_format.emit_and_exit(&e, "Mesh error: "),
         }
     }

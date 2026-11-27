@@ -492,3 +492,134 @@ fn a_follower_is_keyed_by_the_entries_it_follows() {
         "the view is keyed by the entries it follows:\n{out}"
     );
 }
+
+/// Run `sce-codegen <args...> probe.scxml` with JSON diagnostics, [`BOOKED`] and
+/// `others` beside the document; return `(exit_ok, output)`.
+fn check_beside(args: &[&str], doc: &str, others: &[(&str, &str)]) -> (bool, String) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("room_booked.scxml"), BOOKED).expect("write schema");
+    for (name, text) in others {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, doc).expect("write probe");
+    let output = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(args)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout),
+    )
+}
+
+/// docs/adr/0114, D1: a child started locally keeps what it says in its own
+/// engine, which no host core takes, so a document that starts one that says a
+/// fact is refused on the `<invoke>`, on every lane, naming the fact. Red if the
+/// child's facts are not recorded on its `<invoke>`, or not asked of.
+#[test]
+fn a_child_that_says_facts_is_refused_on_its_invoke() {
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="probe">
+  <state id="s">
+    <invoke type="scxml" id="kid" src="kid.scxml"/>
+  </state>
+</scxml>
+"#;
+    let child = statechart("sce-static", SAYS).replace(r#"name="probe""#, r#"name="kid""#);
+    let line = parent
+        .lines()
+        .position(|row| row.contains("<invoke"))
+        .expect("written")
+        + 1;
+    for args in [&["check", "-l", "rust"][..], &["check", "-l", "cpp"][..]] {
+        let (ok, out) = check_beside(args, parent, &[("kid.scxml", child.as_str())]);
+        let record = out
+            .lines()
+            .find(|row| row.contains("\"code\":\"generate/journal-facts-in-child\""))
+            .unwrap_or_else(|| panic!("{args:?} refuses the child's facts:\n{out}"));
+        assert!(!ok, "{args:?}:\n{out}");
+        assert!(record.contains("`room.booked`"), "{record}");
+        assert!(
+            record.contains(&format!("\"line\":{line},"))
+                || record.contains(&format!("\"line\":{line}}}")),
+            "placed on the <invoke>, line {line}: {record}"
+        );
+    }
+}
+
+/// The schema of a second event the probe takes in, which no machine says.
+const CANCELLED: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="room_cancelled" sce:event-name="room.cancelled">
+  <datamodel>
+    <data id="room" sce:type="string[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// docs/adr/0114, D1: where the machine is generated with its deployment, a value
+/// held to the journal's facts written on the event of an imported schema that is
+/// no entry the machine says or follows is refused, placed on that transition in
+/// the machine's document. Red if the refusal carries no place, or the CLI drops it.
+#[test]
+fn a_held_value_written_on_no_entry_is_refused_on_its_transition() {
+    let doc = format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>
+  <sce:import kind="event-schema" src="room_cancelled.scxml" as="RoomCancelled"/>
+  <datamodel>
+    <data id="booked" sce:type="uint32" expr="0" sce:from="journal"/>
+  </datamodel>
+  <state id="s">
+    <transition event="book" type="internal">
+{SAYS}
+    </transition>
+    <transition event="room.booked" type="internal">
+      <assign location="booked" expr="booked + 1"/>
+    </transition>
+    <transition event="room.cancelled" type="internal">
+      <assign location="booked" expr="0"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    );
+    let (ok, out) = check_beside(&["check"], &doc, &[("room_cancelled.scxml", CANCELLED)]);
+    assert!(
+        ok,
+        "the document alone takes the write, on an imported event:\n{out}"
+    );
+    let line = doc
+        .lines()
+        .position(|row| row.contains(r#"event="room.cancelled""#))
+        .expect("written")
+        + 1;
+    let (ok, out) = generate_deployed(
+        &doc,
+        &pooled("        journal: true\n"),
+        &[
+            ("room_cancelled.scxml", CANCELLED),
+            ("rooms.scxml", statechart("sce-static", SAYS).as_str()),
+        ],
+    );
+    let record = out
+        .lines()
+        .find(|row| row.contains("\"code\":\"mesh/codegen-journal-mismatch\""))
+        .unwrap_or_else(|| panic!("refused as a mismatch:\n{out}"));
+    assert!(!ok, "{out}");
+    assert!(record.contains("`room.cancelled`"), "{record}");
+    assert!(
+        record.contains(&format!("\"line\":{line},"))
+            || record.contains(&format!("\"line\":{line}}}")),
+        "placed on the transition, line {line}: {record}"
+    );
+}

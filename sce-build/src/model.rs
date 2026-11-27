@@ -2553,6 +2553,16 @@ pub struct InvokeSessionCommon {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_swift_saves: bool,
+    /// Codegen-internal: the event of the first fact the child says into an
+    /// event journal (`<send type="sce:journal">`, docs/adr/0114, D1), its own
+    /// children's included; `None` for a child that says none, and for one the
+    /// build could not read. The entries a child makes are its own engine's,
+    /// which no host core takes, so its parent is refused
+    /// ([`crate::forge::journal::refuse_facts_of_children`]). Derived beside
+    /// [`Self::child_saves`], from the same child model; not part of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_says_facts: Option<String>,
     /// Codegen-internal: what the child reads of each event it is sent, when it
     /// is a `datamodel="sce-static"` document this build read ([`ChildReceives`]).
     /// A static parent holds a `<param>` of a `<send>` to the child to the field
@@ -3328,6 +3338,12 @@ pub struct InvokeCandidate {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_swift_saves: bool,
+    /// Codegen-internal: the event of the first fact this candidate says into an
+    /// event journal — [`InvokeSessionCommon::child_says_facts`], per candidate.
+    /// Outside the IR contract.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_says_facts: Option<String>,
     /// Codegen-internal: what the candidate reads of each event it is sent —
     /// [`InvokeSessionCommon::child_receives`], per candidate. Outside the IR
     /// contract.

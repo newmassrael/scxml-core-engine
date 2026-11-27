@@ -1610,7 +1610,8 @@ pool, which only the Rust host core serves
 deployment, the documents are read: a document that says facts on a machine that
 declares no `journal: true`, `journal: true` on one whose document says none, and
 a value held to the journal's facts written on an event that is no entry the
-machine says or follows are refused (`mesh/codegen-journal-mismatch`); the events
+machine says or follows are refused (`mesh/codegen-journal-mismatch`), the last placed
+on the transition in the machine's document; the events
 of the entries a machine follows (a followed machine's facts, the events of a
 stream's schemas, each of which must be an event schema,
 `mesh/topology-receiver-source-parse` otherwise) key its sessions as its requests
@@ -5568,7 +5569,12 @@ from its recorded moment. Rust keeps the journal (docs/adr/0114, Scope); every o
 lane, the Interpreter's lowering among them, and a `--no-std` Rust build refuse the
 machine by name (`generate/unsupported-feature`), as does a Rust build of a document
 read without its imports, whose record the build cannot describe. A generated machine
-that says a fact uses the runtime's `record-cbor` feature.
+that says a fact uses the runtime's `record-cbor` feature. Only the session of a keyed
+pool says facts: a document that starts locally a child (`<invoke type="scxml">`, or a
+candidate of a hybrid one) that says one, itself or through a child of its own, keeps
+the entries in the child's engine, which no host core's write takes, and is refused on
+the `<invoke>`, on every lane, naming the child and its fact
+(`generate/journal-facts-in-child`).
 
 **A record signed and sealed by name: `sce:payload`** (docs/adr/0109, D9;
 docs/adr/0107, Open question 1; docs/SCE_HOST_FEATURES.md, "Signing and sealing").
@@ -11432,7 +11438,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (574 codes)
+## Appendix — `DiagnosticCode` index (575 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11788,6 +11794,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codegen/no-std-scheduler-unbounded` | Generate |
 | `generate/source-hash-unavailable` | Generate |
 | `generate/inline-child-unreturnable` | Generate |
+| `generate/journal-facts-in-child` | Generate |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-string-escape` | Expression |

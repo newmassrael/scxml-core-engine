@@ -6863,6 +6863,25 @@ pub enum GenerateError {
         at: Option<SourceLocation>,
     },
 
+    /// docs/adr/0114, D1: a document starts locally a child (`<invoke
+    /// type="scxml">`, or a candidate of a hybrid one) that says facts into an
+    /// event journal, itself or through a child of its own. A child's entries
+    /// are its own engine's, which no host core's write of a checkpoint takes,
+    /// so they would be said and never kept: only the session of a keyed pool
+    /// says facts. `child` is the child's name, `event` the event of its first
+    /// fact, `at` the `<invoke>` that starts it.
+    #[error(
+        "the child `{child}` says the fact `{event}` into an event journal (<send \
+         type=\"sce:journal\">), and a child's entries are its own engine's, which no host \
+         core's write takes: only the session of a keyed pool says facts, so send the fact to \
+         the parent and say it there (docs/adr/0114, D1)"
+    )]
+    JournalFactsInChild {
+        child: String,
+        event: String,
+        at: Option<SourceLocation>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-J-4: an MCU-class kind (link / worker /
     /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
     /// was authored against a language target outside `(rust, c11)`.

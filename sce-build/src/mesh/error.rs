@@ -71,6 +71,20 @@ pub enum MeshError {
     },
 }
 
+impl MeshError {
+    /// Where in the machine's document a refusal of the document stands, for
+    /// one the mesh stage judges against a statement of it: a value held to the
+    /// journal's facts written on an event that is no entry of the machine
+    /// (docs/adr/0114, D1). `None` for every other refusal, which is placed in
+    /// the deployment ([`DeployError::mark_in`]) or nowhere.
+    pub fn document_location(&self) -> Option<&crate::forge::error::SourceLocation> {
+        match self {
+            Self::Codegen(CodegenError::JournalMismatch { at, .. }) => at.as_ref(),
+            _ => None,
+        }
+    }
+}
+
 impl From<DeployError> for MeshError {
     fn from(err: DeployError) -> Self {
         Self::Deploy(Box::new(err))
@@ -4020,8 +4034,17 @@ pub enum CodegenError {
     /// machine, the deployment keeps one and the document says none, or a value
     /// held to the journal's facts is written on an event that is no entry the
     /// machine says or follows. Judged with the documents the deployment names.
+    ///
+    /// `at` is the transition whose statement writes a held value on another
+    /// event, in the machine's document, where the refusal is placed
+    /// ([`MeshError::document_location`]); `None` for a disagreement of the
+    /// document as a whole with its deployment.
     #[error("machine '{machine}': its event journal cannot be kept as written — {reason} (docs/adr/0114, D1).")]
-    JournalMismatch { machine: String, reason: String },
+    JournalMismatch {
+        machine: String,
+        reason: String,
+        at: Option<crate::forge::error::SourceLocation>,
+    },
 }
 
 /// Which declaration of the event journal (docs/adr/0114) a
@@ -6643,7 +6666,9 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone()],
         },
-        CodegenError::JournalMismatch { machine, reason } => DiagnosticPayload {
+        CodegenError::JournalMismatch {
+            machine, reason, ..
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenJournalMismatch,
             stage: Stage::MeshCodegen,
             actual: Some(machine.clone()),

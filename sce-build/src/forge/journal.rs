@@ -506,6 +506,75 @@ fn unwritten(
     Ok(())
 }
 
+/// The event of the first fact said into a journal by `model` or by a child it
+/// can start, at any depth (docs/adr/0114, D1): its own sends first, then what
+/// the parse recorded of each child it starts through an `<invoke type="scxml">`
+/// and of each candidate of a hybrid one. `None` when the tree says none.
+pub fn facts_said_in_tree(model: &SCXMLModel) -> Option<String> {
+    first_journal_event(model).or_else(|| first_child_saying_facts(model).map(|facts| facts.event))
+}
+
+/// A child that says facts into a journal: its name, the event of its first
+/// fact, and where the `<invoke>` that starts it stands.
+struct ChildFacts {
+    child: String,
+    event: String,
+    at: Option<crate::forge::error::SourceLocation>,
+}
+
+/// The first child `model` can start that says facts into a journal.
+fn first_child_saying_facts(model: &SCXMLModel) -> Option<ChildFacts> {
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    states
+        .into_iter()
+        .flat_map(|state| &state.invokes)
+        .find_map(|invoke| {
+            let common = match invoke {
+                crate::model::Invoke::Scxml(info) => &info.common,
+                crate::model::Invoke::Hybrid(info) => &info.common,
+                crate::model::Invoke::MeshRpc(_) | crate::model::Invoke::Unsupported(_) => {
+                    return None
+                }
+            };
+            let at = common.base.source_location.clone();
+            if let Some(event) = &common.child_says_facts {
+                return Some(ChildFacts {
+                    child: common.child_name.clone(),
+                    event: event.clone(),
+                    at,
+                });
+            }
+            match invoke {
+                crate::model::Invoke::Hybrid(info) => {
+                    info.candidates.iter().find_map(|candidate| {
+                        candidate.child_says_facts.clone().map(|event| ChildFacts {
+                            child: candidate.stem.clone(),
+                            event,
+                            at: at.clone(),
+                        })
+                    })
+                }
+                _ => None,
+            }
+        })
+}
+
+/// Refuse `model` when a child it starts locally (`<invoke type="scxml">`, a
+/// candidate of a hybrid one among them) says facts into a journal, at any depth
+/// (docs/adr/0114, D1): the entries a child makes are its own engine's, which no
+/// host core's write takes, so they would be said and never kept. Only the
+/// session of a keyed pool says facts. Placed on the `<invoke>` that starts it,
+/// naming the child and its fact.
+pub fn refuse_facts_of_children(model: &SCXMLModel) -> Result<(), GenerateError> {
+    match first_child_saying_facts(model) {
+        Some(ChildFacts { child, event, at }) => {
+            Err(GenerateError::JournalFactsInChild { child, event, at })
+        }
+        None => Ok(()),
+    }
+}
+
 /// Refuse `model` on `lane` when it says a fact into the journal and the lane
 /// keeps none (docs/adr/0114, Scope), or when the Rust lane would make the entry of
 /// a record the build could not describe: a send of a document read without its

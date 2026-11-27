@@ -867,6 +867,7 @@ references against a real document and drift silently.
 | `extern/target-plugin-symbol-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
 | `generate/inline-child-unreturnable` | `generate` | no |  |
 | `generate/invalid-config` | `generate` | no |  |
+| `generate/journal-facts-in-child` | `generate` | no | ADR 0114 D1 |
 | `generate/source-hash-unavailable` | `generate` | no |  |
 | `generate/template-load` | `generate` | no |  |
 | `generate/template-render` | `generate` | no |  |

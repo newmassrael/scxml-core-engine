@@ -4617,6 +4617,7 @@ pub fn check_journal(
     let refuse = |reason: String| crate::mesh::error::CodegenError::JournalMismatch {
         machine: machine.to_string(),
         reason,
+        at: None,
     };
     let said = crate::forge::journal::journal_events(model);
     let keeps = entry.is_some_and(|m| m.journal);
@@ -4655,13 +4656,19 @@ pub fn check_journal(
                 .split_whitespace()
                 .find(|event| !entries.contains(event))
             {
-                return Err(refuse(format!(
-                    "the transition of state '{}' on '{}' writes '{value}', a value held to the \
-                     journal's facts, and `{event}` is the event of no entry the machine says or \
-                     follows",
-                    state.id,
-                    transition.event.trim()
-                )));
+                // Placed on the transition, in the machine's document, as a
+                // refusal of the document is.
+                return Err(crate::mesh::error::CodegenError::JournalMismatch {
+                    machine: machine.to_string(),
+                    reason: format!(
+                        "the transition of state '{}' on '{}' writes '{value}', a value held to \
+                         the journal's facts, and `{event}` is the event of no entry the \
+                         machine says or follows",
+                        state.id,
+                        transition.event.trim()
+                    ),
+                    at: transition.source_location.clone(),
+                });
             }
         }
     }

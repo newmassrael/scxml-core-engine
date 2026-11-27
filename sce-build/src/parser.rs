@@ -9403,6 +9403,9 @@ fn populate_child_metadata_from_model(
     common.child_saves = crate::forge::static_lowering::a_tree_can_hold(child_model);
     // And whether the Swift runtime saves it: the same rule, held to what that runtime holds.
     common.child_swift_saves = crate::forge::static_lowering::a_swift_tree_can_hold(child_model);
+    // docs/adr/0114, D1: whether the child says facts into a journal, its own
+    // invokes already saying whether theirs do.
+    common.child_says_facts = crate::forge::journal::facts_said_in_tree(child_model);
 }
 
 /// §scxml-6.4: the document a child an `<invoke>` names, by `src`
@@ -9560,6 +9563,7 @@ impl SCXMLParser {
         candidate.child_mesh = common.child_mesh;
         candidate.child_saves = common.child_saves;
         candidate.child_swift_saves = common.child_swift_saves;
+        candidate.child_says_facts = common.child_says_facts;
         candidate.child_receives = common.child_receives;
         Ok(())
     }

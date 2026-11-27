@@ -1619,6 +1619,10 @@ pub enum DiagnosticCode {
     /// own, and the entry point it was handed to returns one machine's source.
     #[serde(rename = "generate/inline-child-unreturnable")]
     GenerateInlineChildUnreturnable,
+    /// A document starts locally a child that says facts into an event
+    /// journal, which no host core takes (docs/adr/0114, D1).
+    #[serde(rename = "generate/journal-facts-in-child")]
+    GenerateJournalFactsInChild,
 
     // ── Codegen matrix invariants (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5).
     //    The variants shipped first as shells (item A1) so downstream
@@ -4348,6 +4352,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateUnsupportedFeature,
         GenerateSourceHashUnavailable,
         GenerateInlineChildUnreturnable,
+        // ADR 0114, D1: a local child that says facts no host core takes
+        GenerateJournalFactsInChild,
         // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
@@ -5459,7 +5465,7 @@ impl DiagnosticCode {
 
             // ── The event journal (docs/adr/0114, D1, D4 and D6) ──
             MeshDeployInvalidJournal => Some("ADR 0114 D4"),
-            MeshCodegenJournalMismatch => Some("ADR 0114 D1"),
+            MeshCodegenJournalMismatch | GenerateJournalFactsInChild => Some("ADR 0114 D1"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -5736,6 +5742,7 @@ impl DiagnosticCode {
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
             | GenerateInlineChildUnreturnable
+            | GenerateJournalFactsInChild
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
@@ -6177,6 +6184,7 @@ impl DiagnosticCode {
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
             | GenerateInlineChildUnreturnable
+            | GenerateJournalFactsInChild
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenStandardHostTypeNotServed
@@ -6766,6 +6774,7 @@ impl DiagnosticCode {
             GenerateUnsupportedFeature => "generate/unsupported-feature",
             GenerateSourceHashUnavailable => "generate/source-hash-unavailable",
             GenerateInlineChildUnreturnable => "generate/inline-child-unreturnable",
+            GenerateJournalFactsInChild => "generate/journal-facts-in-child",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
@@ -12738,6 +12747,17 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![child.clone(), entry.clone()],
         },
+        // docs/adr/0114, D1: the record stands on the `<invoke>` that starts
+        // the child; the fact is written in the child's own document, so no
+        // `actual` of this row, and where it is said instead is the author's.
+        GenerateError::JournalFactsInChild { child, event, .. } => DiagnosticPayload {
+            code: DiagnosticCode::GenerateJournalFactsInChild,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![child.clone(), event.clone()],
+        },
         GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => {
             DiagnosticPayload {
                 code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
@@ -17332,6 +17352,18 @@ mod tests {
                 r##"{"v":1,"id":"fnv1a:865a271de53e9063","code":"generate/inline-child-unreturnable","stage":"generate","message":"the document carries the in-line child `host__sce_synth_invoke__kid`, whose machine is a file of its own beside the parent's, and `compile_from_string` returns the parent's source alone; compile the document with `compile_from_string_lang`, which returns every file"}"##,
             ),
             (
+                // A document that starts a child saying facts into a journal
+                // no host core takes (docs/adr/0114, D1).
+                "forge/generate-journal-facts-in-child",
+                GenerateError::JournalFactsInChild {
+                    child: "kid".into(),
+                    event: "room.booked".into(),
+                    at: None,
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:5b41f73a6eae1559","code":"generate/journal-facts-in-child","stage":"generate","spec":"ADR 0114 D1","message":"the child `kid` says the fact `room.booked` into an event journal (<send type=\"sce:journal\">), and a child's entries are its own engine's, which no host core's write takes: only the session of a keyed pool says facts, so send the fact to the parent and say it there (docs/adr/0114, D1)"}"##,
+            ),
+            (
                 "forge/io-filesystem",
                 ForgeError::Io {
                     path: std::path::PathBuf::from("/tmp/build/out.rs"),
@@ -20811,6 +20843,7 @@ mod tests {
             (
                 "mesh/codegen-journal-mismatch",
                 CodegenError::JournalMismatch {
+                    at: None,
                     machine: "rooms".into(),
                     reason: "the deployment keeps a journal of the machine (`journal: true`), and its document says no fact into it (<send type=\"sce:journal\">)".into(),
                 }
@@ -22218,6 +22251,7 @@ mod tests {
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
             | GenerateInlineChildUnreturnable
+            | GenerateJournalFactsInChild
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             // ADR 0057 §6: the repair names a variant, which is the build's
@@ -23121,6 +23155,7 @@ mod tests {
                 | GenerateUnsupportedFeature
                 | GenerateSourceHashUnavailable
                 | GenerateInlineChildUnreturnable
+                | GenerateJournalFactsInChild
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenFeatureSelectionRequired
@@ -23468,9 +23503,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            574,
+            575,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 574 distinct variants to match the DiagnosticCode \
+             expected 575 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24600,6 +24635,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // resolves the enclosing anchor; no scenario takes an entry that
             // returns one source, so the roster has not seen it carry.
             | GenerateInlineChildUnreturnable
+            | GenerateJournalFactsInChild
             // docs/adr/0109, D11: located on the `<sce:migration>`, or the
             // child of it the refusal is about, through `locate_codegen_error`,
             // which resolves the enclosing anchor; no scenario declares a

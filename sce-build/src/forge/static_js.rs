@@ -2325,6 +2325,8 @@ fn lower_parsed(
     // said into one is refused by name here too.
     crate::forge::journal::refuse_unkept(model, crate::forge::standard_host::HostLane::Interpreter)
         .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
+    crate::forge::journal::refuse_facts_of_children(model)
+        .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }

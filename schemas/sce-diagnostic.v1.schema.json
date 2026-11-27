@@ -252,6 +252,7 @@
         "generate/unsupported-feature",
         "generate/source-hash-unavailable",
         "generate/inline-child-unreturnable",
+        "generate/journal-facts-in-child",
         "codegen/mcu-class-kind-on-non-mcu-language",
         "codegen/generic-kind-backend-emit-missing",
         "codegen/feature-selection-required",
