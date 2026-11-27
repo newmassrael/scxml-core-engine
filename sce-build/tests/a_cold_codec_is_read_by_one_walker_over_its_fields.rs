@@ -231,6 +231,26 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
             );
         }
         let wireexpr = rust_with("codec_zenoh_wireexpr", &named);
+        // The template prints the rows, the gates and the stores of the
+        // table from the context the generator hands it (docs/adr/0155).
+        for printed in [
+            "static CODEC_ZENOH_WIREEXPR_FIELDS: ::sce_forge_runtime::codec::FieldTable = {",
+            "Row { read: Read::Zint { bits: 64 }, gate: Gate::Always },",
+            "Row { read: Read::Zint { bits: 64 }, gate: \
+             Gate::Set(Bits::range(Source::Input(0), 0, 1)) },",
+            "Row { read: Read::Text { len: Bits::whole(Source::Row(1)), max: 65535 }, gate: \
+             Gate::Set(Bits::range(Source::Input(0), 0, 1)) },",
+            "::sce_forge_runtime::codec::TableOut<'f> for CodecZenohWireexprIn<S> {",
+            "self.id = value;",
+            "self.suffix_len = Some(value);",
+            "self.suffix = None;",
+            ".store::<S, CodecZenohWireexprSuffixField>() {",
+        ] {
+            assert!(
+                wireexpr.contains(printed),
+                "the table of codec_zenoh_wireexpr has no `{printed}` (views: {views}):\n{wireexpr}"
+            );
+        }
         assert!(
             !wireexpr.contains("write_table(") && wireexpr.contains("FieldTable::new(ROWS)"),
             "codec_zenoh_wireexpr can refuse a value and is written by the walker \
