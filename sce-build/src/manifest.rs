@@ -1607,7 +1607,7 @@ mod tests {
         ));
         assert_eq!(
             every["runtime_requires"],
-            serde_json::json!(["lua", "dom", "http", "clock", "log", "real"])
+            serde_json::json!(["lua", "dom", "http", "clock", "log", "real", "ownership"])
         );
         assert_valid(&every.to_string());
 

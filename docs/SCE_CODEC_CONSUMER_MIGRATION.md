@@ -3535,6 +3535,13 @@ consumer regenerates its C11 machines and codecs at the new pin.
   writes each line to `stderr` as before); `sce_c_link_runtime` and `sce_c_runtime_libraries` already name it for a
   machine that logs. A deployment that builds without `SCE_C_RUNTIME_POSIX` defines both, or the link names them as
   undefined.
+- `sce/sample.h` (the ownership contract a buffer pool's header and a machine that takes a sample include) no
+  longer includes `<assert.h>`, `<stdlib.h>` or `<string.h>`, and its trap is a seam the deployment defines,
+  `_sce_ownership_trap(const char *what)` (amended 2026-11-27). The macro `SCE_OWNERSHIP_TRAP` is gone: a build
+  that defined it defines the seam instead, and nothing is chosen by `NDEBUG`. A hosted build links
+  `sce_c_runtime_posix` (its `posix/ownership.c` writes the violation to `stderr` and aborts), which
+  `sce_c_runtime_libraries` names for a machine that states `ownership`; a bare-metal deployment defines it, or
+  the link names it as undefined. The seam may return, and the boundary then goes on as a release build does.
 - A machine or a codec that carries a real number in an event's data reads and writes it through
   `_sce_real_text` and `_sce_real_read` (`sce/real_text.h`). A hosted build links `sce_c_text`, which
   `sce_c_runtime_libraries` names for a machine that states `real`; a bare-metal deployment defines the two itself.

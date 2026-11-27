@@ -76,6 +76,17 @@ deployment does not link is never built in the first place.
    - `_sce_real_text` and `_sce_real_read` (`sce/real_text.h`): a real number written as text and read back from
      it, for the event data the core still carries as text (item 2). (Amended 2026-11-20.) The hosted
      implementation is `backends/c/runtime/text/real_text.c`, the library `sce_c_text`, over `number_text.h`.
+   - `_sce_ownership_trap(what)` (`sce/sample.h`). (Amended 2026-11-27.) Where a violation of a sample's borrow
+     contract goes: the delivery of a machine that takes a sample (`<sce:on-sample>`) checks the borrow at the
+     callback boundary, and a buffer pool's tag checks do under `SCE_DEBUG_OWNERSHIP`. The ownership contract had
+     included `<assert.h>`, `<stdlib.h>` and `<string.h>` and defaulted its trap to `assert` or, under `NDEBUG`,
+     to `abort()`: a hosted call in every object that took a sample, and a preprocessor switch between two
+     programs. The trap is now this seam, and the macro `SCE_OWNERSHIP_TRAP` a build could override is gone,
+     since a deployment's definition is that override. The seam may return, and the boundary then goes on as a
+     release build does, so it is not declared noreturn. A machine that takes a sample states the requirement
+     `ownership`, which `sce_c_runtime_posix` implements in `backends/c/runtime/posix/ownership.c` (the
+     violation to `stderr`, then `abort`); the `c11-mcu` gate's board defines it in `backends/c/mcu/seams.c`
+     (a line through the log seam, then exit status 4). The contract takes `memset` from `sce/text.h`.
 2. **Separate units.** A deployment that wants these compiles them beside the core and may use the hosted library
    there.
    - **Saved state:** `<machine>_saved.c` and the `saved_*.h` headers. The core declares the save and the restore,
@@ -154,7 +165,8 @@ A machine without them ends the gate as "could not run" (`sce_gate_cannot_run` i
 
 - **The C11 core can be linked into a firmware image with no hosted C library.** The image's cost is measured here,
   by a budget that fails on growth.
-- **A deployment defines two more seams** (`_sce_log_write`, `_sce_log_real`) besides the clock, and links the saved
+- **A deployment defines two more seams** (`_sce_log_write`, `_sce_log_real`) besides the clock, and a third
+  (`_sce_ownership_trap`, amended 2026-11-27) when a machine takes a sample, and links the saved
   and parsing units only if it uses them. The hosted test harness links the posix seams and every unit, so no host
   behaviour changes.
 - **Generated C11 output changes broadly.** `<log>` calls a seam, the `.c` includes no `<stdio.h>`, and saved state

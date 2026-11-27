@@ -469,11 +469,31 @@ const BUFFER_POOL: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "##;
 
+/// A machine that takes a sample (`<sce:on-sample>`): its header includes the
+/// ownership contract, and its delivery checks the borrow and reports a
+/// violation to the contract's seam.
+const SAMPLING_MACHINE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"/>
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>
+"##;
+
 /// docs/adr/0110, D1 and D2: the ownership contract (`sce/sample.h`) reaches
-/// no hosted header from a buffer pool's header, which includes it. It
-/// included `<assert.h>`, `<stdlib.h>` and `<string.h>` for a trap `NDEBUG`
-/// chose between `assert` and `abort`; it declares a seam instead
-/// (`_sce_ownership_trap`), and takes `memset` from `sce/text.h`.
+/// no hosted header from either side that includes it, a buffer pool's header
+/// and a machine that takes a sample. It included `<assert.h>`, `<stdlib.h>`
+/// and `<string.h>` for a trap `NDEBUG` chose between `assert` and `abort`;
+/// it declares a seam instead (`_sce_ownership_trap`), which the machine states
+/// it requires (`ownership`) so its build links the deployment's definition,
+/// and takes `memset` from `sce/text.h`.
 #[test]
 fn the_ownership_contract_reaches_only_freestanding_headers() {
     let pool = sce_build::compile_forge_from_string(
@@ -497,6 +517,42 @@ fn the_ownership_contract_reaches_only_freestanding_headers() {
         reached.resolved.contains("sce/sample.h"),
         "the walk of the buffer pool's header never read `sce/sample.h`, so it judged \
          nothing of the ownership contract: {:?}",
+        reached.resolved
+    );
+
+    let dir = tempfile::tempdir().expect("a document directory");
+    let document = dir.path().join("watcher.scxml");
+    std::fs::write(&document, SAMPLING_MACHINE).expect("write the document");
+    let machine = sce_build::compile_scxml_lang(
+        document.to_str().expect("a UTF-8 path"),
+        &sce_build::find_template_dir_for(sce_build::generator::Language::C11),
+        sce_build::generator::Language::C11,
+    )
+    .unwrap_or_else(|e| panic!("the sampling machine does not generate: {e}"));
+    assert!(
+        machine.requires.contains(&RuntimeRequirement::Ownership),
+        "a machine that takes a sample does not state `ownership`, so its build links no \
+         definition of the seam its delivery reports to: {:?}",
+        machine.requires
+    );
+    let machine_files: BTreeMap<String, String> = machine.files.into_iter().collect();
+    let ownership = RuntimeRequirement::Ownership.c11_include();
+    assert!(
+        machine_files
+            .values()
+            .any(|text| text.lines().any(|line| line.trim() == ownership)),
+        "the sampling machine states `ownership` and no file of it includes `{ownership}`"
+    );
+    let reached = hosted_reached("watcher_sm.c", &machine_files);
+    assert!(
+        reached.violations.is_empty(),
+        "a machine that takes a sample reaches what a freestanding implementation does not \
+         provide:\n{}",
+        reached.violations.join("\n")
+    );
+    assert!(
+        reached.resolved.contains("sce/sample.h"),
+        "the walk of the sampling machine never read `sce/sample.h`: {:?}",
         reached.resolved
     );
 }

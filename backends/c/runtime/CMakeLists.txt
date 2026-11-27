@@ -55,6 +55,10 @@
 #   real  a real number as text and text as a real, which a machine's core
 #         hands whole to `sce/real_text.h`'s `_sce_real_text` and
 #         `_sce_real_read` (docs/adr/0110 D1, D2)
+#   ownership
+#         where a violation of a sample's borrow contract goes, which a
+#         machine that takes a sample (`<sce:on-sample>`) reports to
+#         (`sce/sample.h`'s `_sce_ownership_trap`, docs/adr/0110 D2)
 #
 # SCE_C_RUNTIME_REQUIREMENTS is every requirement the generator can state
 # (`RuntimeRequirement` in sce-build/src/generator.rs;
@@ -66,7 +70,7 @@
 # machines it cannot link here from the machines rather than from a list of
 # them. `sce_c_runtime_libraries` reads the two, and `sce_c_link_runtime`
 # links a target with what the generated machines it compiles require.
-set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock log real)
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock log real ownership)
 
 # ── What a program's own code requires, which no machine states ──
 #
@@ -315,10 +319,12 @@ if(SCE_C_RUNTIME_POSIX)
     )
     # The POSIX implementations of the BasicHTTP client a machine that sends
     # over BasicHTTP links, of the clock a scheduling machine reads, of the log
-    # a machine that logs writes, and of the directory a suite's runner program
-    # makes. A bare-metal consumer's platform tier registers its own.
+    # a machine that logs writes, of the ownership seam a machine that takes a
+    # sample reports to, and of the directory a suite's runner program makes. A
+    # bare-metal consumer's platform tier registers its own.
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_http sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_clock sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_log sce_c_runtime_posix)
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_ownership sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_directory sce_c_runtime_posix)
 endif()

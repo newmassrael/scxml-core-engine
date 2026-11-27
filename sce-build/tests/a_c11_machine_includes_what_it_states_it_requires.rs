@@ -335,24 +335,32 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
     );
 
     // Each requirement is stated by some fixture and left out by another, or
-    // the comparison above measured nothing for it. `real` is the one the
-    // registry cannot state: its documents are ECMAScript statecharts with no
-    // event schema and no typed host-run invocation, so none of their machines
-    // hands a real number to text (docs/adr/0110, D1), and the registry is the
-    // side that leaves it out. The side that states it is every `sce-static`
-    // machine, held to stating it exactly when it includes it by
-    // `a_c11_machines_core_reaches_only_freestanding_headers`.
+    // the comparison above measured nothing for it. Two are ones the registry
+    // cannot state, and the registry is the side that leaves them out. `real`:
+    // its documents are ECMAScript statecharts with no event schema and no
+    // typed host-run invocation, so none of their machines hands a real number
+    // to text (docs/adr/0110, D1); the side that states it is every
+    // `sce-static` machine. `ownership`: no W3C document takes a sample
+    // (`<sce:on-sample>` is SCE's); the side that states it is the sampling
+    // machine. Each is held to stating it when it includes it by
+    // `a_c11_machines_core_reaches_only_freestanding_headers`, and a machine
+    // that takes no sample to stating none by `sample_callback_codegen_wireup`.
     for requirement in RuntimeRequirement::ALL {
         let stating = outputs
             .iter()
             .filter(|(_, _, generations)| fixture_requires(generations).contains(&requirement))
             .count();
-        if requirement == RuntimeRequirement::Real {
+        let why_none = match requirement {
+            RuntimeRequirement::Real => Some("writes or reads a real number as text"),
+            RuntimeRequirement::Ownership => Some("takes a sample"),
+            _ => None,
+        };
+        if let Some(why_none) = why_none {
             assert_eq!(
                 stating,
                 0,
-                "`real` is stated by {stating} of {} registry fixtures, none of which writes or \
-                 reads a real number as text",
+                "`{}` is stated by {stating} of {} registry fixtures, none of which {why_none}",
+                requirement.wire_name(),
                 outputs.len()
             );
             continue;

@@ -871,17 +871,26 @@ pub enum RuntimeRequirement {
     /// read one out of text, and never formats or parses one itself
     /// ([`c11_hands_reals_to_text`]).
     Real,
+    /// The ownership seam (`sce/sample.h`'s `_sce_ownership_trap`), which a
+    /// platform tier of the runtime implements (docs/adr/0110, D2): the
+    /// machine takes a sample through `<sce:on-sample>`, and its delivery
+    /// checks the borrow at the callback boundary and reports a violation to
+    /// the seam ([`SCXMLModel::on_sample_links`]). A build that turns both
+    /// ownership layers off compiles the check out and references nothing it
+    /// links.
+    Ownership,
 }
 
 impl RuntimeRequirement {
     /// Every requirement a backend can state, in the order a set lists them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Lua,
         Self::Dom,
         Self::Http,
         Self::Clock,
         Self::Log,
         Self::Real,
+        Self::Ownership,
     ];
 
     /// The name a plan states the requirement by
@@ -894,6 +903,7 @@ impl RuntimeRequirement {
             Self::Clock => "clock",
             Self::Log => "log",
             Self::Real => "real",
+            Self::Ownership => "ownership",
         }
     }
 
@@ -908,6 +918,7 @@ impl RuntimeRequirement {
             Self::Clock => "#include <sce/clock.h>",
             Self::Log => "#include <sce/log.h>",
             Self::Real => "#include <sce/real_text.h>",
+            Self::Ownership => "#include \"sce/sample.h\"",
         }
     }
 }
@@ -951,6 +962,9 @@ pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequireme
     }
     if c11_logs(model) {
         requires.insert(RuntimeRequirement::Log);
+    }
+    if !model.on_sample_links.is_empty() {
+        requires.insert(RuntimeRequirement::Ownership);
     }
     requires
 }

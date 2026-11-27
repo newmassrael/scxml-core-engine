@@ -7995,6 +7995,9 @@ tag constants stay `<MACHINE>_PAYLOAD_<EVENT>`.
 
 - Amended by: ADR 0110 (D1, D2): the core is freestanding, and what is hosted is
   a seam or a unit of its own.
+- Amended by: ADR 0110 (D2, amended 2026-11-27): the ownership contract's trap
+  is a seam, `_sce_ownership_trap`, and no longer `assert` or `abort` chosen by
+  `NDEBUG`.
 
 A C11 machine's core (its `<machine>_sm.c`, the units of what it imports, and
 the runtime headers they include) includes only the headers C11 requires of a
@@ -8018,8 +8021,16 @@ What the core does not do itself, a deployment supplies in one of two ways:
   `_sce_log_real(level, label, label_len, value)`, a `<log>` of a real number,
   which the seam formats; and `_sce_real_text` and `_sce_real_read`
   (`sce/real_text.h`), a real number written into an event's data and read back
-  from it. The hosted definitions are `backends/c/runtime/posix/clock.c`,
-  `backends/c/runtime/posix/log.c` (to `stderr`) and the library `sce_c_text`
+  from it; and `_sce_ownership_trap(what)` (`sce/sample.h`), where a violation
+  of a sample's borrow contract goes, which the delivery of a machine that takes
+  a sample (`<sce:on-sample>`, stated as the requirement `ownership`) and the
+  tag checks of a buffer pool under `SCE_DEBUG_OWNERSHIP` report to. The seam
+  may return, and the boundary then goes on as a release build does: the
+  failing pool call returns its failure and the poison fill is skipped. The
+  hosted definitions are `backends/c/runtime/posix/clock.c`,
+  `backends/c/runtime/posix/log.c` (to `stderr`),
+  `backends/c/runtime/posix/ownership.c` (the violation to `stderr`, then
+  `abort`, whether or not `NDEBUG` is defined) and the library `sce_c_text`
   (`backends/c/runtime/text/real_text.c`).
 - **Units of their own**, which a deployment compiles beside the core only when
   it uses them, and which may use the hosted library: a machine's saved state

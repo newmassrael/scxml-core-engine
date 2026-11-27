@@ -369,6 +369,44 @@ fn w2_c11_skipped_when_no_on_sample_blocks() {
     );
 }
 
+/// The C11 machine states the ownership seam (`ownership`) exactly when it
+/// takes a sample: its delivery checks the borrow and reports a violation to
+/// `_sce_ownership_trap`, which the deployment defines (docs/adr/0110, D2), so
+/// its build has to link a definition, and a machine that takes no sample
+/// links none.
+#[test]
+fn w2_c11_states_the_ownership_seam_exactly_when_it_takes_a_sample() {
+    use sce_build::generator::{Language, RuntimeRequirement};
+    const NO_ON_SAMPLE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       name="quiet">
+  <state id="running"/>
+</scxml>
+"##;
+    let requires = |scxml: &str, name: &str| {
+        let tmp = tempdir().expect("tempdir");
+        let path = tmp.path().join(name);
+        fs::write(&path, scxml).expect("write fixture");
+        let tdir: PathBuf = sce_build::find_template_dir_for(Language::C11);
+        sce_build::compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::C11)
+            .expect("c11 codegen")
+            .requires
+    };
+    let sampling = requires(FIXTURE, "watcher.scxml");
+    assert!(
+        sampling.contains(&RuntimeRequirement::Ownership),
+        "a machine that takes a sample must state `ownership`: {sampling:?}"
+    );
+    let quiet = requires(NO_ON_SAMPLE, "quiet.scxml");
+    assert!(
+        !quiet.contains(&RuntimeRequirement::Ownership),
+        "a machine that takes no sample must not state `ownership`: {quiet:?}"
+    );
+}
+
 #[test]
 fn w1_2_skipped_when_no_on_sample_blocks() {
     // Templates must elide the LinkRx surface entirely when no state

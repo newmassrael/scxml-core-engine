@@ -177,11 +177,18 @@
 #include "sce/action_realization.h"
 
 {% endif %}
-{% if model.on_sample_links %}
+{# Included because the set of what this machine requires names `ownership`:
+   the machine takes a sample, and its delivery reports a violation of the
+   borrow to the seam this header declares (`RuntimeRequirement::Ownership`). #}
+{% if "ownership" in runtime_requires %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
    header; the per-link `_deliver_link_<X>_sample` declarations
-   below take a `const sce_sample_t *sample` borrow. */
+   below take a `const sce_sample_t *sample` borrow. The header also
+   declares `_sce_ownership_trap`, the seam the delivery reports a
+   violation of the borrow to, which the deployment defines
+   (docs/adr/0110 D2): `sce_c_runtime_posix` writes it to stderr and
+   aborts, and a bare-metal consumer supplies its own. */
 #include "sce/sample.h"
 {% endif %}
 

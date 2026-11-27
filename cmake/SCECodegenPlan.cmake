@@ -967,7 +967,7 @@ endfunction()
 #     <PREFIX>_REQUIRES       what the machines the run writes need linked
 #                             beside them, as the generator states it
 #                             (`--plan-requires`): each of `lua`, `dom`, `http`,
-#                             `clock`, `log` and `real` the backend decided while rendering
+#                             `clock`, `log`, `real` and `ownership` the backend decided while rendering
 #                             them, or for a plan FROM another, what that plan
 #                             states for the child's generation. Empty for a
 #                             backend that states none. The plan also records
