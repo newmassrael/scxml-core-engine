@@ -22,7 +22,8 @@
 //!   observation under a machine's ([`SessionsStream`]).
 //! * **Positions are one sequence of the journal.** Each is above every position the store gave
 //!   before, to any stream, and none is given twice, after a crash either; a gap is allowed and
-//!   means nothing.
+//!   means nothing. A store that gave the last position there is refuses what would need another
+//!   ([`NoPositionLeft`]).
 //! * **A reader is told how far it may read.** Transactions may become visible out of the order of
 //!   their positions: two that took 7 and 8 may commit 8 first, and a reader that moved its cursor
 //!   to 8 would never see 7. Every read answers the journal's **horizon**
@@ -63,7 +64,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::membership::Person;
-use crate::{Failure, SessionStore};
+use crate::{rules, Failure, SessionStore};
 
 /// What names a stream of the journal. The kind is part of the name: an entry a session made and
 /// one another system's adapter observed are never of one stream.
@@ -319,7 +320,7 @@ pub struct AsOf {
 impl AsOf {
     /// Refused when the position is above `horizon`: what the journal held there can still change.
     pub fn admitted(&self, horizon: u64) -> Result<(), PastHorizon> {
-        if self.position > horizon {
+        if !rules::settled(self.position, horizon) {
             return Err(PastHorizon {
                 asked: self.position,
                 horizon,
@@ -481,6 +482,19 @@ impl fmt::Display for ObservedActor {
 }
 
 impl Error for ObservedActor {}
+
+/// Why a store refused to give a position: it gave the last position there is, and it gives none
+/// twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoPositionLeft;
+
+impl fmt::Display for NoPositionLeft {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the journal has given the last position there is, and it gives none twice")
+    }
+}
+
+impl Error for NoPositionLeft {}
 
 /// The refusal of a session store that keeps no journal: what it answers, as
 /// [`WriteError::Failed`](crate::WriteError::Failed), a write that gives facts, which it would

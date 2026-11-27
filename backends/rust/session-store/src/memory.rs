@@ -4,7 +4,7 @@
 //! A session store that keeps nothing past the process.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Bound;
+use std::ops::{Bound, RangeInclusive};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::audit::{
@@ -30,6 +30,9 @@ use crate::rules::{self, Holding};
 use crate::{
     moment, AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
 };
+
+/// Every position there is: none is `0`.
+const EVERY_POSITION: RangeInclusive<u64> = 1..=u64::MAX;
 
 /// A session store in memory, for the tests of a crate that is given a store, and the store of the
 /// key-value feature a host keeps when it is given no durable one ([`KvStore`]).
@@ -251,12 +254,12 @@ impl Records {
         Ok(Written { version, appended })
     }
 
-    /// The journal's horizon. A position is given, and its entry kept, under the one lock that is
-    /// the write's transaction, which a read takes too: a read never runs between the two, however
-    /// many threads write, so every position given is visible and nothing can still appear at or
-    /// below the last one.
+    /// The journal's horizon, the last position given. A position is given, and its entry kept,
+    /// under the one lock that is the write's transaction, which a read takes too: a read never runs
+    /// between the two, however many threads write, so every position given is visible and nothing
+    /// can still appear at or below the last one.
     fn journal_horizon(&self) -> u64 {
-        self.journal_last
+        rules::horizon(self.journal_last)
     }
 
     /// The entries the facts of `journal` are, as a write of the session `key` at `now_ms` appends
@@ -285,7 +288,7 @@ impl Records {
             .facts
             .iter()
             .map(|fact| {
-                position += 1;
+                position = rules::next_position(position)?;
                 self.entry_at(position, stream, None, fact, now_ms)
             })
             .collect()
@@ -329,7 +332,7 @@ impl Records {
     /// Whether the journal holds an observed stream named `name`.
     fn holds_observed(&self, name: &str) -> bool {
         let observed = Stream::Observed { name }.to_name();
-        self.journal_of(&observed, 0).next().is_some()
+        self.journal_of(&observed, EVERY_POSITION).next().is_some()
     }
 
     /// Whether the journal holds entries the sessions of the machine `machine` made.
@@ -346,14 +349,15 @@ impl Records {
             })
     }
 
-    /// The entries of `stream` past the position `after`, in the order of their positions.
+    /// The entries of `stream` at `positions`, a range whose first position is not past its last,
+    /// in the order of their positions.
     fn journal_of<'a>(
         &'a self,
         stream: &StreamName,
-        after: u64,
+        positions: RangeInclusive<u64>,
     ) -> impl Iterator<Item = &'a JournalEntry> + 'a {
-        let from = (stream.clone(), after.saturating_add(1));
-        let to = (stream.clone(), u64::MAX);
+        let from = (stream.clone(), *positions.start());
+        let to = (stream.clone(), *positions.end());
         self.journal_streams
             .range(from..=to)
             .filter_map(move |(_, position)| self.journal.get(position))
@@ -1225,39 +1229,46 @@ impl AuditStore for MemoryStore {
 impl JournalStore for MemoryStore {
     fn after(&self, position: u64, limit: usize) -> Result<JournalPage, Failure> {
         let records = self.records();
-        Ok(JournalPage {
-            entries: records
+        let horizon = records.journal_horizon();
+        let entries = match rules::readable(position, horizon) {
+            Some(positions) => records
                 .journal
-                .range((Bound::Excluded(position), Bound::Unbounded))
+                .range(positions)
                 .take(limit)
                 .map(|(_, entry)| entry.clone())
                 .collect(),
-            horizon: records.journal_horizon(),
-        })
+            None => Vec::new(),
+        };
+        Ok(JournalPage { entries, horizon })
     }
 
     fn stream(&self, stream: Stream<'_>, after: u64, limit: usize) -> Result<JournalPage, Failure> {
         let records = self.records();
-        Ok(JournalPage {
-            entries: records
-                .journal_of(&stream.to_name(), after)
+        let horizon = records.journal_horizon();
+        let entries = match rules::readable(after, horizon) {
+            Some(positions) => records
+                .journal_of(&stream.to_name(), positions)
                 .take(limit)
                 .cloned()
                 .collect(),
-            horizon: records.journal_horizon(),
-        })
+            None => Vec::new(),
+        };
+        Ok(JournalPage { entries, horizon })
     }
 
     fn position_at(&self, ms: u64) -> Result<u64, Failure> {
         let records = self.records();
+        let Some(positions) = rules::readable(0, records.journal_horizon()) else {
+            return Ok(0);
+        };
         // The moments of a store that gives its positions in the order of its commits rise with
-        // the positions, so the first entry found from the end is the one.
+        // the positions, so the first entry found from the horizon down is the one.
         Ok(records
             .journal
-            .values()
+            .range(positions)
             .rev()
-            .find(|entry| entry.recorded_ms <= ms)
-            .map_or(0, |entry| entry.position))
+            .find(|(_, entry)| entry.recorded_ms <= ms)
+            .map_or(0, |(position, _)| *position))
     }
 
     fn as_of(
@@ -1271,7 +1282,7 @@ impl JournalStore for MemoryStore {
         let horizon = records.journal_horizon();
         as_of.admitted(horizon)?;
         let mut held: Vec<&JournalEntry> = records
-            .journal_of(&stream.to_name(), 0)
+            .journal_of(&stream.to_name(), EVERY_POSITION)
             .filter(|entry| as_of.includes(entry) && entry.cursor() > after)
             .collect();
         held.sort_by_key(|entry| entry.cursor());
@@ -1303,7 +1314,7 @@ impl JournalStore for MemoryStore {
                 name: name.to_string(),
             }));
         }
-        let position = records.journal_last + 1;
+        let position = rules::next_position(records.journal_last)?;
         let entry = records.entry_at(
             position,
             Stream::Observed { name },

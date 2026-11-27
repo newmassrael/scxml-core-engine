@@ -2328,7 +2328,7 @@ fn fact_in(
     let (issued, last_ms): (u64, u64) = connection
         .prepare_cached("SELECT issued, recorded_ms FROM journal_head WHERE id = 0")?
         .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    let position = issued + 1;
+    let position = rules::next_position(issued)?;
     let recorded_ms = recorded(last_ms, now_ms);
     connection
         .prepare_cached("UPDATE journal_head SET issued = ?1, recorded_ms = ?2 WHERE id = 0")?
@@ -2368,9 +2368,10 @@ fn fact_in(
 /// nothing can still appear at or below it. A read asks for it before it reads entries, and reads
 /// none above it, so that one committed in between, by another connection, is left to the next.
 fn journal_horizon_of(connection: &Connection) -> rusqlite::Result<u64> {
-    connection
+    let issued: u64 = connection
         .prepare_cached("SELECT issued FROM journal_head WHERE id = 0")?
-        .query_row([], |row| row.get(0))
+        .query_row([], |row| row.get(0))?;
+    Ok(rules::horizon(issued))
 }
 
 /// The columns `name` and `key` of the entries of `stream`.
@@ -2422,23 +2423,23 @@ impl JournalStore for SqliteStore {
     fn after(&self, position: u64, limit: usize) -> Result<JournalPage, Failure> {
         let connection = self.connection();
         let horizon = journal_horizon_of(&connection)?;
-        // A position past the horizon has nothing after it to read, and one past the largest
-        // signed 64-bit number is none SQLite holds.
-        if position >= horizon {
+        // A cursor at the horizon or past it has nothing after it to read; the positions read are
+        // at or below the horizon, so each is one SQLite holds.
+        let Some(positions) = rules::readable(position, horizon) else {
             return Ok(JournalPage {
                 entries: Vec::new(),
                 horizon,
             });
-        }
+        };
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut statement = connection.prepare_cached(
             "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data, \
              actor_instance, actor_issuer, actor_subject, actor_proved_ms, actor_method \
-             FROM journal_entries WHERE position > ?1 AND position <= ?2 \
+             FROM journal_entries WHERE position >= ?1 AND position <= ?2 \
              ORDER BY position LIMIT ?3",
         )?;
         let entries = statement
-            .query_map((position, horizon, limit), journal_row)?
+            .query_map((*positions.start(), *positions.end(), limit), journal_row)?
             .collect::<rusqlite::Result<Vec<JournalEntry>>>()?;
         Ok(JournalPage { entries, horizon })
     }
@@ -2446,23 +2447,26 @@ impl JournalStore for SqliteStore {
     fn stream(&self, stream: Stream<'_>, after: u64, limit: usize) -> Result<JournalPage, Failure> {
         let connection = self.connection();
         let horizon = journal_horizon_of(&connection)?;
-        if after >= horizon {
+        let Some(positions) = rules::readable(after, horizon) else {
             return Ok(JournalPage {
                 entries: Vec::new(),
                 horizon,
             });
-        }
+        };
         let (name, key) = stream_columns(stream);
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut statement = connection.prepare_cached(
             "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data, \
              actor_instance, actor_issuer, actor_subject, actor_proved_ms, actor_method \
              FROM journal_entries \
-             WHERE name = ?1 AND key IS ?2 AND position > ?3 AND position <= ?4 \
+             WHERE name = ?1 AND key IS ?2 AND position >= ?3 AND position <= ?4 \
              ORDER BY position LIMIT ?5",
         )?;
         let entries = statement
-            .query_map((name, key, after, horizon, limit), journal_row)?
+            .query_map(
+                (name, key, *positions.start(), *positions.end(), limit),
+                journal_row,
+            )?
             .collect::<rusqlite::Result<Vec<JournalEntry>>>()?;
         Ok(JournalPage { entries, horizon })
     }
@@ -2470,15 +2474,20 @@ impl JournalStore for SqliteStore {
     fn position_at(&self, ms: u64) -> Result<u64, Failure> {
         let connection = self.connection();
         let horizon = journal_horizon_of(&connection)?;
+        let Some(positions) = rules::readable(0, horizon) else {
+            return Ok(0);
+        };
         // The moments rise with the positions, since both are given in the order of the commits:
         // the latest moment's largest position is the largest of all.
         let position = connection
             .prepare_cached(
                 "SELECT position FROM journal_entries \
-                 WHERE recorded_ms <= ?1 AND position <= ?2 \
+                 WHERE recorded_ms <= ?1 AND position >= ?2 AND position <= ?3 \
                  ORDER BY recorded_ms DESC, position DESC LIMIT 1",
             )?
-            .query_row((moment(ms), horizon), |row| row.get(0))
+            .query_row((moment(ms), *positions.start(), *positions.end()), |row| {
+                row.get(0)
+            })
             .optional()?;
         Ok(position.unwrap_or(0))
     }

@@ -11,13 +11,20 @@
 //!
 //! What they decide of a key's lease and of a write under it is the module `lease`'s, over the
 //! numbers alone, proved by Verus to refine the store's actions of `EventJournal`
-//! (docs/adr/0115, D13). Here it is read off what a store holds and answered as the contract's
-//! refusals.
+//! (docs/adr/0115, D13). What they decide of the journal's positions, the one a new entry is
+//! given, the horizon and what a read answers, is the module `position`'s, over the numbers alone
+//! too. Here each is read off what a store holds and answered as the contract's refusals.
 
 mod lease;
+mod position;
 
-use crate::{moment, Conflict, Held, Lost};
+use std::ops::RangeInclusive;
+
+use crate::journal::NoPositionLeft;
+use crate::{moment, Conflict, Failure, Held, Lost};
 use lease::{Commit, Grant, Renewal};
+
+pub(crate) use position::{horizon, settled};
 
 /// The lease a store holds on a key: whose it is, its fence, and when it runs out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +117,18 @@ pub(crate) fn acknowledges(held: Option<&str>, incarnation: &str) -> bool {
     held == Some(incarnation)
 }
 
+/// The position a store gives the next entry of its journal, whose last position given is
+/// `issued`: refused when that is the last position there is, since none is given twice.
+pub(crate) fn next_position(issued: u64) -> Result<u64, Failure> {
+    position::next_position(issued).ok_or_else(|| Failure::new(NoPositionLeft))
+}
+
+/// The positions a read past `after` answers over a journal whose horizon is `horizon`, as the
+/// range a store reads its entries over; `None` when there is none to read.
+pub(crate) fn readable(after: u64, horizon: u64) -> Option<RangeInclusive<u64>> {
+    position::readable(after, horizon).map(|span| span.first..=span.last)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +211,37 @@ mod tests {
         assert!(acknowledges(Some("a1"), "a1"));
         assert!(!acknowledges(Some("a1"), "b2"));
         assert!(!acknowledges(None, "a1"));
+    }
+
+    #[test]
+    fn a_position_is_the_one_after_the_last_and_none_is_given_past_the_largest() {
+        assert_eq!(next_position(0).ok(), Some(1));
+        assert_eq!(next_position(41).ok(), Some(42));
+        assert_eq!(next_position(u64::MAX - 1).ok(), Some(u64::MAX));
+        let refused = next_position(u64::MAX).expect_err("no position is left");
+        assert!(refused.to_string().contains("last position"), "{refused}");
+    }
+
+    #[test]
+    fn a_read_answers_past_its_cursor_up_to_the_horizon_and_nothing_from_it() {
+        assert_eq!(readable(3, 7), Some(4..=7));
+        assert_eq!(readable(6, 7), Some(7..=7));
+        assert_eq!(readable(0, 7), Some(1..=7));
+        assert_eq!(readable(7, 7), None);
+        assert_eq!(readable(8, 7), None);
+        assert_eq!(readable(u64::MAX, 7), None);
+        assert_eq!(readable(0, 0), None);
+        assert_eq!(readable(u64::MAX - 1, u64::MAX), Some(u64::MAX..=u64::MAX));
+    }
+
+    #[test]
+    fn the_horizon_is_the_last_position_given_and_an_answer_is_given_at_or_below_it() {
+        assert_eq!(horizon(0), 0);
+        assert_eq!(horizon(9), 9);
+        assert!(settled(9, 9));
+        assert!(settled(0, 0));
+        assert!(!settled(10, 9));
+        assert!(!settled(u64::MAX, 0));
     }
 
     #[test]
