@@ -18,6 +18,10 @@
 //!   the ranges it is given (ADR 0115, D11).
 //! - [`document_model`]: the model of one document over Appendix D, which
 //!   `sce-codegen model` writes (ADR 0115, D7).
+//! - [`document_jani`]: the same document's second encoding, a JANI model
+//!   Storm reads, written from the same tables (ADR 0119, D2).
+//! - [`tla_value`]: the values of TLA+ as TLC prints them, read into one
+//!   form, so that states of the two encodings are compared by value.
 //! - [`properties`]: the properties of one machine and their observers over
 //!   that model, with the runs that judge them (ADR 0115, D15).
 //! - [`verdicts`]: the judge of those properties, and the record of its
@@ -28,6 +32,7 @@
 //!   (`SCE_ERROR_CONTRACT.md` §6).
 
 pub mod apalache;
+pub mod document_jani;
 pub mod document_model;
 pub mod error;
 pub mod inductive;
@@ -35,6 +40,7 @@ pub mod isolation;
 pub mod models;
 pub mod proofs;
 pub mod properties;
+pub mod tla_value;
 pub mod tlc;
 pub mod toolchain;
 pub mod traces;

@@ -4224,6 +4224,19 @@ enum Commands {
         /// top-level final state `fail`, and `Passes`, it ends in `pass`.
         #[arg(long)]
         w3c_verdict: bool,
+        /// Write the document's second encoding instead, a JANI model Storm
+        /// reads (docs/adr/0119, D2), from the same tables as the module; a
+        /// document the module refuses is refused the same.
+        #[arg(long)]
+        jani: bool,
+        /// With `--jani`: an event that may come from outside, as the
+        /// configuration's `Outside` gives it; one flag per event.
+        #[arg(long, requires = "jani")]
+        outside: Vec<String>,
+        /// With `--jani`: the most events that come from outside, the
+        /// configuration's `MaxOutside`; none when not given.
+        #[arg(long, requires = "jani")]
+        max_outside: Option<u32>,
     },
 
     /// Judge recorded broadcast-log histories for linearizability (ADR 0062
@@ -5020,7 +5033,25 @@ pub fn main() {
             scxml,
             module,
             w3c_verdict,
-        } => cmd_model(&scxml, module.as_deref(), w3c_verdict, error_format),
+            jani,
+            outside,
+            max_outside,
+        } => {
+            let jani = jani.then(|| crate::formal::document_jani::Environment {
+                outside: outside
+                    .iter()
+                    .map(|event| event.split('.').map(str::to_string).collect())
+                    .collect(),
+                max_outside: max_outside.unwrap_or(0),
+            });
+            cmd_model(
+                &scxml,
+                module.as_deref(),
+                w3c_verdict,
+                jani.as_ref(),
+                error_format,
+            )
+        }
         Commands::CheckBroadcastHistory { files, method } => {
             cmd_check_broadcast_history(&files, method)
         }
@@ -16858,8 +16889,15 @@ fn cmd_formal(judge: FormalCommand) {
     }
 }
 
-/// Write a document's model over Appendix D. See `Commands::Model`.
-fn cmd_model(scxml: &str, module: Option<&str>, w3c_verdict: bool, error_format: ErrorFormat) {
+/// Write a document's model over Appendix D, or its second encoding in the
+/// environment `jani` gives. See `Commands::Model`.
+fn cmd_model(
+    scxml: &str,
+    module: Option<&str>,
+    w3c_verdict: bool,
+    jani: Option<&crate::formal::document_jani::Environment>,
+    error_format: ErrorFormat,
+) {
     let mut parser = crate::parser::SCXMLParser::new();
     let mut model = parser
         .parse_file(scxml)
@@ -16871,8 +16909,17 @@ fn cmd_model(scxml: &str, module: Option<&str>, w3c_verdict: bool, error_format:
         module,
         w3c_verdict,
     };
-    match crate::formal::document_model::write(&model, scxml, options) {
-        Ok(written) => out_bytes(written.text.as_bytes()),
+    let written = match jani {
+        Some(environment) => {
+            crate::formal::document_jani::write(&model, scxml, options, environment)
+                .map(|written| written.text)
+        }
+        None => {
+            crate::formal::document_model::write(&model, scxml, options).map(|written| written.text)
+        }
+    };
+    match written {
+        Ok(text) => out_bytes(text.as_bytes()),
         Err(err) => error_format.emit_and_exit(&err, ""),
     }
 }
