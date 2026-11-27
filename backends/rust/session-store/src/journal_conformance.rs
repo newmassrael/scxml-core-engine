@@ -1392,7 +1392,8 @@ pub fn a_reader_keeps_how_far_it_read(harness: &impl JournalHarness) {
         "a refused mark changed what was kept"
     );
     let pending = [fact(b"three")];
-    if let Some(commit) = harness.begin("k", keeps(b"s", version, held.fence, &pending, 1_000)) {
+    let begun = harness.begin("k", keeps(b"s", version, held.fence, &pending, 1_000));
+    if let Some(commit) = begun {
         let open = store.keep_read("view", last + 1);
         assert!(
             open.is_err(),
@@ -1412,7 +1413,7 @@ pub fn a_reader_keeps_how_far_it_read(harness: &impl JournalHarness) {
                 .expect("a mark at the horizon"),
             last
         );
-    }
+    };
 }
 
 /// The kit held to stores whose transactions commit out of the order of their numbers: one that
