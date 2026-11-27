@@ -6,3 +6,9 @@ commit = "9449ff952af08ba379815763be3f440c8dbcee11"
 base = "b584386786866e3df012171dc580aee176e9f8bc"
 machine = "mf977c53d872e"
 at = 1795800328
+
+[return]
+reason = "unmeasured"
+detail = "embed-manifest-stamp failed and passed on its confirmation, on one key: its verdict is no function of its key, and its key is blocked"
+report = "m6a944ec3ba29:0000000457-4fe757ceab85/attempt-1.log"
+at = 1795803784
