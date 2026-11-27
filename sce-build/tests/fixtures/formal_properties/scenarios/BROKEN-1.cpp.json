@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "lane": "cpp",
+  "steps": [
+    {"kind": "start", "entered": ["locked"], "configuration": ["locked"]},
+    {"kind": "external", "event": "coin", "fired": [{"source": "locked", "index": 0}], "exited": ["locked"], "entered": ["unlocked"], "configuration": ["unlocked"]},
+    {"kind": "external", "event": "coin", "fired": [{"source": "unlocked", "index": 0}], "exited": [], "entered": [], "configuration": ["unlocked"]}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "lane": "c11",
+  "steps": [
+    {"kind": "start", "entered": ["locked"], "configuration": ["locked"]}
+  ]
+}
