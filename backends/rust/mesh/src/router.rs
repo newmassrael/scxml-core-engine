@@ -388,6 +388,9 @@ pub struct Router {
     persist: Option<Persist>,
     /// The instances of open machines bound since the host last asked ([`Router::take_bound`]).
     bound_since: Vec<String>,
+    /// The instance this machine runs as, when it is an instance of an open machine
+    /// ([`Router::speak_as_instance`]).
+    instance: Option<String>,
 }
 
 impl Router {
@@ -402,9 +405,23 @@ impl Router {
             requests: Correlation::default(),
             persist: None,
             bound_since: Vec::new(),
+            instance: None,
         })
     }
 
+    /// Speak as the instance `instance` of this machine, which runs as an open set of instances
+    /// (deploy.yaml `instances: open`, docs/adr/0113, D1): every envelope it writes names its
+    /// machine in `source` and `instance` in the envelope's key of its own, which is what the
+    /// server's link of the instance holds it to (SCE_MESH.md section 10.9, invariant 11). The
+    /// host gives the instance id, and keeps it. Refused for an id that is not 1 to 64 characters
+    /// of `A-Z a-z 0-9 . _ -`.
+    pub fn speak_as_instance(&mut self, instance: &str) -> Result<(), RouterError> {
+        if !crate::peers::is_instance_id(instance) {
+            return Err(RouterError::NotAnInstanceId(instance.to_string()));
+        }
+        self.instance = Some(instance.to_string());
+        Ok(())
+    }
     /// Bind the instances of the open machine `machine` (deploy.yaml
     /// `instances: open`, docs/adr/0113): no peer is bound by its name, and an
     /// instance is bound under `config`, as `<machine>/<instance>`
@@ -995,6 +1012,7 @@ impl Router {
         Ok(Envelope {
             id: (&id).into(),
             source: machine,
+            instance: self.instance.as_deref().map(within).transpose()?,
             event_type: within("")?,
             pattern: PatternKind::DurableReceipt,
             datacontenttype: PayloadCodec::None,
@@ -1175,9 +1193,11 @@ impl Router {
         } else {
             None
         };
+        let instance = self.instance.as_deref().map(within).transpose()?;
         let envelope = Envelope {
             id: (&id).into(),
             source: within(self.machine.as_str())?,
+            instance,
             event_type: within(request.event_name.as_str())?,
             pattern: if reply {
                 PatternKind::RpcReply
@@ -1266,9 +1286,11 @@ impl Router {
             })?),
             None => peer.config.deadline_ms,
         };
+        let instance = self.instance.as_deref().map(within).transpose()?;
         let envelope = Envelope {
             id: (&id).into(),
             source: within(self.machine.as_str())?,
+            instance,
             event_type: within(event)?,
             pattern: PatternKind::RpcRequest,
             datacontenttype: payload_codec(&request.event_data),
@@ -2227,6 +2249,9 @@ pub enum RouterError {
         window: usize,
         retry_ms: i64,
     },
+    /// The host asked the machine to speak as an instance whose id is not one
+    /// ([`Router::speak_as_instance`], docs/adr/0113, D1).
+    NotAnInstanceId(String),
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's
@@ -3538,6 +3563,49 @@ mod tests {
             ..Envelope::new()
         }
         .encode_to_vec()
+    }
+
+    /// docs/adr/0113, D1, and SCE_MESH.md section 10.9, invariant 11: a machine that speaks as an
+    /// instance names it in every envelope it writes, a notification and a request alike, and the
+    /// server's link of the instance takes each in as the instance's; an id that is none is
+    /// refused. Red if `send` or `invoke` writes no `instance`: the server's router then refuses
+    /// the envelope as `SourceNotLink`.
+    #[test]
+    fn a_machine_that_speaks_as_an_instance_names_it_in_what_it_writes() {
+        let mut phone = Router::new("phone", 8, 50).unwrap();
+        assert_eq!(
+            phone.speak_as_instance("a b"),
+            Err(RouterError::NotAnInstanceId("a b".to_string()))
+        );
+        phone.speak_as_instance("a1").unwrap();
+        phone.add_peer(
+            "cloud",
+            PeerConfig {
+                buffer: None,
+                ..UNORDERED
+            },
+        );
+        assert!(phone.peer_ready("cloud", 0).unwrap().is_empty());
+        let to_cloud = |effects: Vec<Effect>| match effects.as_slice() {
+            [Effect::Transmit { peer, bytes }] if peer == "cloud" => bytes.clone(),
+            other => panic!("expected one transmission to cloud, got {other:?}"),
+        };
+        let note = to_cloud(
+            phone
+                .send(&request("#cloud", "status.changed", ""), [2; 16], 0)
+                .unwrap(),
+        );
+        let asked = match phone.invoke(&ask("#cloud", None), WIRE, [1; 16], 10, 1000) {
+            Ok(Invoked::Started(effects)) => to_cloud(effects),
+            other => panic!("expected the request to start, got {other:?}"),
+        };
+        let mut cloud = open_server(4);
+        for bytes in [note, asked] {
+            let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+            assert_eq!(envelope.source, "phone");
+            assert_eq!(envelope.instance.map(|id| id.into_inner()), Some("a1"));
+            assert!(cloud.receive("phone/a1", bytes.clone(), 20).is_ok());
+        }
     }
 
     /// docs/adr/0113, D3: an instance of an open machine is bound by the one
