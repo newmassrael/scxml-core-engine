@@ -59,6 +59,16 @@ number is written as each host's JSON library writes the shortest text that read
 libraries spell apart (`1e+20` and `1e20`): an entry two hosts must agree on byte for byte holds no such
 number, and a record of SCE's payload form writes a 64-bit integer as a text, which is.
 
+**Who an append was made for** (ADR 0116, D7). An append a host-run invocation makes in a run under a delegation,
+whose request names the person the run acts for (Rust: `HostInvokeRequest::principal`), is written with one member
+more, `sce:principal`, which no record a document declares can name: the object `{"instance", "issuer", "method",
+"proved_ms", "subject"}` of the instance that acts for the person and the person as the server's store holds the
+delegation, `proved_ms` as its decimal digits and `subject` written as a `personal` value is (its keyed digest
+with the prefix `sce-personal:`, or as it is in a stream that keeps personal values in the clear). The host writes
+it before the canonical form is taken, so the chain covers it. An entry received with a member of that name is
+refused (`invalid_argument`): a document neither writes who an append was made for nor leaves it out. An append made
+for nobody, and every append of a host that serves no person (the C++ host), carries no such member.
+
 ## 3. The chain
 
     chain_0 = 32 zero bytes

@@ -1446,6 +1446,16 @@ docs/SCE_AUDIT_LOG.md.
 - An append repeated under one identity (section 1), as a restore starts the
   invocation again, answers the first sequence and appends nothing: the store
   keeps the identity in the transaction of the append.
+- **Who it was made for** (docs/adr/0116, D7). An append started in a run made
+  for a person, the person the external event that began the macrostep was
+  said for, is written with the member `sce:principal`: the instance that acts
+  for them and the person as the server's store holds the delegation, its
+  subject written as a personal value is (docs/SCE_AUDIT_LOG.md section 2). The
+  Rust host core hands it to the host with the request
+  (`HostInvokeRequest::principal`, `ReferenceHost::start_for`); the document
+  writes none, and an entry that names the member is refused
+  (`invalid_argument`). A saved state holds no person, so a machine running an
+  invocation started for one is saved once it ends.
 - **Retention.** A stream keeps its entries for its `retain_days`; a host's pass
   deletes older entries by whole segments, each ending at a checkpoint, which
   then anchors what remains, so the rest stays verifiable.

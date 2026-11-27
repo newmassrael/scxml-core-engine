@@ -17,7 +17,8 @@ pub type Shared<T> = Arc<Mutex<ReferenceHost<T>>>;
 /// A start is answered with its completion (a failure is a completion whose
 /// `error` is a code) or its refusal, or not at all when the host holds it, and
 /// reaches the host with the invocation's identity: the session that started
-/// it, the invoke's id and the start number the engine gave it. The
+/// it, the invoke's id and the start number the engine gave it, and with the
+/// person the run that started it acts for (docs/adr/0116, D7). The
 /// cancel the engine delivers when a state exits or a deadline passes reaches
 /// the host too.
 pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
@@ -37,11 +38,15 @@ pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
                 // starts it again under.
                 let invocation =
                     Invocation::new(&request.session_id, &request.invoke_id, request.start);
-                let outcome = host.lock().expect("the host is not left mid-update").start(
-                    operation,
-                    &invocation,
-                    &params,
-                );
+                let outcome = host
+                    .lock()
+                    .expect("the host is not left mid-update")
+                    .start_for(
+                        operation,
+                        &invocation,
+                        &params,
+                        request.principal.as_deref(),
+                    );
                 match outcome? {
                     Outcome::Done(data) => Some(HostInvokeResponse {
                         done_data: Some(data),

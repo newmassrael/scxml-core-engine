@@ -12,7 +12,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use sce_rust_host_features::audit::{canonical_json, redact, SECRET_MARKER};
+use sce_rust_host_features::audit::{canonical_json, redact, PRINCIPAL_MEMBER, SECRET_MARKER};
 use sce_rust_host_features::{
     AuditStreams, AuditVerdict, HttpRequest, HttpResponse, Invocation, KeyError, Outcome, Params,
     Personal, Reading, ReferenceHost, ScriptedClock, ScriptedRandom, StreamPolicy, Transport,
@@ -238,6 +238,95 @@ fn an_append_is_redacted_chained_and_answered_with_its_sequence() {
             checkpoints: 2
         }
     );
+}
+
+/// docs/adr/0116, D7: an append made for a person is written with who it was made for, the
+/// instance and the person, its subject as a personal value is written (a keyed digest in a stream
+/// that pseudonymises one, as it is in one that does not); an append made for nobody names no one;
+/// and an entry that names the member itself is refused, so a document neither writes who an
+/// append was made for nor leaves it out. Red if the host writes the entry as the document gave
+/// it, writes the subject in the clear in a stream that pseudonymises, or takes the member from
+/// the document.
+#[test]
+fn an_append_made_for_a_person_is_written_with_who_it_was_made_for() {
+    let alice = sce_rust_runtime::Principal {
+        issuer: "https://id.example".to_string(),
+        subject: "alice".to_string(),
+        proved_ms: 1_700_000_000_000,
+        method: "pwd".to_string(),
+        instance: "a1".to_string(),
+    };
+    let entry = r#"{"account":"a","password":"p","result":"r","attempt":1}"#;
+    for personal in [Personal::Pseudonymised, Personal::Clear] {
+        let (mut host, clock) = host(personal);
+        set_clock(&clock, 1_000);
+        for (start, acting) in [(1, Some(&alice)), (2, None)] {
+            let answered = done(host.start_for(
+                APPEND,
+                &Invocation::new("session-1", "audit", start),
+                &append("sign-ins", entry),
+                acting,
+            ));
+            assert_eq!(answered["error"], "");
+        }
+        let written: Vec<Value> = host
+            .audit_store()
+            .audit_rows("sign-ins", 0, 10)
+            .expect("the rows")
+            .iter()
+            .map(|row| serde_json::from_slice(&row.entry).expect("an entry is JSON"))
+            .collect();
+        let named = &written[0][PRINCIPAL_MEMBER];
+        assert_eq!(
+            (
+                &named["instance"],
+                &named["issuer"],
+                &named["method"],
+                &named["proved_ms"]
+            ),
+            (
+                &Value::from("a1"),
+                &Value::from("https://id.example"),
+                &Value::from("pwd"),
+                &Value::from("1700000000000")
+            ),
+            "who the append was made for, under {personal:?}"
+        );
+        let subject = named["subject"].as_str().expect("a subject");
+        match personal {
+            Personal::Pseudonymised => assert!(
+                subject.starts_with("sce-personal:") && !subject.contains("alice"),
+                "a subject in the clear in a stream that pseudonymises: {subject}"
+            ),
+            Personal::Clear => assert_eq!(subject, "alice"),
+        }
+        assert_eq!(
+            written[0]["account"], written[1]["account"],
+            "the entry's own members are written as they are for nobody"
+        );
+        assert!(
+            written[1].get(PRINCIPAL_MEMBER).is_none(),
+            "an append made for nobody names someone: {}",
+            written[1]
+        );
+    }
+    let (mut host, clock) = host(Personal::Pseudonymised);
+    set_clock(&clock, 1_000);
+    let forged = r#"{"account":"a","password":"p","sce:principal":{"subject":"mallory"}}"#;
+    for acting in [None, Some(&alice)] {
+        assert!(
+            matches!(
+                host.start_for(
+                    APPEND,
+                    &Invocation::new("session-1", "forged", 1),
+                    &append("sign-ins", forged),
+                    acting,
+                ),
+                Some(Outcome::Refuse(_))
+            ),
+            "an entry that names who it was made for was taken"
+        );
+    }
 }
 
 #[test]

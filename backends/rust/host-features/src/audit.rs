@@ -20,13 +20,22 @@
 //! how long its entries are kept; an append to another fails `unknown_stream`.
 //! An append repeated under the identity of its invocation answers the first
 //! sequence and appends nothing.
+//!
+//! Who an append was made for is written by the host, never by the document
+//! (docs/adr/0116, D7): an append started in a run under a delegation, whose
+//! request names the person ([`sce_rust_runtime::HostInvokeRequest::principal`]),
+//! is written with the member [`PRINCIPAL_MEMBER`], the instance and the person
+//! ([`principal_member`]), the subject written as a personal value is. An entry
+//! that names that member itself is refused, so a document neither writes it
+//! nor leaves it out.
 
 use std::collections::BTreeMap;
 
 use sce_rust_crypto::audit::{AuditError, Writer};
 use sce_rust_crypto::hex;
 use sce_rust_crypto::keyring::KeyError;
-use serde_json::{json, Value};
+use sce_rust_runtime::Principal;
+use serde_json::{json, Map, Value};
 
 use crate::cose::UNAVAILABLE;
 use crate::{failure, record, Invocation, Outcome, Params, ReferenceHost, Transport};
@@ -48,6 +57,11 @@ pub const MARKS_MAX: usize = 1024;
 pub const SECRET_MARKER: &str = "sce-secret";
 /// What a `personal` text written as its keyed digest begins with.
 pub const PERSONAL_PREFIX: &str = "sce-personal:";
+
+/// The member of a written entry that names who the append was made for
+/// (docs/adr/0116, D7). No field of a record a document declares is named so,
+/// and an entry received with it is refused.
+pub const PRINCIPAL_MEMBER: &str = "sce:principal";
 
 /// The failure of an append to a stream the host keeps no policy for.
 const UNKNOWN_STREAM: &str = "unknown_stream";
@@ -210,14 +224,81 @@ fn redacted(
     personal: Personal,
     pseudonym: &mut dyn FnMut(&str) -> Result<String, KeyError>,
 ) -> Result<String, Unredacted> {
+    redacted_members(entry, marks_text, personal, pseudonym)
+        .map(|members| canonical_json(&Value::Object(members)))
+}
+
+/// The members of `entry`, a JSON object that names no [`PRINCIPAL_MEMBER`],
+/// redacted by `marks_text`.
+fn redacted_members(
+    entry: &str,
+    marks_text: &str,
+    personal: Personal,
+    pseudonym: &mut dyn FnMut(&str) -> Result<String, KeyError>,
+) -> Result<Map<String, Value>, Unredacted> {
     let mut value: Value = serde_json::from_str(entry).map_err(|_| Unredacted::Refused)?;
-    if !value.is_object() {
-        return Err(Unredacted::Refused);
+    match &value {
+        Value::Object(members) if !members.contains_key(PRINCIPAL_MEMBER) => {}
+        _ => return Err(Unredacted::Refused),
     }
     for (segments, mark) in marks(marks_text).ok_or(Unredacted::Refused)? {
         apply(&mut value, &segments, mark, personal, pseudonym)?;
     }
-    Ok(canonical_json(&value))
+    match value {
+        Value::Object(members) => Ok(members),
+        _ => Err(Unredacted::Refused),
+    }
+}
+
+/// What an entry appended for `person` names them by, the value of its
+/// [`PRINCIPAL_MEMBER`] (docs/adr/0116, D7): the instance that acts for them,
+/// the issuer, the subject, when (`proved_ms`, its decimal digits, as a 64-bit
+/// integer of a result is written) and how they proved it. The subject is who
+/// the person is, so a stream that pseudonymises a personal value writes it as
+/// one, as its keyed digest; the rest says which device and which provider, and
+/// is written as it is.
+pub fn principal_member(
+    person: &Principal,
+    personal: Personal,
+    pseudonym: &mut dyn FnMut(&str) -> Result<String, KeyError>,
+) -> Result<Value, KeyError> {
+    let subject = match personal {
+        Personal::Pseudonymised => format!("{PERSONAL_PREFIX}{}", pseudonym(&person.subject)?),
+        Personal::Clear => person.subject.clone(),
+    };
+    Ok(json!({
+        "instance": person.instance,
+        "issuer": person.issuer,
+        "method": person.method,
+        "proved_ms": person.proved_ms.to_string(),
+        "subject": subject,
+    }))
+}
+
+/// The entry an append writes: `entry` redacted by `marks_text`
+/// ([`redact`]), and, for an append made for `acting`, with the member
+/// [`PRINCIPAL_MEMBER`] that names them ([`principal_member`]), in its
+/// canonical form. `None` where [`redact`] answers none, and for an entry that
+/// names that member itself.
+pub fn written(
+    entry: &str,
+    marks_text: &str,
+    acting: Option<&Principal>,
+    personal: Personal,
+    pseudonym: &mut dyn FnMut(&str) -> Result<String, KeyError>,
+) -> Result<Option<String>, KeyError> {
+    let mut members = match redacted_members(entry, marks_text, personal, pseudonym) {
+        Ok(members) => members,
+        Err(Unredacted::Refused) => return Ok(None),
+        Err(Unredacted::Key(error)) => return Err(error),
+    };
+    if let Some(person) = acting {
+        members.insert(
+            PRINCIPAL_MEMBER.to_string(),
+            principal_member(person, personal, pseudonym)?,
+        );
+    }
+    Ok(Some(canonical_json(&Value::Object(members))))
 }
 
 /// `value` written in the canonical form of an audit entry
@@ -307,11 +388,14 @@ pub(crate) fn refuses(params: &Params) -> bool {
     request(params).is_none()
 }
 
-/// Append the entry of `invocation`'s request, one [`refuses`] accepted.
+/// Append the entry of `invocation`'s request, one [`refuses`] accepted, as made
+/// for `acting`, the person the run that started it acts for (docs/adr/0116,
+/// D7).
 pub(crate) fn perform<T: Transport>(
     host: &mut ReferenceHost<T>,
     invocation: &Invocation,
     params: &Params,
+    acting: Option<&Principal>,
 ) -> Outcome {
     let Some((stream, entry, marks_text)) = request(params) else {
         return Outcome::Refuse(crate::INVALID_ARGUMENT);
@@ -352,7 +436,7 @@ pub(crate) fn perform<T: Transport>(
             .audit_pseudonym(text.as_bytes(), now_ms, &mut **random)
             .map(|digest| hex(&digest))
     };
-    let written = match redact(entry, marks_text, policy.personal, &mut pseudonym) {
+    let written = match written(entry, marks_text, acting, policy.personal, &mut pseudonym) {
         Ok(Some(written)) => written,
         Ok(None) => return Outcome::Refuse(crate::INVALID_ARGUMENT),
         Err(error) => {

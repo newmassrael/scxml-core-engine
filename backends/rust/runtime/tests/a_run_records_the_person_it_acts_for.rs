@@ -5,21 +5,31 @@
 // event journal and a host-run invocation it starts are recorded as done for the person the
 // external event that began the macrostep was said for, the internal events it raises included,
 // and for nobody in a macrostep begun by an event said for nobody; never as a document wrote it.
-// The machine is written by hand, so that what these cases read is the runtime.
+// A saved state holds no person, so a machine running an invocation started for one refuses the
+// save. The machine is written by hand, so that what these cases read is the runtime.
 //
 // The machine: one state, `s`, whose targetless transitions take `say` (a fact, and the internal
-// event `said`) and `said` (a fact).
+// event `said`), `said` (a fact) and `ask` (a host-run invocation).
 
-// The journal is the `std` profile's.
+// The journal, host-run invocations and a saved state are the `std` profile's.
 #![cfg(feature = "std")]
+
+use std::sync::{Arc, Mutex, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::journal::JournalEntry;
+use sce_rust_runtime::saved_state::{self, SavedShape};
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, EventMetadata,
-    EventType, EventWithMetadata, HistoryId, NoHistory, Principal, RunStore, StateId, StateKind,
-    StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    EventType, EventWithMetadata, HistoryId, HostInvokeEvent, HostInvokeRequest, NoHistory,
+    Principal, RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
+    TransitionRow, Workspace,
 };
+
+/// The type the machine's invocation names, which the host serves.
+const TYPE: &str = "x-sce-host";
+/// The invocation's id.
+const JOB: &str = "job";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum St {
@@ -32,15 +42,18 @@ enum Ev {
     Null,
     Say,
     Said,
+    Ask,
 }
 
 /// `s` on `say`, targetless.
 const S_SAY: TransitionId = TransitionId(0);
 /// `s` on `said`, targetless.
 const S_SAID: TransitionId = TransitionId(1);
+/// `s` on `ask`, targetless.
+const S_ASK: TransitionId = TransitionId(2);
 
-/// The person a document would write if it could: what every fact the machine says names, and
-/// what the engine must write over.
+/// The person a document would write if it could: what every fact and every request the machine
+/// makes names, and what the engine must write over.
 fn forged() -> Box<Principal> {
     Box::new(person("mallory", "m9"))
 }
@@ -56,7 +69,7 @@ fn person(subject: &str, instance: &str) -> Principal {
     }
 }
 
-/// A machine that says a fact on `say` and on the `said` it raises.
+/// A machine that says a fact on `say` and on the `said` it raises, and starts `JOB` on `ask`.
 struct Teller;
 
 impl StatePolicy for Teller {
@@ -79,7 +92,9 @@ impl StatePolicy for Teller {
     type Configuration = BoundedVec<St, 1>;
     type StartFailure = core::convert::Infallible;
 
-    // One child of the `<scxml>` element with two targetless transitions that have content;
+    const HAS_HOST_INVOKES: bool = true;
+
+    // One child of the `<scxml>` element with three targetless transitions that have content;
     // the document's initial transition, last, enters it.
     const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[StateRow::new(None, StateKind::Atomic, StateId(0), None)],
@@ -89,11 +104,13 @@ impl StatePolicy for Teller {
             TransitionRow::new(Some(StateId(0)), Target::NONE, false, true),
             // s: said, targetless
             TransitionRow::new(Some(StateId(0)), Target::NONE, false, true),
+            // s: ask, targetless
+            TransitionRow::new(Some(StateId(0)), Target::NONE, false, true),
             // <scxml initial="s">
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(2),
+        initial: TransitionId(3),
         default_state: StateId(St::S as u16),
         null_event: EventId(0),
         error_events: &[],
@@ -109,7 +126,7 @@ impl StatePolicy for Teller {
     };
     const STATES: &'static [St] = &[St::S];
     const HISTORIES: &'static [NoHistory] = &[];
-    const EVENTS: &'static [Ev] = &[Ev::Null, Ev::Say, Ev::Said];
+    const EVENTS: &'static [Ev] = &[Ev::Null, Ev::Say, Ev::Said, Ev::Ask];
 
     fn state_id(state: Self::State) -> StateId {
         StateId(state as u16)
@@ -132,6 +149,7 @@ impl StatePolicy for Teller {
             Ev::Null => "",
             Ev::Say => "say",
             Ev::Said => "said",
+            Ev::Ask => "ask",
         }
     }
 
@@ -139,6 +157,7 @@ impl StatePolicy for Teller {
         match name {
             "say" => Some(Ev::Say),
             "said" => Some(Ev::Said),
+            "ask" => Some(Ev::Ask),
             _ => None,
         }
     }
@@ -157,6 +176,11 @@ impl StatePolicy for Teller {
     fn event_data<'a>(
         _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
     ) -> Self::EventData<'a> {
+    }
+
+    // A session id of its own, which a save names.
+    fn own_session_id(&self) -> &str {
+        "teller"
     }
 
     fn execute_entry_actions(
@@ -186,12 +210,13 @@ impl StatePolicy for Teller {
         match (Self::state_of(state), Self::event_of(event)) {
             (St::S, Ev::Say) => Some(S_SAY),
             (St::S, Ev::Said) => Some(S_SAID),
+            (St::S, Ev::Ask) => Some(S_ASK),
             _ => None,
         }
     }
 
-    // The content a generated `<send type="sce:journal">` makes, naming a person the engine must
-    // write over.
+    // The content a generated `<send type="sce:journal">` and a generated invoke site make,
+    // each naming a person the engine must write over.
     fn execute_transition_content(
         &mut self,
         transition: TransitionId,
@@ -210,6 +235,18 @@ impl StatePolicy for Teller {
             engine.raise(EventWithMetadata::new(Ev::Said));
         } else if transition == S_SAID {
             engine.record_journal_entry(said("said"));
+        } else if transition == S_ASK {
+            let started = Engine::perform_host_invoke(
+                self,
+                engine,
+                HostInvokeRequest {
+                    processor_type: TYPE.to_string(),
+                    invoke_id: JOB.to_string(),
+                    principal: Some(forged()),
+                    ..HostInvokeRequest::default()
+                },
+            );
+            assert!(started, "the host serves the type the machine invokes");
         }
     }
 }
@@ -223,12 +260,23 @@ fn said_for(person: Option<Principal>) -> EventMetadata {
     }
 }
 
-/// A running machine standing in `s`.
-fn started() -> Engine<Teller> {
+/// A running machine standing in `s`, and the person each start its host's invoker was handed
+/// names, in order. The host holds every start: none ends until a case ends it.
+fn started() -> (Engine<Teller>, Arc<Mutex<Vec<Option<Principal>>>>) {
     let mut engine = Engine::new(Teller);
+    let starts = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&starts);
+    engine.register_invoker(TYPE, move |event| {
+        if let HostInvokeEvent::Start(request) = event {
+            seen.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(request.principal.map(|person| *person));
+        }
+        None
+    });
     let Ok(()) = engine.initialize();
     engine.step();
-    engine
+    (engine, starts)
 }
 
 /// Raise `event` said for `person` and run it.
@@ -259,7 +307,7 @@ fn said(engine: &mut Engine<Teller>) -> Vec<(&'static str, Option<String>)> {
 /// earlier macrostep is kept past an external event said for nobody.
 #[test]
 fn a_fact_is_recorded_as_said_for_the_person_the_macrostep_acts_for() {
-    let mut engine = started();
+    let (mut engine, _) = started();
     run(&mut engine, "say", Some(person("alice", "a1")));
     assert_eq!(
         said(&mut engine),
@@ -280,4 +328,52 @@ fn a_fact_is_recorded_as_said_for_the_person_the_macrostep_acts_for() {
         [Some(person("bob", "b1")), Some(person("bob", "b1"))],
         "the whole person, the instance among it, is recorded"
     );
+}
+
+/// A host-run invocation started in a macrostep is handed the person the macrostep acts for,
+/// whatever the document wrote, and none when it acts for nobody; and while one started for a
+/// person runs, the machine refuses to be saved, since a restore would start it again for nobody.
+/// Red if `start_host_invoke` leaves the request's person as the document wrote it, or if the
+/// save holds a machine whose running invocation was started for a person.
+#[test]
+fn an_invocation_is_started_for_the_person_and_holds_the_save_while_it_runs() {
+    let shape = SavedShape {
+        first: "shape",
+        revised: "shape",
+        format2_first: "shape",
+        format2_revised: "shape",
+        legacy: &[],
+        records: &[],
+        enums: &[],
+        features: None,
+        migrations: &[],
+    };
+    let refused_for_a_person = |engine: &Engine<Teller>| {
+        matches!(
+            saved_state::save(engine, &shape, Vec::new(), Vec::new(), Vec::new(), 0),
+            Err(refusal) if refusal.reason().contains("was started for a person")
+        )
+    };
+
+    let (mut engine, starts) = started();
+    run(&mut engine, "ask", None);
+    assert!(
+        !refused_for_a_person(&engine),
+        "an invocation started for nobody held the save"
+    );
+
+    let (mut engine, starts_for_alice) = started();
+    run(&mut engine, "ask", Some(person("alice", "a1")));
+    assert!(
+        refused_for_a_person(&engine),
+        "a machine running an invocation started for a person was saved"
+    );
+    let handed = |starts: &Arc<Mutex<Vec<Option<Principal>>>>| {
+        starts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    };
+    assert_eq!(handed(&starts), [None]);
+    assert_eq!(handed(&starts_for_alice), [Some(person("alice", "a1"))]);
 }

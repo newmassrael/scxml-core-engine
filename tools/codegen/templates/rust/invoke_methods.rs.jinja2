@@ -879,6 +879,9 @@
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
                     session_id: String::new(),
+                    // docs/adr/0116, D7: the engine names the person the
+                    // macrostep that starts it acts for.
+                    principal: None,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

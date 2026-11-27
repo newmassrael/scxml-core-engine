@@ -457,6 +457,16 @@ pub struct HostInvokeRequest {
     ///
     /// [`Engine::complete_host_invoke_in`]: crate::Engine::complete_host_invoke_in
     pub session_id: String,
+    /// The person the macrostep that started the invocation acts for, with the
+    /// instance that acts for them (docs/adr/0116, D7), or `None` for one made
+    /// for nobody: whom a host that records who did what records the work as
+    /// done for (the audit log, docs/SCE_HOST_FEATURES.md section 15). The
+    /// engine fills it as it starts the invocation, as it fills
+    /// [`Self::session_id`]; a document never writes it. A saved state holds no
+    /// person, so a machine running an invocation started for one is saved
+    /// once it ends ([`crate::saved_state::save`]), and a restart is made for
+    /// nobody.
+    pub principal: Option<Box<crate::event::Principal>>,
 }
 
 /// How a host ends a host-run invocation of some session of a tree

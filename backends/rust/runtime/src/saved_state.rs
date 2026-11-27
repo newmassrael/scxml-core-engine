@@ -2639,6 +2639,23 @@ pub fn save<P: StatePolicy>(
             P::get_event_name(P::event_of(queued.event))
         )));
     }
+    // docs/adr/0116, D7: a host-run invocation started for a person records
+    // its work as done for them (the audit log), and a restore starts a running
+    // one again from the saved request, which holds no person: started again
+    // for nobody, it would record its work as nobody's. So a running one
+    // started for a person refuses the save, as a queued event of a person
+    // does: a host saves once it ends.
+    if let Some(running) = engine
+        .running_host_invokes()
+        .into_iter()
+        .find(|running| running.request.principal.is_some())
+    {
+        return Err(StateRefusal::new(format!(
+            "the host-run invocation '{}' of type '{}' was started for a person and runs on, \
+             and a saved state holds no person: save once it ends",
+            running.request.invoke_id, running.request.processor_type
+        )));
+    }
     // What the generated machine saved is every child it runs, and nothing
     // else: one left out would restore a parent whose child is gone.
     let running = engine.policy().running_invokes();
@@ -3934,6 +3951,9 @@ fn rearm_host_invokes<P: StatePolicy>(
                 restarted: true,
                 // The engine names the session as the invocation starts again.
                 session_id: String::new(),
+                // docs/adr/0116, D7: a saved state holds no person, and a save
+                // refuses while an invocation started for one runs.
+                principal: None,
             },
             deadline,
         );

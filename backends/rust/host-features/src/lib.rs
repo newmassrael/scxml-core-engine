@@ -519,11 +519,25 @@ impl<T: Transport> ReferenceHost<T> {
         invocation: &Invocation,
         params: &Params,
     ) -> Option<Outcome> {
+        self.start_for(operation, invocation, params, None)
+    }
+
+    /// [`Self::start`] for an invocation started in a run made for `acting`, the
+    /// person the request names (`HostInvokeRequest::principal`, docs/adr/0116,
+    /// D7), or for nobody: an operation that records who did what, the audit
+    /// log's append, records its work as done for them.
+    pub fn start_for(
+        &mut self,
+        operation: &str,
+        invocation: &Invocation,
+        params: &Params,
+        acting: Option<&sce_rust_runtime::Principal>,
+    ) -> Option<Outcome> {
         if !TYPES.contains(&operation) {
             return None;
         }
         let began = Instant::now();
-        let outcome = self.answer(operation, invocation, params);
+        let outcome = self.answer(operation, invocation, params, acting);
         self.report(operation, &outcome, began);
         Some(outcome)
     }
@@ -560,7 +574,13 @@ impl<T: Transport> ReferenceHost<T> {
 
     /// The answer to a start of `operation`, a standard type, as [`Self::start`]
     /// describes it.
-    fn answer(&mut self, operation: &str, invocation: &Invocation, params: &Params) -> Outcome {
+    fn answer(
+        &mut self,
+        operation: &str,
+        invocation: &Invocation,
+        params: &Params,
+        acting: Option<&sce_rust_runtime::Principal>,
+    ) -> Outcome {
         let id = invocation.id.as_str();
         self.starts.push(Start {
             operation: operation.to_string(),
@@ -579,12 +599,18 @@ impl<T: Transport> ReferenceHost<T> {
                 return first;
             }
         }
-        self.perform(operation, invocation, params)
+        self.perform(operation, invocation, params, acting)
     }
 
     /// The operation itself, as [`Self::start`] describes it, for a start that is
     /// not a repeat.
-    fn perform(&mut self, operation: &str, invocation: &Invocation, params: &Params) -> Outcome {
+    fn perform(
+        &mut self,
+        operation: &str,
+        invocation: &Invocation,
+        params: &Params,
+        acting: Option<&sce_rust_runtime::Principal>,
+    ) -> Outcome {
         let id = invocation.id.as_str();
         let argument = |name: &str| params.get(name).map(String::as_str).unwrap_or("");
         let refused = match operation {
@@ -665,7 +691,7 @@ impl<T: Transport> ReferenceHost<T> {
             of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
                 credentials::perform(self, of_credentials, invocation, params)
             }
-            audit::AUDIT_APPEND => audit::perform(self, invocation, params),
+            audit::AUDIT_APPEND => audit::perform(self, invocation, params, acting),
             journal::JOURNAL_READ => journal::perform(self, params),
             _ => unreachable!("the type was checked against TYPES"),
         }

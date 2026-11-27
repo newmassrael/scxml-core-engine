@@ -5364,6 +5364,9 @@ impl<P: StatePolicy> EngineState<P> {
         // docs/adr/0045: the session that starts it, which the host may serve
         // or refuse it by, and names again to end it.
         request.session_id = session_id.to_string();
+        // docs/adr/0116, D7: the person the macrostep that starts it acts for,
+        // whom a host that records who did what records its work as done for.
+        request.principal = self.acting.clone();
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
