@@ -4447,6 +4447,124 @@ mod tests {
     ran_inline.expect("codecs of one table held inline must read and write their frames by it");
 }
 
+/// A cold codec with a row a disjunction gates (`a || b`) is read by the
+/// walker over its table and written by its printed encode (docs/adr/0155
+/// section 2): each frame decodes to the value whose encode is the frame again
+/// and decodes to it once more, a frame short of the field the disjunction
+/// opens is refused, and a value that sets a flag of the disjunction and holds
+/// its field absent is refused rather than written as a zero.
+#[test]
+fn a_cold_codec_gated_by_a_disjunction_reads_by_its_table_and_writes_its_frames_back() {
+    const DISJUNCTION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_cold_disjunction">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="wants_a" bit="0"/>
+      <sce:flag name="wants_b" bit="1"/>
+    </sce:flags>
+    <sce:field id="extra" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="flags.wants_a"/>
+    <sce:field id="seq" sce:type="uint16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="flags.wants_a || flags.wants_b"/>
+  </datamodel>
+</scxml>
+"#;
+    const ROOT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_cold_root">
+  <datamodel>
+    <sce:field id="value" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>
+"#;
+    const HARNESS: &str = r#"// Injected by a_cold_codec_gated_by_a_disjunction_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_cold_disjunction::CodecColdDisjunction;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    /// The bytes of an encode, whether it can refuse a value or not.
+    trait Written {
+        fn written(self) -> Vec<u8>;
+    }
+
+    impl Written for Vec<u8> {
+        fn written(self) -> Vec<u8> {
+            self
+        }
+    }
+
+    impl<E: core::fmt::Debug> Written for Result<Vec<u8>, E> {
+        fn written(self) -> Vec<u8> {
+            self.expect("the value encodes")
+        }
+    }
+
+    #[test]
+    fn a_disjunction_read_by_its_table_writes_its_frame_back() {
+        let frames: [&[u8]; 4] = [&[0x00], &[0x01, 0x07, 0x12, 0x34], &[0x02, 0x12, 0x34], &[0x03, 0x07, 0x12, 0x34]];
+        for frame in frames {
+            let read = CodecColdDisjunction::decode(&mut SceCursor::new(frame)).expect("decode");
+            let written = read.encode_to_vec().written();
+            assert_eq!(written, frame.to_vec(), "{frame:x?}");
+            let again = CodecColdDisjunction::decode(&mut SceCursor::new(&written)).expect("decode again");
+            assert_eq!(again, read, "{frame:x?}");
+        }
+        let b = CodecColdDisjunction::decode(&mut SceCursor::new(&[0x02, 0x12, 0x34])).expect("decode");
+        assert_eq!((b.extra, b.seq), (None, Some(0x1234)));
+        let none = CodecColdDisjunction::decode(&mut SceCursor::new(&[0x00])).expect("decode");
+        assert_eq!((none.extra, none.seq), (None, None));
+        let short = CodecColdDisjunction::decode(&mut SceCursor::new(&[0x02, 0x12])).map(|_| ());
+        assert_eq!(short, Err(CodecError::NeedMoreBytes));
+    }
+
+    #[test]
+    fn a_flag_of_the_disjunction_set_over_an_absent_field_is_refused() {
+        let value = CodecColdDisjunction { flags: 0x02, ..CodecColdDisjunction::default() };
+        assert!(value.encode_to_vec().is_err(), "{value:?}");
+    }
+}
+"#;
+    use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
+    let dir = std::env::temp_dir().join(format!("sce_cold_disjunction_rt_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory for the set");
+    let names = ["codec_cold_root.scxml", "codec_cold_disjunction.scxml"];
+    for (name, text) in names.iter().zip([ROOT, DISJUNCTION]) {
+        std::fs::write(dir.join(name), text).expect("a document of the set");
+    }
+    let documents: Vec<String> = names
+        .iter()
+        .map(|name| dir.join(name).display().to_string())
+        .collect();
+    let sites = BodyReadSites::of_documents(&documents, &[], |_| false);
+    let hot = sites
+        .hot_codecs(["codec_cold_root"])
+        .unwrap_or_else(|e| panic!("codec_cold_root is a codec of the set: {e}"));
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.inline_decode = InlineDecode::Codecs(hot);
+    opts.body_reads = sites;
+    let files =
+        generate_files_for_codec_set_with(&dir, &names, sce_build::generator::Language::Rust, opts);
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut files = files.unwrap_or_else(|e| panic!("the set generates: {e}"));
+    let code = files
+        .iter()
+        .filter(|(name, _)| name.starts_with("codec_cold_disjunction"))
+        .map(|(_, code)| code.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains("::read_table(cursor, &CODEC_COLD_DISJUNCTION_FIELDS, ")
+            && code.contains("gate: Gate::Any(&[")
+            && !code.contains("::write_table("),
+        "codec_cold_disjunction is not read by its table, or is written by it:\n{code}"
+    );
+    files.push(("cold_disjunction.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "cold_disjunction_rust", "test", RustcProfile::Alloc)
+        .expect("a cold codec gated by a disjunction must read, refuse and write back its frames");
+}
+
 /// The declarations of the public face of a generated module, in order: each
 /// line that declares a `pub` struct, enum, union, trait or type alias, or a
 /// `pub` field, as written. An item visible to the modules of the set alone
