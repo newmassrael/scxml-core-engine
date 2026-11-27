@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "lane": "model",
+  "steps": [
+    {
+      "kind": "start",
+      "entered": [
+        "locked"
+      ],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "coin",
+      "fired": [
+        {
+          "source": "locked",
+          "index": 0
+        }
+      ],
+      "exited": [
+        "locked"
+      ],
+      "entered": [
+        "unlocked"
+      ],
+      "configuration": [
+        "unlocked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [
+        {
+          "source": "unlocked",
+          "index": 1
+        }
+      ],
+      "exited": [
+        "unlocked"
+      ],
+      "entered": [
+        "locked"
+      ],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "coin",
+      "fired": [
+        {
+          "source": "locked",
+          "index": 0
+        }
+      ],
+      "exited": [
+        "locked"
+      ],
+      "entered": [
+        "unlocked"
+      ],
+      "configuration": [
+        "unlocked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "relock",
+      "fired": [
+        {
+          "source": "unlocked",
+          "index": 2
+        }
+      ],
+      "exited": [
+        "unlocked"
+      ],
+      "entered": [
+        "locked"
+      ],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "relock",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "kind": "arrive",
+      "after": 1,
+      "event": "push"
+    },
+    {
+      "kind": "arrive",
+      "after": 1,
+      "event": "coin"
+    },
+    {
+      "kind": "arrive",
+      "after": 2,
+      "event": "push"
+    },
+    {
+      "kind": "arrive",
+      "after": 2,
+      "event": "coin"
+    },
+    {
+      "kind": "due",
+      "after": 3,
+      "event": "relock"
+    },
+    {
+      "kind": "due",
+      "after": 6,
+      "event": "relock"
+    }
+  ]
+}

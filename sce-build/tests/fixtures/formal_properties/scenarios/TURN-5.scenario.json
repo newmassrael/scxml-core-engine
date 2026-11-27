@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "lane": "model",
+  "steps": [
+    {
+      "kind": "start",
+      "entered": [
+        "locked"
+      ],
+      "configuration": [
+        "locked"
+      ]
+    }
+  ]
+}

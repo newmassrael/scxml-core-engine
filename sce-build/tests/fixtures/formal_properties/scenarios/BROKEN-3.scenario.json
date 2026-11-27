@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "lane": "model",
+  "steps": [
+    {
+      "kind": "start",
+      "entered": [
+        "locked"
+      ],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    },
+    {
+      "kind": "external",
+      "event": "push",
+      "fired": [],
+      "exited": [],
+      "entered": [],
+      "configuration": [
+        "locked"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "kind": "arrive",
+      "after": 1,
+      "event": "push"
+    },
+    {
+      "kind": "arrive",
+      "after": 2,
+      "event": "push"
+    },
+    {
+      "kind": "arrive",
+      "after": 2,
+      "event": "push"
+    },
+    {
+      "kind": "arrive",
+      "after": 3,
+      "event": "push"
+    }
+  ]
+}
