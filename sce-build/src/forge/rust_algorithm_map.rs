@@ -12,7 +12,8 @@
 //!
 //! * A **parameter** states no bound of its own: its map is the caller's,
 //!   whatever bound the caller's variable states and in whatever storage the
-//!   caller keeps it (`Inline`, `Heap` or `Linear`, D4 "Storage"), so the function is
+//!   caller keeps it (`Inline`, `Heap`, `Linear`, or a run its host lends,
+//!   `Lent` or `LentIndexed`: D4 "Storage", docs/adr/0154), so the function is
 //!   generic over both (`const N0: usize`, `S0: MapStorage`) and takes the map
 //!   lent, `&` to be read (D6 item 1) and `&mut` where it is declared `inout`
 //!   (D6 item 2). A text or a byte string key or value is held to the bound the
@@ -35,9 +36,12 @@
 //!   ([`crate::forge::model::AlgorithmModel::takes_map_seed`]), which its
 //!   caller hands it, and draws each local's from that. An algorithm that
 //!   calls one hands it a seed drawn from its own, after its locals'. Such a
-//!   local is kept in the storage of the map its seed is drawn from, so an
-//!   algorithm lent an inline map builds its own maps inline and allocates
-//!   nothing; one that takes its caller's seed is lent no storage to follow,
+//!   local is kept in the owned storage of the map its seed is drawn from
+//!   (`<S0 as MapStorage>::Owned`, docs/adr/0154, D3): the map's own storage
+//!   where it holds its slots, so an algorithm lent an inline map builds its
+//!   own maps inline and allocates nothing, and the storage that holds them in
+//!   the value with the same lookup where its host lends them, a run being lent
+//!   to one map. One that takes its caller's seed is lent no storage to follow,
 //!   and its locals take the default (`DefaultMapStorage`).
 //!
 //! Each map an algorithm is lent or writes into is a variable of its caller,
@@ -51,7 +55,9 @@
 //! on a full map, which only a body that declares `may-fail` may write. A
 //! `<sce:foreach>` walks the map's positions, over the map itself where
 //! nothing in its body writes the map and over a copy taken where the loop
-//! begins where something does (D6 item 3).
+//! begins where something does (D6 item 3), the copy in the map's owned
+//! storage (`to_owned_storage`, docs/adr/0154, D3), which a map in storage its
+//! host lends has, and `Clone` does not.
 
 use std::collections::HashMap;
 
@@ -203,9 +209,10 @@ pub(crate) struct RustAlgorithmMaps {
     /// What a working local's seed is drawn from: the first map parameter, or
     /// the destination, as the body spells it.
     seed_source: Option<String>,
-    /// The storage a working local is kept in: that of the map its seed is
-    /// drawn from (`S<i>` of the first map parameter, or the destination's),
-    /// and the default where the seed is the caller's.
+    /// The storage a working local is kept in: the owned storage of the map
+    /// its seed is drawn from ([`owned_storage`] of `S<i>` of the first map
+    /// parameter, or of the destination's), and the default where the seed is
+    /// the caller's.
     working_storage: Option<String>,
     /// Whether the function takes its caller's seed ([`RUST_ALGORITHM_SEED_PARAM`]).
     seed_param: bool,
@@ -276,7 +283,7 @@ impl RustAlgorithmMaps {
             );
             if maps.seed_source.is_none() {
                 maps.seed_source = Some(local(&param.name));
-                maps.working_storage = Some(storage);
+                maps.working_storage = Some(owned_storage(&storage));
             }
         }
         let locals: Vec<(&str, &AlgorithmValueType)> = m
@@ -325,10 +332,10 @@ impl RustAlgorithmMaps {
             };
             maps.output = Some(output);
         }
-        // A working local follows the storage of the map its seed is drawn
-        // from: the first map lent, or else the destination.
+        // A working local follows the owned storage of the map its seed is
+        // drawn from: the first map lent, or else the destination.
         if maps.working_storage.is_none() && maps.output.is_some() {
-            maps.working_storage = Some(RUST_ALGORITHM_OUTPUT_STORAGE.to_string());
+            maps.working_storage = Some(owned_storage(RUST_ALGORITHM_OUTPUT_STORAGE));
         }
         let mut ordinal = 0u32;
         for &(name, ty) in &map_locals {
@@ -639,6 +646,14 @@ fn storage_bound(storage: &str) -> String {
     format!("{storage}: {RUST_ALGORITHM_MAP_CRATE}::MapStorage")
 }
 
+/// The storage a map the function builds beside one kept in `storage` is kept
+/// in, and a copy of it: `storage`'s owned storage (docs/adr/0154, D3), itself
+/// where the map holds its slots and, where its host lends them, the one that
+/// holds them in the value, since a run is lent to one map.
+fn owned_storage(storage: &str) -> String {
+    format!("<{storage} as {RUST_ALGORITHM_MAP_CRATE}::MapStorage>::Owned")
+}
+
 /// Every name a `<sce:return>` of `stmts` returns, nested bodies included, in
 /// document order.
 fn returned_names(stmts: &[AlgorithmStmt], into: &mut Vec<String>) {
@@ -767,8 +782,10 @@ pub(crate) fn clear(pad: &str, map: &str) -> String {
 /// The walk of a map or a set `held`, spelled `map`, at `pad`, a loop of its
 /// own numbered `depth` (D6 item 3): what opens it, the body to be lowered
 /// two levels in, and what closes it. Over a copy taken where it begins where
-/// `copies`, its body writing the map, and over the map itself otherwise,
-/// which nothing in the body changes. Each turn binds `item` (each value of a
+/// `copies`, its body writing the map, kept in the map's owned storage
+/// (`to_owned_storage`, docs/adr/0154, D3) so a map whose host lends its slots
+/// is walked as any other, and over the map itself otherwise, which nothing in
+/// the body changes. Each turn binds `item` (each value of a
 /// map, each key of a set) and `key` (each key of a map): a number and a
 /// truth value by copy, any other part by a clone of it, so no turn holds a
 /// borrow of the map.
@@ -788,7 +805,7 @@ impl Walk<'_> {
         let (cursor, at) = (format!("sce_cursor_{depth}"), format!("sce_at_{depth}"));
         let (walked, copy) = if self.copies {
             let walked = format!("sce_walk_{depth}");
-            let copy = format!("{pad}    let {walked} = {}.clone();\n", self.map);
+            let copy = format!("{pad}    let {walked} = {}.to_owned_storage();\n", self.map);
             (walked, copy)
         } else {
             (self.map.to_string(), String::new())
@@ -882,7 +899,10 @@ mod tests {
             ..walk
         };
         let (open, _) = copied.spelled("    ");
-        assert!(open.contains("let sce_walk_1 = resets.clone();"), "{open}");
+        assert!(
+            open.contains("let sce_walk_1 = resets.to_owned_storage();"),
+            "{open}"
+        );
         assert!(
             open.contains("let v = *sce_walk_1.value_at(sce_at_1);"),
             "{open}"
@@ -966,6 +986,12 @@ mod tests {
                 .is_none()
         );
         assert_eq!(storage_bound("SR"), "SR: ::sce_portable_bytes::MapStorage");
+        // docs/adr/0154, D3: a map the function builds is kept in the owned
+        // storage of the one it follows, which a lent map has.
+        assert_eq!(
+            owned_storage("S0"),
+            "<S0 as ::sce_portable_bytes::MapStorage>::Owned"
+        );
         assert_eq!(
             literal_text("K0", "ab"),
             "::sce_portable_bytes::SceString::<K0>::proven::<{ \"ab\".len() }>(\"ab\")"

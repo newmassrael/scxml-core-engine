@@ -2990,9 +2990,14 @@ impl<'ast> syn::visit::Visit<'ast> for MethodCalls {
 impl MethodCalls {
     /// Each receiver a `.clone()` is called on.
     fn cloned(&self) -> Vec<&str> {
+        self.receivers_of("clone")
+    }
+
+    /// Each receiver the method `method` is called on.
+    fn receivers_of(&self, method: &str) -> Vec<&str> {
         self.0
             .iter()
-            .filter(|(_, method)| method == "clone")
+            .filter(|(_, called)| called == method)
             .map(|(receiver, _)| receiver.as_str())
             .collect()
     }
@@ -3193,7 +3198,9 @@ const WALK_LEND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 /// copied nowhere, by the machine (`&self.a`, its walk over `a` taking no
 /// copy) or by its adapter (`&BoundedMap`); and in the algorithm a
 /// `<sce:foreach>` over a map its body does not write walks the map itself,
-/// while one whose body writes the map it walks walks a copy of it.
+/// while one whose body writes the map it walks walks a copy of it, taken into
+/// the map's owned storage (docs/adr/0154, D3), which a map whose host lends
+/// its slots has and `Clone` does not.
 #[test]
 fn rust_copies_no_map_it_reads_and_only_the_map_a_walk_writes() {
     let documents = [
@@ -3230,9 +3237,14 @@ fn rust_copies_no_map_it_reads_and_only_the_map_a_walk_writes() {
     let mut methods = MethodCalls::default();
     syn::visit::Visit::visit_item_fn(&mut methods, refill);
     assert_eq!(
-        methods.cloned(),
+        methods.receivers_of("to_owned_storage"),
         ["b"],
         "only the walk of `b`, whose body writes `b`, copies its map: {:?}",
+        methods.0
+    );
+    assert!(
+        methods.cloned().is_empty(),
+        "a walk copies its map into the map's owned storage, never by `Clone`: {:?}",
         methods.0
     );
 
@@ -3337,7 +3349,7 @@ fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
         );
     }
     assert!(
-        methods.cloned().is_empty(),
+        methods.cloned().is_empty() && methods.receivers_of("to_owned_storage").is_empty(),
         "the walk of the map lent to be read copies it: {:?}",
         methods.0
     );
@@ -3355,12 +3367,17 @@ fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
         .iter()
         .find(|(_, text)| text.contains("pub fn distinct"))
         .expect("the algorithm's file");
-    // docs/adr/0108, D4 "Storage": the set the body builds for itself is kept
-    // in the storage of the map its seed is drawn from, so a caller that lends
-    // an inline map has nothing allocated for it.
+    // docs/adr/0108, D4 "Storage", and docs/adr/0154, D3: the set the body
+    // builds for itself is kept in the owned storage of the map its seed is
+    // drawn from, the map's own where it holds its slots, so a caller that lends
+    // an inline map has nothing allocated for it, and a caller whose map's
+    // slots are lent by its host gets a set of its own.
     assert!(
-        text.contains("seen: ::sce_portable_bytes::BoundedSet<u32, 4, S0> ="),
-        "the set local is kept in the storage of the map it is lent:\n{text}"
+        text.contains(
+            "seen: ::sce_portable_bytes::BoundedSet<u32, 4, \
+             <S0 as ::sce_portable_bytes::MapStorage>::Owned> ="
+        ),
+        "the set local is kept in the owned storage of the map it is lent:\n{text}"
     );
     assert!(
         text.contains("== ::sce_portable_bytes::PutOutcome::Full {")

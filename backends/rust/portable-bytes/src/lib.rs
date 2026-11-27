@@ -18,7 +18,8 @@
 //!   entries by key and a set of at most `N` keys, [`BoundedMap`] and
 //!   [`BoundedSet`] (docs/adr/0108), are the [`map`] module's; where a map
 //!   keeps its entries is a parameter of its type, [`Inline`], [`Heap`] or
-//!   [`Linear`], not a feature of the build.
+//!   [`Linear`], or a run of memory its host lends, [`Lent`] or
+//!   [`LentIndexed`] (docs/adr/0154), not a feature of the build.
 //! * **A codec's storage profiles** ([`HeapList`] / [`InlineList`],
 //!   [`HeapStr`] / [`InlineStr`]): the containers a decoded frame of a protocol
 //!   SCE does not own is held in, whose heap form's `N` is advisory, as the
@@ -63,8 +64,9 @@ pub mod map;
 #[cfg(feature = "alloc")]
 pub use map::Heap;
 pub use map::{
-    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, Linear, MapCursor,
-    MapKey, MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
+    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, LendRefused, Lent,
+    LentCell, LentIndexed, LentIndexedSlot, LentSlot, Linear, MapCursor, MapKey, MapSeed, MapSeeds,
+    MapSlot, MapStorage, PutOutcome, RemoveOutcome,
 };
 
 /// Returned by `from_slice` / `push` / `extend_from_slice` when a copy would

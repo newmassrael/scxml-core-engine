@@ -2403,7 +2403,11 @@ pub fn map_to_saved<K, V, const N: usize, S: crate::MapStorage>(
 /// (docs/adr/0108, D12) is read by a `value` that reads it as a map is read
 /// here, so each inner map is held to its own bound with no key twice, its
 /// refusal naming its place (`what[i][1]`), and hashes under a seed of its own.
-pub fn map_from_saved<K: crate::MapKey, V, const N: usize, S: crate::MapStorage>(
+/// The map is built in storage that holds its own slots: a map whose host lends
+/// its slots (`Lent`, `LentIndexed`, docs/adr/0154) is lent them where it is
+/// built, so its host restores it by clearing it and putting the entries this
+/// reads into a map of the same type.
+pub fn map_from_saved<K: crate::MapKey, V, const N: usize, S: crate::MapStorage<Owned = S>>(
     saved: &Value,
     what: &str,
     mut key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
@@ -2444,8 +2448,8 @@ pub fn set_to_saved<K, const N: usize, S: crate::MapStorage>(
 }
 
 /// A saved set `saved`, its keys read by `key`, held to its bound with no key
-/// twice, as [`map_from_saved`] reads a map.
-pub fn set_from_saved<K: crate::MapKey, const N: usize, S: crate::MapStorage>(
+/// twice, as [`map_from_saved`] reads a map, in storage that holds its own slots.
+pub fn set_from_saved<K: crate::MapKey, const N: usize, S: crate::MapStorage<Owned = S>>(
     saved: &Value,
     what: &str,
     key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
@@ -2456,9 +2460,15 @@ pub fn set_from_saved<K: crate::MapKey, const N: usize, S: crate::MapStorage>(
 }
 
 /// A map whose keys and values each write themselves ([`map_to_saved`] by
-/// their own [`SavedValue`]).
-impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize, S: crate::MapStorage> SavedValue
-    for crate::BoundedMap<K, V, N, S>
+/// their own [`SavedValue`]), in storage that holds its own slots, which a
+/// read of a saved map builds ([`map_from_saved`]); a map whose host lends its
+/// slots is written by [`map_to_saved`] itself.
+impl<
+        K: SavedValue + crate::MapKey,
+        V: SavedValue,
+        const N: usize,
+        S: crate::MapStorage<Owned = S>,
+    > SavedValue for crate::BoundedMap<K, V, N, S>
 {
     fn to_saved(&self) -> Value {
         map_to_saved(self, K::to_saved, V::to_saved)
@@ -2468,8 +2478,9 @@ impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize, S: crate::Map
     }
 }
 
-/// A set whose keys each write themselves ([`set_to_saved`]).
-impl<K: SavedValue + crate::MapKey, const N: usize, S: crate::MapStorage> SavedValue
+/// A set whose keys each write themselves ([`set_to_saved`]), in storage that
+/// holds its own slots, as a map is.
+impl<K: SavedValue + crate::MapKey, const N: usize, S: crate::MapStorage<Owned = S>> SavedValue
     for crate::BoundedSet<K, N, S>
 {
     fn to_saved(&self) -> Value {
@@ -6129,6 +6140,43 @@ mod tests {
             .iter()
             .map(|(face, weight)| (*face, *weight))
             .eq([(9, 1), (3, 2)]));
+
+        // docs/adr/0154, D1: a map whose host lends its slots writes the saved
+        // form an inline map of the same entries writes, in their order, and
+        // a host restores it by putting the entries a map read back holds.
+        type Faces = crate::BoundedMap<u32, u8, 4, crate::Inline>;
+        let faces_saved = json_of("[[7,1],[3,2],[9,3]]");
+        let faces = Faces::from_saved(&faces_saved, "faces").expect("restores");
+        let mut slots: [crate::LentIndexedSlot<u32, u8>; 3] =
+            core::array::from_fn(|_| crate::LentIndexedSlot::empty());
+        let mut cells = [crate::LentCell::EMPTY; 6];
+        let mut lent = crate::BoundedMap::<u32, u8, 4, crate::LentIndexed<'_>>::over(
+            crate::MapSeed::from_halves(1, 2),
+            &mut slots,
+            &mut cells,
+        )
+        .expect("three slots within the bound");
+        for (face, weight) in faces.iter() {
+            assert_eq!(lent.put(*face, *weight), crate::PutOutcome::Inserted);
+        }
+        assert_eq!(
+            map_to_saved(&lent, SavedValue::to_saved, SavedValue::to_saved),
+            faces_saved
+        );
+        let mut few: [crate::LentSlot<u32, u8>; 3] =
+            core::array::from_fn(|_| crate::LentSlot::empty());
+        let mut scanned = crate::BoundedMap::<u32, u8, 4, crate::Lent<'_>>::over(
+            crate::MapSeed::from_halves(1, 2),
+            &mut few,
+        )
+        .expect("three slots within the bound");
+        for (face, weight) in faces.iter() {
+            assert_eq!(scanned.put(*face, *weight), crate::PutOutcome::Inserted);
+        }
+        assert_eq!(
+            map_to_saved(&scanned, SavedValue::to_saved, SavedValue::to_saved),
+            faces_saved
+        );
 
         let twice = Regions::from_saved(&json_of("[[5,[[9,1],[9,2]]]]"), "regions")
             .expect_err("an inner key twice");
