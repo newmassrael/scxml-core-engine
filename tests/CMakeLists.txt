@@ -9344,7 +9344,9 @@ set_tests_properties(sce_build_is_current PROPERTIES
 get_property(_sce_registered_tests DIRECTORY PROPERTY TESTS)
 list(REMOVE_ITEM _sce_registered_tests sce_build_is_current)
 if(_sce_registered_tests)
-    set_tests_properties(${_sce_registered_tests} PROPERTIES
+    # Appended rather than set: a test that requires a fixture of its own, as a
+    # check requires the record it reads (cpp_inbox_history_check), keeps it.
+    set_property(TEST ${_sce_registered_tests} APPEND PROPERTY
         FIXTURES_REQUIRED sce_built
     )
 endif()
