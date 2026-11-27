@@ -242,6 +242,15 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Operator,
         &[("read_text", 1)],
     ),
+    // The quantities manifest the operator names, the documents, modules, configurations
+    // and recorded runs it declares beside it (ADR 0119).
+    (
+        "src/formal/quantities.rs",
+        Why::Operator,
+        &[("runs_of", 1), ("declared", 4), ("check", 1)],
+    ),
+    // The recorded runs of each lane beside the scenarios the operator names (D15).
+    ("src/formal/replay.rs", Why::Operator, &[("judge_dir", 2)]),
     // The configurations the inductive runs of the operator's manifest name, beside it.
     ("src/formal/inductive.rs", Why::Operator, &[("declared", 2)]),
     // The tools the judge pins (docs/adr/0146, D3), and the Java runtime TLC and Apalache run on,
