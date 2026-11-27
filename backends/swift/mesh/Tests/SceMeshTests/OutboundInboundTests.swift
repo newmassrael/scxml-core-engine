@@ -127,12 +127,53 @@ import Testing
     @Test func aSequenceBelowTheExpectedOneIsDropped() throws {
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: false, ordered: true)
-        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 5), delivery: delivery, nowMs: 0))
-        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: 6), delivery: delivery, nowMs: 0))
+        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 1), delivery: delivery, nowMs: 0))
+        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: 2), delivery: delivery, nowMs: 0))
         let late = try admitted(
-            inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 5), delivery: delivery, nowMs: 0))
+            inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 1), delivery: delivery, nowMs: 0))
         #expect(late.released.isEmpty)
         #expect(late.signals.isEmpty)
+    }
+
+    /// SCE_MESH.md section 10.6.4: a stream the receiver has no state for is expected from its first
+    /// number, whatever arrives first, so an envelope that overtook the first waits for it and both are
+    /// released in order. Red if the first envelope that arrives anchors the stream: 2 is then released
+    /// at once and 1 is dropped as a straggler, told to no one.
+    @Test func aFreshStreamWaitsForItsFirstNumber() throws {
+        let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
+        let delivery = Delivery(dedup: false, ordered: true)
+        let overtaking = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: 2), delivery: delivery, nowMs: 0))
+        #expect(overtaking.released.isEmpty, "2 waits for 1")
+        let first = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 1), delivery: delivery, nowMs: 10))
+        #expect(first.released.map(\.sequence_no) == [1, 2])
+        let later = try admitted(inbound.tick(nowMs: 10_000))
+        #expect(later.released.isEmpty && later.signals.isEmpty, "no gap is left: \(later.signals)")
+    }
+
+    /// SCE_MESH.md section 10.6.4: a stream joined after its start (a receiver whose state was lost)
+    /// waits for the numbers below its first arrival as for any gap, and once the gap has waited out its
+    /// timeout tells them lost and releases what it held. Red if the first arrival anchors the stream: 7
+    /// is then released at once and 1 to 6 are never told.
+    @Test func aStreamJoinedAfterItsStartTellsTheNumbersBeforeItLost() throws {
+        let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
+        let delivery = Delivery(dedup: false, ordered: true)
+        let first = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 7, sequence: 7), delivery: delivery, nowMs: 0))
+        #expect(first.released.isEmpty, "7 waits for the numbers below it")
+        let early = try admitted(inbound.tick(nowMs: 49))
+        #expect(early.released.isEmpty && early.signals.isEmpty, "the gap has not waited its timeout")
+        let ended = try admitted(inbound.tick(nowMs: 50))
+        #expect(ended.signals == [.orderingGap(source: "ecu", lostLo: 1, lostHi: 6)])
+        #expect(ended.released.map(\.sequence_no) == [7])
+        // 6 was told lost, so a copy that comes late is a straggler.
+        let straggler = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 6, sequence: 6), delivery: delivery, nowMs: 60))
+        #expect(straggler.released.isEmpty && straggler.signals.isEmpty)
+        let next = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 8, sequence: 8), delivery: delivery, nowMs: 60))
+        #expect(next.released.map(\.sequence_no) == [8])
     }
 
     /// SCE_MESH.md section 10.6.4: a reply and a field notification are not in their sender's
@@ -163,8 +204,8 @@ import Testing
 
     /// SCE_MESH.md section 10.6.4: a reply its sender numbered anyway is passed as one that carries no
     /// number. It neither anchors the stream nor is held behind a gap, and its number is never waited
-    /// for, so no gap times out. Red if a numbered reply is ordered: the first one would anchor the
-    /// stream at 9 and the envelope numbered 1 would be dropped as a straggler.
+    /// for, so no gap times out. Red if a numbered reply is ordered: the first one would be held ahead
+    /// of the stream, and the gap below it would time out as lost.
     @Test func aNumberedReplyTakesNoPlaceInTheStream() throws {
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: false, ordered: true)

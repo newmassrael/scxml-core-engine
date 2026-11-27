@@ -46,7 +46,9 @@ use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
-use crate::inbound::{sequenced, AdmitError, ConfigError, Delivery, Inbound, Judged, Outcome};
+use crate::inbound::{
+    sequenced, AdmitError, ConfigError, Delivery, Inbound, Judged, Outcome, FIRST_SEQUENCE,
+};
 
 pub use crate::inbound::Standing;
 use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
@@ -521,7 +523,7 @@ impl Router {
             Peer {
                 outbound: Outbound::new(config.buffer),
                 config,
-                next_sequence: 1,
+                next_sequence: FIRST_SEQUENCE,
                 causal: None,
                 durable_out: None,
                 durable_in: None,
@@ -4111,9 +4113,10 @@ mod tests {
 
     /// The same copy reaching a responder that started again with no state
     /// for `ecu` (no checkpoint restored its window): it is the first envelope
-    /// that responder hears from `ecu`, so it anchors the ordering there
-    /// (SCE_MESH.md section 10.6.4) and is taken as new, and the requester's next envelope
-    /// follows on from it without waiting.
+    /// that responder hears from `ecu`, and it carries the stream's first
+    /// number, where a receiver with no state for a stream expects it
+    /// (SCE_MESH.md section 10.6.4), so it is taken as new, and the requester's
+    /// next envelope follows on from it without waiting.
     #[test]
     fn a_request_sent_again_to_a_responder_without_state_anchors_its_ordering() {
         let mut ecu = ordered_requester();

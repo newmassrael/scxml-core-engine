@@ -192,7 +192,7 @@ public final class Router {
     private final class BoundPeer {
         let config: PeerConfig
         let outbound: Outbound
-        var nextSequence: UInt64 = 1
+        var nextSequence: UInt64 = firstSequence
 
         /// The causal layer of a causal peer, once the host started it.
         var causal: Causal?

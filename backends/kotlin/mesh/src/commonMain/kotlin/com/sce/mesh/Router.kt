@@ -216,7 +216,7 @@ fun meshPeer(target: String): String? = com.sce.runtime.SendHelper.meshPeer(targ
 class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     private class Peer(val config: PeerConfig) {
         val outbound = Outbound(config.buffer)
-        var nextSequence: ULong = 1u
+        var nextSequence: ULong = FIRST_SEQUENCE
 
         /** The causal layer of a causal peer, once the host started it. */
         var causal: Causal? = null

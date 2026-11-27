@@ -86,6 +86,12 @@ pub(crate) fn sequenced(pattern: PatternKind, durable: bool) -> bool {
     durable || !matches!(pattern, PatternKind::RpcReply | PatternKind::FieldNotify)
 }
 
+/// The number a sender gives the first envelope of a stream it numbers, and so
+/// the number a receiver expects first of a stream it has no state for
+/// (SCE_MESH.md sections 10.6.3 and 10.6.4). One constant for both halves, so a receiver
+/// waits for exactly the number its sender starts at.
+pub(crate) const FIRST_SEQUENCE: u64 = 1;
+
 /// An envelope the engine may now see.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Received {
@@ -287,8 +293,14 @@ struct Sender {
     /// Where a rule writes the window it gives back ([`rewrite`]).
     window_next: SceOwnedList<EnvelopeIdPayload, 256>,
     /// The sequence this sender is expected to send next; `None` until its
-    /// first ordered envelope, which anchors it (a receiver that joins
-    /// mid-stream did not miss what was sent before it listened).
+    /// first ordered envelope arrives, which expects [`FIRST_SEQUENCE`]
+    /// whatever that envelope's own number is (SCE_MESH.md section 10.6.4), or, on a
+    /// durable stream, the number after the last one admitted. An envelope
+    /// ahead of it waits for the gap below it like any other: a stream whose
+    /// first envelopes arrive out of order is released in order, and one
+    /// joined after its start (a receiver whose state was lost) tells the
+    /// numbers below its first arrival lost once that gap has waited out its
+    /// timeout. No number is dropped without being released or told.
     next: Option<u64>,
     pending: SceOwnedList<OrderingSlotPayload, 256>,
     /// Where a rule writes the held slots it gives back ([`rewrite`]).
@@ -414,9 +426,10 @@ impl Inbound {
 
     /// [`Self::admit`], for a stream that is durable when `durable_from` is
     /// the sequence it is expected to send first (SCE_MESH.md section 10.11):
-    /// an ordered durable stream is anchored there rather than at the first
-    /// envelope that arrives, since what came before is still held by its
-    /// sender and will be sent again, and none of its gaps times out.
+    /// an ordered durable stream is anchored there rather than at
+    /// [`FIRST_SEQUENCE`], since what came before it was admitted already,
+    /// and none of its gaps times out, since its sender still holds what is
+    /// missing and will send it again.
     pub(crate) fn admit_from(
         &mut self,
         link: &str,
@@ -515,7 +528,9 @@ impl Inbound {
             out.released.push(Received { bytes });
             return Ok(out);
         };
-        let next = *sender.next.get_or_insert(durable_from.unwrap_or(seq));
+        let next = *sender
+            .next
+            .get_or_insert(durable_from.unwrap_or(FIRST_SEQUENCE));
         if seq < next {
             return Ok(out);
         }
@@ -1057,13 +1072,64 @@ mod tests {
         );
     }
 
+    /// SCE_MESH.md section 10.6.4: a stream the receiver has no state for is expected from
+    /// its first number, whatever arrives first, so an envelope that overtook
+    /// the first waits for it and both are released in order. Red if the
+    /// first envelope that arrives anchors the stream: 2 is then released at
+    /// once and 1 is dropped as a straggler, told to no one.
     #[test]
-    fn the_first_ordered_envelope_anchors_its_sender() {
+    fn a_fresh_stream_waits_for_its_first_number() {
         let mut inbound = core();
+        assert!(inbound
+            .admit("a", wire("a", 2, Some(2)), ORDERED, 0)
+            .unwrap()
+            .released
+            .is_empty());
         let out = inbound
-            .admit("a", wire("a", 7, Some(7)), ORDERED, 0)
+            .admit("a", wire("a", 1, Some(1)), ORDERED, 10)
             .unwrap();
+        assert_eq!(sequences(&out), vec![1, 2]);
+        assert_eq!(inbound.tick(10_000).unwrap(), Outcome::default());
+    }
+
+    /// SCE_MESH.md section 10.6.4: a stream joined after its start (a receiver whose state
+    /// was lost) waits for the numbers below its first arrival as for any gap,
+    /// and once the gap has waited out its timeout tells them lost and
+    /// releases what it held. Red if the first arrival anchors the stream: 7
+    /// is then released at once and 1 to 6 are never told.
+    #[test]
+    fn a_stream_joined_after_its_start_tells_the_numbers_before_it_lost() {
+        let mut inbound = core();
+        assert!(inbound
+            .admit("a", wire("a", 7, Some(7)), ORDERED, 0)
+            .unwrap()
+            .released
+            .is_empty());
+        assert_eq!(inbound.tick(49).unwrap(), Outcome::default());
+        let out = inbound.tick(50).unwrap();
+        assert_eq!(
+            out.signals,
+            vec![Signal::OrderingGap {
+                source: "a".to_string(),
+                lost_lo: 1,
+                lost_hi: 6
+            }]
+        );
         assert_eq!(sequences(&out), vec![7]);
+        // 6 was told lost, so a copy that comes late is a straggler.
+        assert!(inbound
+            .admit("a", wire("a", 6, Some(6)), ORDERED, 60)
+            .unwrap()
+            .released
+            .is_empty());
+        assert_eq!(
+            sequences(
+                &inbound
+                    .admit("a", wire("a", 8, Some(8)), ORDERED, 60)
+                    .unwrap()
+            ),
+            vec![8]
+        );
     }
 
     #[test]
@@ -1096,19 +1162,23 @@ mod tests {
     #[test]
     fn an_envelope_below_the_expected_sequence_is_dropped() {
         let mut inbound = core();
-        inbound
-            .admit("a", wire("a", 5, Some(5)), ORDERED, 0)
-            .unwrap();
-        assert!(inbound
-            .admit("a", wire("a", 4, Some(4)), ORDERED, 0)
-            .unwrap()
-            .released
-            .is_empty());
-        assert!(inbound
-            .admit("a", wire("a", 5, Some(5)), ORDERED, 0)
-            .unwrap()
-            .released
-            .is_empty());
+        for seq in [1, 2] {
+            assert_eq!(
+                sequences(
+                    &inbound
+                        .admit("a", wire("a", seq as u8, Some(seq)), ORDERED, 0)
+                        .unwrap()
+                ),
+                vec![seq]
+            );
+        }
+        for seq in [1, 2] {
+            assert!(inbound
+                .admit("a", wire("a", seq as u8, Some(seq)), ORDERED, 0)
+                .unwrap()
+                .released
+                .is_empty());
+        }
     }
 
     #[test]
@@ -1213,8 +1283,8 @@ mod tests {
     /// §mesh-10.6.4: a reply its sender numbered anyway is passed as one that
     /// carries no number. It neither anchors the stream nor is held behind a
     /// gap, and its number is never waited for, so no gap times out. Red if a
-    /// numbered reply is ordered: the first one would anchor the stream at 9
-    /// and the envelope numbered 1 would be dropped as a straggler.
+    /// numbered reply is ordered: the first one would be held ahead of the
+    /// stream, and the gap below it would time out as lost.
     #[test]
     fn a_numbered_reply_takes_no_place_in_the_stream() {
         let mut inbound = Inbound::new(8, 50).expect("a valid configuration");

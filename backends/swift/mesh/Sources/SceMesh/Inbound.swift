@@ -42,6 +42,12 @@ func sequenced(_ pattern: PatternKind) -> Bool {
     pattern != .rpcReply && pattern != .fieldNotify
 }
 
+/// The number a sender gives the first envelope of a stream it numbers, and so the number a receiver
+/// expects first of a stream it has no state for (SCE_MESH.md sections 10.6.3 and 10.6.4). One value for both
+/// halves, so a receiver waits for exactly the number its sender starts at. The Rust core's
+/// `FIRST_SEQUENCE`.
+let firstSequence: UInt64 = 1
+
 /// What one call released, in the order the engine must see it, and what it signalled.
 public struct Outcome {
     public var released: [Envelope] = []
@@ -82,9 +88,12 @@ func ruleFailure(_ error: any Error) -> AlgorithmError {
 private final class Sender {
     var window: [EnvelopeIdPayload] = []
 
-    /// The sequence this sender is expected to send next; nil until its first ordered envelope,
-    /// which anchors it (a receiver that joins mid-stream did not miss what was sent before it
-    /// listened).
+    /// The sequence this sender is expected to send next; nil until its first ordered envelope
+    /// arrives, which expects `firstSequence` whatever that envelope's own number is (SCE_MESH.md section 10.6.4).
+    /// An envelope ahead of it waits for the gap below it like any other: a stream whose first
+    /// envelopes arrive out of order is released in order, and one joined after its start tells the
+    /// numbers below its first arrival lost once that gap has waited out its timeout. No number is
+    /// dropped without being released or told.
     var next: UInt64?
     var pending: [OrderingSlotPayload] = []
     var held: [UInt64: Envelope] = [:]
@@ -175,8 +184,8 @@ public final class Inbound {
         if let anchored = sender.next {
             next = anchored
         } else {
-            next = sequence
-            sender.next = sequence
+            next = firstSequence
+            sender.next = firstSequence
         }
         if sequence < next {
             return out

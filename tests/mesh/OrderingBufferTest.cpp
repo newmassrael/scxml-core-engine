@@ -113,10 +113,10 @@ TEST(OrderingBufferTest, PerSenderIsolation) {
     // Two senders with independent sequence domains; each must be
     // admitted in its own stream without interference.
     EXPECT_EQ(buf.admit("a", make_env("a", 1)).size(), 1u);
-    EXPECT_EQ(buf.admit("b", make_env("b", 100)).size(), 1u);
+    EXPECT_EQ(buf.admit("b", make_env("b", 1)).size(), 1u);
     // A late arrival out of order on 'a' must not be blocked by 'b'.
     EXPECT_TRUE(buf.admit("a", make_env("a", 3)).empty());
-    EXPECT_EQ(buf.admit("b", make_env("b", 101)).size(), 1u);
+    EXPECT_EQ(buf.admit("b", make_env("b", 2)).size(), 1u);
     auto r = buf.admit("a", make_env("a", 2));
     ASSERT_EQ(r.size(), 2u);
     EXPECT_EQ(*r[0].sequence_no, 2u);
@@ -139,20 +139,41 @@ TEST(OrderingBufferTest, DuplicateSeqAfterFastForwardIgnored) {
     EXPECT_TRUE(r.empty());
 }
 
-TEST(OrderingBufferTest, InitialSeqGreaterThanOneAnchorsToFirstSeen) {
-    // Subscriber joins the stream mid-flight — sender is already at
-    // seq=7. Without the first-seen anchor, the buffer would wait
-    // gap_timeout for seq=1..6 before releasing seq=7. With the
-    // anchor, seq=7 is released immediately and subsequent seqs are
-    // strict monotonic from 8.
+// SCE_MESH.md section 10.6.4: a source not heard from before is expected
+// from its first number, whatever arrives first, so an envelope that
+// overtook the first waits for it and both are released in order. Red if
+// the first envelope that arrives anchors the stream: seq=2 is then
+// released at once and seq=1 dropped as a straggler, reported to no one.
+TEST(OrderingBufferTest, FreshStreamWaitsForItsFirstNumber) {
     OrderingBuffer buf{kTestGap};
-    auto r1 = buf.admit("a", make_env("a", 7));
-    ASSERT_EQ(r1.size(), 1u);
-    EXPECT_EQ(*r1[0].sequence_no, 7u);
-    // seq=6 is now "below next_expected_seq" and must drop.
-    auto late = buf.admit("a", make_env("a", 6));
-    EXPECT_TRUE(late.empty());
-    // seq=8 is the next expected — release immediately.
+    EXPECT_TRUE(buf.admit("a", make_env("a", 2)).empty()) << "seq=2 waits for seq=1";
+    auto r = buf.admit("a", make_env("a", 1));
+    ASSERT_EQ(r.size(), 2u);
+    EXPECT_EQ(*r[0].sequence_no, 1u);
+    EXPECT_EQ(*r[1].sequence_no, 2u);
+    auto t = buf.tick();
+    EXPECT_TRUE(t.released.empty());
+    EXPECT_TRUE(t.gaps.empty());
+}
+
+// SCE_MESH.md section 10.6.4: a stream joined after its start (a receiver
+// whose state was lost) waits for the numbers below its first arrival as
+// for any gap, and once the gap has waited out its timeout reports them
+// lost and releases what it held. Red if the first arrival anchors the
+// stream: seq=7 is then released at once and 1..6 are never reported.
+TEST(OrderingBufferTest, StreamJoinedAfterItsStartReportsTheNumbersBeforeItLost) {
+    OrderingBuffer buf(std::chrono::milliseconds(5));
+    EXPECT_TRUE(buf.admit("a", make_env("a", 7)).empty()) << "seq=7 waits for the numbers below it";
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    auto r = buf.tick();
+    ASSERT_EQ(r.gaps.size(), 1u);
+    EXPECT_EQ(r.gaps[0].source, "a");
+    EXPECT_EQ(r.gaps[0].lost_lo, 1u);
+    EXPECT_EQ(r.gaps[0].lost_hi, 6u);
+    ASSERT_EQ(r.released.size(), 1u);
+    EXPECT_EQ(*r.released[0].sequence_no, 7u);
+    // seq=6 was reported lost, so a copy that comes late is a straggler.
+    EXPECT_TRUE(buf.admit("a", make_env("a", 6)).empty());
     auto r8 = buf.admit("a", make_env("a", 8));
     ASSERT_EQ(r8.size(), 1u);
     EXPECT_EQ(*r8[0].sequence_no, 8u);

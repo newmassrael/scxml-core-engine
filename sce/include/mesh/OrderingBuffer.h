@@ -99,6 +99,11 @@ public:
     /// timeout is the only thing preventing an engine from stalling.
     using Clock = std::chrono::steady_clock;
 
+    /// The sequence number a sender stamps on the first envelope of a
+    /// stream (SCE_MESH.md section 10.6.3), and so the one this buffer
+    /// expects first from a source it has no state for (section 10.6.4).
+    static constexpr std::uint64_t kFirstSequence = 1;
+
     /// Construct with an explicit gap timeout. The buffer carries no
     /// fallback constant: the value comes from deploy.yaml
     /// `machines.<name>.ordering.gap_timeout_ms` (SCE_MESH.md §mesh-10.6.1)
@@ -121,25 +126,15 @@ public:
     /// invariant.
     ///
     /// SCE_MESH.md §mesh-10.6.4: implements the receiver-buffer admit
-    /// algorithm — anchor on the first observed sequence, dispatch and
-    /// drain contiguous buffered envelopes on the expected sequence,
-    /// buffer ahead-of-sequence arrivals, drop stragglers.
+    /// algorithm — expect `kFirstSequence` of a source not heard from
+    /// before, dispatch and drain contiguous buffered envelopes on the
+    /// expected sequence, buffer ahead-of-sequence arrivals, drop
+    /// stragglers.
     [[nodiscard]] std::vector<MeshEnvelope> admit(const std::string &source, MeshEnvelope env) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto &state = state_[source];
         const std::uint64_t seq = *env.sequence_no;
         const auto now = Clock::now();
-
-        if (!state.initialized) {
-            // Receiver just joined the stream — anchor to the first
-            // seen sequence. Without this, a receiver that subscribes
-            // mid-stream (sender already at seq=7) would otherwise
-            // wait `gap_timeout` for seq=1..6 before delivering
-            // seq=7, which is not meaningful: 1..6 were not missed,
-            // they were never destined for this receiver.
-            state.next_expected_seq = seq;
-            state.initialized = true;
-        }
 
         if (seq < state.next_expected_seq) {
             // Late arrival (either a fast-forward straggler or a
@@ -223,10 +218,16 @@ private:
         Clock::time_point arrived_at;
     };
 
+    /// A source not heard from before is expected from `kFirstSequence`,
+    /// whatever its first envelope's own number is: an envelope that
+    /// overtook the first waits for it, and a receiver that joined the
+    /// stream after its start (its state lost) holds what arrives behind
+    /// the gap below it and, once that gap has waited `gap_timeout_`,
+    /// reports it as an `OrderingGapEvent`. No sequence number is dropped
+    /// without being released or reported.
     struct PerSender {
-        std::uint64_t next_expected_seq = 0;
+        std::uint64_t next_expected_seq = kFirstSequence;
         std::map<std::uint64_t, Pending> pending;
-        bool initialized = false;
     };
 
     /// Drain any buffered envelopes whose sequence number is now

@@ -55,6 +55,15 @@ data class Delivery(val dedup: Boolean, val ordered: Boolean)
 internal fun sequenced(pattern: PatternKind): Boolean =
     pattern != PatternKind.RPC_REPLY && pattern != PatternKind.FIELD_NOTIFY
 
+/**
+ * The number a sender gives the first envelope of a stream it numbers, and so
+ * the number a receiver expects first of a stream it has no state for
+ * (SCE_MESH.md sections 10.6.3 and 10.6.4). One value for both halves, so a receiver waits
+ * for exactly the number its sender starts at. The Rust core's
+ * `FIRST_SEQUENCE`.
+ */
+internal const val FIRST_SEQUENCE: ULong = 1uL
+
 /** What one call released, in the order the engine must see it, and what it signalled. */
 class Outcome {
     val released: MutableList<Envelope> = mutableListOf()
@@ -100,8 +109,13 @@ private class Sender {
 
     /**
      * The sequence this sender is expected to send next; `null` until its
-     * first ordered envelope, which anchors it (a receiver that joins
-     * mid-stream did not miss what was sent before it listened).
+     * first ordered envelope arrives, which expects [FIRST_SEQUENCE] whatever
+     * that envelope's own number is (SCE_MESH.md section 10.6.4). An envelope ahead of it
+     * waits for the gap below it like any other: a stream whose first
+     * envelopes arrive out of order is released in order, and one joined after
+     * its start tells the numbers below its first arrival lost once that gap
+     * has waited out its timeout. No number is dropped without being released
+     * or told.
      */
     var next: ULong? = null
     var pending: List<OrderingSlotPayload> = emptyList()
@@ -190,7 +204,7 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
             out.released += envelope
             return out
         }
-        val next = sender.next ?: sequence.also { sender.next = it }
+        val next = sender.next ?: FIRST_SEQUENCE.also { sender.next = it }
         if (sequence < next) {
             return out
         }
