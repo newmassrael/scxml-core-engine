@@ -146,6 +146,18 @@ C++ LSCQ inbox are judged under the C11 memory model by the GenMC lane that alre
 session gone, slot restarted). Rust's `std` inbox rests on the standard library's channel and `Mutex`. They are
 assumed, and the assumption is named in the module (ADR 0115, D6).
 
+**As found (2026-11-27).** Rust's `BoundedInbox` stood on `heapless::mpmc`, Vyukov's bounded queue, whose take
+answers empty when the oldest cell reserved is not yet published, even when a post that reserved a later cell has
+published it and returned. The drain before an event of the owner's own then applied nothing, and the own event
+entered ahead of that post, which D1 does not allow. The inbox now holds a ring of its own
+(`backends/rust/runtime/src/inbox/ring.rs`) whose take waits at such a cell while a cell behind it is published, and
+answers empty only when every input not taken is a post still under way; a unit test parks a post between its
+reservation and its publication to hold it. The wait is for a poster to run the instructions between the two, so a
+deployment whose owner preempts a poster on its own core while another context posts behind it can stop the owner
+there: a ring taken in the order its cells were reserved keeps D1's order no other way. C11's SCQ rows have no such
+cell: a take that finds a ticket still unfilled makes it unusable for its enqueue, which takes another, and goes on
+to the next, which `inbox_take_past_a_post_under_way.c` holds under GenMC.
+
 ## Consequences
 
 - What the door promises is written once, in a module, and every implementation is judged against it by one checker.
