@@ -870,11 +870,29 @@ impl Router {
                     saved.peer
                 ))
             })?;
+            // A checkpoint is input, and a moment it holds that these clocks cannot place
+            // exactly is refused here, before anything of the peer is queued: a moment moved to
+            // the end of the clock would carry an age the age rule cannot count (`Outbound`).
+            let queued = saved
+                .queued
+                .iter()
+                .enumerate()
+                .map(|(index, queued)| {
+                    clocks
+                        .placed(queued.since)
+                        .map(|at| (queued.envelope.clone(), at))
+                        .ok_or_else(|| {
+                            CheckpointError::Malformed(format!(
+                                "the envelope {index} waiting for the peer '{}' was admitted at {} \
+                                 ms since the Unix epoch, which clocks reading {} ms cannot place",
+                                saved.peer, queued.since, clocks.wall_ms
+                            ))
+                        })
+                })
+                .collect::<Result<Vec<_>, CheckpointError>>()?;
             bound.next_sequence = saved.next_sequence;
-            for queued in &saved.queued {
-                bound
-                    .outbound
-                    .requeue(queued.envelope.clone(), clocks.to_monotonic(queued.since));
+            for (envelope, at) in queued {
+                bound.outbound.requeue(envelope, at);
             }
             match bound.durable_out.as_mut() {
                 Some(out) => {
@@ -4237,6 +4255,84 @@ mod tests {
         .unwrap();
         let reply = sent_to_ecu(hmi.durable(1, 10));
         assert_eq!(numbers(&[&reply]), alloc::vec![Some(1)]);
+    }
+
+    /// A checkpoint is input: an envelope it holds as waiting, admitted at a
+    /// moment the clocks it is restored against cannot place, is refused
+    /// where the restore takes it, naming the envelope, and nothing waits for
+    /// the peer; envelopes admitted at moments they place wait at them, one
+    /// before the monotonic clock's start included. Red if the restore
+    /// saturates the moment: under far clocks the envelope then waits with an
+    /// age the age rule cannot count a millisecond later.
+    #[test]
+    fn a_waiting_envelope_the_clocks_cannot_place_is_refused_at_the_restore() {
+        let held = |since: u64| RouterState {
+            peers: alloc::vec![PeerState {
+                peer: "hmi".to_string(),
+                next_sequence: 1,
+                queued: alloc::vec![
+                    QueuedState {
+                        envelope: alloc::vec![1],
+                        since: 0,
+                    },
+                    QueuedState {
+                        envelope: alloc::vec![2],
+                        since,
+                    },
+                ],
+                unacked: Vec::new(),
+                received: None,
+            }],
+            ..RouterState::default()
+        };
+        let restored = || {
+            let mut ecu = Router::new("ecu", 8, 50).unwrap();
+            ecu.add_peer("hmi", ORDERED);
+            ecu.enable_checkpoints();
+            ecu
+        };
+        let near = Clocks {
+            monotonic_ms: 500,
+            wall_ms: 10_000,
+        };
+
+        let mut ahead = restored();
+        let refused = ahead.restore(&held(u64::MAX), 1, true, near);
+        assert!(
+            matches!(&refused, Err(CheckpointError::Malformed(words))
+                if words.starts_with("the envelope 1 waiting for the peer 'hmi'")),
+            "{refused:?}"
+        );
+        assert_eq!(ahead.peers["hmi"].outbound.depth(), 0);
+
+        let mut far = restored();
+        let refused = far.restore(
+            &held(0),
+            1,
+            true,
+            Clocks {
+                monotonic_ms: 0,
+                wall_ms: u64::MAX,
+            },
+        );
+        assert!(
+            matches!(&refused, Err(CheckpointError::Malformed(words))
+                if words.starts_with("the envelope 0 waiting for the peer 'hmi'")),
+            "{refused:?}"
+        );
+        assert_eq!(far.peers["hmi"].outbound.depth(), 0);
+
+        let mut placed = restored();
+        assert_eq!(placed.restore(&held(9_900), 1, true, near), Ok(Vec::new()));
+        let waiting: Vec<(Vec<u8>, i64)> = placed.peers["hmi"]
+            .outbound
+            .queued()
+            .map(|(envelope, at)| (envelope.to_vec(), at))
+            .collect();
+        assert_eq!(
+            waiting,
+            alloc::vec![(alloc::vec![1], -9_500), (alloc::vec![2], 400)]
+        );
     }
 
     #[test]

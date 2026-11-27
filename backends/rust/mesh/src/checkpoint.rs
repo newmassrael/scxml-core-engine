@@ -246,14 +246,29 @@ impl Clocks {
     }
 
     /// The wall-clock moment `wall_ms` on the monotonic clock: a moment already past is as far in
-    /// the past, so what came due while the process was down is due at once.
+    /// the past, so what came due while the process was down is due at once. A moment the
+    /// monotonic clock cannot read (see [`Clocks::placed`]) is kept at the end of the clock it lies
+    /// toward.
     pub(crate) fn to_monotonic(self, wall_ms: u64) -> i64 {
-        if wall_ms >= self.wall_ms {
-            let ahead = i64::try_from(wall_ms - self.wall_ms).unwrap_or(i64::MAX);
-            self.monotonic_ms.saturating_add(ahead)
+        self.placed(wall_ms).unwrap_or(if wall_ms >= self.wall_ms {
+            i64::MAX
         } else {
-            let behind = i64::try_from(self.wall_ms - wall_ms).unwrap_or(i64::MAX);
-            self.monotonic_ms.saturating_sub(behind)
+            i64::MIN
+        })
+    }
+
+    /// The wall-clock moment `wall_ms` on the monotonic clock exactly, or `None` when the
+    /// monotonic clock cannot read it: further from the two clocks' reading than an i64 counts. A
+    /// moment placed so is as far from the monotonic reading as from the wall one, so an age
+    /// measured from it is the one it had on the wall; a moment moved to the end of the clock
+    /// would be given an age it never had.
+    pub(crate) fn placed(self, wall_ms: u64) -> Option<i64> {
+        if wall_ms >= self.wall_ms {
+            let ahead = i64::try_from(wall_ms - self.wall_ms).ok()?;
+            self.monotonic_ms.checked_add(ahead)
+        } else {
+            let behind = i64::try_from(self.wall_ms - wall_ms).ok()?;
+            self.monotonic_ms.checked_sub(behind)
         }
     }
 }
@@ -261,7 +276,8 @@ impl Clocks {
 /// Why a checkpoint could not be taken, read or restored.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckpointError {
-    /// The text is not a checkpoint this core reads; the words say where.
+    /// The text is not a checkpoint this core reads, or it holds a moment the clocks it is
+    /// restored against cannot place (`Clocks::placed`); the words say where.
     Malformed(String),
     /// Its saved state is not one the runtime reads.
     State(StateRefusal),
@@ -2388,5 +2404,35 @@ mod tests {
         assert_eq!(clocks.to_wall(100), 9_600);
         assert_eq!(clocks.to_monotonic(10_200), 700);
         assert_eq!(clocks.to_monotonic(9_600), 100);
+    }
+
+    /// A moment a checkpoint wrote is placed on the monotonic clock exactly,
+    /// one before the monotonic clock's start included, and not at all when
+    /// it lies further from the two clocks' reading than an i64 counts;
+    /// `to_monotonic` keeps such a moment at the end of the clock it lies
+    /// toward. Red if `placed` saturates instead of refusing.
+    #[test]
+    fn a_moment_is_placed_exactly_or_not_at_all() {
+        let clocks = Clocks {
+            monotonic_ms: 500,
+            wall_ms: 10_000,
+        };
+        assert_eq!(clocks.placed(10_200), Some(700));
+        assert_eq!(clocks.placed(9_600), Some(100));
+        assert_eq!(clocks.placed(0), Some(-9_500));
+        assert_eq!(clocks.placed(u64::MAX), None);
+        assert_eq!(clocks.to_monotonic(u64::MAX), i64::MAX);
+        let far = Clocks {
+            monotonic_ms: 0,
+            wall_ms: u64::MAX,
+        };
+        assert_eq!(far.placed(0), None);
+        assert_eq!(far.to_monotonic(0), i64::MIN);
+        let edge = Clocks {
+            monotonic_ms: -1,
+            wall_ms: i64::MAX as u64,
+        };
+        assert_eq!(edge.placed(0), Some(i64::MIN));
+        assert_eq!(edge.placed(i64::MAX as u64 + 1), Some(0));
     }
 }
