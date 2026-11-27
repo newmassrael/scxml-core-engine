@@ -911,6 +911,35 @@ mod tests {
         assert!(module.trim_end().ends_with("===="));
     }
 
+    /// A step names its event by the name it was taken under, which the run
+    /// trace format defines the field as (`_event.name`), however short the
+    /// descriptor that selected it. The trace module holds that name whole and
+    /// equal to the model's `currentEvent`, the event the model took, and leaves
+    /// the matching of descriptors to AppendixD's `NameMatch`: no step's name
+    /// is compared with a descriptor. Turns red if the name is cut to a prefix
+    /// or the step is held to the transitions' descriptors.
+    #[test]
+    fn a_step_names_its_event_whole_and_is_held_to_the_event_taken() {
+        let run = RunTrace::from_json(
+            r#"{"version": 1, "lane": "c11", "steps": [
+                {"kind": "start", "entered": ["s1"], "configuration": ["s1"]},
+                {"kind": "internal", "event": "request.new", "fired": [{"source": "s1", "index": 0}], "exited": ["s1"], "entered": ["s2"], "configuration": ["s2"]},
+                {"kind": "stop", "exited": ["s2"], "outcome": null}
+            ]}"#,
+        )
+        .expect("a run");
+        let module = trace_module("M", &run);
+        assert!(
+            module.contains(r#"[kind |-> "internal", event |-> << "request", "new" >>,"#),
+            "{module}"
+        );
+        assert!(
+            module.contains("       /\\ currentEvent' = s.event\n"),
+            "{module}"
+        );
+        assert!(!module.contains("NameMatch"), "{module}");
+    }
+
     #[test]
     fn a_trace_is_judged_under_the_constants_of_its_model_alone() {
         assert_eq!(

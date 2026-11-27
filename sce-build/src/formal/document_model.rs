@@ -1673,6 +1673,50 @@ mod tests {
         }
     }
 
+    /// An event is raised under a name longer than every descriptor that
+    /// matches it, and one a descriptor of the document names only as the
+    /// wildcard matches.
+    const PREFIXED: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+            datamodel="null" initial="s1">
+        <state id="s1">
+            <onentry><raise event="request.new"/></onentry>
+            <transition event="request" target="s2"/>
+        </state>
+        <state id="s2">
+            <onentry><raise event="other.thing"/></onentry>
+            <transition event="request.*" target="fail"/>
+            <transition event="*" target="pass"/>
+        </state>
+        <final id="pass"/>
+        <final id="fail"/>
+    </scxml>"#;
+
+    /// The model holds an event by its whole name, the name a run trace's step
+    /// names it by, and a transition by the descriptors that select it, which
+    /// AppendixD's `NameMatch` matches token by token as a prefix of the name,
+    /// or as the wildcard. So a run that takes `request.new` on `request` is
+    /// judged against the event taken, and no step's name is compared with a
+    /// descriptor. Turns red if a raised name is cut to the descriptor that
+    /// matches it, a descriptor's trailing `.*` is kept, or the wildcard is
+    /// written as a name.
+    #[test]
+    fn an_event_keeps_its_whole_name_and_a_descriptor_its_prefix() {
+        let text = written(PREFIXED, Options::default());
+        for expected in [
+            r#"    Transition("s1", {<<"request">>}, NoCond, <<"s2">>, NoContent),"#,
+            r#"    Transition("s2", {<<"request">>}, NoCond, <<"fail">>, NoContent),"#,
+            r#"    Transition("s2", {<<"*">>}, NoCond, <<"pass">>, NoContent),"#,
+            r#"block = "onentry s1" -> Effect(data, <<<<"request", "new">>>>, <<>>, <<>>)"#,
+            r#"block = "onentry s2" -> Effect(data, <<<<"other", "thing">>>>, <<>>, <<>>)"#,
+        ] {
+            assert!(
+                text.contains(expected),
+                "missing {expected:?} in
+{text}"
+            );
+        }
+    }
+
     /// Turns red if the W3C verdict is written unasked, not written when
     /// asked, or asked of a document with no final state it names.
     #[test]
