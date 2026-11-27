@@ -60,7 +60,7 @@ says of "the program" is what such a program must do.
 | Group commit: the checkpoints of many sessions and the acknowledgements of durable clients written in one transaction, each answered once it is durable; the server tells its host per client | `sce_rust_mesh::commit::Committer` (`Pool::committer`) over `SessionStore::write_many` (`SqliteStore`: one savepoint per write, one sync; sealed under `Sealed`); `ServerHost::deliver` called at once for different clients | ADR 0109, D15; SCE_MESH.md sections 10.11, 14.4 and 22.8 |
 | The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | An audit log: entries redacted by their schema, chained, checkpointed under the audit key, durable before the append answers, retained by segments | `AuditStore` of `sce-rust-session-store` (`SqliteStore` from layout 7, sealed under `Sealed`), `sce_rust_crypto::audit` (the chain, the checkpoints, `verify`, `retain`), given to the host by `ReferenceHost::set_audit_store` and `set_audit_streams`; `audit_stop` at the orderly stop, `audit_retain` on the host's schedule | ADR 0109, D14; docs/SCE_HOST_FEATURES.md section 15; docs/SCE_AUDIT_LOG.md |
-| The event journal's store: a session's facts appended by the write that keeps its state, in one order of positions read up to the horizon and as of an earlier moment, and what another system's adapter observed, once for each id it gave | `JournalStore` of `sce-rust-session-store` (`SqliteStore` from layout 8, sealed under `Sealed`), appended to by `Write::journal` and `JournalStore::observe`. The store contract alone: no pool writes a fact, no document declares a journal and no follower reads one yet | ADR 0114 |
+| The event journal's store: a session's facts appended by the write that keeps its state, in one order of positions read up to the horizon and as of an earlier moment, and what another system's adapter observed, once for each id it gave | `JournalStore` of `sce-rust-session-store` (`SqliteStore` from layout 8, sealed under `Sealed`), appended to by `Write::journal` and `JournalStore::observe`; a pool appends what its sessions say with the checkpoint that holds it, and a pool that follows a journal reads it (`Pool::follow_from`, `Pool::follow`), each session keeping its position in its checkpoint and the reader its mark in the store (`JournalStore::keep_read`, layout 10); the machines of a deployment keep their sessions in one store, each by its own handle (`SessionStore::machine`, `SqliteStore::of_machine`, layout 10) | ADR 0114 |
 | The key ring: the keys a host generates and derives, its issuing key of tokens and its audit keys, and the index and sealing keys of a sealed store, each kept wrapped under a key-encryption key the store never holds | `Keyring` of `sce_rust_crypto::keyring` over a `KeyStore` of `sce-rust-session-store` (`SqliteStore` from layout 2); the `KeyWrap` port and its reference adapter `KeyEncryptionKey` of `sce_rust_crypto::wrap` (`from_file`, `from_variable`); given to the host by `ReferenceHost::set_keyring` | ADR 0109, D7 and D8; docs/SCE_HOST_FEATURES.md section 13; section 3.2 |
 | The standard host features a server's machine asks for, the clock, key-value, HTTP, signing and sealing, random bytes, keyed digests, keys, credentials and the audit log among them, served by one reference host | `ReferenceHost` of `sce-rust-host-features` (`ReferenceHost::new` or `with_kv_store`, and its setters, section 1), joined to a generated machine by `sce_rust_host_features::serve` | docs/SCE_HOST_FEATURES.md; ADR 0109, D3 to D7, D13, D14 |
 | Outbound HTTP from a server: each request judged by a destination policy before anything is sent, connected to the address judged, no redirect followed, bounded in time and size | `NetworkTransport::new(policy, settings)` of `sce-rust-host-http`, the reference host's transport; `DestinationPolicy::allow_list` or `public_internet` of `sce_rust_host_features::destination` | ADR 0109, D4; docs/SCE_HOST_FEATURES.md section 5 |
@@ -79,12 +79,8 @@ limits. It is a test suite, not a guarantee of a deployment's own composition.
 
 Not built, and a server must not count on them:
 
-- The rest of ADR 0114: the pool's write that carries facts, and a follower of a journal. The build reads
-  `journal:`, `follows:` and `streams:`, `<send type="sce:journal">`, `sce:valid-time`, `sce:from="journal"` and
-  `sce-host-journal-read` (`docs/SCE_ACCEPTED_SUBSET.md` sections 2.8 and 2.15), a generated Rust machine keeps the
-  entries it says for its host (`EngineState::take_journal`), and the Rust reference host reads pages of the journal
-  store it is given (`ReferenceHost::set_journal_store`, docs/SCE_HOST_FEATURES.md section 16); no pool takes the
-  entries yet, so nothing of SCE appends to the store (above). It has no retention: a journal keeps every entry.
+- The journal's retention (ADR 0114, D8): a journal keeps every entry, and a reader's mark every position. An
+  observed stream's adapter is the application's (D6): no part of SCE calls `JournalStore::observe`.
 - A server program (ADR 0107; ADR 0109, "Not in scope"): each deployment writes its own (section 1).
 - A store on media several machines share, and an exchange routed to the process that holds its key's lease (ADR
   0109, D18): its direction is decided and it is built only once a deployment measures one active process with a
@@ -351,11 +347,13 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   one sync of the log at the commit. A write refused for its version or its fence, or one the database refuses part
   of the way through, is rolled back to its savepoint and answered alone; the others commit. Section 3.1 says when a
   batch holds more than one write, and how to measure what it buys.
-- **Its layout.** The database's `user_version` names the layout, `8` today. A file of layout `1` to `7` is brought
-  to `8` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes, values and audit
-  log kept. A file of a layout this build does not know, or one that holds tables the store did not make, is refused.
-  A later build that changes the layout makes a rollback to an earlier build refuse the file: a build before layout 8
-  refuses a file this one opened.
+- **Its layout.** The database's `user_version` names the layout, `10` today. A file of layout `1` to `9` is brought
+  to `10` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes, values, audit log,
+  journal and members kept; layout 10 keeps a session by its machine and its key (ADR 0114, D2), and the sessions of
+  an earlier file are the one machine's the empty name stands for, which `SqliteStore::open` gives a handle of. A file
+  of a layout this build does not know, or one that holds tables the store did not make, is refused. A later build
+  that changes the layout makes a rollback to an earlier build refuse the file: a build before layout 10 refuses a
+  file this one opened.
 - **The outboxes** (ADR 0109, D10). Under `receipt: durable` what a session sends a client is appended to the
   client's outbox by the same transaction that writes the session's checkpoint (`SessionStore::write`), so either
   both are durable or neither; an acknowledgement deletes what it covers, and an expiry what is older than

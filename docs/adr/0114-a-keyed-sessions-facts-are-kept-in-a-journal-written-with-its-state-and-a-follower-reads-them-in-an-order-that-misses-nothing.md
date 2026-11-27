@@ -2,7 +2,8 @@
 
 - Status: Accepted (2026-11-22, by the owner). Its model (D7) was written and checked before any code. Amended
   2026-11-22 by the owner: D1 (how an entry is typed, what its send does, deciding and applying, a variable held to the
-  facts) and D4 (a machine does not follow itself).
+  facts) and D4 (a machine does not follow itself). Amended on landing step 4 (2026-11-27): D2 (a session's row is the
+  machine and the key) and D4 (the reader's mark, the order of a key's entries, a follower that does not end).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -85,6 +86,16 @@ key. A write therefore names its machine for the journal alone (`Journal::machin
 brought to (machine, key) as the first part of step 4, in a layout of its own; until then a deployment that `follows:`
 another machine keeps the two in two stores, and step 3 refuses one that names the same store.
 
+**Amended on landing (2026-11-27, step 4).** A session's row, its lease and the notes an expiry wrote for it are kept by
+the machine and the key (`SqliteStore` layout 10), and a handle keeps the sessions of one machine
+(`SessionStore::machine`, `of_machine`), so the machines of a deployment keep their sessions in one store and an equal
+key of two of them names two sessions. The interim of step 2 is lifted: a follower and the machine it follows keep their
+sessions in the store the journal is in, and nothing refuses it. The build named no store to refuse by, and kept no such
+refusal; what it refuses still holds: a follower of a machine of another device, whose journal is in a store its process
+does not open ("Not in scope": a journal several stores share). The rows a file of an earlier layout held are the
+machine the empty name stands for, the one machine of a store that kept one. A sealing store binds a session's record to
+its machine as well as its key, so a record moved to another machine's equal key does not open.
+
 ### D3. Position, and the reader's horizon
 
 The store gives each entry a position, above every position it gave before, inside the transaction that writes it. A
@@ -110,6 +121,23 @@ entry at or below its position as a repeat and drops it. A delivery that is lost
 dropped, so each entry takes effect once. What a view computed is the checkpoint, so a view needs no other snapshot, and
 a view is rebuilt by following from position 0 under a new name. A follower that cannot keep up stops the reader at its
 inbox's bound (ADR 0109 D1) and nothing is dropped.
+
+**Amended on landing (2026-11-27, step 4).** The pool's reader (`Pool::follow`) is what D4 rests on, held to three rules
+beside the session's position. It hands a session the entries of its key in the order of their positions: one handed and
+lost (its session dropped before a durable checkpoint held it) is handed again before any later one of its key, and no
+later one is handed while the key's session is in another place than the earlier one went to, judged under the lock the
+hand-out is made under; a session that took an entry took every entry of its key below it, so its position drops only
+repeats. Its mark (`JournalStore::keep_read`, kept by the follower's name in the store) is the position through which
+every entry it read was taken in by a durable checkpoint, and a pool reads on from it when it starts: the consumer's
+committed offset, a lower bound the idempotent receiver makes safe to repeat from (Kleppmann 2017, *Designing
+Data-Intensive Applications*, chapter 11). A mark is never kept above the horizon. An entry of a key another process
+holds is that process's to hand: it is taken in once that session's stored checkpoint holds its position, and handed
+here once the lease runs out. An entry no session can be handed (no kind of entry the build described, data no value of
+its record, no key) is told to the host and passed. A follower's document declares no top-level final state
+(`mesh/codegen-journal-mismatch`): a session that ends takes its positions with it, and an entry handed again after its
+end would start its key's session anew and take effect twice. The build tells the pool the record each followed kind of
+entry is read by (`Sessions::follows`), and an entry's data is that record's deterministic CBOR read into the event's
+data, as the event of a fact the session said itself carries it.
 
 ### D5. Two times, and reading as of
 
@@ -209,8 +237,9 @@ Each step lands with a test that fails without it.
    position that later writes do not change, an origin id given twice. `Sealed` and its re-seal pass.
 3. The build: `journal:`, `follows:`, `streams:`, `sce:journal` sends, `sce:valid-time`, `sce-host-journal-read`, and
    the refusals, each with its appendix row.
-4. The pool: the write that carries entries, the follower and its positions. In the server suite: an input killed at
-   every write makes one entry or none, and a follower of many sessions that is killed repeats and misses nothing.
+4. (2026-11-27) The pool: the write that carries entries, the follower and its positions. In the server suite: an input
+   killed at every write makes one entry or none, and a follower of many sessions that is killed repeats and misses
+   nothing.
 5. The documents named in "Amends".
 
 ## Open questions

@@ -4243,3 +4243,30 @@ changes.
   refusal. A request signature covers `sce-mesh-fresh` when the request carries one; one that carries none signs the
   bytes it signed before, so the C++ client and the vector of `tests/mesh/https_signature_cross_language.json` are
   unchanged. `sce_rust_mesh::https::freshness` holds the server's `Freshness` and the header's name.
+
+## A pool writes and follows the event journal, and a session is its machine and its key (ADR 0114, step 4)
+
+Landing: the commits that add this section. Every committed tree generated from the Rust templates changes its
+template digest (`mesh_peers.rs.jinja2` writes `follows:`); a generated keyed pool that follows nothing compiles as it
+did, with `follows: Follows::NONE`.
+
+- **A session is its machine and its key.** `SessionStore::machine` names the machine a handle keeps the sessions of;
+  it answers the empty name unless the store keeps several apart, and a store or a wrapper of the consumer's own
+  compiles as it did (a wrapper forwards it, as `Sealed` does). `MemoryStore::of_machine` and
+  `SqliteStore::of_machine` give a handle of another machine on the same store; `SqliteStore`'s layout is 12, and a
+  file of layout 1 to 11 is brought to it when opened, its sessions the empty name's; a build before this one refuses
+  a file of layout 12. `Sealed` binds a session's record to a named machine as well as its key.
+- **`JournalStore` has two more methods**, `read_through` and `keep_read`, the mark of a reader kept by its name: a
+  journal store of the consumer's own implements both, held to `journal_conformance::a_reader_keeps_how_far_it_read`.
+  `conformance::a_session_is_its_machine_and_its_key` holds a session store to the machine rule, given two handles.
+- **The pool writes facts and follows journals.** `SessionMachine::take_journal` hands the pool what a run said (the
+  generated machine's `EngineState::take_journal`, which `served::ServedMachine` calls); it answers nothing by
+  default. `Pool::follow_from` gives a pool the journal store it follows, and the host calls `Pool::follow` on its
+  schedule and runs the keys it answers. A pool is refused over a handle of another machine
+  (`PoolConfigError::StoreOfAnotherMachine`), and a `match` over `PoolError` names `Unfollowed`. `peers::Sessions`
+  has `follows: Follows` (a literal adds `follows: Follows::NONE`), and `checkpoint::Checkpoint` has `followed`, the
+  position each followed journal was taken in through (a literal adds `followed: BTreeMap::new()`; the JSON member is
+  written only when it holds one). `sce-rust-mesh` now asks for the runtime's `record-cbor` feature.
+- **The build.** `mesh::topology::KeyedPool` has `follows` and `followed` (a literal adds both, empty), and
+  `forge::journal::entry_record` answers the description an entry of an imported event is read by. A machine that
+  follows a journal whose document has a top-level `<final>` is refused (`mesh/codegen-journal-mismatch`).
