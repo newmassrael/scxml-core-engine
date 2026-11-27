@@ -106,12 +106,12 @@
       "file": "backends/rust/runtime/src/inbox/drain.rs",
       "compiled_by": "backends/rust/runtime/src/inbox.rs",
       "decision": "docs/adr/0147",
-      "verified": 17,
+      "verified": 18,
       "mutants": [
         {
           "breaks": "a drain begins inside a drain, out of the order the inbox took its inputs in",
-          "from": "if self.due.is_some() {\n            return false;",
-          "to": "if false {\n            return false;"
+          "from": "if let Stage::Idle = self.stage {",
+          "to": "if true {"
         },
         {
           "breaks": "an event of the owner's own goes ahead of what the inbox held",
@@ -120,17 +120,22 @@
         },
         {
           "breaks": "what an inbox holds when a drain reaches it is left in it, at the end as at a boundary",
-          "from": "            self.due = Some(held);",
-          "to": "            self.due = Some(0);"
+          "from": "            self.stage = Stage::Taking(held);",
+          "to": "            self.stage = Stage::Taking(0);"
+        },
+        {
+          "breaks": "a drain reached again takes from a second inbox after the first, out of the order their posts linearized in",
+          "from": "if let Stage::Begun = self.stage {",
+          "to": "if true {"
         },
         {
           "breaks": "an input a drain takes is not counted, so it takes past what the inbox held",
-          "from": "self.due = Some(due - 1);",
-          "to": "self.due = Some(due);"
+          "from": "self.stage = Stage::Taking(due - 1);",
+          "to": "self.stage = Stage::Taking(due);"
         },
         {
           "breaks": "a drain that is over stays under way, so no drain after it applies anything",
-          "from": "        self.due = None;\n",
+          "from": "        self.stage = Stage::Idle;\n",
           "to": ""
         }
       ]

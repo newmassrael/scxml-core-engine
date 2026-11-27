@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! What the owner of a session decides when it drains the session's inboxes (docs/adr/0084, D2;
-//! docs/adr/0147, D4): whether a drain begins, one at a time; how many inputs it takes from each
-//! inbox it reaches, which is what that inbox held then; and whether an event of the owner's own
-//! waits for a drain or joins the queue in the place of the input being applied. The engine moves
-//! the inputs (the channel, the ring, the calls that apply them) and decides none of this. These
-//! rules are here by themselves, over counts alone, and proved by Verus to refine the owner's
-//! actions of `EngineInbox` (docs/formal/EngineInbox.tla): `Own`, with the drain before an event
-//! of the owner's own and what that drain applies taken out of the inbox, `Boundary`, `End` and
-//! `Late`.
+//! What the owner of a session decides when it drains the session's inbox (docs/adr/0084, D2;
+//! docs/adr/0147, D4): whether a drain begins, one at a time; how many inputs it takes from the
+//! inbox, which is what the inbox held when the drain reached it; and whether an event of the
+//! owner's own waits for a drain or joins the queue in the place of the input being applied. The
+//! engine moves the inputs (the channel, the ring, the calls that apply them) and decides none of
+//! this. These rules are here by themselves, over counts alone, and proved by Verus to refine the
+//! owner's actions of `EngineInbox` (docs/formal/EngineInbox.tla): `Own`, with the drain before
+//! an event of the owner's own and what that drain applies taken out of the inbox, `Boundary`,
+//! `End` and `Late`.
 //!
 //! Taken as given, and judged elsewhere: an inbox is a queue of many producers and one consumer,
 //! so what its owner takes is its oldest input and taking it removes it (the channel's and the
 //! ring's own, held to that by the inbox history of docs/adr/0147, D3, and the ring's atomics by
 //! GenMC, D5); and where a drain reads the count it is handed is where the posts behind that count
-//! linearize after it. A session with an attached inbox beside its own has two inboxes, each
-//! drained as one; the order between them is the order the drain reaches them in.
+//! linearize after it.
+//!
+//! A session has one inbox. Its engine holds the `std` profile's own or one a deployment attached,
+//! never both (`crate::inbox::SessionInbox`): two inboxes drained one after the other would apply
+//! a post to the second ahead of an earlier post to the first, though the two posts did not overlap
+//! in time, and `InboxService` promises the order the posts linearized in
+//! (docs/formal/InboxService.tla; docs/adr/0147, D1). So a drain reaches one inbox: reached again before it is
+//! over, it keeps the count of the inbox it reached first, and takes from no second one.
 //!
 //! The contracts and the proofs are read by Verus and by nothing else: without `cfg(verus_only)`
 //! this file is the plain Rust it compiles as, and needs no crate. What is proved is of this code,
@@ -26,17 +32,29 @@
 #[cfg(verus_only)]
 use vstd::prelude::*;
 
-/// Where the owner of a session stands in draining its inboxes.
+/// Where the owner of a session stands in draining its inbox.
 #[cfg_attr(verus_only, verus_verify)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Drain {
-    /// `None` when no drain is under way. Under one, how many inputs it may still take from the
-    /// inbox it reached last, and none before it reaches one.
-    due: Option<usize>,
+    /// The stage of the drain under way, or the rest between two.
+    stage: Stage,
+}
+
+/// The stages of one drain, and the rest between two. Read only through a [`Drain`], whose
+/// field holding it no code outside this module reaches.
+#[cfg_attr(verus_only, verus_verify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// No drain is under way.
+    Idle,
+    /// A drain is under way and has not reached the session's inbox yet.
+    Begun,
+    /// The drain under way reached the session's inbox, and may still take this many inputs
+    /// from it.
+    Taking(usize),
 }
 
 /// What becomes of an event of the owner's own that is about to join its external queue.
-#[cfg_attr(verus_only, verus_verify)]
 #[cfg_attr(verus_only, verus_verify)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Own {
@@ -57,7 +75,7 @@ impl Drain {
             made.stage is Idle,
     ))]
     pub(crate) const fn idle() -> Drain {
-        Drain { due: None }
+        Drain { stage: Stage::Idle }
     }
 
     /// A drain is asked for, at a macrostep boundary or where the run ends: whether it begins.
@@ -70,11 +88,11 @@ impl Drain {
             !began ==> *final(self) == *old(self),
     ))]
     pub(crate) fn begin(&mut self) -> bool {
-        if self.due.is_some() {
-            return false;
+        if let Stage::Idle = self.stage {
+            self.stage = Stage::Begun;
+            return true;
         }
-        self.due = Some(0);
-        true
+        false
     }
 
     /// The owner is about to put an event of its own on its external queue: whether a drain
@@ -94,17 +112,19 @@ impl Drain {
         }
     }
 
-    /// The drain under way reaches an inbox, which gives `held` as the count of what it holds: the
-    /// drain takes at most that many from it, so a post taken while it applies them waits for the
-    /// next drain, and posters that never stop cannot hold the owner here. Nothing, when no drain
-    /// is under way.
+    /// The drain under way reaches the session's inbox, which gives `held` as the count of what it
+    /// holds: the drain takes at most that many from it, so a post taken while it applies them
+    /// waits for the next drain, and posters that never stop cannot hold the owner here. Nothing,
+    /// when no drain is under way, and nothing when the drain reached the inbox already: a session
+    /// has one inbox, and a drain that took from a second after the first would apply its posts
+    /// out of the order they linearized in against the first's.
     #[cfg_attr(verus_only, verus_spec(
         ensures
             final(self).stage == (if old(self).stage is Begun { Stage::Taking(held) } else { old(self).stage }),
     ))]
     pub(crate) fn reach(&mut self, held: usize) {
-        if self.due.is_some() {
-            self.due = Some(held);
+        if let Stage::Begun = self.stage {
+            self.stage = Stage::Taking(held);
         }
     }
 
@@ -116,15 +136,15 @@ impl Drain {
             !take ==> *final(self) == *old(self),
     ))]
     pub(crate) fn take_another(&mut self) -> bool {
-        match self.due {
-            Some(due) => {
+        match self.stage {
+            Stage::Taking(due) => {
                 if due == 0 {
                     return false;
                 }
-                self.due = Some(due - 1);
+                self.stage = Stage::Taking(due - 1);
                 true
             }
-            None => false,
+            _ => false,
         }
     }
 
@@ -135,8 +155,8 @@ impl Drain {
             final(self).stage == (if old(self).stage is Taking { Stage::Taking(0usize) } else { old(self).stage }),
     ))]
     pub(crate) fn ran_dry(&mut self) {
-        if self.due.is_some() {
-            self.due = Some(0);
+        if let Stage::Taking(_) = self.stage {
+            self.stage = Stage::Taking(0);
         }
     }
 
@@ -146,7 +166,7 @@ impl Drain {
             final(self).stage is Idle,
     ))]
     pub(crate) fn finish(&mut self) {
-        self.due = None;
+        self.stage = Stage::Idle;
     }
 }
 
@@ -434,4 +454,77 @@ fn a_later_end_is_a_step_of_late(
     a_drain_applies_what_it_reached(drain, door, later, held, holds)
 }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Drain, Own};
+
+    /// A drain under way that reached an inbox which gave `held` as its count.
+    fn reached(held: usize) -> Drain {
+        let mut drain = Drain::idle();
+        assert!(drain.begin(), "no drain was under way, so one begins");
+        drain.reach(held);
+        drain
+    }
+
+    #[test]
+    fn a_drain_takes_what_its_inbox_held_when_reached_and_no_more() {
+        let mut drain = reached(2);
+        assert!(drain.take_another());
+        assert!(drain.take_another());
+        assert!(
+            !drain.take_another(),
+            "the drain took past what the inbox held when it reached it"
+        );
+    }
+
+    #[test]
+    fn a_drain_reached_again_keeps_the_count_of_the_inbox_it_reached_first() {
+        let mut drain = reached(1);
+        drain.reach(5);
+        assert!(drain.take_another());
+        assert!(
+            !drain.take_another(),
+            "a second reach in one drain handed it a second inbox's count"
+        );
+
+        let mut emptied = reached(1);
+        assert!(emptied.take_another());
+        emptied.reach(3);
+        assert!(
+            !emptied.take_another(),
+            "a drain that emptied the inbox it reached took from a second one"
+        );
+    }
+
+    #[test]
+    fn one_drain_at_a_time_and_an_own_event_waits_only_outside_one() {
+        let mut drain = Drain::idle();
+        assert_eq!(drain.own(), Own::AfterDrain);
+        assert!(!drain.begin(), "a drain began inside a drain");
+        assert_eq!(drain.own(), Own::InPlace);
+        drain.finish();
+        assert!(
+            drain.begin(),
+            "a drain asked for after one was over did not begin"
+        );
+    }
+
+    #[test]
+    fn a_reach_outside_a_drain_and_a_dry_inbox_take_nothing() {
+        let mut idle = Drain::idle();
+        idle.reach(4);
+        assert!(
+            !idle.take_another(),
+            "a drain that never began took an input"
+        );
+
+        let mut dry = reached(4);
+        dry.ran_dry();
+        assert!(
+            !dry.take_another(),
+            "a drain took from an inbox that ran dry"
+        );
+    }
 }
