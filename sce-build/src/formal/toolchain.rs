@@ -337,7 +337,10 @@ pub fn install_verus(pin: &VerusPin, place: &Path) -> Result<Installed, FormalEr
     if wrapper.is_file() {
         return Ok(Installed::Present(place.to_path_buf()));
     }
-    let scratch = super::WorkDir::new("verus")?;
+    let beside = place.parent().unwrap_or(place);
+    std::fs::create_dir_all(beside)
+        .map_err(|e| unavailable("Verus", format!("cannot create {}: {e}", beside.display())))?;
+    let scratch = super::WorkDir::new_in(beside, "verus")?;
     let archive = scratch.path().join("verus.zip");
     fetch("Verus", &pin.url, &archive)?;
     admit("Verus", &archive, &pin.url, &pin.sha256)?;
@@ -442,7 +445,14 @@ pub fn install_apalache(pin: &ApalachePin, place: &Path) -> Result<Installed, Fo
     if wrapper.is_file() {
         return Ok(Installed::Present(place.to_path_buf()));
     }
-    let scratch = super::WorkDir::new("apalache")?;
+    let beside = place.parent().unwrap_or(place);
+    std::fs::create_dir_all(beside).map_err(|e| {
+        unavailable(
+            "Apalache",
+            format!("cannot create {}: {e}", beside.display()),
+        )
+    })?;
+    let scratch = super::WorkDir::new_in(beside, "apalache")?;
     let archive = scratch.path().join("apalache.tgz");
     fetch("Apalache", &pin.url, &archive)?;
     admit("Apalache", &archive, &pin.url, &pin.sha256)?;

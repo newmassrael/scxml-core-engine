@@ -42,12 +42,19 @@ pub(crate) struct WorkDir {
 
 impl WorkDir {
     pub(crate) fn new(purpose: &str) -> Result<Self, FormalError> {
+        Self::new_in(&std::env::temp_dir(), purpose)
+    }
+
+    /// A fresh directory under `parent`: a tool is unpacked beside the place it
+    /// is installed in, so that moving it there is a rename on one file system
+    /// and not a copy across two, which a rename cannot do.
+    pub(crate) fn new_in(parent: &std::path::Path, purpose: &str) -> Result<Self, FormalError> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_nanos());
-        let path = std::env::temp_dir().join(format!(
+        let path = parent.join(format!(
             "sce-formal-{purpose}-{}-{nanos}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
