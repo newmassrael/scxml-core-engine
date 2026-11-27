@@ -425,6 +425,38 @@ fn a_read_of_a_journal_the_machine_does_not_follow_is_refused_on_its_attribute()
     );
 }
 
+/// A literal of a request typed by `sce:request` lands in the request record's
+/// field and takes its type, as one a `<send>` carries does: one past `int32`
+/// in the `int64` field `valid_ms` is generated in that type, and one the
+/// `uint16` field `limit` cannot hold is refused where it is written. Red if
+/// the request's literal is lowered without its field (as an `int32`, which
+/// refuses the first), or is left bare (an `i32` to rustc).
+#[test]
+fn a_literal_of_a_request_takes_the_type_of_its_field() {
+    let wide = reader(READS_ROOMS, "").replace(
+        r#"<param name="valid_ms" expr="valid"/>"#,
+        r#"<param name="valid_ms" expr="1700000000000"/>"#,
+    );
+    assert_ne!(wide, reader(READS_ROOMS, ""), "the literal is written");
+    let (ok, out, written) = run(&["generate", "-l", "rust"], true, &wide, &siblings(BOTH));
+    assert!(ok, "a literal past int32 fits the int64 field:\n{out}");
+    assert!(
+        written.contains("ScriptValue::String((1700000000000i64).to_string())"),
+        "the literal is spelled in its field's type:\n{written}"
+    );
+    let narrow = reader(READS_ROOMS, "").replace(
+        r#"<param name="limit" expr="limit"/>"#,
+        r#"<param name="limit" expr="70000"/>"#,
+    );
+    assert_ne!(narrow, reader(READS_ROOMS, ""), "the literal is written");
+    let (ok, out, _) = run(&["check"], false, &narrow, &siblings(BOTH));
+    assert!(
+        !ok && out.contains("\"code\":\"expression/literal-out-of-range\"")
+            && out.contains("70000 does not fit in uint16"),
+        "refused by the field's range:\n{out}"
+    );
+}
+
 /// Generate `doc`, a document of `work`, for Rust into `out`, and answer the
 /// path of its machine, `<stem>_sm.rs`.
 fn generate_machine(work: &Path, doc: &str, out: &Path) -> PathBuf {

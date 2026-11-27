@@ -10628,8 +10628,12 @@ pub fn lower(
                     lower_host_request_strings(info, &plain_ctx, &plain_renames, &rewrites)?;
                     let element = format!("<invoke id=\"{}\">", info.base.invoke_id);
                     let host_served = info.host_served;
+                    // A request typed by `sce:request` is the record its params
+                    // are the fields of.
+                    let requested = (!info.request_schema.is_empty())
+                        .then_some(Landing::Requested(info.request_schema.as_str()));
                     for param in &mut info.base.params {
-                        lower_wire_param(param, None, &plain_ctx, &plain_renames, &rewrites)?;
+                        lower_wire_param(param, requested, &plain_ctx, &plain_renames, &rewrites)?;
                         composed_writes_unlowered(
                             &format!("{element} <param name=\"{}\">", param.name),
                             param.native_writes,
@@ -27912,7 +27916,13 @@ fn lower_action(
             for param in &mut action.params {
                 pairs.push((
                     param.name.clone(),
-                    lower_wire_param(param, Some(action.event.as_str()), ctx, renames, rewrites)?,
+                    lower_wire_param(
+                        param,
+                        Some(Landing::Sent(action.event.as_str())),
+                        ctx,
+                        renames,
+                        rewrites,
+                    )?,
                 ));
                 // A send a host serves carries each value as text too: a composed
                 // value's is its JSON, read back from the payload it is written
@@ -29586,14 +29596,16 @@ fn literal_json(is_static_literal: bool, static_value: &str) -> TextBound {
 /// its type to [`InferredType::wire_param_slot`], or took it for an enum value
 /// held by a variable, which crosses as a string ([`StaticTarget::enum_wire_name`]),
 /// so a refusal here is a lowering this backend lacks, not a mistake in the
-/// document.
+/// document. `landing` is the record whose field of the param's name reads the
+/// value ([`Landing`]), `None` where no schema the document imports does.
 fn lower_wire_value(
     param: &crate::forge::static_datamodel::WireParam<'_>,
-    sent_as: Option<&str>,
+    landing: Option<Landing<'_>>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<Option<WireValue>, GenerateError> {
+    let sent_as = landing.and_then(Landing::event);
     let written = param.written;
     if param.is_static_literal || written.trim().is_empty() {
         return Ok(None);
@@ -29741,11 +29753,11 @@ fn lower_wire_value(
     }
     // A literal takes the type of the place it lands in (SCE_FORGE.md §3.4,
     // "Typing convention"): a param of a `<send>` of an event whose schema the
-    // document imports lands in that schema's field, so an integer or a real
-    // literal crosses in the field's type and is held to its range, as a literal
-    // of a request typed by `sce:request` is. Any other value crosses in its own
-    // type, which the judge held to the field.
-    let landed = match (ty, sent_field_type(param.name, sent_as, rewrites)) {
+    // document imports, or of an `<invoke>` whose request `sce:request` types,
+    // lands in that record's field, so an integer or a real literal crosses in
+    // the field's type and is held to its range, as the judge held it. Any other
+    // value crosses in its own type, which the judge held to the field.
+    let landed = match (ty, landing_field_type(param.name, landing, rewrites)) {
         (
             InferredType::UntypedInt,
             Some(want @ (InferredType::Int { .. } | InferredType::Float { .. })),
@@ -29969,24 +29981,50 @@ fn unproven_count(
     crate::forge::value_type::count_left_to_send(held, &field.ty)
 }
 
-/// The type of the field `name` of the schema the document imports for the
-/// event `sent_as`, as an expression types a value of it: what a literal sent
-/// under that name lands in. `None` where no schema of an event reads the
-/// value, where the schema declares no such field, and where the field holds
-/// no scalar.
-fn sent_field_type(
+/// The record a `<param>`'s value lands in as the field of the param's name:
+/// the one schema both a `<send>`'s and a typed request's params are read by.
+#[derive(Debug, Clone, Copy)]
+enum Landing<'a> {
+    /// The event a `<send>` sends the param in, whose schema the document
+    /// imports.
+    Sent(&'a str),
+    /// The record `sce:request` types an `<invoke>`'s request by, by the alias
+    /// the document imports its schema under.
+    Requested(&'a str),
+}
+
+impl<'a> Landing<'a> {
+    /// The event a `<send>` sends the param in; `None` for a request.
+    fn event(self) -> Option<&'a str> {
+        match self {
+            Self::Sent(event) => Some(event),
+            Self::Requested(_) => None,
+        }
+    }
+}
+
+/// The type of the field `name` of the record `landing` names, as an
+/// expression types a value of it: what a literal written under that name
+/// lands in. `None` where no record reads the value, where the record declares
+/// no such field, and where the field holds no scalar.
+fn landing_field_type(
     name: &str,
-    sent_as: Option<&str>,
+    landing: Option<Landing<'_>>,
     rewrites: &Rewrites<'_>,
 ) -> Option<InferredType> {
     use crate::forge::value_path::{walk, Place, Step};
     use crate::forge::value_type::ValueType;
-    let event = sent_as.filter(|event| !event.is_empty())?;
-    let alias = rewrites.event_aliases.get(event)?;
+    let alias = match landing? {
+        Landing::Sent(event) => rewrites.event_aliases.get(event)?.as_str(),
+        Landing::Requested(alias) => alias,
+    };
+    if alias.is_empty() {
+        return None;
+    }
     let field = walk(
         Some(&rewrites.type_scope),
         &Place::of(ValueType::Record {
-            alias: alias.clone(),
+            alias: alias.to_string(),
         }),
         &[Step::Field(name)],
     )?;
@@ -29999,18 +30037,20 @@ fn sent_field_type(
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in
 /// place: `Param::native_value`, and whether it can fail. Answers the most
 /// bytes of the JSON the value is written as ([`WireValue::json`]).
-/// `sent_as` is the event a `<send>` sends the param in, whose schema reads it
-/// ([`composed_wire_value`]); `None` where no schema of an event reads it.
+/// `landing` is the record whose field of the param's name reads it: the
+/// schema of the event a `<send>` sends it in ([`composed_wire_value`]), or
+/// the record `sce:request` types a request by ([`Landing`]); `None` where no
+/// schema the document imports reads it.
 fn lower_wire_param(
     param: &mut crate::model::Param,
-    sent_as: Option<&str>,
+    landing: Option<Landing<'_>>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<TextBound, GenerateError> {
     let view = crate::forge::static_datamodel::WireParam::of_param(param);
     Ok(
-        match lower_wire_value(&view, sent_as, ctx, renames, rewrites)? {
+        match lower_wire_value(&view, landing, ctx, renames, rewrites)? {
             Some(value) => {
                 param.native_value = value.text;
                 param.native_fails = value.fails;
