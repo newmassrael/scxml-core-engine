@@ -1185,6 +1185,13 @@ pub struct EngineState<P: StatePolicy> {
     /// the events the saved machine had queued.
     #[cfg(feature = "std")]
     pub(crate) restored_host_invokes: Vec<RestoredHostInvoke>,
+    /// The entries of the event journal this machine's macrosteps made and the
+    /// host has not taken yet, in the order made (docs/adr/0114, D1): each a
+    /// fact a `<send type="sce:journal">` said, kept until the host's write of
+    /// the checkpoint that holds the state that made it appends it
+    /// ([`EngineState::take_journal`]). Not part of a saved state.
+    #[cfg(feature = "std")]
+    pub(crate) journal: Vec<crate::journal::JournalEntry>,
     /// The factory of the routers of this machine's children (SCE_MESH.md,
     /// Child Sessions in Mesh): registered by the host on a machine it starts
     /// ([`Engine::register_child_mesh_routers`]), and on a child by the
@@ -1307,6 +1314,8 @@ macro_rules! engine_initial_fields {
             refused_host_invoke_completions: 0,
             #[cfg(feature = "std")]
             restored_host_invokes: Vec::new(),
+            #[cfg(feature = "std")]
+            journal: Vec::new(),
             #[cfg(feature = "std")]
             child_mesh_routers: None,
             #[cfg(feature = "std")]
@@ -4041,6 +4050,25 @@ impl<P: StatePolicy> EngineState<P> {
     // ════════════════════════════════════════
     // Event submission (matches C++ raise / raiseExternal overloads)
     // ════════════════════════════════════════
+
+    /// Keep `entry`, an entry of the event journal a `<send type="sce:journal">`
+    /// of this macrostep made, after the ones made before it (docs/adr/0114,
+    /// D1). The send raises the fact's event itself; this keeps only the entry,
+    /// which has no position until the host's write appends it.
+    #[cfg(feature = "std")]
+    pub fn record_journal_entry(&mut self, entry: crate::journal::JournalEntry) {
+        self.journal.push(entry);
+    }
+
+    /// The entries of the event journal the machine's macrosteps made since the
+    /// last take, in the order made, leaving none (docs/adr/0114, D1): what the
+    /// host's write of the checkpoint that holds the machine's state now
+    /// appends to the session's stream, so an entry exists exactly when the
+    /// state that made it does. Empty for a machine that says no fact.
+    #[cfg(feature = "std")]
+    pub fn take_journal(&mut self) -> Vec<crate::journal::JournalEntry> {
+        core::mem::take(&mut self.journal)
+    }
 
     /// §scxml-C-1: Raise an internal event (high priority).
     ///

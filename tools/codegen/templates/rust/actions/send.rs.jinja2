@@ -885,7 +885,45 @@
 {{ host_send_arm(action, model, machine_name, 'sce:mesh', dyn_event, has_params, has_dynamic_params, has_namelist) }}
     } else {
 {% endif %}
-{% if action.send_type_host_served %}
+{% if action.journal_record %}
+    // docs/adr/0114, D1: to say a fact is to take it. The entry is the record's
+    // deterministic CBOR, which the engine keeps until the host core's write of
+    // the checkpoint that holds this macrostep appends it; the event, with the
+    // entry's data, goes on the internal queue as a <raise> does (§scxml-5.10.1),
+    // so the transitions that apply the fact run in this macrostep. A record that
+    // has no encoding is the argument error: nothing is said and nothing is taken.
+{% if payload_can_fail %}
+    if !_param_failed {
+{% endif %}
+    match ::sce_rust_runtime::journal::entry(
+        "{{ action.event | escape_rust }}",
+        {{ action.journal_revision }},
+        event_data,
+        "{{ action.journal_record | escape_rust }}",
+        {% if action.journal_valid_time %}Some("{{ action.journal_valid_time | escape_rust }}"){% else %}None{% endif %},
+    ) {
+        Ok(entry) => {
+            engine.record_journal_entry(entry);
+            let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+            meta.set_event_data(event_data);
+            engine.raise(meta);
+        }
+        Err(why) => {
+            ::sce_rust_runtime::sce_log_error!("<send type=\"sce:journal\" event=\"{{ action.event | escape_rust }}\"> has no entry: {}", why);
+{% if 'error.execution' in model.events %}
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send type=\"sce:journal\"> carries a record that has no encoding, so the fact is not said");
+            err_meta.carry_send_id(send_id);
+            engine.raise(err_meta);
+{% endif %}
+{% if in_block %}
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+        }
+    }
+{% if payload_can_fail %}
+    }
+{% endif %}
+{% elif action.send_type_host_served %}
 {{ host_send_arm(action, model, machine_name, action.send_type, dyn_event, has_params, has_dynamic_params, has_namelist) }}
 {% elif not action.targetexpr and action.target == '#_internal' %}
     // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.

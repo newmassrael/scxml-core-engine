@@ -2159,6 +2159,11 @@ pub fn emit_model_artifacts(
         forge::standard_host::HostLane::Generated(language),
     )
     .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
+    // docs/adr/0114, D1 and Scope: a fact said into the session's journal is
+    // made by the host core that keeps the journal, the Rust one, and refused by
+    // name on every other lane.
+    forge::journal::refuse_unkept(model, forge::standard_host::HostLane::Generated(language))
+        .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
     // on every backend, and a backend generates one only once the profile's
     // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every

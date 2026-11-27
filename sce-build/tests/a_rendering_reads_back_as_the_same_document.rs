@@ -277,6 +277,7 @@ fn every_field_clause_survives_the_round_trip() {
         default: Some("left = right".to_string()),
         default_spelling: None,
         sensitivity: None,
+        valid_time: false,
     };
 
     let document = ForgeDocument::Transform(TransformModel {

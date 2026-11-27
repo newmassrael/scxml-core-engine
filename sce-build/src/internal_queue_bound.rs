@@ -581,8 +581,12 @@ impl<'m> Analysis<'m> {
     /// A `<send>`: its delivery, and its errors when it can fail.
     fn send(&mut self, action: &Action) -> Result<Cost, String> {
         let host_served = action.send_type_host_served;
-        let to_internal =
-            !host_served && action.targetexpr.is_empty() && action.target == "#_internal";
+        // docs/adr/0114, D1: a fact said into the session's journal is taken as
+        // `<raise>` takes its event, and a record with no encoding is the
+        // argument error, which says nothing.
+        let journal = crate::forge::journal::is_journal_send(action);
+        let to_internal = journal
+            || (!host_served && action.targetexpr.is_empty() && action.target == "#_internal");
         let to_own_external = !host_served
             && action.target.is_empty()
             && crate::scxml_self_send::sends_to_itself(action);
@@ -611,6 +615,7 @@ impl<'m> Analysis<'m> {
         // A send to this session's own queue, with nothing computed and
         // nothing that can fail, raises no error; any other can.
         let can_fail = refused
+            || journal
             || failing_values > 0
             || !(to_internal || to_own_external)
             || computed_event

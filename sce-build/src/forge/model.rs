@@ -1316,6 +1316,15 @@ pub struct ForgeField<T = SceType> {
     /// not part of the IR this export writes.
     #[serde(skip)]
     pub sensitivity: Option<Sensitivity>,
+    /// `sce:valid-time="from"` — on the one `int64` field of an event schema
+    /// that says when a fact of the schema holds from in the world, in
+    /// milliseconds since the Unix epoch (docs/adr/0114, D5): the valid time of
+    /// an entry of the event journal, which a read as of a moment orders by.
+    /// `false` for every other field, and for a field of any other kind; an
+    /// entry of a schema that marks none holds from its recorded moment. Not
+    /// part of the IR this export writes.
+    #[serde(skip)]
+    pub valid_time: bool,
 }
 
 /// How a field of an event schema is redacted where a record of the schema is
@@ -1498,6 +1507,7 @@ impl<T> ForgeField<T> {
             default: self.default.clone(),
             default_spelling: self.default_spelling.clone(),
             sensitivity: self.sensitivity,
+            valid_time: self.valid_time,
         }
     }
 

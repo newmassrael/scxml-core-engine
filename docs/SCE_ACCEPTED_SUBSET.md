@@ -5527,6 +5527,39 @@ every lane: a `<log>` of a marked value writes `sce-secret` or `sce-personal` in
 place, and a statechart of another data model that imports a marked schema is
 refused (docs/adr/0109, Open question 9; "What a `<log>` shows" above).
 
+**A fact said into the event journal: `<send type="sce:journal">`** (docs/adr/0114,
+D1 and D5). A document of a keyed pool that keeps a journal (§2.8, `journal: true`)
+says a fact with `<send type="sce:journal" event="E">`, the event of an event schema
+it imports, each field of the schema's record given by a `<param>` of the field's
+name, typed and lowered as a send of a declared schema's event to another machine is.
+The one send makes the entry, the record's deterministic CBOR (docs/adr/0101,
+section 2) with the schema's event name as its id, its revision, and the valid time
+the schema marks, and puts the event with the entry's data on the session's internal
+queue as `<raise>` does, so the transitions that apply the fact run in the same
+macrostep; `_event.origin` is empty there. The engine keeps the entries in the order
+made (`EngineState::record_journal_entry`) until the host core's write of the
+checkpoint that holds the state that made them takes them
+(`EngineState::take_journal`) and appends them, so an entry exists exactly when that
+state does; nothing of them is saved. A record that has no encoding (a list below its
+lower count, a value past a bound) is `error.execution` at the send, and nothing is
+said or taken. Refused on the send as `scxml/static-datamodel-rule`: the send under
+any data model but `sce-static`, one that names its event by `eventexpr`, one that
+writes a `target`, `targetexpr`, `typeexpr`, `delay`, `delayexpr`, `id`,
+`idlocation`, `namelist` or `<content>` (an entry's stream is the session, it is made
+by the macrostep that says it, and it is never cancelled), an event of no schema the
+document imports, a record with no deterministic CBOR, a field the schema does not
+make optional that no `<param>` gives, and a field two give. A field of an event
+schema may carry `sce:valid-time="from"`, the one value (`validation/invalid-attribute`
+for another): the `int64` field of the schema's first revision, one per schema, that
+says when the fact holds from in the world, in milliseconds since the Unix epoch; the
+mark on a field of another type, on one a later revision added, or on a second field
+is `validation/attribute-rule-violated`, and an entry of a schema that marks none holds
+from its recorded moment. Rust keeps the journal (docs/adr/0114, Scope); every other
+lane, the Interpreter's lowering among them, and a `--no-std` Rust build refuse the
+machine by name (`generate/unsupported-feature`), as does a Rust build of a document
+read without its imports, whose record the build cannot describe. A generated machine
+that says a fact uses the runtime's `record-cbor` feature.
+
 **A record signed and sealed by name: `sce:payload`** (docs/adr/0109, D9;
 docs/adr/0107, Open question 1; docs/SCE_HOST_FEATURES.md, "Signing and sealing").
 `<invoke type="sce-host-cose-sign1" sce:payload="Note">` names the imported event

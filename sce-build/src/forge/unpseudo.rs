@@ -715,6 +715,7 @@ fn parse_typed_field<T>(
         default: None,
         default_spelling: None,
         sensitivity: None,
+        valid_time: false,
     };
 
     // ⚠ The expression is taken from the LINE, not rebuilt from its

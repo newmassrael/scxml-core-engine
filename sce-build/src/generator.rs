@@ -3973,6 +3973,16 @@ fn render_rust(
                  (docs/adr/0109, D12)"
             )));
         }
+        // docs/adr/0114, D1: an entry of the event journal is made by the
+        // runtime's record codec and kept for the host core's write, neither of
+        // which a `no_std` build carries.
+        if let Some(event) = crate::forge::journal::first_journal_event(model) {
+            return Err(GenerateError::unsupported(format!(
+                "<send type=\"sce:journal\" event=\"{event}\">: a no_std Rust machine keeps no \
+                 event journal, which the host core's write of its checkpoint appends \
+                 (docs/adr/0114, D1)"
+            )));
+        }
     }
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events

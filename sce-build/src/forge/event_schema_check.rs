@@ -3100,6 +3100,7 @@ mod tests {
             default: None,
             default_spelling: None,
             sensitivity: None,
+            valid_time: false,
         }
     }
 

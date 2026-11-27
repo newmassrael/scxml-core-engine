@@ -78,15 +78,15 @@ PY
 mutation_case "the parser never marks a send type unsupported" <<'PY'
 edit("sce-build/src/parser.rs",
      """        action.send_type_unsupported = !action.send_type.is_empty()
-            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);""",
-     "        action.send_type_unsupported = false;")
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type)""",
+     "        action.send_type_unsupported = false")
 PY
 
 mutation_case "the parser marks every send unsupported" <<'PY'
 edit("sce-build/src/parser.rs",
      """        action.send_type_unsupported = !action.send_type.is_empty()
-            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);""",
-     "        action.send_type_unsupported = true;")
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type)""",
+     "        action.send_type_unsupported = true")
 PY
 
 # ── The sites stop being collected ──────────────────────────────────

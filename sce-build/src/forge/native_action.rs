@@ -2694,6 +2694,7 @@ mod tests {
                     default: None,
                     default_spelling: None,
                     sensitivity: None,
+                    valid_time: false,
                 },
                 EntryField {
                     id: "offset".to_string(),
@@ -2714,6 +2715,7 @@ mod tests {
                     default: None,
                     default_spelling: None,
                     sensitivity: None,
+                    valid_time: false,
                 },
             ],
             payload_none: false,

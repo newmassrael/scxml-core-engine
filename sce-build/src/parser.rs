@@ -3747,6 +3747,10 @@ impl SCXMLParser {
             // against the same map before the request it fills a field of is
             // judged.
             crate::forge::payload_record::resolve(&model, diag_label)?;
+            // A fact a session says into its journal is a record of an imported
+            // schema too (docs/adr/0114, D1): judged against the same map, and
+            // what its entry is made by written onto the send.
+            crate::forge::journal::resolve(&mut model, diag_label)?;
             // A mark of a schema is followed where a value's type is known, and
             // a statechart of any data model but `sce-static` has none: one that
             // imports a schema marking a field is refused here, by every route
@@ -4924,7 +4928,11 @@ impl SCXMLParser {
         // which literals are accepted, and answering it here would
         // change emitted code under cover of a refactor.
         action.send_type_unsupported = !action.send_type.is_empty()
-            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type)
+            // docs/adr/0114, D1: a fact said into the session's journal is
+            // judged where the document's imports are read, and made by the
+            // host core that keeps the journal (`crate::forge::journal`).
+            && action.send_type != crate::forge::journal::SEND_TYPE;
         // §scxml-6.2.4: a written target the SCXML Event I/O Processor cannot
         // address — `bogus` as much as `!invalid` — is the element's own
         // argument error. Decided once, here, for every backend; a

@@ -601,6 +601,14 @@
        text, `validation/attribute-rule-violated`). -->
   <xs:attribute name="sensitivity" type="xs:string"/>
 
+  <!-- docs/adr/0114, D5: the one field of an event schema that says when a
+       fact of the schema holds from in the world, the valid time of an entry
+       of the event journal: `from`. `xs:string` and not an enumeration: the
+       parser owns the refusals (another value, `validation/invalid-attribute`;
+       the mark on a field that is no `int64`, on one a later revision added,
+       or on a second field, `validation/attribute-rule-violated`). -->
+  <xs:attribute name="valid-time" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 

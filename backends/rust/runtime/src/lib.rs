@@ -534,6 +534,10 @@ pub mod invoke;
 /// and a machine's saved state. `std` only, like both of them.
 #[cfg(feature = "std")]
 pub mod json;
+// Documented by the module's own `//!`; see `payload_reading` below for why no `///` here.
+// `std` only, like the host core that writes what it holds.
+#[cfg(feature = "std")]
+pub mod journal;
 // The module's own `//!` documents it. A `///` here would be joined to that text and
 // resolved from the crate root, where `Engine` already resolves, so the explicit
 // `crate::Engine` target inside would be flagged by `redundant_explicit_links`.

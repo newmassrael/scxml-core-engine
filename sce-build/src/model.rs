@@ -781,6 +781,27 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_idlocation: String,
+    /// Codegen-internal: for a `<send type="sce:journal">` (docs/adr/0114, D1),
+    /// the description of the type of the record its event's schema declares,
+    /// which the runtime's record codec writes the entry's data by
+    /// ([`crate::forge::payload_record::describe`]); empty for every other
+    /// action. Written where the document's imports are resolved
+    /// ([`crate::forge::journal::resolve`]). Transient and outside the AST
+    /// contract, as [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub journal_record: String,
+    /// Codegen-internal: the revision of that schema, which writes the entry's
+    /// data; `None` for every other action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(skip))]
+    pub journal_revision: Option<u32>,
+    /// Codegen-internal: the field that schema marks `sce:valid-time="from"`
+    /// (docs/adr/0114, D5), which the entry's valid time is read from; empty
+    /// for a schema that marks none, and for every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub journal_valid_time: String,
     /// Codegen-internal: the `<content expr>` of a `<send>` in a `sce-static`
     /// document that names a single value — a bool, a string, an integer of at
     /// most 32 bits, a real or an enum value — as the typed value the backend's

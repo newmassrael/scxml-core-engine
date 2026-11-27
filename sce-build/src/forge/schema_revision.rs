@@ -1031,6 +1031,7 @@ mod tests {
             default: default.map(str::to_string),
             default_spelling: None,
             sensitivity: None,
+            valid_time: false,
         }
     }
 

@@ -51,6 +51,7 @@ fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
         default: None,
         default_spelling: None,
         sensitivity: None,
+        valid_time: false,
     }
 }
 

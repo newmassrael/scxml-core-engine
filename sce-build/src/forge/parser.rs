@@ -14173,6 +14173,25 @@ fn parse_event_schema(
         }
         read_field_revision(&data, &mut field, revision, label.diagnostic_label)?;
         read_sensitivity(&data, &mut field, label.diagnostic_label)?;
+        read_valid_time(&data, &mut field, label.diagnostic_label)?;
+        if field.valid_time {
+            if let Some(first) = fields.iter().find(|f| f.valid_time) {
+                return Err(located(
+                    &data,
+                    label.diagnostic_label,
+                    ValidationError::AttributeRuleViolated {
+                        element: format!("EventSchema field '{}'", field.id),
+                        attr: "sce:valid-time".into(),
+                        value: "from".into(),
+                        rule: format!(
+                            "a schema marks one field its valid time (docs/adr/0114, D5), and \
+                             the field '{}' is marked already",
+                            first.id
+                        ),
+                    },
+                ));
+            }
+        }
         fields.push(field);
     }
 
@@ -14326,6 +14345,64 @@ fn read_sensitivity(
         ));
     }
     field.sensitivity = Some(mark);
+    Ok(())
+}
+
+/// `sce:valid-time` on one field of an event schema (docs/adr/0114, D5): `from`,
+/// the one value, on an `int64` field of the schema's first revision, which says
+/// when a fact of the schema holds from in the world, in milliseconds since the
+/// Unix epoch, before it for a negative number. Any other value is refused, and
+/// so is the mark on a field of another type, or on one a later revision added,
+/// since every revision's entry is ordered by the same field.
+fn read_valid_time(
+    data: &roxmltree::Node,
+    field: &mut SchemaField,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    use crate::forge::value_type::ValueType;
+
+    let Some(text) = sce_attr(data, "valid-time") else {
+        return Ok(());
+    };
+    let element = format!("EventSchema field '{}'", field.id);
+    if text.trim() != "from" {
+        return Err(located(
+            data,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:valid-time".into(),
+                value: text.clone(),
+                allowed: vec!["from".into()],
+            },
+        ));
+    }
+    let refuse = |rule: String| {
+        Err(located(
+            data,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: element.clone(),
+                attr: "sce:valid-time".into(),
+                value: text.clone(),
+                rule,
+            },
+        ))
+    };
+    if !matches!(field.sce_type, ValueType::Scalar(SceType::Int64)) {
+        return refuse(format!(
+            "the valid time is when a fact holds from, in milliseconds since the Unix epoch, \
+             before it for a negative number: an `int64`, and this field is `{}`",
+            field.sce_type
+        ));
+    }
+    if let Some(since) = field.since {
+        return refuse(format!(
+            "the valid time orders the entries of every revision of the schema alike, so it is a \
+             field of the first revision, and revision {since} added this one"
+        ));
+    }
+    field.valid_time = true;
     Ok(())
 }
 
@@ -15849,6 +15926,10 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "unresolved",
     "unresolved-candidates",
     "unresolved-reason",
+    // The field of an event schema that says when a fact of the schema holds from
+    // in the world, the valid time of an entry of the event journal
+    // (docs/adr/0114, D5; `read_valid_time`).
+    "valid-time",
     // `sce:value="text"`: a content-line string that is an RFC 5545 TEXT.
     "value",
     "window",
@@ -16281,6 +16362,7 @@ fn parse_field_body<T>(
         // A mark is an event schema's field's alone: `parse_event_schema` reads
         // `sce:sensitivity` for its own fields (docs/adr/0109, D14).
         sensitivity: None,
+        valid_time: false,
     })
 }
 

@@ -53,6 +53,7 @@ pub mod import_source;
 pub mod import_use;
 pub mod int_ranges;
 pub mod intrinsic_registry;
+pub mod journal;
 pub mod kind_basis;
 pub mod kind_catalog;
 pub mod lift;

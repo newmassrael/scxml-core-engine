@@ -2321,6 +2321,10 @@ fn lower_parsed(
         crate::forge::standard_host::HostLane::Interpreter,
     )
     .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
+    // docs/adr/0114, Scope: the Interpreter keeps no event journal, so a fact
+    // said into one is refused by name here too.
+    crate::forge::journal::refuse_unkept(model, crate::forge::standard_host::HostLane::Interpreter)
+        .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }
@@ -4236,6 +4240,7 @@ mod tests {
             default: None,
             default_spelling: None,
             sensitivity: None,
+            valid_time: false,
         };
         assert_eq!(
             target
@@ -4327,6 +4332,7 @@ mod tests {
             default: None,
             default_spelling: None,
             sensitivity: None,
+            valid_time: false,
         };
         assert_eq!(
             target
