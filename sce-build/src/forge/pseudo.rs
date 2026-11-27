@@ -337,9 +337,9 @@ use crate::forge::model::{
     Direction, Endian, EnumModel, EventSchemaModel, FeaturesModel, FilterModel, FilterType,
     FlagDef, FoldBody, ForgeDocument, ForgeField, InterpolationMethod, InterpolationModel,
     LinkClass, LinkModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy,
-    PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState,
-    ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType,
-    TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
+    PoolSharing, PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel,
+    ProcedureState, ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage,
+    SceType, TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
     TransformModel, ValidatorModel, WorkerModel,
 };
 use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
@@ -4318,6 +4318,12 @@ fn render_buffer_pool(m: &BufferPoolModel) -> Vec<Node> {
     if let Some(c) = &m.dma_channel {
         head.push(Part::Word(Word::Dma));
         head.push(Part::Text(text(c).into_owned()));
+    }
+    // `owner` is what a document that says nothing means, so only the other
+    // value is written (docs/adr/0111 D4).
+    if m.sharing == PoolSharing::Shared {
+        head.push(Part::Word(Word::Sharing));
+        head.push(Part::Word(Word::Shared));
     }
     out.line_of(head);
     match &m.variant {

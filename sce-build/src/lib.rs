@@ -15958,13 +15958,18 @@ topology:
             body.contains("pub struct RxPoolSram1"),
             "must emit pascal-cased struct; full source:\n{body}",
         );
-        // γ: phantom-typed API replaces the α bare-`usize` surface.
+        // γ: phantom-typed API replaces the α bare-`usize` surface; docs/adr/0111
+        // D4: every transition takes `&self` and each lending names its length.
         assert!(
-            body.contains("pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>>"),
+            body.contains(
+                "pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut>, LendRefused>"
+            ),
             "must emit phantom-typed acquire surface (spec §5.E line 1233); full source:\n{body}",
         );
         assert!(
-            body.contains("pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>>"),
+            body.contains(
+                "pub fn link_arm_rx(&self, len: usize) -> Result<Slot<DmaArmedRx>, LendRefused>"
+            ),
             "must emit phantom-typed RX-arm surface (spec §5.E line 1236); full source:\n{body}",
         );
         assert!(
@@ -15972,11 +15977,13 @@ topology:
             "must emit Slot<CpuMut> impl block; full source:\n{body}",
         );
         assert!(
-            body.contains("pub fn link_arm_tx(self, pool: &mut RxPoolSram1)"),
+            body.contains(
+                "pub fn link_arm_tx(self, pool: &RxPoolSram1<impl SlotStore>, frame: usize) -> Result<SlotIndex, Self>"
+            ),
             "must emit consuming link_arm_tx on Slot<CpuMut>; full source:\n{body}",
         );
         assert!(
-            body.contains("pub fn pool_return(self, pool: &mut RxPoolSram1)"),
+            body.contains("pub fn pool_return(self, pool: &RxPoolSram1<impl SlotStore>)"),
             "must emit consuming pool_return on Slot<CpuMut> (spec §5.E line 1234); full source:\n{body}",
         );
         assert!(
@@ -15988,7 +15995,7 @@ topology:
             "must emit SlotState enum mirroring C11 tag values; full source:\n{body}",
         );
         assert!(
-            body.contains("storage: [SlotBytes([0u8; SLOT_SIZE]); SLOT_COUNT]"),
+            body.contains("[SlotBytes([0u8; SLOT_SIZE]); SLOT_COUNT]"),
             "must initialize storage as a fixed-size array of slot-sized chunks; full source:\n{body}",
         );
         assert!(
@@ -15997,8 +16004,76 @@ topology:
              on the DMA boundary rather than only the first; full source:\n{body}",
         );
         assert!(
-            body.contains("slot_states: [SlotState::Free; SLOT_COUNT]"),
-            "γ replaces the α `in_use` bitmap with a per-slot SlotState array; full source:\n{body}",
+            body.contains("book: [const { Entry::new() }; SLOT_COUNT]"),
+            "the book holds one all-zero entry per slot of the bound; full source:\n{body}",
+        );
+        // docs/adr/0111 D4: the lent pool. An empty pool is a `const fn`'s
+        // value, a pool is made over the caller's storage with a run-time count
+        // and length, a lent slot is named across an interface by a
+        // generational index, and an owner's book is plain cells.
+        for needle in [
+            "pub const fn new() -> Self",
+            "pub fn with_count(count: usize) -> Result<Self, PoolRefused>",
+            "pub fn over(bytes: &'a mut [u8], count: usize, len: usize) -> Result<Self, PoolRefused>",
+            "pub struct SlotIndex {",
+            "pub fn into_index(self, pool: &RxPoolSram1<impl SlotStore>) -> SlotIndex",
+            "pub fn reclaim<S: Held>(&self, index: SlotIndex) -> Option<Slot<S>>",
+            "pub unsafe fn take_prefixed(&self, index: SlotIndex, prefix: &[u8]) -> Result<Span, TakeRefused>",
+            "pub fn release(&self, index: SlotIndex) -> bool",
+            "pub const SHARING: &'static str = \"owner\";",
+            "type Word = core::cell::Cell<u32>;",
+        ] {
+            assert!(
+                body.contains(needle),
+                "must emit `{needle}`; full source:\n{body}",
+            );
+        }
+        assert!(
+            !body.contains("unsafe impl<St: SlotStore + Send> Sync"),
+            "an owner's pool is not shared between threads; full source:\n{body}",
+        );
+    }
+
+    /// docs/adr/0111 D4: a pool that a driver context moves too declares
+    /// `<sce:sharing>shared</sce:sharing>`, and its book is atomic words, each
+    /// transition a compare-and-swap, or the deployment's critical section on
+    /// a target with none; the pool is `Sync`.
+    #[test]
+    fn a_shared_buffer_pool_keeps_an_atomic_book() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="tx_pool_shared" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:sharing>shared</sce:sharing>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "tx_pool_shared",
+            diagnostic_label: "tx_pool_shared.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("a shared pool generates");
+        let (_, body) = &out.files[0];
+        for needle in [
+            "pub const SHARING: &'static str = \"shared\";",
+            "type Word = core::sync::atomic::AtomicU32;",
+            "#[cfg(target_has_atomic = \"32\")]",
+            "#[cfg(not(target_has_atomic = \"32\"))]",
+            "critical_section::with(|_| {",
+            "unsafe impl<St: SlotStore + Send> Sync for TxPoolShared<St> {}",
+        ] {
+            assert!(
+                body.contains(needle),
+                "a shared pool must emit `{needle}`; full source:\n{body}",
+            );
+        }
+        assert!(
+            !body.contains("type Word = core::cell::Cell<u32>;"),
+            "a shared pool keeps no plain cells; full source:\n{body}",
         );
     }
 
@@ -16017,7 +16092,13 @@ topology:
     /// none is the same shape as a gate that never fires.
     #[test]
     fn buffer_pool_rust_emitted_module_compiles_and_its_tests_pass() {
-        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+        // The owner's pool with cache maintenance, and a shared pool
+        // (docs/adr/0111 D4), whose book is atomic words: the two books the
+        // template writes.
+        let documents = [
+            (
+                "rx_pool_sram1",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
@@ -16027,88 +16108,106 @@ topology:
   <sce:alignment>16</sce:alignment>
   <sce:dma-channel>DW0_CH3</sce:dma-channel>
   <sce:cache-policy>maintain</sce:cache-policy>
-</scxml>"##;
-        let label = DocumentLabel {
-            identifier: "rx_pool_sram1",
-            diagnostic_label: "rx_pool_sram1.scxml",
-        };
-        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
-            .expect("forge rust codegen must succeed for a well-formed buffer-pool");
-        let (_, body) = &out.files[0];
+</scxml>"##,
+            ),
+            (
+                "tx_pool_shared",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="tx_pool_shared" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:sharing>shared</sce:sharing>
+</scxml>"##,
+            ),
+        ];
+        for (name, scxml) in documents {
+            let label = DocumentLabel {
+                identifier: name,
+                diagnostic_label: "generated_pool.scxml",
+            };
+            let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+                .expect("forge rust codegen must succeed for a well-formed buffer-pool");
+            let (_, body) = &out.files[0];
 
-        let tmp = std::env::temp_dir().join(format!(
-            "sce-build-buffer-pool-gamma-rustc-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).expect("create tmp dir");
-        let src = tmp.join("rx_pool_sram1.rs");
-        // `cache-policy: maintain` declares the two cache-maintenance
-        // externs, so a *linked* binary needs them to resolve. On target
-        // they come from `sce_intrinsics_runtime`; here host no-ops are
-        // enough, the same stubs the C11 driver test provides.
-        // Appended rather than emitted: the
-        // generated module must not carry host stubs to target.
-        // In a submodule: the generated file already declares these
-        // names in its `extern` block, and it is the exported C symbol
-        // that resolves the link, not the Rust path.
-        let harness_src = format!(
-            "{body}\n\
-             mod host_cache_stubs {{\n\
-             #[no_mangle]\n\
-             pub extern \"C\" fn sce_dcache_clean_by_addr(_s: *const core::ffi::c_void, _n: usize) {{}}\n\
-             #[no_mangle]\n\
-             pub extern \"C\" fn sce_dcache_invalidate_by_addr(_s: *mut core::ffi::c_void, _n: usize) {{}}\n\
-             }}\n"
-        );
-        std::fs::write(&src, &harness_src).expect("write generated source");
+            let tmp = std::env::temp_dir().join(format!(
+                "sce-build-buffer-pool-gamma-rustc-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).expect("create tmp dir");
+            let src = tmp.join(format!("{name}.rs"));
+            // `cache-policy: maintain` declares the two cache-maintenance
+            // externs, so a *linked* binary needs them to resolve. On target
+            // they come from `sce_intrinsics_runtime`; here host no-ops are
+            // enough, the same stubs the C11 driver test provides.
+            // Appended rather than emitted: the
+            // generated module must not carry host stubs to target.
+            // In a submodule: the generated file already declares these
+            // names in its `extern` block, and it is the exported C symbol
+            // that resolves the link, not the Rust path.
+            let harness_src = format!(
+                "{body}\n\
+                 mod host_cache_stubs {{\n\
+                 #[no_mangle]\n\
+                 pub extern \"C\" fn sce_dcache_clean_by_addr(_s: *const core::ffi::c_void, _n: usize) {{}}\n\
+                 #[no_mangle]\n\
+                 pub extern \"C\" fn sce_dcache_invalidate_by_addr(_s: *mut core::ffi::c_void, _n: usize) {{}}\n\
+                 }}\n"
+            );
+            std::fs::write(&src, &harness_src).expect("write generated source");
 
-        let harness = tmp.join("rx_pool_sram1_tests");
-        let compiled = std::process::Command::new("rustc")
-            .arg("--edition=2021")
-            .arg("--test")
-            .arg("-o")
-            .arg(&harness)
-            .arg(&src)
-            .arg("--cap-lints")
-            .arg("allow")
-            .output()
-            .expect("rustc must be on PATH for the build environment");
+            let harness = tmp.join(format!("{name}_tests"));
+            let compiled = std::process::Command::new("rustc")
+                .arg("--edition=2021")
+                .arg("--test")
+                .arg("-o")
+                .arg(&harness)
+                .arg(&src)
+                .arg("--cap-lints")
+                .arg("allow")
+                .output()
+                .expect("rustc must be on PATH for the build environment");
 
-        assert!(
-            compiled.status.success(),
-            "generated Rust source must compile under rustc.\nstdout:\n{}\nstderr:\n{}\n--- source ---\n{}",
-            String::from_utf8_lossy(&compiled.stdout),
-            String::from_utf8_lossy(&compiled.stderr),
-            body,
-        );
+            assert!(
+                compiled.status.success(),
+                "{name}: generated Rust source must compile under rustc.\nstdout:\n{}\nstderr:\n{}\n--- source ---\n{}",
+                String::from_utf8_lossy(&compiled.stdout),
+                String::from_utf8_lossy(&compiled.stderr),
+                body,
+            );
 
-        let ran = std::process::Command::new(&harness)
-            .output()
-            .expect("the compiled test harness must be runnable");
-        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&ran.stderr).into_owned();
-        let _ = std::fs::remove_dir_all(&tmp);
+            let ran = std::process::Command::new(&harness)
+                .output()
+                .expect("the compiled test harness must be runnable");
+            let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&ran.stderr).into_owned();
+            let _ = std::fs::remove_dir_all(&tmp);
 
-        assert!(
-            ran.status.success(),
-            "the generated module's own tests must pass.\nstdout:\n{stdout}\nstderr:\n{stderr}\n--- source ---\n{body}",
-        );
-        // A harness that compiled but collected nothing would report
-        // success with `0 passed`, which is the silent shape this test
-        // exists to rule out. The lower bound is counted off the
-        // template's current `mod generated_tests`.
-        let ran_count = stdout
-            .lines()
-            .find_map(|l| l.strip_prefix("test result: ok. "))
-            .and_then(|rest| rest.split(' ').next())
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or_else(|| panic!("could not read the test count from:\n{stdout}"));
-        assert!(
-            ran_count >= 16,
-            "only {ran_count} generated tests ran; the emitted `mod generated_tests` \
-             has lost cases or stopped being collected.\n{stdout}",
-        );
+            assert!(
+                ran.status.success(),
+                "{name}: the generated module's own tests must pass.\nstdout:\n{stdout}\nstderr:\n{stderr}\n--- source ---\n{body}",
+            );
+            // A harness that compiled but collected nothing would report
+            // success with `0 passed`, which is the silent shape this test
+            // exists to rule out. The lower bound is counted off the
+            // template's current `mod generated_tests`.
+            let ran_count = stdout
+                .lines()
+                .find_map(|l| l.strip_prefix("test result: ok. "))
+                .and_then(|rest| rest.split(' ').next())
+                .and_then(|n| n.parse::<usize>().ok())
+                .unwrap_or_else(|| panic!("could not read the test count from:\n{stdout}"));
+            assert!(
+                ran_count >= 30,
+                "{name}: only {ran_count} generated tests ran; the emitted `mod generated_tests` \
+                 has lost cases or stopped being collected.\n{stdout}",
+            );
+        }
     }
 
     /// The emitted Rust buffer pool is total outside `#[cfg(test)]`
@@ -16225,6 +16324,20 @@ topology:
   <sce:alignment>16</sce:alignment>
   <sce:dma-channel>DW0_CH3</sce:dma-channel>
   <sce:cache-policy>maintain</sce:cache-policy>",
+                ),
+            ),
+            // docs/adr/0111 D4: a shared pool's book is atomic words, a
+            // different body for every transition.
+            (
+                "pool_shared",
+                document(
+                    "pool_shared",
+                    "  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>maintain</sce:cache-policy>
+  <sce:sharing>shared</sce:sharing>",
                 ),
             ),
         ];
@@ -16528,6 +16641,30 @@ topology:
         assert!(
             matches!(diags[0].code, DiagnosticCode::XmlSchemaValidation),
             "must be XmlSchemaValidation for bogus cache-policy (XSD-pre-empted); got {:?}",
+            diags[0].code,
+        );
+
+        // Bogus <sce:sharing> (docs/adr/0111 D4) — XSD-pre-empted via the
+        // poolSharingType enumeration, as the cache policy is; the parser's
+        // own `InvalidAttribute` is the schema-skipped fallback.
+        let bad_sharing = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>128</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:sharing>everyone</sce:sharing>
+</scxml>"##;
+        let err = compile_forge_from_string(bad_sharing, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool with an unknown sharing must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::XmlSchemaValidation),
+            "must be XmlSchemaValidation for an unknown sharing (XSD-pre-empted); got {:?}",
             diags[0].code,
         );
 

@@ -155,20 +155,20 @@ fn a_pump_injects_every_row_that_holds_and_hands_on_what_the_framer_refuses() {
 fn a_send_through_the_pool_is_the_frame_the_next_pump_reads() {
     let wire = Rc::new(RefCell::new(Wire::default()));
     let mut link = LinkEventsPooled::new(Loopback::on(&wire));
-    let mut pool = LinkEventsTxPool::new();
+    let pool = LinkEventsTxPool::new();
 
     let hello = LinkEventsPooledOutbound::ScoutFrameSend(LinkEventsFrame {
         msg_id: 2,
         payload_len: 0x0102,
     });
     assert_eq!(hello.name(), "scout.frame.send");
-    link.send(&mut pool, &hello)
+    link.send(&pool, &hello)
         .expect("the framer encodes the hello");
     let query = LinkEventsPooledOutbound::ScoutQuerySend(LinkEventsQuery {
         query_id: 9,
         window: 4,
     });
-    link.send(&mut pool, &query)
+    link.send(&pool, &query)
         .expect("the query codec encodes the query");
 
     assert_eq!(

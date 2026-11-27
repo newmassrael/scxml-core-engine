@@ -31202,6 +31202,10 @@ fn render_buffer_pool_rust(
         dma_channel => m.dma_channel.clone().unwrap_or_default(),
         has_dma_channel => m.dma_channel.is_some(),
         cache_policy => m.cache_policy.to_string(),
+        // `<sce:sharing>` (docs/adr/0111 D4): what the book's words are, plain
+        // cells for `owner` and atomics for `shared`.
+        sharing => m.sharing.as_str(),
+        shared => m.sharing == crate::forge::model::PoolSharing::Shared,
         // C5 cache-maintenance: template emits cache_clean +
         // (conditionally) cache_invalidate when cache_policy=maintain.
         cache_maintain => cache_maintain,

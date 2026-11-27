@@ -3895,6 +3895,14 @@
               "description": "`<sce:section>` — SRAM region name. Validated against deploy.yaml `memory.sram_regions` via [`compile_forge_with_deploy`].",
               "type": "string"
             },
+            "sharing": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/PoolSharing"
+                }
+              ],
+              "description": "`<sce:sharing>` — who moves the pool's slots: `owner` (the default, when the element is absent) or `shared` (docs/adr/0111 D4)."
+            },
             "slot_count": {
               "description": "`<sce:slot-count>` — slot count in the pool. Parser rejects 0.",
               "format": "uint32",
@@ -3933,6 +3941,7 @@
             "kind",
             "name",
             "section",
+            "sharing",
             "slot_count",
             "slot_size",
             "variant"
@@ -6612,6 +6621,25 @@
         "id"
       ],
       "type": "object"
+    },
+    "PoolSharing": {
+      "description": "`<sce:sharing>` on `<scxml sce:kind=\"buffer-pool\">`: who moves the pool's slots, which decides what its state book is made of (docs/adr/0111 D4).",
+      "oneOf": [
+        {
+          "description": "Whoever holds the drive uses the pool alone: the book is plain cells, a transition is a load and a store, and the pool is not shared between threads.",
+          "enum": [
+            "owner"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The drive and a driver context (another thread, an interrupt) both move slots: each transition is a compare-and-swap from the state it leaves, or runs inside the deployment's critical section on a target with none.",
+          "enum": [
+            "shared"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "Position": {
       "description": "Where inside its source document a requirement or node sits.\n\n⭐ A variant, because this half of a coordinate is SOURCE-SHAPED and the landed design had it nailed to one shape. RFC §5.2g measured the corpus a real consumer holds — 146 PDF, 3 xlsx, 1 docx, 1 arxml — and `page: Option<u32>` can only address the first of those. A spreadsheet requirement is at a row, a structured document's at a path; a field named `page` makes every non-paginated source lose the coordinate that makes a review report checkable at all.\n\n⚠ The DIVISION a requirement belongs to is deliberately NOT part of this type. That is `section`, it stays a plain key beside this, and the reason is load-bearing: `section` is what [`crate::requirement_manifest::Classification::section_counts`] groups by, and RFC §5.2a calls those per-division counts its only handle on omission. Folding the division into a source-shaped variant would mean each shape had to answer \"which group\" its own way — and for a path-addressed source there is no honest answer without measuring one, which nobody has. Keeping it out means every source shape answers the grouping question the same way, by naming a division the manifest already declares.\n\n⚠⚠ Closed, like the extraction block's fields and for the same reason: an open string here would let a source's identity in through the data, where the executable-code gate cannot see it.",

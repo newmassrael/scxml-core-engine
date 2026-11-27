@@ -6668,6 +6668,43 @@ impl std::fmt::Display for CachePolicy {
     }
 }
 
+/// `<sce:sharing>` on `<scxml sce:kind="buffer-pool">`: who moves the pool's
+/// slots, which decides what its state book is made of (docs/adr/0111 D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum PoolSharing {
+    /// Whoever holds the drive uses the pool alone: the book is plain cells,
+    /// a transition is a load and a store, and the pool is not shared
+    /// between threads.
+    Owner,
+    /// The drive and a driver context (another thread, an interrupt) both
+    /// move slots: each transition is a compare-and-swap from the state it
+    /// leaves, or runs inside the deployment's critical section on a target
+    /// with none.
+    Shared,
+}
+
+impl PoolSharing {
+    pub const ALL_NAMES: &'static [&'static str] = &["owner", "shared"];
+
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "owner" => Some(Self::Owner),
+            "shared" => Some(Self::Shared),
+            _ => None,
+        }
+    }
+
+    /// The body text `<sce:sharing>` spells this with.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Shared => "shared",
+        }
+    }
+}
+
 /// `<sce:variant>` on `<scxml sce:kind="buffer-pool">` — RFC §synth-5-M lines
 /// 2676-2698. The reassembly variant of §synth-5-E carries three additional
 /// fields (`max-fragments-per-message`, `reassembly-timeout-ms`,
@@ -6788,6 +6825,9 @@ pub struct BufferPoolModel {
     pub dma_channel: Option<String>,
     /// `<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`.
     pub cache_policy: CachePolicy,
+    /// `<sce:sharing>` — who moves the pool's slots: `owner` (the
+    /// default, when the element is absent) or `shared` (docs/adr/0111 D4).
+    pub sharing: PoolSharing,
     /// `<sce:variant>` discriminator (RFC §synth-5-M line 2682). The
     /// `Default` arm covers the absence of `<sce:variant>` —
     /// regular RX/TX/stage pool behavior. `Reassembly` carries the
