@@ -1,0 +1,684 @@
+{
+  "actions": [
+    {
+      "name": "start"
+    },
+    {
+      "name": "eventless"
+    },
+    {
+      "name": "internal"
+    },
+    {
+      "name": "external"
+    },
+    {
+      "name": "stop"
+    },
+    {
+      "name": "due"
+    },
+    {
+      "name": "arrive"
+    }
+  ],
+  "automata": [
+    {
+      "edges": [
+        {
+          "action": "start",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 1
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 0
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "internal",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 2
+                },
+                {
+                  "ref": "data_Var1",
+                  "value": {
+                    "left": "data_Var1",
+                    "op": "+",
+                    "right": 1
+                  }
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 1
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "due",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 3
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 1
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "internal",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 4
+                },
+                {
+                  "ref": "data_Var1",
+                  "value": {
+                    "left": "data_Var1",
+                    "op": "+",
+                    "right": 1
+                  }
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 2
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "due",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 5
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 2
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "internal",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 6
+                },
+                {
+                  "ref": "data_Var1",
+                  "value": {
+                    "left": "data_Var1",
+                    "op": "+",
+                    "right": 1
+                  }
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 3
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 7
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 4
+              },
+              "op": "\u2227",
+              "right": {
+                "left": "data_Var1",
+                "op": "=",
+                "right": 2
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 8
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 4
+              },
+              "op": "\u2227",
+              "right": {
+                "exp": {
+                  "left": "data_Var1",
+                  "op": "=",
+                  "right": 2
+                },
+                "op": "\u00ac"
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "due",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 9
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 4
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "internal",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 10
+                },
+                {
+                  "ref": "data_Var1",
+                  "value": {
+                    "left": "data_Var1",
+                    "op": "+",
+                    "right": 1
+                  }
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 5
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "internal",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 10
+                },
+                {
+                  "ref": "data_Var1",
+                  "value": {
+                    "left": "data_Var1",
+                    "op": "+",
+                    "right": 1
+                  }
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 6
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "stop",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 11
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 7
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "stop",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 12
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 8
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 13
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 9
+              },
+              "op": "\u2227",
+              "right": {
+                "left": "data_Var1",
+                "op": "=",
+                "right": 2
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 14
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 9
+              },
+              "op": "\u2227",
+              "right": {
+                "exp": {
+                  "left": "data_Var1",
+                  "op": "=",
+                  "right": 2
+                },
+                "op": "\u00ac"
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 13
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 10
+              },
+              "op": "\u2227",
+              "right": {
+                "left": "data_Var1",
+                "op": "=",
+                "right": 2
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "eventless",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 14
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": {
+                "left": "control",
+                "op": "=",
+                "right": 10
+              },
+              "op": "\u2227",
+              "right": {
+                "exp": {
+                  "left": "data_Var1",
+                  "op": "=",
+                  "right": 2
+                },
+                "op": "\u00ac"
+              }
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "stop",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 15
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 13
+            }
+          },
+          "location": "run"
+        },
+        {
+          "action": "stop",
+          "destinations": [
+            {
+              "assignments": [
+                {
+                  "ref": "control",
+                  "value": 16
+                }
+              ],
+              "location": "run",
+              "probability": {
+                "exp": 1
+              }
+            }
+          ],
+          "guard": {
+            "exp": {
+              "left": "control",
+              "op": "=",
+              "right": 14
+            }
+          },
+          "location": "run"
+        }
+      ],
+      "initial-locations": [
+        "run"
+      ],
+      "locations": [
+        {
+          "name": "run"
+        }
+      ],
+      "name": "machine"
+    }
+  ],
+  "jani-version": 1,
+  "name": "W3CTest403c",
+  "properties": [],
+  "system": {
+    "elements": [
+      {
+        "automaton": "machine"
+      }
+    ],
+    "syncs": [
+      {
+        "result": "start",
+        "synchronise": [
+          "start"
+        ]
+      },
+      {
+        "result": "eventless",
+        "synchronise": [
+          "eventless"
+        ]
+      },
+      {
+        "result": "internal",
+        "synchronise": [
+          "internal"
+        ]
+      },
+      {
+        "result": "external",
+        "synchronise": [
+          "external"
+        ]
+      },
+      {
+        "result": "stop",
+        "synchronise": [
+          "stop"
+        ]
+      },
+      {
+        "result": "due",
+        "synchronise": [
+          "due"
+        ]
+      },
+      {
+        "result": "arrive",
+        "synchronise": [
+          "arrive"
+        ]
+      }
+    ]
+  },
+  "type": "mdp",
+  "variables": [
+    {
+      "initial-value": 0,
+      "name": "control",
+      "type": {
+        "base": "int",
+        "kind": "bounded",
+        "lower-bound": 0,
+        "upper-bound": 16
+      }
+    },
+    {
+      "initial-value": 0,
+      "name": "data_Var1",
+      "type": "int"
+    }
+  ]
+}
