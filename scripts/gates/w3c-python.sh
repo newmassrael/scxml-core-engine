@@ -112,10 +112,11 @@ status=0
 # the Rust one, over components written by hand, which no document drives.
 #
 # `trace_port/` is the twelfth: it holds the runtime's trace port to the run
-# trace format (docs/adr/0115, D4 and D8) over no document, and the runs of the
+# trace format (docs/adr/0115, D4 and D8) over no document, the runs of the
 # W3C documents `docs/formal` has models of, which it drives from the machines
 # the generation above writes, to the recorded runs `docs/formal/traces.json`
-# declares. It is no fixture stem either.
+# declares, and the replay of each scenario of the properties judge's turnstile
+# to its recorded run beside it (D15). It is no fixture stem either.
 #
 # The inbox's recorded runs (docs/adr/0147, D3) write their histories into the
 # directory SCE_INBOX_HISTORY_DIR names, emptied first, and the command every

@@ -49,7 +49,13 @@
               # The recorded runs of the Python lane and the Rust lane's they
               # are held to, which `backends/python/tests/trace_port/` reads
               # at run time (docs/adr/0115, D4 and D8).
-              "docs/formal/traces/**"],
+              "docs/formal/traces/**",
+              # The turnstile of the properties judge's fixture, which the
+              # gate's regeneration writes the module of, and its scenarios
+              # with the Python lane's recorded runs of them, which the same
+              # directory replays and holds its runs to at run time
+              # (docs/adr/0115, D15).
+              "sce-build/tests/fixtures/formal_properties/**"],
     "deps": ["codegen-build"],
     "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                "every push.",
