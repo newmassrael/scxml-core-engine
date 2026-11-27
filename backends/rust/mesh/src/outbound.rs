@@ -120,13 +120,27 @@ impl Outbound {
     /// what waited longer than the bound. Idempotent — a ready target's
     /// queue is empty, since admit only queues behind a queue or while not
     /// ready.
+    ///
+    /// All or nothing: every envelope that waits is judged before any leaves,
+    /// so a rule that refuses one (an admission time a corrupt checkpoint put
+    /// back, whose age does not fit an i64) leaves the target as it was, not
+    /// ready, with every envelope still waiting in the order it was admitted,
+    /// and nothing to send or tell. Taking each from the queue as it was
+    /// judged would lose the ones taken before the refusal with the release
+    /// the error discards.
     pub fn mark_ready(&mut self, now_ms: i64) -> Result<Drained, AlgorithmError> {
-        self.gate.ready();
-        let mut out = Drained::default();
         // Without a buffer nothing was queued, so there is nothing to release.
         let max_age_ms = self.buffer.map_or(0, |b| b.max_age_ms);
-        while let Some(queued) = self.queue.pop_front() {
-            if outbound_stale(queued.enqueued_at_ms, now_ms, max_age_ms)? {
+        let stale = self
+            .queue
+            .iter()
+            .map(|queued| outbound_stale(queued.enqueued_at_ms, now_ms, max_age_ms))
+            .collect::<Result<Vec<bool>, AlgorithmError>>()?;
+        self.gate.ready();
+        let mut out = Drained::default();
+        for (queued, stale) in self.queue.drain(..).zip(stale) {
+            if stale {
+                // The rule subtracted the same two times without overflow.
                 out.signals.push(Signal::OutboundStaleDrop {
                     age_ms: now_ms - queued.enqueued_at_ms,
                     max_age_ms,
@@ -316,6 +330,33 @@ mod tests {
                 max_age_ms: 50
             }]
         );
+    }
+
+    /// A release a rule refuses part way loses nothing: the envelope a
+    /// corrupt checkpoint put back with an admission time whose age overflows
+    /// an i64 is refused after the one ahead of it was judged fit to send,
+    /// and every envelope still waits, in order, with its admission time,
+    /// behind which a new one queues; the target is not taken as ready. Red
+    /// if the queue is drained while the verdicts are asked.
+    #[test]
+    fn a_release_a_rule_refuses_part_way_loses_and_reorders_nothing() {
+        let mut out = buffered(4, 1_000);
+        assert_eq!(out.admit(bytes(1), 90), Admitted::Queued);
+        out.requeue(bytes(2), i64::MIN);
+        out.requeue(bytes(3), 95);
+        assert_eq!(out.mark_ready(100), Err(AlgorithmError::Overflow));
+        assert!(!out.is_ready(), "a refused release does not take readiness");
+        assert_eq!(out.depth(), 3);
+        let waiting: Vec<(Vec<u8>, i64)> = out
+            .queued()
+            .map(|(envelope, since)| (envelope.to_vec(), since))
+            .collect();
+        assert_eq!(
+            waiting,
+            vec![(bytes(1), 90), (bytes(2), i64::MIN), (bytes(3), 95)]
+        );
+        assert_eq!(out.admit(bytes(4), 100), Admitted::Queued);
+        assert_eq!(out.depth(), 4);
     }
 
     #[test]

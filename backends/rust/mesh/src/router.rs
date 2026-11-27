@@ -1312,7 +1312,9 @@ impl Router {
         self.requests.cancel(invoke_id, token);
     }
 
-    /// `peer`'s transport became ready: release what waited for it.
+    /// `peer`'s transport became ready: release what waited for it. A rule
+    /// that refuses an envelope that waits leaves the peer as it was, every
+    /// envelope still waiting in order (`Outbound::mark_ready`).
     pub fn peer_ready(&mut self, peer: &str, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
         self.bind(peer)?;
         let bound = self
