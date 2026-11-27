@@ -87,6 +87,7 @@ from .inbox import (
     InboxHostInvokeEnding,
     InboxInput,
     InboxMeshDelivery,
+    InboxPort,
     TreeInboxes,
 )
 from . import io_processors
@@ -367,6 +368,10 @@ class Engine(Generic[S, E]):
         # Set while `_drain_inbox` applies what it took, so the external events
         # those inputs queue do not drain the inbox again (`_drain_inbox`).
         self._draining_inbox: bool = False
+        # docs/adr/0147, D3: the inbox port a test set (`set_inbox_port`), told
+        # each event the owner puts on the external queue and the close of the
+        # inbox; None unless one was set.
+        self._inbox_port: Optional[InboxPort] = None
         self._is_running: bool = False
         # §scxml-D-enterStates — the top-level `<final>` the run ended in, set
         # on entering it. See `terminal_state`.
@@ -1278,8 +1283,16 @@ class Engine(Generic[S, E]):
         if not self._is_running:
             # Refused rather than queued, so the drain in
             # `_run_main_event_loop` never sees it — which is why the count is
-            # taken here as well as there. See `unseen_external_events`.
+            # taken here as well as there. See `unseen_external_events`. An
+            # input the closing inbox held is told to the inbox port as entering
+            # there (`InboxPort.enqueue_begins`).
+            port = self._inbox_port if self._draining_inbox else None
+            counted = metadata or EventMetadata()
+            if port is not None:
+                port.enqueue_begins(event, counted, True)
             self._note_unseen_event(event)
+            if port is not None:
+                port.enqueue_ends(event, counted, True)
             return False
         self._enqueue_external(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
@@ -1306,9 +1319,17 @@ class Engine(Generic[S, E]):
         `raise_internal` does not come here, and does not drain: the internal
         queue is the running macrostep's own, and arrival order is a property
         of the external queue."""
+        # docs/adr/0147, D3: an event of the owner's own is told before the drain
+        # its enqueue begins with; an input the drain applies, inside it.
+        port = self._inbox_port
+        posted = self._draining_inbox
+        if port is not None:
+            port.enqueue_begins(queued.event, queued.metadata, posted)
         if self._is_running:
             self._drain_inbox()
         self._external_queue.append(queued)
+        if port is not None:
+            port.enqueue_ends(queued.event, queued.metadata, posted)
 
     # ── The inbox (ARCHITECTURE.md "Engine Threading") ─────────────
 
@@ -1362,7 +1383,14 @@ class Engine(Generic[S, E]):
         """Refuse every post from now on, apply what the inbox still holds as a
         direct call would be applied now, and leave the tree's directory, so a
         post that names this session is refused from then on."""
+        # Told only when the inbox was open: a run that ended at a top-level
+        # `<final>` and is then stopped closes it once.
+        port = self._inbox_port if self._inbox_state.is_open() else None
+        if port is not None:
+            port.close_begins()
         self._inbox_state.close()
+        if port is not None:
+            port.close_ends()
         self._drain_inbox()
         self._inbox_state.tree().remove(self._session_id, self._inbox_state)
 
@@ -3477,6 +3505,24 @@ class Engine(Generic[S, E]):
         """Tell no trace port anything; the engine is then as it was before one
         was set."""
         self._trace = None
+
+    def set_inbox_port(self, port: InboxPort) -> None:
+        """Tell `port` each event the owner puts on the external queue and the
+        close of the inbox from now on, each as two calls around it
+        (`InboxPort`, docs/adr/0147, D3). A test that writes a run of the inbox
+        as an inbox history sets one before the run and reads its clock in each
+        call.
+
+        A port reads and is never asked anything, so a run with one set is the
+        run without, and it must not call back into the engine. Set it on the
+        owner, or before the run starts. Setting a port replaces the one set
+        before."""
+        self._inbox_port = port
+
+    def clear_inbox_port(self) -> None:
+        """Tell no inbox port anything; the engine is then as it was before one
+        was set."""
+        self._inbox_port = None
 
     def _taken_name(self, evt: EventWithMetadata[E]) -> str:
         """The name `_event.name` holds while `evt` is taken: the one it

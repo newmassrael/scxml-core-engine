@@ -68,6 +68,7 @@ from .inbox import (
     InboxHostInvokeEnding,
     InboxInput,
     InboxMeshDelivery,
+    InboxPort,
     InboxWaker,
 )
 from .io_processors import (
@@ -209,6 +210,7 @@ __all__ = [
     "InboxHostInvokeEnding",
     "InboxInput",
     "InboxMeshDelivery",
+    "InboxPort",
     "InboxWaker",
     "Invoke",
     "JsonError",

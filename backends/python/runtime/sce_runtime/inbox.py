@@ -32,7 +32,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Deque, Dict, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Deque, Dict, Generic, Optional, Protocol, TypeVar, Union
 
 from .child_mesh import MeshCall
 from .event import EventMetadata
@@ -112,6 +112,50 @@ InboxInput = Union[
 InboxWaker = Callable[[], None]
 
 
+class InboxPort(Protocol):
+    """Told what the owner of an engine does at the door of docs/adr/0084
+    (`Engine.set_inbox_port`): each event it puts on the external queue, and
+    the close of the inbox when a run ends, each as two calls around it. A test
+    reads one clock every thread of the run shares in both calls, and writes the
+    run as the inbox history `sce-codegen check-inbox-history` judges against
+    `docs/formal/InboxService.tla` (docs/adr/0147, D3;
+    `tests/forge/conformance/inbox_history.schema.json`).
+
+    The calls are made on the thread that drives the engine, inside the call
+    that drove it. The port reads and is asked nothing, so an engine with one set
+    does what one without does, and it must not call back into the engine."""
+
+    def enqueue_begins(self, event: Any, metadata: EventMetadata, posted: bool) -> None:
+        """The owner begins to put `event`, with `metadata`, on the external
+        queue. `posted` is true for an input the owner applies from the inbox,
+        and false for an event of its own: a `<send>` to its own session, a
+        delayed send come due, a host-run invocation's ending made on the owner,
+        the host's own raise. Putting an event of its own on the queue begins
+        with the drain that applies what the inbox holds first (docs/adr/0084, D2
+        as amended at step 9), so this call comes before that drain, and the
+        inputs it applies are told between this call and `enqueue_ends` for the
+        same event.
+
+        An input applied after the run has ended, which the run counts with its
+        unseen events rather than queues (`Engine.unseen_external_events`), is
+        told as entering there: that is where what an inbox holds when its run
+        ends goes. An event of the owner's own raised after the end is refused,
+        and told nothing."""
+
+    def enqueue_ends(self, event: Any, metadata: EventMetadata, posted: bool) -> None:
+        """`event`, told to `enqueue_begins` last with the same `posted`, has
+        entered the external queue."""
+
+    def close_begins(self) -> None:
+        """The inbox, open until now, begins to close: the run has ended or was
+        stopped, and from `close_ends` on every post is refused."""
+
+    def close_ends(self) -> None:
+        """The inbox refuses posts from now on. What it held when it closed is
+        applied after this call, each input told to `enqueue_begins` and
+        `enqueue_ends`."""
+
+
 def _named_session(posted: InboxInput[E]) -> Optional[str]:
     """The session `posted` names, ``None`` when it names none and is for the
     machine whose inbox it is posted to."""
@@ -176,6 +220,12 @@ class EngineInboxState(Generic[E]):
         """Take posts from now on. The owner's."""
         with self._lock:
             self._closed = False
+
+    def is_open(self) -> bool:
+        """Whether the inbox takes posts. The owner's, who alone opens and
+        closes it."""
+        with self._lock:
+            return not self._closed
 
     def close(self) -> None:
         """Refuse every post from now on. What the inbox holds when this returns
