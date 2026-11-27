@@ -136,6 +136,15 @@ DrainOrder(es) == IF OneDrain \/ Len(es) < 2 THEN es ELSE Tail(es) \o <<Head(es)
 \* The queues once the entries es are applied, each to the session it names.
 ApplyOf(q, es) == [t \in Sessions |-> q[t] \o ItemsTo(DrainOrder(es), t)]
 
+\* The inbox whose storage the post of i, under way, holds a slot of: the one it
+\* is posted to.
+\* @type: (Str) => Str;
+Holder(i) == IF AddressAtPost \/ i \in ByHandle THEN Tree!Target(i) ELSE Root
+
+\* The posts under way that hold a slot of session s's inbox.
+\* @type: (Str) => Set(Str);
+Claims(s) == {j \in Tree!TreeInputs : status[j] = "underway" /\ Holder(j) = s}
+
 Init ==
     /\ inbox = [s \in Sessions |-> <<>>]
     /\ extq = [s \in Sessions |-> <<>>]
@@ -260,8 +269,9 @@ NoLoss ==
             \/ \E t \in Sessions : InSeq(i, extq[t])
             \/ \E s \in Sessions : InSeq(i, ItemsTo(inbox[s], Tree!Target(i)))
 
-\* No inbox holds more than its capacity.
-Bounded == \A s \in Sessions : Len(inbox[s]) <= Capacity
+\* No inbox's storage holds more than its capacity: the inputs in it and the
+\* posts under way that hold a slot of it.
+Bounded == \A s \in Sessions : Len(inbox[s]) + Cardinality(Claims(s)) <= Capacity
 
 \* Every input taken reaches the queue of the session it names.
 Delivered == \A i \in Tree!TreeInputs : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
@@ -297,7 +307,7 @@ ASSUME Longest =
 Typed ==
     /\ inbox = [s \in Sessions |-> Gen(Longest)]
     /\ extq = [s \in Sessions |-> Gen(Longest)]
-    /\ status \in [Inputs -> {"none", "taken"} \cup Tree!Refusals]
+    /\ status \in [Inputs -> {"none", "underway", "taken"} \cup Tree!Refusals]
     /\ ownUnsent \in SUBSET OwnEvents
     /\ ended \in [Sessions -> BOOLEAN]
     /\ awake \in BOOLEAN
@@ -305,7 +315,7 @@ Typed ==
     /\ lin = [s \in Sessions |-> Gen(Longest)]
 
 QueueInductive ==
-    /\ status \in [Inputs -> {"none", "taken"} \cup Tree!Refusals]
+    /\ status \in [Inputs -> {"none", "underway", "taken"} \cup Tree!Refusals]
     /\ ownUnsent \subseteq OwnEvents
     /\ Inputs \cap OwnEvents = {}
     /\ Unknown \notin Sessions
