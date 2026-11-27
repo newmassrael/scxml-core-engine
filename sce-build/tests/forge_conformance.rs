@@ -4333,28 +4333,31 @@ mod tests {
     const HARNESS_INLINE: &str = r#"// Injected by cold_codecs_of_the_same_rows_name_one_table_in_their_set.
 extern crate std;
 
-use crate::codec_shared_first::CodecSharedFirstIn;
-use crate::codec_shared_second::CodecSharedSecondIn;
-use ::sce_forge_runtime::codec::{CodecError, Inline, SceCursor, SceSink, SliceSink};
+#[cfg(test)]
+mod tests {
+    use crate::codec_shared_first::CodecSharedFirstIn;
+    use crate::codec_shared_second::CodecSharedSecondIn;
+    use ::sce_forge_runtime::codec::{CodecError, Inline, SceCursor, SliceSink};
 
-#[test]
-fn each_codec_of_one_table_holds_and_writes_its_frames_inline() {
-    let frames: [&[u8]; 2] = [&[0x00], &[0x01, 0x02, 0xAA, 0xBB]];
-    for frame in frames {
-        let mut window = [0u8; 16];
-        let first = CodecSharedFirstIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
-        let mut sink = SliceSink::new(&mut window[..]);
-        first.encode(&mut sink).expect("the frame fits the window");
-        let written = sink.position();
-        assert_eq!(&window[..written], frame, "{frame:x?}");
-        let second = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
-        let mut sink = SliceSink::new(&mut window[..]);
-        second.encode(&mut sink).expect("the frame fits the window");
-        let written = sink.position();
-        assert_eq!(&window[..written], frame, "{frame:x?}");
+    #[test]
+    fn each_codec_of_one_table_holds_and_writes_its_frames_inline() {
+        let frames: [&[u8]; 2] = [&[0x00], &[0x01, 0x02, 0xAA, 0xBB]];
+        for frame in frames {
+            let mut window = [0u8; 16];
+            let first = CodecSharedFirstIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
+            let mut sink = SliceSink::new(&mut window[..]);
+            first.encode(&mut sink).expect("the frame fits the window");
+            let written = sink.position();
+            assert_eq!(&window[..written], frame, "{frame:x?}");
+            let second = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(frame)).expect("decode");
+            let mut sink = SliceSink::new(&mut window[..]);
+            second.encode(&mut sink).expect("the frame fits the window");
+            let written = sink.position();
+            assert_eq!(&window[..written], frame, "{frame:x?}");
+        }
+        let short = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(&[0x01, 0x02, 0xAA])).map(|_| ());
+        assert_eq!(short, Err(CodecError::NeedMoreBytes));
     }
-    let short = CodecSharedSecondIn::<Inline>::decode(&mut SceCursor::new(&[0x01, 0x02, 0xAA])).map(|_| ());
-    assert_eq!(short, Err(CodecError::NeedMoreBytes));
 }
 "#;
     use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
