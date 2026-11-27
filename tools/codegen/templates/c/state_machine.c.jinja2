@@ -6418,7 +6418,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
    `keep_tree_inboxes` is true for a child session its parent begins
    (`_invoked_begin`): the slot it stands in keeps the part of it from `inbox`
    on, which its parent built with the tree, because another context may be
-   posting to it (docs/adr/0084, D2 as amended at step 10).
+   posting to it (docs/adr/0084, D2 as amended at step 10), and keeps the
+   token its next host-run start receives, so that no start of the slot is
+   given a token an ending in that inbox may still carry.
 
    `session_id` is the id the host gives a root (docs/adr/0045), NULL for none,
    in which case the machine draws its own.
@@ -6468,6 +6470,16 @@ SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_cons
             return refused;
         }
     }
+{% if model.host_invoker_types %}
+    /* docs/adr/0084, D2: the token the next host-run start receives is the
+       slot's, not the run's. A child started again stands in the slot the run
+       before it stood in, whose inbox may still hold an ending of that run's
+       start, and that ending is refused by the token check (§scxml-6.4: what a
+       cancelled process sends is ignored) only while no start of the slot is
+       given its token again. Read before the struct is cleared: the slot's
+       storage was zeroed with its parent, so a first run starts from 0. */
+    const uint64_t slot_next_host_invoke_token = keep_tree_inboxes ? sm->started_host_invokes.next_token : 0u;
+{% endif %}
 #if SCE_MAX_INBOX > 0
     if (keep_tree_inboxes) {
         memset(sm, 0, offsetof({{ csym_prefix }}{{ model.name }}_t, inbox));
@@ -6480,6 +6492,9 @@ SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_cons
     memset(sm, 0, sizeof(*sm));
     build_inbox(sm);
 #endif
+{% if model.host_invoker_types %}
+    sm->started_host_invokes.next_token = slot_next_host_invoke_token;
+{% endif %}
 {% if ns_maps.any %}
     /* docs/adr/0108, D8: kept, after the memset, for the maps below and each child
        this machine starts. */

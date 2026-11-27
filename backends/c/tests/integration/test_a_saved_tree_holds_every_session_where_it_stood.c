@@ -60,10 +60,11 @@ enum { TEXT_CAP = 32768 };
 typedef static_invoke_tree_t tree_t;
 
 // What the host that serves the clock was asked: it never answers, so the invocation is running
-// when the tree is saved.
+// when the tree is saved. `session` and `token` are those of the latest start.
 typedef struct {
     int starts;
     char session[96];
+    uint64_t token;
 } clock_host_t;
 
 static void clock_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
@@ -72,6 +73,7 @@ static void clock_invoker(void *user_data, const sce_host_invoke_event_t *event,
     if (event->phase == SCE_HOST_INVOKE_START) {
         host->starts++;
         (void)snprintf(host->session, sizeof(host->session), "%s", event->session_id);
+        host->token = event->token;
     }
 }
 
@@ -355,6 +357,43 @@ static void a_child_sessions_host_invocation_is_failed_by_the_session_that_start
           "a run that failed is not completed after");
 }
 
+static void a_restarted_childs_invocation_is_given_a_token_its_slot_never_gave(void) {
+    // docs/adr/0084, D2: a child started again stands in the slot the run before it stood in,
+    // whose inbox may still hold an ending of that run's start. The ending is refused by the
+    // token check, so the restarted run's start is given a token the slot never gave.
+    static tree_t sm;
+    clock_host_t host;
+    char first_session[sizeof(host.session)];
+    uint64_t first_token;
+    memset(&host, 0, sizeof(host));
+    started(&sm, &host);
+    // `go`, forwarded in one tick and taken by the child in the next: the first run asks.
+    raise_named(&sm, "go");
+    tick(&sm);
+    tick(&sm);
+    CHECK(host.starts == 1, "the first run asked its host once: %d starts", host.starts);
+    first_token = host.token;
+    (void)snprintf(first_session, sizeof(first_session), "%s", host.session);
+    // Left and entered again: the worker is started again in its slot, and asks again.
+    raise_named(&sm, "rest");
+    tick(&sm);
+    raise_named(&sm, "back");
+    tick(&sm);
+    raise_named(&sm, "go");
+    tick(&sm);
+    tick(&sm);
+    CHECK(host.starts == 2, "the restarted run asked its host: %d starts", host.starts);
+    CHECK(strcmp(host.session, first_session) != 0, "each run is a session of its own: %s", host.session);
+    CHECK(host.token != first_token, "the restarted run's start was given the first run's token %llu",
+          (unsigned long long)first_token);
+    CHECK(!static_invoke_tree_complete_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", first_token, "{}"),
+          "the restarted run took an ending of the first run's token");
+    CHECK(!static_invoke_tree_complete_host_invoke_in(&sm, first_session, CLOCK_TYPE, "clock", first_token, "{}"),
+          "an ending of the first run's session reached a session: %s", first_session);
+    CHECK(static_invoke_tree_complete_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", host.token, "{}"),
+          "the restarted run takes the ending of its own start: %s", host.session);
+}
+
 int main(void) {
     the_tree_holds_every_session_where_it_stood();
     the_shared_text_restores_and_saves_again_as_it_was();
@@ -363,6 +402,7 @@ int main(void) {
     a_save_after_any_host_call_finds_nothing_in_transit();
     a_child_sessions_host_invocation_is_completed_by_the_session_that_started_it();
     a_child_sessions_host_invocation_is_failed_by_the_session_that_started_it();
+    a_restarted_childs_invocation_is_given_a_token_its_slot_never_gave();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

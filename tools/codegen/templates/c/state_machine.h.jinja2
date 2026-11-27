@@ -1449,7 +1449,9 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        which of those invocations are in flight. Two members rather than one
        because they answer two questions: "who runs this type" and "did this
        one start" — the second is what the exit chain has to know before it
-       tells a host to stop something. */
+       tells a host to stop something. The set's `next_token` is the slot's
+       and not the run's: a child started again in its slot keeps it
+       (docs/adr/0084, D2), so no start of the slot repeats a token. */
     sce_host_invoker_registry_t host_invokers;
     sce_host_invocation_set_t started_host_invokes;
 {% if (model.invokes | host_invoker | list) | length > 0 %}
