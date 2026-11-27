@@ -6,6 +6,7 @@
   leave two TLC runners, the second in the generator that levels 4 and 5 need. It also left a path a consumer would
   depend on that is no contract, and the tools pinned inside manifests that a consumer would copy. This record is
   the improved plan.
+- Amended 2026-11-27 by the owner: Apalache joins the toolchain of D3, approved that day as the tool of ADR 0115 D3.
 - Date: 2026-11-26
 - Also amends `SCE_ERROR_CONTRACT.md` (the stage `formal`, its three codes, and the exit status 15) and
   `docs/SCE_ACCEPTED_SUBSET.md` (its appendix of codes).
@@ -106,8 +107,9 @@ the gates to the command. No revision has two judges that answer.
 
 ### D3. The judge pins the tools
 
-`sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on: version, URL and sha256 of
-each. Apalache and Storm join it when ADR 0115 D3 and ADR 0119 bring them, each with the owner's approval. The file
+`sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on, and Apalache: version, URL
+and sha256 of each. Apalache joined it on 2026-11-27 with ADR 0115 D3, by the owner's approval; Storm joins it when
+ADR 0119 brings it, with the owner's approval. The file
 is compiled into the binary, so a binary of a revision knows its pins without a tree; it sits among the module's
 sources, since it is one of them. `formal toolchain` prints
 them. `bx.toml`, the workflows and `gate_registry.py` read this file, not a manifest. A manifest that names a tool

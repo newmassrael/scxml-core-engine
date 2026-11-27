@@ -232,6 +232,12 @@ fn the_toolchain_schema_rejects_what_the_judge_refuses() {
             .remove("toolchain");
     });
     refused("a tool the judge does not run", &|v| {
-        v["apalache"] = serde_json::json!({})
+        v["storm"] = serde_json::json!({})
+    });
+    refused("no Apalache", &|v| {
+        v.as_object_mut().expect("an object").remove("apalache");
+    });
+    refused("Apalache given a Rust release", &|v| {
+        v["apalache"]["toolchain"] = serde_json::json!("1.99.1")
     });
 }

@@ -15,6 +15,7 @@
 //! finds by the same digest before it runs it, so a tool replaced under the same
 //! name is refused as `formal/tool-unavailable`, never run.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -53,12 +54,24 @@ pub struct VerusPin {
     pub sha256: String,
 }
 
+/// Apalache, the symbolic checker of level 3 (docs/adr/0115, D3): the
+/// release's archive, which holds its launcher, its jar and the standard module
+/// `Apalache` that a model extends to be read by it, and TLC with it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApalachePin {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
 /// Every pinned tool.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Toolchain {
     pub tlc: TlcPin,
     pub verus: VerusPin,
+    pub apalache: ApalachePin,
 }
 
 /// The pins this binary was built with.
@@ -109,6 +122,19 @@ pub fn verus_place(pin: &VerusPin) -> Result<PathBuf, FormalError> {
 pub fn verus_rust_place(pin: &VerusPin) -> Result<PathBuf, FormalError> {
     Ok(home()?.join(".local").join("rust").join(&pin.toolchain))
 }
+
+/// Where the pinned Apalache is unpacked: `~/.local/apalache/<version>`, the
+/// place `bx.toml` declares for a build machine.
+pub fn apalache_place(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("apalache").join(&pin.version))
+}
+
+/// The directory under an unpacked Apalache that holds the standard module
+/// `Apalache`, taken out of the release's jar by `formal install`.
+const APALACHE_MODULES: &str = "modules";
+
+/// The one standard module of Apalache a model may extend, as its jar holds it.
+const APALACHE_MODULE_IN_JAR: &str = "tla2sany/StandardModules/Apalache.tla";
 
 /// The lowercase hex sha256 of a file's bytes.
 pub fn sha256_of(path: &Path) -> std::io::Result<String> {
@@ -170,6 +196,41 @@ pub fn admitted_verus(pin: &VerusPin) -> Result<PathBuf, FormalError> {
         ));
     }
     Ok(tool)
+}
+
+/// The pinned Apalache, found: the program `bin/apalache` under the unpacked
+/// release. It is not admitted by digest here, as Verus is not: what was
+/// admitted is the archive it was unpacked from, by `formal install`.
+pub fn admitted_apalache(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
+    let tool = apalache_place(pin)?.join("bin").join("apalache");
+    if !tool.is_file() {
+        return Err(unavailable(
+            "Apalache",
+            format!(
+                "no Apalache at {}: sce-codegen formal install",
+                tool.display()
+            ),
+        ));
+    }
+    Ok(tool)
+}
+
+/// The directory that holds the standard module `Apalache` of the pinned
+/// release, found. TLC reads a model that extends it from there, so the module
+/// both tools read is the one release's (docs/adr/0146, D3).
+pub fn admitted_apalache_modules(pin: &ApalachePin) -> Result<PathBuf, FormalError> {
+    let modules = apalache_place(pin)?.join(APALACHE_MODULES);
+    if !modules.join("Apalache.tla").is_file() {
+        return Err(unavailable(
+            "Apalache's standard module",
+            format!(
+                "no Apalache.tla in {}, which a model that extends Apalache is read with: \
+                 sce-codegen formal install",
+                modules.display()
+            ),
+        ));
+    }
+    Ok(modules)
 }
 
 /// Fetch `url` to `to` by `curl`, which follows redirects and fails on an
@@ -332,27 +393,168 @@ pub fn install_verus(pin: &VerusPin, place: &Path) -> Result<Installed, FormalEr
     })?;
     std::fs::write(&wrapper, verus_wrapper(pin))
         .map_err(|e| unavailable("Verus", format!("cannot write {}: {e}", wrapper.display())))?;
-    make_executable(&wrapper)?;
+    make_executable("Verus", &wrapper)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// The program `bin/apalache` under the unpacked release: the release's own
+/// launcher, `bin/apalache-mc`, which sets the JVM's heap and collector as its
+/// authors run it, behind a line that answers `--version` by itself, so that a
+/// check of the installation starts no JVM.
+pub fn apalache_wrapper(pin: &ApalachePin) -> String {
+    format!(
+        "#!/bin/sh\n\
+         # Written by sce-codegen formal install: Apalache {version}, run by its own launcher.\n\
+         if [ \"$1\" = --version ]; then\n    echo \"apalache {version}\"\n    exit 0\nfi\n\
+         exec \"$(dirname \"$(readlink -f \"$0\")\")/apalache-mc\" \"$@\"\n",
+        version = pin.version,
+    )
+}
+
+/// Run `program` with `args` for `tool`'s installation, and refuse it as
+/// unavailable when it cannot run or fails.
+fn run_for(tool: &str, program: &str, args: &[&OsStr]) -> Result<(), FormalError> {
+    let ran = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| unavailable(tool, format!("cannot run {program}: {e}")))?;
+    if !ran.status.success() {
+        return Err(unavailable(
+            tool,
+            format!(
+                "{program} failed: {}",
+                String::from_utf8_lossy(&ran.stderr).trim()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Fetch the pinned Apalache, admit the archive by its digest and unpack it into
+/// `place` (`apalache_place` unless a build machine's declaration names
+/// another), unless it is there. The archive is the release's `.tgz`, unpacked
+/// by `tar`, which keeps each file's mode. The standard module `Apalache` is
+/// taken out of the release's jar by `unzip` into `modules/`, where TLC reads
+/// it for a model that extends it. The wrapper is written last, so its presence
+/// is the mark of a whole installation.
+pub fn install_apalache(pin: &ApalachePin, place: &Path) -> Result<Installed, FormalError> {
+    let wrapper = place.join("bin").join("apalache");
+    if wrapper.is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    let scratch = super::WorkDir::new("apalache")?;
+    let archive = scratch.path().join("apalache.tgz");
+    fetch("Apalache", &pin.url, &archive)?;
+    admit("Apalache", &archive, &pin.url, &pin.sha256)?;
+    let unpacked = scratch.path().join("unpacked");
+    std::fs::create_dir_all(&unpacked).map_err(|e| {
+        unavailable(
+            "Apalache",
+            format!("cannot create {}: {e}", unpacked.display()),
+        )
+    })?;
+    run_for(
+        "Apalache",
+        "tar",
+        &[
+            OsStr::new("-xzf"),
+            archive.as_os_str(),
+            OsStr::new("-C"),
+            unpacked.as_os_str(),
+        ],
+    )?;
+    let tree = unpacked.join(format!("apalache-{}", pin.version));
+    let jar = Path::new("lib").join("apalache.jar");
+    for needed in [Path::new("bin").join("apalache-mc"), jar.clone()] {
+        if !tree.join(&needed).is_file() {
+            return Err(unavailable(
+                "Apalache",
+                format!(
+                    "{} holds no apalache-{}/{}",
+                    pin.url,
+                    pin.version,
+                    needed.display()
+                ),
+            ));
+        }
+    }
+    std::fs::create_dir_all(place).map_err(|e| {
+        unavailable(
+            "Apalache",
+            format!("cannot create {}: {e}", place.display()),
+        )
+    })?;
+    let entries = std::fs::read_dir(&tree)
+        .map_err(|e| unavailable("Apalache", format!("cannot read {}: {e}", tree.display())))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| unavailable("Apalache", format!("cannot read {}: {e}", tree.display())))?;
+        let to = place.join(entry.file_name());
+        std::fs::rename(entry.path(), &to).map_err(|e| {
+            unavailable(
+                "Apalache",
+                format!(
+                    "cannot move {} to {}: {e}",
+                    entry.path().display(),
+                    to.display()
+                ),
+            )
+        })?;
+    }
+    let modules = place.join(APALACHE_MODULES);
+    std::fs::create_dir_all(&modules).map_err(|e| {
+        unavailable(
+            "Apalache",
+            format!("cannot create {}: {e}", modules.display()),
+        )
+    })?;
+    let jar = place.join(jar);
+    run_for(
+        "Apalache",
+        "unzip",
+        &[
+            OsStr::new("-q"),
+            OsStr::new("-j"),
+            OsStr::new("-o"),
+            jar.as_os_str(),
+            OsStr::new(APALACHE_MODULE_IN_JAR),
+            OsStr::new("-d"),
+            modules.as_os_str(),
+        ],
+    )?;
+    if !modules.join("Apalache.tla").is_file() {
+        return Err(unavailable(
+            "Apalache",
+            format!("{} holds no {APALACHE_MODULE_IN_JAR}", jar.display()),
+        ));
+    }
+    std::fs::write(&wrapper, apalache_wrapper(pin)).map_err(|e| {
+        unavailable(
+            "Apalache",
+            format!("cannot write {}: {e}", wrapper.display()),
+        )
+    })?;
+    make_executable("Apalache", &wrapper)?;
     Ok(Installed::Fetched(place.to_path_buf()))
 }
 
 #[cfg(unix)]
-fn make_executable(path: &Path) -> Result<(), FormalError> {
+fn make_executable(tool: &str, path: &Path) -> Result<(), FormalError> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
         unavailable(
-            "Verus",
+            tool,
             format!("cannot make {} executable: {e}", path.display()),
         )
     })
 }
 
 #[cfg(not(unix))]
-fn make_executable(path: &Path) -> Result<(), FormalError> {
+fn make_executable(tool: &str, path: &Path) -> Result<(), FormalError> {
     Err(unavailable(
-        "Verus",
+        tool,
         format!(
-            "the pinned release is Linux x86-64's, so {} is not installed here",
+            "the pinned release is installed on Linux, so {} is not installed here",
             path.display()
         ),
     ))
@@ -368,6 +570,7 @@ mod tests {
         for (tool, sha256, url) in [
             ("tlc", &pins.tlc.sha256, &pins.tlc.url),
             ("verus", &pins.verus.sha256, &pins.verus.url),
+            ("apalache", &pins.apalache.sha256, &pins.apalache.url),
         ] {
             assert_eq!(sha256.len(), 64, "{tool}: a sha256 is 64 hex digits");
             assert!(
@@ -385,6 +588,13 @@ mod tests {
         assert!(
             pins.verus.url.contains(&pins.verus.version),
             "the Verus fetched is the release the pin names"
+        );
+        assert!(
+            pins.apalache
+                .url
+                .ends_with(&format!("/v{0}/apalache-{0}.tgz", pins.apalache.version)),
+            "the Apalache fetched is the archive of the release the pin names, \
+             which install_apalache unpacks as apalache-<version>/"
         );
     }
 
@@ -422,5 +632,14 @@ mod tests {
             pins.verus.toolchain
         )));
         assert!(text.contains("VERUS_USE_RUSTUP=0"));
+    }
+
+    #[test]
+    fn the_apalache_wrapper_answers_its_release_and_runs_the_launcher() {
+        let pins = pinned();
+        let text = apalache_wrapper(&pins.apalache);
+        assert!(text.starts_with("#!/bin/sh\n"));
+        assert!(text.contains(&format!("echo \"apalache {}\"", pins.apalache.version)));
+        assert!(text.contains("/apalache-mc\" \"$@\""));
     }
 }
