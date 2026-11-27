@@ -796,11 +796,31 @@ where
         )
     }
 
-    /// [`Self::observed`] for a machine that may be bound to open machines (docs/adr/0113):
-    /// their members are kept in `store`, the one the sessions are kept in, so that a write made
-    /// under an incarnation is judged in its own transaction (D5), and the pool lets go of what
-    /// its sessions hold of a member whose lease ended ([`Self::end_members`]).
+    /// [`Self::new`] for a machine that may be bound to open machines (docs/adr/0113): their
+    /// members are kept in `store`, the one the sessions are kept in, so that a write made under
+    /// an incarnation is judged in its own transaction (D5), and the pool lets go of what its
+    /// sessions hold of a member whose lease ended ([`Self::end_members`]).
     pub fn with_members(
+        machine: Machine,
+        config: PoolConfig,
+        factory: F,
+        store: Arc<dyn MembershipStore>,
+        transport: T,
+        environment: E,
+    ) -> Result<Self, PoolConfigError> {
+        Self::observed_with_members(
+            machine,
+            config,
+            factory,
+            store,
+            transport,
+            environment,
+            sce_rust_metrics::none(),
+        )
+    }
+
+    /// [`Self::with_members`], reporting to `metrics` as [`Self::observed`] does.
+    pub fn observed_with_members(
         machine: Machine,
         config: PoolConfig,
         factory: F,
@@ -5752,7 +5772,6 @@ mod tests {
             Arc::new(store.clone()),
             wire.clone(),
             clock.clone(),
-            sce_rust_metrics::none(),
         )
         .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
         pool.peer_ready("client");

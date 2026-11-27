@@ -507,15 +507,21 @@ pub trait ServerHost: Send + Sync + 'static {
     /// the answer only for an exchange that carried envelopes: a poll waits for no checkpoint.
     fn deliver(&self, events: Vec<LinkEvent>) -> Durability;
 
-    /// [`Self::deliver`] for an exchange of an instance of an open machine (docs/adr/0113, D4
-    /// and D5), which its edge admitted as `judged` says: the host hands each envelope to its pool
+    /// [`Self::deliver`] for an exchange of `member`, an instance of an open machine named by its
+    /// pair (docs/adr/0113, D4 and D5), which its edge admitted as `judged` says: the host hands
+    /// each envelope to its pool
     /// with the judgement (`Pool::receive_member`), tells the pool the member's standing when the
     /// exchange confirmed an offer (`Pool::stand`), and answers [`Durability::Fenced`] when a
     /// session found an envelope fenced. Called for an exchange that carried envelopes or
     /// confirmed an offer. A host that serves no open machine is never asked, and by default
     /// takes nothing in: the exchange is shed.
-    fn deliver_member(&self, events: Vec<LinkEvent>, judged: Judgement) -> Durability {
-        let _ = (events, judged);
+    fn deliver_member(
+        &self,
+        member: &str,
+        events: Vec<LinkEvent>,
+        judged: Judgement,
+    ) -> Durability {
+        let _ = (member, events, judged);
         Durability::NotDurable
     }
 }
@@ -1319,11 +1325,13 @@ async fn tell(shared: &Arc<Shared>, events: Vec<LinkEvent>) -> Durability {
 /// ([`ServerHost::deliver_member`]).
 async fn tell_member(
     shared: &Arc<Shared>,
+    member: &str,
     events: Vec<LinkEvent>,
     judged: Judgement,
 ) -> Durability {
     let host = Arc::clone(&shared.host);
-    tokio::task::spawn_blocking(move || host.deliver_member(events, judged))
+    let member = member.to_string();
+    tokio::task::spawn_blocking(move || host.deliver_member(&member, events, judged))
         .await
         .unwrap_or(Durability::NotDurable)
 }
@@ -2182,7 +2190,7 @@ async fn exchange(
         // sessions that hold the instance.
         let durability = match judged {
             Some(judged) if judged.confirmed || !events.is_empty() => {
-                tell_member(&shared, events, judged).await
+                tell_member(&shared, &name, events, judged).await
             }
             _ if events.is_empty() => Durability::Now,
             _ => tell(&shared, events).await,
@@ -4640,7 +4648,13 @@ mod tests {
             Durability::Now
         }
 
-        fn deliver_member(&self, events: Vec<LinkEvent>, judged: Judgement) -> Durability {
+        fn deliver_member(
+            &self,
+            member: &str,
+            events: Vec<LinkEvent>,
+            judged: Judgement,
+        ) -> Durability {
+            assert!(member.starts_with("phone/"), "{member}");
             let carried = events
                 .iter()
                 .filter(|event| matches!(event, LinkEvent::Received(..)))
