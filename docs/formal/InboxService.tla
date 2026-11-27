@@ -16,21 +16,30 @@
 (* machine's, read at a macrostep boundary, so a posted input never        *)
 (* reaches a running macrostep (ADR 0084, D1).                             *)
 (*                                                                         *)
+(* A post goes through one of two doors. Through the tree's directory, by  *)
+(* the id of the session it names: the directory holds the sessions of the *)
+(* tree, and a session leaves it when its run ends. Or through the handle  *)
+(* of the session's own inbox (ByHandle), which names a session of the     *)
+(* tree and looks nothing up.                                              *)
+(*                                                                         *)
 (* A refused post changes nothing but its own answer, which says why:      *)
-(*   unknown  the tree does not hold the session the post names; and, once *)
-(*            a session's run has ended where the runtime closes its inbox *)
-(*            (Closes), the tree may have let it go                        *)
-(*   ended    the session's run has ended, where the runtime closes        *)
+(*   unknown  the post went through the directory, which does not hold the *)
+(*            session: the tree never held it, or its run has ended and it *)
+(*            has left. A post through a handle is never unknown           *)
+(*   ended    the session's run has ended, where the runtime closes its    *)
+(*            inbox (Closes)                                               *)
 (*   full     the session holds Capacity inputs taken and not yet in its   *)
 (*            queue                                                        *)
-(* A post the promise counts full may still be taken: a drain takes inputs *)
-(* out of an inbox before they enter the queue, and frees room that what   *)
-(* a session holds here does not show. That an inbox never holds more than *)
-(* Capacity is the mechanism's (Bounded in EngineInbox), and no poster is  *)
-(* told anything false past it.                                            *)
+(* Where the runtime never closes, a post to a session whose run has ended *)
+(* that is not refused is taken, and what it takes enters at the end of    *)
+(* the owner's loop. A post the promise counts full may still be taken: a  *)
+(* drain takes inputs out of an inbox before they enter the queue, and     *)
+(* frees room that what a session holds here does not show. That an inbox  *)
+(* never holds more than Capacity is the mechanism's (Bounded in           *)
+(* EngineInbox), and no poster is told anything false past it.             *)
 (*                                                                         *)
 (* Taken as given: the inputs are distinct values, and a post linearizes   *)
-(* at one instant, which is what the runtime's queue must show            *)
+(* at one instant, which is what the runtime's queue must show             *)
 (* (docs/adr/0147, D3 and D5 judge that).                                  *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
@@ -40,6 +49,7 @@ CONSTANTS
     RootInputs, ChildInputs,  \* the inputs posted to each, each posted once
     Unknown,                  \* a session the tree does not hold
     UnknownInputs,            \* the inputs posted naming it, each posted once
+    ByHandle,                 \* the inputs posted through their session's own handle
     RootOwn, ChildOwn,        \* the events each session puts on its own queue
     Capacity,                 \* the inputs a session holds before a post is full
     Closes                    \* whether the runtime refuses a post after the end
@@ -49,13 +59,16 @@ VARIABLES arrivals, entered, status, ownUnsent, ended
 vars == <<arrivals, entered, status, ownUnsent, ended>>
 
 Sessions == {Root, Child}
-\* The inputs that name a session the tree holds.
-Addressed == RootInputs \cup ChildInputs
-Inputs == Addressed \cup UnknownInputs
+\* The inputs that name a session the tree holds, through either door.
+TreeInputs == RootInputs \cup ChildInputs
+Inputs == TreeInputs \cup UnknownInputs
 OwnEvents == RootOwn \cup ChildOwn
 Target(i) ==
     IF i \in RootInputs THEN Root ELSE IF i \in ChildInputs THEN Child ELSE Unknown
 OwnerOf(e) == IF e \in RootOwn THEN Root ELSE Child
+
+\* A handle is a session's own, so a post through one names a session of the tree.
+ASSUME ByHandle \subseteq TreeInputs
 
 \* What a refused post answers.
 Refusals == {"unknown", "ended", "full"}
@@ -78,18 +91,25 @@ Refuse(i, why) ==
     /\ status' = [status EXCEPT ![i] = why]
     /\ UNCHANGED <<arrivals, entered>>
 
+\* The post of i reaches session s, which may hold its capacity.
+Reach(i, s) ==
+    \/ /\ Held(s) >= Capacity
+       /\ Refuse(i, "full")
+    \/ /\ status' = [status EXCEPT ![i] = "taken"]
+       /\ arrivals' = [arrivals EXCEPT ![s] = Append(@, i)]
+       /\ UNCHANGED entered
+
 Post(i) ==
     LET s == Target(i) IN
     /\ status[i] = "none"
     /\ IF s \notin Sessions
          THEN Refuse(i, "unknown")
-         ELSE IF ended[s] /\ Closes
-         THEN \E why \in {"ended", "unknown"} : Refuse(i, why)
-         ELSE \/ /\ Held(s) >= Capacity
-                 /\ Refuse(i, "full")
-              \/ /\ status' = [status EXCEPT ![i] = "taken"]
-                 /\ arrivals' = [arrivals EXCEPT ![s] = Append(@, i)]
-                 /\ UNCHANGED entered
+         ELSE \/ /\ ended[s]
+                 /\ i \notin ByHandle
+                 /\ Refuse(i, "unknown")
+              \/ IF ended[s] /\ Closes
+                   THEN Refuse(i, "ended")
+                   ELSE Reach(i, s)
     /\ UNCHANGED <<ownUnsent, ended>>
 
 \* An own event enters the queue at once, behind everything its session held.

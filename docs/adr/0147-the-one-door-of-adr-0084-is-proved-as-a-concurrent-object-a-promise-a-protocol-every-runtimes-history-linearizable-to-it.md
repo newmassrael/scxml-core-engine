@@ -53,10 +53,14 @@ core (D2, D13), but not this.
 
 What a host may rely on, with no mechanism. A tree of sessions, posters on any number of threads, one owner:
 
+- **Two doors.** A post goes through one of two doors. Through the tree's directory, by the id of the session it
+  names: the directory holds the sessions of the tree, and a session leaves it when its run ends. Or through the
+  handle of that session's own inbox, which names a session of the tree and looks nothing up.
 - **Taken or refused, when posted.** Whether a post is taken or refused is decided when it is posted. A refused post
-  is handed back with its reason and never takes effect. The reasons are three. `unknown`: the tree does not hold
-  the session the post names, having never held it or having let it go when its run ended where the runtime closes
-  its inbox. `ended`: the session's run has ended and the runtime closes its inbox. `full`: the session's bounded
+  is handed back with its reason and never takes effect. The reasons are three. `unknown`: the post went through
+  the directory, and the directory does not hold the session it names: the tree never held it, or its run has ended
+  and it has left the directory. A post through a handle is never refused as unknown. `ended`: the session's run
+  has ended and the runtime closes its inbox, whichever door the post went through. `full`: the session's bounded
   inbox holds its capacity, counted as the inputs taken for the session and not yet in its queue. Any other post to
   a session the tree holds is taken. A post is refused as full only when that count is reached, and may still be
   taken then, because a drain frees room before what it took out reaches the queue. That an inbox never holds more
@@ -70,8 +74,9 @@ What a host may rely on, with no mechanism. A tree of sessions, posters on any n
   against that session's own enqueues: an event of the owner's own enters behind every post taken before it (D2 as
   amended at steps 9 and 10).
 - **The end.** What a session's inbox holds when its run ends is applied then, as a direct call made at that moment
-  would be (an event counted as unseen, an ending refused by its token). A later post is refused where the runtime
-  closes its inbox, and applied at the end of the owner's loop where it never closes.
+  would be (an event counted as unseen, an ending refused by its token). A later post is refused as ended where the
+  runtime closes its inbox, and applied at the end of the owner's loop where it never closes; a later post through
+  the directory may instead be refused as unknown, once the session has left it, whether the runtime closes or not.
 - **Progress.** Under the owner's weak fairness and a waker that is called, every post that is taken is applied.
 
 ### D2. The protocol: `EngineInbox.tla`, refining `InboxService`

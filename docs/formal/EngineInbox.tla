@@ -250,7 +250,7 @@ NoLoss ==
 Bounded == \A s \in Sessions : Len(inbox[s]) <= Capacity
 
 \* Every input taken reaches the queue of the session it names.
-Delivered == \A i \in Tree!Addressed : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
+Delivered == \A i \in Tree!TreeInputs : status[i] = "taken" ~> InSeq(i, extq[Tree!Target(i)])
 
 \* What has arrived, as the promise counts it: what the queue took, then what
 \* the session's inbox holds, then what the root's holds for it.
