@@ -384,3 +384,146 @@ fn a_fact_said_for_a_person_is_written_as_said_for_them() {
         ]
     );
 }
+
+/// The tellers, bound to the instances of the open machine [`PHONE`] as well as to the client.
+const OPEN_TELLERS: Machine = Machine {
+    name: "tellers",
+    open_peers: &[PHONE],
+    ..ROOMS
+};
+
+/// What the instance `instance` of `phone` tells the room `room`, numbered `number` in its
+/// incarnation, under the envelope id `id(0x55, n)`: `say`, saying `fact`.
+fn said_by(instance: &str, room: &str, fact: &str, n: u32, number: u32) -> Vec<u8> {
+    let data = alloc::format!(r#"{{"room":"{room}","fact":"{fact}"}}"#);
+    Envelope {
+        id: (&id(0x55, n)).into(),
+        source: within("phone").unwrap(),
+        instance: Some(within(instance).unwrap()),
+        event_type: within("say").unwrap(),
+        pattern: PatternKind::FireForget,
+        datacontenttype: PayloadCodec::Json,
+        data: within(data.as_bytes()).unwrap(),
+        sequence_no: Some(u64::from(number)),
+        ..Envelope::new()
+    }
+    .encode_to_vec()
+}
+
+/// docs/adr/0113, D5, with docs/adr/0114, D1: a run made under an incarnation that ended keeps
+/// nothing, the facts it said among it. The session is let go and loaded again from what the
+/// store keeps, whose state said none of them, so the next write appends only what the next run
+/// said (`Pool::let_go`). Red if a fenced session keeps what its refused write carried: the
+/// fact of the ended incarnation is then appended by the next write.
+#[test]
+fn a_fact_said_under_an_ended_incarnation_is_dropped_with_its_run() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    let pool = Pool::with_members(
+        OPEN_TELLERS,
+        PoolConfig {
+            owner: "p1".to_string(),
+            lease_ttl_ms: LEASE_TTL_MS,
+            renew_every_ms: 3_000,
+        },
+        Tellers,
+        Arc::new(store.clone()),
+        Wire::default(),
+        clock.clone(),
+    )
+    .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+    let first = joined(&store, "phone/a1", "n1", &clock);
+    let under_first = Standing {
+        incarnation: first,
+        mark: 1,
+    };
+    let (key, kept) = pool.receive_member(
+        "phone/a1",
+        first,
+        under_first,
+        said_by("a1", "r1", "kept", 1, 1),
+    );
+    pool.run(key.as_deref().expect("placed"));
+    assert_eq!(kept.fate(), Fate::Settled, "{:?}", pool.take_errors());
+
+    // The instance joins again, ending its first incarnation, while what it said under the first
+    // waits for its session.
+    let second = joined(&store, "phone/a1", "n2", &clock);
+    let (_, dropped) = pool.receive_member(
+        "phone/a1",
+        first,
+        under_first,
+        said_by("a1", "r1", "dropped", 2, 2),
+    );
+    pool.run("r1");
+    assert_eq!(dropped.fate(), Fate::Lost);
+    assert!(pool
+        .take_errors()
+        .iter()
+        .any(|error| matches!(error, PoolError::Fenced { key, .. } if key == "r1")));
+
+    let (_, after) = pool.receive_member(
+        "phone/a1",
+        second,
+        Standing {
+            incarnation: second,
+            mark: 1,
+        },
+        said_by("a1", "r1", "after", 3, 1),
+    );
+    pool.run("r1");
+    assert_eq!(after.fate(), Fate::Settled, "{:?}", pool.take_errors());
+    assert_eq!(
+        entries(&store),
+        [
+            (stream("r1"), "kept".to_string()),
+            (stream("r1"), "after".to_string()),
+        ]
+    );
+    let loaded = checkpoint::load(&store, "r1")
+        .expect("read")
+        .expect("saved");
+    assert_eq!(
+        said_of(&loaded.checkpoint.state),
+        Ok(2),
+        "the state that said them"
+    );
+}
+
+/// docs/adr/0113, D4, with docs/adr/0114, D2: a pool of a machine bound to an open machine keeps
+/// its sessions and its members through a handle of its own machine, as any pool does, and
+/// refuses one that keeps another machine's. Red if `Pool::with_members` skips the check of the
+/// handle's machine that `Pool::new` makes.
+#[test]
+fn a_pool_with_members_refuses_a_store_that_keeps_another_machines_sessions() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    let config = || PoolConfig {
+        owner: "p1".to_string(),
+        lease_ttl_ms: LEASE_TTL_MS,
+        renew_every_ms: 3_000,
+    };
+    let refused = Pool::with_members(
+        OPEN_TELLERS,
+        config(),
+        Tellers,
+        Arc::new(store.of_machine("rooms")),
+        Wire::default(),
+        clock.clone(),
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(PoolConfigError::StoreOfAnotherMachine { ref machine, ref store })
+                if machine == "tellers" && store == "rooms"
+        ),
+        "a pool with members over another machine's sessions"
+    );
+    assert!(Pool::with_members(
+        OPEN_TELLERS,
+        config(),
+        Tellers,
+        Arc::new(store.of_machine("tellers")),
+        Wire::default(),
+        clock,
+    )
+    .is_ok());
+}
