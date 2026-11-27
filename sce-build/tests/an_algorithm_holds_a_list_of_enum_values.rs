@@ -16,6 +16,8 @@
 //! * The Interpreter's lowering holds the list as the array of its elements'
 //!   declared names.
 //! * A statechart holds no such list and takes none from a call.
+//! * Another algorithm is lent one, on Rust alone, by a list parameter whose
+//!   element is a value of the same enum.
 
 mod common;
 
@@ -488,29 +490,97 @@ fn a_list_of_enum_values_is_appended_a_value_of_its_enum_alone() {
     }
 }
 
-/// A list crosses only the host boundary, one of enum values as one of numbers:
-/// another algorithm's call of a list parameter is refused naming it.
-#[test]
-fn a_list_of_enum_values_is_handed_to_no_other_algorithm() {
+/// The length of `xs`, a list of values of the open enum: a callee whose list
+/// parameter takes an element of other values than `Status`'s.
+fn level_count() -> String {
+    algorithm(
+        "level_count",
+        LEVEL_ONLY,
+        r#"<sce:param name="xs" type="list&lt;enum:Level&gt;"/>
+    <sce:return type="uint32"/>"#,
+        r#"<sce:return expr="len(xs)"/>"#,
+    )
+}
+
+/// An algorithm `status_caller` that lends its `list<enum:Status>` parameter to
+/// the algorithm `callee` imports as `Count`, written beside the enums and
+/// `callee` as `<callee_name>.scxml`; the caller's path.
+fn status_caller(callee_name: &str, callee: &str) -> (tempfile::TempDir, PathBuf) {
     let (dir, path) = written(
         "status_caller",
         &algorithm(
             "status_caller",
-            r#"<sce:import kind="enum" src="probe_status.scxml" as="Status"/>
-  <sce:import kind="algorithm" src="status_count.scxml" as="Count"/>"#,
+            &format!(
+                r#"<sce:import kind="enum" src="probe_status.scxml" as="Status"/>
+  <sce:import kind="algorithm" src="{callee_name}.scxml" as="Count"/>"#
+            ),
             r#"<sce:param name="xs" type="list&lt;enum:Status&gt;"/>
     <sce:return type="uint32"/>"#,
             r#"<sce:return expr="Count(xs)"/>"#,
         ),
     );
-    std::fs::write(dir.path().join("status_count.scxml"), status_count())
+    std::fs::write(dir.path().join(format!("{callee_name}.scxml")), callee)
         .expect("write the callee");
+    (dir, path)
+}
+
+/// A list of enum values is lent to another algorithm's list parameter as a
+/// list of numbers is (SCE_FORGE.md §4.12, "Where a list crosses"), on the
+/// backends that lend a list across: on Rust the caller lends its parameter, the
+/// slice it is, to the callee's, and every other backend refuses the caller,
+/// naming `list<enum:Status>`. Pinned by the list arm of
+/// `algorithm_record_slots` (`sce-build/src/lib.rs`) and `handed_list`
+/// (`sce-build/src/forge/expr.rs`): with the slot mapped to no list, Rust
+/// refuses the call as one a host alone makes.
+#[test]
+fn a_list_of_enum_values_is_lent_to_another_algorithm_on_rust_alone() {
+    let (_dir, path) = status_caller("status_count", &status_count());
+    for language in sce_build::forge::codegen_matrix::emitting_in_part(
+        sce_build::forge::model::ForgeKind::Algorithm,
+    ) {
+        let result = generated(&path, language);
+        if language == Language::Rust {
+            let output = result.unwrap_or_else(|e| panic!("Rust lends the list: {}", e.error));
+            let text = output
+                .files
+                .into_iter()
+                .find(|(file, _)| file.strip_suffix(".rs") == Some("status_caller"))
+                .expect("the caller's Rust unit")
+                .1;
+            holds(&text, "xs: &[probe_status::ProbeStatus]");
+            holds(&text, "status_count(xs)");
+            continue;
+        }
+        let (code, why) = refused(result);
+        assert!(
+            matches!(
+                code,
+                DiagnosticCode::GenerateUnsupportedFeature
+                    | DiagnosticCode::ExpressionUnsupportedConstruct
+            ),
+            "{language:?}: {code:?}: {why}"
+        );
+        assert!(why.contains("list<enum:Status>"), "{language:?}: {why}");
+    }
+}
+
+/// A list of the values of one enum is not lent to a list parameter of another
+/// enum's values: the element is held to the parameter's by the relation "fits"
+/// (docs/adr/0086, section 5.1), two enums one type only where they hold the
+/// same values. Pinned by the element check of `judge_list_argument`
+/// (`sce-build/src/forge/expr.rs`).
+#[test]
+fn a_list_of_enum_values_is_refused_by_a_list_parameter_of_another_enum() {
+    let (_dir, path) = status_caller("level_count", &level_count());
     let (code, why) = refused(generated(&path, Language::Rust));
     assert!(
         matches!(code, DiagnosticCode::ExpressionUnsupportedConstruct),
         "{code:?}: {why}"
     );
-    assert!(why.contains("list<enum:Status>"), "{why}");
+    assert!(
+        why.contains("of another document than") && why.contains("handed to `Count`"),
+        "{why}"
+    );
 }
 
 /// A working list of enum values beside an output of numbers: the one list of
