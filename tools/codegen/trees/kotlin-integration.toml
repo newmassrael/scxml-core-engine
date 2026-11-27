@@ -81,6 +81,20 @@ arguments = [
 place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{document}"
 keep = ["*Sm.kt"]
 
+# The turnstile of the properties judge's fixture (docs/adr/0115, D15): each
+# scenario TLC gives of it, a violation or a witness, is replayed through this
+# machine by com.sce.formal.AScenarioOfTheTurnstileIsItsRunTest, the twin of the
+# Rust and C11 lanes' tests of the same name. It is the formal fixture's
+# document, which no channel contract of integration_resources holds; its
+# package is the document's, `com.sce.integration.turnstile`.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/formal_properties/turnstile.scxml", "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/turnstile"
+keep = ["*Sm.kt"]
+
 # The AI supervision loop example, for a host serving `x-sce-host`. It is an
 # example, not a fixture: `ai_loop_channel_parity` holds every channel that
 # drives it to one scenario set.

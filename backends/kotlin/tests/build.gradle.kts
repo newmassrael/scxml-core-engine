@@ -158,6 +158,15 @@ tasks.test {
     inputs.dir(File(rootDir, "backends/kotlin/tests/fixtures/jvm_long_text"))
         .withPropertyName("jvmLongTextDocuments")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // Same reason, same failure mode. `AScenarioOfTheTurnstileIsItsRunTest` reads each
+    // scenario of the properties judge's turnstile and the recorded run of this lane
+    // beside it, at RUN time (docs/adr/0115, D15); a recorded run edited to one the
+    // engine does not take must turn the suite red, not leave it UP-TO-DATE. The
+    // fixture's directory, which holds the scenarios' directory once they are written.
+    inputs.dir(File(rootDir, "sce-build/tests/fixtures/formal_properties"))
+        .withPropertyName("formalPropertiesFixture")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // The runner program of the generated suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4):

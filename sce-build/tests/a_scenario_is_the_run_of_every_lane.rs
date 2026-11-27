@@ -12,6 +12,7 @@
 //! - `c11`: `backends/c/tests/integration/test_a_scenario_of_the_turnstile_is_its_run.c`
 //! - `cpp`: `tests/w3c/run_traces/AScenarioOfTheTurnstileIsItsRunTest.cpp`
 //! - `go`: `backends/go/tests/run_trace/a_scenario_of_the_turnstile_is_its_run_test.go`
+//! - `kotlin`: `backends/kotlin/tests/src/test/kotlin/com/sce/formal/AScenarioOfTheTurnstileIsItsRunTest.kt`
 //!
 //! Here every recorded run is held to be its scenario's, step for step, and
 //! every scenario to have a run of each lane, so a scenario added without its
@@ -22,7 +23,7 @@ use std::path::{Path, PathBuf};
 use sce_build::formal::replay::judge_dir;
 
 /// The lanes whose harness replays a scenario.
-const LANES: [&str; 4] = ["rust", "c11", "cpp", "go"];
+const LANES: [&str; 5] = ["rust", "c11", "cpp", "go", "kotlin"];
 
 fn scenarios_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formal_properties/scenarios")

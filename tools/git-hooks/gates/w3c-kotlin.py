@@ -42,7 +42,13 @@
               # The recorded runs of the Kotlin lane, which
               # `com.sce.formal.ARunIsABehaviourOfItsModelTest` holds its runs
               # to at run time (docs/adr/0115, D4 and D8).
-              "docs/formal/traces/**"],
+              "docs/formal/traces/**",
+              # The turnstile of the properties judge's fixture, whose machine
+              # the Kotlin integration tree holds, and its scenarios with the
+              # Kotlin lane's recorded runs of them, which
+              # `com.sce.formal.AScenarioOfTheTurnstileIsItsRunTest` replays
+              # and holds its runs to at run time (docs/adr/0115, D15).
+              "sce-build/tests/fixtures/formal_properties/**"],
     "deps": ["codegen-build"],
     # 69s was measured on a push whose Kotlin tree was already current.
     # 152s, pace-normalised, is what it cost on 2026-08-24 when a
