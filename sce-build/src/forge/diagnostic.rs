@@ -14929,7 +14929,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union","test-template","test-port-type","test-component","test-configuration","test-case","test-suite"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union","test-template","test-port-type","test-component","test-configuration","test-case","test-suite","properties","exploration"]}}"#,
             ),
             (
                 "forge/duplicate-id",

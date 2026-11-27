@@ -235,6 +235,13 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     ("src/formal/tlc.rs", Why::Operator, &[("run", 1)]),
     // The one copy of the operator's modules into a run's scratch, for TLC and Apalache alike.
     ("src/formal/mod.rs", Why::Operator, &[("stage_modules", 1)]),
+    // The properties and exploration documents the operator names on the command line,
+    // read whole before they are parsed as documents of their kinds.
+    (
+        "src/formal/properties.rs",
+        Why::Operator,
+        &[("read_text", 1)],
+    ),
     // The configurations the inductive runs of the operator's manifest name, beside it.
     ("src/formal/inductive.rs", Why::Operator, &[("declared", 2)]),
     // The tools the judge pins (docs/adr/0146, D3), and the Java runtime TLC and Apalache run on,
@@ -295,6 +302,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // document names. Every such command reads them in the one function
             // that judges the files of a kind.
             ("judge_history_files", 1),
+            // The verdicts a formal properties run is told were recorded (`--recorded`):
+            // the operator's record of a judgement, not a document a document names. It
+            // is read where the command's errors leave it (`leave`, nested in the arm).
+            ("leave", 1),
             // The replay scenario a command is named: the operator's own
             // argument, as `cmd_scenarios` reads it. (The document a command is
             // named is read through `confine`, so a plan run can answer for a
