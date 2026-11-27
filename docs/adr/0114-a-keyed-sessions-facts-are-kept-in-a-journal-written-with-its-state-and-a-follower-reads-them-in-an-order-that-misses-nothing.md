@@ -87,7 +87,7 @@ brought to (machine, key) as the first part of step 4, in a layout of its own; u
 another machine keeps the two in two stores, and step 3 refuses one that names the same store.
 
 **Amended on landing (2026-11-27, step 4).** A session's row, its lease and the notes an expiry wrote for it are kept by
-the machine and the key (`SqliteStore` layout 10), and a handle keeps the sessions of one machine
+the machine and the key (`SqliteStore` layout 12), and a handle keeps the sessions of one machine
 (`SessionStore::machine`, `of_machine`), so the machines of a deployment keep their sessions in one store and an equal
 key of two of them names two sessions. The interim of step 2 is lifted: a follower and the machine it follows keep their
 sessions in the store the journal is in, and nothing refuses it. The build named no store to refuse by, and kept no such
