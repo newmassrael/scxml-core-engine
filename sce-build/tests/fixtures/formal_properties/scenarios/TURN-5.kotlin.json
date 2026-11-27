@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "lane": "kotlin",
+  "steps": [
+    {"kind": "start", "entered": ["locked"], "configuration": ["locked"]}
+  ]
+}

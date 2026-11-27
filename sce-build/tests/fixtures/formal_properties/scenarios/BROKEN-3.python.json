@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "lane": "python",
+  "steps": [
+    {"kind": "start", "entered": ["locked"], "configuration": ["locked"]},
+    {"kind": "external", "event": "push", "fired": [], "exited": [], "entered": [], "configuration": ["locked"]},
+    {"kind": "external", "event": "push", "fired": [], "exited": [], "entered": [], "configuration": ["locked"]},
+    {"kind": "external", "event": "push", "fired": [], "exited": [], "entered": [], "configuration": ["locked"]},
+    {"kind": "external", "event": "push", "fired": [], "exited": [], "entered": [], "configuration": ["locked"]}
+  ]
+}
