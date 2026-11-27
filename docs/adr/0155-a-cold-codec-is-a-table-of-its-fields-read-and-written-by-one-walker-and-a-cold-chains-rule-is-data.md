@@ -146,6 +146,10 @@ holds the walker or a table read. A generator test of a set with hot roots named
   `HeldEntries`, each one function for every table, out of line, with unit tests over tables written by hand.
 - A cold read costs the walker's dispatch, a few instructions a field, once per event; a hot read costs what it costs.
 - The stores of a cold codec are still printed once per form and profile, as its types are.
+- The table and the stores are printed by the codec template from a structured context (rows, gates, derives, store
+  arms), as every template-printed form is. The adapter the writer reads a source through (`{Codec}Rows`) is printed by
+  the source interface's printer (`rust_source`, docs/adr/0081), which writes Rust text by `format!` as the rest of
+  that printer does. That is a debt: it migrates to a template with the rest of the printer, not in this change.
 
 ## Alternatives considered
 

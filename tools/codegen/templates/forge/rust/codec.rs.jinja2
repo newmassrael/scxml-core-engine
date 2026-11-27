@@ -385,9 +385,111 @@ impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
 {# docs/adr/0155: a codec outside the hot closure of a build that names its hot
    roots, every field of a kind a row states, is read by the runtime's one
-   walker over the table of its fields, which the value's stores answer. #}
+   walker over the table of its fields, which the value's stores answer. The
+   table is the `static` of its rows (section 2), or the name of an earlier
+   codec's of the set (section 4); the stores are the value's `TableOut`, one
+   method per kind of store, each a `match` on the row's index. #}
+{% macro ft_bits(b) %}{% if b.width is none %}Bits::whole(Source::{{ b.source }}({{ b.index }})){% else %}Bits::range(Source::{{ b.source }}({{ b.index }}), {{ b.shift }}, {{ b.width }}){% endif %}{% endmacro %}
+{% macro ft_read(r) %}{% if r.kind == "Uint" %}Read::Uint { bytes: {{ r.bytes }}, big: {{ r.big }} }{% elif r.kind == "Zint" %}Read::Zint { bits: {{ r.bits }} }{% elif r.kind == "Body" %}Read::Body { inputs: &[{% for b in r.inputs %}{{ ft_bits(b) }}{% if not loop.last %}, {% endif %}{% endfor %}] }{% else %}Read::{{ r.kind }} { len: {{ ft_bits(r.len) }}, max: {{ r.max }} }{% endif %}{% endmacro %}
+{% macro ft_gate(g) %}{% if g.kind == "Always" %}Gate::Always{% else %}Gate::{{ g.kind }}({{ ft_bits(g.bits) }}){% endif %}{% endmacro %}
+{% macro ft_arm(kind, a) %}
+{% if kind == "number" %}
+                self.{{ a.ident }} = {% if a.gated %}Some({% endif %}value{% if a.cast %} as {{ a.cast }}{% endif %}{% if a.gated %}){% endif %};
+{% elif kind == "bytes" or kind == "text" %}
+{% if a.bounded %}
+                let value = {{ a.runtime }}::Bounded::new({{ kind }}).ok_or(CodecError::LengthOutOfRange)?;
+{% endif %}
+                match {% if a.bounded %}value{% else %}{{ kind }}{% endif %}.store::<{{ a.storage_param }}, {{ a.tag }}>() {
+                    Ok(stored) => {
+                        self.{{ a.ident }} = {% if a.gated %}Some(stored){% else %}stored{% endif %};
+                        Ok(())
+                    }
+                    Err(refused) => {
+                        self.{{ a.ident }} = {% if a.gated %}None{% else %}Default::default(){% endif %};
+                        Err(refused)
+                    }
+                }
+{% elif kind == "read" %}
+{% for b in a.bindings %}
+                {{ b.binding }}
+                let _ = {{ b.local }};
+{% endfor %}
+                {{ a.statement }}
+{% else %}
+                self.{{ a.ident }} = None;
+{% endif %}
+{% endmacro %}
+{% macro ft_dispatch(kind, arms, otherwise) %}
+{% if arms|length == 1 and not otherwise %}
+        if row == {{ arms[0].row }} {
+{{ ft_arm(kind, arms[0]) }}        }
+{% else %}
+        match row {
+{% for a in arms %}
+            {{ a.row }} => {
+{{ ft_arm(kind, a) }}            }
+{% endfor %}
+            _ => {{ otherwise or "{}" }},
+        }
+{% endif %}
+{% endmacro %}
 {% if field_table is defined %}
-{{ field_table.items }}
+{% set ft = field_table %}
+{% set st = ft.stores %}
+{% if ft.home == "borrowed" %}
+/// The fields of `{{ ft.struct_name }}` are the rows of the table of a codec
+/// before it in the set, which it names (docs/adr/0155).
+use {{ ft.path }} as {{ ft.name }};
+{% else %}
+/// The fields of `{{ ft.struct_name }}` in wire order, read by the runtime's one
+/// walker: the codec is read once per event, not on the per-message path
+/// (docs/adr/0155).
+{% if ft.home == "lent" %}pub(super) {% endif %}static {{ ft.name }}: {{ runtime_codec }}::FieldTable = {
+    use {{ runtime_codec }}::{{ "{" }}{{ ft.uses }}{{ "}" }};
+    const ROWS: &[Row] = &[
+{% for row in ft.rows %}
+        Row { read: {{ ft_read(row.read) }}, gate: {{ ft_gate(row.gate) }} },
+{% endfor %}
+    ];
+{% if ft.derived %}
+    const DERIVED: &[Derive] = &[
+{% for d in ft.derived %}
+        Derive { into: {{ ft_bits(d.into) }}, from: Derived::{{ d.from.kind }}({{ d.from.row }}) },
+{% endfor %}
+    ];
+    FieldTable::with_derived(ROWS, DERIVED)
+{% else %}
+    FieldTable::new(ROWS)
+{% endif %}
+};
+{% endif %}
+
+// The stores of `{{ ft.struct_name }}` by the index of each row of {{ ft.name }}.
+impl{{ st.impl_generics }} {{ runtime_codec }}::TableOut<'f> for {{ st.value_type }} {
+{% if st.number %}
+    fn number(&mut self, row: usize, value: u64) {
+{{ ft_dispatch("number", st.number, "") }}    }
+{% endif %}
+{% if st.bytes %}
+    fn bytes(&mut self, row: usize, bytes: &'f [u8]) -> Result<(), CodecError> {
+{{ ft_dispatch("bytes", st.bytes, "Ok(())") }}    }
+{% endif %}
+{% if st.text %}
+    fn text(&mut self, row: usize, text: &'f str) -> Result<(), CodecError> {
+{{ ft_dispatch("text", st.text, "Ok(())") }}    }
+{% endif %}
+{% if st.read %}
+    fn read(&mut self, row: usize, cursor: &mut SceReader<'f>, inputs: &[u64]) {
+        let _ = inputs;
+        let _out = self;
+{{ ft_dispatch("read", st.read, "") }}    }
+{% endif %}
+{% if st.absent %}
+    fn absent(&mut self, row: usize) {
+{{ ft_dispatch("absent", st.absent, "") }}    }
+{% endif %}
+}
+
 {% endif %}
 #[allow(dead_code)]
 {% if emit_owned %}

@@ -69,87 +69,53 @@ pub(super) struct PrintedTable {
     pub(super) rows: Vec<Row>,
     /// The type name of the codec's value.
     struct_name: String,
-    /// The value's `TableOut`, its stores by the index of each row.
-    stores: String,
+    /// The value's `TableOut`, its stores by the index of each row, as the
+    /// template prints them.
+    stores: serde_json::Value,
 }
 
 impl PrintedTable {
     /// What the table is, row for row: its rows and the numbers its write
-    /// derives (`derived`), as the `static` prints them. Two codecs of a set
-    /// whose tables are the same text are one table (docs/adr/0155 section 4).
+    /// derives (`derived`), with no name of the codec's. Two codecs of a set
+    /// whose tables are the same are one table (docs/adr/0155 section 4).
     pub(super) fn rows_key(&self, derived: &[Derive]) -> String {
-        let (rows, derived) = self.printed_rows(derived);
-        format!("{rows}{derived}")
+        serde_json::json!({
+            "rows": self.rows.iter().map(Row::context).collect::<Vec<_>>(),
+            "derived": derived.iter().map(|derive| derive.context()).collect::<Vec<_>>(),
+        })
+        .to_string()
     }
 
-    /// The `ROWS` of the table and its `DERIVED`, empty where its write
-    /// derives no number, each as the `static` holds it.
-    fn printed_rows(&self, derived: &[Derive]) -> (String, String) {
-        let rows_text: String = self
-            .rows
-            .iter()
-            .map(|row| format!("        {},\n", row.print()))
-            .collect();
-        let rows = format!("    const ROWS: &[Row] = &[\n{rows_text}    ];\n");
-        if derived.is_empty() {
-            return (rows, String::new());
-        }
-        let lines: String = derived
-            .iter()
-            .map(|derive| format!("        {},\n", derive.print()))
-            .collect();
-        (
-            rows,
-            format!("    const DERIVED: &[Derive] = &[\n{lines}    ];\n"),
-        )
-    }
-
-    /// The module's items: the `static` of the rows, with the numbers the
-    /// encode derives where the codec is written by the runtime's one writer
-    /// over its table (`derived`, docs/adr/0155 section 3), and the value's
-    /// stores. A table no write derives a number of is made with none. Where
-    /// the table is an earlier codec's of the set (`home`, section 4), the
-    /// module names that codec's `static` by its own table's name in place of
-    /// one of its own; where a later codec names this one, the modules of the
-    /// set see it.
-    pub(super) fn items(&self, derived: &[Derive], home: &TableHome) -> String {
-        let struct_name = &self.struct_name;
-        let name = &self.name;
-        let stores = &self.stores;
-        let visibility = match home {
-            TableHome::Borrowed { path, .. } => {
-                return format!(
-                    "/// The fields of `{struct_name}` are the rows of the table of a codec\n\
-                     /// before it in the set, which it names (docs/adr/0155).\n\
-                     use {path} as {name};\n\n{stores}"
-                );
-            }
-            TableHome::Lent => "pub(super) ",
-            TableHome::Own => "",
+    /// What the codec template prints the table and the value's stores from
+    /// (`field_table`): the rows and the numbers the encode derives where the
+    /// codec is written by the runtime's one writer over its table
+    /// (`derived`, docs/adr/0155 section 3), where the `static` is
+    /// (`home`, section 4), and the stores by the index of each row.
+    pub(super) fn context(&self, derived: &[Derive], home: &TableHome) -> serde_json::Value {
+        let (home, path) = match home {
+            TableHome::Own => ("own", None),
+            TableHome::Lent => ("lent", None),
+            TableHome::Borrowed { path, .. } => ("borrowed", Some(path.clone())),
         };
         let mut uses = vec!["FieldTable", "Gate", "Read", "Row"];
         if !derived.is_empty() || self.rows.iter().any(Row::names_bits) {
             uses.extend(["Bits", "Source"]);
         }
-        let made = if derived.is_empty() {
-            "FieldTable::new(ROWS)"
-        } else {
+        if !derived.is_empty() {
             uses.extend(["Derive", "Derived"]);
-            "FieldTable::with_derived(ROWS, DERIVED)"
-        };
+        }
         uses.sort_unstable();
-        let (rows, derived) = self.printed_rows(derived);
-        format!(
-            "/// The fields of `{struct_name}` in wire order, read by the runtime's one\n\
-             /// walker: the codec is read once per event, not on the per-message path\n\
-             /// (docs/adr/0155).\n\
-             {visibility}static {name}: {RUNTIME_CODEC}::FieldTable = {{\n\
-             \x20   use {RUNTIME_CODEC}::{{{uses}}};\n\
-             {rows}{derived}\
-             \x20   {made}\n\
-             }};\n\n{stores}",
-            uses = uses.join(", "),
-        )
+        serde_json::json!({
+            "name": self.name,
+            "inputs": self.inputs,
+            "struct_name": self.struct_name,
+            "home": home,
+            "path": path,
+            "uses": uses.join(", "),
+            "rows": self.rows.iter().map(Row::context).collect::<Vec<_>>(),
+            "derived": derived.iter().map(|derive| derive.context()).collect::<Vec<_>>(),
+            "stores": self.stores,
+        })
     }
 }
 
@@ -179,15 +145,18 @@ impl Bits {
         }
     }
 
-    fn print(self) -> String {
-        let from = match self.from {
-            Place::Row(row) => format!("Source::Row({row})"),
-            Place::Input(input) => format!("Source::Input({input})"),
+    /// The range as the template prints a runtime `Bits` of it.
+    fn context(self) -> serde_json::Value {
+        let (source, index) = match self.from {
+            Place::Row(row) => ("Row", row),
+            Place::Input(input) => ("Input", input),
         };
-        match self.width {
-            None => format!("Bits::whole({from})"),
-            Some(width) => format!("Bits::range({from}, {}, {width})", self.shift),
-        }
+        serde_json::json!({
+            "source": source,
+            "index": index,
+            "shift": self.shift,
+            "width": self.width,
+        })
     }
 }
 
@@ -200,11 +169,12 @@ pub(super) enum Gate {
 }
 
 impl Gate {
-    fn print(self) -> String {
+    /// The gate as the template prints a runtime `Gate` of it.
+    fn context(self) -> serde_json::Value {
         match self {
-            Gate::Always => "Gate::Always".to_string(),
-            Gate::Set(bits) => format!("Gate::Set({})", bits.print()),
-            Gate::Clear(bits) => format!("Gate::Clear({})", bits.print()),
+            Gate::Always => serde_json::json!({ "kind": "Always", "bits": null }),
+            Gate::Set(bits) => serde_json::json!({ "kind": "Set", "bits": bits.context() }),
+            Gate::Clear(bits) => serde_json::json!({ "kind": "Clear", "bits": bits.context() }),
         }
     }
 }
@@ -256,26 +226,27 @@ pub(super) struct Row {
 }
 
 impl Row {
-    fn print(&self) -> String {
+    /// The row as the template prints a runtime `Row` of it.
+    fn context(&self) -> serde_json::Value {
         let read = match &self.kind {
-            Kind::Uint { bytes, big, .. } => format!("Read::Uint {{ bytes: {bytes}, big: {big} }}"),
-            Kind::Zint { bits, .. } => format!("Read::Zint {{ bits: {bits} }}"),
-            Kind::Counted { text, len, max } => format!(
-                "Read::{} {{ len: {}, max: {} }}",
-                if *text { "Text" } else { "Bytes" },
-                Bits::whole(Place::Row(*len)).print(),
-                max.map_or_else(|| "u64::MAX".to_string(), |max| max.to_string())
-            ),
-            Kind::Body { handed, .. } => format!(
-                "Read::Body {{ inputs: &[{}] }}",
-                handed
+            Kind::Uint { bytes, big, .. } => {
+                serde_json::json!({ "kind": "Uint", "bytes": bytes, "big": big })
+            }
+            Kind::Zint { bits, .. } => serde_json::json!({ "kind": "Zint", "bits": bits }),
+            Kind::Counted { text, len, max } => serde_json::json!({
+                "kind": if *text { "Text" } else { "Bytes" },
+                "len": Bits::whole(Place::Row(*len)).context(),
+                "max": max.map_or_else(|| "u64::MAX".to_string(), |max| max.to_string()),
+            }),
+            Kind::Body { handed, .. } => serde_json::json!({
+                "kind": "Body",
+                "inputs": handed
                     .iter()
-                    .map(|h| Bits::whole(h.from).print())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+                    .map(|h| Bits::whole(h.from).context())
+                    .collect::<Vec<_>>(),
+            }),
         };
-        format!("Row {{ read: {read}, gate: {} }}", self.gate.print())
+        serde_json::json!({ "read": read, "gate": self.gate.context() })
     }
 
     /// Whether the row's print names a `Bits`.
@@ -636,47 +607,26 @@ pub(super) fn dispatch(arms: &[(usize, String)], otherwise: &str) -> String {
     }
 }
 
-/// The store of a counted row's bytes or text, `value`, into its member, the
-/// field `f` of the codec named `codec`.
-fn counted_store(codec: &str, f: &CodecField, said: &Said<'_>, value: &str) -> String {
-    let ident = said.ident;
-    let tag = rust_storage_tag(codec, &f.id);
-    let gated = f.present_if.is_some();
-    let mut out = String::new();
-    let value = if said.bounded {
-        out.push_str(&format!(
-            "                let value = {RUNTIME_CODEC}::Bounded::new({value}).ok_or(CodecError::LengthOutOfRange)?;\n"
-        ));
-        "value"
-    } else {
-        value
-    };
-    let (held, none) = if gated {
-        ("Some(stored)", "None")
-    } else {
-        ("stored", "Default::default()")
-    };
-    out.push_str(&format!(
-        "                match {value}.store::<{STORAGE_PARAM}, {tag}>() {{\n\
-         \x20                   Ok(stored) => {{\n\
-         \x20                       self.{ident} = {held};\n\
-         \x20                       Ok(())\n\
-         \x20                   }}\n\
-         \x20                   Err(refused) => {{\n\
-         \x20                       self.{ident} = {none};\n\
-         \x20                       Err(refused)\n\
-         \x20                   }}\n\
-         \x20               }}\n"
-    ));
-    out
+/// The store of a counted row's bytes or text into its member, the field `f`
+/// of the codec named `codec`, as the template prints it.
+fn counted_store(codec: &str, at: usize, f: &CodecField, said: &Said<'_>) -> serde_json::Value {
+    serde_json::json!({
+        "row": at,
+        "ident": said.ident,
+        "tag": rust_storage_tag(codec, &f.id),
+        "storage_param": STORAGE_PARAM,
+        "runtime": RUNTIME_CODEC,
+        "bounded": said.bounded,
+        "gated": f.present_if.is_some(),
+    })
 }
 
-/// The table of the rows `rows` and the value's stores by their indexes.
+/// The table of the rows `rows` and the value's stores by their indexes,
+/// which the codec template prints.
 fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
     let m = input.m;
     let struct_name = input.struct_name;
     let name = format!("{}_FIELDS", to_upper_snake(&m.name));
-    let mut items = String::new();
     // The stores of each kind of row, by the row's index.
     let mut numbers = Vec::new();
     let mut counted = (Vec::new(), Vec::new());
@@ -687,41 +637,41 @@ fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
         let gated = !matches!(row.gate, Gate::Always);
         match &row.kind {
             Kind::Uint { ty, .. } | Kind::Zint { ty, .. } => {
-                let value = if *ty == "u64" {
-                    "value".to_string()
-                } else {
-                    format!("value as {ty}")
-                };
-                let value = if gated {
-                    format!("Some({value})")
-                } else {
-                    value
-                };
-                numbers.push((at, format!("                self.{ident} = {value};\n")));
+                numbers.push(serde_json::json!({
+                    "row": at,
+                    "ident": ident,
+                    "cast": (*ty != "u64").then_some(*ty),
+                    "gated": gated,
+                }));
             }
             Kind::Counted { text, .. } => {
-                let (arms, value) = if *text {
-                    (&mut counted.1, "text")
+                let arms = if *text {
+                    &mut counted.1
                 } else {
-                    (&mut counted.0, "bytes")
+                    &mut counted.0
                 };
-                arms.push((at, counted_store(&m.name, f, &said[at], value)));
+                arms.push(counted_store(&m.name, at, f, &said[at]));
             }
             Kind::Body { statement, handed } => {
-                let mut body = String::new();
-                for (i, h) in handed.iter().enumerate() {
-                    body.push_str(&format!(
-                        "                {}\n                let _ = {};\n",
-                        handed_binding(i, &h.local, h.ty),
-                        h.local
-                    ));
-                }
-                body.push_str(&format!("                {statement}\n"));
-                bodies.push((at, body));
+                let bindings: Vec<serde_json::Value> = handed
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| {
+                        serde_json::json!({
+                            "binding": handed_binding(i, &h.local, h.ty),
+                            "local": h.local,
+                        })
+                    })
+                    .collect();
+                bodies.push(serde_json::json!({
+                    "row": at,
+                    "bindings": bindings,
+                    "statement": statement,
+                }));
             }
         }
         if gated {
-            absent.push((at, format!("                self.{ident} = None;\n")));
+            absent.push(serde_json::json!({ "row": at, "ident": ident }));
         }
     }
     let (impl_generics, value_type) = if input.owned {
@@ -732,45 +682,6 @@ fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
     } else {
         ("<'f>".to_string(), struct_name.to_string())
     };
-    items.push_str(&format!(
-        "// The stores of `{struct_name}` by the index of each row of {name}.\n\
-         impl{impl_generics} {RUNTIME_CODEC}::TableOut<'f> for {value_type} {{\n"
-    ));
-    let mut methods = Vec::new();
-    if !numbers.is_empty() {
-        methods.push(format!(
-            "    fn number(&mut self, row: usize, value: u64) {{\n{}    }}\n",
-            dispatch(&numbers, "")
-        ));
-    }
-    if !counted.0.is_empty() {
-        methods.push(format!(
-            "    fn bytes(&mut self, row: usize, bytes: &'f [u8]) -> Result<(), CodecError> {{\n{}    }}\n",
-            dispatch(&counted.0, "Ok(())")
-        ));
-    }
-    if !counted.1.is_empty() {
-        methods.push(format!(
-            "    fn text(&mut self, row: usize, text: &'f str) -> Result<(), CodecError> {{\n{}    }}\n",
-            dispatch(&counted.1, "Ok(())")
-        ));
-    }
-    if !bodies.is_empty() {
-        methods.push(format!(
-            "    fn read(&mut self, row: usize, cursor: &mut SceReader<'f>, inputs: &[u64]) {{\n\
-             \x20       let _ = inputs;\n\
-             \x20       let _out = self;\n{}    }}\n",
-            dispatch(&bodies, "")
-        ));
-    }
-    if !absent.is_empty() {
-        methods.push(format!(
-            "    fn absent(&mut self, row: usize) {{\n{}    }}\n",
-            dispatch(&absent, "")
-        ));
-    }
-    items.push_str(&methods.join("\n"));
-    items.push_str("}\n");
     let inputs = m
         .flag_inputs
         .iter()
@@ -787,7 +698,15 @@ fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
         inputs,
         rows,
         struct_name: struct_name.to_string(),
-        stores: items,
+        stores: serde_json::json!({
+            "impl_generics": impl_generics,
+            "value_type": value_type,
+            "number": numbers,
+            "bytes": counted.0,
+            "text": counted.1,
+            "read": bodies,
+            "absent": absent,
+        }),
     }
 }
 
@@ -829,12 +748,16 @@ pub(super) struct Derive {
 }
 
 impl Derive {
-    fn print(self) -> String {
-        let from = match self.from {
-            DerivedFrom::Present(row) => format!("Derived::Present({row})"),
-            DerivedFrom::Count(row) => format!("Derived::Count({row})"),
+    /// The derive as the template prints a runtime `Derive` of it.
+    fn context(self) -> serde_json::Value {
+        let (kind, row) = match self.from {
+            DerivedFrom::Present(row) => ("Present", row),
+            DerivedFrom::Count(row) => ("Count", row),
         };
-        format!("Derive {{ into: {}, from: {from} }}", self.into.print())
+        serde_json::json!({
+            "into": self.into.context(),
+            "from": { "kind": kind, "row": row },
+        })
     }
 }
 
@@ -1047,26 +970,92 @@ mod tests {
         let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
         assert_eq!(table.name, "CODEC_ZENOH_WIREEXPR_FIELDS");
         assert_eq!(table.inputs, "u64::from(n)");
-        for printed in [
-            "Row { read: Read::Zint { bits: 64 }, gate: Gate::Always },",
-            "Row { read: Read::Zint { bits: 64 }, gate: \
-             Gate::Set(Bits::range(Source::Input(0), 0, 1)) },",
-            "Row { read: Read::Text { len: Bits::whole(Source::Row(1)), max: 65535 }, gate: \
-             Gate::Set(Bits::range(Source::Input(0), 0, 1)) },",
-            "self.id = value;",
-            "self.suffix_len = Some(value);",
-            "self.suffix = None;",
-            "Bounded::new(text).ok_or(CodecError::LengthOutOfRange)?;",
-            "match value.store::<S, CodecZenohWireexprSuffixField>() {",
-            "impl<'f, S: CodecZenohWireexprFrom<'f>> ::sce_forge_runtime::codec::TableOut<'f> \
-             for CodecZenohWireexprIn<S> {",
-        ] {
-            assert!(
-                table.items(&[], &TableHome::Own).contains(printed),
-                "the table of codec_zenoh_wireexpr has no `{printed}`:\n{}",
-                table.items(&[], &TableHome::Own)
-            );
-        }
+        let flag = Gate::Set(Bits {
+            from: Place::Input(0),
+            shift: 0,
+            width: Some(1),
+        });
+        assert_eq!(
+            table.rows,
+            vec![
+                Row {
+                    kind: Kind::Zint {
+                        bits: 64,
+                        ty: "u64"
+                    },
+                    gate: Gate::Always,
+                },
+                Row {
+                    kind: Kind::Zint {
+                        bits: 64,
+                        ty: "u64"
+                    },
+                    gate: flag,
+                },
+                Row {
+                    kind: Kind::Counted {
+                        text: true,
+                        len: 1,
+                        max: Some(65535),
+                    },
+                    gate: flag,
+                },
+            ]
+        );
+        let context = table.context(&[], &TableHome::Own);
+        let stores = &context["stores"];
+        assert_eq!(
+            stores["number"],
+            serde_json::json!([
+                { "row": 0, "ident": "id", "cast": null, "gated": false },
+                { "row": 1, "ident": "suffix_len", "cast": null, "gated": true },
+            ]),
+            "{context}"
+        );
+        assert_eq!(
+            stores["text"],
+            serde_json::json!([{
+                "row": 2,
+                "ident": "suffix",
+                "tag": "CodecZenohWireexprSuffixField",
+                "storage_param": "S",
+                "runtime": RUNTIME_CODEC,
+                "bounded": true,
+                "gated": true,
+            }]),
+            "{context}"
+        );
+        assert_eq!(
+            stores["absent"],
+            serde_json::json!([
+                { "row": 1, "ident": "suffix_len" },
+                { "row": 2, "ident": "suffix" },
+            ]),
+            "{context}"
+        );
+        assert_eq!(
+            (&stores["impl_generics"], &stores["value_type"]),
+            (
+                &serde_json::json!("<'f, S: CodecZenohWireexprFrom<'f>>"),
+                &serde_json::json!("CodecZenohWireexprIn<S>")
+            ),
+            "{context}"
+        );
+        assert_eq!(
+            context["rows"][2],
+            serde_json::json!({
+                "read": {
+                    "kind": "Text",
+                    "len": { "source": "Row", "index": 1, "shift": 0, "width": null },
+                    "max": "65535",
+                },
+                "gate": {
+                    "kind": "Set",
+                    "bits": { "source": "Input", "index": 0, "shift": 0, "width": 1 },
+                },
+            }),
+            "{context}"
+        );
     }
 
     /// An embedded body and a chain are read by their printed statements, each
@@ -1092,26 +1081,70 @@ mod tests {
             context(&[("id", "extensions"), ("tlv_chain_decode_stmt", chain)]),
         ];
         let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
-        for printed in [
-            "Row { read: Read::Uint { bytes: 1, big: true }, gate: Gate::Always },",
-            "Row { read: Read::Body { inputs: &[Bits::whole(Source::Row(0))] }, gate: \
-             Gate::Always },",
-            "let header: u8 = inputs.first().copied().unwrap_or(0) as u8;",
-            "self.header = value as u8;",
-            embed,
-            chain,
-        ] {
-            assert!(
-                table.items(&[], &TableHome::Own).contains(printed),
-                "the table of codec_zenoh_msg_del has no `{printed}`:\n{}",
-                table.items(&[], &TableHome::Own)
-            );
-        }
-        assert!(
-            !table.items(&[], &TableHome::Own).contains("fn absent("),
+        let handed = vec![Handed {
+            local: "header".to_string(),
+            ty: "u8",
+            from: Place::Row(0),
+        }];
+        assert_eq!(
+            table.rows,
+            vec![
+                Row {
+                    kind: Kind::Uint {
+                        bytes: 1,
+                        big: true,
+                        ty: "u8",
+                    },
+                    gate: Gate::Always,
+                },
+                Row {
+                    kind: Kind::Body {
+                        statement: embed.to_string(),
+                        handed: handed.clone(),
+                    },
+                    gate: Gate::Always,
+                },
+                Row {
+                    kind: Kind::Body {
+                        statement: chain.to_string(),
+                        handed,
+                    },
+                    gate: Gate::Always,
+                },
+            ]
+        );
+        let context = table.context(&[], &TableHome::Own);
+        let stores = &context["stores"];
+        let binding = serde_json::json!({
+            "binding": "let header: u8 = inputs.first().copied().unwrap_or(0) as u8;",
+            "local": "header",
+        });
+        assert_eq!(
+            stores["read"],
+            serde_json::json!([
+                { "row": 1, "bindings": [binding.clone()], "statement": embed },
+                { "row": 2, "bindings": [binding], "statement": chain },
+            ]),
+            "{context}"
+        );
+        assert_eq!(
+            stores["number"],
+            serde_json::json!([{ "row": 0, "ident": "header", "cast": "u8", "gated": false }]),
+            "{context}"
+        );
+        assert_eq!(
+            stores["absent"],
+            serde_json::json!([]),
             "codec_zenoh_msg_del gates its bodies in their statements, and has an absent \
-             store:\n{}",
-            table.items(&[], &TableHome::Own)
+             store: {context}"
+        );
+        assert_eq!(
+            context["rows"][1]["read"],
+            serde_json::json!({
+                "kind": "Body",
+                "inputs": [{ "source": "Row", "index": 0, "shift": 0, "width": null }],
+            }),
+            "{context}"
         );
     }
 
@@ -1228,53 +1261,62 @@ mod tests {
         assert_eq!(derived.len(), 2, "{derived:?}");
         assert!(derived.contains(&flag), "{derived:?}");
         assert!(derived.contains(&count), "{derived:?}");
-        let items = table.items(&derived, &TableHome::Own);
-        for printed in [
-            "use ::sce_forge_runtime::codec::{Bits, Derive, Derived, FieldTable, Gate, Read, \
-             Row, Source};",
-            "    const DERIVED: &[Derive] = &[\n",
-            "Derive { into: Bits::range(Source::Row(0), 0, 1), from: Derived::Present(2) },",
-            "Derive { into: Bits::whole(Source::Row(1)), from: Derived::Count(2) },",
-            "    FieldTable::with_derived(ROWS, DERIVED)\n",
-        ] {
-            assert!(
-                items.contains(printed),
-                "the table of codec_present_if_string has no `{printed}`:\n{items}"
-            );
-        }
-        let read_only = table.items(&[], &TableHome::Own);
-        assert!(
-            read_only.contains("    FieldTable::new(ROWS)\n") && !read_only.contains("DERIVED"),
-            "a table no write derives a number of is made with none:\n{read_only}"
+        let context = table.context(&derived, &TableHome::Own);
+        assert_eq!(
+            context["uses"],
+            serde_json::json!("Bits, Derive, Derived, FieldTable, Gate, Read, Row, Source"),
+            "{context}"
+        );
+        assert_eq!(
+            context["derived"],
+            serde_json::json!([
+                {
+                    "into": { "source": "Row", "index": 0, "shift": 0, "width": 1 },
+                    "from": { "kind": "Present", "row": 2 },
+                },
+                {
+                    "into": { "source": "Row", "index": 1, "shift": 0, "width": null },
+                    "from": { "kind": "Count", "row": 2 },
+                },
+            ]),
+            "{context}"
+        );
+        let read_only = table.context(&[], &TableHome::Own);
+        assert_eq!(
+            (&read_only["derived"], &read_only["home"]),
+            (&serde_json::json!([]), &serde_json::json!("own")),
+            "a table no write derives a number of is made with none: {read_only}"
         );
         // docs/adr/0155 section 4: what the table is names no codec, so two
         // codecs of the same rows have one; the first lends its `static` to
         // the set, and a later one names it in place of one of its own.
         let rows = table.rows_key(&derived);
         assert!(
-            rows.contains("const ROWS: &[Row] = &[")
-                && rows.contains("const DERIVED: &[Derive] = &[")
-                && !rows.contains("PRESENT_IF_STRING"),
+            rows.contains("\"derived\"") && !rows.contains("PRESENT_IF_STRING"),
             "{rows}"
         );
-        let lent = table.items(&derived, &TableHome::Lent);
-        assert!(
-            lent.contains("pub(super) static CODEC_PRESENT_IF_STRING_FIELDS: "),
-            "a lent table is no static the set sees:\n{lent}"
+        assert_ne!(
+            rows,
+            table.rows_key(&[]),
+            "the derived numbers are no part of the rows"
         );
-        let borrowed = table.items(
+        let lent = table.context(&derived, &TableHome::Lent);
+        assert_eq!(lent["home"], serde_json::json!("lent"), "{lent}");
+        let borrowed = table.context(
             &derived,
             &TableHome::Borrowed {
                 path: "super::codec_a::CODEC_A_FIELDS".to_string(),
                 rows,
             },
         );
-        assert!(
-            borrowed.contains(
-                "use super::codec_a::CODEC_A_FIELDS as CODEC_PRESENT_IF_STRING_FIELDS;\n"
-            ) && !borrowed.contains("static ")
-                && borrowed.contains("TableOut<'f> for CodecPresentIfStringIn<S> {"),
-            "a borrowed table is not the earlier codec's, with stores of its own:\n{borrowed}"
+        assert_eq!(
+            (&borrowed["home"], &borrowed["path"], &borrowed["stores"]),
+            (
+                &serde_json::json!("borrowed"),
+                &serde_json::json!("super::codec_a::CODEC_A_FIELDS"),
+                &context["stores"]
+            ),
+            "a borrowed table is not the earlier codec's, with stores of its own: {borrowed}"
         );
     }
 

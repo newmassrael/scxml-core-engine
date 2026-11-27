@@ -18000,11 +18000,7 @@ fn render_codec(
                 let home = set_tables.home(&m.name, &rows);
                 ctx.insert(
                     "field_table".into(),
-                    serde_json::json!({
-                        "name": table.name,
-                        "inputs": table.inputs,
-                        "items": table.items(&rendered.derived, &home),
-                    }),
+                    table.context(&rendered.derived, &home),
                 );
                 *cold = Some(crate::forge::shared_tables::ColdCodec::Table(
                     crate::forge::shared_tables::SetTable {
