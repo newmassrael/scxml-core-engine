@@ -17,6 +17,7 @@ VARIABLE
     \* @type: Int;
     n
 
+\* @type: <<Int>>;
 vars == <<n>>
 
 Init == n = 0

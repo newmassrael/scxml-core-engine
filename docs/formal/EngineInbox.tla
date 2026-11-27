@@ -188,6 +188,7 @@ Spec == Init /\ [][Next]_vars
 \* loop applies what came late.
 LiveSpec == Spec /\ WF_vars(Boundary) /\ \A s \in Sessions : WF_vars(Late(s))
 
+\* @type: (Str, Seq(Str)) => Bool;
 InSeq(x, q) == \E k \in DOMAIN q : q[k] = x
 
 \* What each queue took is the order its posts and own events linearized in.

@@ -166,10 +166,12 @@ VARIABLES
 
 srv  == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects>>
 cli  == <<cinc, cjn, cwait, cnext, slot, status, got>>
+\* @type: <<Int, Int, Int, Int>>;
 cnt  == <<nCli, nSrv, nExp, nForge>>
 vars == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects,
           cinc, cjn, cwait, cnext, slot, status, got, net, nCli, nSrv, nExp, nForge>>
 
+\* @type: (Str, Int, Int, Int, Int, Int, Int) => {kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int};
 Msg(kind, i, inc, seq, k, mark, jn) ==
     [kind |-> kind, i |-> i, inc |-> inc, seq |-> seq, k |-> k, mark |-> mark, jn |-> jn]
 
@@ -205,6 +207,7 @@ CJoin(i) ==
     /\ net' = net \cup {Msg("join", i, 0, 0, 0, 0, cjn[i] + 1)}
     /\ UNCHANGED <<srv, cinc, cnext, slot, status, got, cnt>>
 
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 COffer(m) ==
     /\ m.kind = "offer" /\ cinc[m.i] = 0
     /\ Match => (cwait[m.i] /\ m.jn = cjn[m.i])
@@ -231,6 +234,7 @@ CAck(i) ==
     /\ net' = net \cup {Msg("ack", i, cinc[i], 0, 0, Mark(i), 0)}
     /\ UNCHANGED <<srv, cli, cnt>>
 
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 CReply(m) ==
     /\ m.kind = "reply" /\ cinc[m.i] = m.inc /\ Waiting(m.i, m.seq)
     /\ status' = [status EXCEPT ![m.i][slot[m.i][m.seq]] = "done"]
@@ -239,6 +243,7 @@ CReply(m) ==
 
 Unknown(i) == [k \in Ks |-> IF status[i][k] = "waiting" THEN "unknown" ELSE status[i][k]]
 
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 CFenced(m) ==
     /\ m.kind = "fenced" /\ m.inc # 0 /\ cinc[m.i] = m.inc
     /\ status' = [status EXCEPT ![m.i] = Unknown(m.i)]
@@ -256,10 +261,12 @@ CCrash(i) ==
 -----------------------------------------------------------------------------
 \* The server. What is taken from the network stays in it when messages repeat.
 
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Set({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int});
 Left(m) == IF Dup THEN net ELSE net \ {m}
 
 \* The answer to a join. `ofor` is the join the offer stands for: a join repeated while its offer
 \* stands is offered the same incarnation again.
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 SJoin(m) ==
     /\ m.kind = "join"
     /\ LET again == SameOffer /\ Handshake /\ offer[m.i] # 0 /\ ofor[m.i] = m.jn
@@ -278,6 +285,7 @@ SJoin(m) ==
 Room(i) == ~Limit \/ member[i] # 0 \/ Cardinality(Members) < MaxMembers
 
 \* The edge: judge the incarnation, take the mark, hand the request to its session.
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 SEdge(m) ==
     /\ m.kind \in {"req", "ack"}
     /\ LET i       == m.i
@@ -305,10 +313,12 @@ SCommitMark(i) ==
     /\ lowD' = [lowD EXCEPT ![i] = low[i]]
     /\ UNCHANGED <<member, offer, ofor, drawn, low, rec, inbox, effects, cli, net, cnt>>
 
+\* @type: ({i: Int, inc: Int, seq: Int, k: Int}, {kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 Of(r, m) == r.i = m.i /\ r.inc = m.inc /\ r.seq = m.seq
 
 \* A session runs a request: the effect and its record are one write, and that write is refused when
 \* the store no longer holds the incarnation, which is the judgement `gone` makes (D5).
+\* @type: (Int, {kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 SRun(s, m) ==
     /\ m \in inbox[s]
     /\ inbox' = [inbox EXCEPT ![s] = @ \ {m}]
@@ -481,6 +491,7 @@ TypeOK ==
     /\ nExp \in 0..MaxExpire
     /\ nForge \in 0..MaxForge
 
+\* @type: ({kind: Str, i: Int, inc: Int, seq: Int, k: Int, mark: Int, jn: Int}) => Bool;
 IsReq(m) == m.kind = "req"
 
 \* An incarnation that can never be a member again: neither the member nor the one offered. A
@@ -495,6 +506,7 @@ Kept(i, c, q, k) ==
     \/ member[i] = c /\ q < lowD[i]
 
 \* Two of one request of one instance, on the network, in an inbox or as a record, carry one name.
+\* @type: ({i: Int, k: Int, inc: Int, seq: Int, a}, {i: Int, k: Int, inc: Int, seq: Int, b}) => Bool;
 OneName(x, y) == (x.i = y.i /\ x.k = y.k) => (x.inc = y.inc /\ x.seq = y.seq)
 
 AtMostOnceInductive ==
