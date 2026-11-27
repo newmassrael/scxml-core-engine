@@ -4237,14 +4237,15 @@ of an algorithm that holds a map changes where it is generated again (below).
   (`BoundedMap::<_, _, N, Lent<'_>>::over`): both lent storages have an `over`.
 - `BoundedMap::limit()` answers how many entries the map may hold, `N` or the slots lent; a put of an absent key at
   the limit answers `PutOutcome::Full`.
-- `MapSlot { index, generation }` (`#[repr(C)]`) names the slot an entry is held in until it is removed:
-  `put_slot(key, value)` answers `(PutOutcome, Option<MapSlot>)`, `slot_of(key)`, `MapCursor::slot()` and
-  `at_slot(slot)` (`None` for a slot freed since, or taken again by another entry). `put` answers as before.
-- **What changes for code that exists.** A `MapCursor` carries its slot's generation: two positions read before and
-  after a slot was freed and taken again are unequal, and `key_at` or `value_at` of the earlier panics; compare
-  `cursor.slot().index` to ask whether two positions are one slot. `clear()` frees every slot onto the free list,
-  where it gave the slots back to the storage; what a map answers is unchanged. Each slot holds a `u32` more, so a
-  map in bounded storage grows by up to four bytes a slot, eight where alignment rounds it.
+- `MapSlot { index, generation }` (`#[repr(C)]`) names the slot an entry of a lent map is held in until it is
+  removed: `put_slot(key, value)` answers `(PutOutcome, Option<MapSlot>)`, `slot_of(key)`,
+  `MapCursor::<u32>::slot()` and `at_slot(slot)` (`None` for a slot freed since, or taken again by another entry).
+  They exist where `MapStorage::Generation` is `u32`, in `Lent` and `LentIndexed` storage; a position of a lent map
+  is `MapCursor<u32>`, and `key_at` of one whose slot was freed and taken again panics.
+- **What stays as it was.** `Inline`, `Heap` and `Linear` keep no generation (`MapStorage::Generation = ()`): their
+  slots and their positions (`MapCursor`, now `MapCursor<G = ()>`, the default naming the one it was) are the size
+  they were, `clear()` gives the slots back, a clone copies the slots and the index as they stand, and `put` answers
+  as before. Code that names `MapCursor` for a map of those storages compiles unchanged.
 - `Clone` of a map or a set is implemented for a storage that holds its own slots, `S: MapStorage<Owned = S>`
   (`Inline`, `Heap`, `Linear`); code generic over `S: MapStorage` that clones a map writes `to_owned_storage()`,
   which copies into `S::Owned` (`Linear` for `Lent`, `Inline` for `LentIndexed`, the storage itself otherwise), or

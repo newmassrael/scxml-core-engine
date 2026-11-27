@@ -112,8 +112,9 @@ every engine walks a map in the same order and a scenario compares one trace acr
 was rejected (Alternatives rejected, 3).
 
 (Amended by ADR 0154, D2.) What leaves a map into a document's value is still no handle, slot or position. A Rust host
-reads the slot each entry is held in, `MapSlot`, a number below the map's limit and a generation that moves each
-time the slot is freed, so a host keeps state of its own beside each entry.
+reads the slot each entry of a map in storage it lends is held in, `MapSlot`, a number below the map's limit and a
+generation that moves each time the slot is freed, so a host keeps state of its own beside each entry; the storages
+that hold their own slots keep no generation and name no slot.
 
 ### D3. What a statechart reads and writes
 

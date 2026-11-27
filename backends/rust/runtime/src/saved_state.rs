@@ -6106,9 +6106,9 @@ mod tests {
         // docs/adr/0154, D1: a map whose host lends its slots writes the saved
         // form an inline map of the same entries writes, in their order, and
         // a host restores it by putting the entries a map read back holds.
-        type Faces = crate::BoundedMap<u32, u8, 4, crate::Inline>;
+        type Weights = crate::BoundedMap<u32, u8, 4, crate::Inline>;
         let faces_saved = json_of("[[7,1],[3,2],[9,3]]");
-        let faces = Faces::from_saved(&faces_saved, "faces").expect("restores");
+        let faces = Weights::from_saved(&faces_saved, "faces").expect("restores");
         let mut slots: [crate::LentIndexedSlot<u32, u8>; 3] =
             core::array::from_fn(|_| crate::LentIndexedSlot::empty());
         let mut cells = [crate::LentCell::EMPTY; 6];
