@@ -66,6 +66,17 @@ arguments = ["generate", "tests/integration/{document}.scxml", "-l", "go", "-o",
 place = "backends/go/tests/integration/{document}"
 keep = ["*_sm.go"]
 
+# The turnstile of the properties judge's fixture (docs/adr/0115, D15): each
+# scenario TLC gives of it, a violation or a witness, is replayed through this
+# machine by run_trace/a_scenario_of_the_turnstile_is_its_run_test.go, the twin
+# of the Rust and C11 lanes' tests of the same name. It is the formal fixture's
+# document, which no channel contract of integration_resources holds; its
+# package is the document's, `turnstile`.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/formal_properties/turnstile.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/formal_turnstile"
+keep = ["*_sm.go"]
+
 # The AI supervision loop example, for a host serving `x-sce-host`. It is an
 # example, not a fixture: `ai_loop_channel_parity` holds every channel that
 # drives it to one scenario set.

@@ -32,7 +32,13 @@
               # The recorded runs of the Go lane, which
               # `backends/go/tests/run_trace` holds its runs to at run time
               # (docs/adr/0115, D4 and D8).
-              "docs/formal/traces/**"],
+              "docs/formal/traces/**",
+              # The turnstile of the properties judge's fixture, whose machine
+              # the Go integration tree holds, and its scenarios with the Go
+              # lane's recorded runs of them, which
+              # `backends/go/tests/run_trace` replays and holds its runs to at
+              # run time (docs/adr/0115, D15).
+              "sce-build/tests/fixtures/formal_properties/**"],
     "deps": ["codegen-build"],
     # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
     # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them

@@ -117,14 +117,15 @@ done
 
 # The trace port (docs/adr/0115, D4 and D8), which is compiled only with the
 # build tag `sce_trace_port`, so neither run above reaches it: the runtime's own
-# tests of its writer and recorder, and the runs of the W3C documents
-# docs/formal has a model of, recorded through the port from the machines the
-# suite generated above and held to docs/formal/traces/*.go.json
-# (backends/go/tests/run_trace). Of the runtime, only its `TestTrace` cases: the
-# rest ran above. The floors are the runtime's five cases and the package's
-# five, for the reason the suite has one: a package compiled without its tag
-# holds no case and exits 0.
-for traced in "runtime:.:^TestTrace:5" "tests:./run_trace/:.:5"; do
+# tests of its writer and recorder, the runs of the W3C documents docs/formal
+# has a model of, recorded through the port from the machines the suite
+# generated above and held to docs/formal/traces/*.go.json, and the replay of
+# each scenario of the properties judge's turnstile, held to its recorded run
+# beside it (backends/go/tests/run_trace; docs/adr/0115, D15). Of the runtime,
+# only its `TestTrace` cases: the rest ran above. The floors are the runtime's
+# five cases and the package's six, for the reason the suite has one: a package
+# compiled without its tag holds no case and exits 0.
+for traced in "runtime:.:^TestTrace:5" "tests:./run_trace/:.:6"; do
     IFS=: read -r module package cases_run floor <<<"$traced"
     sce_gate_step "running the Go $module module's trace port tests (-tags sce_trace_port)"
     traced_status=0
