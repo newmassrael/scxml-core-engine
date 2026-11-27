@@ -192,6 +192,69 @@
           "to": "self.last_backoff_ms = None;"
         }
       ]
+    },
+    {
+      "file": "backends/rust/mesh/src/https/rate/limits.rs",
+      "compiled_by": "backends/rust/mesh/src/https/rate.rs",
+      "decision": "docs/adr/0115",
+      "verified": 14,
+      "mutants": [
+        {
+          "breaks": "a request the rule could not judge is admitted unjudged",
+          "from": "            Answer::Refused {\n                wait_ms: interval_ms,\n            },\n            None,\n        ),",
+          "to": "            Answer::Admitted,\n            None,\n        ),"
+        },
+        {
+          "breaks": "a refused request spends a permit of its key",
+          "from": "                        wait_ms: wait as u64,\n                    },\n                    None,\n",
+          "to": "                        wait_ms: wait as u64,\n                    },\n                    Some(arrival),\n"
+        },
+        {
+          "breaks": "an admitted request spends nothing, so its key is never past its rate",
+          "from": "(Answer::Admitted, Some(arrival))",
+          "to": "(Answer::Admitted, None)"
+        },
+        {
+          "breaks": "a key the limiter does not track is judged as one that waits, so a fresh key is refused",
+          "from": "kept.unwrap_or(0)",
+          "to": "kept.unwrap_or(1)"
+        },
+        {
+          "breaks": "a table at its bound takes a new key past it",
+          "from": "if tracked >= bound {",
+          "to": "if tracked > bound {"
+        },
+        {
+          "breaks": "a limiter told to track no key keeps one past its bound",
+          "from": "    if max_tracked == 0 {\n        1\n",
+          "to": "    if max_tracked == 0 {\n        0\n"
+        },
+        {
+          "breaks": "an interval past what the rule's 64 bits hold wraps to a negative one",
+          "from": "if interval_ms > i64::MAX as u64 {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "of two refusals the shorter wait is asked",
+          "from": "core::cmp::max(x, y)",
+          "to": "core::cmp::min(x, y)"
+        },
+        {
+          "breaks": "a wait of part of a second is asked as less than it is",
+          "from": "        whole + 1\n",
+          "to": "        whole\n"
+        },
+        {
+          "breaks": "a wait of no time asks for none",
+          "from": "if rounded == 0 {",
+          "to": "if false {"
+        },
+        {
+          "breaks": "an address that is no trusted proxy is walked past, so a client names any address it likes",
+          "from": "            } else {\n                Hop::Client(address)\n",
+          "to": "            } else {\n                Hop::Passes(address)\n"
+        }
+      ]
     }
   ]
 }

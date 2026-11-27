@@ -15,6 +15,13 @@
 //!
 //! The remote address of a connection from a trusted proxy is read from its `Forwarded` header
 //! (RFC 7239): the rightmost address it names that is not itself a trusted proxy.
+//!
+//! What is done with the rule's answers (whether a request spends, how many keys a table tracks,
+//! which wait an exchange is told, the seconds of a `Retry-After`, which address of `Forwarded` is
+//! the client's) is the module `limits`'s, a core proved by Verus (docs/adr/0115, D13); this module
+//! holds the tables and the addresses it decides over.
+
+mod limits;
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -26,6 +33,8 @@ use std::time::Duration;
 
 use crate::generated_rate::gcra_admit::gcra_admit;
 use crate::peers::{EdgeRate, EdgeRates};
+
+use limits::{Answer, Hop, Room};
 
 /// What a limiter answers a request with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +68,7 @@ impl<K: Eq + Hash + Ord + Clone> Limiter<K> {
     pub fn new(rate: EdgeRate, max_tracked: u32) -> Self {
         Limiter {
             rate,
-            max_tracked: usize::try_from(max_tracked).unwrap_or(usize::MAX).max(1),
+            max_tracked: limits::bound(max_tracked),
             arrivals: HashMap::new(),
             by_arrival: BTreeSet::new(),
         }
@@ -73,15 +82,20 @@ impl<K: Eq + Hash + Ord + Clone> Limiter<K> {
     /// Spend one permit of `key` at `now_ms`: admitted, and the key's arrival time moves on, or
     /// refused with the wait, and nothing moves.
     pub fn spend(&mut self, key: &K, now_ms: i64) -> Verdict {
-        let (verdict, arrival) = self.judge(key, now_ms);
+        let (answer, arrival) = self.judge(key, now_ms);
         if let Some(arrival) = arrival {
             self.set(key, arrival);
         }
-        verdict
+        verdict(answer)
     }
 
     /// Whether `key` would be admitted at `now_ms`, spending nothing.
     pub fn ask(&self, key: &K, now_ms: i64) -> Verdict {
+        verdict(self.answer(key, now_ms))
+    }
+
+    /// What `key` would be answered at `now_ms`, spending nothing.
+    fn answer(&self, key: &K, now_ms: i64) -> Answer {
         self.judge(key, now_ms).0
     }
 
@@ -90,42 +104,29 @@ impl<K: Eq + Hash + Ord + Clone> Limiter<K> {
     /// any reading of a clock that starts at 0. The build bounds a limiter's span far below what
     /// the rule's 64-bit arithmetic holds, so the rule refuses nothing it is given; were it to,
     /// the request is refused for one interval rather than admitted unjudged.
-    fn judge(&self, key: &K, now_ms: i64) -> (Verdict, Option<i64>) {
-        let tat = self.arrivals.get(key).copied().unwrap_or(0);
-        let interval = i64::try_from(self.rate.interval_ms).unwrap_or(i64::MAX);
-        match gcra_admit(tat, now_ms, 1, interval, self.rate.burst) {
-            Ok(decision) if decision.admitted => (Verdict::Admitted, Some(decision.tat)),
-            Ok(decision) => (
-                Verdict::Refused {
-                    wait: Duration::from_millis(
-                        u64::try_from(decision.retry_after).unwrap_or(u64::MAX),
-                    ),
-                },
-                None,
-            ),
-            Err(_) => (
-                Verdict::Refused {
-                    wait: Duration::from_millis(self.rate.interval_ms),
-                },
-                None,
-            ),
-        }
+    fn judge(&self, key: &K, now_ms: i64) -> (Answer, Option<i64>) {
+        let tat = limits::arrival(self.arrivals.get(key).copied());
+        let interval = limits::interval(self.rate.interval_ms);
+        let decided = gcra_admit(tat, now_ms, 1, interval, self.rate.burst)
+            .ok()
+            .map(|decision| (decision.admitted, decision.tat, decision.retry_after));
+        limits::answer(decided, self.rate.interval_ms)
     }
 
     /// Keep `arrival` for `key`, dropping the key of the earliest arrival first when the limiter
     /// tracks `max_tracked` keys and `key` is not one of them.
     fn set(&mut self, key: &K, arrival: i64) {
-        match self.arrivals.get(key).copied() {
-            Some(held) => {
+        let held = self.arrivals.get(key).copied();
+        match limits::room(self.arrivals.len(), self.max_tracked, held) {
+            Room::Held(held) => {
                 self.by_arrival.remove(&(held, key.clone()));
             }
-            None => {
-                if self.arrivals.len() >= self.max_tracked {
-                    if let Some((_, dropped)) = self.by_arrival.pop_first() {
-                        self.arrivals.remove(&dropped);
-                    }
+            Room::Full => {
+                if let Some((_, dropped)) = self.by_arrival.pop_first() {
+                    self.arrivals.remove(&dropped);
                 }
             }
+            Room::Free => {}
         }
         self.arrivals.insert(key.clone(), arrival);
         self.by_arrival.insert((arrival, key.clone()));
@@ -168,14 +169,14 @@ impl Edge {
         let by_name = self
             .failed_by_name
             .as_ref()
-            .map_or(Verdict::Admitted, |limiter| {
-                limiter.ask(&String::from(name), now_ms)
+            .map_or(Answer::Admitted, |limiter| {
+                limiter.answer(&String::from(name), now_ms)
             });
         let by_address = match (&self.failed_by_address, address) {
-            (Some(limiter), Some(address)) => limiter.ask(&address, now_ms),
-            _ => Verdict::Admitted,
+            (Some(limiter), Some(address)) => limiter.answer(&address, now_ms),
+            _ => Answer::Admitted,
         };
-        longer(by_name, by_address)
+        verdict(limits::longer(by_name, by_address))
     }
 
     /// An exchange of `name` from `address` failed authentication (a `401`): it spends a permit
@@ -208,14 +209,13 @@ fn spend_on<K: Eq + Hash + Ord + Clone>(
     }
 }
 
-/// The verdict that asks the longer wait.
-fn longer(a: Verdict, b: Verdict) -> Verdict {
-    match (a, b) {
-        (Verdict::Refused { wait: x }, Verdict::Refused { wait: y }) => {
-            Verdict::Refused { wait: x.max(y) }
-        }
-        (refused @ Verdict::Refused { .. }, _) | (_, refused @ Verdict::Refused { .. }) => refused,
-        _ => Verdict::Admitted,
+/// The verdict a limiter's answer is told as.
+fn verdict(answer: Answer) -> Verdict {
+    match answer {
+        Answer::Admitted => Verdict::Admitted,
+        Answer::Refused { wait_ms } => Verdict::Refused {
+            wait: Duration::from_millis(wait_ms),
+        },
     }
 }
 
@@ -298,12 +298,13 @@ pub fn client_address<'a>(
         .collect();
     let mut client = peer;
     for named in named.into_iter().rev() {
-        let Some(address) = named else {
-            return client;
-        };
-        client = canonical(address);
-        if !is_trusted(trusted, client) {
-            return client;
+        let named = named
+            .map(canonical)
+            .map(|address| (address, is_trusted(trusted, address)));
+        match limits::hop(named) {
+            Hop::Ends => return client,
+            Hop::Passes(address) => client = address,
+            Hop::Client(address) => return address,
         }
     }
     client
@@ -333,8 +334,7 @@ fn node_address(node: &str) -> Option<IpAddr> {
 
 /// The seconds a `Retry-After` header asks for a wait: rounded up, and at least one.
 pub fn retry_seconds(wait: Duration) -> u64 {
-    let seconds = wait.as_millis().div_ceil(1000).max(1);
-    u64::try_from(seconds).unwrap_or(u64::MAX)
+    limits::seconds(wait.as_millis())
 }
 
 #[cfg(test)]
