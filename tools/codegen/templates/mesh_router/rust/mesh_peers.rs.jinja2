@@ -46,10 +46,20 @@ pub const MACHINE: Machine = Machine {
     dedup_window: {{ dedup_window }},
     gap_timeout_ms: {{ gap_timeout_ms }},
 {#- The peers bound by name, and the open machines (deploy.yaml `instances: open`,
-    docs/adr/0113, D3), whose instances are found under their one entry. -#}
+    docs/adr/0113, D3), whose instances are found under their one entry, each with the terms its
+    members are held to (deploy.yaml `members:`, D4 and D6). -#}
 {%- for field, entries in [["peers", peers], ["open_peers", open_peers]] %}
     {{ field }}: &[
 {%- for peer in entries %}
+{%- if field == "open_peers" %}
+        sce_rust_mesh::peers::OpenPeer {
+            members: sce_rust_mesh::peers::Members {
+                lease_ms: {{ peer.members.lease_ms }},
+                provisional_ms: {{ peer.members.provisional_ms }},
+                max_instances: {{ peer.members.max_instances }},
+            },
+            peer:
+{%- endif %}
         Peer {
             name: "{{ peer.name | escape_rust }}",
             config: PeerConfig {
@@ -139,6 +149,9 @@ pub const MACHINE: Machine = Machine {
             },
 {%- endif %}
         },
+{%- if field == "open_peers" %}
+        },
+{%- endif %}
 {%- endfor %}
     ],
 {%- endfor %}

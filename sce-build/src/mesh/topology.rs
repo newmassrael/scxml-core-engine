@@ -1870,6 +1870,22 @@ pub struct SendActionSummary {
     pub srcexpr_sites: Vec<MeshRpcInvokeSite>,
 }
 
+/// The target a written `<send target>` or mesh-rpc `src` resolves to in the
+/// deployment: the machine whose binding carries it. That is the target as
+/// written, or, for the origin of an instance of an open machine,
+/// `mesh://<machine>/<instance>` (docs/adr/0113, D2), its machine's `#<machine>`:
+/// the instance is reached over the one binding of its machine, and is bound
+/// by the router when it arrives.
+fn addressed_target(raw: &str) -> Option<TargetId> {
+    match crate::host_processor_analyzer::instance_origin(raw) {
+        Some(name) => {
+            let machine = name.split_once('/').map_or(name, |(machine, _)| machine);
+            TargetId::new(format!("#{machine}"))
+        }
+        None => TargetId::new(raw),
+    }
+}
+
 /// Collect all `<send>` action data from an SCXML model in a single pass.
 ///
 /// Replaces five separate `for_each_send_action` traversals with one.
@@ -1909,7 +1925,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         // Empty-target sends (e.g. targetexpr-only) are recorded above but
         // contribute no SendActionDetail — the downstream validators, event
         // coverage among them, judge written targets only.
-        let Some(tid) = TargetId::new(&action.target) else {
+        let Some(tid) = addressed_target(&action.target) else {
             return;
         };
 
@@ -1970,7 +1986,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
             });
             continue;
         };
-        let Some(tid) = TargetId::new(src_literal) else {
+        let Some(tid) = addressed_target(src_literal) else {
             // `src` malformed — pure-parse problem that should have
             // been flagged earlier. Skip rather than invent a
             // diagnostic in the wrong layer.
@@ -2062,7 +2078,7 @@ pub fn refuse_literal_open_targets(
 fn collect_target_events(model: &SCXMLModel) -> Vec<(TargetId, String)> {
     let mut pairs = Vec::new();
     for_each_send_action(model, |_, _site, action| {
-        if let Some(tid) = TargetId::new(&action.target) {
+        if let Some(tid) = addressed_target(&action.target) {
             if !tid.is_internal() {
                 pairs.push((tid, action.event.clone()));
             }
@@ -5782,12 +5798,74 @@ topology:
                 .collect()
         };
         assert_eq!(
-            responders("{ source: phone.scxml, instances: open }"),
+            responders(
+                "{ source: phone.scxml, instances: open, members: { lease_ms: 60000, \
+                 provisional_ms: 1000, max_instances: 4 } }"
+            ),
             vec![Responders::Instance]
         );
         assert_eq!(
             responders("{ source: phone.scxml }"),
             vec![Responders::Machines(vec!["phone".to_string()])]
+        );
+    }
+
+    /// docs/adr/0113, D2: a literal `<send target="mesh://phone/a1">` names an
+    /// instance of the open machine `phone`, and resolves to the one binding of
+    /// that machine, answered by the instance; it names no target of its own.
+    /// Red if the origin is taken as a target name, which no binding carries.
+    #[test]
+    fn a_literal_instance_origin_resolves_to_its_machines_binding() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  cloud:
+    machines:
+      sender:
+        source: sender.scxml
+        bindings:
+          "#phone": { transport: https, listen: "127.0.0.1:9443", authenticator: install }
+      phone:
+        source: phone.scxml
+        instances: open
+        members: { lease_ms: 60000, provisional_ms: 1000, max_instances: 4 }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="sender" initial="s">
+                 <state id="s">
+                   <onentry><send target="mesh://phone/a1" event="pong"/></onentry>
+                 </state>
+               </scxml>"##,
+            "sender",
+        );
+        let summary = summary_for(&model);
+        assert_eq!(
+            summary
+                .targets
+                .iter()
+                .map(TargetId::as_str)
+                .collect::<Vec<_>>(),
+            ["#phone"]
+        );
+        let targets = build_resolved_targets(
+            &TargetContributions {
+                send_summary: &summary,
+                subscriptions: &[],
+            },
+            &deploy,
+            "sender",
+            &super::super::external::ExternalResolution::default(),
+        )
+        .expect("the origin resolves to the open machine's binding")
+        .targets;
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| (target.target.as_str(), target.responders.clone()))
+                .collect::<Vec<_>>(),
+            [("#phone", Responders::Instance)]
         );
     }
 

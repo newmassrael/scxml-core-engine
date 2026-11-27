@@ -429,6 +429,7 @@
         "mesh/deploy-invalid-outbound-buffer",
         "mesh/deploy-invalid-sessions",
         "mesh/deploy-invalid-instances",
+        "mesh/deploy-invalid-members",
         "mesh/deploy-sessions-key-not-in-request",
         "mesh/deploy-config-missing",
         "mesh/deploy-config-unknown",

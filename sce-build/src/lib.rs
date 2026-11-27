@@ -12027,6 +12027,9 @@ pub fn compile_mesh_transport(
     // codegen for each of its machines, with a binding or without, where a
     // backend that serves none refuses it by that machine's name.
     let open_machine = deploy_cfg.first_open_machine();
+    // docs/adr/0113, D4 and D6: the terms each open machine's members are
+    // held to, which a machine bound to one carries in its peer table.
+    let open_members = deploy_cfg.open_members();
 
     // SCE_MESH.md §16.5 wire-21: a partition may produce no
     // conventional `<send target="#X">` traffic and still need a
@@ -12263,6 +12266,7 @@ pub fn compile_mesh_transport(
             machine_receipt,
             open_machine,
             open: machine_entry.is_some_and(mesh::deploy::MachineConfig::is_open),
+            open_members: &open_members,
         },
         language,
     )?;

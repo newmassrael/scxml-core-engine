@@ -3170,6 +3170,13 @@ topology:
         # `https` (`mesh/deploy-invalid-instances`). Served by the Rust host
         # core; every other backend refuses the deployment.
         instances: open
+        # The terms a server holds the instances of an open machine to
+        # (docs/adr/0113, D4 and D6), required beside `instances: open` and
+        # refused anywhere else, none defaulted (`mesh/deploy-invalid-members`):
+        # how long a member a session kept a message of lives past its last
+        # exchange, how long one no session kept yet (and an offer) lives, and
+        # how many stand at once.
+        members: { lease_ms: <integer>, provisional_ms: <integer>, max_instances: <integer> }
 
         bindings:
           "<target_id>":

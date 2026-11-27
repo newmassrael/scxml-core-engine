@@ -717,6 +717,46 @@ pub fn mesh_peer(target: &str) -> Option<&str> {
         .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
 }
 
+/// The instance an origin `mesh://<machine>/<instance>` names (docs/adr/0113,
+/// D2), as the name `<machine>/<instance>` a router binds it under: a machine
+/// name that is a path segment as it stands (RFC 3986's unreserved characters)
+/// and an instance id (1 to 64 of `A-Z a-z 0-9 . _ -`).
+///
+/// The build's copy of the Rust core's `origin_instance`, held to the same
+/// table's `instance` column (`tests/mesh/mesh_target_cases.json`). Only the
+/// Rust host core routes it ([`serves_instance_origins`]); every other backend
+/// refuses a document that writes one.
+pub fn instance_origin(target: &str) -> Option<&str> {
+    let name = target.strip_prefix("mesh://")?;
+    let (machine, instance) = name.split_once('/')?;
+    let segment = |text: &str, also: &[u8]| {
+        text.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || also.contains(&b))
+    };
+    let machine_ok = !machine.is_empty() && segment(machine, b"-._~");
+    let instance_ok = (1..=64).contains(&instance.len()) && segment(instance, b"._-");
+    (machine_ok && instance_ok).then_some(name)
+}
+
+/// Whether `language`'s Mesh core routes the origin of an instance of an open
+/// machine (docs/adr/0113, D2 and D7): the Rust host core, the one core that
+/// serves an open machine.
+pub fn serves_instance_origins(language: Language) -> bool {
+    matches!(language, Language::Rust)
+}
+
+/// Whether `action` is a `<send>` to the origin of an instance of an open
+/// machine the build can see as one: a literal `target="mesh://<machine>/<instance>"`
+/// ([`instance_origin`]) through the SCXML Event I/O Processor, with no
+/// `typeexpr` or `targetexpr` that could make it something else.
+pub(crate) fn is_static_instance_send(action: &Action) -> bool {
+    action.action_type == "send"
+        && action.targetexpr.is_empty()
+        && action.typeexpr.is_empty()
+        && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
+        && instance_origin(&action.target).is_some()
+}
+
 /// Whether `action` is a `<send>` whose `targetexpr` may name a Mesh peer once
 /// evaluated: the send templates' dynamic Mesh branch (SCE_MESH.md §mesh-19)
 /// asks the evaluated target, and the machine needs the host-send surface
@@ -788,10 +828,13 @@ pub fn talks_to_a_mesh_peer(model: &SCXMLModel) -> bool {
     sends_to_a_mesh_peer(model) || model.has_mesh_rpc_invoke()
 }
 
-/// Whether any `<send>` in `model` names a Mesh peer the build can see — the
-/// document fact [`needs_mesh_router`] qualifies by language.
+/// Whether any `<send>` in `model` names a Mesh peer the build can see, a
+/// `#peer` or the origin of an instance (docs/adr/0113, D2) — the document fact
+/// [`needs_mesh_router`] qualifies by language.
 pub fn sends_to_a_mesh_peer(model: &SCXMLModel) -> bool {
-    any_action(model, &mut is_static_mesh_send)
+    any_action(model, &mut |action| {
+        is_static_mesh_send(action) || is_static_instance_send(action)
+    })
 }
 
 /// What a session running `model` asks of Mesh: whether the document talks
@@ -914,7 +957,10 @@ fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLMode
     }
     let mut lowered = model.clone();
     visit_actions_mut(&mut lowered, &mut |action| {
-        if is_static_mesh_send(action) {
+        // docs/adr/0113, D2: the origin of an instance is a Mesh target on a
+        // core that serves an open machine; every other backend refuses the
+        // document before it renders (`generator`).
+        if is_static_mesh_send(action) || is_static_instance_send(action) {
             action.send_type = MESH_PROCESSOR_TYPE.to_string();
             action.send_type_unsupported = false;
             action.send_type_host_served = true;
@@ -1221,6 +1267,50 @@ mod tests {
             let target = case["target"].as_str().expect("a target is a string");
             assert_eq!(mesh_peer(target), case["peer"].as_str(), "{target:?}");
         }
+    }
+
+    /// tests/mesh/mesh_target_cases.json, its `instance` column: the origin of
+    /// an instance of an open machine is read as the Rust core reads it
+    /// (docs/adr/0113, D2), and no `#peer` is one. Red if the build's copy reads
+    /// another form than the table's.
+    #[test]
+    fn an_instance_origin_is_read_by_the_shared_table() {
+        let table: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/mesh/mesh_target_cases.json"))
+                .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        let mut named = 0;
+        for case in cases {
+            let target = case["target"].as_str().expect("a target is a string");
+            let expected = case.get("instance").and_then(serde_json::Value::as_str);
+            named += usize::from(expected.is_some());
+            assert_eq!(instance_origin(target), expected, "{target:?}");
+        }
+        assert!(named >= 2, "the table lost its instance cases: {named}");
+    }
+
+    /// docs/adr/0113, D2: a literal `<send target="mesh://<machine>/<instance>">`
+    /// is a Mesh send the build can see, lowered to the host's router as a
+    /// `#peer` is. Red if the build reads only the `#peer` form.
+    #[test]
+    fn a_literal_instance_origin_is_lowered_as_a_mesh_send() {
+        let model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s">
+                   <onentry><send target="mesh://phone/a1" event="pong"/></onentry>
+                 </state>
+               </scxml>"##,
+        );
+        assert!(sends_to_a_mesh_peer(&model));
+        assert!(needs_mesh_router(&model, Language::Rust));
+        let lowered = lower_mesh(&model, Language::Rust);
+        let mut types = Vec::new();
+        walk_model_actions(&lowered, &mut |_, action| {
+            if action.action_type == "send" {
+                types.push(action.send_type.clone());
+            }
+        });
+        assert_eq!(types, [MESH_PROCESSOR_TYPE]);
     }
 
     /// tests/fixtures/host_processor/reserved_type_cases.json: the table every copy

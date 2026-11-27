@@ -1574,6 +1574,20 @@ deployment that declares one is generated for Rust alone; every other backend
 refuses each of its machines by name
 (`mesh/codegen-open-instances-unsupported`).
 
+An open machine declares the terms a server holds its instances to,
+`members: { lease_ms, provisional_ms, max_instances }` (docs/adr/0113, D4
+and D6), none of which has a default: a member a session kept a message of
+lives `lease_ms` past its last exchange, one no session kept yet, and an offer,
+`provisional_ms`, and at most `max_instances` stand at once. An open machine
+without the section is refused as `mesh/deploy-invalid-instances`; a field
+below 1, a `provisional_ms` longer than `lease_ms`, or the section on a
+machine that runs once, as `mesh/deploy-invalid-members`. An instance's
+origin, `mesh://<machine>/<instance>`, is a Mesh target on the Rust lane, as
+`#peer` is, whether a `targetexpr` computes it or a `target` writes it; every
+other backend refuses a document that writes one, by its backend's name
+(`generate/unsupported-feature`), and its runtime refuses a computed one as a
+target it cannot address.
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for
@@ -11327,7 +11341,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (570 codes)
+## Appendix — `DiagnosticCode` index (571 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11750,6 +11764,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
 | `mesh/deploy-invalid-sessions` | Mesh Deploy |
 | `mesh/deploy-invalid-instances` | Mesh Deploy |
+| `mesh/deploy-invalid-members` | Mesh Deploy |
 | `mesh/deploy-sessions-key-not-in-request` | Mesh Deploy |
 | `mesh/deploy-config-missing` | Mesh Deploy |
 | `mesh/deploy-config-unknown` | Mesh Deploy |

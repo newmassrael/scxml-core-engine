@@ -3114,6 +3114,13 @@ pub struct MachineConfig {
     /// Private, so that every reader asks [`Self::is_open`].
     #[serde(default)]
     instances: Option<Instances>,
+    /// The terms a server holds the instances of this open machine to
+    /// (docs/adr/0113, D4 and D6): `members: { lease_ms, provisional_ms,
+    /// max_instances }`, each written by the deployment, none defaulted.
+    /// Required beside `instances: open` and refused on any other machine, by
+    /// [`validate_instances`].
+    #[serde(default)]
+    pub members: Option<MembersConfig>,
     /// The values the machine's deployment supplies (docs/adr/0109, D12), by
     /// the id of the `<data sce:from="deployment">` that declares each in the
     /// machine's document. Checked against the document's declarations when
@@ -3369,6 +3376,32 @@ impl MachineConfig {
     pub fn is_open(&self) -> bool {
         matches!(self.instances, Some(Instances::Open))
     }
+}
+
+/// The `members:` of an open machine (docs/adr/0113, D4 and D6): how long a
+/// server keeps an instance a member past its last exchange, and how many it
+/// keeps at once. No field has a default; each is the deployment's, as a
+/// lease's length is.
+///
+/// ```yaml
+/// members:
+///   lease_ms: 2592000000      # a member a session kept a message of
+///   provisional_ms: 60000     # a member no session kept yet, and an offer
+///   max_instances: 100000     # the members that stand at once
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MembersConfig {
+    /// How long a member a session kept a message of stays one past its last
+    /// exchange, in milliseconds. At least 1.
+    pub lease_ms: u64,
+    /// How long a member no session kept a message of stays one past its last
+    /// exchange, and how long an offer stands, in milliseconds. At least 1, and
+    /// at most `lease_ms`.
+    pub provisional_ms: u64,
+    /// The most members that stand at once: past it a new one is shed and none
+    /// that stands is put out. At least 1.
+    pub max_instances: u32,
 }
 
 /// A machine's `instances:` (docs/adr/0113, D1). Absent, the machine is one,
@@ -7526,6 +7559,16 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
         .collect();
     for (&open, machine) in &machines {
         if !machine.is_open() {
+            // docs/adr/0113, D4: the terms of membership are an open machine's,
+            // and a machine that runs once has no members to hold to them.
+            if machine.members.is_some() {
+                return Err(DeployError::InvalidMembers {
+                    machine: open.to_string(),
+                    reason: "the machine runs once (it declares no `instances: open`), so it \
+                             has no members to hold to them"
+                        .to_string(),
+                });
+            }
             continue;
         }
         let refuse = |reason: String| {
@@ -7618,8 +7661,46 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
                 }
             }
         }
+        // docs/adr/0113, D4 and D6: a server holds its members to terms the
+        // deployment writes, and none of them has a default.
+        let Some(members) = machine.members else {
+            return refuse(
+                "the machine declares no `members: { lease_ms, provisional_ms, \
+                 max_instances }`, and none of the three has a default"
+                    .to_string(),
+            );
+        };
+        if let Some(reason) = members_refusal(&members) {
+            return Err(DeployError::InvalidMembers {
+                machine: open.to_string(),
+                reason,
+            });
+        }
     }
     Ok(())
+}
+
+/// Why an open machine's `members:` cannot be kept, if it cannot: a field
+/// below 1, or a provisional lease longer than the lease it leads to.
+fn members_refusal(members: &MembersConfig) -> Option<String> {
+    let below = [
+        ("lease_ms", members.lease_ms == 0),
+        ("provisional_ms", members.provisional_ms == 0),
+        ("max_instances", members.max_instances == 0),
+    ];
+    if let Some((field, _)) = below.into_iter().find(|(_, zero)| *zero) {
+        return Some(format!(
+            "`{field}` is 0, and a member is held for a millisecond at least, and one at \
+             least is held"
+        ));
+    }
+    (members.provisional_ms > members.lease_ms).then(|| {
+        format!(
+            "`provisional_ms` ({}) is longer than `lease_ms` ({}), and a member no session \
+             kept yet is held no longer than one a session kept",
+            members.provisional_ms, members.lease_ms
+        )
+    })
 }
 
 /// Refuse what SCE_MESH.md section 10.11 refuses of `persistence:` and
@@ -8365,6 +8446,19 @@ impl DeployConfig {
         self.device_for_machine(machine_name)
             .and_then(|device| device.machines.get(machine_name))
             .is_some_and(MachineConfig::is_open)
+    }
+
+    /// The terms of membership of each machine this deployment runs as an open
+    /// set of instances, by its name (docs/adr/0113, D4 and D6): what a server
+    /// bound to one holds its instances to. Parse-time validation gave every
+    /// open machine its `members:`.
+    pub fn open_members(&self) -> BTreeMap<String, MembersConfig> {
+        self.topology
+            .values()
+            .flat_map(|device| device.machines.iter())
+            .filter(|(_, machine)| machine.is_open())
+            .filter_map(|(name, machine)| Some((name.clone(), machine.members?)))
+            .collect()
     }
 
     /// The first machine, in name order, this deployment runs as an open set
@@ -9635,7 +9729,7 @@ topology:
     /// value is taken for it.
     #[test]
     fn an_open_machine_is_declared_by_its_one_value() {
-        let open = "        instances: open\n";
+        let open = "        instances: open\n        members: { lease_ms: 60000, provisional_ms: 1000, max_instances: 4 }\n";
         let cfg = parse_deploy_str(&joined("", "", open, "")).expect("an open client of a server");
         assert!(cfg.topology["handset"].machines["phone"].is_open());
         assert!(cfg.is_open_machine("phone"));
@@ -9657,6 +9751,92 @@ topology:
                 "`instances: {value}`"
             );
         }
+    }
+
+    /// docs/adr/0113, D4 and D6: an open machine's terms of membership are
+    /// read as written, none defaulted, and handed out by its name. Red if the
+    /// section is not read or not handed out.
+    #[test]
+    fn an_open_machines_members_are_read_and_handed_out_by_its_name() {
+        let cfg = parse_deploy_str(&open_phone(
+            "        members: { lease_ms: 60000, provisional_ms: 1000, max_instances: 4 }\n",
+        ))
+        .expect("an open machine with its terms");
+        let terms = MembersConfig {
+            lease_ms: 60_000,
+            provisional_ms: 1_000,
+            max_instances: 4,
+        };
+        assert_eq!(
+            cfg.topology["handset"].machines["phone"].members,
+            Some(terms)
+        );
+        assert_eq!(
+            cfg.open_members().into_iter().collect::<Vec<_>>(),
+            vec![("phone".to_string(), terms)]
+        );
+        let closed = parse_deploy_str(&joined("", "", "", "")).expect("a closed pair");
+        assert!(closed.open_members().is_empty());
+    }
+
+    /// docs/adr/0113, D4: an open machine without its terms is refused at its
+    /// `instances:` key, since none of the three has a default. Red if a
+    /// default is taken.
+    #[test]
+    fn an_open_machine_without_its_members_is_refused() {
+        let reason = open_refusal(&open_phone(""));
+        assert!(reason.contains("declares no `members:"), "{reason}");
+    }
+
+    /// docs/adr/0113, D4 and D6: terms that cannot be kept are refused as
+    /// `mesh/deploy-invalid-members`, at the `members:` key: a field below 1,
+    /// a provisional lease longer than the lease, and the section on a machine
+    /// that runs once. Red if any of them is taken.
+    #[test]
+    fn members_that_cannot_be_kept_are_refused() {
+        let refusal = |yaml: &str| match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidMembers { machine, reason }) => {
+                assert_eq!(machine, "phone");
+                reason
+            }
+            other => panic!("{yaml}: expected InvalidMembers, got {other:?}"),
+        };
+        for (members, said) in [
+            (
+                "lease_ms: 0, provisional_ms: 0, max_instances: 4",
+                "`lease_ms` is 0",
+            ),
+            (
+                "lease_ms: 9, provisional_ms: 0, max_instances: 4",
+                "`provisional_ms` is 0",
+            ),
+            (
+                "lease_ms: 9, provisional_ms: 1, max_instances: 0",
+                "`max_instances` is 0",
+            ),
+            (
+                "lease_ms: 60000, provisional_ms: 90000, max_instances: 4",
+                "`provisional_ms` (90000) is longer than `lease_ms` (60000)",
+            ),
+        ] {
+            let reason = refusal(&open_phone(&format!("        members: {{ {members} }}\n")));
+            assert!(reason.contains(said), "{members}: {reason}");
+        }
+        let once = joined(
+            "",
+            "",
+            "        members: { lease_ms: 9, provisional_ms: 1, max_instances: 4 }\n",
+            "",
+        );
+        let reason = refusal(&once);
+        assert!(reason.contains("runs once"), "{reason}");
+        let refused = parse_deploy_str(&once).expect_err("refused");
+        let mark = refused.mark_in(&once).expect("a key of the deployment");
+        let line = once
+            .lines()
+            .position(|line| line.trim_start().starts_with("members:"))
+            .expect("written");
+        assert_eq!(usize::try_from(mark.line).expect("a line"), line + 1);
     }
 
     /// The reason `yaml` is refused for what its open machine `phone` cannot

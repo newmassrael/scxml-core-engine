@@ -2237,6 +2237,48 @@ fn reject_native_conditions_in_unsupported_lang(
     ))
 }
 
+/// Refuse, on a backend whose Mesh core serves no open machine, a document that
+/// writes the origin of an instance of one as a `<send target>`,
+/// `mesh://<machine>/<instance>` (docs/adr/0113, D2 and D7). Only the Rust host
+/// core routes that address; a backend that lowered it as any other target would
+/// emit a send that raises `error.execution` every time it runs, so the
+/// document is refused by the backend's name instead, at the element that wrote
+/// it. A `targetexpr` whose value is such an origin is not known here; the
+/// runtime of every other backend answers it as a target it cannot address, and
+/// a deployment with an open machine is refused on those backends whole
+/// (`mesh/codegen-open-instances-unsupported`).
+fn reject_instance_origins_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: Language,
+) -> Result<(), GenerateError> {
+    if crate::host_processor_analyzer::serves_instance_origins(language) {
+        return Ok(());
+    }
+    let mut written: Option<(String, Option<crate::forge::error::SourceLocation>)> = None;
+    crate::host_processor_analyzer::walk_model_actions(model, &mut |_, action| {
+        if written.is_none()
+            && action.action_type == "send"
+            && action.targetexpr.is_empty()
+            && crate::host_processor_analyzer::instance_origin(&action.target).is_some()
+        {
+            written = Some((action.target.clone(), action.source_location.clone()));
+        }
+    });
+    let Some((target, at)) = written else {
+        return Ok(());
+    };
+    Err(GenerateError::unsupported_at(
+        format!(
+            "<send target=\"{target}\"> in '{}' addresses an instance of an open machine by \
+             its origin, which the {} Mesh core does not route (docs/adr/0113, D2 and D7). \
+             Generate this machine with `--lang rust`, whose host core serves an open machine.",
+            model.name,
+            language.canonical_name()
+        ),
+        at,
+    ))
+}
+
 /// The first `cond` that would reach a backend's constant-fold arm while
 /// not actually being constant.
 ///
@@ -3114,6 +3156,7 @@ pub fn generate_rust_within(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -3510,6 +3553,7 @@ pub fn generate_with_templates(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -4171,6 +4215,7 @@ fn render_cpp(
     cpp_namespace_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_static_datamodel_in_unsupported_lang(model, Language::Cpp)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Cpp)?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     // Neither host refusal here: the C++ AOT engine carries both registries
@@ -4397,6 +4442,7 @@ fn render_c11(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::C11);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::C11)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
     // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
@@ -4819,6 +4865,7 @@ pub fn generate_kotlin_for_engine(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Kotlin);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
@@ -4844,6 +4891,7 @@ pub fn generate_kotlin_with_templates(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Kotlin);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
@@ -5061,6 +5109,7 @@ pub fn generate_go_for_module(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Go);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
     // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
@@ -5083,6 +5132,7 @@ pub fn generate_go_with_templates(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Go);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -5108,6 +5158,7 @@ pub fn generate_swift(model: &SCXMLModel, template_dir: &Path) -> Result<String,
     let model = crate::host_processor_analyzer::lower_mesh(model, Language::Swift);
     let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Swift)?;
@@ -5123,6 +5174,7 @@ pub fn generate_swift_with_templates(
     let model = crate::host_processor_analyzer::lower_mesh(model, Language::Swift);
     let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Swift)?;
@@ -5823,6 +5875,7 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Python);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
     // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
@@ -5844,6 +5897,7 @@ pub fn generate_python_with_templates(
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Python);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
+    reject_instance_origins_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
@@ -6950,6 +7004,44 @@ mod tests {
     fn parse(content: &str) -> SCXMLModel {
         let mut p = SCXMLParser::new();
         p.parse_string(content, "brake").expect("parse")
+    }
+
+    /// docs/adr/0113, D2 and D7: a written `<send target="mesh://<machine>/<instance>">`
+    /// is generated for Rust, whose host core routes it, and refused by name on every other
+    /// backend, at the element that wrote it; a `#peer` is refused on none. Red if a backend is
+    /// added to the ones that route the origin, or the refusal is skipped.
+    #[test]
+    fn an_instance_origin_is_refused_on_every_backend_but_rust() {
+        let written = |target: &str| {
+            parse(&format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                     <state id="s"><onentry><send target="{target}" event="pong"/></onentry></state>
+                   </scxml>"#
+            ))
+        };
+        let origin = written("mesh://phone/a1");
+        let peer = written("#phone");
+        for &language in Language::ALL {
+            let refused = reject_instance_origins_in_unsupported_lang(&origin, language);
+            if language == Language::Rust {
+                assert!(refused.is_ok(), "{language:?}: {refused:?}");
+            } else {
+                match refused {
+                    Err(GenerateError::UnsupportedFeature { detail, .. }) => {
+                        assert!(
+                            detail.contains("mesh://phone/a1")
+                                && detail.contains(language.canonical_name()),
+                            "{language:?}: {detail}"
+                        );
+                    }
+                    other => panic!("{language:?}: expected a refusal, got {other:?}"),
+                }
+            }
+            assert!(
+                reject_instance_origins_in_unsupported_lang(&peer, language).is_ok(),
+                "{language:?}"
+            );
+        }
     }
 
     /// The parser must keep the `<invoke>` rather than dropping it. This is

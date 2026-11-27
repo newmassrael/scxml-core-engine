@@ -1340,7 +1340,7 @@ const TAKING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 fn open_https_deploy() -> String {
     HTTPS_DEPLOY.replace(
         "        source: client.scxml\n",
-        "        source: client.scxml\n        instances: open\n",
+        "        source: client.scxml\n        instances: open\n        members: { lease_ms: 2592000000, provisional_ms: 60000, max_instances: 200 }\n",
     )
 }
 
@@ -1400,6 +1400,9 @@ fn an_open_machine_reaches_the_rust_peer_tables_of_both_sides() {
     assert!(!peers.contains("name: \"client\""), "no peer by its name");
     for line in [
         "name: \"client\",",
+        "lease_ms: 2592000000,",
+        "provisional_ms: 60000,",
+        "max_instances: 200,",
         "responders: sce_rust_mesh::router::Responders::Instance,",
         "link: PeerLink::HttpsAccept {",
         "instances: sce_rust_mesh::peers::Instances::One,",

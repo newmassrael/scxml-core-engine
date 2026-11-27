@@ -1139,6 +1139,13 @@ pub enum DeployError {
     #[error("machine '{machine}': `instances: open` in deploy.yaml cannot be kept — {reason}.")]
     InvalidInstances { machine: String, reason: String },
 
+    /// A machine's `members: { lease_ms, provisional_ms, max_instances }`
+    /// (docs/adr/0113, D4 and D6) cannot be kept: a field below 1, a
+    /// provisional lease longer than the lease, or the section on a machine
+    /// that runs once. Read off the deployment alone, at parse time.
+    #[error("machine '{machine}': `members:` in deploy.yaml cannot be kept — {reason}.")]
+    InvalidMembers { machine: String, reason: String },
+
     /// A machine's `receipt: { window, retry_ms }` block cannot be kept (SCE_MESH.md section
     /// 10.11; docs/adr/0109, D10): a field below 1, or a machine none of whose bindings is
     /// durable, which leaves the block reading nothing. Read off the deployment alone.
@@ -3065,6 +3072,7 @@ impl DeployError {
             }
             Self::InvalidSessions { machine, .. } => P::machine(machine).key("sessions"),
             Self::InvalidInstances { machine, .. } => P::machine(machine).key("instances"),
+            Self::InvalidMembers { machine, .. } => P::machine(machine).key("members"),
             Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
             Self::ReceiptWithoutPersistence {
                 machine, target, ..
@@ -4429,6 +4437,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: Some("open".into()),
             // `instances:` removed, or what it cannot stand beside: which
             // depends on what the machine is for, so nothing is offered.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidMembers { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidMembers,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // The values are the deployment's to choose (no default exists),
+            // so none is offered.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],

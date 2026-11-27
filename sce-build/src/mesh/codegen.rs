@@ -1255,6 +1255,10 @@ pub struct MeshCodegenInputs<'a> {
     pub open_machine: Option<&'a str>,
     /// This machine itself runs as an open set of instances.
     pub open: bool,
+    /// The terms of membership of each open machine of the deployment, by its
+    /// name (deploy.yaml `members:`, docs/adr/0113, D4 and D6): what this
+    /// machine holds the instances of an open machine it is bound to to.
+    pub open_members: &'a BTreeMap<String, super::deploy::MembersConfig>,
 }
 
 /// The backends whose Mesh core tells the instances of one machine apart
@@ -1664,6 +1668,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         // backend.
         open_machine: _,
         open: _,
+        open_members: _,
     } = inputs;
     // Validate: every target's transport must be in the registry AND
     // carried by the C++ template. Three failure modes, one refusal:
@@ -2462,6 +2467,11 @@ struct HostPeerContext {
     causal: Option<CausalGroupContext>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
+    /// For an open machine (docs/adr/0113, D3), the terms its members are
+    /// held to (deploy.yaml `members:`, D4 and D6); absent for a peer bound
+    /// by its name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    members: Option<super::deploy::MembersConfig>,
 }
 
 /// A causal binding's group as a core's template spells it, a host core's
@@ -2636,6 +2646,7 @@ fn generate_host_mesh(
         sessions,
         machine_receipt,
         open,
+        open_members,
         ..
     } = inputs;
     use super::error::HostCoreGap;
@@ -2797,6 +2808,21 @@ fn generate_host_mesh(
                 },
                 causal: policy.causal.map(CausalGroupContext::from),
                 link,
+                // docs/adr/0113, D4: parse-time validation gave every open
+                // machine its `members:`, and a target answered by its
+                // instance is one of an open machine.
+                members: match &t.responders {
+                    Responders::Instance => {
+                        Some(*open_members.get(t.target.name()).unwrap_or_else(|| {
+                            unreachable!(
+                                "generate_host_mesh: open machine '{}' passed deploy \
+                                 validation without `members:`",
+                                t.target.name()
+                            )
+                        }))
+                    }
+                    Responders::Machines(_) => None,
+                },
             }
         })
         .collect();

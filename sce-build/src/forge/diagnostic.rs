@@ -3162,6 +3162,10 @@ pub enum DiagnosticCode {
     /// served in.
     #[serde(rename = "mesh/deploy-invalid-instances")]
     MeshDeployInvalidInstances,
+    /// An open machine's terms of membership (docs/adr/0113, D4 and D6)
+    /// cannot be kept, or are written on a machine that runs once.
+    #[serde(rename = "mesh/deploy-invalid-members")]
+    MeshDeployInvalidMembers,
     /// A machine's `receipt:` block cannot be kept: a field below 1, or no
     /// durable binding on the machine to read it.
     #[serde(rename = "mesh/deploy-invalid-receipt")]
@@ -4560,6 +4564,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidSessions,
         // ADR 0113, D1 and D7: an open machine whose instances cannot be served
         MeshDeployInvalidInstances,
+        // ADR 0113, D4 and D6: an open machine's terms of membership
+        MeshDeployInvalidMembers,
         MeshDeploySessionsKeyNotInRequest,
         MeshDeployConfigMissing,
         MeshDeployConfigUnknown,
@@ -5426,6 +5432,7 @@ impl DiagnosticCode {
             // ── An open set of instances (docs/adr/0113, D2 and D7) ──
             MeshDeployInvalidInstances | MeshCodegenOpenInstancesUnsupported => Some("ADR 0113 D7"),
             MeshTopologyOpenMachineNamedLiterally => Some("ADR 0113 D2"),
+            MeshDeployInvalidMembers => Some("ADR 0113 D4"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -6318,6 +6325,7 @@ impl DiagnosticCode {
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
+            | MeshDeployInvalidMembers
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
@@ -6947,6 +6955,7 @@ impl DiagnosticCode {
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
             MeshDeployInvalidInstances => "mesh/deploy-invalid-instances",
+            MeshDeployInvalidMembers => "mesh/deploy-invalid-members",
             MeshDeployInvalidReceipt => "mesh/deploy-invalid-receipt",
             MeshDeployReceiptWithoutPersistence => "mesh/deploy-receipt-without-persistence",
             MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
@@ -19275,6 +19284,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:c0d6f7f257a9845b","code":"mesh/deploy-invalid-instances","stage":"mesh-deploy","spec":"ADR 0113 D7","message":"machine 'phone': `instances: open` in deploy.yaml cannot be kept — the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of.","actual":"open"}"#,
             ),
             (
+                "mesh/deploy-invalid-members",
+                DeployError::InvalidMembers {
+                    machine: "phone".into(),
+                    reason: "`provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8f80acff0f95faea","code":"mesh/deploy-invalid-members","stage":"mesh-deploy","spec":"ADR 0113 D4","message":"machine 'phone': `members:` in deploy.yaml cannot be kept — `provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept.","actual":"phone"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-receipt",
                 DeployError::InvalidReceipt {
                     machine: "calendar".into(),
@@ -22249,6 +22267,7 @@ mod tests {
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
+            | MeshDeployInvalidMembers
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigInvalid
@@ -23155,6 +23174,7 @@ mod tests {
                 | MeshDeployInvalidOutboundBuffer
                 | MeshDeployInvalidSessions
                 | MeshDeployInvalidInstances
+                | MeshDeployInvalidMembers
                 | MeshDeploySessionsKeyNotInRequest
                 | MeshDeployConfigMissing
                 | MeshDeployConfigUnknown
@@ -23350,9 +23370,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            570,
+            571,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 570 distinct variants to match the DiagnosticCode \
+             expected 571 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24291,6 +24311,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeployInvalidInstances
+            | MeshDeployInvalidMembers
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
