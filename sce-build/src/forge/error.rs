@@ -1631,6 +1631,35 @@ pub enum ValidationError {
         site: String,
     },
 
+    /// docs/adr/0116, D3: the record a document reads the person an instance
+    /// acts for as (`<scxml sce:principal>`) cannot be one, or a transition
+    /// requires a person (`sce:principal="required"`) of a document that reads
+    /// none: the declaration is under a data model other than `sce-static`,
+    /// names no imported event schema, or the schema declares a field that is
+    /// none of issuer, subject, proved_ms, method and instance, one of another
+    /// type, or a text with a bound. `element` is where the attribute is
+    /// written, `value` its value (the record's `actual`), `reason` which of
+    /// these it is. No fix: which record the document reads is the author's.
+    ///
+    /// Wire code: `validation/principal-record`.
+    #[error("{element} sce:principal=\"{value}\": {reason} (docs/adr/0116, D3)")]
+    PrincipalRecord {
+        element: String,
+        value: String,
+        reason: String,
+    },
+
+    /// docs/adr/0116, D4: a `<send sce:on-behalf>` that quotes a person to the
+    /// receiver. Every quote is refused until a deployment lists the machines a
+    /// machine takes one from (Open question 2 of the record); the reason
+    /// names what the attribute is held to first, that it quotes
+    /// `_x.principal` of a document that declares the person it reads.
+    /// `value` is the attribute's value (the record's `actual`).
+    ///
+    /// Wire code: `validation/quote-refused`.
+    #[error("<send> sce:on-behalf=\"{value}\": {reason} (docs/adr/0116, D4)")]
+    QuoteRefused { value: String, reason: String },
+
     /// docs/adr/0101, section 4.4: the largest encoding of a value of `ty` at
     /// `place` is past 2^64 - 1 bytes, so the build has no number to size an
     /// encode, a buffer or a slot by. Raised where `C` of a CBOR codec's entry

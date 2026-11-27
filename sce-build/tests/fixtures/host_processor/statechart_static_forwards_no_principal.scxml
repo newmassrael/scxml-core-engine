@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0116, D4): nothing passes on by itself. The server
+  reads the person its `ping` was said for, and forwards what it is sent to its child
+  `helper` (autoforward, W3C SCXML 6.4.1); the copy is the event's, and the person stays
+  with the server, so the child reads none and says so.
+
+    parent_saw      1 for each `ping` said for a person, as the server reads it.
+    child_saw       1 for each forwarded `ping` the child read a person on.
+    child_saw_none  1 for each forwarded `ping` the child read no person on.
+
+  Generated for Rust alone, as every document that reads a person is (D10).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="serving" datamodel="sce-static"
+       name="statechart_static_forwards_no_principal" sce:principal="Person">
+  <sce:import kind="event-schema" src="schema_principal_person.scxml" as="Person"/>
+  <datamodel>
+    <data id="parent_saw" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="child_saw" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="child_saw_none" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="serving">
+    <invoke type="scxml" id="helper" autoforward="true">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="idle" datamodel="sce-static" sce:principal="Person">
+          <sce:import kind="event-schema" src="schema_principal_person.scxml" as="Person"/>
+          <state id="idle">
+            <transition event="ping" cond="_x.principal !== null">
+              <send target="#_parent" event="child.someone"/>
+            </transition>
+            <transition event="ping">
+              <send target="#_parent" event="child.nobody"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="ping" cond="_x.principal !== null">
+      <assign location="parent_saw" expr="parent_saw + 1"/>
+    </transition>
+    <transition event="ping"/>
+    <transition event="child.someone">
+      <assign location="child_saw" expr="child_saw + 1"/>
+    </transition>
+    <transition event="child.nobody">
+      <assign location="child_saw_none" expr="child_saw_none + 1"/>
+    </transition>
+  </state>
+</scxml>

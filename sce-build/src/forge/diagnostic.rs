@@ -942,6 +942,15 @@ pub enum DiagnosticCode {
     /// applied.
     #[serde(rename = "validation/journal-value-assigned")]
     ValidationJournalValueAssigned,
+    /// The record a document reads the person an instance acts for as
+    /// (`<scxml sce:principal>`) that cannot be one, or a transition that
+    /// requires a person of a document that reads none (docs/adr/0116, D3).
+    #[serde(rename = "validation/principal-record")]
+    ValidationPrincipalRecord,
+    /// A `<send sce:on-behalf>`, refused until a deployment lists the machines
+    /// a machine takes a quote from (docs/adr/0116, D4).
+    #[serde(rename = "validation/quote-refused")]
+    ValidationQuoteRefused,
     /// `<invoke sce:entry>` (docs/adr/0109, D14): an audit entry's schema the
     /// build cannot write an entry of, or an append that names none.
     #[serde(rename = "validation/audit-entry-schema")]
@@ -3792,6 +3801,12 @@ pub enum DiagnosticCode {
     /// are of (docs/adr/0114, D5).
     #[serde(rename = "mesh/codegen-journal-read-refused")]
     MeshCodegenJournalReadRefused,
+    /// A machine whose document reads the person an instance acts for
+    /// (`sce:principal`), bound where no person is proved: to no open machine,
+    /// or under an authenticator other than `key`, without `sign:` and
+    /// `verify:`, or without durable receipt (docs/adr/0116, D10).
+    #[serde(rename = "mesh/codegen-principal-unproved")]
+    MeshCodegenPrincipalUnproved,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4183,6 +4198,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMapInWirePosition,
         ValidationDeploymentValueAssigned,
         ValidationJournalValueAssigned,
+        // ADR 0116, D3 and D4: the record a person is read as, and a quote
+        ValidationPrincipalRecord,
+        ValidationQuoteRefused,
         ValidationAuditEntrySchema,
         ValidationPayloadRecordSchema,
         // ADR 0114, D5: a read of the event journal that names nothing it can read
@@ -4750,6 +4768,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenJournalMismatch,
         // ADR 0114, D5: a read of a stream the machine neither keeps nor follows
         MeshCodegenJournalReadRefused,
+        // ADR 0116, D10: a machine that reads a person, bound where none is proved
+        MeshCodegenPrincipalUnproved,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5037,6 +5057,10 @@ impl DiagnosticCode {
 
             // ── A value held to the journal's facts (docs/adr/0114, D1) ──
             ValidationJournalValueAssigned => Some("ADR 0114 D1"),
+
+            // ── The person behind an instance (docs/adr/0116, D3 and D4) ──
+            ValidationPrincipalRecord => Some("ADR 0116 D3"),
+            ValidationQuoteRefused => Some("ADR 0116 D4"),
 
             // ── An audit entry's schema (docs/adr/0109, D14) ──
             ValidationAuditEntrySchema => Some("ADR 0109 D14"),
@@ -5481,6 +5505,9 @@ impl DiagnosticCode {
             // ── The event journal (docs/adr/0114, D1, D4 and D6) ──
             MeshDeployInvalidJournal => Some("ADR 0114 D4"),
             MeshCodegenJournalMismatch | GenerateJournalFactsInChild => Some("ADR 0114 D1"),
+
+            // ── A machine that reads a person (docs/adr/0116, D10) ──
+            MeshCodegenPrincipalUnproved => Some("ADR 0116 D10"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -6051,6 +6078,8 @@ impl DiagnosticCode {
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationJournalValueAssigned
+            | ValidationPrincipalRecord
+            | ValidationQuoteRefused
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationJournalReadSchema
@@ -6506,6 +6535,7 @@ impl DiagnosticCode {
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
             | MeshCodegenJournalReadRefused
+            | MeshCodegenPrincipalUnproved
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6629,6 +6659,8 @@ impl DiagnosticCode {
             ValidationMapInWirePosition => "validation/map-in-wire-position",
             ValidationDeploymentValueAssigned => "validation/deployment-value-assigned",
             ValidationJournalValueAssigned => "validation/journal-value-assigned",
+            ValidationPrincipalRecord => "validation/principal-record",
+            ValidationQuoteRefused => "validation/quote-refused",
             ValidationAuditEntrySchema => "validation/audit-entry-schema",
             ValidationPayloadRecordSchema => "validation/payload-record-schema",
             ValidationJournalReadSchema => "validation/journal-read-schema",
@@ -7218,6 +7250,7 @@ impl DiagnosticCode {
             }
             MeshCodegenJournalMismatch => "mesh/codegen-journal-mismatch",
             MeshCodegenJournalReadRefused => "mesh/codegen-journal-read-refused",
+            MeshCodegenPrincipalUnproved => "mesh/codegen-principal-unproved",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -9178,6 +9211,31 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         // docs/adr/0114, D1: the place as written is `actual`; whether what
         // changes is a fold of the facts or a variable of the machine's own is
         // the author's, so neither `expected` nor `fix`.
+        // docs/adr/0116, D3: the declaration's value is `actual`; which record
+        // the document reads a person as is the author's, so neither
+        // `expected` nor `fix`.
+        ValidationError::PrincipalRecord {
+            element,
+            value,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationPrincipalRecord,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), value.clone(), reason.clone()],
+        },
+        // docs/adr/0116, D4: the quote as written is `actual`; no repair is the
+        // build's to name while every quote is refused.
+        ValidationError::QuoteRefused { value, reason } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationQuoteRefused,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![value.clone(), reason.clone()],
+        },
         ValidationError::JournalValueAssigned {
             element,
             attr,
@@ -15245,6 +15303,31 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:e042fba40b52e972","code":"validation/journal-value-assigned","stage":"validation","spec":"ADR 0114 D1","message":"<assign> location=\"booked\" in the <onentry> of state 's': writes 'booked', a value held to the journal's facts, which only its initial value and a transition whose event is an entry's write (docs/adr/0114, D1): write it where the fact is applied, or keep what else changes in a variable of the machine's own","actual":"booked"}"#,
             ),
             (
+                // The record a person is read as declares a field none of the
+                // fixed list names (docs/adr/0116, D3): the declaration's value
+                // is `actual`.
+                "forge/principal-record",
+                ValidationError::PrincipalRecord {
+                    element: "<scxml>".into(),
+                    value: "Person".into(),
+                    reason: "the record declares `email`, which is none of the fields a person is read with: issuer, subject, proved_ms, method and instance".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c833df6a7c08dfcb","code":"validation/principal-record","stage":"validation","spec":"ADR 0116 D3","message":"<scxml> sce:principal=\"Person\": the record declares `email`, which is none of the fields a person is read with: issuer, subject, proved_ms, method and instance (docs/adr/0116, D3)","actual":"Person"}"#,
+            ),
+            (
+                // A quote, refused until a deployment lists the machines a
+                // machine takes one from (docs/adr/0116, D4): the attribute's
+                // value is `actual`.
+                "forge/quote-refused",
+                ValidationError::QuoteRefused {
+                    value: "_x.principal".into(),
+                    reason: "no deployment lists this machine among those its receiver takes a quote from, and every quote is refused until one does".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:233a70d5df8b7a62","code":"validation/quote-refused","stage":"validation","spec":"ADR 0116 D4","message":"<send> sce:on-behalf=\"_x.principal\": no deployment lists this machine among those its receiver takes a quote from, and every quote is refused until one does (docs/adr/0116, D4)","actual":"_x.principal"}"#,
+            ),
+            (
                 // A CBOR entry whose largest encoding is past 2^64 - 1 bytes
                 // (docs/adr/0101, section 4.4): the type is `actual`.
                 "forge/encoded-size-overflow",
@@ -20904,6 +20987,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:33d6e86a4a6f05a9","code":"mesh/codegen-journal-mismatch","stage":"mesh-codegen","spec":"ADR 0114 D1","message":"machine 'rooms': its event journal cannot be kept as written — the deployment keeps a journal of the machine (`journal: true`), and its document says no fact into it (<send type=\"sce:journal\">) (docs/adr/0114, D1).","actual":"rooms"}"#,
             ),
             (
+                "mesh/codegen-principal-unproved",
+                CodegenError::PrincipalUnproved {
+                    machine: "rooms".into(),
+                    reason: "its binding '#phone' is under the `bearer` authenticator, which proves no key a proof of a person is bound to".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0d1e74bac417be3a","code":"mesh/codegen-principal-unproved","stage":"mesh-codegen","spec":"ADR 0116 D10","message":"machine 'rooms' reads the person an instance acts for (`sce:principal`), and its binding '#phone' is under the `bearer` authenticator, which proves no key a proof of a person is bound to (docs/adr/0116, D10).","actual":"rooms"}"#,
+            ),
+            (
                 "mesh/codegen-journal-read-refused",
                 CodegenError::JournalReadRefused {
                     machine: "view".into(),
@@ -22031,6 +22123,8 @@ mod tests {
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationJournalValueAssigned
+            | ValidationPrincipalRecord
+            | ValidationQuoteRefused
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationJournalReadSchema
@@ -22602,6 +22696,7 @@ mod tests {
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
             | MeshCodegenJournalReadRefused
+            | MeshCodegenPrincipalUnproved
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -23096,6 +23191,8 @@ mod tests {
                 | ValidationMapKeyType | ValidationMapInWirePosition
                 | ValidationDeploymentValueAssigned
                 | ValidationJournalValueAssigned
+                | ValidationPrincipalRecord
+                | ValidationQuoteRefused
                 | ValidationAuditEntrySchema
                 | ValidationPayloadRecordSchema
                 | ValidationJournalReadSchema
@@ -23492,6 +23589,7 @@ mod tests {
                 | MeshCodegenPersistenceWithoutSavedState
                 | MeshCodegenJournalMismatch
                 | MeshCodegenJournalReadRefused
+                | MeshCodegenPrincipalUnproved
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -23571,9 +23669,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            577,
+            580,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 577 distinct variants to match the DiagnosticCode \
+             expected 580 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24234,6 +24332,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationJournalValueAssigned
+            | ValidationPrincipalRecord
+            | ValidationQuoteRefused
             | ValidationAuditEntrySchema
             | ValidationPayloadRecordSchema
             | ValidationJournalReadSchema
@@ -24644,6 +24744,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenPersistenceWithoutSavedState
             | MeshCodegenJournalMismatch
             | MeshCodegenJournalReadRefused
+            | MeshCodegenPrincipalUnproved
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

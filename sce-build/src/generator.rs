@@ -2237,6 +2237,21 @@ fn reject_native_conditions_in_unsupported_lang(
     ))
 }
 
+/// Refuse, on a backend whose core holds no person an instance acts for, a document that
+/// reads one (`<scxml sce:principal>`, docs/adr/0116, D10), by the backend's name, before
+/// anything of it is generated. A person is held by the core that binds the instances of an
+/// open machine and nowhere else, so the backends that serve an instance's origin are the
+/// ones that hold one.
+fn reject_principal_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: Language,
+) -> Result<(), GenerateError> {
+    if crate::host_processor_analyzer::serves_instance_origins(language) {
+        return Ok(());
+    }
+    crate::forge::principal::refuse_backend(model, language.canonical_name())
+}
+
 /// Refuse, on a backend whose Mesh core serves no open machine, a document that
 /// writes the origin of an instance of one as a `<send target>`,
 /// `mesh://<machine>/<instance>` (docs/adr/0113, D2 and D7). Only the Rust host
@@ -3193,6 +3208,7 @@ pub fn generate_rust_within(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Rust)?;
+    reject_principal_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -3590,6 +3606,7 @@ pub fn generate_with_templates(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Rust)?;
+    reject_principal_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -3956,6 +3973,16 @@ fn render_rust(
     // expression reads are ones that channel must carry.
     let static_lowering =
         crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name)?;
+    // docs/adr/0116, D3: the person behind an instance rides an event's metadata, whose
+    // text fields a `no_std` runtime does not carry; such a machine is refused by name.
+    if options.no_std {
+        if let Some(alias) = model_lowered.principal.as_deref() {
+            return Err(GenerateError::unsupported(format!(
+                "`<scxml sce:principal=\"{alias}\">`: a no_std Rust machine holds no person an \
+                 instance acts for, which an event carries as text (docs/adr/0116, D3)"
+            )));
+        }
+    }
     // docs/adr/0109, D12: the values a deployment supplies are read from the
     // JSON of its configuration by the runtime's payload reader, which a
     // `no_std` build does not carry; such a machine is refused by name rather
@@ -4168,6 +4195,8 @@ fn render_rust(
         policy_generics_use => &policy_generics_use,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        // docs/adr/0116, D3: the person behind an instance the machine reads, if any.
+        static_principal => minijinja::Value::from_serialize(&static_lowering.principal),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
@@ -4262,6 +4291,7 @@ fn render_cpp(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_static_datamodel_in_unsupported_lang(model, Language::Cpp)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Cpp)?;
+    reject_principal_in_unsupported_lang(model, Language::Cpp)?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     // Neither host refusal here: the C++ AOT engine carries both registries
@@ -4489,6 +4519,7 @@ fn render_c11(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::C11)?;
     reject_instance_origins_in_unsupported_lang(model, Language::C11)?;
+    reject_principal_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
     // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
@@ -4912,6 +4943,7 @@ pub fn generate_kotlin_for_engine(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_principal_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
@@ -4938,6 +4970,7 @@ pub fn generate_kotlin_with_templates(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_principal_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
@@ -5156,6 +5189,7 @@ pub fn generate_go_for_module(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Go)?;
+    reject_principal_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
     // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
@@ -5179,6 +5213,7 @@ pub fn generate_go_with_templates(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Go)?;
+    reject_principal_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -5205,6 +5240,7 @@ pub fn generate_swift(model: &SCXMLModel, template_dir: &Path) -> Result<String,
     let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Swift)?;
+    reject_principal_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Swift)?;
@@ -5221,6 +5257,7 @@ pub fn generate_swift_with_templates(
     let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Swift)?;
+    reject_principal_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Swift)?;
@@ -5922,6 +5959,7 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Python)?;
+    reject_principal_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
     // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
@@ -5944,6 +5982,7 @@ pub fn generate_python_with_templates(
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     reject_instance_origins_in_unsupported_lang(model, Language::Python)?;
+    reject_principal_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;

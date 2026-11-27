@@ -228,9 +228,22 @@ pub struct DeploymentValue {
     pub reader: String,
 }
 
+/// The person behind an instance as a machine holds it (docs/adr/0116, D3): the record
+/// type of the schema the document reads them as (`<scxml sce:principal>`), and the
+/// target's expression that reads the person the event being processed was said for into
+/// an optional value of that type ([`StaticTarget::principal_read`]).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticPrincipal {
+    pub record_type: String,
+    pub read: String,
+}
+
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
 #[derive(Debug, Clone, Default)]
 pub struct StaticLowering {
+    /// The person behind an instance the machine reads, `None` for a machine of a
+    /// document that reads none ([`StaticPrincipal`]).
+    pub principal: Option<StaticPrincipal>,
     /// The machine's fields, in declaration order. A value the deployment
     /// supplies is not among them ([`Self::deployment`]).
     pub fields: Vec<StaticField>,
@@ -2619,6 +2632,21 @@ pub trait StaticTarget {
     /// ([`refuse_event_origin`]). What a document answers its sender at, and an instance of an
     /// open machine by its one address (docs/adr/0113, D2).
     fn event_origin(&self) -> Option<&'static str> {
+        None
+    }
+    /// What `_x.principal` and `_x.quoted` read on this target (docs/adr/0116, D3 and D4):
+    /// the machine's places that hold the person the event being processed was said for and
+    /// the person a machine quoted with it, each an optional record of the declared schema; or
+    /// `None` for a target whose machine holds no person, which refuses a document that
+    /// declares one by its name ([`refuse_principal`]).
+    fn event_principal(&self) -> Option<(&'static str, &'static str)> {
+        None
+    }
+    /// The expression that reads the person the event being processed was said for into an
+    /// optional value of `record`, the type of `schema`, taking each field `schema` declares
+    /// and no other ([`crate::forge::principal::FIELDS`]); `None` for a target with no
+    /// place for one ([`Self::event_principal`]).
+    fn principal_read(&self, _record: &str, _schema: &EntrySchema) -> Option<String> {
         None
     }
     /// What the `typeexpr` attribute of a `<send>` is rewritten to, for a target
@@ -6506,6 +6534,37 @@ impl StaticTarget for RustTarget {
     fn event_origin(&self) -> Option<&'static str> {
         Some("self.pending_event_origin.as_ref().map_or(\"\", |origin| origin.address.as_str())")
     }
+    // The person the delivering edge stamped on the event (`EventMetadata::principal`),
+    // which the machine holds while it processes the event, and the person a machine
+    // quoted, which no edge takes while no deployment lists a quote (docs/adr/0116, D4):
+    // `populate_event_metadata` fills both, and every event that carries no person leaves
+    // them absent.
+    fn event_principal(&self) -> Option<(&'static str, &'static str)> {
+        Some(("self.pending_event_principal", "self.pending_event_quoted"))
+    }
+    // The runtime's `Principal`, bound as `person`, taken field by field into the record
+    // the document declares: each text held to its field's bound, a text past it refusing
+    // the delivery with the field it does not fit (`StatePolicy::admit_principal`), and the
+    // moment copied.
+    fn principal_read(&self, record: &str, schema: &EntrySchema) -> Option<String> {
+        let fields: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let read = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::String, Some(bound)) => format!(
+                        "{}::SceString::from_text(&person.{id}).map_err(|_| String::from(\
+                         \"its `{id}` is longer than the {bound} bytes the record holds\"))?",
+                        crate::forge::composed_lowering::RUST_PORTABLE,
+                        id = field.id,
+                    ),
+                    _ => format!("person.{}", field.id),
+                };
+                format!("{}: {read}", self.record_field(&field.id))
+            })
+            .collect();
+        Some(format!("{record} {{ {} }}", fields.join(", ")))
+    }
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_event`).
     fn lowers_cancel_expr(&self) -> bool {
@@ -9566,6 +9625,7 @@ pub fn lower(
         return Ok(StaticLowering::default());
     };
     refuse_event_origin(model, target)?;
+    refuse_principal(model, target)?;
     let lang = target.name();
     // The schemas the machine reads, one entry per field: every use of one that
     // holds a list, a record or an optional over either was refused where the
@@ -10995,6 +11055,27 @@ pub fn lower(
     // One adapter for each way a call of an algorithm that takes or returns a record
     // or a list was made (docs/SCE_ACCEPTED_SUBSET.md §2.15), and the unit of each
     // schema it names a record of.
+    // docs/adr/0116, D3: the record the machine reads the person an instance acts for as,
+    // declared as a variable's record type is, and the target's read of the event's person
+    // into it. A target with no place for one was refused above.
+    let principal = match scope.principal.as_deref() {
+        Some(alias) => {
+            let schema = records.get(alias).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "`sce:principal=\"{alias}\"` names no record the build read: import the \
+                     event schema the person is read as"
+                ))
+            })?;
+            let record_type = declarations.record(alias, schema)?;
+            let read = target.principal_read(&record_type, schema).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "`sce:principal` has no {lang} read of the person of an event"
+                ))
+            })?;
+            Some(StaticPrincipal { record_type, read })
+        }
+        None => None,
+    };
     // The bounds the machine names, each a constant of the number the build resolved
     // it to (docs/adr/0050). A name two elements resolve to two numbers has no one
     // value, and is declared by none: a read of it is refused where it is written.
@@ -11340,6 +11421,7 @@ pub fn lower(
     };
     header_imports.extend(declarations.unit_imports);
     Ok(StaticLowering {
+        principal,
         fields,
         deployment,
         payload_events,
@@ -25643,7 +25725,25 @@ fn renames<'a>(
     if let Some(origin) = target.event_origin() {
         map.insert("_event.origin", origin);
     }
+    if let Some((principal, quoted)) = target.event_principal() {
+        map.insert(crate::forge::principal::PRINCIPAL, principal);
+        map.insert(crate::forge::principal::QUOTED, quoted);
+    }
     map
+}
+
+/// Refuse, on a target whose machine holds no person ([`StaticTarget::event_principal`]), a
+/// `sce-static` document that reads one (`<scxml sce:principal>`, docs/adr/0116, D3 and
+/// D10): the Rust host core is the one that holds the person behind an instance. Refused by
+/// the target's name, before anything is lowered.
+pub(crate) fn refuse_principal(
+    model: &SCXMLModel,
+    target: &dyn StaticTarget,
+) -> Result<(), GenerateError> {
+    if target.event_principal().is_some() {
+        return Ok(());
+    }
+    crate::forge::principal::refuse_backend(model, target.name())
 }
 
 /// Refuse, on a target whose machine holds no origin ([`StaticTarget::event_origin`]), a

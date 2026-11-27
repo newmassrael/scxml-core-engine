@@ -1204,6 +1204,10 @@ pub struct StaticScope {
     state_calls: Vec<StateCallName>,
     /// Each bound the statechart names ([`Self::limits`]).
     limits: Vec<(String, BuildLimit)>,
+    /// The alias of the record the statechart reads the person an instance acts for as
+    /// (`<scxml sce:principal>`, docs/adr/0116, D3): what `_x.principal` and `_x.quoted` are
+    /// optional records of. `None` for a statechart that reads no person.
+    pub principal: Option<String>,
 }
 
 /// One step from a map or set variable to the place a statement writes through
@@ -1584,6 +1588,7 @@ impl StaticScope {
             callees,
             state_calls,
             limits,
+            principal: model.principal.clone(),
         })
     }
 
@@ -2191,6 +2196,37 @@ impl StaticScope {
         // reserves for what a platform adds): the bounds the statechart names.
         for (name, value) in &self.limits {
             ctx.limits.insert(name.as_str(), *value);
+        }
+        // What `_x.principal` and `_x.quoted` read (docs/adr/0116, D3 and D4): an
+        // optional record of the declared schema each, read as an optional record
+        // variable is, and the two the only members of `_x` an expression reads by
+        // name (`_x.limits.<name>` is a number by then).
+        if let Some(place) = self
+            .principal
+            .as_deref()
+            .and_then(crate::forge::principal::place)
+        {
+            ctx.insert_record(
+                crate::forge::principal::SYSTEM_VARIABLE,
+                RecordShape::Closed,
+            );
+            for (name, value) in [
+                (
+                    crate::forge::principal::PRINCIPAL,
+                    crate::forge::principal::PRINCIPAL_VALUE,
+                ),
+                (
+                    crate::forge::principal::QUOTED,
+                    crate::forge::principal::QUOTED_VALUE,
+                ),
+            ] {
+                ctx.insert_value(name, place.clone());
+                ctx.insert_var(
+                    name,
+                    InferredType::Optional(crate::forge::types::OptionalElem::Record),
+                );
+                ctx.insert_record(value, RecordShape::Closed);
+            }
         }
         // The names a record or a list handed to an algorithm takes in the expression
         // read instead of the author's ([`Self::rewrite_state_calls`]): the placeholders,

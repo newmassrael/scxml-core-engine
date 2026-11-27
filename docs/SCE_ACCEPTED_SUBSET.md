@@ -1582,6 +1582,15 @@ deployment that declares one is generated for Rust alone; every other backend
 refuses each of its machines by name
 (`mesh/codegen-open-instances-unsupported`).
 
+A machine whose document reads the person an instance acts for (`<scxml sce:principal>`,
+§2.15; docs/adr/0116, D10) is generated with its deployment only where a person is
+proved: bound to at least one open machine, each such binding under the `key`
+authenticator (every other proves no key a proof of a person is bound to), with `sign:` on
+the server's side and `verify:` on the instances', and under `receipt: durable` (an event
+is told the person of the incarnation it was taken in under, which only an instance's
+completion records judge, docs/adr/0113, D5); each missing is refused naming the binding
+(`mesh/codegen-principal-unproved`).
+
 An open machine declares the terms a server holds its instances to,
 `members: { lease_ms, provisional_ms, max_instances }` (docs/adr/0113, D4
 and D6), none of which has a default: a member a session kept a message of
@@ -7234,6 +7243,52 @@ Go, Python, Swift, C11 and the Interpreter's lowering refuse the `<data>` by nam
 reader. `sce-build/tests/a_machine_reads_the_values_its_deployment_supplies.rs` holds
 the rules, and `a_deployment_value_is_no_line_of_the_saved_shape` the shape.
 
+**The person behind an instance: `sce:principal`, `_x.principal` and `_x.quoted`**
+(docs/adr/0116, D3 and D4).
+
+- Amended by: ADR 0116 (D3, D4 and D10, step 4 of its order of work): a document
+  reads the person an instance acts for, and every quote is refused.
+
+`<scxml sce:principal="Person">` names an imported event
+schema the document reads the person an instance of an open machine acts for as, and the
+document reads `_x.principal`, an `optional<record:Person>` of the event being processed:
+the platform's variable under `_x`, which no document declares and no sender writes. It is
+present on an event an instance sent while its incarnation acts for a person, as the edge
+of the server that took the event in stamped it from the delegation its store holds, and
+absent on every other: an internal event, a timer, a completion, an event of an
+incarnation that acts for nobody. It is read as an optional record variable is, a field of
+its present value (`_x.principal.value.subject`) only where a test proves it present
+(`expression/optional-read-unproven` elsewhere), and no statement writes it. The record's
+fields are taken by name from a fixed list, each of its type: `issuer`, `subject`,
+`method` and `instance`, texts (each of the bound the record states, as every text is),
+and `proved_ms`, a `uint64`; a field not declared is not given. A person whose text is
+longer than its field holds refuses the delivery whole, as one whose data does not fit its
+type does (`error.execution`, docs/adr/0124, D2): the event is never run as said for
+nobody, and no text is cut. A declaration under another data model, one that names no
+imported event schema, a record with no field, a field none of the list names and one of
+another type are refused as `validation/principal-record`. `sce:principal="required"` on a
+`<transition>` is the guard `_x.principal !== null`, joined before the transition's own
+condition, so an event said for nobody does not select it and the condition reads the
+person where it is proven present; another value is `validation/attribute-rule-violated`,
+and the attribute on a document that declares no person is `validation/principal-record`.
+A machine that asks another on a person's behalf says so, `<send
+sce:on-behalf="_x.principal">`, and the receiver reads a quoted person, `_x.quoted` (the
+same record), and never `_x.principal`; a deployment lists which machines a machine takes
+a quote from, and until one does every quote is refused where it is written, as
+`validation/quote-refused` (Open question 2 of the record), and `_x.quoted` is absent on
+every event. Nothing passes on by itself: a child an `<invoke autoforward="true">` forwards
+the event to is told it as said for nobody, the copy being the event's and the person no
+field of `_event`. The Rust host core holds the person (`EventMetadata::principal`, which the
+edge stamps with `Endpoint::receive_member_for`); a saved state and a checkpoint hold none,
+so a machine whose queue holds an event of a person it has not run refuses to save
+(D6: it is never run as nobody's). A `no_std` Rust build and every other backend refuse the
+document by name (`generate/unsupported-feature`), and so does the Interpreter's
+lowering. Where the machine is generated with its deployment it is held to a binding that
+proves a person (§2.8, `mesh/codegen-principal-unproved`).
+`sce-build/tests/a_document_reads_the_person_an_instance_acts_for.rs` holds the rules, and
+`backends/rust/tests/tests/a_static_server_reads_the_person_an_instance_acts_for.rs` runs the
+machine.
+
 **A value held to the journal's facts: `sce:from="journal"`** (docs/adr/0114, D1).
 `<data id="booked" sce:type="uint32" expr="0" sce:from="journal"/>` declares a
 top-level variable whose value is a fold of the entries the session said or took in,
@@ -11506,7 +11561,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (577 codes)
+## Appendix — `DiagnosticCode` index (580 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11606,6 +11661,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/map-in-wire-position` | Validation |
 | `validation/deployment-value-assigned` | Validation |
 | `validation/journal-value-assigned` | Validation |
+| `validation/principal-record` | Validation |
+| `validation/quote-refused` | Validation |
 | `validation/audit-entry-schema` | Validation |
 | `validation/payload-record-schema` | Validation |
 | `validation/journal-read-schema` | Validation |
@@ -12056,6 +12113,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-open-instances-unsupported` | Mesh Codegen |
 | `mesh/codegen-persistence-without-saved-state` | Mesh Codegen |
 | `mesh/codegen-journal-mismatch` | Mesh Codegen |
+| `mesh/codegen-principal-unproved` | Mesh Codegen |
 | `mesh/codegen-journal-read-refused` | Mesh Codegen |
 
 ### Diagnostic-only

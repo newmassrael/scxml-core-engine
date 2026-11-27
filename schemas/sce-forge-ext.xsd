@@ -817,6 +817,17 @@
   <xs:attribute name="stream" type="xs:string"/>
   <xs:attribute name="entries" type="xs:string"/>
 
+  <!-- docs/adr/0116, D3 and D4: the person behind an instance. `principal` on a
+       statechart's `<scxml>` names the imported record schema the document reads
+       the person as (`_x.principal`, `_x.quoted`), and on a `<transition>` takes
+       `required`, the guard `_x.principal !== null`; `on-behalf` on a `<send>`
+       quotes the person to the receiver. `xs:string` for the three uses: the
+       parser and the build own their refusals (`validation/principal-record`,
+       `validation/quote-refused`, `validation/attribute-rule-violated`), which a
+       schema type would pre-empt. -->
+  <xs:attribute name="principal" type="xs:string"/>
+  <xs:attribute name="on-behalf" type="xs:string"/>
+
   <!-- Section 4.7: Validator — data-attribute form (target format) -->
   <xs:attribute name="range-min" type="xs:string"/>
   <xs:attribute name="range-max" type="xs:string"/>

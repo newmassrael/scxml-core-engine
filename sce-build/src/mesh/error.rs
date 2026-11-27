@@ -4073,6 +4073,21 @@ pub enum CodegenError {
         reason: String,
         at: Option<crate::forge::error::SourceLocation>,
     },
+
+    /// A machine whose document reads the person an instance acts for
+    /// (`<scxml sce:principal>`, docs/adr/0116, D3), bound where no person is
+    /// proved (D10): to no instance of an open machine, or on a binding of one
+    /// under an authenticator other than `key` (the others prove no key a proof
+    /// of a person is bound to, D2), without `sign:` on its side or `verify:` on
+    /// the instances', or without durable receipt (an event is told the person
+    /// of the incarnation it was taken in under, which only an instance's
+    /// completion records judge, docs/adr/0113, D5). Judged with the documents
+    /// the deployment names.
+    #[error(
+        "machine '{machine}' reads the person an instance acts for (`sce:principal`), and \
+         {reason} (docs/adr/0116, D10)."
+    )]
+    PrincipalUnproved { machine: String, reason: String },
 }
 
 /// Which declaration of the event journal (docs/adr/0114) a
@@ -6732,6 +6747,15 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             stage: Stage::MeshCodegen,
             actual: Some(machine.clone()),
             // The document or the deployment changed: which is the author's.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        CodegenError::PrincipalUnproved { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenPrincipalUnproved,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Bind the machine where a person is proved, or read none: the author's.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],

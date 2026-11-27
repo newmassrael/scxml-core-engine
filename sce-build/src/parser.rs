@@ -3532,6 +3532,11 @@ impl SCXMLParser {
             kind_basis,
             ..Default::default()
         };
+        // docs/adr/0116, D3: `<scxml sce:principal="Person">` names the record the
+        // document reads the person an instance acts for as, held to its fields
+        // where the imports are read (`forge::principal::check_declaration`). Read
+        // before the states, whose transitions may require one.
+        model.principal = crate::forge::principal::declared(&root, &model, diag_label)?;
 
         // docs/SCE_TEST_PROFILE.md §11.5: a `test-component` declares its
         // ports, timers and module parameters, adds statements, and invokes
@@ -4868,6 +4873,9 @@ impl SCXMLParser {
         // The same attribute, in the same order, as the value above.
         let cond_spelling = AttributeSpelling::of(elem, None, "cond")
             .or_else(|| AttributeSpelling::of(elem, None, "expr"));
+        // docs/adr/0116, D3: `sce:principal="required"` is the guard
+        // `_x.principal !== null`, joined before the transition's own condition.
+        let cond = crate::forge::principal::guard_with_required(elem, model, source_name, cond)?;
 
         // One decision for every backend, shared with `<if>` / `<elseif>`
         // — see [`resolve_cond`] for why deciding it here alone was the
@@ -5014,6 +5022,9 @@ impl SCXMLParser {
         action.typeexpr = elem.attribute("typeexpr").unwrap_or("").to_string();
         action.targets = collect_send_targets(elem, action, source_name)?;
         action.types = collect_send_types(elem, action, source_name)?;
+        // docs/adr/0116, D4: a quote of the person the event came for, refused
+        // until a deployment lists the machines a machine takes one from.
+        crate::forge::principal::refuse_quote(elem, model, source_name)?;
         // Decided where the attribute arrives, so every backend's send
         // template reads one answer instead of re-deriving it from its
         // own copy of the accepted set.

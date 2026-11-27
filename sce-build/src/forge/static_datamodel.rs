@@ -197,6 +197,9 @@ pub fn check(
     // docs/adr/0114, D1: a value held to the journal's facts is written only
     // where a fact is applied.
     crate::forge::journal::refuse_journal_values_written_elsewhere(model, diag_label)?;
+    // docs/adr/0116, D3: the record the document reads a person as takes its
+    // fields from the fixed list, each of its type.
+    crate::forge::principal::check_declaration(model, diag_label)?;
     let held_enums = model.held_enums();
     // The schemas read one entry per field: every use of one that holds a
     // composition was refused where the document was parsed

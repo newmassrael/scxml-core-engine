@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record a server reads the person an instance acts for as (docs/adr/0116, D3):
+  three of the fields a person is read with, by name, each of its type. Each text states
+  its bound, and a person whose text is longer refuses the delivery where it is taken in;
+  `method` and `instance` are not declared, and so are not given.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_principal_person"
+       sce:event-name="principal.person">
+  <datamodel>
+    <data id="issuer" sce:type="string[64]" sce:direction="in"/>
+    <data id="subject" sce:type="string[64]" sce:direction="in"/>
+    <data id="proved_ms" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

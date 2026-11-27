@@ -1169,6 +1169,14 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
 {% endif %}
+{% if static_principal %}
+    // docs/adr/0116, D3 and D4: the person the event being processed was said
+    // for (`_x.principal`), as the edge that took it in stamped it, and the
+    // person a machine quoted with it (`_x.quoted`), absent on every event
+    // while no deployment lists a machine a quote is taken from.
+    pending_event_principal: Option<{{ static_principal.record_type }}>,
+    pending_event_quoted: Option<{{ static_principal.record_type }}>,
+{% endif %}
 {# The configuration and what each `<history>` recorded are not fields here:
    the engine keeps both, as numbers, in its run store (docs/adr/0064). #}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this struct.
@@ -1506,6 +1514,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% if model.needs_event_invokeid %}
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
+{% endif %}
+{% if static_principal %}
+            pending_event_principal: None,
+            pending_event_quoted: None,
 {% endif %}
 {% for field in static_fields %}
             {{ field.name }},
@@ -2222,7 +2234,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
    override. `invokeid` is also read by a host-served `<send>`, which carries it
    out (SCE_MESH.md §mesh-10.7) on a machine with no script engine, so it is
    named here in its own right; host sends are std-only, like the field. #}
-{% if (model.needs_event_data and model.needs_script_engine) or (model.needs_event_name and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype or model.needs_event_invokeid %}
+{% if (model.needs_event_data and model.needs_script_engine) or (model.needs_event_name and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype or model.needs_event_invokeid or static_principal %}
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
@@ -2270,6 +2282,31 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.needs_event_invokeid %}
         self.pending_event_invokeid.clear();
 {% endif %}
+{% if static_principal %}
+        self.pending_event_principal = None;
+        self.pending_event_quoted = None;
+{% endif %}
+    }
+{% endif %}
+{% if static_principal %}
+
+    // docs/adr/0116, D3: the person the edge stamped on the event about to be
+    // processed, taken into the record the document declares, the fields it
+    // declares and no other, each text held to its field's bound; absent on an
+    // internal event, a timer and a completion, which carry none. A text past
+    // its bound refuses the delivery (`StatePolicy::admit_principal`).
+    fn admit_principal(
+        &mut self,
+        metadata: &sce_rust_runtime::EventMetadata,
+    ) -> Result<(), String> {
+        self.pending_event_principal = None;
+        // docs/adr/0116, D4: no edge takes a quote while no deployment lists one.
+        self.pending_event_quoted = None;
+        let Some(person) = metadata.principal.as_ref() else {
+            return Ok(());
+        };
+        self.pending_event_principal = Some({{ static_principal.read }});
+        Ok(())
     }
 {% endif %}
 

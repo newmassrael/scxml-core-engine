@@ -12117,6 +12117,9 @@ pub fn compile_mesh_transport(
         &deploy_cfg,
         deploy_dir,
     )?;
+    // docs/adr/0116, D10: a document that reads the person an instance acts for
+    // is bound where a person is proved.
+    mesh::principal::check_bound(&effective_machine_name, model, &deploy_cfg)?;
     let keyed_pool = device
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.sessions.as_ref())

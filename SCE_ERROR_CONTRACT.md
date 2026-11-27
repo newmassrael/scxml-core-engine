@@ -1095,8 +1095,10 @@ references against a real document and drift silently.
 | `validation/native-action-signature-conflict` | `validation` | no |  |
 | `validation/numeric-parse` | `validation` | no |  |
 | `validation/payload-record-schema` | `validation` | no | ADR 0109 D9 |
+| `validation/principal-record` | `validation` | no | ADR 0116 D3 |
 | `validation/provenance-duplicate` | `validation` | no |  |
 | `validation/provenance-malformed` | `validation` | no |  |
+| `validation/quote-refused` | `validation` | no | ADR 0116 D4 |
 | `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |
 | `validation/render-bound` | `validation` | no | ADR 0087 §3.1 |
 | `validation/render-holes` | `validation` | no | ADR 0087 §3.1 |
@@ -1233,6 +1235,7 @@ references against a real document and drift silently.
 | `mesh/codegen-open-instances-unsupported` | `mesh-codegen` | no | ADR 0113 D7 |
 | `mesh/codegen-persistence-without-saved-state` | `mesh-codegen` | no | SCE Mesh §10.11 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
+| `mesh/codegen-principal-unproved` | `mesh-codegen` | no | ADR 0116 D10 |
 | `mesh/codegen-template-read` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-render` | `mesh-codegen` | no |  |
 | `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` | SCE Mesh §7 |

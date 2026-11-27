@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0116, D3 and D4): a server that reads the person an
+  instance of an open machine acts for, `_x.principal`, an optional record of the
+  schema it declares with `sce:principal`, which the edge that took the event in
+  stamped and no field of an envelope wrote.
+
+    alices    1 for each `ping` said for the subject `alice`.
+    others    1 for each `ping` said for another person.
+    nobodys   1 for each `ping` said for nobody: one an instance sent while its
+              incarnation acts for no person, and one the machine raises itself
+              (`relay`), an internal event, which carries none.
+    quoted    1 for each `ping` said for `alice` that carries a quoted person
+              (`_x.quoted`): none, while no deployment lists a machine a quote is
+              taken from.
+    entered   1 for each `enter` said for a person of the issuer
+              `https://id.example`: `sce:principal="required"` is the guard
+              `_x.principal !== null`, so the condition after it reads the person.
+    recent    the moment the last person was proved, `proved_ms`.
+    refused   1 for each event said for a person a field of the record does not hold
+              (a subject longer than its 64 bytes): the delivery is refused whole, as
+              error.execution, and never run as said for nobody (D6).
+
+  Generated for Rust alone: every other backend refuses the document by name, since
+  its core holds no person an instance acts for (D10).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="serving" datamodel="sce-static"
+       name="statechart_static_reads_a_principal" sce:principal="Person">
+  <sce:import kind="event-schema" src="schema_principal_person.scxml" as="Person"/>
+  <datamodel>
+    <data id="alices" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="others" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="nobodys" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="quoted" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="entered" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="recent" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="serving">
+    <transition event="ping" cond="_x.principal !== null &amp;&amp; _x.principal.value.subject === 'alice'">
+      <assign location="alices" expr="alices + 1"/>
+      <if cond="_x.principal !== null">
+        <assign location="recent" expr="_x.principal.value.proved_ms"/>
+      </if>
+      <if cond="_x.quoted !== null">
+        <assign location="quoted" expr="quoted + 1"/>
+      </if>
+    </transition>
+    <transition event="ping" cond="_x.principal !== null">
+      <assign location="others" expr="others + 1"/>
+    </transition>
+    <transition event="ping">
+      <assign location="nobodys" expr="nobodys + 1"/>
+    </transition>
+    <transition event="relay">
+      <raise event="ping"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+    <transition event="enter" sce:principal="required"
+                cond="_x.principal.value.issuer === 'https://id.example'">
+      <assign location="entered" expr="entered + 1"/>
+    </transition>
+  </state>
+</scxml>

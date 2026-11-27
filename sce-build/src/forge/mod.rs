@@ -72,6 +72,7 @@ pub mod payload_record;
 pub mod payload_schema;
 pub mod pool_registry;
 pub mod previous_value;
+pub mod principal;
 pub mod provenance;
 pub mod pseudo;
 pub mod quantity;

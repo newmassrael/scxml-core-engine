@@ -4778,6 +4778,12 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interface_closed: bool,
 
+    /// `<scxml sce:principal="Person">`: the alias of the imported event schema the
+    /// document reads the person an instance acts for as, `_x.principal` and
+    /// `_x.quoted` (docs/adr/0116, D3). Absent, the document reads no person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
+
     /// `<scxml sce:transition-table="emit">`: the generated machine carries
     /// its own transitions as constant data (`docs/SCE_TRANSITION_TABLE.md`,
     /// [`EmittedTransitionTable`]). A fact of the document and not of the
