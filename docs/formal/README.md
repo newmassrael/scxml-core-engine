@@ -113,10 +113,13 @@ generator (`document_model::SEMANTICS_TEXT`), so the judge stages the semantics 
   (`backends/kotlin/tests/src/test/kotlin/com/sce/formal/AScenarioOfTheTurnstileIsItsRunTest.kt`), Python
   (`backends/python/tests/trace_port/test_a_scenario_of_the_turnstile_is_its_run.py`) and Swift
   (`backends/swift/tests/Tests/EcmaScriptMachinesTests/AScenarioOfTheTurnstileIsItsRunTests.swift`). Each harness
-  reads a scenario's `inputs`, gives each event by name and moves a clock it owns to the next deadline. It gives an
-  input once the machine has taken every step it can, so a scenario whose environment put an event on the queue in the
-  middle of a macrostep that also sends to its own external queue, or whose model made a later delayed send due before
-  an earlier one, is one no harness replays as the model ran it, and the judge finds the runs part.
+  reads a scenario's `inputs`, gives each event by name and moves a clock it owns to the next deadline. A move makes
+  every send of that deadline due at once, where the model's time (any pending send, at any moment) may make them due
+  one at a time with steps between, so a `due` input that finds no send pending was given by the move before it, and
+  gives nothing: the steps compared say whether it was. It gives an input once the machine has taken every step it
+  can, so a scenario whose environment put an event on the queue in the middle of a macrostep that also sends to its
+  own external queue, whose model made a later delayed send due before an earlier one, or made sends of one deadline
+  due around another event, is one no harness replays as the model ran it, and the judge finds the runs part.
 - **Coverage.** `--coverage` alters the machine in each way of a closed list (`sce-build/src/formal/coverage.rs`: a
   transition's condition made false, which takes it out, or made true; an action taken out; the event an action sends
   or raises changed to one no transition names; the value an `<assign>` writes changed, an integer by one more and a
