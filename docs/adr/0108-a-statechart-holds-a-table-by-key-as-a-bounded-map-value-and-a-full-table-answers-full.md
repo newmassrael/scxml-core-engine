@@ -12,6 +12,9 @@
   be a map, a list or a record that holds a list, written in place through a nested place, on the consumer's probes
   of the three shapes. Amended 2026-11-22 (D4 "Storage", D8): Rust has a third storage, `Linear`, with no index, on
   the consumer's measurement of what the hash costs a small map on a microcontroller.
+  Amended by: ADR 0154 (proposed 2026-11-28), D2, D4 "Storage" and D8: Rust has two storages a host lends, sized at
+  run time, a host reads the slot each entry is held in, and a map an algorithm builds or copies is kept in the
+  owned storage of the map it follows.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
@@ -108,6 +111,10 @@ Removing a key and putting it again puts it last. Iteration, the saved form and 
 every engine walks a map in the same order and a scenario compares one trace across all of them. Sorting by key
 was rejected (Alternatives rejected, 3).
 
+(Amended by ADR 0154, D2.) What leaves a map into a document's value is still no handle, slot or position. A Rust host
+reads the slot each entry is held in, `MapSlot`, a number below the map's limit and a generation that moves each
+time the slot is freed, so a host keeps state of its own beside each entry.
+
 ### D3. What a statechart reads and writes
 
 Reads, in any expression:
@@ -201,6 +208,14 @@ form, the snapshot, and equality with a map of another storage. The map keeps th
 hand it on to the maps drawn from it. A generated machine's own map variables keep `DefaultMapStorage`; a generated
 algorithm, generic over the storage of each map it is lent, takes a `Linear` map unchanged, and a map it builds
 from one is `Linear` too. C11 and the heap lanes are unchanged.
+
+(Amended by ADR 0154, D1 and D3.) Rust has two storages in runs of memory a host lends for a map's life, sized when
+the map is built: `Lent<'a>`, the slots and no index, and `LentIndexed<'a>`, the slots and the index's cells. The
+map's limit is the run's length, at most the bound, refused past it, and a put of an absent key at the limit answers
+`full`, storage being exhausted, as this paragraph says. The map value holds no slot, so a map lent none costs a few
+words whatever its bound. A map a generated algorithm builds for itself, and the copy a walk takes, is kept in the
+owned storage of the map it follows (`MapStorage::Owned`): the storage itself where the map holds its own slots,
+`Linear` for `Lent` and `Inline` for `LentIndexed`.
 
 ### D5. A statechart walks a map with `<foreach>`, and an algorithm takes one by name
 
