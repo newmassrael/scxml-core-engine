@@ -7564,6 +7564,7 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
             if machine.members.is_some() {
                 return Err(DeployError::InvalidMembers {
                     machine: open.to_string(),
+                    field: None,
                     reason: "the machine runs once (it declares no `instances: open`), so it \
                              has no members to hold to them"
                         .to_string(),
@@ -7670,9 +7671,10 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
                     .to_string(),
             );
         };
-        if let Some(reason) = members_refusal(&members) {
+        if let Some((field, reason)) = members_refusal(&members) {
             return Err(DeployError::InvalidMembers {
                 machine: open.to_string(),
+                field: Some(field),
                 reason,
             });
         }
@@ -7680,25 +7682,32 @@ fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// Why an open machine's `members:` cannot be kept, if it cannot: a field
-/// below 1, or a provisional lease longer than the lease it leads to.
-fn members_refusal(members: &MembersConfig) -> Option<String> {
+/// Why an open machine's `members:` cannot be kept, if it cannot, with the
+/// field at fault: a field below 1, or a provisional lease longer than the
+/// lease it leads to.
+fn members_refusal(members: &MembersConfig) -> Option<(&'static str, String)> {
     let below = [
         ("lease_ms", members.lease_ms == 0),
         ("provisional_ms", members.provisional_ms == 0),
         ("max_instances", members.max_instances == 0),
     ];
     if let Some((field, _)) = below.into_iter().find(|(_, zero)| *zero) {
-        return Some(format!(
-            "`{field}` is 0, and a member is held for a millisecond at least, and one at \
-             least is held"
+        return Some((
+            field,
+            format!(
+                "`{field}` is 0, and a member is held for a millisecond at least, and one at \
+                 least is held"
+            ),
         ));
     }
     (members.provisional_ms > members.lease_ms).then(|| {
-        format!(
-            "`provisional_ms` ({}) is longer than `lease_ms` ({}), and a member no session \
-             kept yet is held no longer than one a session kept",
-            members.provisional_ms, members.lease_ms
+        (
+            "provisional_ms",
+            format!(
+                "`provisional_ms` ({}) is longer than `lease_ms` ({}), and a member no \
+                 session kept yet is held no longer than one a session kept",
+                members.provisional_ms, members.lease_ms
+            ),
         )
     })
 }
@@ -9795,40 +9804,63 @@ topology:
     #[test]
     fn members_that_cannot_be_kept_are_refused() {
         let refusal = |yaml: &str| match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidMembers { machine, reason }) => {
+            Err(DeployError::InvalidMembers {
+                machine,
+                field,
+                reason,
+            }) => {
                 assert_eq!(machine, "phone");
-                reason
+                (field, reason)
             }
             other => panic!("{yaml}: expected InvalidMembers, got {other:?}"),
         };
-        for (members, said) in [
+        for (members, at, said) in [
             (
                 "lease_ms: 0, provisional_ms: 0, max_instances: 4",
+                "lease_ms",
                 "`lease_ms` is 0",
             ),
             (
                 "lease_ms: 9, provisional_ms: 0, max_instances: 4",
+                "provisional_ms",
                 "`provisional_ms` is 0",
             ),
             (
                 "lease_ms: 9, provisional_ms: 1, max_instances: 0",
+                "max_instances",
                 "`max_instances` is 0",
             ),
             (
                 "lease_ms: 60000, provisional_ms: 90000, max_instances: 4",
+                "provisional_ms",
                 "`provisional_ms` (90000) is longer than `lease_ms` (60000)",
             ),
         ] {
-            let reason = refusal(&open_phone(&format!("        members: {{ {members} }}\n")));
+            let (field, reason) =
+                refusal(&open_phone(&format!("        members: {{ {members} }}\n")));
+            assert_eq!(field, Some(at), "{members}");
             assert!(reason.contains(said), "{members}: {reason}");
         }
+        // A field at fault is where the refusal stands.
+        let block = open_phone(
+            "        members:\n          lease_ms: 9\n          provisional_ms: 1\n          \
+             max_instances: 0\n",
+        );
+        let refused = parse_deploy_str(&block).expect_err("refused");
+        let mark = refused.mark_in(&block).expect("a key of the deployment");
+        let line = block
+            .lines()
+            .position(|line| line.trim_start().starts_with("max_instances:"))
+            .expect("written");
+        assert_eq!(usize::try_from(mark.line).expect("a line"), line + 1);
         let once = joined(
             "",
             "",
             "        members: { lease_ms: 9, provisional_ms: 1, max_instances: 4 }\n",
             "",
         );
-        let reason = refusal(&once);
+        let (field, reason) = refusal(&once);
+        assert_eq!(field, None, "the section itself is at fault");
         assert!(reason.contains("runs once"), "{reason}");
         let refused = parse_deploy_str(&once).expect_err("refused");
         let mark = refused.mark_in(&once).expect("a key of the deployment");

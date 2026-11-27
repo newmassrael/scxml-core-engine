@@ -19287,10 +19287,11 @@ mod tests {
                 "mesh/deploy-invalid-members",
                 DeployError::InvalidMembers {
                     machine: "phone".into(),
+                    field: Some("provisional_ms"),
                     reason: "`provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8f80acff0f95faea","code":"mesh/deploy-invalid-members","stage":"mesh-deploy","spec":"ADR 0113 D4","message":"machine 'phone': `members:` in deploy.yaml cannot be kept — `provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept.","actual":"phone"}"#,
+                r#"{"v":1,"id":"fnv1a:8f80acff0f95faea","code":"mesh/deploy-invalid-members","stage":"mesh-deploy","spec":"ADR 0113 D4","message":"machine 'phone': `members:` in deploy.yaml cannot be kept — `provisional_ms` (90000) is longer than `lease_ms` (60000), and a member no session kept yet is held no longer than one a session kept."}"#,
             ),
             (
                 "mesh/deploy-invalid-receipt",

@@ -1143,8 +1143,15 @@ pub enum DeployError {
     /// (docs/adr/0113, D4 and D6) cannot be kept: a field below 1, a
     /// provisional lease longer than the lease, or the section on a machine
     /// that runs once. Read off the deployment alone, at parse time.
+    ///
+    /// `field` is the field of the section at fault, when one is: the refusal
+    /// stands on it, and on the section's key otherwise.
     #[error("machine '{machine}': `members:` in deploy.yaml cannot be kept — {reason}.")]
-    InvalidMembers { machine: String, reason: String },
+    InvalidMembers {
+        machine: String,
+        field: Option<&'static str>,
+        reason: String,
+    },
 
     /// A machine's `receipt: { window, retry_ms }` block cannot be kept (SCE_MESH.md section
     /// 10.11; docs/adr/0109, D10): a field below 1, or a machine none of whose bindings is
@@ -3072,7 +3079,10 @@ impl DeployError {
             }
             Self::InvalidSessions { machine, .. } => P::machine(machine).key("sessions"),
             Self::InvalidInstances { machine, .. } => P::machine(machine).key("instances"),
-            Self::InvalidMembers { machine, .. } => P::machine(machine).key("members"),
+            Self::InvalidMembers { machine, field, .. } => match field {
+                Some(field) => P::machine(machine).key("members").key(field),
+                None => P::machine(machine).key("members"),
+            },
             Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
             Self::ReceiptWithoutPersistence {
                 machine, target, ..
@@ -4441,10 +4451,15 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
         },
-        DeployError::InvalidMembers { machine, reason } => DiagnosticPayload {
+        DeployError::InvalidMembers {
+            machine, reason, ..
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidMembers,
             stage: Stage::MeshDeploy,
-            actual: Some(machine.clone()),
+            // The refusal stands on the field at fault, or on the section, by
+            // its key path: no one scalar is the value refused, and the machine's
+            // name as `actual` would place it on the machine's key.
+            actual: None,
             // The values are the deployment's to choose (no default exists),
             // so none is offered.
             expected: None,
