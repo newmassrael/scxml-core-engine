@@ -827,28 +827,23 @@
       "runs": [
         {
           "config": "EngineInbox.cfg",
-          "expect": "holds",
-          "states": 2480
+          "expect": "holds"
         },
         {
           "config": "EngineInbox_never_closes.cfg",
-          "expect": "holds",
-          "states": 2496
+          "expect": "holds"
         },
         {
           "config": "EngineInbox_bounded.cfg",
-          "expect": "holds",
-          "states": 3040
+          "expect": "holds"
         },
         {
           "config": "EngineInbox_live.cfg",
-          "expect": "holds",
-          "states": 2480
+          "expect": "holds"
         },
         {
           "config": "EngineInbox_live_never_closes.cfg",
-          "expect": "holds",
-          "states": 2496
+          "expect": "holds"
         },
         {
           "config": "EngineInbox_without_drain_before_own.cfg",

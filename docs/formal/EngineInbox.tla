@@ -11,10 +11,14 @@
 (* never closes applies a later post at the end of its loop. A post goes   *)
 (* through the tree's directory, which holds each session until its run    *)
 (* ends, or through a session's own handle (ByHandle), which looks nothing *)
-(* up. A post is refused when it is posted: one through the directory      *)
-(* naming a session it does not hold, one to a session whose run has ended *)
-(* where the runtime closes, and one into an inbox that holds Capacity     *)
-(* inputs.                                                                 *)
+(* up. A post may first take a slot of the inbox it is posted to, while it *)
+(* writes its input (Claim), and is decided after; the inbox counts those  *)
+(* slots against Capacity, and a post finds no slot when the inputs the    *)
+(* inbox holds and the slots taken reach Capacity. A post is refused when  *)
+(* it is decided: one through the directory naming a session it does not   *)
+(* hold, one to a session whose run has ended where the runtime closes,    *)
+(* and one into an inbox whose inputs and slots taken by other posts reach *)
+(* Capacity.                                                               *)
 (*                                                                         *)
 (* The parts, each a constant that is TRUE in the protocol, and each taken *)
 (* out by a run that must find what it breaks:                             *)
@@ -26,7 +30,9 @@
 (*   Wake            a post wakes the owner                                *)
 (*   Lookup          a post through the directory looks its session up     *)
 (*                   there, and one the directory does not hold is refused *)
-(*   RefuseFull      a post into an inbox that holds Capacity is refused   *)
+(*   RefuseFull      a post into an inbox whose inputs and slots taken by  *)
+(*                   other posts reach Capacity is refused, and a post     *)
+(*                   takes a slot only when one is free                    *)
 (*                                                                         *)
 (* lin is a history variable: the order posts and own events linearized,   *)
 (* per session, which no runtime keeps and every property is stated by.   *)
@@ -97,7 +103,8 @@ VARIABLES
     \* each session's external queue
     \* @type: Str -> Seq(Str);
     extq,
-    \* each input: none, taken, or refused for a reason (unknown, ended or full)
+    \* each input: none, underway (its post holds a slot and is not decided), taken, or refused
+    \* for a reason (unknown, ended or full)
     \* @type: Str -> Str;
     status,
     \* the events of the owner not yet put on a queue
@@ -161,17 +168,32 @@ Refuse(i, why) ==
     /\ status' = [status EXCEPT ![i] = why]
     /\ UNCHANGED <<inbox, awake, lin>>
 
-\* A thread posts the input i. Through the directory, which says whether it
-\* holds the session i names; without the lookup the post is taken, and no
-\* inbox holds it. Through the session's own handle, which needs no lookup and
-\* is the session's inbox, so its address is resolved whatever the part says.
-\* Then the inbox says whether it is full.
+\* A thread begins the post of the input i, which names a session of the tree,
+\* by taking a slot of the inbox it is posted to, which it holds while it writes
+\* the input; the post is decided later (Post). A slot is free while the inputs
+\* the inbox holds and the slots other posts took are fewer than Capacity, and
+\* always, without the part.
+\* @type: (Str) => Bool;
+Claim(i) ==
+    /\ i \in Tree!TreeInputs
+    /\ status[i] = "none"
+    /\ (~RefuseFull \/ Len(inbox[Holder(i)]) + Cardinality(Claims(Holder(i))) < Capacity)
+    /\ status' = [status EXCEPT ![i] = "underway"]
+    /\ UNCHANGED <<inbox, extq, ownUnsent, ended, awake, directory, lin>>
+
+\* A thread posts the input i, at once or once it holds a slot. Through the
+\* directory, which says whether it holds the session i names; without the
+\* lookup the post is taken, and no inbox holds it. Through the session's own
+\* handle, which needs no lookup and is the session's inbox, so its address is
+\* resolved whatever the part says. Then the inbox says whether it is full: the
+\* inputs it holds and the slots other posts took reach Capacity. A post that
+\* holds a slot is never full, and lets the slot go when it is decided.
 Post(i) ==
     LET s == Tree!Target(i)
         handle == i \in ByHandle
         at == IF AddressAtPost \/ handle THEN s ELSE Root
     IN
-    /\ status[i] = "none"
+    /\ status[i] \in {"none", "underway"}
     /\ IF ~handle /\ s \notin directory
          THEN IF Lookup
                 THEN Refuse(i, "unknown")
@@ -179,7 +201,7 @@ Post(i) ==
                      /\ UNCHANGED <<inbox, awake, lin>>
          ELSE IF ended[s] /\ Closes
          THEN Refuse(i, "ended")
-         ELSE IF RefuseFull /\ Len(inbox[at]) >= Capacity
+         ELSE IF RefuseFull /\ Len(inbox[at]) + Cardinality(Claims(at) \ {i}) >= Capacity
          THEN Refuse(i, "full")
          ELSE /\ status' = [status EXCEPT ![i] = "taken"]
               /\ inbox' = [inbox EXCEPT ![at] = Append(@, i)]
@@ -238,6 +260,7 @@ Late(s) ==
     /\ UNCHANGED <<status, ownUnsent, ended, awake, directory, lin>>
 
 Next ==
+    \/ \E i \in Inputs : Claim(i)
     \/ \E i \in Inputs : Post(i)
     \/ \E e \in OwnEvents : Own(e)
     \/ Boundary
