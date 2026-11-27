@@ -37,6 +37,7 @@ pub(crate) struct Drain {
 
 /// What becomes of an event of the owner's own that is about to join its external queue.
 #[cfg_attr(verus_only, verus_verify)]
+#[cfg_attr(verus_only, verus_verify)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Own {
     /// No drain is under way, and one begins: what the inbox holds is applied first, and the
@@ -53,7 +54,7 @@ impl Drain {
     /// The owner of a session before its first drain: none is under way.
     #[cfg_attr(verus_only, verus_spec(made =>
         ensures
-            made.due is None,
+            made.stage is Idle,
     ))]
     pub(crate) const fn idle() -> Drain {
         Drain { due: None }
@@ -64,8 +65,8 @@ impl Drain {
     /// reached in order, so this one is nothing.
     #[cfg_attr(verus_only, verus_spec(began =>
         ensures
-            began == (old(self).due is None),
-            began ==> final(self).due == Some(0usize),
+            began == (old(self).stage is Idle),
+            began ==> final(self).stage is Begun,
             !began ==> *final(self) == *old(self),
     ))]
     pub(crate) fn begin(&mut self) -> bool {
@@ -81,8 +82,8 @@ impl Drain {
     /// queues.
     #[cfg_attr(verus_only, verus_spec(own =>
         ensures
-            (own is AfterDrain) == (old(self).due is None),
-            own is AfterDrain ==> final(self).due == Some(0usize),
+            (own is AfterDrain) == (old(self).stage is Idle),
+            own is AfterDrain ==> final(self).stage is Begun,
             own is InPlace ==> *final(self) == *old(self),
     ))]
     pub(crate) fn own(&mut self) -> Own {
@@ -99,7 +100,7 @@ impl Drain {
     /// is under way.
     #[cfg_attr(verus_only, verus_spec(
         ensures
-            final(self).due == (if old(self).due is Some { Some(held) } else { None }),
+            final(self).stage == (if old(self).stage is Begun { Stage::Taking(held) } else { old(self).stage }),
     ))]
     pub(crate) fn reach(&mut self, held: usize) {
         if self.due.is_some() {
@@ -110,8 +111,8 @@ impl Drain {
     /// Whether the drain takes one more input from the inbox it reached, counted when it does.
     #[cfg_attr(verus_only, verus_spec(take =>
         ensures
-            take == (old(self).due matches Some(due) && due > 0),
-            take ==> (old(self).due matches Some(due) && final(self).due == Some((due - 1) as usize)),
+            take == (old(self).stage matches Stage::Taking(due) && due > 0),
+            take ==> (old(self).stage matches Stage::Taking(due) && final(self).stage == Stage::Taking((due - 1) as usize)),
             !take ==> *final(self) == *old(self),
     ))]
     pub(crate) fn take_another(&mut self) -> bool {
@@ -131,7 +132,7 @@ impl Drain {
     /// with its capacity, not with what it holds): the drain takes no more from it.
     #[cfg_attr(verus_only, verus_spec(
         ensures
-            final(self).due == (if old(self).due is Some { Some(0usize) } else { None }),
+            final(self).stage == (if old(self).stage is Taking { Stage::Taking(0usize) } else { old(self).stage }),
     ))]
     pub(crate) fn ran_dry(&mut self) {
         if self.due.is_some() {
@@ -142,7 +143,7 @@ impl Drain {
     /// The drain under way is over: the next one asked for begins.
     #[cfg_attr(verus_only, verus_spec(
         ensures
-            final(self).due is None,
+            final(self).stage is Idle,
     ))]
     pub(crate) fn finish(&mut self) {
         self.due = None;
@@ -217,11 +218,11 @@ proof fn taken_then_later(taken: Seq<int>, later: Seq<int>)
     assert(Seq::<int>::empty() + later =~= later);
 }
 
-/// One inbox drained by the drain under way, as the engine drains it: reached with `held`, the
-/// count it gave, it gives its oldest input while it holds one (`holds` of them, `fifo` in the
-/// order it took them), and each input the drain takes is applied to the external queue `extq` in
-/// the order it was taken. The drain takes what the inbox held when it reached it, or all it has
-/// when it holds less, and leaves the rest.
+/// The session's inbox drained by the drain under way, as the engine drains it: reached with
+/// `held`, the count it gave, it gives its oldest input while it holds one (`holds` of them,
+/// `fifo` in the order it took them), and each input the drain takes is applied to the external
+/// queue `extq` in the order it was taken. The drain takes what the inbox held when it reached it,
+/// or all it has when it holds less, and leaves the rest.
 fn a_drain_takes_what_it_reached(
     drain: &mut Drain,
     held: usize,
@@ -230,10 +231,10 @@ fn a_drain_takes_what_it_reached(
     extq: Ghost<Seq<int>>,
 ) -> (after: Ghost<(Seq<int>, Seq<int>)>)
     requires
-        old(drain).due is Some,
+        old(drain).stage is Begun,
         fifo@.len() == holds,
     ensures
-        final(drain).due is Some,
+        final(drain).stage is Taking,
         after@.0 == extq@ + fifo@.take(least(held as int, holds as int)),
         after@.1 == fifo@.skip(least(held as int, holds as int)),
 {
@@ -247,10 +248,10 @@ fn a_drain_takes_what_it_reached(
     }
     loop
         invariant_except_break
-            drain.due == Some((held - (holds - left)) as usize),
+            drain.stage == Stage::Taking((held - (holds - left)) as usize),
         invariant
             fifo@.len() == holds,
-            drain.due is Some,
+            drain.stage is Taking,
             left <= holds,
             holds - left <= held,
             inbox == fifo@.skip(holds - left),
@@ -280,9 +281,24 @@ fn a_drain_takes_what_it_reached(
     Ghost((queue, inbox))
 }
 
-/// A drain asked for where none is under way, of one inbox, as `EngineState::drain_inbox` makes
-/// it: what it reached is applied in order and taken out, the posts the inbox took behind it stay
-/// there, and the drain is over.
+/// A drain reaches one inbox, the session's one: a drain that took all the inbox it reached held,
+/// reached again with any count before it is over, takes nothing more. So it takes from no second
+/// inbox after the first, which would apply that inbox's posts out of the order they linearized in
+/// against the first's (docs/adr/0147, D1).
+fn a_drain_reaches_one_inbox(drain: &mut Drain, again: usize) -> (took: bool)
+    requires
+        old(drain).stage == Stage::Taking(0usize),
+    ensures
+        !took,
+        final(drain).stage == Stage::Taking(0usize),
+{
+    drain.reach(again);
+    drain.take_another()
+}
+
+/// A drain asked for where none is under way, of the session's inbox, as
+/// `EngineState::drain_inbox` makes it: what it reached is applied in order and taken out, the
+/// posts the inbox took behind it stay there, and the drain is over.
 ///
 /// `door` is the session as the step finds it, its inbox what the drain takes; `later` is what the
 /// inbox took behind that, the posts that linearized after the step (the module says why).
@@ -294,11 +310,11 @@ fn a_drain_applies_what_it_reached(
     holds: usize,
 ) -> (after: Ghost<Door>)
     requires
-        old(drain).due is None,
+        old(drain).stage is Idle,
         (door@.inbox + later@).len() == holds,
         door@.inbox.len() == least(held as int, holds as int),
     ensures
-        final(drain).due is None,
+        final(drain).stage is Idle,
         after@ == posted(applied(door@), later@),
 {
     let ghost mut stepped = door@;
@@ -324,12 +340,12 @@ fn a_boundary_is_a_step_of_boundary(
     holds: usize,
 ) -> (after: Ghost<Door>)
     requires
-        old(drain).due is None,
+        old(drain).stage is Idle,
         !door@.ended,
         (door@.inbox + later@).len() == holds,
         door@.inbox.len() == least(held as int, holds as int),
     ensures
-        final(drain).due is None,
+        final(drain).stage is Idle,
         after@ == posted(step_boundary(door@), later@),
 {
     a_drain_applies_what_it_reached(drain, door, later, held, holds)
@@ -348,12 +364,12 @@ fn an_own_event_is_a_step_of_own(
     e: Ghost<int>,
 ) -> (after: Ghost<Door>)
     requires
-        old(drain).due is None,
+        old(drain).stage is Idle,
         !door@.ended,
         (door@.inbox + later@).len() == holds,
         door@.inbox.len() == least(held as int, holds as int),
     ensures
-        final(drain).due is None,
+        final(drain).stage is Idle,
         after@ == posted(step_own(door@, e@), later@),
 {
     let ghost mut stepped = door@;
@@ -385,12 +401,12 @@ fn the_end_is_a_step_of_end(
     holds: usize,
 ) -> (after: Ghost<Door>)
     requires
-        old(drain).due is None,
+        old(drain).stage is Idle,
         !door@.ended,
         (door@.inbox + later@).len() == holds,
         door@.inbox.len() == least(held as int, holds as int),
     ensures
-        final(drain).due is None,
+        final(drain).stage is Idle,
         after@ == posted(step_end(door@), later@),
 {
     let got = a_drain_applies_what_it_reached(drain, door, later, held, holds);
@@ -407,12 +423,12 @@ fn a_later_end_is_a_step_of_late(
     holds: usize,
 ) -> (after: Ghost<Door>)
     requires
-        old(drain).due is None,
+        old(drain).stage is Idle,
         door@.ended,
         (door@.inbox + later@).len() == holds,
         door@.inbox.len() == least(held as int, holds as int),
     ensures
-        final(drain).due is None,
+        final(drain).stage is Idle,
         after@ == posted(step_late(door@), later@),
 {
     a_drain_applies_what_it_reached(drain, door, later, held, holds)
