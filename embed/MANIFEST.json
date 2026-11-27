@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "e161fed",
+  "embed_version": "eac8199",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 822,
+  "symbol_count": 826,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1524,6 +1524,35 @@
       "kind": "typedef",
       "name": "SCE::HostSendHandler",
       "type": "std::function<std::vector<HostSendResponse> (const HostSendRequest &)>"
+    },
+    {
+      "header": "core/InboxPort.h",
+      "kind": "struct",
+      "members": [
+        "field bool entered",
+        "field bool posted",
+        "field std::string_view data",
+        "field std::string_view event"
+      ],
+      "name": "SCE::Core::InboxEnqueue"
+    },
+    {
+      "header": "core/InboxPort.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::InboxPortSlot<T>"
+    },
+    {
+      "header": "core/InboxPort.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::InboxPortTrait<T>"
+    },
+    {
+      "header": "core/InboxPort.h",
+      "kind": "typedef",
+      "name": "SCE::Core::InboxPort",
+      "type": "std::function<void (const InboxEnqueue &)>"
     },
     {
       "header": "core/InvokeHelper.h",

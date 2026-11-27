@@ -57,6 +57,9 @@
 // about the event rather than about that interface.
 #include "core/PayloadReading.h"
 #include "core/StatePolicyConcepts.h"
+// docs/adr/0147, D3: the inbox port a machine whose build asks tells each event
+// it puts on its external queue, which a test writes as an inbox history.
+#include "core/InboxPort.h"
 // docs/adr/0115, D4 and D8: the trace port a machine whose build asks tells
 // each step of Appendix D it takes, and the writer of the run trace format.
 #include "core/TracePort.h"
@@ -346,9 +349,11 @@ struct EventOutcome {
 
 // docs/adr/0115, D4 and D8: the recorder of the trace port is an empty base of
 // an engine whose machine tells none (core/TracePort.h), so a build that does not
-// ask for the port pays no byte for it.
+// ask for the port pays no byte for it; and so is the inbox port of one whose
+// machine tells none (docs/adr/0147, D3; core/InboxPort.h).
 template <typename StatePolicy>
-class StaticExecutionEngine : private SCE::Core::TracePortSlot<SCE::Core::TracePortTrait<StatePolicy>::value> {
+class StaticExecutionEngine : private SCE::Core::TracePortSlot<SCE::Core::TracePortTrait<StatePolicy>::value>,
+                              private SCE::Core::InboxPortSlot<SCE::Core::InboxPortTrait<StatePolicy>::value> {
     static_assert(SCE::Core::EventNamingPolicyTrait<StatePolicy>::value,
                   "StatePolicy must be an event naming policy: a base state policy (document tree, initial and "
                   "history targets, final states) whose events convert to and from their names "
@@ -397,6 +402,14 @@ public:
     /// recorder, has no `setTracePort`, and every hook of the port is a
     /// discarded branch.
     static constexpr bool HAS_TRACE_PORT = SCE::Core::TracePortTrait<StatePolicy>::value;
+
+    /// Whether this machine tells an inbox port each event it puts on its
+    /// external queue (docs/adr/0147, D3; core/InboxPort.h): its policy's
+    /// `INBOX_PORT`, which a generated machine takes from its build,
+    /// `<NAME>_INBOX_PORT` whose default is `SCE_INBOX_PORT`. When false the
+    /// engine holds no port, has no `setInboxPort`, and each call of the port is
+    /// a discarded branch.
+    static constexpr bool HAS_INBOX_PORT = SCE::Core::InboxPortTrait<StatePolicy>::value;
 
     /// How many links an `error.*` chain may have before the engine stops
     /// feeding it — see `errorCascadeEvents()`. The number, and why it is that
@@ -1536,6 +1549,27 @@ private:
     }
 
     /**
+     * @brief Tell the inbox port one of the two calls of @p event, an event this
+     *        engine puts on its external queue (docs/adr/0147, D3;
+     *        core/InboxPort.h)
+     *
+     * The event is named by the name `_event.name` holds when it is taken: the
+     * longer name a door resolved to the member, which rides in `name`, or else
+     * the member's own. Nothing when the machine tells no inbox port, and no
+     * name is spelled when none is set.
+     */
+    void tellInboxPort([[maybe_unused]] const EventWithMetadata &event, [[maybe_unused]] bool posted,
+                       [[maybe_unused]] bool entered) {
+        if constexpr (HAS_INBOX_PORT) {
+            if (this->inboxPort_) {
+                const std::string name =
+                    event.name.empty() ? std::string(policy_.getEventName(event.event)) : event.name;
+                this->inboxPort_(SCE::Core::InboxEnqueue{name, event.data, posted, entered});
+            }
+        }
+    }
+
+    /**
      * @brief Close the inbox and apply what it still holds
      *
      * A run that ended, or was stopped, takes no more posts. What was posted
@@ -1901,12 +1935,24 @@ public:
         // queue keeps arrival order: what other threads posted before this event
         // is applied first, and this event joins the queue behind it. Applying a
         // posted event comes back here inside the drain, and is pushed as it is.
+        //
+        // docs/adr/0147, D3: the inbox port is told the event before that drain,
+        // which is part of putting an event of the machine's own on the queue:
+        // what the inbox holds when the drain reads it enters ahead of the event,
+        // and a post made after that read may follow it. And it is told the event
+        // immediately after it entered. An input the drain applies is raised from
+        // inside the drain, where `drainingInbox_` says the inbox held it and the
+        // drain below is nothing, so its two calls are told inside its own
+        // event's two.
+        const bool posted = drainingInbox_;
+        tellInboxPort(eventWithMetadata, posted, false);
         applyHeldBeforeExternalEnqueue();
 
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
         externalQueue_.raise(eventWithMetadata);
+        tellInboxPort(eventWithMetadata, posted, true);
     }
 
     /**
@@ -4257,6 +4303,38 @@ public:
      */
     template <bool Traced = HAS_TRACE_PORT, std::enable_if_t<Traced, int> = 0> void clearTracePort() {
         this->traceRecorder_.clear();
+    }
+
+    /**
+     * @brief Tell @p port each event this engine puts on its external queue from
+     *        now on (docs/adr/0147, D3; core/InboxPort.h)
+     *
+     * Told twice for each event: when the engine begins to put it on the queue,
+     * ahead of the drain that applies what the inbox holds first, and once it
+     * has entered, each time saying whether the inbox held it. The inputs that
+     * drain applies are told inside the event's two calls. A host reads one
+     * clock in both and writes the run as the inbox history
+     * `sce-codegen check-inbox-history` judges. The port reads and is asked
+     * nothing, so a machine with one set takes the steps one without takes; it
+     * runs on the thread that drives the engine, inside the call that drove it,
+     * and must not call back into the engine.
+     *
+     * A member only of a machine whose build asks for the port
+     * (`HAS_INBOX_PORT`).
+     *
+     * @param port Told each call (an empty function to stop)
+     */
+    template <bool Told = HAS_INBOX_PORT, std::enable_if_t<Told, int> = 0>
+    void setInboxPort(SCE::Core::InboxPort port) {
+        this->inboxPort_ = std::move(port);
+    }
+
+    /**
+     * @brief Tell no inbox port anything; the engine is then as it was before one
+     *        was set
+     */
+    template <bool Told = HAS_INBOX_PORT, std::enable_if_t<Told, int> = 0> void clearInboxPort() {
+        this->inboxPort_ = nullptr;
     }
 
     /**

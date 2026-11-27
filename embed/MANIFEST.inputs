@@ -108,6 +108,7 @@ dc7ca2fa2bc975e117d47e912ef63494ac67ec8c sce/include/core/ExternalEventBudget.h
 8626865235b8a37fc3f97e3b8a1023d32715ebcd sce/include/core/HistoryHelper.h
 2868e7f095d6bc0366a19fd019e24a6f178cf8d9 sce/include/core/HostInvokeLedger.h
 396427ecaf2b9000df16009a34d6d1a293b4d7ca sce/include/core/HostProcessor.h
+8b3c14edcc7126288f6c8348a816a7ea8fb8b09c sce/include/core/InboxPort.h
 e27194ebe89e0e2b73935f83a830afb2edb3c1bb sce/include/core/InvokeHelper.h
 c421580553a2e6886266194d06643115c6a160b9 sce/include/core/LogMacros.h
 f67ff26d33c168aac917958b04fb975238446def sce/include/core/MacrostepCeilings.h
@@ -211,7 +212,7 @@ dcfee1b2daf9d51f5d4343ad08b44d2e7417fa0d sce/include/scripting/SessionRegistry.h
 f12393e21b3b9851bf9ac8b36986f49bc5979371 sce/include/scripting/XMLDOMWrapper.h
 f57837b886a94c405c0fdb72c9e8476edcf931de sce/include/scripting/ecma_semantics.lua
 57b84f75c1eff041540d0607e2986b7ff31f65f2 sce/include/scripting/json_builtins.lua
-73cd0f591ec55e82ae87fe03db9d3f6291acfeb1 sce/include/static/StaticExecutionEngine.h
+431916fc5b8c91cccae1b22cfc5dfb22e3819a91 sce/include/static/StaticExecutionEngine.h
 91380dfbe084a5fadde4f8ece93b297029677e60 sce/include/types.h
 35a5142372c19cc3fc3bc7f116fd30cc7c682bba sce/sce_base_sources.cmake
 e55b5cee00d40f8036b65623966b60e17da8b86a scripts/_embed_manifest_filter.py
