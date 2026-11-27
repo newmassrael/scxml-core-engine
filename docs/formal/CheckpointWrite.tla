@@ -416,9 +416,14 @@ Ends == OI!Ends
 Followed == EJ!Followed
 CaughtUp == EJ!CaughtUp
 
-\* A key passes to another lease only once the deadline of the lease it ends has come, in time.
-\* A property of a deadline, and so of time: it stands on the clocks, and nothing else does.
-TakenWhenDue == [][\A j \in EJ!Sess : fence'[j] # fence[j] => now >= Due(j)]_vars
+\* A key passes to another owner only once the lease its holder holds has ended in time, by the
+\* deadline the holder was given last, at its grant or at its renewal; or once the holder holds it no
+\* more, having given it up or stopped. A process that takes the key again under its own name holds
+\* it still, and passes it to nobody. A property of a deadline, and so of time: no effect, answer or
+\* entry depends on it.
+TakenWhenDue == [][\A j \in EJ!Sess : fence'[j] # fence[j] =>
+    \A p \in EJ!Procs :
+        (fence[j] # 0 /\ hold[p][j] = fence[j] /\ hold'[p][j] # fence'[j]) => now >= due[j][fence[j]]]_vars
 
 -----------------------------------------------------------------------------
 \* What the composition implements (docs/adr/0115, D2): the two promises over one server, and what
