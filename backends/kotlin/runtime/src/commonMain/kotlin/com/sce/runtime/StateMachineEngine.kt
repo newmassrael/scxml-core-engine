@@ -837,6 +837,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /** What [tracePort] set, and the step being told. */
     private val trace = TraceRecorder()
 
+    /**
+     * Told each event the owner puts on the external queue and the close of the
+     * inbox, each as two calls around it ([InboxPort]); `null` tells nothing
+     * (docs/adr/0147, D3). A test that writes a run of the inbox as an inbox
+     * history sets one before the run and reads its clock in each call.
+     *
+     * It reads and is asked nothing, so an engine with one set does what one
+     * without does, and with none set each place it is told asks one `null`
+     * check. It runs on the thread that drives the engine and must not call back
+     * into the engine; an exception it throws is not caught. Set it on the
+     * owner, or before the run starts.
+     */
+    var inboxPort: InboxPort<E>? = null
+
     // --- Event Queue ---
 
     // --- Event Metadata (§scxml-5.10) ---
@@ -1089,8 +1103,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * loop, or a thread holding its macrostep lock.
      */
     private fun closeInbox() {
+        // Told only when the inbox was open: a run that ended at a top-level
+        // `<final>` and is then stopped closes it once.
+        val port = inboxPort.takeUnless { inboxClosed }
+        port?.closeBegins()
         eventChannel.close()
         inboxClosed = true
+        port?.closeEnds()
         drainInbox()
         assignedSessionId?.let { tree.leave(it, this) }
     }
@@ -1153,8 +1172,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * a platform error waits for no post ([enqueueInternal]).
      */
     private fun enqueueExternal(queued: QueuedEvent<E>) {
+        // docs/adr/0147, D3: an event of the owner's own is told before the drain
+        // its enqueue begins with; an input the drain applies, inside it.
+        val port = inboxPort
+        val posted = drainingInbox
+        port?.enqueueBegins(queued.event, queued.metadata, posted)
         drainInbox()
         externalEventQueue.addLast(queued)
+        port?.enqueueEnds(queued.event, queued.metadata, posted)
     }
 
     /**
@@ -3173,8 +3198,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // the inbox is already closed, which would answer failure to a
             // caller that discards it. Counted instead, at the door, for the
             // same reason the loop counts what it abandons. See
-            // [unseenExternalEvents].
+            // [unseenExternalEvents]. An input the closing inbox held is told to
+            // the inbox port as entering there ([InboxPort.enqueueBegins]).
+            val port = inboxPort.takeIf { drainingInbox }
+            port?.enqueueBegins(event, metadata, true)
             noteUnseenEvent(event)
+            port?.enqueueEnds(event, metadata, true)
             return
         }
         if (onOwner) {
