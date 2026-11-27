@@ -65,7 +65,10 @@ A codec's table is a `static` `FieldTable` of rows in wire order. A row says:
   gates keeps its write printed, and the generator says so by name (`NotWrittenByTable::Disjunction`): the flags of
   a disjunction do not say alone whether its field is present, so a value can set one of them and hold the field
   absent, which the printed encode refuses or derives as its plan says and the writer, opening the row by the flags,
-  would write as a zero;
+  would write as a zero. Such a codec necessarily declares `sce:encode-may-fail="true"`, since a field it gates can be
+  given where the flags say it is absent and the generator refuses the codec that does not declare it
+  (`CodecUndeclaredEncodeRefusal`), so it would also be `MayRefuse`: `Disjunction` is chosen before `MayRefuse` so
+  that the reason named is the one its gate causes;
 - **its place in the value**: the row's index, which the value's store answers.
 
 The walker keeps the number each row read in a frame of its own (`[u64; TABLE_ROWS]`), so a gate, a length, a count,
