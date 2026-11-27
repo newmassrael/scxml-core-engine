@@ -58,6 +58,11 @@ CONSTANTS
     \* the most inputs an inbox holds
     \* @type: Int;
     Capacity,
+    \* the most a queue can hold: every input that names a session of the tree and every own
+    \* event, once (the ASSUME below holds it to that). Apalache generates each sequence up to
+    \* it (Gen), which takes a number the configuration gives, not one computed from sets.
+    \* @type: Int;
+    Longest,
     \* whether the runtime refuses a post after the end
     \* @type: Bool;
     Closes,
@@ -267,10 +272,9 @@ Refines == Promise!Spec
 \* taken is linearized, so it is in the queue or the inbox of its session (NoLoss). A refused post
 \* changes only its own answer, and no input naming a session the tree does not hold is taken.
 
-\* The most a queue can hold: every input that names a session of the tree and every own event,
-\* once. Apalache generates each sequence up to it (Gen), and the invariant implies no sequence is
-\* longer, so the states it starts from are every state the invariant allows.
-Longest ==
+\* The invariant implies no queue is longer than Longest, so the states the step starts from are
+\* every state the invariant allows.
+ASSUME Longest =
     Cardinality(RootInputs) + Cardinality(ChildInputs) + Cardinality(RootOwn) + Cardinality(ChildOwn)
 
 \* Each variable a value of its type, for Apalache to start the step from, conjoined with the
