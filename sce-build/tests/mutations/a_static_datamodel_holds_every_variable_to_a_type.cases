@@ -41,11 +41,9 @@ PY
 # thing a document with no host behind it cannot afford.
 mutation_case "the scope is left open" <<'PY'
 edit("sce-build/src/forge/type_ctx.rs",
-     """    );
-    ctx.insert_record("_event", RecordShape::Open);
+     """    ctx.insert_var("_event.origin", InferredType::Str);
     close_the_scope(&mut ctx);""",
-     """    );
-    ctx.insert_record("_event", RecordShape::Open);""")
+     """    ctx.insert_var("_event.origin", InferredType::Str);""")
 PY
 
 # A computed type is chosen among the processors the document declares
@@ -153,8 +151,8 @@ PY
 # address (§scxml-6.2.4), and a Mesh peer is not lowered for a computed target.
 mutation_case "a route the machine cannot send by is declared and let through" <<'PY'
 edit("sce-build/src/parser.rs",
-     "        if crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer {\n",
-     "        if false {\n")
+     "            && (crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer)\n",
+     "            && false\n")
 PY
 
 # A BasicHTTP send's params are the text map the engine hands its transport, which the

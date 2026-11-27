@@ -25,8 +25,8 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/f
 
 mutation_case "a value that is none of the declared routes is let through" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     ".filter(|route| matches!(route.as_str(), {% for entry in action.targets %}",
-     ".filter(|route| true || matches!(route.as_str(), {% for entry in action.targets %}")
+     ".filter(|route| {% if literal_routes %}",
+     ".filter(|route| true || {% if literal_routes %}")
 PY
 
 mutation_case "a value that names no route raises nothing" <<'PY'
