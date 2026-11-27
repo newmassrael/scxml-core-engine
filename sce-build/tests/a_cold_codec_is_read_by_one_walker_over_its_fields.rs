@@ -361,10 +361,13 @@ fn every_cold_codec_says_its_table_or_why_it_has_none() {
 
 /// A document of a codec whose field `seq` is gated by a disjunction of two
 /// flags (`a || b`), one of which gates another field: no gate group holds
-/// it, so the codec is a table whose row of `seq` the disjunction opens.
+/// it, so the codec is a table whose row of `seq` the disjunction opens. A
+/// value can set a flag of the disjunction and hold `seq` absent, which its
+/// encode refuses, so the codec declares that its encode may fail.
 const DISJUNCTION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_cold_disjunction">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_cold_disjunction">
   <datamodel>
     <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="wants_a" bit="0"/>

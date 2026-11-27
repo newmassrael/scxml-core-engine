@@ -4457,7 +4457,8 @@ mod tests {
 fn a_cold_codec_gated_by_a_disjunction_reads_by_its_table_and_writes_its_frames_back() {
     const DISJUNCTION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_cold_disjunction">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_cold_disjunction">
   <datamodel>
     <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="wants_a" bit="0"/>
