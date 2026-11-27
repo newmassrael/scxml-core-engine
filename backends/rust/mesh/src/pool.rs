@@ -95,6 +95,21 @@
 //! its checkpoint, so an entry handed again takes effect once (module
 //! `follow`).
 //!
+//! A machine bound to an open machine (docs/adr/0113), whose instances no
+//! deployment lists, is pooled with the store that keeps their members
+//! ([`Pool::with_members`]). Its edge judges each exchange of an instance by
+//! the member's incarnation and low-water mark and hands the envelope on with
+//! that judgement ([`Pool::receive_member`]); the session that runs it judges
+//! it again by its completion records, and the write that keeps its checkpoint
+//! names every incarnation the run was made under, so the store keeps nothing
+//! of a run once one of them ended. Such a write refused is not a lost lease:
+//! the session is let go and restored from what the store keeps, and an
+//! envelope found fenced is [`Fate::Fenced`], which the edge answers `412`.
+//! What concerns one instance reaches only the sessions whose routers bind it
+//! (D6): its readiness, the store's latest answer for its member
+//! ([`Pool::stand`]), and the end of its membership ([`Pool::end_members`]),
+//! which unbinds it and drops what each session kept of it.
+//!
 //! [`Pool::stop`] stops the pool in order: it admits nothing, runs what each
 //! inbox holds, and saves every session as a clean checkpoint, so a start
 //! after it raises no `restored`.
@@ -136,8 +151,8 @@ use sce_rust_runtime::journal::JournalEntry;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
-    AcquireError, Append, Change, Fact, FactData, Failure, Held, Journal, JournalStore, LeaseError,
-    SessionStore, Write, WriteError, LATEST_MOMENT,
+    AcquireError, Append, Change, Conflict, Fact, FactData, Failure, Held, Journal, JournalStore,
+    LeaseError, MembershipStore, SessionStore, Under, Write, WriteError, LATEST_MOMENT,
 };
 
 use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
@@ -152,8 +167,8 @@ use crate::generated::rpc_status::RpcStatus;
 use crate::health::Health;
 use crate::inbound::ConfigError;
 use crate::outbox::Outboxes;
-use crate::peers::{KeyFrom, Machine, Sessions};
-use crate::router::{payload_text, within, RouterError};
+use crate::peers::{instance_of, KeyFrom, Machine, Sessions};
+use crate::router::{payload_text, within, RouterError, Standing};
 
 mod follow;
 
@@ -257,6 +272,9 @@ pub enum PoolConfigError {
     },
     /// A session's router could not be built from the machine.
     Router(ConfigError),
+    /// The machine is bound to an open machine (docs/adr/0113), whose members the pool keeps in
+    /// its store and lets go when their leases end: it is pooled by [`Pool::with_members`].
+    NoMembers { machine: String },
 }
 
 /// What went wrong that only the host can act on. None of it reaches a
@@ -317,6 +335,15 @@ pub enum PoolError {
         journal: String,
         position: u64,
         reason: String,
+    },
+    /// A checkpoint of the session `key` was not kept: the run it holds was made under the
+    /// incarnation `incarnation` of a member that stands under `current` now, or under none
+    /// (docs/adr/0113, D5). The session is restored from what the store keeps; what it took in
+    /// since its last durable checkpoint is lost, and its senders carry it again.
+    Fenced {
+        key: String,
+        incarnation: u64,
+        current: Option<u64>,
     },
     /// The envelope numbered `number` in `client`'s outbox, appended at `at_ms`, was kept longer
     /// than the binding's `retain_ms` without `client` acknowledging it, and the store let it go
@@ -392,6 +419,11 @@ pub enum Fate {
     /// its key. The host does not acknowledge it, and its sender carries it
     /// again.
     Lost,
+    /// Fenced: it was taken in by its edge under an incarnation of its instance's membership that
+    /// the store no longer holds, the member standing under `current` (docs/adr/0113, D4 and D5),
+    /// and nothing of it was taken in. The host answers its exchange `412`, and the instance
+    /// learns that what it waited on has an unknown outcome.
+    Fenced { current: u64 },
 }
 
 /// The receipt of one envelope handed to the pool
@@ -438,7 +470,17 @@ enum Input {
         peer: String,
         bytes: Vec<u8>,
         receipt: Receipt,
+        /// For an instance of an open machine judged by its completion records, the incarnation
+        /// its edge took it in under and the store's answer for its member then (docs/adr/0113,
+        /// D5).
+        judged: Option<(u64, Standing)>,
     },
+    /// The store's latest answer for the member whose instance is the peer named
+    /// (docs/adr/0113, D5).
+    Stand(String, Standing),
+    /// The membership of the instance named ended (docs/adr/0113, D4): its binding and what the
+    /// router keeps of it are let go.
+    EndMember(String),
     Ready(String),
     NotReady(String),
     Tick,
@@ -531,6 +573,13 @@ struct Live<M, T, E> {
     /// For each journal the session follows, the position of the last entry it
     /// took in (docs/adr/0114, D4): written with what it did, in the checkpoint.
     followed: BTreeMap<String, u64>,
+    /// The incarnations the run since the last durable checkpoint was made under, each with its
+    /// member's name (docs/adr/0113, D5): every checkpoint sealed since names them, and the write
+    /// that keeps one keeps nothing once the store no longer holds one of them.
+    under: BTreeSet<(String, u64)>,
+    /// A write of it was refused for an incarnation the store no longer holds: the session is
+    /// let go and restored from what the store keeps (docs/adr/0113, D5).
+    fenced: bool,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -556,6 +605,9 @@ enum Served {
     Finished,
     /// Its lease is no longer this process's, for this reason.
     Lost(String),
+    /// A write of it was refused for an incarnation the store no longer holds (docs/adr/0113,
+    /// D5): it is restored from what the store keeps.
+    Fenced,
 }
 
 /// Which checkpoint of a session the pool takes (SCE_MESH.md section 10.11).
@@ -625,6 +677,20 @@ enum Unplaced {
     },
 }
 
+/// The instances of open machines the pool's sessions hold (docs/adr/0113, D6): the sessions
+/// whose routers bind each, which its readiness and the end of its membership reach and no
+/// other, and the entry the store keeps each member under, by which an ended one is named.
+#[derive(Default)]
+struct Known {
+    /// The sessions whose routers bind each instance, by the instance's name.
+    holders: BTreeMap<String, BTreeSet<String>>,
+    /// The instances each session's router binds, by the session's key.
+    held: BTreeMap<String, BTreeSet<String>>,
+    /// Each instance's name, by the entry the store keeps its member under
+    /// ([`MembershipStore::member_entry`]).
+    entries: BTreeMap<String, String>,
+}
+
 /// A machine served as a pool of sessions, one per key. See the module
 /// documentation for what it does and when the host calls it.
 pub struct Pool<F, T, E>
@@ -653,6 +719,11 @@ where
     /// The outboxes of the clients whose `https` accepting binding is durable
     /// (docs/adr/0109, D10), which the server answers their exchanges from.
     outboxes: Option<Arc<Outboxes>>,
+    /// The members of the open machines the machine is bound to, kept in the pool's own store
+    /// (docs/adr/0113, D4); `None` when it is bound to none.
+    members: Option<Arc<dyn MembershipStore>>,
+    /// The instances the sessions hold (docs/adr/0113, D6).
+    known: Mutex<Known>,
     /// Set by [`Pool::stop`]: nothing is admitted from then on.
     stopping: AtomicBool,
     /// Set once [`Pool::stop`] ended.
@@ -697,6 +768,9 @@ where
 
     /// [`Self::new`], reporting what the pool, its committer and its
     /// durable clients' outboxes do to `metrics` (docs/adr/0109, D16).
+    ///
+    /// Refused for a machine bound to an open machine, whose members the pool keeps:
+    /// [`Self::with_members`] pools it.
     pub fn observed(
         machine: Machine,
         config: PoolConfig,
@@ -706,6 +780,59 @@ where
         environment: E,
         metrics: Arc<dyn Metrics>,
     ) -> Result<Self, PoolConfigError> {
+        if !machine.open_peers.is_empty() {
+            return Err(PoolConfigError::NoMembers {
+                machine: machine.name.to_string(),
+            });
+        }
+        Self::assemble(
+            machine,
+            config,
+            factory,
+            (store, None),
+            transport,
+            environment,
+            metrics,
+        )
+    }
+
+    /// [`Self::observed`] for a machine that may be bound to open machines (docs/adr/0113):
+    /// their members are kept in `store`, the one the sessions are kept in, so that a write made
+    /// under an incarnation is judged in its own transaction (D5), and the pool lets go of what
+    /// its sessions hold of a member whose lease ended ([`Self::end_members`]).
+    pub fn with_members(
+        machine: Machine,
+        config: PoolConfig,
+        factory: F,
+        store: Arc<dyn MembershipStore>,
+        transport: T,
+        environment: E,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, PoolConfigError> {
+        let sessions: Arc<dyn SessionStore> = store.clone();
+        Self::assemble(
+            machine,
+            config,
+            factory,
+            (sessions, Some(store)),
+            transport,
+            environment,
+            metrics,
+        )
+    }
+
+    /// The pool of `machine` over `stores`: the store its sessions are kept in, and the same
+    /// store as the one that keeps members, when it does.
+    fn assemble(
+        machine: Machine,
+        config: PoolConfig,
+        factory: F,
+        stores: (Arc<dyn SessionStore>, Option<Arc<dyn MembershipStore>>),
+        transport: T,
+        environment: E,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, PoolConfigError> {
+        let (store, members) = stores;
         let Some(sessions) = machine.sessions else {
             return Err(PoolConfigError::NotPooled {
                 machine: machine.name.to_string(),
@@ -747,6 +874,8 @@ where
             deferred: Mutex::new(BTreeMap::new()),
             errors: Mutex::new(Vec::new()),
             outboxes,
+            members,
+            known: Mutex::new(Known::default()),
             stopping: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
             journal: None,
@@ -822,7 +951,7 @@ where
     /// `RpcStatus::Unavailable`, which tells its client to try again, and
     /// anything else is dropped and told to the host ([`PoolError::Shed`]).
     pub fn receive(&self, peer: &str, bytes: Vec<u8>) -> Option<String> {
-        self.receive_as(peer, bytes, false).0
+        self.receive_as(peer, bytes, false, None).0
     }
 
     /// [`Self::receive`], with the envelope's [`Receipt`]: the host reads it
@@ -836,17 +965,37 @@ where
     /// who carries it again (the `https` binding's `503`), so no reply tells
     /// a client of a request it will send again and the pool then serves.
     pub fn receive_with_receipt(&self, peer: &str, bytes: Vec<u8>) -> (Option<String>, Receipt) {
-        self.receive_as(peer, bytes, true)
+        self.receive_as(peer, bytes, true, None)
+    }
+
+    /// [`Self::receive_with_receipt`] for envelope `bytes` of `peer`, an instance of an open
+    /// machine whose binding receives durably (docs/adr/0113, D5): its edge took it in under the
+    /// incarnation `made_under`, while the store held its member as `standing`
+    /// (`MembershipStore::admit`). The session that runs it judges both again
+    /// ([`crate::router::Router::receive_member`]), and the write that keeps what it made of it
+    /// names the incarnation, so nothing of it is kept once the incarnation ended. One the
+    /// session finds fenced is [`Fate::Fenced`]; one whose session binds as many instances as
+    /// the deployment's `max_instances` is shed, [`Fate::Lost`] (D6).
+    pub fn receive_member(
+        &self,
+        peer: &str,
+        made_under: u64,
+        standing: Standing,
+        bytes: Vec<u8>,
+    ) -> (Option<String>, Receipt) {
+        self.know(peer);
+        self.receive_as(peer, bytes, true, Some((made_under, standing)))
     }
 
     /// [`Self::receive_with_receipt`], where `acknowledged` says whether the
     /// host reads the receipt: a shed envelope is then lost rather than
-    /// answered.
+    /// answered; `judged` is what [`Self::receive_member`] was given.
     fn receive_as(
         &self,
         peer: &str,
         bytes: Vec<u8>,
         acknowledged: bool,
+        judged: Option<(u64, Standing)>,
     ) -> (Option<String>, Receipt) {
         let placed = {
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
@@ -864,6 +1013,7 @@ where
                     peer: peer.to_string(),
                     bytes,
                     receipt: receipt.clone(),
+                    judged,
                 };
                 match self.post_bounded(&key, input) {
                     Ok(()) => (Some(key), receipt),
@@ -906,17 +1056,200 @@ where
     }
 
     /// `peer`'s link became ready. Every session is told, in order with what
-    /// its inbox holds; the keys answered are the sessions to run.
+    /// its inbox holds; the keys answered are the sessions to run. Of an
+    /// instance of an open machine, only the sessions whose routers bind it are
+    /// told (docs/adr/0113, D6), and one that binds it later is told then.
     pub fn peer_ready(&self, peer: &str) -> Vec<String> {
         lock(&self.ready).insert(peer.to_string());
+        if self.is_instance(peer) {
+            self.know(peer);
+            return self.tell_holders(peer, || Input::Ready(peer.to_string()));
+        }
         self.broadcast(|| Input::Ready(peer.to_string()))
     }
 
     /// `peer`'s link stopped being ready. Every session is told, as
     /// [`Self::peer_ready`] tells it.
     pub fn peer_not_ready(&self, peer: &str) -> Vec<String> {
-        lock(&self.ready).remove(peer);
-        self.broadcast(|| Input::NotReady(peer.to_string()))
+        let mut ready = lock(&self.ready);
+        ready.remove(peer);
+        if !self.is_instance(peer) {
+            drop(ready);
+            return self.broadcast(|| Input::NotReady(peer.to_string()));
+        }
+        {
+            // An instance no session holds and whose link is not ready is noted no more: the end
+            // of its membership, here or in another process, has nothing here to let go.
+            let mut known = lock(&self.known);
+            if known.holders.get(peer).is_none_or(BTreeSet::is_empty) {
+                self.unnote(&mut known, peer);
+            }
+        }
+        drop(ready);
+        self.tell_holders(peer, || Input::NotReady(peer.to_string()))
+    }
+
+    /// `standing`, the store's latest answer for the member whose instance is `peer`
+    /// (`MembershipStore::admit`), told to the sessions whose routers bind it (docs/adr/0113,
+    /// D5 and D6): each drops the completion records below its mark, and all of them when it
+    /// stands under a later incarnation. The keys answered are the sessions to run.
+    pub fn stand(&self, peer: &str, standing: Standing) -> Vec<String> {
+        self.tell_holders(peer, || Input::Stand(peer.to_string(), standing))
+    }
+
+    /// Let go of the members whose leases ended (docs/adr/0113, D4): the store removes at most a
+    /// batch of them ([`MembershipStore::end_expired`]), and each session whose router binds one
+    /// unbinds it, dropping what it kept of it (its completion records, its place among the
+    /// deployment's `max_instances`). The keys answered are the sessions to run. The host calls
+    /// this on its clock loop's schedule, as it calls [`Self::expire`].
+    pub fn end_members(&self) -> Vec<String> {
+        let Some(members) = &self.members else {
+            return Vec::new();
+        };
+        let ended = match members.end_expired(self.wall_now(), WAKE_BATCH) {
+            Ok(ended) => ended,
+            Err(failure) => {
+                self.error(PoolError::Store { key: None, failure });
+                return Vec::new();
+            }
+        };
+        let mut keys = BTreeSet::new();
+        for ended in ended {
+            let (instance, holders) = {
+                let mut known = lock(&self.known);
+                let Some(instance) = known.entries.remove(&ended.member) else {
+                    continue;
+                };
+                let holders = known.holders.remove(&instance).unwrap_or_default();
+                for key in &holders {
+                    if let Some(held) = known.held.get_mut(key) {
+                        held.remove(&instance);
+                    }
+                }
+                (instance, holders)
+            };
+            lock(&self.ready).remove(&instance);
+            let table = lock(&self.table);
+            for key in holders {
+                if let Some(slot) = table.get(&key) {
+                    lock(&slot.inbox)
+                        .queue
+                        .push_back(Input::EndMember(instance.clone()));
+                    keys.insert(key);
+                }
+            }
+        }
+        keys.into_iter().collect()
+    }
+
+    /// Whether `peer` names an instance of an open machine the machine is bound to.
+    fn is_instance(&self, peer: &str) -> bool {
+        instance_of(peer).is_some_and(|(machine, _)| self.machine.open_peer(machine).is_some())
+    }
+
+    /// Note the instance `peer` by the entry the store keeps its member under, so that the end
+    /// of its membership finds it ([`Self::end_members`]).
+    fn know(&self, peer: &str) {
+        let Some(members) = &self.members else {
+            return;
+        };
+        if !self.is_instance(peer) {
+            return;
+        }
+        let entry = members.member_entry(peer);
+        lock(&self.known)
+            .entries
+            .entry(entry)
+            .or_insert_with(|| peer.to_string());
+    }
+
+    /// Put an input made by `input` in the inbox of every session in the table whose router binds
+    /// the instance `peer` (docs/adr/0113, D6), and answer their keys.
+    fn tell_holders(&self, peer: &str, input: impl Fn() -> Input) -> Vec<String> {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
+        let holders: Vec<String> = lock(&self.known)
+            .holders
+            .get(peer)
+            .map(|keys| keys.iter().cloned().collect())
+            .unwrap_or_default();
+        let table = lock(&self.table);
+        let mut keys = Vec::new();
+        for key in holders {
+            if let Some(slot) = table.get(&key) {
+                lock(&slot.inbox).queue.push_back(input());
+                keys.push(key);
+            }
+        }
+        keys
+    }
+
+    /// The session `key`'s router bound the instances `bound` (docs/adr/0113, D6): it holds
+    /// them from now on, and is told the readiness of each that is ready.
+    fn learn(&self, key: &str, endpoint: &mut Endpoint<SessionTransport<T>, E>) {
+        let bound = endpoint.take_bound();
+        if bound.is_empty() {
+            return;
+        }
+        for instance in &bound {
+            self.know(instance);
+        }
+        {
+            let mut known = lock(&self.known);
+            for instance in &bound {
+                known
+                    .holders
+                    .entry(instance.clone())
+                    .or_default()
+                    .insert(key.to_string());
+                known
+                    .held
+                    .entry(key.to_string())
+                    .or_default()
+                    .insert(instance.clone());
+            }
+        }
+        let ready: Vec<String> = {
+            let ready = lock(&self.ready);
+            bound
+                .into_iter()
+                .filter(|instance| ready.contains(instance))
+                .collect()
+        };
+        for instance in ready {
+            endpoint.peer_ready(&instance);
+        }
+    }
+
+    /// The session `key` left memory: it holds no instance until it is built again
+    /// (docs/adr/0113, D6), and no request it sent waits.
+    fn forget_session(&self, key: &str) {
+        self.forget_replies(key);
+        let ready = lock(&self.ready);
+        let mut known = lock(&self.known);
+        let Some(held) = known.held.remove(key) else {
+            return;
+        };
+        for instance in held {
+            let unheld = known.holders.get_mut(&instance).is_some_and(|holders| {
+                holders.remove(key);
+                holders.is_empty()
+            });
+            // One no session holds and whose link is not ready is noted no more, as
+            // `Self::peer_not_ready` lets it go.
+            if unheld && !ready.contains(&instance) {
+                self.unnote(&mut known, &instance);
+            }
+        }
+    }
+
+    /// Note the instance `peer` no more in `known`.
+    fn unnote(&self, known: &mut Known, peer: &str) {
+        known.holders.remove(peer);
+        if let Some(members) = &self.members {
+            known.entries.remove(&members.member_entry(peer));
+        }
     }
 
     /// Let time pass for every session's endpoint: its ordering gaps, its
@@ -966,6 +1299,17 @@ where
                 Served::Lost(reason) => {
                     self.lose(&slot, &mut live, reason);
                     return;
+                }
+                // docs/adr/0113, D5: nothing of the run since the last durable checkpoint is
+                // kept, and the session goes on from what the store keeps: it is let go with
+                // its lease, and loaded again for what its inbox holds.
+                Served::Fenced => {
+                    if let Some(mut fenced) = live.take() {
+                        self.metrics().adjust(Gauge::LiveSessions, -1);
+                        self.let_go(&mut fenced);
+                    }
+                    self.forget_session(&slot.key);
+                    self.release(&slot);
                 }
             }
         }
@@ -1166,7 +1510,7 @@ where
         **live = None;
         self.metrics().adjust(Gauge::LiveSessions, -1);
         self.metrics().count(Counter::Evictions { reason: why }, 1);
-        self.forget_replies(&slot.key);
+        self.forget_session(&slot.key);
         self.release(slot);
         true
     }
@@ -1382,6 +1726,7 @@ where
             peer,
             bytes,
             receipt,
+            ..
         } = input
         else {
             return;
@@ -1534,7 +1879,7 @@ where
                 Ok(true) => {
                     **live = None;
                     self.metrics().adjust(Gauge::LiveSessions, -1);
-                    self.forget_replies(&slot.key);
+                    self.forget_session(&slot.key);
                     self.release(&slot);
                     // Out of the table; what its inbox still holds, when the deadline came
                     // before its run, was never admitted, and its sender carries it again.
@@ -1695,6 +2040,8 @@ where
                 .as_ref()
                 .map(|loaded| loaded.checkpoint.followed.clone())
                 .unwrap_or_default(),
+            under: BTreeSet::new(),
+            fenced: false,
         })
     }
 
@@ -1883,8 +2230,12 @@ where
             outboxes: self.outboxes.clone(),
         };
         let mut endpoint = Endpoint::new(router, transport, lock(&self.environment).clone());
+        // An instance of an open machine is told only to a session whose router binds it
+        // (docs/adr/0113, D6), once it does (`Self::learn`).
         for peer in lock(&self.ready).iter() {
-            endpoint.peer_ready(peer);
+            if !self.is_instance(peer) {
+                endpoint.peer_ready(peer);
+            }
         }
         Ok(Arc::new(Mutex::new(endpoint)))
     }
@@ -1904,6 +2255,10 @@ where
             };
             let now = self.wall_now();
             let mut event = matches!(input, Input::Envelope { .. });
+            // docs/adr/0113, D5 and D4: the store's answer for a member drops completion
+            // records, and the end of a membership unbinds its instance, each of which the
+            // checkpoint holds.
+            let member = matches!(input, Input::Stand(..) | Input::EndMember(..));
             let told = session.notes_through;
             let calls = {
                 let mut endpoint = lock(&session.endpoint);
@@ -1913,10 +2268,35 @@ where
                         peer,
                         bytes,
                         receipt,
+                        judged: None,
                     } => {
                         endpoint.receive(&peer, bytes);
                         session.unsaved.push(receipt);
                     }
+                    Input::Envelope {
+                        peer,
+                        bytes,
+                        receipt,
+                        judged: Some((made_under, standing)),
+                    } => match endpoint.receive_member(&peer, made_under, standing, bytes) {
+                        Ok(()) => session.unsaved.push(receipt),
+                        // docs/adr/0113, D5: judged again as it runs, it names an incarnation
+                        // its member no longer stands under, and nothing of it was taken in.
+                        Err(RouterError::Fenced { current, .. }) => {
+                            receipt.settle(Fate::Fenced { current });
+                        }
+                        // D6: the session binds as many instances as the deployment allows, and
+                        // none is put out for this one: it is shed, and carried again.
+                        Err(refused) => {
+                            receipt.settle(Fate::Lost);
+                            self.error(PoolError::Endpoint {
+                                key: key.to_string(),
+                                error: refused,
+                            });
+                        }
+                    },
+                    Input::Stand(peer, standing) => endpoint.stand(&peer, standing),
+                    Input::EndMember(peer) => endpoint.remove_peer(&peer),
                     Input::Ready(peer) => endpoint.peer_ready(&peer),
                     Input::NotReady(peer) => endpoint.peer_not_ready(&peer),
                     Input::Tick => endpoint.tick(),
@@ -1953,13 +2333,16 @@ where
             // An envelope taken in changed what the endpoint holds (its
             // duplicate window, its reply cache), which the checkpoint holds
             // too, even when it ran no macrostep; so did a note told, which
-            // the next write takes.
-            session.dirty |= event || session.notes_through > told;
+            // the next write takes; so did what concerns a member.
+            session.dirty |= event || member || session.notes_through > told;
             // A provisional session is written once its first run ends, and
             // only if its machine is still running then (docs/adr/0109, D1).
             if !session.provisional {
                 if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
                     return Served::Lost(reason);
+                }
+                if session.fenced {
+                    return Served::Fenced;
                 }
             }
             if session.machine.finished() {
@@ -1977,6 +2360,9 @@ where
             }
             if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
                 return Served::Lost(reason);
+            }
+            if session.fenced {
+                return Served::Fenced;
             }
             // What the checkpoint released and the transport refused at once
             // is a row the machine is told.
@@ -2010,6 +2396,7 @@ where
             session.facts.extend(session.machine.take_journal());
             let mut endpoint = lock(&session.endpoint);
             self.report(key, &mut endpoint);
+            self.learn(key, &mut endpoint);
             calls = endpoint.take_calls();
             drop(endpoint);
             if calls.is_empty() {
@@ -2059,7 +2446,19 @@ where
             Err(reason) => return not_saved(reason),
         };
         let sequence = session.sequence.saturating_add(1);
-        let sealed = lock(&session.endpoint).checkpoint(sequence, state, take == Take::Clean);
+        let sealed = {
+            let mut endpoint = lock(&session.endpoint);
+            let sealed = endpoint.checkpoint(sequence, state, take == Take::Clean);
+            // docs/adr/0113, D5: the checkpoint holds the run since the last durable one, so its
+            // write names every incarnation that run was made under, those an earlier seal named
+            // whose write was not kept included.
+            if sealed.is_ok() {
+                session
+                    .under
+                    .extend(endpoint.sealed_under().iter().cloned());
+            }
+            sealed
+        };
         let mut taken = match sealed {
             Ok(taken) => taken,
             Err(error) => return not_saved(error.to_string()),
@@ -2094,6 +2493,7 @@ where
             // docs/adr/0114, D1: the facts the state said are appended by the
             // write that keeps it, so both are durable or neither is.
             let facts = facts_of(&session.facts);
+            let under = unders(&session.under);
             // docs/adr/0109, D15: handed to the committer, which writes it with
             // what other sessions handed meanwhile and answers once the
             // transaction that holds it is durable (step 2); step 3 follows.
@@ -2111,7 +2511,7 @@ where
                     notes_through: session.notes_through,
                     now_ms: now,
                     sessions: &[],
-                    under: &[],
+                    under: &under,
                 },
             )
         };
@@ -2119,6 +2519,7 @@ where
             Ok(written) => {
                 session.version = written.version;
                 session.facts.clear();
+                session.under.clear();
                 if let Some(outboxes) = &self.outboxes {
                     let envelopes: Vec<Vec<u8>> = outbound
                         .into_iter()
@@ -2135,6 +2536,17 @@ where
                 endpoint.durable(sequence);
                 self.report(key, &mut endpoint);
                 Ok(true)
+            }
+            // docs/adr/0113, D5: the run was made under an incarnation that ended, and nothing of
+            // it is kept; the session is restored from what the store keeps (`Served::Fenced`).
+            Err(WriteError::Conflict(Conflict::Incarnation { presented, current })) => {
+                session.fenced = true;
+                self.error(PoolError::Fenced {
+                    key: key.to_string(),
+                    incarnation: presented,
+                    current,
+                });
+                Ok(false)
             }
             Err(WriteError::Conflict(conflict)) => {
                 *lock(&slot.lease) = LeaseState::Lost;
@@ -2178,6 +2590,14 @@ where
                     None
                 }
             };
+            // docs/adr/0113, D5: the removal keeps what the last run made, and names every
+            // incarnation the run since the last durable checkpoint was made under.
+            if sealed.is_some() {
+                finished
+                    .under
+                    .extend(endpoint.sealed_under().iter().cloned());
+            }
+            let under = unders(&finished.under);
             // docs/adr/0109, D10: what its last inputs sent a durable client is
             // appended to the client's outbox by the write that removes it.
             let outbound = match sealed.as_mut() {
@@ -2225,6 +2645,7 @@ where
                                 journal: self.journal_of(&facts),
                                 now_ms: now,
                                 sessions: &host_session_ids,
+                                under: &under,
                                 ..Write::delete(finished.version, fence)
                             },
                         )
@@ -2268,7 +2689,7 @@ where
         }
         let fate = if ended { Fate::Settled } else { Fate::Lost };
         settle_all(&mut finished.unsaved, fate);
-        self.forget_replies(key);
+        self.forget_session(key);
         self.release(slot);
     }
 
@@ -2285,19 +2706,29 @@ where
     ) {
         if let Some(mut dropped) = live.take() {
             self.metrics().adjust(Gauge::LiveSessions, -1);
-            settle_all(&mut dropped.unsaved, Fate::Lost);
-            // docs/adr/0109, D10: what it produced for a durable client and no
-            // write appended is lost with it, and gives its window places back.
-            if let Some(outboxes) = &self.outboxes {
-                let endpoint = lock(&dropped.endpoint);
-                for (client, _) in outboxes.bindings() {
-                    outboxes.unreserve(client, endpoint.held_for(client));
-                }
-            }
+            self.let_go(&mut dropped);
         }
         *lock(&slot.lease) = LeaseState::Unheld;
-        self.forget_replies(&slot.key);
+        self.forget_session(&slot.key);
         self.abandon(slot, &Refusal::unavailable(reason));
+    }
+
+    /// What `dropped`, a session let go unsaved, held since its last durable checkpoint is lost
+    /// with it: the envelopes and journal entries it took in, which their senders and readers hand
+    /// again; what it produced for a durable client that no write appended, which gives its window
+    /// places back (docs/adr/0109, D10); and the facts its runs said that no write appended
+    /// (docs/adr/0114, D1). Those facts are not kept for a next write, as a failed write keeps
+    /// them: the session is restored from its last durable checkpoint, whose state said none of
+    /// them, and an entry exists exactly when the state that said it does. The run that said them
+    /// runs again from what is handed again, and says them again.
+    fn let_go(&self, dropped: &mut Live<F::Machine, T, E>) {
+        settle_all(&mut dropped.unsaved, Fate::Lost);
+        if let Some(outboxes) = &self.outboxes {
+            let endpoint = lock(&dropped.endpoint);
+            for (client, _) in outboxes.bindings() {
+                outboxes.unreserve(client, endpoint.held_for(client));
+            }
+        }
     }
 
     /// Hand the host what the endpoint of the session `key` reported to it.
@@ -2343,6 +2774,7 @@ where
                     peer,
                     bytes,
                     receipt,
+                    ..
                 } => (peer, bytes, receipt),
                 // docs/adr/0114, D4: an entry no session took in is handed again by the reader.
                 Input::Followed(entry) => {
@@ -2461,6 +2893,18 @@ fn facts_of(entries: &[JournalEntry]) -> Vec<Fact<'_>> {
             revision: entry.revision,
             data: FactData::Bytes(&entry.data),
             valid_ms: entry.valid_ms,
+        })
+        .collect()
+}
+
+/// The incarnations `under` holds, each with its member's name, as a write names them
+/// (docs/adr/0113, D5).
+fn unders(under: &BTreeSet<(String, u64)>) -> Vec<Under<'_>> {
+    under
+        .iter()
+        .map(|(member, incarnation)| Under {
+            member: member.as_str(),
+            incarnation: *incarnation,
         })
         .collect()
 }
@@ -5242,5 +5686,267 @@ mod tests {
             }),
             1
         );
+    }
+
+    /// The open machine `phone`, whose instances post to the rooms over `https` under
+    /// `receipt: durable` and are judged by their completion records (docs/adr/0113, D5): one
+    /// of them is a member at once, as a member a minute after its last exchange.
+    const PHONE: OpenPeer = OpenPeer {
+        peer: Peer {
+            name: "phone",
+            config: PeerConfig {
+                transport: "https",
+                responders: Responders::Instance,
+                ..CLIENT
+            },
+            link: PeerLink::HttpsAccept {
+                listen: "0.0.0.0:8443",
+                authenticator: crate::peers::HttpsAuthenticator::Key,
+                max_hold_ms: 30_000,
+                max_body_bytes: 1_048_576,
+                absence_ms: 120_000,
+                mailbox: 1024,
+                max_clients: 100_000,
+                max_response_bytes: 1_048_576,
+                rate: crate::peers::EdgeRates::DEFAULT,
+                trusted_proxies: &[],
+                sign: None,
+                max_skew_ms: 300_000,
+                receipt: crate::peers::Receipt::Durable {
+                    window: 1024,
+                    retry_ms: 1_000,
+                },
+                retain_ms: 60_000,
+            },
+        },
+        members: crate::peers::Members {
+            lease_ms: 60_000,
+            provisional_ms: 60_000,
+            max_instances: 1,
+        },
+    };
+
+    /// The rooms, bound to the instances of [`PHONE`] as well as to the client.
+    const OPEN_ROOMS: Machine = Machine {
+        open_peers: &[PHONE],
+        ..ROOMS
+    };
+
+    /// A pool of [`OPEN_ROOMS`] over `store`, which keeps the members of `phone` too.
+    fn open_pool(
+        store: &MemoryStore,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+    ) -> (Pool<Rooms, Wire, Clock>, Wire) {
+        let wire = Wire::default();
+        let pool = Pool::with_members(
+            OPEN_ROOMS,
+            PoolConfig {
+                owner: "p1".to_string(),
+                lease_ttl_ms: LEASE_TTL_MS,
+                renew_every_ms: 3_000,
+            },
+            Rooms {
+                probe: Arc::clone(probe),
+            },
+            Arc::new(store.clone()),
+            wire.clone(),
+            clock.clone(),
+            sce_rust_metrics::none(),
+        )
+        .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+        pool.peer_ready("client");
+        (pool, wire)
+    }
+
+    /// The request the instance `instance` of `phone` numbered `number` in its incarnation: a
+    /// join of `room`, under the wire invoke id `id(0x44, number)`.
+    fn from_instance(instance: &str, room: &str, number: u32) -> Vec<u8> {
+        let (envelope_id, wire_id) = (id(0x33, number), id(0x44, number));
+        let data = alloc::format!(r#"{{"room":"{room}"}}"#);
+        Envelope {
+            id: (&envelope_id).into(),
+            source: within("phone").unwrap(),
+            instance: Some(within(instance).unwrap()),
+            event_type: within("service.request.join").unwrap(),
+            pattern: PatternKind::RpcRequest,
+            datacontenttype: PayloadCodec::Json,
+            data: within(data.as_bytes()).unwrap(),
+            invoke_id: Some((&wire_id).into()),
+            sequence_no: Some(u64::from(number)),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    /// The incarnation `store` makes `member` a member under, at the clock's moment: the offer a
+    /// join with `nonce` drew, confirmed by the exchange that names it.
+    fn joined(store: &MemoryStore, member: &str, nonce: &str, clock: &Clock) -> u64 {
+        let terms = PHONE.members.terms();
+        let offered = store
+            .offer(member, nonce, terms.provisional_ms, clock.at())
+            .expect("a join is answered");
+        match store
+            .admit(member, offered.incarnation, 1, terms, clock.at())
+            .expect("an exchange is judged")
+        {
+            sce_rust_session_store::Admission::Confirmed { .. } => offered.incarnation,
+            other => panic!("the offer of {member} was not confirmed: {other:?}"),
+        }
+    }
+
+    /// docs/adr/0113, D5, and docs/formal/OpenInstances.tla, `OpenInstances_without_recheck`:
+    /// the write that keeps a session's checkpoint names the incarnation each envelope it took in
+    /// was taken in under, and keeps nothing once the store no longer holds one. The session is
+    /// restored from what the store keeps and what it took in is lost to its sender, who carries
+    /// it again; an envelope its session then finds fenced is told as fenced, which the edge
+    /// answers `412`. Red if the pool's write names no incarnation: the join made under the
+    /// ended incarnation is kept, and the room holds two members.
+    #[test]
+    fn a_run_under_an_incarnation_that_ended_is_not_kept_and_its_session_is_restored() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = open_pool(&store, &clock, &probe);
+        let first = joined(&store, "phone/a1", "n1", &clock);
+        pool.peer_ready("phone/a1");
+        let standing = Standing {
+            incarnation: first,
+            mark: 1,
+        };
+        let (key, taken) =
+            pool.receive_member("phone/a1", first, standing, from_instance("a1", "r1", 1));
+        assert_eq!(key.as_deref(), Some("r1"));
+        pool.run("r1");
+        assert_eq!(taken.fate(), Fate::Settled);
+        assert_eq!(stored_members(&store, "r1"), 1);
+        let replies = wire.take();
+        assert_eq!(replies.len(), 1, "{replies:?}");
+        assert_eq!(replies[0].peer, "phone/a1");
+        assert_eq!(replies[0].wire_id, Some(id(0x44, 1)));
+
+        // The instance joins again, which ends its first incarnation, while its next request,
+        // taken in by the edge under the first, waits for its session.
+        let second = joined(&store, "phone/a1", "n2", &clock);
+        let (_, late) =
+            pool.receive_member("phone/a1", first, standing, from_instance("a1", "r1", 2));
+        pool.run("r1");
+        assert_eq!(late.fate(), Fate::Lost, "its sender carries it again");
+        assert_eq!(
+            stored_members(&store, "r1"),
+            1,
+            "nothing of the run under the ended incarnation is kept"
+        );
+        assert!(
+            pool.take_errors().iter().any(|error| matches!(
+                error,
+                PoolError::Fenced { key, incarnation, current }
+                    if key == "r1" && *incarnation == first && *current == Some(second)
+            )),
+            "the refused write is told"
+        );
+        assert!(
+            wire.take().is_empty(),
+            "no reply left for what was not kept"
+        );
+
+        // Carried again with the store's latest answer, its restored session fences it.
+        let (_, again) = pool.receive_member(
+            "phone/a1",
+            first,
+            Standing {
+                incarnation: second,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 2),
+        );
+        pool.run("r1");
+        assert_eq!(again.fate(), Fate::Fenced { current: second });
+        assert_eq!(stored_members(&store, "r1"), 1);
+    }
+
+    /// docs/adr/0113, D4 and D6: what concerns one instance (its readiness, the store's answer
+    /// for its member) reaches only the sessions whose routers bind it, and the end of its
+    /// membership unbinds it there, so the next instance takes its place among the deployment's
+    /// `max_instances`. Red if readiness is told to every session, or if an ended member stays
+    /// bound: the next instance's request is then shed.
+    #[test]
+    fn an_instance_reaches_only_the_sessions_that_bind_it_and_its_end_unbinds_it() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, _wire) = open_pool(&store, &clock, &probe);
+        deliver(&pool, join("r2", 1));
+        let a1 = joined(&store, "phone/a1", "n1", &clock);
+        pool.peer_ready("phone/a1");
+        let (key, _) = pool.receive_member(
+            "phone/a1",
+            a1,
+            Standing {
+                incarnation: a1,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 1),
+        );
+        pool.run(key.as_deref().expect("placed"));
+        assert_eq!(
+            pool.peer_not_ready("phone/a1"),
+            vec!["r1".to_string()],
+            "r2 binds no instance and is not told"
+        );
+        assert_eq!(pool.peer_ready("phone/a1"), vec!["r1".to_string()]);
+        assert_eq!(
+            pool.stand(
+                "phone/a1",
+                Standing {
+                    incarnation: a1,
+                    mark: 2
+                }
+            ),
+            vec!["r1".to_string()]
+        );
+        pool.run("r1");
+        assert!(pool.end_members().is_empty(), "the member stands");
+
+        clock.advance(PHONE.members.lease_ms + 1);
+        assert_eq!(pool.end_members(), vec!["r1".to_string()]);
+        pool.run("r1");
+        assert!(
+            pool.peer_ready("phone/a1").is_empty(),
+            "no session binds it any more"
+        );
+        let b2 = joined(&store, "phone/b2", "n1", &clock);
+        let (_, next) = pool.receive_member(
+            "phone/b2",
+            b2,
+            Standing {
+                incarnation: b2,
+                mark: 1,
+            },
+            from_instance("b2", "r1", 1),
+        );
+        pool.run("r1");
+        assert_eq!(next.fate(), Fate::Settled, "{:?}", pool.take_errors());
+        assert_eq!(stored_members(&store, "r1"), 2);
+    }
+
+    /// docs/adr/0113, D4: a pool keeps the members of the open machines its machine is bound to,
+    /// so one built without a store of members is refused. Red if `Pool::observed` builds it.
+    #[test]
+    fn a_machine_bound_to_an_open_machine_is_pooled_only_with_its_members() {
+        let refused = Pool::new(
+            OPEN_ROOMS,
+            PoolConfig {
+                owner: "p1".to_string(),
+                lease_ttl_ms: LEASE_TTL_MS,
+                renew_every_ms: 3_000,
+            },
+            Rooms {
+                probe: Arc::new(Probe::default()),
+            },
+            Arc::new(MemoryStore::new()),
+            Wire::default(),
+            Clock::new(),
+        );
+        assert!(matches!(
+            refused,
+            Err(PoolConfigError::NoMembers { machine }) if machine == "rooms"
+        ));
     }
 }

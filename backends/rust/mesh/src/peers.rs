@@ -383,7 +383,9 @@ impl Machine {
     /// A dialing `https` binding under `receipt: durable` (docs/adr/0109, D10) makes the router
     /// checkpoint and hold what it sends the peer until a `200` carried it, the binding's
     /// acknowledgement (SCE_MESH.md section 10.11): the host checkpoints the machine, as the
-    /// deployment's `persistence: checkpoint` says it does.
+    /// deployment's `persistence: checkpoint` says it does. An open machine whose instances post
+    /// to this one under `receipt: durable` makes the router checkpoint and judge each instance's
+    /// requests by their completion records (docs/adr/0113, D5; [`Router::receive_durably`]).
     pub fn router(&self) -> Result<Router, ConfigError> {
         let mut router = Router::new(self.name, self.dedup_window, self.gap_timeout_ms)?;
         for peer in self.peers {
@@ -417,6 +419,18 @@ impl Machine {
                 .map_err(|_| ConfigError::BadOpenMachine {
                     machine: open.peer.name,
                 })?;
+            if let PeerLink::HttpsAccept {
+                receipt: Receipt::Durable { .. },
+                ..
+            } = open.peer.link
+            {
+                router.enable_checkpoints();
+                router.receive_durably(open.peer.name).map_err(|_| {
+                    ConfigError::BadOpenMachine {
+                        machine: open.peer.name,
+                    }
+                })?;
+            }
         }
         Ok(router)
     }
@@ -683,6 +697,65 @@ mod tests {
         );
         assert!(SERVER.open_peer("elsewhere").is_none());
         assert_eq!(SERVER.instances, Instances::One, "the server is one");
+    }
+
+    /// docs/adr/0113, D5: an open machine whose instances post under `receipt: durable` makes the
+    /// router checkpoint and judge each instance's requests by their completion records, so an
+    /// envelope handed without the incarnation its edge took it in under is refused as unjudged.
+    /// Red if `Machine::router` leaves the open machine to a window of ids.
+    #[test]
+    fn a_durable_open_machine_is_judged_by_its_completion_records() {
+        const DURABLE: Machine = Machine {
+            peers: &[],
+            open_peers: &[OpenPeer {
+                peer: Peer {
+                    name: "phone",
+                    config: PeerConfig {
+                        responders: Responders::Instance,
+                        ..HTTPS_SERVER.peers[0].config
+                    },
+                    link: PeerLink::HttpsAccept {
+                        listen: "0.0.0.0:8443",
+                        authenticator: HttpsAuthenticator::Key,
+                        max_hold_ms: 30_000,
+                        max_body_bytes: 1_048_576,
+                        absence_ms: 120_000,
+                        mailbox: 1024,
+                        max_clients: 100_000,
+                        max_response_bytes: 1_048_576,
+                        rate: EdgeRates::DEFAULT,
+                        trusted_proxies: &[],
+                        sign: None,
+                        max_skew_ms: 300_000,
+                        receipt: Receipt::Durable {
+                            window: 1024,
+                            retry_ms: 1_000,
+                        },
+                        retain_ms: 2_592_000_000,
+                    },
+                },
+                members: Members {
+                    lease_ms: 60_000,
+                    provisional_ms: 1_000,
+                    max_instances: 4,
+                },
+            }],
+            ..HTTPS_SERVER
+        };
+        let mut router = DURABLE.router().expect("a valid configuration");
+        assert!(router.is_checkpointed(), "the host checkpoints the machine");
+        let envelope = crate::generated::envelope::Envelope {
+            source: crate::router::within("phone").unwrap(),
+            instance: Some(crate::router::within("a1").unwrap()),
+            event_type: crate::router::within("hello").unwrap(),
+            sequence_no: Some(1),
+            ..crate::generated::envelope::Envelope::new()
+        }
+        .encode_to_vec();
+        assert_eq!(
+            router.receive("phone/a1", envelope, 0),
+            Err(crate::router::RouterError::Unjudged("phone/a1".to_string()))
+        );
     }
 
     /// docs/adr/0113, D6: an open machine with room for no instance is refused when its router is

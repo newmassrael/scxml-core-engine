@@ -438,18 +438,37 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// Envelope `bytes` the transport received from `peer`, an instance of an open machine
     /// whose binding receives durably, which its edge took in under the incarnation `made_under`
     /// while the store held its member as `standing` (see [`Router::receive_member`]).
+    ///
+    /// Two refusals are the host's to answer the instance with, and are returned rather than
+    /// reported (docs/adr/0113, D4 and D6): [`RouterError::Fenced`], whose exchange is answered
+    /// `412`, and [`RouterError::InstancesFull`], whose exchange is shed (`503`). Nothing of
+    /// the envelope was taken in by either.
     pub fn receive_member(
         &mut self,
         peer: &str,
         made_under: u64,
         standing: Standing,
         bytes: Vec<u8>,
-    ) {
+    ) -> Result<(), RouterError> {
         let now = self.environment.now_ms();
-        let effects = self
+        match self
             .router
-            .receive_member(peer, made_under, standing, bytes, now);
-        self.take_in(peer, effects);
+            .receive_member(peer, made_under, standing, bytes, now)
+        {
+            Err(refused @ (RouterError::Fenced { .. } | RouterError::InstancesFull { .. })) => {
+                Err(refused)
+            }
+            effects => {
+                self.take_in(peer, effects);
+                Ok(())
+            }
+        }
+    }
+
+    /// The instances of open machines the endpoint's router bound since the host last asked (see
+    /// [`Router::take_bound`]).
+    pub fn take_bound(&mut self) -> Vec<String> {
+        self.router.take_bound()
     }
 
     /// Take `standing`, the store's latest answer for the member whose instance is `peer` (see

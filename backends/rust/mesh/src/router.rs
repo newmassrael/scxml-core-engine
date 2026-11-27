@@ -384,6 +384,8 @@ pub struct Router {
     requests: Correlation,
     /// `Some` when the router checkpoints ([`Router::enable_checkpoints`]).
     persist: Option<Persist>,
+    /// The instances of open machines bound since the host last asked ([`Router::take_bound`]).
+    bound_since: Vec<String>,
 }
 
 impl Router {
@@ -397,6 +399,7 @@ impl Router {
             open: BTreeMap::new(),
             requests: Correlation::default(),
             persist: None,
+            bound_since: Vec::new(),
         })
     }
 
@@ -481,7 +484,16 @@ impl Router {
             });
         }
         self.add_peer(peer, open.config);
+        self.bound_since.push(peer.to_string());
         Ok(())
+    }
+
+    /// The instances of open machines this router bound since the host last asked, each once, in
+    /// the order they were bound (docs/adr/0113, D6): by what arrived on an instance's link, a
+    /// send to its origin, its readiness or a restore. A host that tells readiness and an end of
+    /// membership only to the routers that hold an instance keeps its index of them by this.
+    pub fn take_bound(&mut self) -> Vec<String> {
+        core::mem::take(&mut self.bound_since)
     }
 
     /// How many instances of the open machine `machine` are bound.
