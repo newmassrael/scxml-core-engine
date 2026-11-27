@@ -1225,6 +1225,7 @@ references against a real document and drift silently.
 | `mesh/codegen-durable-receipt-unsupported` | `mesh-codegen` | no | SCE Mesh §10.11 |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
+| `mesh/codegen-journal-mismatch` | `mesh-codegen` | no | ADR 0114 D1 |
 | `mesh/codegen-keyed-pool-unsupported` | `mesh-codegen` | no | SCE Mesh §14.4 |
 | `mesh/codegen-open-instances-unsupported` | `mesh-codegen` | no | ADR 0113 D7 |
 | `mesh/codegen-persistence-without-saved-state` | `mesh-codegen` | no | SCE Mesh §10.11 |

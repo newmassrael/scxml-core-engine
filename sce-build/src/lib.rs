@@ -11974,11 +11974,28 @@ pub fn compile_mesh_transport(
     // against the requests this document serves before anything is emitted,
     // and the pool reaches codegen even with no binding, where a backend that
     // does not serve one refuses it.
+    // docs/adr/0114, D1 and D4: the document and the deployment agree about
+    // the machine's journal before its pool is resolved, and a pool that
+    // follows journals takes their entries in as it takes requests, each
+    // keyed by the field `key_from` names.
+    let followed_events =
+        mesh::topology::followed_entry_events(&effective_machine_name, &deploy_cfg, deploy_dir)?;
+    mesh::topology::check_journal(
+        &effective_machine_name,
+        device.and_then(|d| d.machines.get(&effective_machine_name)),
+        model,
+        &followed_events,
+    )?;
     let keyed_pool = device
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.sessions.as_ref())
         .map(|sessions| {
-            mesh::topology::resolve_keyed_pool(&effective_machine_name, sessions, model)
+            mesh::topology::resolve_keyed_pool_following(
+                &effective_machine_name,
+                sessions,
+                model,
+                &followed_events,
+            )
         })
         .transpose()?;
 

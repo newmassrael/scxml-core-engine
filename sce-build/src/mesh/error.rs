@@ -4013,6 +4013,15 @@ pub enum CodegenError {
          one that saves, or remove `persistence:` from deploy.yaml."
     )]
     PersistenceWithoutSavedState { machine: String },
+
+    /// A machine whose document and deployment disagree about its event journal
+    /// (docs/adr/0114, D1 and D4): the document says facts
+    /// (`<send type="sce:journal">`) and the deployment keeps no journal of the
+    /// machine, the deployment keeps one and the document says none, or a value
+    /// held to the journal's facts is written on an event that is no entry the
+    /// machine says or follows. Judged with the documents the deployment names.
+    #[error("machine '{machine}': its event journal cannot be kept as written — {reason} (docs/adr/0114, D1).")]
+    JournalMismatch { machine: String, reason: String },
 }
 
 /// Which declaration of the event journal (docs/adr/0114) a
@@ -6633,6 +6642,15 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone()],
+        },
+        CodegenError::JournalMismatch { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenJournalMismatch,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // The document or the deployment changed: which is the author's.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
         },
     }
 }

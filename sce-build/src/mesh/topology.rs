@@ -4540,6 +4540,134 @@ fn load_machine_model(
     parse_machine_source(machine, machine_cfg, deploy_dir)
 }
 
+/// The events of the entries `machine` follows (`follows:`, docs/adr/0114,
+/// D4): each a fact a followed machine's document says (`<send
+/// type="sce:journal">`), or the event of a schema an observed stream of
+/// `streams:` names. Empty for a machine that follows nothing.
+pub fn followed_entry_events(
+    machine: &str,
+    deploy: &DeployConfig,
+    deploy_dir: &Path,
+) -> Result<BTreeSet<String>, TopologyError> {
+    let follows: Vec<String> = deploy
+        .topology
+        .values()
+        .find_map(|d| d.machines.get(machine))
+        .map(|m| m.follows.clone())
+        .unwrap_or_default();
+    let mut events = BTreeSet::new();
+    for followed in &follows {
+        if let Some(stream) = deploy.streams.get(followed) {
+            for schema in &stream.schemas {
+                events.insert(stream_schema_event(followed, schema, deploy_dir)?);
+            }
+        } else if let Some(model) = load_machine_model(followed, deploy, deploy_dir)? {
+            events.extend(crate::forge::journal::journal_events(&model));
+        }
+    }
+    Ok(events)
+}
+
+/// The event the schema document `schema` of the observed stream `stream`
+/// declares, read relative to `deploy_dir` (docs/adr/0114, D6).
+fn stream_schema_event(
+    stream: &str,
+    schema: &str,
+    deploy_dir: &Path,
+) -> Result<String, TopologyError> {
+    let path = deploy_dir.join(schema);
+    let label = path.display().to_string();
+    let content =
+        crate::confine::read_to_string(&path).map_err(|e| TopologyError::ReceiverSourceRead {
+            machine: stream.to_string(),
+            path: label.clone(),
+            source: e,
+        })?;
+    let refused = |reason: String| TopologyError::ReceiverSourceParse {
+        machine: stream.to_string(),
+        path: label.clone(),
+        reason,
+    };
+    match crate::forge::parser::parse_forge(&content, crate::DocumentLabel::for_input_path(&label))
+    {
+        Ok(Some(crate::forge::model::ForgeDocument::EventSchema(schema))) => Ok(schema.event_name),
+        Ok(_) => Err(refused(
+            "it is no event schema (`sce:kind=\"event-schema\"`), and an entry of an observed \
+             stream is a record of one"
+                .to_string(),
+        )),
+        Err(e) => Err(refused(e.to_string())),
+    }
+}
+
+/// Refuse `machine`, generated with its deployment entry `entry`, as
+/// [`crate::mesh::error::CodegenError::JournalMismatch`] where its document and
+/// its deployment disagree about its journal (docs/adr/0114, D1 and D4): it says
+/// facts (`<send type="sce:journal">`) and the deployment keeps no journal of it
+/// (`journal: true`), or the deployment keeps one and it says none; or a value
+/// held to the journal's facts (`<data sce:from="journal">`) is written by a
+/// transition on an event that is no entry the machine says or follows
+/// (`followed`).
+pub fn check_journal(
+    machine: &str,
+    entry: Option<&crate::mesh::deploy::MachineConfig>,
+    model: &SCXMLModel,
+    followed: &BTreeSet<String>,
+) -> Result<(), crate::mesh::error::CodegenError> {
+    let refuse = |reason: String| crate::mesh::error::CodegenError::JournalMismatch {
+        machine: machine.to_string(),
+        reason,
+    };
+    let said = crate::forge::journal::journal_events(model);
+    let keeps = entry.is_some_and(|m| m.journal);
+    match said.iter().next() {
+        Some(event) if !keeps => {
+            return Err(refuse(format!(
+                "its document says facts of `{event}` into the journal (<send \
+                 type=\"sce:journal\">), and the deployment keeps no journal of the machine: \
+                 declare `journal: true` on its keyed pool"
+            )))
+        }
+        None if keeps => {
+            return Err(refuse(
+                "the deployment keeps a journal of the machine (`journal: true`), and its \
+                 document says no fact into it (<send type=\"sce:journal\">)"
+                    .to_string(),
+            ))
+        }
+        _ => {}
+    }
+    let entries: BTreeSet<&str> = said
+        .iter()
+        .chain(followed.iter())
+        .map(String::as_str)
+        .collect();
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    for state in states {
+        for transition in &state.transitions {
+            let Some(value) = crate::forge::journal::first_held_write(model, &transition.actions)
+            else {
+                continue;
+            };
+            if let Some(event) = transition
+                .event
+                .split_whitespace()
+                .find(|event| !entries.contains(event))
+            {
+                return Err(refuse(format!(
+                    "the transition of state '{}' on '{}' writes '{value}', a value held to the \
+                     journal's facts, and `{event}` is the event of no entry the machine says or \
+                     follows",
+                    state.id,
+                    transition.event.trim()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Strict event coverage check for a single sender: every `<send event="Y"/>`
 /// to a static target must have a matching `<transition event="Y"/>` in the
 /// receiver — with the §mesh-9.5 exemption that RpcReply events targeting a
@@ -4681,6 +4809,21 @@ pub fn resolve_keyed_pool(
     sessions: &crate::mesh::deploy::SessionsConfig,
     model: &SCXMLModel,
 ) -> Result<KeyedPool, crate::mesh::error::DeployError> {
+    resolve_keyed_pool_following(machine, sessions, model, &BTreeSet::new())
+}
+
+/// [`resolve_keyed_pool`] of a pool that also takes in the entries of the
+/// journals it follows (`follows:`, docs/adr/0114, D4), whose events are
+/// `followed`: each is delivered to the session the key field of its data
+/// names, so each is held to what a request is, its schema one the document
+/// imports and declaring the field as a key. A pool that follows a journal
+/// and serves no request is a view of what it follows.
+pub fn resolve_keyed_pool_following(
+    machine: &str,
+    sessions: &crate::mesh::deploy::SessionsConfig,
+    model: &SCXMLModel,
+    followed: &BTreeSet<String>,
+) -> Result<KeyedPool, crate::mesh::error::DeployError> {
     use super::pattern::CommunicationPattern;
     use crate::mesh::deploy::{SessionKeySource, MAX_SESSION_KEY_BYTES};
     use crate::mesh::error::{DeployError, SessionKeyFault};
@@ -4713,7 +4856,7 @@ pub fn resolve_keyed_pool(
     // that matches many (`service.request`, `service.request.*`) names no
     // one schema, and the requests it matches are named by their own
     // transitions or by none.
-    let requests: BTreeSet<String> = collect_transition_events(model)
+    let mut requests: BTreeSet<String> = collect_transition_events(model)
         .into_iter()
         .filter(|event| {
             !event.contains('*')
@@ -4722,6 +4865,7 @@ pub fn resolve_keyed_pool(
                     .is_some_and(|suffix| !suffix.is_empty())
         })
         .collect();
+    requests.extend(followed.iter().cloned());
     if requests.is_empty() {
         return Err(refuse(SessionKeyFault::NoRequest));
     }

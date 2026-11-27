@@ -1606,7 +1606,17 @@ opens; a stream whose name is not a letter followed by letters, digits, `_` or
 `-`, or is a machine's, and one that names no schema, one twice, or one by an
 empty or absolute path. A machine that keeps or follows a journal is a keyed
 pool, which only the Rust host core serves
-(`mesh/codegen-keyed-pool-unsupported`).
+(`mesh/codegen-keyed-pool-unsupported`). Where the machine is generated with its
+deployment, the documents are read: a document that says facts on a machine that
+declares no `journal: true`, `journal: true` on one whose document says none, and
+a value held to the journal's facts written on an event that is no entry the
+machine says or follows are refused (`mesh/codegen-journal-mismatch`); the events
+of the entries a machine follows (a followed machine's facts, the events of a
+stream's schemas, each of which must be an event schema,
+`mesh/topology-receiver-source-parse` otherwise) key its sessions as its requests
+do, each schema the document imports declaring the `key_from` field as a key
+(`mesh/deploy-sessions-key-not-in-request`), so a pool that serves no request
+and follows a journal is a view of it.
 
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
@@ -11422,7 +11432,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (573 codes)
+## Appendix — `DiagnosticCode` index (574 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11969,6 +11979,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-durable-receipt-unsupported` | Mesh Codegen |
 | `mesh/codegen-open-instances-unsupported` | Mesh Codegen |
 | `mesh/codegen-persistence-without-saved-state` | Mesh Codegen |
+| `mesh/codegen-journal-mismatch` | Mesh Codegen |
 
 ### Diagnostic-only
 

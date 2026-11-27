@@ -558,6 +558,7 @@
         "mesh/codegen-durable-receipt-unsupported",
         "mesh/codegen-open-instances-unsupported",
         "mesh/codegen-persistence-without-saved-state",
+        "mesh/codegen-journal-mismatch",
         "mesh/io",
         "forge/source-hash-mismatch",
         "forge/source-hash-input-uncovered",

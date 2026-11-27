@@ -3774,6 +3774,10 @@ pub enum DiagnosticCode {
     /// state for a checkpoint to hold.
     #[serde(rename = "mesh/codegen-persistence-without-saved-state")]
     MeshCodegenPersistenceWithoutSavedState,
+    /// A machine whose document and deployment disagree about its event
+    /// journal (docs/adr/0114, D1 and D4).
+    #[serde(rename = "mesh/codegen-journal-mismatch")]
+    MeshCodegenJournalMismatch,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4724,6 +4728,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // ADR 0113, D7: an open machine on a core that serves none
         MeshCodegenOpenInstancesUnsupported,
         MeshCodegenPersistenceWithoutSavedState,
+        // ADR 0114, D1 and D4: a document and its deployment that disagree about its journal
+        MeshCodegenJournalMismatch,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5453,6 +5459,7 @@ impl DiagnosticCode {
 
             // ── The event journal (docs/adr/0114, D1, D4 and D6) ──
             MeshDeployInvalidJournal => Some("ADR 0114 D4"),
+            MeshCodegenJournalMismatch => Some("ADR 0114 D1"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -6474,6 +6481,7 @@ impl DiagnosticCode {
             | MeshCodegenDurableReceiptUnsupported
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
+            | MeshCodegenJournalMismatch
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -7182,6 +7190,7 @@ impl DiagnosticCode {
             MeshCodegenPersistenceWithoutSavedState => {
                 "mesh/codegen-persistence-without-saved-state"
             }
+            MeshCodegenJournalMismatch => "mesh/codegen-journal-mismatch",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -20800,6 +20809,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d22e4e08a43f9043","code":"mesh/codegen-persistence-without-saved-state","stage":"mesh-codegen","spec":"SCE Mesh §10.11","message":"machine 'calendar' declares `persistence: checkpoint`, and its document has no saved state for a checkpoint to hold (SCE_MESH.md section 10.11): a document saves under `datamodel=\"sce-static\"` when every child it can start saves too. Make the document one that saves, or remove `persistence:` from deploy.yaml.","actual":"calendar"}"#,
             ),
             (
+                "mesh/codegen-journal-mismatch",
+                CodegenError::JournalMismatch {
+                    machine: "rooms".into(),
+                    reason: "the deployment keeps a journal of the machine (`journal: true`), and its document says no fact into it (<send type=\"sce:journal\">)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:33d6e86a4a6f05a9","code":"mesh/codegen-journal-mismatch","stage":"mesh-codegen","spec":"ADR 0114 D1","message":"machine 'rooms': its event journal cannot be kept as written — the deployment keeps a journal of the machine (`journal: true`), and its document says no fact into it (<send type=\"sce:journal\">) (docs/adr/0114, D1).","actual":"rooms"}"#,
+            ),
+            (
                 "mesh/io",
                 MeshError::Io {
                     path: std::path::PathBuf::from("/tmp/mesh.log"),
@@ -22483,6 +22501,7 @@ mod tests {
             | MeshCodegenDurableReceiptUnsupported
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
+            | MeshCodegenJournalMismatch
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -23369,6 +23388,7 @@ mod tests {
                 | MeshCodegenDurableReceiptUnsupported
                 | MeshCodegenOpenInstancesUnsupported
                 | MeshCodegenPersistenceWithoutSavedState
+                | MeshCodegenJournalMismatch
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -23448,9 +23468,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            573,
+            574,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 573 distinct variants to match the DiagnosticCode \
+             expected 574 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24518,6 +24538,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenDurableReceiptUnsupported
             | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
+            | MeshCodegenJournalMismatch
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

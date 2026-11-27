@@ -391,3 +391,104 @@ fn a_value_comes_from_the_deployment_or_the_journal() {
         "an unknown source is refused, naming both:\n{out}"
     );
 }
+
+/// Run `sce-codegen generate -l rust --deploy` on `doc` as `probe.scxml` with
+/// `deploy` as deploy.yaml, [`BOOKED`] and `others` beside it; return
+/// `(exit_ok, output)`.
+fn generate_deployed(doc: &str, deploy: &str, others: &[(&str, &str)]) -> (bool, String) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("room_booked.scxml"), BOOKED).expect("write schema");
+    for (name, text) in others {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, doc).expect("write probe");
+    let deploy_path = dir.path().join("deploy.yaml");
+    std::fs::write(&deploy_path, deploy).expect("write deploy");
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir_all(&out_dir).expect("out dir");
+    let output = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .arg("generate")
+        .arg("-l")
+        .arg("rust")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--deploy")
+        .arg(&deploy_path)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout),
+    )
+}
+
+/// A deployment whose keyed pool `probe` takes `lines`, beside a pool `rooms`
+/// that keeps a journal.
+fn pooled(lines: &str) -> String {
+    format!(
+        r#"version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: {{ key_from: data.room, idle_ms: 1000 }}
+        journal: true
+      probe:
+        source: probe.scxml
+        sessions: {{ key_from: data.room, idle_ms: 1000 }}
+{lines}"#
+    )
+}
+
+/// docs/adr/0114, D1: where the machine is generated with its deployment, a
+/// document that says facts runs on a pool that keeps a journal, and a pool that
+/// keeps one runs a document that says them. Red if either side is not read.
+#[test]
+fn a_document_and_its_deployment_agree_about_its_journal() {
+    let rooms = [("rooms.scxml", statechart("sce-static", SAYS))];
+    let rooms: Vec<(&str, &str)> = rooms.iter().map(|(n, t)| (*n, t.as_str())).collect();
+    for (doc, lines, said) in [
+        (
+            statechart("sce-static", SAYS),
+            "",
+            "declare `journal: true`",
+        ),
+        (
+            statechart("sce-static", ""),
+            "        journal: true\n",
+            "says no fact into it",
+        ),
+    ] {
+        let (ok, out) = generate_deployed(&doc, &pooled(lines), &rooms);
+        assert!(
+            !ok && out.contains("\"code\":\"mesh/codegen-journal-mismatch\"") && out.contains(said),
+            "refused with `{said}`:\n{out}"
+        );
+    }
+}
+
+/// docs/adr/0114, D4: a pool that follows a journal takes its entries in as it
+/// takes requests, keyed by the field `key_from` names in each entry's schema,
+/// so a pool that serves no request and follows one is a view of it. Red if the
+/// followed entries are not counted, which refuses the pool as serving nothing.
+#[test]
+fn a_follower_is_keyed_by_the_entries_it_follows() {
+    let rooms = statechart("sce-static", SAYS);
+    let (_, out) = generate_deployed(
+        &statechart("sce-static", ""),
+        &pooled("        follows: [rooms]\n"),
+        &[("rooms.scxml", rooms.as_str())],
+    );
+    assert!(
+        !out.contains("mesh/deploy-sessions-key-not-in-request")
+            && !out.contains("mesh/codegen-journal-mismatch"),
+        "the view is keyed by the entries it follows:\n{out}"
+    );
+}

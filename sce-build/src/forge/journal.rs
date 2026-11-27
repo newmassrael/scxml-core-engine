@@ -400,11 +400,81 @@ pub fn refuse_journal_values_written_elsewhere(
     Ok(())
 }
 
-/// Refuse the first statement of `actions`, at any depth, that writes one of
-/// `held` or a place inside it, standing in `site`: every place a statement
+/// Each place `action` itself writes that is one of `held` or inside it, with
+/// the statement, the attribute and the variable: every place a statement
 /// writes ([`crate::forge::static_datamodel::places_written`]), what an
 /// `<sce:call>` returns into its `location`, and a map or a set of `held` the
 /// call hands an algorithm by name, which writes it in place.
+fn held_places<'a>(
+    action: &'a Action,
+    held: &[&crate::model::Variable],
+) -> Vec<(&'static str, &'static str, &'a str, String)> {
+    let mut places = crate::forge::static_datamodel::places_written(action);
+    if action.action_type == "sce_call" {
+        places.push(("<sce:call>", "location", action.location.as_str()));
+        let arguments = action
+            .expr
+            .split_once('(')
+            .and_then(|(_, rest)| rest.rsplit_once(')'))
+            .map_or("", |(arguments, _)| arguments);
+        for argument in arguments.split(',').map(str::trim) {
+            let in_place = held.iter().any(|var| {
+                var.id == argument
+                    && var
+                        .value_type
+                        .as_ref()
+                        .is_some_and(|ty| ty.map_key().is_some())
+            });
+            if in_place {
+                places.push(("<sce:call>", "expr", argument));
+            }
+        }
+    }
+    places
+        .into_iter()
+        .filter_map(|(element, attr, location)| {
+            let root = location
+                .trim()
+                .split(['.', '['])
+                .next()
+                .unwrap_or("")
+                .trim();
+            held.iter()
+                .find(|var| !root.is_empty() && var.id == root)
+                .map(|var| (element, attr, location, var.id.clone()))
+        })
+        .collect()
+}
+
+/// The first value held to the journal's facts that `actions` write, at any
+/// depth; `None` when they write none. What a deployment that runs the machine
+/// holds to the entries the machine says and follows
+/// (`crate::mesh::topology::check_journal`).
+pub fn first_held_write(model: &SCXMLModel, actions: &[Action]) -> Option<String> {
+    let held: Vec<&crate::model::Variable> =
+        model.variables.iter().filter(|v| v.from_journal).collect();
+    if held.is_empty() {
+        return None;
+    }
+    fn walk(actions: &[Action], held: &[&crate::model::Variable]) -> Option<String> {
+        actions.iter().find_map(|action| {
+            held_places(action, held)
+                .into_iter()
+                .next()
+                .map(|(_, _, _, value)| value)
+                .or_else(|| {
+                    action
+                        .nested_blocks()
+                        .into_iter()
+                        .find_map(|block| walk(block.actions, held))
+                })
+        })
+    }
+    walk(actions, &held)
+}
+
+/// Refuse the first statement of `actions`, at any depth, that writes one of
+/// `held` or a place inside it ([`held_places`]), standing in `site`.
 fn unwritten(
     actions: &[Action],
     held: &[&crate::model::Variable],
@@ -412,44 +482,15 @@ fn unwritten(
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     for action in actions {
-        let mut places = crate::forge::static_datamodel::places_written(action);
-        if action.action_type == "sce_call" {
-            places.push(("<sce:call>", "location", action.location.as_str()));
-            let arguments = action
-                .expr
-                .split_once('(')
-                .and_then(|(_, rest)| rest.rsplit_once(')'))
-                .map_or("", |(arguments, _)| arguments);
-            for argument in arguments.split(',').map(str::trim) {
-                let in_place = held.iter().any(|var| {
-                    var.id == argument
-                        && var
-                            .value_type
-                            .as_ref()
-                            .is_some_and(|ty| ty.map_key().is_some())
-                });
-                if in_place {
-                    places.push(("<sce:call>", "expr", argument));
-                }
-            }
-        }
-        for (element, attr, location) in places {
-            let root = location
-                .trim()
-                .split(['.', '['])
-                .next()
-                .unwrap_or("")
-                .trim();
-            let Some(var) = held.iter().find(|var| !root.is_empty() && var.id == root) else {
-                continue;
-            };
+        if let Some((element, attr, location, value)) = held_places(action, held).into_iter().next()
+        {
             let spelling = action.spellings.get(attr);
             return Err(Located::new(
                 crate::forge::error::ValidationError::JournalValueAssigned {
                     element: element.to_string(),
                     attr: attr.to_string(),
                     location: location.trim().to_string(),
-                    value: var.id.clone(),
+                    value,
                     site: site.to_string(),
                 }
                 .into(),
