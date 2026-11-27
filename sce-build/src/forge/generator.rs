@@ -34510,6 +34510,9 @@ fn render_buffer_pool_c(
         dma_channel => m.dma_channel.clone().unwrap_or_default(),
         has_dma_channel => m.dma_channel.is_some(),
         cache_policy => m.cache_policy.to_string(),
+        // `<sce:sharing>` (docs/adr/0111 D4), as for the Rust book.
+        sharing => m.sharing.as_str(),
+        shared => m.sharing == crate::forge::model::PoolSharing::Shared,
         analyzer => analyzer,
         // C5 cache-maintenance gating; mirror of Rust template
         // context shape so per-backend template authors can reach for

@@ -16900,23 +16900,47 @@ topology:
              typestate family reach consumer builds; full header:\n{header}",
         );
         assert!(
-            header.contains("static sce_slot_state_t rx_pool_sram1_slot_states["),
-            "γ replaces the β `in_use[]` bitmap with a slot_states array; full header:\n{header}",
+            header.contains("static rx_pool_sram1_book_t rx_pool_sram1_book;"),
+            "the book is a static with no initializer, all zero when no slot is out \
+             (docs/adr/0111 D4); full header:\n{header}",
         );
-        // γ: tag-checked author API per spec §synth-5-E lines 1232-1242.
+        // γ: tag-checked author API per spec §synth-5-E lines 1232-1242;
+        // docs/adr/0111 D4: each lending names its length.
         assert!(
-            header.contains("static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(void)"),
+            header.contains(
+                "static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(size_t len, size_t headroom)"
+            ),
             "must emit pool_acquire_for_encode tag-checked surface (spec §5.E line 1233); full header:\n{header}",
         );
         assert!(
-            header.contains("static inline sce_slot_handle_t rx_pool_sram1_link_arm_rx(void)"),
+            header.contains("static inline sce_slot_handle_t rx_pool_sram1_link_arm_rx(size_t len)"),
             "must emit link_arm_rx tag-checked surface (spec §5.E line 1236); full header:\n{header}",
         );
         assert!(
             header.contains(
-                "static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle)"
+                "static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle, size_t frame)"
             ),
             "must emit tag-checked link_arm_tx (spec §5.E line 1235); full header:\n{header}",
+        );
+        // docs/adr/0111 D4: a pool over the caller's storage, a run-time
+        // count, and a slot index that crosses an interface.
+        for needle in [
+            "static inline bool rx_pool_sram1_init(size_t count)",
+            "static inline bool rx_pool_sram1_init_over(uint8_t *bytes, size_t len, size_t count, size_t slot_len)",
+            "} rx_pool_sram1_slot_index_t;",
+            "static inline rx_pool_sram1_slot_index_t rx_pool_sram1_into_index(sce_slot_handle_t *handle)",
+            "static inline sce_slot_handle_t rx_pool_sram1_reclaim(rx_pool_sram1_slot_index_t index, sce_slot_state_t state)",
+            "#define RX_POOL_SRAM1_SHARING \"owner\"",
+            "#ifndef RX_POOL_SRAM1_CALLER_STORAGE",
+        ] {
+            assert!(
+                header.contains(needle),
+                "must emit `{needle}`; full header:\n{header}",
+            );
+        }
+        assert!(
+            !header.contains("_sce_critical_enter"),
+            "an owner's pool declares no critical section; full header:\n{header}",
         );
         assert!(
             header.contains(
@@ -17047,14 +17071,14 @@ void sce_dcache_invalidate_by_addr(void *start, size_t len) {
 }
 
 int main(void) {
-    sce_slot_handle_t h = rx_pool_sram1_pool_acquire_for_encode();
+    sce_slot_handle_t h = rx_pool_sram1_pool_acquire_for_encode(RX_POOL_SRAM1_SLOT_SIZE, 0);
     if (h.state == SCE_SLOT_INVALID) return 1;
     uint8_t *w = rx_pool_sram1_slot_write(&h);
     if (w == NULL) return 2;
     w[0] = 0xAB;
     if (!rx_pool_sram1_pool_return(&h)) return 3;
 
-    sce_slot_handle_t r = rx_pool_sram1_link_arm_rx();
+    sce_slot_handle_t r = rx_pool_sram1_link_arm_rx(RX_POOL_SRAM1_SLOT_SIZE);
     if (r.state != SCE_SLOT_DMA_ARMED_RX) return 4;
     /* Reading or writing a dma-armed-rx slot must be rejected
      * by the runtime tag check. */
@@ -17062,7 +17086,7 @@ int main(void) {
     if (rx_pool_sram1_slot_write(&r) != NULL) return 6;
 
     /* link_arm_tx on a non-cpu-mut handle is rejected. */
-    if (rx_pool_sram1_link_arm_tx(&r)) return 7;
+    if (rx_pool_sram1_link_arm_tx(&r, 0)) return 7;
 
     if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT - 1) return 8;
 
@@ -17081,10 +17105,10 @@ int main(void) {
     if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 15;
 
     /* TX arm closes too: cpu-mut -> dma-armed-tx -> dma-busy-tx -> free. */
-    sce_slot_handle_t t = rx_pool_sram1_pool_acquire_for_encode();
+    sce_slot_handle_t t = rx_pool_sram1_pool_acquire_for_encode(RX_POOL_SRAM1_SLOT_SIZE, 0);
     if (t.state != SCE_SLOT_CPU_MUT) return 16;
     size_t ti = t.idx;
-    if (!rx_pool_sram1_link_arm_tx(&t)) return 17;
+    if (!rx_pool_sram1_link_arm_tx(&t, 0)) return 17;
     if (t.state != SCE_SLOT_DMA_ARMED_TX) return 18;
     if (rx_pool_sram1_slot_read(&t) != NULL) return 19;
     if (!rx_pool_sram1_dma_start_tx(ti)) return 20;
@@ -17108,7 +17132,7 @@ int main(void) {
         if ((uintptr_t)rx_pool_sram1_storage[i].bytes % RX_POOL_SRAM1_ALIGNMENT) return 32;
     }
 
-    sce_slot_handle_t ar = rx_pool_sram1_link_arm_rx();
+    sce_slot_handle_t ar = rx_pool_sram1_link_arm_rx(RX_POOL_SRAM1_SLOT_SIZE);
     if (ar.state != SCE_SLOT_DMA_ARMED_RX) return 33;
     size_t ari = ar.idx;
     uint8_t *rxbuf = rx_pool_sram1_dma_armed_rx_ptr(&ar);
@@ -17132,7 +17156,7 @@ int main(void) {
     }
     if (!rx_pool_sram1_pool_return(&filled)) return 42;
 
-    sce_slot_handle_t at = rx_pool_sram1_pool_acquire_for_encode();
+    sce_slot_handle_t at = rx_pool_sram1_pool_acquire_for_encode(RX_POOL_SRAM1_SLOT_SIZE, 0);
     if (at.state != SCE_SLOT_CPU_MUT) return 43;
     size_t ati = at.idx;
     uint8_t *enc = rx_pool_sram1_slot_write(&at);
@@ -17142,7 +17166,7 @@ int main(void) {
     }
     /* A slot the CPU still owns publishes no bus address. */
     if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 45;
-    if (!rx_pool_sram1_link_arm_tx(&at)) return 46;
+    if (!rx_pool_sram1_link_arm_tx(&at, RX_POOL_SRAM1_SLOT_SIZE)) return 46;
     const uint8_t *txbuf = rx_pool_sram1_dma_armed_tx_ptr(ati);
     if (txbuf == NULL) return 47;
     if (rx_pool_sram1_slot_index_of_ptr(txbuf) != ati) return 48;
@@ -17174,10 +17198,32 @@ int main(void) {
     if (rx_pool_sram1_slot_index_of_ptr(
             (const void *)((uintptr_t)rx_pool_sram1_storage - 1u)) != SIZE_MAX) return 60;
 
+    /* docs/adr/0111 D4: a handle given up for its index is rebuilt once,
+       and a slot lent with a headroom leaves with its prefix in front. */
+    sce_slot_handle_t p = rx_pool_sram1_pool_acquire_for_encode(RX_POOL_SRAM1_SLOT_SIZE, 2);
+    if (p.state != SCE_SLOT_CPU_MUT) return 61;
+    if (rx_pool_sram1_slot_capacity(&p) != RX_POOL_SRAM1_SLOT_SIZE - 2) return 62;
+    rx_pool_sram1_slot_index_t pi = rx_pool_sram1_into_index(&p);
+    if (p.state != SCE_SLOT_INVALID) return 63;
+    sce_slot_handle_t back = rx_pool_sram1_reclaim(pi, SCE_SLOT_CPU_MUT);
+    if (back.state != SCE_SLOT_CPU_MUT) return 64;
+    if (rx_pool_sram1_reclaim(pi, SCE_SLOT_CPU_MUT).state != SCE_SLOT_INVALID) return 65;
+    if (rx_pool_sram1_ownership_violations() != 1u) return 66;
+    uint8_t *frame = rx_pool_sram1_slot_write(&back);
+    if (frame == NULL) return 67;
+    frame[0] = 0xA1;
+    if (!rx_pool_sram1_link_arm_tx(&back, 1)) return 68;
+    rx_pool_sram1_slot_index_t armed = rx_pool_sram1_slot_index(&back);
+    const uint8_t prefix[2] = {0x00, 0x01};
+    rx_pool_sram1_span_t span = rx_pool_sram1_take_prefixed(armed, prefix, sizeof prefix);
+    if (span.ptr == NULL || span.len != 3u || span.ptr[0] != 0x00 || span.ptr[2] != 0xA1) return 69;
+    if (!rx_pool_sram1_tx_complete(armed.slot)) return 70;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 71;
+
     /* Whole ring, twice: arming every slot must remain recoverable. */
     for (int round = 0; round < 2; ++round) {
         for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
-            sce_slot_handle_t a = rx_pool_sram1_link_arm_rx();
+            sce_slot_handle_t a = rx_pool_sram1_link_arm_rx(RX_POOL_SRAM1_SLOT_SIZE);
             if (a.state != SCE_SLOT_DMA_ARMED_RX) return 26;
             if (!rx_pool_sram1_dma_start_rx(&a)) return 27;
         }
@@ -17547,7 +17593,7 @@ __attribute__((section(".after_pool"), used)) uint8_t author_buf[4];
 volatile uint8_t *sce_test_sink;
 
 void _start(void) {
-    sce_slot_handle_t h = odd_pool_pool_acquire_for_encode();
+    sce_slot_handle_t h = odd_pool_pool_acquire_for_encode(ODD_POOL_SLOT_SIZE, 0);
     sce_test_sink = odd_pool_slot_write(&h);
     sce_test_sink = spliced_buf;
 }
