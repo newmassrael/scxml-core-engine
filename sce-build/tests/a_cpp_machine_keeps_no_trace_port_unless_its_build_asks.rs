@@ -13,9 +13,10 @@
 // This reads the generated text rather than compiling it, so it runs on a host with
 // no C++ toolchain. That the machine builds and runs both ways is the C++ lane's:
 // the W3C conformance programs and integration_tests build their machines with
-// nothing set; `IntegrationTracePort` and the
-// `cpp_a_run_of_test_*_is_the_recorded_run_of_its_model` programs build machines
-// with it on and hold what the port is told.
+// nothing set; `IntegrationTracePort`, the
+// `cpp_a_run_of_test_*_is_the_recorded_run_of_its_model` programs and
+// `cpp_a_scenario_of_the_turnstile_is_its_run` build machines with it on and
+// hold what the port is told.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

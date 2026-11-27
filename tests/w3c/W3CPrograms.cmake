@@ -451,6 +451,47 @@ if(NOT EMSCRIPTEN)
             LABELS "w3c;w3c_cpp"
         )
     endforeach()
+
+    # docs/adr/0115, D15 and the converse of D8: each scenario of the properties
+    # judge's turnstile, the run TLC gave of a violation or a witness, replayed
+    # through the machine with its trace port on, and its run held to the recorded
+    # run `<name>.cpp.json` beside the scenario, byte for byte
+    # (w3c/run_traces/AScenarioOfTheTurnstileIsItsRunTest.cpp), which
+    # `sce_build::formal::replay` judges to be the scenario's. The scenarios are
+    # written by `sce-codegen formal properties --scenarios` and read at run time.
+    # The machine is the formal fixture's, which no W3C document and no channel
+    # contract holds, so it is generated here alone, with SCE_TRACE_PORT=1 in the one
+    # program that compiles it. Under the label of the W3C programs, as the recorded
+    # runs above are: the lane that runs them runs this. Recording again, after a
+    # change that moves a run on purpose:
+    # `UPDATE_EXPECT=1 ctest -R cpp_a_scenario_of_the_turnstile_is_its_run`.
+    set(_formal_properties_dir "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/formal_properties")
+    set(_formal_turnstile_dir "${CMAKE_CURRENT_BINARY_DIR}/formal_turnstile_generated")
+    sce_codegen_generation(_FORMAL_TURNSTILE
+        DOCUMENT "${_formal_properties_dir}/turnstile.scxml"
+        OUTPUT_DIR "${_formal_turnstile_dir}"
+        LANGUAGE cpp
+        COMMENT "Generating the formal properties fixture turnstile (cpp)")
+    set(_scenario_test cpp_a_scenario_of_the_turnstile_is_its_run)
+    add_executable(${_scenario_test}
+        w3c/run_traces/AScenarioOfTheTurnstileIsItsRunTest.cpp
+        ${_FORMAL_TURNSTILE_HEADERS})
+    target_include_directories(${_scenario_test} PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+        "${_formal_turnstile_dir}")
+    target_compile_definitions(${_scenario_test} PRIVATE
+        SCE_TRACE_PORT=1
+        SCE_FORMAL_SCENARIOS_DIR="${_formal_properties_dir}/scenarios")
+    target_link_libraries(${_scenario_test} PRIVATE sce_runtime GTest::gtest_main pthread)
+    apply_sce_test_policies(${_scenario_test})
+    list(APPEND W3C_CPP_PROGRAMS ${_scenario_test})
+    add_test(NAME ${_scenario_test} COMMAND ${_scenario_test})
+    set_tests_properties(${_scenario_test} PROPERTIES
+        TIMEOUT 60
+        LABELS "w3c;w3c_cpp"
+    )
 endif()
 
 # ============================================================================

@@ -45,7 +45,13 @@
               # `cpp_a_run_of_test_*_is_the_recorded_run_of_its_model`
               # programs hold their runs to at run time (docs/adr/0115, D4
               # and D8).
-              "docs/formal/traces/**"],
+              "docs/formal/traces/**",
+              # The turnstile of the properties judge's fixture, which the
+              # build generates, and its scenarios with the C++ lane's
+              # recorded runs of them, which
+              # `cpp_a_scenario_of_the_turnstile_is_its_run` replays and
+              # holds its runs to at run time (docs/adr/0115, D15).
+              "sce-build/tests/fixtures/formal_properties/**"],
     "deps": ["codegen-build"],
     "ci_only": "55s, and it is the gate that decides whether the budget "
                "is met on a good run or on every run. Without it the set "
