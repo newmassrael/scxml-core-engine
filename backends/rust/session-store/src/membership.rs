@@ -86,6 +86,20 @@ pub enum Admission {
     /// The offer stands, and as many members stand as the bound allows: nothing was taken, and
     /// the exchange may be made again.
     Full,
+    /// The offer it names waits for a proof of a person (ADR 0116, D2), and the exchange carried
+    /// none the host judged good: nothing was taken, and the offer stands until it runs out for an
+    /// exchange that carries one.
+    Unproved,
+}
+
+/// What a join says follows its offer (ADR 0116, D2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joining {
+    /// The next exchange that names the offer confirms it.
+    Exchange,
+    /// The exchange that confirms the offer carries a proof of a person, made for it: the offer
+    /// waits for one, `login_ms` and no longer, and no exchange without one confirms it.
+    Proof,
 }
 
 /// A person as an identity provider proved them (ADR 0116, D2 and D3): what the host's port of
@@ -182,6 +196,8 @@ pub struct Offer {
     /// The nonce of the join it answers.
     pub nonce: String,
     pub expires_ms: u64,
+    /// What the join said follows it: an exchange, or an exchange with a proof of a person.
+    pub joining: Joining,
 }
 
 /// What the store holds of one member's name: the member, and an offer, each when it holds one.
@@ -243,14 +259,28 @@ pub enum Renewal {
 /// 0113, D4 and D5), with the person each incarnation acts for (ADR 0116, D1). Every method is
 /// one transaction.
 pub trait MembershipStore: SessionStore {
-    /// Answer a join of `member` that carries `nonce`, at `now_ms`: the offer that stands for the
-    /// same nonce, as it stands; or else an incarnation drawn from the store's counter, offered
-    /// until `now_ms + ttl_ms` in place of any offer before it. The member, if one stands, is not
-    /// touched.
+    /// [`MembershipStore::offer_as`] for a join that says no proof follows it
+    /// ([`Joining::Exchange`]).
     fn offer(
         &self,
         member: &str,
         nonce: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<Offered, Failure> {
+        self.offer_as(member, nonce, Joining::Exchange, ttl_ms, now_ms)
+    }
+
+    /// Answer a join of `member` that carries `nonce` and says `joining` follows it, at `now_ms`:
+    /// the offer that stands for the same nonce and the same `joining`, as it stands; or else an
+    /// incarnation drawn from the store's counter, offered until `now_ms + ttl_ms` in place of any
+    /// offer before it. The member, if one stands, is not touched. An offer for a proof is given
+    /// `login_ms` as `ttl_ms` (ADR 0116, D2).
+    fn offer_as(
+        &self,
+        member: &str,
+        nonce: &str,
+        joining: Joining,
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Offered, Failure>;
@@ -277,6 +307,8 @@ pub trait MembershipStore: SessionStore {
     ///   `provisional_ms` before), its mark raised to `mark` when that is above it, and the person
     ///   it acts for, or its acting for nobody, as it was: `delegation` is not read
     ///   ([`Admission::Current`]);
+    /// * the offer that stands for it, when it waits for a proof and `delegation` is none:
+    ///   [`Admission::Unproved`], nothing written;
     /// * the offer that stands for it: unless as many other members stand as
     ///   [`Terms::max_members`] ([`Admission::Full`], nothing written), the instance is a member
     ///   under it with the mark `mark` (at least 1) and a provisional lease, acting for
@@ -363,7 +395,8 @@ impl Error for NoMembership {}
 /// are.
 pub(crate) mod judge {
     use super::{
-        Admission, Delegation, Member, Offer, Person, PersonKey, Renewal, Revocation, Terms,
+        Admission, Delegation, Joining, Member, Offer, Person, PersonKey, Renewal, Revocation,
+        Terms,
     };
     use crate::{moment, rules, Conflict};
 
@@ -378,10 +411,17 @@ pub(crate) mod judge {
         stands(member.ends_ms(), now_ms)
     }
 
-    /// Whether a join with `nonce` is offered `offered` again at `now_ms`: it stands, and it
-    /// answers a join of the same nonce.
-    pub(crate) fn offers_again(offered: Option<&Offer>, nonce: &str, now_ms: u64) -> bool {
-        offered.is_some_and(|offer| offer.nonce == nonce && stands(offer.expires_ms, now_ms))
+    /// Whether a join with `nonce` that says `joining` follows it is offered `offered` again at
+    /// `now_ms`: it stands, and it answers a join of the same nonce that said the same.
+    pub(crate) fn offers_again(
+        offered: Option<&Offer>,
+        nonce: &str,
+        joining: Joining,
+        now_ms: u64,
+    ) -> bool {
+        offered.is_some_and(|offer| {
+            offer.nonce == nonce && offer.joining == joining && stands(offer.expires_ms, now_ms)
+        })
     }
 
     /// What an exchange carries that the store judges: the incarnation it names, its low-water
@@ -450,13 +490,17 @@ pub(crate) mod judge {
                 },
             };
         }
-        let confirms = offered.is_some_and(|offer| {
+        let Some(offer) = offered.filter(|offer| {
             offer.incarnation == exchange.incarnation && stands(offer.expires_ms, now_ms)
-        });
-        if !confirms {
+        }) else {
             return Judged::Refuse(Admission::Fenced {
                 current: standing.map(|member| member.incarnation),
             });
+        };
+        // ADR 0116, D2: an offer made for a proof is confirmed by the exchange that carries one,
+        // and by no other, so that an incarnation never acts for nobody before its person.
+        if offer.joining == Joining::Proof && exchange.delegation.is_none() {
+            return Judged::Refuse(Admission::Unproved);
         }
         if others >= terms.max_members {
             return Judged::Refuse(Admission::Full);
@@ -598,6 +642,7 @@ mod tests {
             incarnation,
             nonce: "n1".to_string(),
             expires_ms,
+            joining: Joining::Exchange,
         }
     }
 
@@ -708,10 +753,14 @@ mod tests {
     #[test]
     fn a_join_is_offered_again_only_for_its_nonce_while_the_offer_stands() {
         let offered = offer(9, 450);
-        assert!(offers_again(Some(&offered), "n1", 449));
-        assert!(!offers_again(Some(&offered), "n2", 449));
-        assert!(!offers_again(Some(&offered), "n1", 450));
-        assert!(!offers_again(None, "n1", 0));
+        assert!(offers_again(Some(&offered), "n1", Joining::Exchange, 449));
+        assert!(!offers_again(Some(&offered), "n2", Joining::Exchange, 449));
+        assert!(!offers_again(Some(&offered), "n1", Joining::Exchange, 450));
+        assert!(!offers_again(None, "n1", Joining::Exchange, 0));
+        assert!(
+            !offers_again(Some(&offered), "n1", Joining::Proof, 449),
+            "a join that says a proof follows is another join"
+        );
     }
 
     /// The condition of the write: kept only under the incarnation the member stands under at
@@ -927,6 +976,40 @@ mod tests {
             },
             "a",
             &hers
+        ));
+    }
+    /// ADR 0116, D2: an offer made for a proof is confirmed only by the exchange that carries
+    /// one, and stands meanwhile; one made for an exchange is confirmed by any. Red if an exchange
+    /// without a proof confirms an offer that waits for one, and the incarnation acts for nobody
+    /// before its person.
+    #[test]
+    fn an_offer_that_waits_for_a_proof_is_confirmed_by_one_alone() {
+        let waiting = Offer {
+            joining: Joining::Proof,
+            ..offer(9, 450)
+        };
+        assert_eq!(
+            admit(None, Some(&waiting), 0, exchange(9, 1), TERMS, 400).admission(),
+            Admission::Unproved
+        );
+        let bound = delegation("alice", 5_000);
+        let proved = Exchange {
+            incarnation: 9,
+            mark: 1,
+            delegation: Some(&bound),
+        };
+        assert!(matches!(
+            admit(None, Some(&waiting), 0, proved, TERMS, 400),
+            Judged::Confirm { member, .. } if member.delegation == Some(bound.clone())
+        ));
+        assert_eq!(
+            admit(None, Some(&waiting), 0, proved, TERMS, 450).admission(),
+            Admission::Fenced { current: None },
+            "it waits no longer than it was offered for"
+        );
+        assert!(matches!(
+            admit(None, Some(&offer(9, 450)), 0, proved, TERMS, 400),
+            Judged::Confirm { .. }
         ));
     }
 }

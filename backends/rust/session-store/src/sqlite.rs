@@ -25,8 +25,8 @@ use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
 use crate::membership::{
-    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, Person,
-    PersonKey, Renewal, Revocation, Terms,
+    Admission, Delegation, Ended, Joining, Member, Membership, MembershipStore, Offer, Offered,
+    Person, PersonKey, Renewal, Revocation, Terms,
 };
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -39,7 +39,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 10;
+const LAYOUT_VERSION: i64 = 11;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -287,6 +287,12 @@ const LAYOUT_10: &str = "
     CREATE INDEX members_by_person ON members (person_issuer, person_subject);
 ";
 
+/// What layout 11 adds to layout 10: whether an offer waits for a proof of a person (ADR 0116,
+/// D2), `1` when it does. An offer of layout 10 waits for an exchange.
+const LAYOUT_11: &str = "
+    ALTER TABLE member_offers ADD COLUMN proof INTEGER NOT NULL DEFAULT 0;
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -370,9 +376,9 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 10] = [
+    const ADDITIONS: [&str; 11] = [
         LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8, LAYOUT_9,
-        LAYOUT_10,
+        LAYOUT_10, LAYOUT_11,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -882,13 +888,19 @@ fn member_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<M
 fn offer_of(connection: &Connection, member: &str) -> rusqlite::Result<Option<Offer>> {
     connection
         .prepare_cached(
-            "SELECT incarnation, nonce, expires_ms FROM member_offers WHERE member = ?1",
+            "SELECT incarnation, nonce, expires_ms, proof FROM member_offers WHERE member = ?1",
         )?
         .query_row((member,), |row| {
+            let proof: bool = row.get(3)?;
             Ok(Offer {
                 incarnation: row.get(0)?,
                 nonce: row.get(1)?,
                 expires_ms: row.get(2)?,
+                joining: if proof {
+                    Joining::Proof
+                } else {
+                    Joining::Exchange
+                },
             })
         })
         .optional()
@@ -1485,17 +1497,18 @@ fn keep_first_in(
 /// The members, in the same file as the sessions, so that a write made under an incarnation is
 /// judged against them in its own transaction.
 impl MembershipStore for SqliteStore {
-    fn offer(
+    fn offer_as(
         &self,
         member: &str,
         nonce: &str,
+        joining: Joining,
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Offered, Failure> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
         if let Some(offer) = offer_of(&transaction, member)?
-            .filter(|offer| judge::offers_again(Some(offer), nonce, now_ms))
+            .filter(|offer| judge::offers_again(Some(offer), nonce, joining, now_ms))
         {
             return Ok(Offered {
                 incarnation: offer.incarnation,
@@ -1508,10 +1521,16 @@ impl MembershipStore for SqliteStore {
         };
         transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO member_offers (member, incarnation, nonce, expires_ms) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT OR REPLACE INTO member_offers \
+                 (member, incarnation, nonce, expires_ms, proof) VALUES (?1, ?2, ?3, ?4, ?5)",
             )?
-            .execute((member, offered.incarnation, nonce, offered.expires_ms))?;
+            .execute((
+                member,
+                offered.incarnation,
+                nonce,
+                offered.expires_ms,
+                joining == Joining::Proof,
+            ))?;
         transaction.commit()?;
         Ok(offered)
     }

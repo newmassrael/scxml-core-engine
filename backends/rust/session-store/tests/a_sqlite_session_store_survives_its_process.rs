@@ -44,7 +44,7 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 10;
+const LAYOUT: i64 = 11;
 
 /// The tables layout 9 added (ADR 0113), dropped from a file this build made so that it is left as
 /// a build of layout 8 left it.
@@ -1432,8 +1432,8 @@ mod journal {
 mod members {
     use rusqlite::Connection;
     use sce_rust_session_store::{
-        Admission, Conflict, Delegation, MembershipStore, Person, SessionStore, SqliteStore, Terms,
-        Under, Write, WriteError,
+        Admission, Conflict, Delegation, Joining, MembershipStore, Person, SessionStore,
+        SqliteStore, Terms, Under, Write, WriteError,
     };
 
     use super::{LAYOUT, WITHOUT_LAYOUT_9};
@@ -1467,6 +1467,8 @@ mod members {
         CREATE INDEX member_offers_by_expiry ON member_offers (expires_ms, member);
         INSERT INTO members (member, incarnation, mark, expires_ms, kept, lease_ms)
             VALUES ('phone/a1', 7, 3, 5000, 1, 10000);
+        INSERT INTO member_offers (member, incarnation, nonce, expires_ms)
+            VALUES ('phone/c3', 8, 'n1', 5000);
     ";
 
     /// ADR 0116, D1: a file of layout 9 is brought to this build's layout when it is opened, in
@@ -1509,6 +1511,15 @@ mod members {
             (7, 3, 5_000)
         );
         assert_eq!(member.delegation, None, "it acts for nobody");
+        assert_eq!(
+            store
+                .membership("phone/c3")
+                .expect("reading")
+                .offer
+                .map(|offer| offer.joining),
+            Some(Joining::Exchange),
+            "an offer of layout 9 waits for an exchange"
+        );
         assert_eq!(
             store.end_expired(4_999, 10).expect("sweeping"),
             Vec::new(),

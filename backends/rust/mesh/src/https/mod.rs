@@ -36,6 +36,8 @@ mod client_mailbox;
 pub mod conformance;
 mod fresh_step;
 pub mod freshness;
+pub mod principal;
+pub mod principal_conformance;
 pub mod rate;
 pub mod server;
 pub mod signature;

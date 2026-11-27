@@ -35,6 +35,9 @@
 //! The person an incarnation acts for (ADR 0116, D1 and D6), held to docs/formal/Principals.tla,
 //! each function named by the configuration of that model that takes its part out:
 //!
+//! * [`an_offer_for_a_proof_is_confirmed_by_one_alone`]: a join that says a proof follows is
+//!   offered an incarnation that waits as long as it was given, and only an exchange that carries
+//!   a person confirms it.
 //! * [`a_confirmation_binds_its_person_to_its_incarnation_alone`] (`without_one_person`,
 //!   `without_one_person_kept`): the exchange that confirms binds the person; no later exchange
 //!   under the incarnation changes it, and the next incarnation acts for nobody unless its own
@@ -58,8 +61,8 @@
 
 use crate::batch::{Batched, Decided};
 use crate::membership::{
-    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, Person,
-    PersonKey, Renewal, Revocation, Terms, Under,
+    Admission, Delegation, Ended, Joining, Member, Membership, MembershipStore, Offer, Offered,
+    Person, PersonKey, Renewal, Revocation, Terms, Under,
 };
 use crate::outbox::{Append, Write, Written};
 use crate::{AcquireError, Conflict, Lease, SessionStore, WriteError};
@@ -196,6 +199,7 @@ pub fn a_join_offers_and_the_exchange_that_names_it_confirms(harness: &impl Memb
                 incarnation: offered.incarnation,
                 nonce: "n1".to_string(),
                 expires_ms: 1_100,
+                joining: Joining::Exchange,
             }),
         },
         "a join offers and makes no member"
@@ -969,5 +973,70 @@ pub fn a_delegations_bytes_are_replaced_only_from_what_they_hold(harness: &impl 
             ..bound
         }),
         "every other field is kept"
+    );
+}
+
+/// ADR 0116, D2: a join that says a proof follows is offered an incarnation that waits as long as
+/// it was given (`login_ms`), past `provisional_ms`, and that only an exchange carrying a person
+/// confirms: one without is told the offer waits, and takes nothing in. A repeat of the join is
+/// offered it again; a join of the same nonce that says no proof follows is another join. Red
+/// without it: an incarnation that acts for nobody before its person.
+pub fn an_offer_for_a_proof_is_confirmed_by_one_alone(harness: &impl MembershipHarness) {
+    let store = harness.handle();
+    let waiting = store
+        .offer_as(PHONE, "n1", Joining::Proof, 5_000, 100)
+        .expect("a join is answered");
+    assert_eq!(
+        waiting.expires_ms, 5_100,
+        "it waits as long as it was given"
+    );
+    assert_eq!(
+        store
+            .offer_as(PHONE, "n1", Joining::Proof, 5_000, 200)
+            .expect("a join is answered"),
+        waiting,
+        "a repeated join is offered it again"
+    );
+    assert_eq!(
+        admit(&store, PHONE, waiting.incarnation, 1, 2_000),
+        Admission::Unproved
+    );
+    assert_eq!(
+        held(&store, PHONE),
+        Membership {
+            member: None,
+            offer: Some(Offer {
+                incarnation: waiting.incarnation,
+                nonce: "n1".to_string(),
+                expires_ms: 5_100,
+                joining: Joining::Proof,
+            }),
+        },
+        "an exchange without a proof takes nothing in, and the offer stands"
+    );
+    let alice = delegation("alice", 50_000);
+    assert_eq!(
+        store
+            .admit_as(PHONE, waiting.incarnation, 1, Some(&alice), TERMS, 4_000)
+            .expect("an exchange is judged"),
+        Admission::Confirmed {
+            mark: 1,
+            ended: None
+        },
+        "the exchange that carries a person confirms it, within the time it was given"
+    );
+    assert_eq!(
+        held(&store, PHONE)
+            .member
+            .and_then(|member| member.delegation),
+        Some(alice)
+    );
+    let proved = store
+        .offer_as(OTHER, "n1", Joining::Proof, 5_000, 100)
+        .expect("a join is answered");
+    let plain = offer(&store, OTHER, "n1", 200);
+    assert_ne!(
+        plain.incarnation, proved.incarnation,
+        "a join that says no proof follows is another join"
     );
 }

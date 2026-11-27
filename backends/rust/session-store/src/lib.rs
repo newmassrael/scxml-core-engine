@@ -80,7 +80,8 @@
 //! ([`Write::under`]): [`MemoryStore`] in memory, and `SqliteStore` in the same file (layout 9),
 //! held to [`membership_conformance`]. Beside a member, the person its incarnation acts for (ADR
 //! 0116, D1 and D6; [`Delegation`]) until a moment no exchange moves, which a renewal moves and a
-//! revocation ends with the incarnation (layout 10).
+//! revocation ends with the incarnation (layout 10); and whether an offer waits for a proof of a
+//! person, which alone confirms it (layout 11).
 //!
 //! # Building the SQLite store
 //!
@@ -142,8 +143,8 @@ pub use journal::{
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};
 pub use membership::{
-    Admission, Delegation, Ended, Member, Membership, MembershipStore, NoMembership, Offer,
-    Offered, Person, PersonKey, Renewal, Revocation, Terms, Under,
+    Admission, Delegation, Ended, Joining, Member, Membership, MembershipStore, NoMembership,
+    Offer, Offered, Person, PersonKey, Renewal, Revocation, Terms, Under,
 };
 pub use memory::MemoryStore;
 pub use outbox::{

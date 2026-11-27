@@ -18,8 +18,8 @@ use sce_forge_runtime::cbor::{
     read_bytes, read_text, read_uint, write_array_head, write_bytes, write_text, write_uint,
 };
 use sce_rust_session_store::{
-    moment, Admission, Delegation, Ended, Failure, Member, Membership, MembershipStore, Offered,
-    Person, PersonKey, Renewal, Revocation, Terms,
+    moment, Admission, Delegation, Ended, Failure, Joining, Member, Membership, MembershipStore,
+    Offered, Person, PersonKey, Renewal, Revocation, Terms,
 };
 use zeroize::Zeroizing;
 
@@ -187,14 +187,15 @@ impl<S: MembershipStore> Sealed<S> {
 }
 
 impl<S: MembershipStore> MembershipStore for Sealed<S> {
-    fn offer(
+    fn offer_as(
         &self,
         member: &str,
         nonce: &str,
+        joining: Joining,
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Offered, Failure> {
-        self.inner.offer(member, nonce, ttl_ms, now_ms)
+        self.inner.offer_as(member, nonce, joining, ttl_ms, now_ms)
     }
 
     /// The person sealed for the incarnation it would bind, so that it opens for no other; the

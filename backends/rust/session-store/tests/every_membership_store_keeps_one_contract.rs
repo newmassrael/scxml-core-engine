@@ -22,6 +22,7 @@ macro_rules! kit {
                 no_member_is_taken_past_the_bound,
                 what_ran_out_is_swept_and_told,
                 a_batch_judges_each_write_by_its_own_incarnations,
+                an_offer_for_a_proof_is_confirmed_by_one_alone,
                 a_confirmation_binds_its_person_to_its_incarnation_alone,
                 a_delegation_ends_its_incarnation_at_until,
                 a_revocation_ends_what_it_names_in_one_write,

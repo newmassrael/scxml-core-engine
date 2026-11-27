@@ -19,8 +19,8 @@ use crate::journal::{
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::membership::judge::{self, Judged};
 use crate::membership::{
-    Admission, Delegation, Ended, Member, Membership, MembershipStore, Offer, Offered, PersonKey,
-    Renewal, Revocation, Terms,
+    Admission, Delegation, Ended, Joining, Member, Membership, MembershipStore, Offer, Offered,
+    PersonKey, Renewal, Revocation, Terms,
 };
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -657,10 +657,11 @@ impl SessionStore for MemoryStore {
 /// The members, kept beside the sessions so that a write made under an incarnation is judged
 /// against them under the one lock that is its transaction.
 impl MembershipStore for MemoryStore {
-    fn offer(
+    fn offer_as(
         &self,
         member: &str,
         nonce: &str,
+        joining: Joining,
         ttl_ms: u64,
         now_ms: u64,
     ) -> Result<Offered, Failure> {
@@ -668,7 +669,7 @@ impl MembershipStore for MemoryStore {
         if let Some(offer) = records
             .offers
             .get(member)
-            .filter(|offer| judge::offers_again(Some(*offer), nonce, now_ms))
+            .filter(|offer| judge::offers_again(Some(*offer), nonce, joining, now_ms))
         {
             return Ok(Offered {
                 incarnation: offer.incarnation,
@@ -685,6 +686,7 @@ impl MembershipStore for MemoryStore {
                 incarnation: offered.incarnation,
                 nonce: nonce.to_string(),
                 expires_ms: offered.expires_ms,
+                joining,
             },
         );
         Ok(offered)
