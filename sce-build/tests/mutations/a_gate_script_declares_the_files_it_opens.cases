@@ -109,7 +109,9 @@ PY
 
 mutation_case "the comments that explain a gate are read as its code" <<'PY'
 edit("tools/git-hooks/gate_registry.py",
+     '        for line in path.read_text(encoding="utf-8").splitlines()\n'
      '        if not line.lstrip().startswith("#")',
+     '        for line in path.read_text(encoding="utf-8").splitlines()\n'
      '        if not line.lstrip().startswith("# no such prefix")')
 PY
 
