@@ -25,7 +25,7 @@ use crate::generator::Language;
 use crate::{DocumentLabel, ForgeCompileOptions};
 
 /// The field table a cold codec's module prints, as a set reads it
-/// (`GeneratedOutput::field_tables`).
+/// (`GeneratedOutput::cold_codecs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetTable {
     /// The codec.
@@ -38,6 +38,181 @@ pub struct SetTable {
     /// What the table is: its rows and the numbers its write derives, as the
     /// `static` holds them, with no name of the codec's.
     pub rows: String,
+}
+
+/// What the generation of one cold codec of a set says of its table
+/// (docs/adr/0155 section 2): the table its module prints, or why it is
+/// printed, as the printers of docs/adr/0081 answer the forms they lower.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ColdCodec {
+    /// The codec is read by the runtime's one walker over this table.
+    Table(SetTable),
+    /// The codec is printed, for the reason `why`.
+    Printed {
+        /// The codec.
+        codec: String,
+        /// Why no table states it.
+        why: NotATable,
+    },
+}
+
+/// Why a cold codec is printed rather than read by a table of its fields
+/// (docs/adr/0155 section 2): its shape, or the first field no row states.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotATable {
+    /// The codec's shape is no table's.
+    Codec(CodecShape),
+    /// The field `field`, the first in wire order no row states, is of the
+    /// form `form`.
+    Field {
+        /// The field's id.
+        field: String,
+        /// What no row states of it.
+        form: UnstatedField,
+    },
+}
+
+/// A shape of a codec no table states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodecShape {
+    /// Its fields are at fixed offsets, read in place and by no stream.
+    FixedLayout,
+    /// It is not positional.
+    NotPositional,
+    /// It dispatches a variant.
+    Variant,
+    /// It has no field.
+    NoField,
+    /// It has more fields than a table has rows.
+    TooManyFields,
+    /// A gate group holds fields of it as one.
+    GateGroup,
+    /// A field has no context the generation states.
+    NoContext,
+}
+
+/// The form of a field no row of a table states.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnstatedField {
+    /// A gate group holds it.
+    HeldByGateGroup,
+    /// It is placed or measured by a form of its own: a DMA alignment, a
+    /// length's arithmetic, an embedded body's length, a quantity.
+    OwnForm,
+    /// It is no unsigned integer.
+    NotUnsigned,
+    /// The generation prints no read of it.
+    NoPrintedRead,
+    /// Its read refuses a value: a range, a conversion.
+    RefusesValue,
+    /// It is in the native byte order.
+    NativeOrder,
+    /// It is a number of a width no row reads.
+    NumberWidth {
+        /// Its width, as the document spells it.
+        bits: String,
+    },
+    /// It is counted, and is no byte string or text.
+    NotBytesOrText,
+    /// It is counted by no field.
+    CountedByNoField,
+    /// It is counted by no earlier number.
+    CountedByNoEarlierNumber,
+    /// It is gated otherwise than the number that counts it.
+    GatedOtherwiseThanCount,
+    /// Its length has no bound.
+    NoLengthBound,
+    /// It is held to a least length.
+    LeastLength,
+    /// It is a body whose read names the field `named`, which no number of a
+    /// row a body is handed states.
+    NamesUnstatedNumber {
+        /// The field the read names.
+        named: String,
+    },
+    /// It is a body whose read names more numbers than a row hands.
+    NamesTooManyNumbers,
+    /// It is the bytes left in the frame.
+    Tail,
+    /// It is a byte string or a text of a value no storage profile holds.
+    NoStorageProfile,
+    /// It is gated by several clauses.
+    SeveralClauses,
+    /// It is gated by no earlier carrier.
+    GatedByNoCarrier,
+    /// It is gated by a carrier a gate decides.
+    GatedByGatedCarrier,
+    /// It is gated by no flag of its carrier.
+    GatedByNoFlag,
+    /// It is gated by no input of the codec.
+    GatedByNoInput,
+    /// It is gated by the entries of a chain.
+    GatedByChain,
+}
+
+impl std::fmt::Display for NotATable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Codec(shape) => f.write_str(match shape {
+                CodecShape::FixedLayout => "the codec is read in place at fixed offsets",
+                CodecShape::NotPositional => "the codec is not positional",
+                CodecShape::Variant => "the codec dispatches a variant",
+                CodecShape::NoField => "the codec has no field",
+                CodecShape::TooManyFields => "the codec has more fields than a table has rows",
+                CodecShape::GateGroup => "a gate group holds fields of the codec as one",
+                CodecShape::NoContext => "a field has no context",
+            }),
+            Self::Field { field, form } => {
+                write!(f, "field '{field}' ")?;
+                match form {
+                    UnstatedField::HeldByGateGroup => f.write_str("is held by a gate group"),
+                    UnstatedField::OwnForm => f.write_str("has a form no row states"),
+                    UnstatedField::NotUnsigned => f.write_str("is no unsigned integer"),
+                    UnstatedField::NoPrintedRead => f.write_str("has no printed read"),
+                    UnstatedField::RefusesValue => {
+                        f.write_str("is read by a read that refuses a value")
+                    }
+                    UnstatedField::NativeOrder => f.write_str("is in the native byte order"),
+                    UnstatedField::NumberWidth { bits } => {
+                        write!(f, "is a number of {bits} bits no row reads")
+                    }
+                    UnstatedField::NotBytesOrText => f.write_str("is a length of no bytes or text"),
+                    UnstatedField::CountedByNoField => f.write_str("is counted by no field"),
+                    UnstatedField::CountedByNoEarlierNumber => {
+                        f.write_str("is counted by no earlier number")
+                    }
+                    UnstatedField::GatedOtherwiseThanCount => {
+                        f.write_str("is gated otherwise than its count")
+                    }
+                    UnstatedField::NoLengthBound => f.write_str("has no length bound"),
+                    UnstatedField::LeastLength => f.write_str("is held to a least length"),
+                    UnstatedField::NamesUnstatedNumber { named } => write!(
+                        f,
+                        "is read by a statement that names '{named}', which no number states"
+                    ),
+                    UnstatedField::NamesTooManyNumbers => f.write_str(
+                        "is read by a statement that names more numbers than a row hands",
+                    ),
+                    UnstatedField::Tail => f.write_str("is the bytes left in the frame"),
+                    UnstatedField::NoStorageProfile => f.write_str("is held by no storage profile"),
+                    UnstatedField::SeveralClauses => f.write_str("is gated by several clauses"),
+                    UnstatedField::GatedByNoCarrier => {
+                        f.write_str("is gated by no earlier carrier")
+                    }
+                    UnstatedField::GatedByGatedCarrier => {
+                        f.write_str("is gated by a carrier a gate decides")
+                    }
+                    UnstatedField::GatedByNoFlag => {
+                        f.write_str("is gated by no flag of its carrier")
+                    }
+                    UnstatedField::GatedByNoInput => {
+                        f.write_str("is gated by no input of the codec")
+                    }
+                    UnstatedField::GatedByChain => f.write_str("is gated by a chain's entries"),
+                }
+            }
+        }
+    }
 }
 
 /// Where the table of one cold codec of a set is written.
@@ -124,7 +299,15 @@ impl SharedTables {
             ) else {
                 continue;
             };
-            tables.extend(output.field_tables);
+            tables.extend(
+                output
+                    .cold_codecs
+                    .into_iter()
+                    .filter_map(|cold| match cold {
+                        ColdCodec::Table(table) => Some(table),
+                        ColdCodec::Printed { .. } => None,
+                    }),
+            );
         }
         Self::of(&tables)
     }

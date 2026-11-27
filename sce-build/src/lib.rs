@@ -2829,7 +2829,7 @@ fn emit_lifted_artifacts<D: variant_dialect::Dialect>(
         files,
         deps,
         requires,
-        field_tables: Vec::new(),
+        cold_codecs: Vec::new(),
     })
 }
 

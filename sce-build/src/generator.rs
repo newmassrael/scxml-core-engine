@@ -807,11 +807,13 @@ pub struct GeneratedOutput {
     /// child carried in line among them. Empty for a backend that states
     /// none, and for an output that holds no machine.
     pub requires: BTreeSet<RuntimeRequirement>,
-    /// Rust only: the field table of each cold codec this output prints
-    /// (docs/adr/0155), by which a set finds the codecs whose tables are one
-    /// table ([`crate::forge::shared_tables::SharedTables::of`]). Empty for
-    /// every other output.
-    pub field_tables: Vec<crate::forge::shared_tables::SetTable>,
+    /// Rust only: what each cold codec this output prints says of its table
+    /// (docs/adr/0155 section 2): the field table it prints, by which a set
+    /// finds the codecs whose tables are one table
+    /// ([`crate::forge::shared_tables::SharedTables::of`]), or why it is
+    /// printed. Empty for every other output, and for a build that names no
+    /// hot root.
+    pub cold_codecs: Vec<crate::forge::shared_tables::ColdCodec>,
 }
 
 /// What a generated machine needs linked beside it that the header-only

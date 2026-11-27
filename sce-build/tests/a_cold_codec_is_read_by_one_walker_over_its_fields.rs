@@ -12,6 +12,7 @@
 use std::path::PathBuf;
 
 use sce_build::forge::body_reads::{BodyReadSites, ColdCodecs, InlineDecode};
+use sce_build::forge::shared_tables::{CodecShape, ColdCodec, NotATable};
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -32,8 +33,8 @@ fn sites_of(documents: &[&str], views: bool) -> BodyReadSites {
     BodyReadSites::of_documents(&documents, &[], |_| views)
 }
 
-/// The Rust the codec `name` generates under `options`, every file joined.
-fn rust_with(name: &str, options: &ForgeCompileOptions) -> String {
+/// What the codec `name` generates for Rust under `options`.
+fn output_with(name: &str, options: &ForgeCompileOptions) -> sce_build::generator::GeneratedOutput {
     let path = resource_dir().join(format!("{name}.scxml"));
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()));
@@ -45,11 +46,16 @@ fn rust_with(name: &str, options: &ForgeCompileOptions) -> String {
         options,
     )
     .unwrap_or_else(|e| panic!("{name} generates for Rust: {e}"))
-    .files
-    .into_iter()
-    .map(|(_, code)| code)
-    .collect::<Vec<_>>()
-    .join("\n")
+}
+
+/// The Rust the codec `name` generates under `options`, every file joined.
+fn rust_with(name: &str, options: &ForgeCompileOptions) -> String {
+    output_with(name, options)
+        .files
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The lines of `code` that declare a public item or member.
@@ -222,4 +228,65 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
              cold codecs printed (views: {views})"
         );
     }
+}
+
+/// The generation of each cold codec of the set answers the table it prints or
+/// why it prints none (docs/adr/0155 section 2), and a hot codec answers
+/// nothing: with the put named hot, the delete, the query and the key
+/// expression are tables, and the request, which dispatches a variant, is not.
+#[test]
+fn every_cold_codec_says_its_table_or_why_it_has_none() {
+    let sites = sites_of(&["codec_zenoh_request.scxml"], false);
+    let hot = sites
+        .hot_codecs(["codec_zenoh_msg_put"])
+        .unwrap_or_else(|e| panic!("codec_zenoh_msg_put is a codec of the set: {e}"));
+    let named = ForgeCompileOptions {
+        inline_decode: InlineDecode::Codecs(hot.clone()),
+        body_reads: sites.clone(),
+        ..ForgeCompileOptions::default()
+    };
+    let mut said = std::collections::BTreeMap::new();
+    for name in SET {
+        let cold = output_with(name, &named).cold_codecs;
+        if hot.is_hot(name) {
+            assert!(cold.is_empty(), "the hot {name} says {cold:?}");
+            continue;
+        }
+        let [one] = cold.as_slice() else {
+            panic!("the cold {name} says other than one thing of its table: {cold:?}");
+        };
+        said.insert(name, one.clone());
+        // With its cold codecs printed, the build says nothing of a table.
+        let printed = ForgeCompileOptions {
+            cold_codecs: ColdCodecs::Printed,
+            ..named.clone()
+        };
+        assert!(
+            output_with(name, &printed).cold_codecs.is_empty(),
+            "the cold {name} says something of a table with its cold codecs printed"
+        );
+    }
+    for name in [
+        "codec_zenoh_msg_del",
+        "codec_zenoh_query",
+        "codec_zenoh_wireexpr",
+    ] {
+        assert!(
+            matches!(said.get(name), Some(ColdCodec::Table(table)) if table.codec == name),
+            "{name} is no table: {said:?}"
+        );
+    }
+    assert_eq!(
+        said.get("codec_zenoh_request"),
+        Some(&ColdCodec::Printed {
+            codec: "codec_zenoh_request".to_string(),
+            why: NotATable::Codec(CodecShape::Variant),
+        }),
+        "{said:?}"
+    );
+    assert_eq!(
+        said.len(),
+        4,
+        "the cold codecs of the set are other than the four: {said:?}"
+    );
 }

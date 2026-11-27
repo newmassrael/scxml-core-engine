@@ -14518,8 +14518,9 @@ fn body_read_attribute(every: bool, sites: u32) -> &'static str {
 
 /// The text of the codec `m` for `lang`. A Rust codec of a set whose cold
 /// codecs' tables are written where `set_tables` says (docs/adr/0155 section
-/// 4) hands back the table its module prints, if any, in `printed_table`, for
-/// the set to read; every other backend passes the default and prints none.
+/// 4) hands back, where it is cold, the table its module prints or why it
+/// prints none in `cold`, for the set to read; every other backend passes
+/// the default and prints none.
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -14527,7 +14528,7 @@ fn render_codec(
     lang: crate::generator::Language,
     forms: CodecForms,
     set_tables: &crate::forge::shared_tables::SharedTables,
-    printed_table: &mut Option<crate::forge::shared_tables::SetTable>,
+    cold: &mut Option<crate::forge::shared_tables::ColdCodec>,
 ) -> Result<String, ForgeError> {
     let CodecForms {
         owned_origin,
@@ -14542,6 +14543,20 @@ fn render_codec(
     // and judges it by nothing else (docs/adr/0077 §7, amendment of 2026-11-05),
     // so a list the protocol bounds by nothing needs no view, and a tree is
     // generated with or without views alike.
+    // docs/adr/0155 section 2: a codec that is not positional (a CBOR map, a
+    // content line) has no field a row reads; a cold one says so here, as it is
+    // rendered by its own module below.
+    if m.encoding != CodecEncoding::Positional
+        && matches!(lang, crate::generator::Language::Rust)
+        && body_read.cold
+    {
+        *cold = Some(crate::forge::shared_tables::ColdCodec::Printed {
+            codec: m.name.clone(),
+            why: crate::forge::shared_tables::NotATable::Codec(
+                crate::forge::shared_tables::CodecShape::NotPositional,
+            ),
+        });
+    }
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
@@ -16563,20 +16578,33 @@ fn render_codec(
     // row states, it is read by the runtime's one walker over a table of its
     // fields, and any other codec is printed as it is.
     // Its write is lowered over the same table with its source interface,
-    // below, and the table is printed with what that write derives.
-    let cold_table = if matches!(lang, crate::generator::Language::Rust)
-        && body_read.cold
-        && needs_streaming_path
-    {
-        let struct_name = filters::to_pascal_case(m.name.clone());
-        field_table::lower(&field_table::Input {
-            m,
-            stored: &stored,
-            wire: &wire,
-            struct_name: &struct_name,
-            owned: codec_self_borrowed(m, imports),
-        })
-        .ok()
+    // below, and the table is printed with what that write derives. A cold
+    // codec that is no table says why (section 2), which the set reads.
+    let cold_table = if matches!(lang, crate::generator::Language::Rust) && body_read.cold {
+        let lowered = if needs_streaming_path {
+            let struct_name = filters::to_pascal_case(m.name.clone());
+            field_table::lower(&field_table::Input {
+                m,
+                stored: &stored,
+                wire: &wire,
+                struct_name: &struct_name,
+                owned: codec_self_borrowed(m, imports),
+            })
+        } else {
+            Err(crate::forge::shared_tables::NotATable::Codec(
+                crate::forge::shared_tables::CodecShape::FixedLayout,
+            ))
+        };
+        match lowered {
+            Ok(table) => Some(table),
+            Err(why) => {
+                *cold = Some(crate::forge::shared_tables::ColdCodec::Printed {
+                    codec: m.name.clone(),
+                    why,
+                });
+                None
+            }
+        }
     } else {
         None
     };
@@ -17978,12 +18006,14 @@ fn render_codec(
                         "items": table.items(&rendered.derived, &home),
                     }),
                 );
-                *printed_table = Some(crate::forge::shared_tables::SetTable {
-                    codec: m.name.clone(),
-                    module: filters::to_snake_case(m.name.clone()),
-                    name: table.name.clone(),
-                    rows,
-                });
+                *cold = Some(crate::forge::shared_tables::ColdCodec::Table(
+                    crate::forge::shared_tables::SetTable {
+                        codec: m.name.clone(),
+                        module: filters::to_snake_case(m.name.clone()),
+                        name: table.name.clone(),
+                        rows,
+                    },
+                ));
             }
             ctx.insert("source_block".into(), rendered.text.into());
         }
@@ -30474,7 +30504,7 @@ pub fn generate_rust_with_imports_and_externs(
 
     // docs/adr/0155 section 4: the table a cold codec's module prints, which
     // the set reads to find the codecs whose tables are one.
-    let mut printed_table = None;
+    let mut cold_codec = None;
     let code = match doc {
         // Statechart documents flow through the SCXML pipeline
         // (`classify_document` routes `sce:kind="statechart"` to
@@ -30514,7 +30544,7 @@ pub fn generate_rust_with_imports_and_externs(
                     .with_cold_codecs(options.cold_codecs),
             },
             &options.shared_tables,
-            &mut printed_table,
+            &mut cold_codec,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -30639,7 +30669,7 @@ pub fn generate_rust_with_imports_and_externs(
     }
     Ok(GeneratedOutput {
         files,
-        field_tables: printed_table.into_iter().collect(),
+        cold_codecs: cold_codec.into_iter().collect(),
         ..Default::default()
     })
 }

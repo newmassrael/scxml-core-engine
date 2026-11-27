@@ -28,7 +28,7 @@ use crate::forge::model::{
     BitSize, CodecEncoding, CodecField, CodecModel, Endian, PresentIfPredicate, PresentIfScope,
     SceType,
 };
-use crate::forge::shared_tables::TableHome;
+use crate::forge::shared_tables::{CodecShape, NotATable, TableHome, UnstatedField};
 
 use super::{rust_storage_tag, to_upper_snake, RUNTIME_CODEC, STORAGE_PARAM};
 
@@ -347,30 +347,31 @@ fn reads_a_chain(gate: &PresentIfPredicate) -> bool {
 
 /// The gate of the field at `at`, a flag of an earlier carrier no gate decides
 /// or an input of the codec.
-fn gate_of(m: &CodecModel, at: usize, gate: Option<&PresentIfPredicate>) -> Result<Gate, String> {
+fn gate_of(
+    m: &CodecModel,
+    at: usize,
+    gate: Option<&PresentIfPredicate>,
+) -> Result<Gate, UnstatedField> {
     let Some(gate) = gate else {
         return Ok(Gate::Always);
     };
-    let field = &m.fields[at].id;
     if gate.or_with.is_some() {
-        return Err(format!("field '{field}' is gated by several clauses"));
+        return Err(UnstatedField::SeveralClauses);
     }
     let bits = match gate.scope {
         PresentIfScope::Local => {
             let carrier = m.fields[..at]
                 .iter()
                 .position(|f| f.id == gate.field_id)
-                .ok_or_else(|| format!("field '{field}' is gated by no earlier carrier"))?;
+                .ok_or(UnstatedField::GatedByNoCarrier)?;
             if m.fields[carrier].present_if.is_some() {
-                return Err(format!(
-                    "field '{field}' is gated by a carrier a gate decides"
-                ));
+                return Err(UnstatedField::GatedByGatedCarrier);
             }
             let flag = m.fields[carrier]
                 .flags
                 .iter()
                 .find(|flag| flag.name == gate.flag_name)
-                .ok_or_else(|| format!("field '{field}' is gated by no flag of its carrier"))?;
+                .ok_or(UnstatedField::GatedByNoFlag)?;
             Bits {
                 from: Place::Row(carrier),
                 shift: flag.bit,
@@ -382,16 +383,14 @@ fn gate_of(m: &CodecModel, at: usize, gate: Option<&PresentIfPredicate>) -> Resu
                 .flag_inputs
                 .iter()
                 .position(|input| input.name == gate.flag_name)
-                .ok_or_else(|| format!("field '{field}' is gated by no input of the codec"))?;
+                .ok_or(UnstatedField::GatedByNoInput)?;
             Bits {
                 from: Place::Input(input),
                 shift: 0,
                 width: Some(m.flag_inputs[input].width),
             }
         }
-        PresentIfScope::Chain => {
-            return Err(format!("field '{field}' is gated by a chain's entries"));
-        }
+        PresentIfScope::Chain => return Err(UnstatedField::GatedByChain),
     };
     Ok(if gate.negate {
         Gate::Clear(bits)
@@ -402,20 +401,16 @@ fn gate_of(m: &CodecModel, at: usize, gate: Option<&PresentIfPredicate>) -> Resu
 
 /// The row of a number: an unsigned integer of whole bytes, or a ZInt held to
 /// its type's width.
-fn number_row(m: &CodecModel, f: &CodecField, read: Option<&str>) -> Result<Kind, String> {
-    let (ty, width) =
-        unsigned(&f.sce_type).ok_or_else(|| format!("field '{}' is no unsigned integer", f.id))?;
+fn number_row(m: &CodecModel, f: &CodecField, read: Option<&str>) -> Result<Kind, UnstatedField> {
+    let (ty, width) = unsigned(&f.sce_type).ok_or(UnstatedField::NotUnsigned)?;
     // The printed read of a number refuses nothing but a short frame; a read
     // that refuses a value (a range, a conversion) is one no row states.
-    let read = read.ok_or_else(|| format!("field '{}' has no printed read", f.id))?;
+    let read = read.ok_or(UnstatedField::NoPrintedRead)?;
     if ["fail(", "settle(", "hold(", "ok_or("]
         .iter()
         .any(|refusal| read.contains(refusal))
     {
-        return Err(format!(
-            "field '{}' is read by a read that refuses a value",
-            f.id
-        ));
+        return Err(UnstatedField::RefusesValue);
     }
     match f.bit_size {
         BitSize::Fixed { bits } if bits == width && f.bit_offset.is_none() => {
@@ -423,9 +418,7 @@ fn number_row(m: &CodecModel, f: &CodecField, read: Option<&str>) -> Result<Kind
                 Endian::Big => true,
                 Endian::Little => false,
                 Endian::Native if bits == 8 => true,
-                Endian::Native => {
-                    return Err(format!("field '{}' is in the native byte order", f.id));
-                }
+                Endian::Native => return Err(UnstatedField::NativeOrder),
             };
             Ok(Kind::Uint {
                 bytes: bits / 8,
@@ -436,46 +429,41 @@ fn number_row(m: &CodecModel, f: &CodecField, read: Option<&str>) -> Result<Kind
         BitSize::Vle { width_bits } if width_bits == width && width_bits >= 16 => {
             Ok(Kind::Zint { bits: width, ty })
         }
-        _ => Err(format!(
-            "field '{}' is a number of {} bits no row reads",
-            f.id,
-            f.bit_size.as_attr()
-        )),
+        _ => Err(UnstatedField::NumberWidth {
+            bits: f.bit_size.as_attr(),
+        }),
     }
 }
 
 /// The row of a byte string or a text counted by an earlier number that the
 /// same gate decides.
-fn counted_row(m: &CodecModel, at: usize, rows: &[Row]) -> Result<Kind, String> {
+fn counted_row(m: &CodecModel, at: usize, rows: &[Row]) -> Result<Kind, UnstatedField> {
     let f = &m.fields[at];
     let text = match f.sce_type {
         SceType::String => true,
         SceType::Bytes => false,
-        _ => return Err(format!("field '{}' is a length of no bytes or text", f.id)),
+        _ => return Err(UnstatedField::NotBytesOrText),
     };
     let count = f
         .length_field
         .as_deref()
-        .ok_or_else(|| format!("field '{}' is counted by no field", f.id))?;
+        .ok_or(UnstatedField::CountedByNoField)?;
     let len = m.fields[..at]
         .iter()
         .position(|other| other.id == count)
-        .ok_or_else(|| format!("field '{}' is counted by no earlier number", f.id))?;
+        .ok_or(UnstatedField::CountedByNoEarlierNumber)?;
     if !matches!(rows[len].kind, Kind::Uint { .. } | Kind::Zint { .. }) {
-        return Err(format!("field '{}' is counted by no earlier number", f.id));
+        return Err(UnstatedField::CountedByNoEarlierNumber);
     }
     if m.fields[len].present_if != f.present_if {
-        return Err(format!(
-            "field '{}' is gated otherwise than its count",
-            f.id
-        ));
+        return Err(UnstatedField::GatedOtherwiseThanCount);
     }
     let bound = f
         .length_bound(&m.fields)
-        .ok_or_else(|| format!("field '{}' has no length bound", f.id))?;
+        .ok_or(UnstatedField::NoLengthBound)?;
     let (least, most) = bound.carried_range();
     if least.is_some_and(|least| least > 0) {
-        return Err(format!("field '{}' is held to a least length", f.id));
+        return Err(UnstatedField::LeastLength);
     }
     Ok(Kind::Counted {
         text,
@@ -486,11 +474,13 @@ fn counted_row(m: &CodecModel, at: usize, rows: &[Row]) -> Result<Kind, String> 
 
 /// The row of a body the value reads itself: the printed statement, gated by
 /// itself, handed each earlier number and input it names.
-fn body_row(m: &CodecModel, at: usize, rows: &[Row], said: &[Said<'_>]) -> Result<Kind, String> {
-    let f = &m.fields[at];
-    let statement = said[at]
-        .statement
-        .ok_or_else(|| format!("field '{}' has no printed read", f.id))?;
+fn body_row(
+    m: &CodecModel,
+    at: usize,
+    rows: &[Row],
+    said: &[Said<'_>],
+) -> Result<Kind, UnstatedField> {
+    let statement = said[at].statement.ok_or(UnstatedField::NoPrintedRead)?;
     let mut handed = Vec::new();
     for (row, earlier) in rows.iter().enumerate() {
         if !mentions(statement, said[row].local) {
@@ -499,11 +489,9 @@ fn body_row(m: &CodecModel, at: usize, rows: &[Row], said: &[Said<'_>]) -> Resul
         let ty = match (&earlier.kind, earlier.gate) {
             (Kind::Uint { ty, .. } | Kind::Zint { ty, .. }, Gate::Always) => *ty,
             _ => {
-                return Err(format!(
-                    "field '{}' is read by a statement that names '{}', which no number \
-                     states",
-                    f.id, m.fields[row].id
-                ));
+                return Err(UnstatedField::NamesUnstatedNumber {
+                    named: m.fields[row].id.clone(),
+                });
             }
         };
         handed.push(Handed {
@@ -523,10 +511,7 @@ fn body_row(m: &CodecModel, at: usize, rows: &[Row], said: &[Said<'_>]) -> Resul
         }
     }
     if handed.len() > ROW_INPUTS {
-        return Err(format!(
-            "field '{}' is read by a statement that names more than {ROW_INPUTS} numbers",
-            f.id
-        ));
+        return Err(UnstatedField::NamesTooManyNumbers);
     }
     Ok(Kind::Body {
         statement: statement.to_string(),
@@ -536,71 +521,94 @@ fn body_row(m: &CodecModel, at: usize, rows: &[Row], said: &[Said<'_>]) -> Resul
 
 /// The table of the codec `input.m`, read at a cold site, or why it is not
 /// one: the first field no row states, or the shape of the codec.
-pub(super) fn lower(input: &Input<'_>) -> Result<PrintedTable, String> {
+pub(super) fn lower(input: &Input<'_>) -> Result<PrintedTable, NotATable> {
     let m = input.m;
+    let shape =
+        |shape: CodecShape| -> Result<PrintedTable, NotATable> { Err(NotATable::Codec(shape)) };
     if m.encoding != CodecEncoding::Positional {
-        return Err("the codec is not positional".to_string());
+        return shape(CodecShape::NotPositional);
     }
     if m.variant.is_some() {
-        return Err("the codec dispatches a variant".to_string());
+        return shape(CodecShape::Variant);
     }
     if m.fields.is_empty() {
-        return Err("the codec has no field".to_string());
+        return shape(CodecShape::NoField);
     }
     if m.fields.len() > TABLE_ROWS {
-        return Err(format!("the codec has more than {TABLE_ROWS} fields"));
+        return shape(CodecShape::TooManyFields);
     }
     if input.wire.len() != m.fields.len() || input.stored.len() != m.fields.len() {
-        return Err("a gate group holds fields of the codec as one".to_string());
+        return shape(CodecShape::GateGroup);
     }
-    if m.fields
+    if let Some(f) = m
+        .fields
         .iter()
-        .filter_map(|f| f.present_if.as_ref())
-        .any(reads_a_chain)
+        .find(|f| f.present_if.as_ref().is_some_and(reads_a_chain))
     {
-        return Err("a gate reads the entries of a chain".to_string());
+        return Err(NotATable::Field {
+            field: f.id.clone(),
+            form: UnstatedField::GatedByChain,
+        });
     }
-    let said: Vec<Said<'_>> = input
+    let Some(said) = input
         .wire
         .iter()
         .map(Said::of)
-        .collect::<Option<_>>()
-        .ok_or_else(|| "a field has no context".to_string())?;
+        .collect::<Option<Vec<Said<'_>>>>()
+    else {
+        return shape(CodecShape::NoContext);
+    };
     let mut rows: Vec<Row> = Vec::with_capacity(m.fields.len());
     for (at, (f, stored)) in m.fields.iter().zip(input.stored).enumerate() {
-        if stored.get("assign_stmt").is_some() || stored.get("assign_expr").is_some() {
-            return Err(format!("field '{}' is held by a gate group", f.id));
-        }
-        if f.dma_burst_align.is_some()
-            || f.length_arith.is_some()
-            || f.embed_length_from.is_some()
-            || f.quantity.is_some()
-        {
-            return Err(format!("field '{}' has a form no row states", f.id));
-        }
-        let row = match f.bit_size {
-            BitSize::Fixed { .. } | BitSize::Vle { .. } => Row {
-                kind: number_row(m, f, said[at].read)?,
-                gate: gate_of(m, at, f.present_if.as_ref())?,
-            },
-            BitSize::LengthRef => Row {
-                kind: counted_row(m, at, &rows)?,
-                gate: gate_of(m, at, f.present_if.as_ref())?,
-            },
-            BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => Row {
-                kind: body_row(m, at, &rows, &said)?,
-                gate: Gate::Always,
-            },
-            BitSize::Tail => {
-                return Err(format!("field '{}' is the bytes left in the frame", f.id));
-            }
-        };
-        if matches!(row.kind, Kind::Counted { .. }) && !input.owned {
-            return Err(format!("field '{}' is held by no storage profile", f.id));
-        }
+        let row = row_of(input, at, stored, &rows, &said).map_err(|form| NotATable::Field {
+            field: f.id.clone(),
+            form,
+        })?;
         rows.push(row);
     }
     Ok(print(input, rows, &said))
+}
+
+/// The row of the field at `at`, held as `stored` says, after the rows
+/// `rows`, or what no row states of it.
+fn row_of(
+    input: &Input<'_>,
+    at: usize,
+    stored: &serde_json::Value,
+    rows: &[Row],
+    said: &[Said<'_>],
+) -> Result<Row, UnstatedField> {
+    let m = input.m;
+    let f = &m.fields[at];
+    if stored.get("assign_stmt").is_some() || stored.get("assign_expr").is_some() {
+        return Err(UnstatedField::HeldByGateGroup);
+    }
+    if f.dma_burst_align.is_some()
+        || f.length_arith.is_some()
+        || f.embed_length_from.is_some()
+        || f.quantity.is_some()
+    {
+        return Err(UnstatedField::OwnForm);
+    }
+    let row = match f.bit_size {
+        BitSize::Fixed { .. } | BitSize::Vle { .. } => Row {
+            kind: number_row(m, f, said[at].read)?,
+            gate: gate_of(m, at, f.present_if.as_ref())?,
+        },
+        BitSize::LengthRef => Row {
+            kind: counted_row(m, at, rows)?,
+            gate: gate_of(m, at, f.present_if.as_ref())?,
+        },
+        BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => Row {
+            kind: body_row(m, at, rows, said)?,
+            gate: Gate::Always,
+        },
+        BitSize::Tail => return Err(UnstatedField::Tail),
+    };
+    if matches!(row.kind, Kind::Counted { .. }) && !input.owned {
+        return Err(UnstatedField::NoStorageProfile);
+    }
+    Ok(row)
 }
 
 /// `if row == N { .. }` where one row has a store, a `match` otherwise.
@@ -992,7 +1000,7 @@ mod tests {
     }
 
     /// [`lower`] of `m`, each field read by `wire` and held as it is read.
-    fn lowered(m: &CodecModel, wire: &[serde_json::Value]) -> Result<PrintedTable, String> {
+    fn lowered(m: &CodecModel, wire: &[serde_json::Value]) -> Result<PrintedTable, NotATable> {
         lower(&Input {
             m,
             stored: wire,
@@ -1102,7 +1110,7 @@ mod tests {
     fn a_variant_is_no_table() {
         let m = codec("codec_zenoh_request");
         let why = lowered(&m, &[]).expect_err("a variant is no table");
-        assert!(why.contains("variant"), "{why}");
+        assert_eq!(why, NotATable::Codec(CodecShape::Variant), "{why}");
     }
 
     /// A body whose statement names a number a gate decides is no row: the
@@ -1146,7 +1154,16 @@ mod tests {
             ]),
         ];
         let why = lowered(&m, &wire).expect_err("a body names a gated number");
-        assert!(why.contains("consolidation"), "{why}");
+        assert_eq!(
+            why,
+            NotATable::Field {
+                field: "extensions".to_string(),
+                form: UnstatedField::NamesUnstatedNumber {
+                    named: "consolidation".to_string(),
+                },
+            },
+            "{why}"
+        );
     }
 
     /// The context of each field of `codec_present_if_string`: a carrier, and
