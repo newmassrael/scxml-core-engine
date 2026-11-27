@@ -23,14 +23,12 @@ publish = false
 # own server; `scripts/gate wasm32-scenarios` builds and runs it.
 
 # The wasm32 build is a cdylib the page loads; every other target builds the rlib, which is empty
-# there (`src/lib.rs`).
+# there (`src/lib.rs`) and depends on nothing.
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[dependencies]
-sce-rust-mesh = { path = "../mesh", default-features = false, features = ["alloc", "browser"] }
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+sce-rust-mesh = { path = "../mesh", default-features = false, features = ["alloc", "browser"] }
 # The version `Cargo.lock` holds is the one `wasm-bindgen-cli` must be: the generated glue and the
 # module are only compatible at the same version.
 wasm-bindgen = "0.2"
