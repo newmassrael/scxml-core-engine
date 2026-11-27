@@ -4732,6 +4732,13 @@ pub struct ForgeCompileOptions {
     /// every document of the set is generated with the same value. Empty (the
     /// default) writes each cold codec's table in its own module.
     pub shared_tables: forge::shared_tables::SharedTables,
+    /// Rust only: how a set whose build names its hot roots
+    /// ([`Self::inline_decode`]) generates the codecs outside their closure
+    /// (docs/adr/0155 section 1): by the tables of their fields (the default),
+    /// or printed, as what the tables are measured against. Like
+    /// [`Self::body_reads`] it is a property of a SET, and every document of
+    /// the set, and the census of its tables, is generated with the same value.
+    pub cold_codecs: forge::body_reads::ColdCodecs,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default

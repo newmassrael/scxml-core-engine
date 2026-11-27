@@ -30508,7 +30508,10 @@ pub fn generate_rust_with_imports_and_externs(
                 // serves every deployment, so the deploy input does not make it.
                 views: options.views,
                 inline_encode: options.inline_encode,
-                body_read: options.inline_decode.forms(&m.name, &options.body_reads),
+                body_read: options
+                    .inline_decode
+                    .forms(&m.name, &options.body_reads)
+                    .with_cold_codecs(options.cold_codecs),
             },
             &options.shared_tables,
             &mut printed_table,

@@ -455,6 +455,35 @@ pub struct BodyReadForms {
     pub entry: BodyReads,
 }
 
+impl BodyReadForms {
+    /// The forms of a body a build that names its hot roots generates its cold
+    /// codecs by `cold` (docs/adr/0155 section 1): a body that is not read on
+    /// the hot path is read by the walker over its table only where the build
+    /// asks for tables.
+    pub fn with_cold_codecs(self, cold: ColdCodecs) -> Self {
+        Self {
+            cold: self.cold && cold == ColdCodecs::Tables,
+            ..self
+        }
+    }
+}
+
+/// How a build that names its hot roots generates the codecs outside their
+/// closure (docs/adr/0155 section 1). A build that names none generates every
+/// codec printed whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ColdCodecs {
+    /// Each cold codec whose every field is of a kind a row states is read and
+    /// written by the runtime's one walker over the table of its fields. The
+    /// default.
+    #[default]
+    Tables,
+    /// Each cold codec is printed as a build that names its hot roots prints
+    /// it with no table (docs/adr/0140): the build the tables are measured
+    /// against, whose public declarations are the same text.
+    Printed,
+}
+
 /// Which body reads a build asks inlined (docs/adr/0136 section 4,
 /// docs/adr/0139, docs/adr/0140). Like `inline_encode` it is the build's
 /// declaration: what a build's hot path reads is a fact of its workload, and

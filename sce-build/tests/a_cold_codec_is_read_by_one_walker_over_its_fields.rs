@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use sce_build::forge::body_reads::{BodyReadSites, InlineDecode};
+use sce_build::forge::body_reads::{BodyReadSites, ColdCodecs, InlineDecode};
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -81,8 +81,9 @@ const SET: [&str; 11] = [
 /// With the put named hot, its closure is printed as before and calls no
 /// walker; the cold codecs whose fields are rows read by one call of the
 /// walker, and the request, which dispatches a variant, is printed as it is.
-/// Every codec declares what it declares with no codec named, and with no
-/// codec named none calls a walker.
+/// Every codec declares what it declares with the same codec named and its cold
+/// codecs printed, so the tables alone are measured, and neither that build nor
+/// one that names no codec calls a walker.
 #[test]
 fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
     for views in [false, true] {
@@ -96,6 +97,10 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
             body_reads: sites.clone(),
             ..ForgeCompileOptions::default()
         };
+        let printed = ForgeCompileOptions {
+            cold_codecs: ColdCodecs::Printed,
+            ..named.clone()
+        };
         let none = ForgeCompileOptions {
             views,
             body_reads: sites.clone(),
@@ -104,11 +109,16 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
         for name in SET {
             assert!(sites.holds(name), "{name} is no codec of the set");
             let code = rust_with(name, &named);
-            let plain = rust_with(name, &none);
+            let plain = rust_with(name, &printed);
+            let unnamed = rust_with(name, &none);
             for walker in WALKERS {
                 assert!(
                     !plain.contains(walker),
-                    "{name} calls `{walker}` with no codec named (views: {views}):\n{plain}"
+                    "{name} calls `{walker}` with its cold codecs printed (views: {views}):\n{plain}"
+                );
+                assert!(
+                    !unnamed.contains(walker),
+                    "{name} calls `{walker}` with no codec named (views: {views}):\n{unnamed}"
                 );
                 if hot.is_hot(name) {
                     assert!(
@@ -120,7 +130,7 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
             assert_eq!(
                 declarations(&code),
                 declarations(&plain),
-                "{name} declares otherwise with the put named hot (views: {views})"
+                "{name} declares otherwise by its table than printed (views: {views})"
             );
         }
         for (name, call) in [
@@ -207,9 +217,9 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
         );
         assert_eq!(
             rust_with("codec_zenoh_request", &named),
-            rust_with("codec_zenoh_request", &none),
-            "codec_zenoh_request dispatches a variant and is printed otherwise than with no \
-             codec named (views: {views})"
+            rust_with("codec_zenoh_request", &printed),
+            "codec_zenoh_request dispatches a variant and is printed otherwise than with its \
+             cold codecs printed (views: {views})"
         );
     }
 }
