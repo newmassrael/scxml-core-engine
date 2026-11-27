@@ -3243,6 +3243,12 @@ impl<P: StatePolicy> Engine<P> {
         // data (`EngineHost::bind_queued`).
         #[cfg(not(feature = "std"))]
         let _ = lent;
+        // docs/adr/0115, D4: the event step that takes this event names it by
+        // the name `_event.name` holds, the member's own unless a door resolved
+        // a longer one to it. An `error.execution` a door took in a delivery's
+        // place returned above and is named by its own.
+        #[cfg(feature = "trace-port")]
+        self.state.trace.taken_under(metadata.name.as_str());
         if external {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {

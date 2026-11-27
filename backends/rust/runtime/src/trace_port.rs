@@ -93,8 +93,11 @@ pub struct Fired {
 pub struct TraceStep {
     /// Which step.
     pub kind: StepKind,
-    /// The event an internal or external step took, by its name.
-    pub event: Option<&'static str>,
+    /// The event an internal or external step took, by the name `_event.name`
+    /// holds while it is taken: the whole name it was raised or sent under,
+    /// which is not the name of the event of the document it matched when a
+    /// door resolved a longer name, or one the document never writes, to it.
+    pub event: Option<String>,
     /// The transitions the step's microstep took, in the order they were
     /// selected.
     pub fired: Vec<Fired>,
@@ -109,7 +112,7 @@ pub struct TraceStep {
 }
 
 impl TraceStep {
-    fn opened(kind: StepKind, event: Option<&'static str>) -> TraceStep {
+    fn opened(kind: StepKind, event: Option<String>) -> TraceStep {
         TraceStep {
             kind,
             event,
@@ -135,7 +138,7 @@ impl TraceStep {
             StepKind::Eventless | StepKind::Internal | StepKind::External => {
                 if self.kind != StepKind::Eventless {
                     out.push_str(", \"event\": ");
-                    push_text(&mut out, self.event.unwrap_or_default());
+                    push_text(&mut out, self.event.as_deref().unwrap_or_default());
                 }
                 out.push_str(", \"fired\": [");
                 for (at, fired) in self.fired.iter().enumerate() {
@@ -239,6 +242,9 @@ pub(crate) type Port = Box<dyn FnMut(&TraceStep) + Send>;
 pub(crate) struct Recorder {
     port: Option<Port>,
     step: Option<TraceStep>,
+    /// The name the event being taken was taken under, when it is not its
+    /// member's own: what the event step it opens names.
+    taken: Option<String>,
 }
 
 impl Recorder {
@@ -247,6 +253,7 @@ impl Recorder {
         Recorder {
             port: None,
             step: None,
+            taken: None,
         }
     }
 
@@ -254,12 +261,23 @@ impl Recorder {
     pub(crate) fn set(&mut self, port: Port) {
         self.port = Some(port);
         self.step = None;
+        self.taken = None;
     }
 
     /// Tell no port anything.
     pub(crate) fn clear(&mut self) {
         self.port = None;
         self.step = None;
+        self.taken = None;
+    }
+
+    /// The event the engine is taking off a queue was taken under `name`
+    /// (`_event.name`), or under its member's own name when `name` is empty.
+    /// The next step opened, which is the event step that takes it, names it.
+    pub(crate) fn taken_under(&mut self, name: &str) {
+        if self.port.is_some() {
+            self.taken = (!name.is_empty()).then(|| name.to_string());
+        }
     }
 
     /// Whether a step is being told.
@@ -267,9 +285,14 @@ impl Recorder {
         self.step.is_some()
     }
 
-    /// Begin a step of `kind`, which took `event` when it is an event step.
+    /// Begin a step of `kind`, which took the event of member `event` when it
+    /// is an event step: named by the name it was taken under
+    /// ([`taken_under`](Self::taken_under)), or by the member's own when that
+    /// is the name. Whatever step it is, the name taken is spent.
     pub(crate) fn begin(&mut self, kind: StepKind, event: Option<&'static str>) {
+        let taken = self.taken.take();
         if self.port.is_some() {
+            let event = event.map(|member| taken.unwrap_or_else(|| member.to_string()));
             self.step = Some(TraceStep::opened(kind, event));
         }
     }
@@ -319,7 +342,7 @@ mod tests {
     fn step(kind: StepKind) -> TraceStep {
         TraceStep {
             kind,
-            event: Some("go.on"),
+            event: Some("go.on".to_string()),
             fired: vec![Fired {
                 source: "s0",
                 index: 2,
@@ -427,7 +450,7 @@ mod tests {
             vec![
                 TraceStep {
                     kind: StepKind::Internal,
-                    event: Some("e"),
+                    event: Some("e".to_string()),
                     fired: vec![Fired {
                         source: "s0",
                         index: 1
@@ -470,5 +493,47 @@ mod tests {
         assert!(!recorder.is_open());
         recorder.end(vec!["s0"], None);
         assert_eq!(*told.lock().expect("not poisoned"), 0);
+    }
+
+    /// An event step names the event by the name it was taken under, which a
+    /// door resolved to a shorter member (`request`), and by the member's own
+    /// when that is the name; the name taken is spent by the step that opens
+    /// next, so it names no later event.
+    #[test]
+    fn an_event_step_names_the_event_by_the_name_it_was_taken_under() {
+        let told: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+        let sink = Arc::clone(&told);
+        let mut recorder = Recorder::new();
+        recorder.taken_under("request.new");
+        recorder.begin(StepKind::External, Some("request"));
+        assert!(!recorder.is_open(), "with no port set nothing is kept");
+        recorder.set(Box::new(move |step: &TraceStep| {
+            sink.lock().expect("not poisoned").push(step.event.clone());
+        }));
+
+        recorder.taken_under("request.new");
+        recorder.begin(StepKind::External, Some("request"));
+        recorder.end(vec!["s2"], None);
+        recorder.begin(StepKind::Internal, Some("request"));
+        recorder.end(vec!["s3"], None);
+        recorder.taken_under("other.thing");
+        recorder.begin(StepKind::Eventless, None);
+        recorder.end(vec!["s3"], None);
+        recorder.begin(StepKind::Internal, Some("*"));
+        recorder.end(vec!["s4"], None);
+        recorder.taken_under("");
+        recorder.begin(StepKind::Internal, Some("request"));
+        recorder.end(vec!["s5"], None);
+
+        assert_eq!(
+            *told.lock().expect("not poisoned"),
+            vec![
+                Some("request.new".to_string()),
+                Some("request".to_string()),
+                None,
+                Some("*".to_string()),
+                Some("request".to_string()),
+            ]
+        );
     }
 }

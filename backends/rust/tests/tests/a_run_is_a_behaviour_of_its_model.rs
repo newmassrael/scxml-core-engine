@@ -113,6 +113,44 @@ fn a_run_of_test_403c_is_the_recorded_run_of_its_model() {
     holds_to_the_recorded_run("W3CTest403c", &trace);
 }
 
+/// An event step names its event by the name `_event.name` holds while it is
+/// taken, which the run trace format defines the field as: the whole name it
+/// was sent under, and not the event of the document a door resolved it to
+/// (`request`, or the wildcard). The document sends six events whose names it
+/// computes, three to its external queue and three to its internal one, as the
+/// C11 lane's `c11_integration_trace_port` holds of the same document.
+#[test]
+fn an_event_step_names_the_event_by_the_name_it_was_sent_under() {
+    use sce_rust_tests::integration::a_computed_event_name_is_matched_like_any_other::{
+        AComputedEventNameIsMatchedLikeAnyOtherPolicy, AComputedEventNameIsMatchedLikeAnyOtherState,
+    };
+    let (trace, ended) = run(AComputedEventNameIsMatchedLikeAnyOtherPolicy::new(
+        script_engine(),
+    ));
+    assert_eq!(
+        ended,
+        Some(AComputedEventNameIsMatchedLikeAnyOtherState::Pass)
+    );
+    starts_and_stops(&trace);
+    let events: Vec<(StepKind, Option<&str>)> = trace
+        .steps()
+        .iter()
+        .filter(|step| matches!(step.kind, StepKind::Internal | StepKind::External))
+        .map(|step| (step.kind, step.event.as_deref()))
+        .collect();
+    assert_eq!(
+        events,
+        vec![
+            (StepKind::External, Some("request.new")),
+            (StepKind::External, Some("other.thing")),
+            (StepKind::Internal, Some("request.again")),
+            (StepKind::Internal, Some("last.one")),
+            (StepKind::Internal, Some("request.third")),
+            (StepKind::External, Some("last.two")),
+        ]
+    );
+}
+
 /// A port set and then cleared is told nothing, and the run is the one an
 /// engine that never had one makes.
 #[test]

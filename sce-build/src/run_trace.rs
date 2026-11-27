@@ -23,8 +23,11 @@
 //! docs/adr/0089); `exited` and `entered` are the states in the order the step
 //! exited and entered them; `configuration` is the states active once it was
 //! over, a set; `event` is the name of the event an event step took off its
-//! queue; `outcome` is the top-level `<final>` a stop ended the run in, or
-//! `null`. They are AppendixD's record `told` and the variables
+//! queue, the one `_event.name` holds while it is taken: the whole name it was
+//! raised or sent under, never a descriptor that matched it, the event of the
+//! document a runtime resolved it to, nor the wildcard; `outcome` is the
+//! top-level `<final>` a stop ended the run in, or `null`. They are
+//! AppendixD's record `told` and the variables
 //! `configuration`, `currentEvent` and `outcome` after the step. An event step
 //! whose event selects nothing says so with no transition, no state exited and
 //! none entered. A macrostep is the steps from a `start` or an `external` step
@@ -89,7 +92,7 @@ pub enum Step {
     Eventless(Microstep),
     /// An event taken off the internal queue and what it selected.
     Internal {
-        /// The event's name.
+        /// The event's name, as `_event.name` holds it.
         event: String,
         /// The microstep it selected, which takes nothing when it selected
         /// nothing.
@@ -97,7 +100,7 @@ pub enum Step {
     },
     /// An event taken off the external queue and what it selected.
     External {
-        /// The event's name.
+        /// The event's name, as `_event.name` holds it.
         event: String,
         /// The microstep it selected, which takes nothing when it selected
         /// nothing.

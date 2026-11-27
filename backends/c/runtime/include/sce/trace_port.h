@@ -116,7 +116,9 @@ typedef struct sce_trace_fired_s {
  * host that keeps a step past it keeps its own copy. */
 typedef struct sce_trace_step_s {
     sce_trace_kind_t kind;
-    /* The name of the event an internal or external step took; NULL otherwise. */
+    /* The name of the event an internal or external step took, as `_event.name`
+     * holds it while it is taken: the whole name it was raised or sent under,
+     * not the event of the document a door resolved it to; NULL otherwise. */
     const char *event;
     /* The transitions the step's microstep took, in the order they were selected. */
     sce_trace_fired_t fired[SCE_TRACE_MAX_NAMES];
