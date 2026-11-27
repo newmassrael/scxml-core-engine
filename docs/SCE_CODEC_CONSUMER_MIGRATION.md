@@ -4270,3 +4270,30 @@ did, with `follows: Follows::NONE`.
 - **The build.** `mesh::topology::KeyedPool` has `follows` and `followed` (a literal adds both, empty), and
   `forge::journal::entry_record` answers the description an entry of an imported event is read by. A machine that
   follows a journal whose document has a top-level `<final>` is refused (`mesh/codegen-journal-mismatch`).
+
+## A buffer pool is lent: a run-time count and length, the caller's storage, an index across an interface (ADR 0111 D4)
+
+Landing: the commits that add this section. No committed generated tree changes; a consumer that generates a
+buffer pool regenerates it, and one that drives a generated pool by hand changes its calls as below.
+
+- **Rust.** Every transition takes `&self`: a call that passed `&mut pool` passes `&pool`. `pool_acquire_for_encode()`
+  is `pool_acquire_for_encode(len, headroom)` and `link_arm_rx()` is `link_arm_rx(len)`, each answering
+  `Result<Slot<_>, LendRefused>` where it answered `Option`; the pool's whole slot with no headroom is
+  `pool.pool_acquire_for_encode(pool.slot_len(), 0)`, refused only as `LendRefused::Exhausted`. `Slot::read` and
+  `Slot::write` hand out a slice of the lent length less its headroom, where they handed out `[u8; SLOT_SIZE]`.
+  `link_arm_tx(pool)` is `link_arm_tx(pool, frame)`, the bytes of the frame written, and answers
+  `Result<SlotIndex, Slot<CpuMut>>`. `Slot::idx() -> usize` is `Slot::index() -> SlotIndex`, whose `slot` is the
+  position `slot_state` and the position-keyed seam take. The pool type is `Pool<St = Owned>`: `Pool::new()` is a
+  `const fn` of every slot, and `Pool::with_count(count)` and `Pool::over(bytes, count, len)` make one of a run-time
+  count over its own storage or the caller's. `SlotIndex`, `into_index`, `reclaim`, `take_prefixed`, `lend`, `hold`,
+  `release` and `lent` are new. A `shared` pool on a target with no compare-and-swap needs the `critical-section`
+  crate.
+- **C11.** `<pool>_pool_acquire_for_encode()` is `<pool>_pool_acquire_for_encode(len, headroom)`,
+  `<pool>_link_arm_rx()` is `<pool>_link_arm_rx(len)` and `<pool>_link_arm_tx(&h)` is `<pool>_link_arm_tx(&h, frame)`;
+  `<pool>_slot_len()` and `<pool>_slot_capacity(&h)` give the lengths a caller passes and reads back. The state array
+  `<pool>_slot_states` is gone, and `<pool>_slot_state(i)` reads a slot's state. `<pool>_init`, `<pool>_init_over`,
+  `<pool>_slot_index_t`, `<pool>_slot_index`, `<pool>_into_index`, `<pool>_reclaim`, `<pool>_take_prefixed`,
+  `<pool>_lend`, `<pool>_hold`, `<pool>_release` and `<pool>_lent` are new. Defining `<POOL>_CALLER_STORAGE` before
+  the include drops the pool's own storage. A `shared` pool links the `sce_atomic_*` intrinsics, or
+  `_sce_critical_enter` and `_sce_critical_exit` on a target with no compare-and-swap.
+- A link's generated `send` takes its transmit pool by `&` (Rust) and lends at the pool's slot length.
