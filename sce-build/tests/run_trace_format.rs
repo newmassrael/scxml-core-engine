@@ -3,8 +3,8 @@
 
 //! The run trace form (docs/adr/0115, D4 and D8), held from both sides as the
 //! inbox history's is: the schema that documents the form accepts exactly the
-//! runs the reader accepts, and a run written by the reader's own writer reads
-//! back the same.
+//! runs the reader accepts, every recorded run this repository judges is one,
+//! and a run written by the reader's own writer reads back the same.
 
 use std::path::{Path, PathBuf};
 
@@ -27,6 +27,40 @@ fn validator() -> jsonschema::JSONSchema {
         .with_draft(jsonschema::Draft::Draft7)
         .compile(&schema)
         .expect("the schema compiles")
+}
+
+/// Every recorded run under `docs/formal/traces`.
+fn recorded() -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(repo_root().join("docs/formal/traces"))
+        .expect("the recorded runs exist")
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn every_recorded_run_is_a_run_trace() {
+    let files = recorded();
+    assert!(
+        files.len() >= 3,
+        "one recorded run per hand-written instance of AppendixD; {} here",
+        files.len()
+    );
+    let validator = validator();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("read the run");
+        let run = RunTrace::from_json(&text)
+            .unwrap_or_else(|e| panic!("{} is no run trace: {e}", file.display()));
+        assert!(!run.steps.is_empty());
+        let document: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        assert!(
+            validator.validate(&document).is_ok(),
+            "{} is refused by the schema",
+            file.display()
+        );
+    }
 }
 
 const START: &str = r#"{"kind": "start", "entered": ["s0"], "configuration": ["s0"]}"#;

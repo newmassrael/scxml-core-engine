@@ -23,8 +23,10 @@ description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 # reads one back, with the runtime's record codec (docs/adr/0109, D9). `log`:
 # the tests install `env_logger`, and the engine and the generated machines
 # write their diagnostics to it only with the facade (docs/adr/0053, amendment
-# of 2026-11-25).
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor", "log"] }
+# of 2026-11-25). `trace-port`: the tests that record a run of a W3C document
+# as the trace `sce-codegen formal traces` judges against the document's model
+# (docs/adr/0115, D4 and D8).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component", "record-cbor", "log", "trace-port"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
