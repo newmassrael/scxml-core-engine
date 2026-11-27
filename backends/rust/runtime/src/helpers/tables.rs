@@ -923,6 +923,42 @@ pub enum TablesFault {
 }
 
 impl DocumentTables<'_> {
+    /// Whether a machine of these tables takes the reactive turn
+    /// (docs/adr/0148) as far as its document decides it: the row walk (no
+    /// `<history>`, no `<parallel>`, no transition of more than one target), no
+    /// eventless transition (no state has a cell of the null event) and every
+    /// `<final>` a child of the `<scxml>` element, so no `done.state` event is
+    /// raised. The policy adds what its tables do not say
+    /// (`StatePolicy::REACTIVE_TURN`).
+    ///
+    /// A `const fn`, so the answer is a constant of the build that holds the
+    /// rows: a build whose rows leave out a gated transition is judged on the
+    /// rows it keeps.
+    pub const fn reactive_class(&self) -> bool {
+        if self.history.is_some() || self.parallel.is_some() {
+            return false;
+        }
+        let Some(candidates) = &self.candidates else {
+            return false;
+        };
+        let mut cell = 0;
+        while cell < candidates.cells.len() {
+            if candidates.cells[cell].event().0 == self.null_event.0 {
+                return false;
+            }
+            cell += 1;
+        }
+        let mut state = 0;
+        while state < self.states.len() {
+            let row = &self.states[state];
+            if matches!(row.kind(), StateKind::Final) && row.parent().is_some() {
+                return false;
+            }
+            state += 1;
+        }
+        true
+    }
+
     /// The row of `state`.
     ///
     /// The procedures read a row at almost every step, and each read is

@@ -3060,13 +3060,20 @@ impl<P: StatePolicy> Engine<P> {
         let mut workspace = <P::Workspace as Buffers>::EMPTY;
         let (enabled, scratch) = workspace.split();
         let host: &mut dyn MainLoop = &mut EngineHost::new(self, lend);
-        Turn {
+        let mut turn = Turn {
             host,
             tables: P::TABLES,
             enabled,
             scratch,
+        };
+        // A constant of the policy, so each machine links one of the two
+        // bodies and a program whose machines are all of the class links no
+        // general turn (docs/adr/0148).
+        if P::REACTIVE_TURN {
+            turn.run_reactive(initial);
+        } else {
+            turn.run(initial);
         }
-        .run(initial);
     }
 
     /// Bind the event `queued`, just taken off the internal queue or (when
@@ -6613,6 +6620,65 @@ impl Turn<'_> {
         // taken off the external queue — so an `autoforward` child is live for
         // every event `<onentry>` queued on the way in.
         self.run_main_event_loop();
+    }
+
+    /// One turn of a machine of the reactive class (docs/adr/0148): the entry
+    /// into the initial configuration first when `initial`, then each external
+    /// event the queue holds, within the call's budget, taken and answered by
+    /// the one microstep it selects, until the run ends or the queue is empty.
+    ///
+    /// Appendix D's main event loop for a document in which its other steps
+    /// have nothing to do: the class has no eventless transition, so
+    /// selectEventlessTransitions answers nothing; its internal queue is
+    /// proven empty, so the inner loop's dequeue never runs; it invokes
+    /// nothing, so no invocation starts; and it has no `<finalize>` or
+    /// autoforward. What is left is the order the general turn keeps for this
+    /// class: what other threads posted is applied, one external event is
+    /// taken, and its microstep is taken before the next. A build with debug
+    /// assertions checks after each step that the internal queue is still
+    /// empty, which is what the proof says.
+    ///
+    /// Out of line, one body for every reactive machine of a program, as
+    /// [`run`](Self::run) is for the others.
+    #[inline(never)]
+    fn run_reactive(&mut self, initial: bool) {
+        if initial {
+            self.enter_initial_configuration();
+        }
+        let mut taken: u32 = 0;
+        loop {
+            debug_assert!(
+                !self.host.queue(false).has_events(),
+                "a machine of the reactive class raised an internal event: its internal queue bound is wrong"
+            );
+            if !self.loop_state().goes_on() {
+                // §scxml-D-exitInterpreter: the run entered a top-level final.
+                self.end_run();
+                break;
+            }
+            // docs/adr/0084: what other threads posted joins the external queue
+            // here, at the macrostep's boundary, as in the general turn.
+            #[cfg(any(feature = "std", feature = "bounded-inbox"))]
+            self.host.drain_inbox();
+            if !self.host.queue(true).has_events() {
+                break;
+            }
+            if taken >= self.loop_state().max_external_events_per_call {
+                #[cfg(feature = "macrostep-diagnostics")]
+                self.report_truncated_event_chain();
+                break;
+            }
+            taken += 1;
+            match self.take_external_event() {
+                ExternalEvent::Empty => break,
+                #[cfg(feature = "std")]
+                ExternalEvent::Refused => {}
+                ExternalEvent::Taken(event) => {
+                    let outcome = self.take_event(event.event);
+                    self.end_external_event(event, outcome);
+                }
+            }
+        }
     }
 
     /// §scxml-D-interpret: enterStates([doc.initialTransition]) — the

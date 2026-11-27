@@ -288,6 +288,15 @@ pub(crate) fn decide(standing: &Standing<'_>, event: &Event<'_>) -> Answer {
 
 #[cfg(test)]
 mod tests {
+    // The machine is of the reactive class (docs/adr/0148): its tables have
+    // no eventless transition and no nested `<final>`, its internal queue is
+    // proven empty and it invokes nothing, so each of its turns is the
+    // reactive turn. Held when the tests are compiled.
+    const _: () = assert!(
+        <super::RequestLifePolicy as sce_rust_runtime::StatePolicy>::REACTIVE_TURN,
+        "the machine is of the reactive class"
+    );
+
     use super::*;
 
     const T0: u64 = 1_000;

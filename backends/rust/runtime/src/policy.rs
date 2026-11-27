@@ -455,6 +455,29 @@ pub trait StatePolicy: Sized + 'static {
     /// `<invoke>`.
     const HAS_HOST_INVOKES: bool = true;
 
+    /// Whether this machine's turns are reactive (docs/adr/0148): each takes an
+    /// external event, selects from its state's cells and takes the one
+    /// microstep it selects, with no eventless selection, no internal queue,
+    /// no invocation to start and no `<finalize>` or autoforward step, which
+    /// for a machine of this class are steps with nothing to do. A program
+    /// whose machines all take the reactive turn links none of the general
+    /// turn's macrostep completion.
+    ///
+    /// Derived, never written: the document's tables say what they decide
+    /// ([`DocumentTables::reactive_class`](crate::helpers::tables::DocumentTables::reactive_class)),
+    /// and the policy adds what they do not: an internal queue the generator
+    /// proved empty, which it proves only where no executable content can
+    /// raise an event or a platform error (§scxml-5.10), and no invocation of
+    /// any kind. A policy written by hand proves no internal bound, so it
+    /// takes the general turn.
+    const REACTIVE_TURN: bool = Self::TABLES.reactive_class()
+        && matches!(Self::INTERNAL_QUEUE_BOUND, Some(0))
+        && !Self::HAS_INVOKE_SUPPORT
+        && !Self::HAS_HOST_INVOKES
+        && !Self::HAS_FINALIZE
+        && !Self::HAS_AUTOFORWARD
+        && !Self::HAS_CHILD_TICK;
+
     // ──────────────────────────────────────────────
     // Static metadata methods (C++ `constexpr static`)
     //

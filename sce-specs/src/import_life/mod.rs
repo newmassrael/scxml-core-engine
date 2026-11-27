@@ -166,6 +166,15 @@ pub(crate) fn decide(state: ProposalState, event: &Event) -> Answer {
 
 #[cfg(test)]
 mod tests {
+    // The machine is of the reactive class (docs/adr/0148): its tables have
+    // no eventless transition and no nested `<final>`, its internal queue is
+    // proven empty and it invokes nothing, so each of its turns is the
+    // reactive turn. Held when the tests are compiled.
+    const _: () = assert!(
+        <super::ImportLifePolicy as sce_rust_runtime::StatePolicy>::REACTIVE_TURN,
+        "the machine is of the reactive class"
+    );
+
     use super::*;
     use ProposalState::{Accepted, Pending, Rejected, Superseded};
 

@@ -5882,6 +5882,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "platformError",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "REACTIVE_TURN",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -17087,6 +17092,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "EngineCore",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "run_reactive",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

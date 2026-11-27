@@ -302,12 +302,15 @@ impl Runner<'_> {
 }
 
 /// `events` run over `tables`, from the initial configuration to the
-/// interpreter's exit.
+/// interpreter's exit: by Appendix D's loop, or, `reactive`, by the reactive
+/// turn's (docs/adr/0148), which takes each external event's microstep and no
+/// other.
 fn run(
     tables: &rt::DocumentTables<'static>,
     doc: &DocumentTables,
     hooks: &Hooks,
     events: &[u16],
+    reactive: bool,
 ) -> Run {
     let states = doc.states.len();
     let mut runner = Runner {
@@ -320,12 +323,12 @@ fn run(
     let null_event = tables.null_event.0;
     let entered =
         enter_initial_configuration(tables, &mut runner.machine, runner.buffers.scratch());
-    let mut ended = runner.record(entered) || runner.complete(null_event);
+    let mut ended = runner.record(entered) || (!reactive && runner.complete(null_event));
     for &event in events {
         if ended {
             break;
         }
-        ended = runner.take(event).unwrap_or(false) || runner.complete(null_event);
+        ended = runner.take(event).unwrap_or(false) || (!reactive && runner.complete(null_event));
     }
     exit_interpreter(&mut runner.machine);
     let exited = runner.machine.active(states);
@@ -364,6 +367,7 @@ fn every_document_of_the_class_runs_on_the_class_walker_as_on_the_general_interp
     let corpus = common::repository::files_git_tracks(&["*.scxml"]);
     let (mut documents, mut consumer_shaped) = (0usize, 0usize);
     let (mut microsteps, mut guards, mut raised, mut ended) = (0usize, 0usize, 0usize, 0usize);
+    let (mut reactive_documents, mut reactive_runs) = (0usize, 0usize);
     for path in &corpus {
         let Some(model) = runtime_tables::generatable(path) else {
             continue;
@@ -381,6 +385,16 @@ fn every_document_of_the_class_runs_on_the_class_walker_as_on_the_general_interp
         let class = runtime_tables::row_walk(&doc, &paths, &selection, null_event);
         assert_eq!(general.check(), Ok(()), "{name}: the general walk's tables");
         assert_eq!(class.check(), Ok(()), "{name}: the class walker's tables");
+        // docs/adr/0148: the tables' answer is the document's, read here from
+        // the model: no eventless transition, and every <final> a child of the
+        // <scxml> element (the row walk is the class already).
+        let reactive = class.reactive_class();
+        let by_model = model.states.values().all(|state| {
+            state.transitions.iter().all(|t| !t.event.trim().is_empty())
+                && (!state.is_final || state.parent.is_none())
+        });
+        assert_eq!(reactive, by_model, "{name}: the tables' reactive class");
+        reactive_documents += usize::from(reactive);
         let raises = done_state_events(&doc, &names);
         raised += raises.iter().flatten().count();
         for seed in 1..=SEEDS {
@@ -397,13 +411,24 @@ fn every_document_of_the_class_runs_on_the_class_walker_as_on_the_general_interp
             } else {
                 (0..EVENTS).map(|_| rng.below(names.len()) as u16).collect()
             };
-            let on_general = run(&general, &doc, &hooks, &events);
-            let on_class = run(&class, &doc, &hooks, &events);
+            let on_general = run(&general, &doc, &hooks, &events, false);
+            let on_class = run(&class, &doc, &hooks, &events, false);
             assert_eq!(
                 on_class, on_general,
                 "{name}, seed {seed}: the class walker and the general interpreter \
                  disagree over the events {events:?}"
             );
+            // docs/adr/0148: a document of the reactive class runs on the
+            // reactive turn as Appendix D's loop runs it.
+            if reactive {
+                let on_reactive = run(&class, &doc, &hooks, &events, true);
+                assert_eq!(
+                    on_reactive, on_general,
+                    "{name}, seed {seed}: the reactive turn and the general loop \
+                     disagree over the events {events:?}"
+                );
+                reactive_runs += 1;
+            }
             microsteps += on_general.steps.len();
             guards += on_general
                 .journal
@@ -433,4 +458,9 @@ fn every_document_of_the_class_runs_on_the_class_walker_as_on_the_general_interp
     assert!(raised >= 1, "{raised} states raise done.state on entry");
     assert!(ended >= 10, "{ended} runs ended in a top-level <final>");
     assert!(corpus.len() >= 1000, "walked {} documents", corpus.len());
+    // The reactive turn was held to the general loop over real documents.
+    assert!(
+        reactive_documents >= 10 && reactive_runs >= 60,
+        "{reactive_documents} documents of the reactive class, {reactive_runs} runs"
+    );
 }
