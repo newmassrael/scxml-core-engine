@@ -1391,6 +1391,114 @@
       "decision": "SCE_MESH.md section 10.6",
       "abstract": true,
       "runs": []
+    },
+    {
+      "module": "OrderingBuffer",
+      "decision": "SCE_MESH.md section 10.6",
+      "parts": {
+        "DropBehind": "TRUE",
+        "HoldAhead": "TRUE",
+        "Drain": "TRUE",
+        "OldestFirst": "TRUE",
+        "TimeoutGap": "TRUE",
+        "FirstArrival": "TRUE",
+        "WaitWhenDurable": "TRUE",
+        "AnchorDurable": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "OrderService",
+      "progress": [
+        "Released"
+      ],
+      "possible": [
+        "Idle"
+      ],
+      "runs": [
+        {
+          "config": "OrderingBuffer.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "OrderingBuffer_durable.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "OrderingBuffer_live.cfg",
+          "expect": "holds",
+          "possible": "Idle"
+        },
+        {
+          "config": "OrderingBuffer_live_durable.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "OrderingBuffer_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Released",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "time and the host's tick are what end a gap; the promise of the stream is safety and needs none"
+        },
+        {
+          "config": "OrderingBuffer_without_drop_behind.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "DropBehind",
+          "promise": "broken"
+        },
+        {
+          "config": "OrderingBuffer_without_hold_ahead.cfg",
+          "expect": "violates",
+          "invariant": "InOrder",
+          "without": "HoldAhead",
+          "promise": "broken"
+        },
+        {
+          "config": "OrderingBuffer_without_oldest_first.cfg",
+          "expect": "violates",
+          "invariant": "LostUnseen",
+          "without": "OldestFirst",
+          "promise": "broken"
+        },
+        {
+          "config": "OrderingBuffer_without_timeout.cfg",
+          "expect": "violates",
+          "possible": "Idle",
+          "without": "TimeoutGap",
+          "promise": "kept",
+          "why": "a gap that never ends gives the machine nothing out of order and tells it nothing false; what came after it is held for good, which is progress's"
+        },
+        {
+          "config": "OrderingBuffer_without_drain.cfg",
+          "expect": "violates",
+          "property": "Released",
+          "without": "Drain",
+          "promise": "kept",
+          "why": "what a release leaves held is given to the machine out of order never: it waits, and the promise asks no envelope to be given"
+        },
+        {
+          "config": "OrderingBuffer_without_first_arrival.cfg",
+          "expect": "violates",
+          "property": "Released",
+          "without": "FirstArrival",
+          "promise": "kept",
+          "why": "a wait started again only puts off the end of a gap: nothing is given out of order, and nothing that arrived is told lost"
+        },
+        {
+          "config": "OrderingBuffer_durable_without_wait.cfg",
+          "expect": "violates",
+          "invariant": "NoneTold",
+          "without": "WaitWhenDurable",
+          "promise": "broken"
+        },
+        {
+          "config": "OrderingBuffer_durable_without_anchor.cfg",
+          "expect": "violates",
+          "invariant": "FromFirst",
+          "without": "AnchorDurable",
+          "promise": "broken"
+        }
+      ]
     }
   ]
 }

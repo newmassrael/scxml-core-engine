@@ -8,8 +8,8 @@ this file says what is here and how to read it.
 
 | Level (ADR 0115) | Here | Built |
 |---|---|---|
-| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`: what a user may rely on, no mechanism; `CheckpointService.tla`: two of them over one server, and what ties them | yes, for five protocols and the composition of two |
-| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla`, `EngineInbox.tla` and `CheckpointWrite.tla` | yes, for five protocols and the composition of two |
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`, `OrderService.tla`: what a user may rely on, no mechanism; `CheckpointService.tla`: two of them over one server, and what ties them | yes, for six protocols and the composition of two |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla`, `EngineInbox.tla`, `OrderingBuffer.tla` and `CheckpointWrite.tla` | yes, for six protocols and the composition of two |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
@@ -31,6 +31,7 @@ this file says what is here and how to read it.
 | `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
 | `InboxService`, `EngineInbox` | ADR 0084 and ADR 0147, the one door of every runtime: an inbox per session, the drain at the boundary and before an event of the owner's own, the address resolved when posted, a post refused when posted (a session the tree does not hold, an ended one, a full inbox) |
 | `SessionPool` | ADR 0115 D13 and ADR 0109 D1, a pool of sessions in one process: who holds the table, an inbox and a session's live lock, and when; a post and a removal under the table, an eviction that reads the inbox again, the bounds, a stop set and read under the table |
+| `OrderService`, `OrderingBuffer` | SCE_MESH.md section 10.6, the receive half's order of one sender's stream (`backends/rust/mesh/src/inbound.rs`): an envelope held ahead of its number, the release of what follows on, a gap told lost once it has waited, and a durable stream, which is anchored at its first number and never told a gap |
 | `CheckpointService`, `CheckpointWrite` | ADR 0115 D12, the composition: `OpenInstances` and `EventJournal` over the one write in which a session's state, its outbox, its journal and a member's records are made durable together, and the time a lease is judged by |
 | `AppendixD`, `W3CTest388`, `W3CTest570`, `W3CTest403c` | ADR 0115 D7, the SCXML recommendation's Appendix D over a document's tables, and three documents of the W3C corpus over it: history recorded and restored, the done events of a parallel state's regions and of the state, the removal of conflicting transitions |
 
