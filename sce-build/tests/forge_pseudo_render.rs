@@ -21,11 +21,12 @@ use sce_build::forge::model::{
     EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument,
     ForgeField, InboxConfig, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
     LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
-    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
-    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
-    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
-    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvEntryFlagBind, TlvEntryId,
-    TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
+    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PoolSharing, PresentIfPredicate,
+    PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
+    ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule,
+    ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor, TimerModel,
+    TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, TransformModel, ValidatorModel,
+    ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::forge::value_type::{Bound, ValueType};
@@ -1235,6 +1236,7 @@ fn each_mcu_kind_renders_every_field_it_can_carry() {
         alignment: 32,
         dma_channel: Some("ch3".to_string()),
         cache_policy: CachePolicy::NonCacheable,
+        sharing: PoolSharing::Shared,
         variant: BufferPoolVariant::Reassembly(ReassemblyConfig {
             max_fragments_per_message: 4,
             reassembly_timeout_ms: 500,
@@ -1245,7 +1247,7 @@ fn each_mcu_kind_renders_every_field_it_can_carry() {
     assert_eq!(
         render(&ForgeDocument::BufferPool(bp)).unwrap(),
         "buffer-pool pool slots 8 size 256 section sram1 align 32 \
-         cache non-cacheable dma ch3\n  \
+         cache non-cacheable dma ch3 sharing shared\n  \
          reassembly max-fragments 4 timeout 500ms per-peer-quota 2\n"
     );
 

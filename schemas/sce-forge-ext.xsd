@@ -2583,6 +2583,29 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    ADR 0111 D4: who moves a buffer-pool's slots. `owner` (the default,
+    when the element is absent): whoever holds the drive uses the pool
+    alone, and the state book is plain cells. `shared`: a driver context
+    (another thread, an interrupt) moves slots too, and each transition is
+    a compare-and-swap, or runs inside the deployment's critical section
+    on a target with no compare-and-swap.
+  -->
+  <xs:simpleType name="poolSharingType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="owner"/>
+      <xs:enumeration value="shared"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="sharing">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="sce:poolSharingType"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
   <!-- ═══════════════════════════════════════════════════════════════
        RFC §synth-5-M reassembly-variant buffer-pool fields (item C9)
 

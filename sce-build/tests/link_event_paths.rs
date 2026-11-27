@@ -169,10 +169,10 @@ fn rust_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
         generate(OUTBOUND_THROUGH_POOL, Language::Rust).expect("rust link with a transmit pool");
     assert_has(
         &body,
-        "pub fn send(&mut self, tx_pool: &mut super::scout_tx_pool::ScoutTxPool, event: &UdpScoutOutbound)",
+        "pub fn send(&mut self, tx_pool: &super::scout_tx_pool::ScoutTxPool, event: &UdpScoutOutbound)",
     );
-    assert_has(&body, ".pool_acquire_for_encode()");
-    assert_has(&body, ".ok_or(UdpScoutSendError::PoolExhausted)?;");
+    assert_has(&body, ".pool_acquire_for_encode(tx_pool.slot_len(), 0)");
+    assert_has(&body, ".map_err(|_| UdpScoutSendError::PoolExhausted)?;");
     assert_has(&body, "SliceSink::new(&mut slot.write(tx_pool)[..])");
     assert_has(&body, "slot.pool_return(tx_pool);");
 }
