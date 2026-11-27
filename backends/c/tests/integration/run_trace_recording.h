@@ -17,6 +17,11 @@
 // steps no choice, so the two recorded runs differ only in their lane, or the
 // judge refuses one.
 //
+// The replay of a scenario (test_a_scenario_of_the_turnstile_is_its_run.c)
+// records its runs with the same functions, `SCE_FORMAL_TRACES_DIR` naming the
+// directory of its scenarios; a scenario's run ends where the model's did, in
+// no final state, so it holds none to `run_trace_starts_and_stops_in_pass`.
+//
 // Recording again, after a change that moves a run on purpose:
 //   UPDATE_EXPECT=1 ctest -R c11_a_run_of_test_
 // then `sce-codegen formal traces --manifest docs/formal/traces.json`, and read
@@ -75,8 +80,10 @@ static void run_trace_told(const sce_trace_step_t *step) {
 }
 
 // The run starts, ends in `pass`, and the interpreter's exit leaves that state
-// alone: the first and the last step a recorded run must hold. 0 when it does.
-static int run_trace_starts_and_stops_in_pass(void) {
+// alone: the first and the last step a recorded run of a W3C document must hold.
+// 0 when it does. Inline, so a driver that holds no run to it is not warned of
+// it.
+static inline int run_trace_starts_and_stops_in_pass(void) {
     int bad = 0;
     if (run_trace_count == 0u || run_trace_first_kind != SCE_TRACE_START) {
         (void)fprintf(stderr, "run trace: FAIL - the run does not begin with a start step\n");

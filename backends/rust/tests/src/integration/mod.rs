@@ -49,6 +49,12 @@
 //! values are typed, which the script-engine fixture of that ADR
 //! (`a_child_takes_a_handed_value_in_place_of_its_data`, a stem of every
 //! channel) does not reach. It lives at `tests/integration/<stem>.scxml`.
+//!
+//! `formal_turnstile` is the sixth: the machine of the properties judge's
+//! fixture (`sce-build/tests/fixtures/formal_properties/turnstile.scxml`,
+//! docs/adr/0115, D15), through which `tests/a_scenario_of_the_turnstile_is_its_run.rs`
+//! replays each scenario TLC gives of it. It belongs to that fixture and to
+//! no channel contract.
 
 // One module per directory the trees placed under src/integration, each read
 // from its `mod.rs` in OUT_DIR: `#[path]` cannot take `env!("OUT_DIR")`, so

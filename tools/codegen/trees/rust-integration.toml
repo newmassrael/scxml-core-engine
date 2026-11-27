@@ -166,6 +166,16 @@ arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_sta
 place = "backends/rust/tests/src/integration/host_processor"
 keep = ["*_sm.rs"]
 
+# The turnstile of the properties judge's fixture (docs/adr/0115, D15): each
+# scenario TLC gives of it, a violation or a witness, is replayed through this
+# machine by tests/a_scenario_of_the_turnstile_is_its_run.rs, the twin of the
+# C11 lane's test of the same name. It is the formal fixture's document, which
+# no channel contract of integration_resources holds.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/formal_properties/turnstile.scxml", "-l", "rust", "-o", "{out}"]
+place = "backends/rust/tests/src/integration/formal_turnstile"
+keep = ["*.rs"]
+
 # Each directory's module index: a machine is a private module re-exported
 # whole, a transition function a public module of its own.
 [[index]]

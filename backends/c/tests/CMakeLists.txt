@@ -476,6 +476,46 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0115, D15 and the converse of D8: each scenario of the properties
+    # judge's turnstile, the run TLC gave of a violation or a witness, replayed
+    # through the machine with its trace port on, and its run held to the
+    # recorded run beside the scenario (integration/run_trace_recording.h), which
+    # `sce_build::formal::replay` judges to be the scenario's. The scenarios are
+    # the program's arguments, globbed when the tree is configured, and are
+    # written by `sce-codegen formal properties --scenarios`. Named through
+    # SCXML_FILE: the machine is the formal fixture's, which no other channel
+    # contract holds. Recording again, after a change that moves a run on
+    # purpose: `UPDATE_EXPECT=1 ctest -R c11_a_scenario_of_the_turnstile`.
+    sce_generate_static_integration_c_test(turnstile "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/formal_properties/turnstile.scxml"
+    )
+    set(_formal_scenarios_dir "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/formal_properties/scenarios")
+    file(GLOB _formal_turnstile_scenarios CONFIGURE_DEPENDS "${_formal_scenarios_dir}/*.scenario.json")
+    add_executable(sce_c_a_scenario_of_the_turnstile_is_its_run
+        integration/test_a_scenario_of_the_turnstile_is_its_run.c
+        ${INTEGRATION_C_TEST_turnstile_SOURCES}
+    )
+    target_compile_definitions(sce_c_a_scenario_of_the_turnstile_is_its_run PRIVATE
+        SCE_TRACE_PORT=1
+        SCE_FORMAL_TRACES_DIR="${_formal_scenarios_dir}"
+    )
+    sce_c_link_runtime(sce_c_a_scenario_of_the_turnstile_is_its_run)
+    target_include_directories(sce_c_a_scenario_of_the_turnstile_is_its_run PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_a_scenario_of_the_turnstile_is_its_run PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_a_scenario_of_the_turnstile_is_its_run
+        COMMAND sce_c_a_scenario_of_the_turnstile_is_its_run ${_formal_turnstile_scenarios}
+    )
+    set_tests_properties(c11_a_scenario_of_the_turnstile_is_its_run PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset 2.21: a document that declares its transition function
     # (`sce:transition-function="emit"`) is generated with a header of its own
     # beside the machine, `<stem>_transition_function.h`, every symbol under a
