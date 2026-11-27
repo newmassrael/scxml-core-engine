@@ -126,7 +126,7 @@ impl Alteration {
                 from,
                 to,
             } => format!(
-                "the event `{from}` action {at} of {} makes changed to `{to}`",
+                "the event `{from}` made by action {at} of {} changed to `{to}`",
                 block.describe()
             ),
             Alteration::ValueChanged {
@@ -136,7 +136,7 @@ impl Alteration {
                 from,
                 to,
             } => format!(
-                "the value `{from}` action {at} of {} writes to `{location}` changed to `{to}`",
+                "the value `{from}` written to `{location}` by action {at} of {} changed to `{to}`",
                 block.describe()
             ),
         }
@@ -335,13 +335,13 @@ mod tests {
             [
                 "transition 0 of state `locked` taken out",
                 "action 0 of transition 0 of state `locked` taken out",
-                "the value `coins + 1` action 0 of transition 0 of state `locked` writes to \
-                 `coins` changed to `(coins + 1) + 1`",
+                "the value `coins + 1` written to `coins` by action 0 of transition 0 of state \
+                 `locked` changed to `(coins + 1) + 1`",
                 "transition 0 of state `unlocked` taken out",
                 "the condition of transition 0 of state `unlocked` made true",
                 "transition 1 of state `unlocked` taken out",
                 "action 0 of the <onentry> 0 of state `unlocked` taken out",
-                "the event `relock` action 0 of the <onentry> 0 of state `unlocked` makes \
+                "the event `relock` made by action 0 of the <onentry> 0 of state `unlocked` \
                  changed to `altered_relock`",
             ]
         );
