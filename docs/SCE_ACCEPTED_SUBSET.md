@@ -6750,10 +6750,12 @@ the run's length, at most `N` and refused past it, a put of an absent key at the
 limit answers `full`, and the map value holds no slot, so a map lent none costs a
 few words whatever its bound; lent `N` slots, it answers, orders, saves and
 compares as an `Inline` map does. Each entry stays in its slot until it is
-removed, and a host reads it as a `MapSlot` (`put_slot`, `slot_of`,
-`MapCursor::slot`, `at_slot`), a number below the limit and a generation that
-moves each time the slot is freed, so a number kept for a removed entry reads
-nothing (docs/adr/0154, D2); a document sees no slot. The index hashes a key's canonical bytes (the runtime's
+removed, and of a map in those two storages a host reads it as a `MapSlot`
+(`put_slot`, `slot_of`, `MapCursor::slot`, `at_slot`), a number below the
+limit and a generation that moves each time the slot is freed, so a number kept
+for a removed entry reads nothing (docs/adr/0154, D2); the other storages keep
+no generation and name no slot, their slots no larger for it, and a document
+sees no slot. The index hashes a key's canonical bytes (the runtime's
 `MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
 as one, an enum by its declared number, a text and a byte string by their length
 and their bytes, a record by its fields in order) with SipHash-1-3 under a

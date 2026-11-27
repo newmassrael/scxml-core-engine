@@ -49,11 +49,14 @@
 //! under `alloc` and [`Inline`] without it. The map's algorithm is written once,
 //! over what any storage gives it.
 //!
-//! An entry stays in the slot a put took for it until a remove takes it out,
-//! and a host may read that slot as a [`MapSlot`]: its number, below the
-//! map's limit, and its generation, which moves each time the slot is freed, so
-//! a number kept for an entry that was removed finds nothing once another
-//! entry takes the slot (docs/adr/0154, D2).
+//! An entry stays in the slot a put took for it until a remove takes it out.
+//! In [`Lent`] and [`LentIndexed`] storage each slot keeps a generation,
+//! which moves each time the slot is freed, and a host reads the slot of an
+//! entry as a [`MapSlot`], its number below the map's limit and its
+//! generation, so a number kept for an entry that was removed finds nothing
+//! once another entry takes the slot (docs/adr/0154, D2). Every other storage
+//! keeps no generation and names no slot, and its slots are as large as they
+//! would be without it.
 //!
 //! A link between slots and a cell of the index name a slot by its number and
 //! one, so the link to no slot and the cell of no key are both 0. A map built
@@ -71,7 +74,7 @@
 
 use crate::{BoundedList, SceString};
 use core::marker::PhantomData;
-use storage::{KeyIndex, Lookup, Slot, SlotStore};
+use storage::{Generation as _, KeyIndex, Lookup, Slot, SlotStore};
 
 // ── SipHash ─────────────────────────────────────────────────────────────────
 
@@ -485,7 +488,7 @@ pub trait MapStorage: storage::Sealed {
     /// The slots of a map of `N` entries, each a key of `K` and a value of
     /// `V`.
     #[doc(hidden)]
-    type Slots<K, V, const N: usize>: storage::SlotStore<K, V, Self::Stamp>;
+    type Slots<K, V, const N: usize>: storage::SlotStore<K, V, Self::Stamp, Self::Generation>;
     /// How a map of `N` entries finds the slot of a key: the cells of its
     /// index, or nothing where it compares keys one by one.
     #[doc(hidden)]
@@ -498,6 +501,24 @@ pub trait MapStorage: storage::Sealed {
     /// [`Linear`] for [`Lent`] and [`Inline`] for [`LentIndexed`], since a
     /// host lends a run to one map.
     type Owned: MapStorage<Stamp = Self::Stamp>;
+    /// What each slot keeps of how many times it was freed (docs/adr/0154,
+    /// D2): `u32` where the map names its slots to its host as [`MapSlot`]s,
+    /// in [`Lent`] and [`LentIndexed`] storage, and `()` in every other, whose
+    /// slots and positions ([`MapCursor`]) are then as large as they would be
+    /// with no generation.
+    type Generation: storage::Generation;
+
+    /// The slots and the index of a copy of a map of this storage, `slots` and
+    /// `index`, its order starting at `head` and holding `live` entries, in
+    /// its owned storage: a copy of each where the storage is its own owned
+    /// storage, as a map's clone has always been.
+    #[doc(hidden)]
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        index: &Self::Cells<N>,
+        head: u32,
+        live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N>;
 }
 
 /// A map's storage held in the map, the bound reserved: `N` slots and an index
@@ -511,9 +532,19 @@ impl storage::Sealed for Inline {}
 
 impl MapStorage for Inline {
     type Stamp = u64;
-    type Slots<K, V, const N: usize> = heapless::Vec<storage::Slot<K, V, u64>, N>;
+    type Slots<K, V, const N: usize> = heapless::Vec<storage::Slot<K, V, u64, ()>, N>;
     type Cells<const N: usize> = storage::Hashed<[[u32; N]; 2]>;
     type Owned = Inline;
+    type Generation = ();
+
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        index: &Self::Cells<N>,
+        _head: u32,
+        _live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N> {
+        (slots.clone(), index.clone())
+    }
 }
 
 /// A map's storage on the heap: the slots and the index grow as the map is
@@ -529,9 +560,19 @@ impl storage::Sealed for Heap {}
 #[cfg(feature = "alloc")]
 impl MapStorage for Heap {
     type Stamp = u64;
-    type Slots<K, V, const N: usize> = alloc::vec::Vec<storage::Slot<K, V, u64>>;
+    type Slots<K, V, const N: usize> = alloc::vec::Vec<storage::Slot<K, V, u64, ()>>;
     type Cells<const N: usize> = storage::Hashed<alloc::vec::Vec<u32>>;
     type Owned = Heap;
+    type Generation = ();
+
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        index: &Self::Cells<N>,
+        _head: u32,
+        _live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N> {
+        (slots.clone(), index.clone())
+    }
 }
 
 /// A map's storage held in the map, the bound reserved, with no index: `N`
@@ -557,9 +598,19 @@ impl storage::Sealed for Linear {}
 
 impl MapStorage for Linear {
     type Stamp = ();
-    type Slots<K, V, const N: usize> = heapless::Vec<storage::Slot<K, V, ()>, N>;
+    type Slots<K, V, const N: usize> = heapless::Vec<storage::Slot<K, V, (), ()>, N>;
     type Cells<const N: usize> = storage::Scan;
     type Owned = Linear;
+    type Generation = ();
+
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        index: &Self::Cells<N>,
+        _head: u32,
+        _live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N> {
+        (slots.clone(), *index)
+    }
 }
 
 /// A map's storage in a run of [`LentSlot`]s its host lends for the life
@@ -587,9 +638,28 @@ impl storage::Sealed for Lent<'_> {}
 
 impl<'a> MapStorage for Lent<'a> {
     type Stamp = ();
-    type Slots<K, V, const N: usize> = storage::LentSlots<'a, K, V, ()>;
+    type Slots<K, V, const N: usize> = storage::LentSlots<'a, K, V, (), u32>;
     type Cells<const N: usize> = storage::Scan;
     type Owned = Linear;
+    type Generation = u32;
+
+    /// Each slot taken copied into the value, at its number, without its
+    /// generation, which a copy, naming no slot, does not keep.
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        _index: &Self::Cells<N>,
+        _head: u32,
+        _live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N> {
+        let mut owned = heapless::Vec::new();
+        for slot in slots.taken() {
+            // At most the run's slots, which are at most `N`.
+            if owned.push(slot.regenerated(())).is_err() {
+                break;
+            }
+        }
+        (owned, storage::Scan)
+    }
 }
 
 /// A map's storage in runs its host lends for the life `'a` of the map, its
@@ -607,9 +677,31 @@ impl storage::Sealed for LentIndexed<'_> {}
 
 impl<'a> MapStorage for LentIndexed<'a> {
     type Stamp = u64;
-    type Slots<K, V, const N: usize> = storage::LentSlots<'a, K, V, u64>;
+    type Slots<K, V, const N: usize> = storage::LentSlots<'a, K, V, u64, u32>;
     type Cells<const N: usize> = storage::Hashed<storage::LentCells<'a>>;
     type Owned = Inline;
+    type Generation = u32;
+
+    /// Each slot taken copied into the value, at its number, without its
+    /// generation, and the index built again at twice the bound from the
+    /// slots' stamps, no key hashed again.
+    fn owned_parts<K: Clone, V: Clone, const N: usize>(
+        slots: &Self::Slots<K, V, N>,
+        _index: &Self::Cells<N>,
+        head: u32,
+        live: usize,
+    ) -> storage::OwnedParts<Self, K, V, N> {
+        let mut owned: heapless::Vec<storage::Slot<K, V, u64, ()>, N> = heapless::Vec::new();
+        for slot in slots.taken() {
+            // At most the run's slots, which are at most `N`.
+            if owned.push(slot.regenerated(())).is_err() {
+                break;
+            }
+        }
+        let mut index = <storage::Hashed<[[u32; N]; 2]> as KeyIndex<u64>>::VACANT;
+        index.refill(owned.as_slice(), head, live, N);
+        (owned, index)
+    }
 }
 
 /// One slot of a map in [`Lent`] storage, held in the run its host lends: an
@@ -619,11 +711,11 @@ impl<'a> MapStorage for LentIndexed<'a> {
 /// it holds only through the map while the map lives; a map dropped drops the
 /// entries it left in the run.
 #[repr(transparent)]
-pub struct LentSlot<K, V>(Slot<K, V, ()>);
+pub struct LentSlot<K, V>(Slot<K, V, (), u32>);
 
 impl<K, V> LentSlot<K, V> {
     /// A slot that holds no entry, which a host fills the run it lends with.
-    pub const EMPTY: Self = Self(Slot::vacant(()));
+    pub const EMPTY: Self = Self(Slot::vacant((), 0));
 
     /// [`Self::EMPTY`], for a run built by a function
     /// (`core::array::from_fn`).
@@ -642,11 +734,11 @@ impl<K, V> LentSlot<K, V> {
 /// host lends, as [`LentSlot`] is in [`Lent`] storage, with the hash of its
 /// key, which a rebuild of the index reads instead of hashing again.
 #[repr(transparent)]
-pub struct LentIndexedSlot<K, V>(Slot<K, V, u64>);
+pub struct LentIndexedSlot<K, V>(Slot<K, V, u64, u32>);
 
 impl<K, V> LentIndexedSlot<K, V> {
     /// A slot that holds no entry, which a host fills the run it lends with.
-    pub const EMPTY: Self = Self(Slot::vacant(0));
+    pub const EMPTY: Self = Self(Slot::vacant(0, 0));
 
     /// [`Self::EMPTY`], for a run built by a function
     /// (`core::array::from_fn`).
@@ -751,47 +843,104 @@ mod storage {
     /// rebuild of the index reads instead of hashing again, or nothing for a
     /// map with no index); and the links to its neighbours, in the map's order
     /// for a slot in use and on the free list (`next` alone) for one that is
-    /// not; and its generation (docs/adr/0154, D2), how many times the slot was
-    /// freed, which a host's `MapSlot` carries, so a number it kept for an
-    /// entry that was removed does not name the entry that took the slot after
-    /// it. A slot never freed is of generation 0, as a link to no slot is, so
-    /// an empty map built in a const context stays all zero bytes.
+    /// not; and its generation `G` ([`Generation`], docs/adr/0154, D2):
+    /// nothing in a storage that names no slot to its host, so its slot is as
+    /// large as a slot with no generation, and in one that does, how many times
+    /// the slot was freed, which a host's `MapSlot` carries.
     #[derive(Clone)]
-    pub struct Slot<K, V, H> {
+    pub struct Slot<K, V, H, G> {
         pub(super) entry: Option<(K, V)>,
         pub(super) stamp: H,
         pub(super) prev: u32,
         pub(super) next: u32,
-        pub(super) generation: u32,
+        pub(super) generation: G,
     }
 
-    impl<K, V, H> Slot<K, V, H> {
-        /// The slot that holds no entry and was never freed, stamped `stamp`.
-        pub(super) const fn vacant(stamp: H) -> Self {
+    impl<K, V, H, G> Slot<K, V, H, G> {
+        /// The slot that holds no entry, stamped `stamp`, of the generation
+        /// `generation`.
+        pub(super) const fn vacant(stamp: H, generation: G) -> Self {
             Self {
                 entry: None,
                 stamp,
                 prev: NIL,
                 next: NIL,
-                generation: 0,
+                generation,
+            }
+        }
+
+        /// A copy of the slot of the generation `generation`: what a copy of a
+        /// map in storage of another generation holds.
+        pub(super) fn regenerated<F>(&self, generation: F) -> Slot<K, V, H, F>
+        where
+            K: Clone,
+            V: Clone,
+            H: Copy,
+        {
+            Slot {
+                entry: self.entry.clone(),
+                stamp: self.stamp,
+                prev: self.prev,
+                next: self.next,
+                generation,
             }
         }
     }
 
+    /// What a slot keeps of how many times it was freed (docs/adr/0154, D2):
+    /// `u32` in a storage whose map names its slots to its host
+    /// ([`super::Lent`], [`super::LentIndexed`]), moved each time the slot is
+    /// freed and 0 for one never freed, so a map built empty in a const context
+    /// is still all zero bytes; and `()` in every other, which costs a slot and
+    /// a position nothing.
+    pub trait Generation: Copy + Eq + core::fmt::Debug {
+        /// The generation of a slot never freed.
+        const FIRST: Self;
+        /// Whether a slot keeps one: a clear then frees every slot it took,
+        /// moving each one's generation, where a storage that keeps none
+        /// gives its slots back.
+        const KEPT: bool;
+        /// The generation of the slot once it is freed.
+        fn moved(self) -> Self;
+    }
+
+    impl Generation for () {
+        const FIRST: Self = ();
+        const KEPT: bool = false;
+        fn moved(self) -> Self {}
+    }
+
+    impl Generation for u32 {
+        const FIRST: Self = 0;
+        const KEPT: bool = true;
+        fn moved(self) -> Self {
+            self.wrapping_add(1)
+        }
+    }
+
+    /// The slots and the index of a copy of a map of the storage `S` in its
+    /// owned storage (`MapStorage::owned_parts`).
+    pub type OwnedParts<S, K, V, const N: usize> = (
+        <<S as super::MapStorage>::Owned as super::MapStorage>::Slots<K, V, N>,
+        <<S as super::MapStorage>::Owned as super::MapStorage>::Cells<N>,
+    );
+
     /// The slots of a map, numbered from 0 in the order they were first taken.
-    pub trait SlotStore<K, V, H>: Sized {
+    pub trait SlotStore<K, V, H, G>: Sized {
         /// The store of a map that has taken no slot.
         const VACANT: Self;
         /// The slots taken so far.
-        fn taken(&self) -> &[Slot<K, V, H>];
+        fn taken(&self) -> &[Slot<K, V, H, G>];
         /// The slots taken so far, to write.
-        fn taken_mut(&mut self) -> &mut [Slot<K, V, H>];
+        fn taken_mut(&mut self) -> &mut [Slot<K, V, H, G>];
         /// Take the slot after the last one taken, holding `slot`: whether
         /// there was one to take.
-        fn take_slot(&mut self, slot: Slot<K, V, H>) -> bool;
+        fn take_slot(&mut self, slot: Slot<K, V, H, G>) -> bool;
         /// How many slots the store can take for a map bounded by `bound`:
         /// the bound, or the slots its host lent (docs/adr/0154, D1).
         fn room(&self, bound: usize) -> usize;
+        /// Give back every slot, the storage kept for the slots taken next.
+        fn give_back(&mut self);
     }
 
     /// The cells of a map's index, each the link to the slot of a key
@@ -827,19 +976,19 @@ mod storage {
         type Place: Copy;
         /// Where `key` is among `slots`, whose order starts at `head`, the
         /// map keyed by `seed`; or, where the map does not hold it, its stamp.
-        fn find<K: MapKey, V, Q: MapKey + ?Sized>(
+        fn find<K: MapKey, V, G, Q: MapKey + ?Sized>(
             &self,
             seed: &MapSeed,
-            slots: &[Slot<K, V, H>],
+            slots: &[Slot<K, V, H, G>],
             head: u32,
             key: &Q,
         ) -> Lookup<Self::Place, H>;
         /// Take in the entry the map has just linked last at `at`, stamped as
         /// [`Self::find`] answered, the map holding `live` entries before it
         /// and limited to `limit` (`BoundedMap::limit`).
-        fn enter<K, V>(
+        fn enter<K, V, G>(
             &mut self,
-            slots: &[Slot<K, V, H>],
+            slots: &[Slot<K, V, H, G>],
             head: u32,
             at: u32,
             live: usize,
@@ -847,9 +996,9 @@ mod storage {
         );
         /// Let go of the key found at `place`, whose slot the map has taken out
         /// of its order, the map now holding `live` entries.
-        fn leave<K, V>(
+        fn leave<K, V, G>(
             &mut self,
-            slots: &[Slot<K, V, H>],
+            slots: &[Slot<K, V, H, G>],
             head: u32,
             place: Self::Place,
             live: usize,
@@ -857,11 +1006,22 @@ mod storage {
         /// Hold no key, the storage kept.
         fn empty(&mut self);
         /// Stamp each entry again under `seed` and take them all in again.
-        fn restamp<K: MapKey, V>(&mut self, seed: &MapSeed, slots: &mut [Slot<K, V, H>], head: u32);
+        fn restamp<K: MapKey, V, G>(
+            &mut self,
+            seed: &MapSeed,
+            slots: &mut [Slot<K, V, H, G>],
+            head: u32,
+        );
         /// Take in every entry of `slots` linked from `head`, each stamped as
         /// it is, into an index that holds no key, the map holding `live`
         /// entries and limited to `limit`: the index of a copy of a map.
-        fn refill<K, V>(&mut self, slots: &[Slot<K, V, H>], head: u32, live: usize, limit: usize);
+        fn refill<K, V, G>(
+            &mut self,
+            slots: &[Slot<K, V, H, G>],
+            head: u32,
+            live: usize,
+            limit: usize,
+        );
         /// How many cells a removed key left that a rebuild has not cleared.
         #[cfg(test)]
         fn tombstones(&self) -> u32;
@@ -881,7 +1041,7 @@ mod storage {
     impl<C: CellStore> Hashed<C> {
         /// The index again, `len` cells long, with every entry linked from
         /// `head` at the cell its stamp first probes free and no tombstone left.
-        fn rebuild<K, V>(&mut self, slots: &[Slot<K, V, u64>], head: u32, len: usize) {
+        fn rebuild<K, V, G>(&mut self, slots: &[Slot<K, V, u64, G>], head: u32, len: usize) {
             self.cells.reset(len);
             self.tombstones = 0;
             if len == 0 {
@@ -924,10 +1084,10 @@ mod storage {
 
         /// The probe from the cell the key's hash starts at, past tombstones
         /// and the cells of other keys, to the key or to an empty cell.
-        fn find<K: MapKey, V, Q: MapKey + ?Sized>(
+        fn find<K: MapKey, V, G, Q: MapKey + ?Sized>(
             &self,
             seed: &MapSeed,
-            slots: &[Slot<K, V, u64>],
+            slots: &[Slot<K, V, u64, G>],
             _head: u32,
             key: &Q,
         ) -> Lookup<usize, u64> {
@@ -962,9 +1122,9 @@ mod storage {
         /// while it can still grow: an index that grows is built again with
         /// every entry, this one last; otherwise the entry takes the first
         /// tombstone or empty cell its probe meets.
-        fn enter<K, V>(
+        fn enter<K, V, G>(
             &mut self,
-            slots: &[Slot<K, V, u64>],
+            slots: &[Slot<K, V, u64, G>],
             head: u32,
             at: u32,
             live: usize,
@@ -993,7 +1153,13 @@ mod storage {
             self.rebuild(slots, head, len);
         }
 
-        fn leave<K, V>(&mut self, slots: &[Slot<K, V, u64>], head: u32, place: usize, live: usize) {
+        fn leave<K, V, G>(
+            &mut self,
+            slots: &[Slot<K, V, u64, G>],
+            head: u32,
+            place: usize,
+            live: usize,
+        ) {
             self.cells.set_cell(place, TOMBSTONE);
             self.tombstones += 1;
             if self.tombstones as usize > live {
@@ -1010,10 +1176,10 @@ mod storage {
 
         /// Each entry's hash taken again under `seed`, and the index built
         /// again at its length, no tombstone left.
-        fn restamp<K: MapKey, V>(
+        fn restamp<K: MapKey, V, G>(
             &mut self,
             seed: &MapSeed,
-            slots: &mut [Slot<K, V, u64>],
+            slots: &mut [Slot<K, V, u64, G>],
             head: u32,
         ) {
             let mut at = head;
@@ -1031,9 +1197,9 @@ mod storage {
         /// The index at the length the map's entries need, each at the cell
         /// its stamp first probes free: an index that grows holds no cell for a
         /// map that holds nothing.
-        fn refill<K, V>(
+        fn refill<K, V, G>(
             &mut self,
-            slots: &[Slot<K, V, u64>],
+            slots: &[Slot<K, V, u64, G>],
             head: u32,
             live: usize,
             limit: usize,
@@ -1062,10 +1228,10 @@ mod storage {
         const VACANT: Self = Scan;
         type Place = ();
 
-        fn find<K: MapKey, V, Q: MapKey + ?Sized>(
+        fn find<K: MapKey, V, G, Q: MapKey + ?Sized>(
             &self,
             _seed: &MapSeed,
-            slots: &[Slot<K, V, ()>],
+            slots: &[Slot<K, V, (), G>],
             head: u32,
             key: &Q,
         ) -> Lookup<(), ()> {
@@ -1087,9 +1253,9 @@ mod storage {
             Lookup::Absent(())
         }
 
-        fn enter<K, V>(
+        fn enter<K, V, G>(
             &mut self,
-            _slots: &[Slot<K, V, ()>],
+            _slots: &[Slot<K, V, (), G>],
             _head: u32,
             _at: u32,
             _live: usize,
@@ -1097,22 +1263,28 @@ mod storage {
         ) {
         }
 
-        fn leave<K, V>(&mut self, _slots: &[Slot<K, V, ()>], _head: u32, _place: (), _live: usize) {
+        fn leave<K, V, G>(
+            &mut self,
+            _slots: &[Slot<K, V, (), G>],
+            _head: u32,
+            _place: (),
+            _live: usize,
+        ) {
         }
 
         fn empty(&mut self) {}
 
-        fn restamp<K: MapKey, V>(
+        fn restamp<K: MapKey, V, G>(
             &mut self,
             _seed: &MapSeed,
-            _slots: &mut [Slot<K, V, ()>],
+            _slots: &mut [Slot<K, V, (), G>],
             _head: u32,
         ) {
         }
 
-        fn refill<K, V>(
+        fn refill<K, V, G>(
             &mut self,
-            _slots: &[Slot<K, V, ()>],
+            _slots: &[Slot<K, V, (), G>],
             _head: u32,
             _live: usize,
             _limit: usize,
@@ -1125,23 +1297,29 @@ mod storage {
         }
     }
 
-    impl<K, V, H: Copy, const N: usize> SlotStore<K, V, H> for heapless::Vec<Slot<K, V, H>, N> {
+    impl<K, V, H: Copy, G: Copy, const N: usize> SlotStore<K, V, H, G>
+        for heapless::Vec<Slot<K, V, H, G>, N>
+    {
         const VACANT: Self = heapless::Vec::new();
 
-        fn taken(&self) -> &[Slot<K, V, H>] {
+        fn taken(&self) -> &[Slot<K, V, H, G>] {
             self.as_slice()
         }
 
-        fn taken_mut(&mut self) -> &mut [Slot<K, V, H>] {
+        fn taken_mut(&mut self) -> &mut [Slot<K, V, H, G>] {
             self.as_mut_slice()
         }
 
-        fn take_slot(&mut self, slot: Slot<K, V, H>) -> bool {
+        fn take_slot(&mut self, slot: Slot<K, V, H, G>) -> bool {
             self.push(slot).is_ok()
         }
 
         fn room(&self, _bound: usize) -> usize {
             N
+        }
+
+        fn give_back(&mut self) {
+            self.clear();
         }
     }
 
@@ -1168,24 +1346,28 @@ mod storage {
     }
 
     #[cfg(feature = "alloc")]
-    impl<K, V, H: Copy> SlotStore<K, V, H> for alloc::vec::Vec<Slot<K, V, H>> {
+    impl<K, V, H: Copy, G: Copy> SlotStore<K, V, H, G> for alloc::vec::Vec<Slot<K, V, H, G>> {
         const VACANT: Self = alloc::vec::Vec::new();
 
-        fn taken(&self) -> &[Slot<K, V, H>] {
+        fn taken(&self) -> &[Slot<K, V, H, G>] {
             self.as_slice()
         }
 
-        fn taken_mut(&mut self) -> &mut [Slot<K, V, H>] {
+        fn taken_mut(&mut self) -> &mut [Slot<K, V, H, G>] {
             self.as_mut_slice()
         }
 
-        fn take_slot(&mut self, slot: Slot<K, V, H>) -> bool {
+        fn take_slot(&mut self, slot: Slot<K, V, H, G>) -> bool {
             self.push(slot);
             true
         }
 
         fn room(&self, bound: usize) -> usize {
             bound
+        }
+
+        fn give_back(&mut self) {
+            self.clear();
         }
     }
 
@@ -1296,12 +1478,12 @@ mod storage {
     /// `Self` is `#[repr(transparent)]` over `T`.
     pub unsafe trait LaidOutAs<T> {}
 
-    // SAFETY: `LentSlot<K, V>` is `#[repr(transparent)]` over `Slot<K, V, ()>`.
-    unsafe impl<K, V> LaidOutAs<Slot<K, V, ()>> for super::LentSlot<K, V> {}
+    // SAFETY: `LentSlot<K, V>` is `#[repr(transparent)]` over `Slot<K, V, (), u32>`.
+    unsafe impl<K, V> LaidOutAs<Slot<K, V, (), u32>> for super::LentSlot<K, V> {}
 
     // SAFETY: `LentIndexedSlot<K, V>` is `#[repr(transparent)]` over
-    // `Slot<K, V, u64>`.
-    unsafe impl<K, V> LaidOutAs<Slot<K, V, u64>> for super::LentIndexedSlot<K, V> {}
+    // `Slot<K, V, u64, u32>`.
+    unsafe impl<K, V> LaidOutAs<Slot<K, V, u64, u32>> for super::LentIndexedSlot<K, V> {}
 
     // SAFETY: `LentCell` is `#[repr(transparent)]` over `u32`.
     unsafe impl LaidOutAs<u32> for super::LentCell {}
@@ -1309,15 +1491,15 @@ mod storage {
     /// The slots of a map in lent storage ([`super::Lent`],
     /// [`super::LentIndexed`]): the run its host lent, of which the first
     /// `taken` are the slots the map has taken, never more than the run holds.
-    pub struct LentSlots<'a, K, V, H> {
-        pub(super) region: Region<'a, Slot<K, V, H>>,
+    pub struct LentSlots<'a, K, V, H, G> {
+        pub(super) region: Region<'a, Slot<K, V, H, G>>,
         pub(super) taken: usize,
     }
 
-    impl<'a, K, V, H> LentSlots<'a, K, V, H> {
+    impl<'a, K, V, H, G> LentSlots<'a, K, V, H, G> {
         /// The run `lent`, no slot of it taken: whatever an earlier map left
         /// in it is overwritten as the map takes each slot.
-        pub(super) fn over<U: LaidOutAs<Slot<K, V, H>>>(lent: &'a mut [U]) -> Self {
+        pub(super) fn over<U: LaidOutAs<Slot<K, V, H, G>>>(lent: &'a mut [U]) -> Self {
             Self {
                 region: Region::over(lent),
                 taken: 0,
@@ -1325,22 +1507,22 @@ mod storage {
         }
     }
 
-    impl<K, V, H: Copy> SlotStore<K, V, H> for LentSlots<'_, K, V, H> {
+    impl<K, V, H: Copy, G: Copy> SlotStore<K, V, H, G> for LentSlots<'_, K, V, H, G> {
         const VACANT: Self = Self {
             region: Region::VACANT,
             taken: 0,
         };
 
-        fn taken(&self) -> &[Slot<K, V, H>] {
+        fn taken(&self) -> &[Slot<K, V, H, G>] {
             &self.region.whole()[..self.taken]
         }
 
-        fn taken_mut(&mut self) -> &mut [Slot<K, V, H>] {
+        fn taken_mut(&mut self) -> &mut [Slot<K, V, H, G>] {
             let taken = self.taken;
             &mut self.region.whole_mut()[..taken]
         }
 
-        fn take_slot(&mut self, slot: Slot<K, V, H>) -> bool {
+        fn take_slot(&mut self, slot: Slot<K, V, H, G>) -> bool {
             let at = self.taken;
             match self.region.whole_mut().get_mut(at) {
                 Some(place) => {
@@ -1355,11 +1537,20 @@ mod storage {
         fn room(&self, _bound: usize) -> usize {
             self.region.length()
         }
+
+        /// Every slot taken dropped of its entry, the run kept whole.
+        fn give_back(&mut self) {
+            let taken = self.taken;
+            for slot in &mut self.region.whole_mut()[..taken] {
+                slot.entry = None;
+            }
+            self.taken = 0;
+        }
     }
 
     /// A map dropped drops the entries it left in its host's run; the slots
     /// stay, holding none, the host's to lend again.
-    impl<K, V, H> Drop for LentSlots<'_, K, V, H> {
+    impl<K, V, H, G> Drop for LentSlots<'_, K, V, H, G> {
         fn drop(&mut self) {
             let taken = self.taken;
             for slot in &mut self.region.whole_mut()[..taken] {
@@ -1436,7 +1627,8 @@ pub enum RemoveOutcome {
     Absent,
 }
 
-/// The slot an entry is held in (docs/adr/0154, D2): its number, from 0 and
+/// The slot an entry of a map in [`Lent`] or [`LentIndexed`] storage is held
+/// in (docs/adr/0154, D2): its number, from 0 and
 /// below the map's limit ([`BoundedMap::limit`]), and the generation of the
 /// slot, which moves each time the slot is freed. An entry keeps its slot from
 /// the put that inserts it to the remove that takes it out (no operation of
@@ -1447,10 +1639,11 @@ pub enum RemoveOutcome {
 /// the number first, as a pool's slot index is (docs/adr/0111, D4).
 ///
 /// A number names a slot of the map that answered it. A copy of the map
-/// ([`Clone`], [`BoundedMap::to_owned_storage`]) holds each entry at the same
-/// slot; a map built again from a saved form holds them at slots of its own. A
-/// generation counts a slot's frees modulo 2^32, so a number kept across 2^32
-/// frees of its slot is read as current again.
+/// ([`BoundedMap::to_owned_storage`]) holds each entry at the same number, in
+/// storage that keeps no generation and names no slot; a map built again from
+/// a saved form holds them at slots of its own. A generation counts a slot's
+/// frees modulo 2^32, so a number kept across 2^32 frees of its slot is read
+/// as current again.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MapSlot {
@@ -1466,15 +1659,21 @@ pub struct MapSlot {
 /// of the map between two reads. It stays where it is while the map is not
 /// written; a generated machine walks a copy of a map its loop writes
 /// (docs/adr/0108, D6 item 3).
+///
+/// `G` is the generation its map's slots keep (`MapStorage::Generation`):
+/// `()` in every storage but the two a host lends, so a position is one
+/// `u32`, and `u32` in those, where a position read before its slot was
+/// freed and taken again names no entry and answers its [`MapSlot`]
+/// (docs/adr/0154, D2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MapCursor {
+pub struct MapCursor<G = ()> {
     /// The link to the slot of the entry (`link_to`), never `NIL`.
     link: u32,
     /// The generation of that slot when the position was read.
-    generation: u32,
+    generation: G,
 }
 
-impl MapCursor {
+impl MapCursor<u32> {
     /// The slot of the entry at this position (docs/adr/0154, D2).
     pub fn slot(self) -> MapSlot {
         MapSlot {
@@ -1530,7 +1729,7 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
         let () = Self::NUMBERED;
         Self {
             seed,
-            slots: <S::Slots<K, V, N> as SlotStore<K, V, S::Stamp>>::VACANT,
+            slots: <S::Slots<K, V, N> as SlotStore<K, V, S::Stamp, S::Generation>>::VACANT,
             index: <S::Cells<N> as KeyIndex<S::Stamp>>::VACANT,
             head: NIL,
             tail: NIL,
@@ -1581,19 +1780,24 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     }
 
     /// Empty the map, which then takes up to its limit of entries again. Its
-    /// storage is kept for the entries it takes next: every slot it took is
+    /// storage is kept for the entries it takes next. In a storage whose slots
+    /// keep a generation ([`Lent`], [`LentIndexed`]) every slot it took is
     /// freed, so a [`MapSlot`] read for an entry it held names no entry
     /// (docs/adr/0154, D2), and the puts after it take the slots from the
-    /// first.
+    /// first; in every other its slots are given back.
     pub fn clear(&mut self) {
         let mut free = NIL;
-        for (number, slot) in self.slots.taken_mut().iter_mut().enumerate().rev() {
-            if slot.entry.take().is_some() {
-                slot.generation = slot.generation.wrapping_add(1);
+        if <S::Generation as storage::Generation>::KEPT {
+            for (number, slot) in self.slots.taken_mut().iter_mut().enumerate().rev() {
+                if slot.entry.take().is_some() {
+                    slot.generation = slot.generation.moved();
+                }
+                slot.prev = NIL;
+                slot.next = free;
+                free = link_to(number);
             }
-            slot.prev = NIL;
-            slot.next = free;
-            free = link_to(number);
+        } else {
+            self.slots.give_back();
         }
         self.index.empty();
         self.head = NIL;
@@ -1612,49 +1816,31 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     }
 
     /// The position of the first entry, or `None` for an empty map.
-    pub fn first(&self) -> Option<MapCursor> {
+    pub fn first(&self) -> Option<MapCursor<S::Generation>> {
         (self.head != NIL).then(|| self.cursor(self.head))
     }
 
     /// The position of the entry after `at`, or `None` after the last.
-    pub fn next_after(&self, at: MapCursor) -> Option<MapCursor> {
+    pub fn next_after(&self, at: MapCursor<S::Generation>) -> Option<MapCursor<S::Generation>> {
         let next = self.slots.taken().get(slot_number(at.link))?.next;
         (next != NIL).then(|| self.cursor(next))
     }
 
-    /// The entry held in `slot` (docs/adr/0154, D2), or `None` where the
-    /// slot holds none, where it holds an entry put after the one `slot` was
-    /// read for (its generation has moved since), or where the number names
-    /// no slot the map took.
-    pub fn at_slot(&self, slot: MapSlot) -> Option<(&K, &V)> {
-        let held = self.slots.taken().get(slot.index as usize)?;
-        if held.generation != slot.generation {
-            return None;
-        }
-        held.entry.as_ref().map(|(key, value)| (key, value))
-    }
-
     /// A copy of the map in the storage that holds its own slots
-    /// ([`MapStorage::Owned`], docs/adr/0154, D3): each entry in the slot it
-    /// holds here, in the same order, under the same seed, so the copy answers
-    /// every operation as the map does and holds each entry at the same
-    /// [`MapSlot`]. What a map whose host lent its slots is copied by, the run
-    /// being lent to one map; what a walk of a generated algorithm copies its
-    /// map by, whatever storage the map is in. For a map that holds its own
-    /// slots it is [`Clone`].
+    /// ([`MapStorage::Owned`], docs/adr/0154, D3): each entry in the slot of
+    /// the same number, in the same order, under the same seed, so the copy
+    /// answers every operation as the map does. What a map whose host lent its
+    /// slots is copied by, the run being lent to one map, its slots' generations
+    /// left behind, since the copy names no slot; what a walk of a generated
+    /// algorithm copies its map by, whatever storage the map is in. For a map
+    /// that holds its own slots it is its [`Clone`], the slots and the index
+    /// copied as they stand.
     pub fn to_owned_storage(&self) -> BoundedMap<K, V, N, S::Owned>
     where
         K: Clone,
         V: Clone,
     {
-        let mut slots =
-            <<S::Owned as MapStorage>::Slots<K, V, N> as SlotStore<K, V, S::Stamp>>::VACANT;
-        for slot in self.slots.taken() {
-            let taken = slots.take_slot(slot.clone());
-            debug_assert!(taken, "a map takes no more than N slots");
-        }
-        let mut index = <<S::Owned as MapStorage>::Cells<N> as KeyIndex<S::Stamp>>::VACANT;
-        index.refill(slots.taken(), self.head, self.len(), slots.room(N));
+        let (slots, index) = S::owned_parts(&self.slots, &self.index, self.head, self.len());
         BoundedMap {
             seed: self.seed,
             slots,
@@ -1672,7 +1858,7 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     ///
     /// When no entry is at `at`: the map was written since the position was
     /// read, which a walk of a map it writes does on a copy instead.
-    pub fn key_at(&self, at: MapCursor) -> &K {
+    pub fn key_at(&self, at: MapCursor<S::Generation>) -> &K {
         &self.entry_at(at).0
     }
 
@@ -1681,11 +1867,11 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     /// # Panics
     ///
     /// As [`Self::key_at`].
-    pub fn value_at(&self, at: MapCursor) -> &V {
+    pub fn value_at(&self, at: MapCursor<S::Generation>) -> &V {
         &self.entry_at(at).1
     }
 
-    fn entry_at(&self, at: MapCursor) -> &(K, V) {
+    fn entry_at(&self, at: MapCursor<S::Generation>) -> &(K, V) {
         match self
             .slots
             .taken()
@@ -1699,28 +1885,20 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     }
 
     /// The slot `at` links to, which is not [`NIL`].
-    fn slot(&self, at: u32) -> &Slot<K, V, S::Stamp> {
+    fn slot(&self, at: u32) -> &Slot<K, V, S::Stamp, S::Generation> {
         &self.slots.taken()[slot_number(at)]
     }
 
     /// The position of the entry in the slot `at` links to.
-    fn cursor(&self, at: u32) -> MapCursor {
+    fn cursor(&self, at: u32) -> MapCursor<S::Generation> {
         MapCursor {
             link: at,
             generation: self.slot(at).generation,
         }
     }
 
-    /// The [`MapSlot`] of the slot `at` links to.
-    fn map_slot(&self, at: u32) -> MapSlot {
-        MapSlot {
-            index: at - 1,
-            generation: self.slot(at).generation,
-        }
-    }
-
     /// The slot `at` links to, to write.
-    fn slot_mut(&mut self, at: u32) -> &mut Slot<K, V, S::Stamp> {
+    fn slot_mut(&mut self, at: u32) -> &mut Slot<K, V, S::Stamp, S::Generation> {
         &mut self.slots.taken_mut()[slot_number(at)]
     }
 
@@ -1747,7 +1925,7 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
                 stamp,
                 prev: tail,
                 next: NIL,
-                generation: 0,
+                generation: <S::Generation as storage::Generation>::FIRST,
             };
             if at >= N || !self.slots.take_slot(slot) {
                 return None;
@@ -1781,7 +1959,7 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
         let free = self.free;
         let slot = self.slot_mut(at);
         slot.entry = None;
-        slot.generation = slot.generation.wrapping_add(1);
+        slot.generation = slot.generation.moved();
         slot.prev = NIL;
         slot.next = free;
         self.free = at;
@@ -1817,14 +1995,12 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
     /// an absent key is not put, and the map is as it was
     /// ([`PutOutcome::Full`]).
     pub fn put(&mut self, key: K, value: V) -> PutOutcome {
-        self.put_slot(key, value).0
+        self.put_link(key, value).0
     }
 
-    /// [`Self::put`], answering beside its outcome the slot the key's entry is
-    /// held in after it (docs/adr/0154, D2): the slot it was put in, or the
-    /// one it stands in where its value was replaced; `None` with
-    /// [`PutOutcome::Full`].
-    pub fn put_slot(&mut self, key: K, value: V) -> (PutOutcome, Option<MapSlot>) {
+    /// [`Self::put`], answering beside its outcome the link to the slot the
+    /// key's entry is held in after it, `None` with [`PutOutcome::Full`].
+    fn put_link(&mut self, key: K, value: V) -> (PutOutcome, Option<u32>) {
         let stamp = match self
             .index
             .find(&self.seed, self.slots.taken(), self.head, &key)
@@ -1833,7 +2009,7 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
                 if let Some(entry) = self.slot_mut(slot).entry.as_mut() {
                     entry.1 = value;
                 }
-                return (PutOutcome::Replaced, Some(self.map_slot(slot)));
+                return (PutOutcome::Replaced, Some(slot));
             }
             Lookup::Absent(stamp) => stamp,
         };
@@ -1848,13 +2024,7 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
         self.index
             .enter(self.slots.taken(), self.head, at, live, limit);
         self.live += 1;
-        (PutOutcome::Inserted, Some(self.map_slot(at)))
-    }
-
-    /// The slot of the entry at `key` (docs/adr/0154, D2), or `None` where
-    /// the map does not hold it.
-    pub fn slot_of<Q: MapKey + ?Sized>(&self, key: &Q) -> Option<MapSlot> {
-        self.link_of(key).map(|at| self.map_slot(at))
+        (PutOutcome::Inserted, Some(at))
     }
 
     /// Take the entry at `key` out of the map, the others keeping their order
@@ -1895,6 +2065,48 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
             Lookup::Found { slot, .. } => Some(slot),
             Lookup::Absent(_) => None,
         }
+    }
+}
+
+/// The slots of a map in storage whose slots keep a generation, [`Lent`] and
+/// [`LentIndexed`] (docs/adr/0154, D2): what a host reads of where each entry
+/// is held. A storage that keeps none names no slot, and costs nothing for it.
+impl<K, V, const N: usize, S: MapStorage<Generation = u32>> BoundedMap<K, V, N, S> {
+    /// The entry held in `slot`, or `None` where the slot holds none, where
+    /// it holds an entry put after the one `slot` was read for (its
+    /// generation has moved since), or where the number names no slot the map
+    /// took.
+    pub fn at_slot(&self, slot: MapSlot) -> Option<(&K, &V)> {
+        let held = self.slots.taken().get(slot.index as usize)?;
+        if held.generation != slot.generation {
+            return None;
+        }
+        held.entry.as_ref().map(|(key, value)| (key, value))
+    }
+
+    /// The [`MapSlot`] of the slot `at` links to.
+    fn map_slot(&self, at: u32) -> MapSlot {
+        MapSlot {
+            index: at - 1,
+            generation: self.slot(at).generation,
+        }
+    }
+}
+
+impl<K: MapKey, V, const N: usize, S: MapStorage<Generation = u32>> BoundedMap<K, V, N, S> {
+    /// [`Self::put`], answering beside its outcome the slot the key's entry is
+    /// held in after it (docs/adr/0154, D2): the slot it was put in, or the
+    /// one it stands in where its value was replaced; `None` with
+    /// [`PutOutcome::Full`].
+    pub fn put_slot(&mut self, key: K, value: V) -> (PutOutcome, Option<MapSlot>) {
+        let (outcome, at) = self.put_link(key, value);
+        (outcome, at.map(|at| self.map_slot(at)))
+    }
+
+    /// The slot of the entry at `key` (docs/adr/0154, D2), or `None` where
+    /// the map does not hold it.
+    pub fn slot_of<Q: MapKey + ?Sized>(&self, key: &Q) -> Option<MapSlot> {
+        self.link_of(key).map(|at| self.map_slot(at))
     }
 }
 
@@ -2155,15 +2367,9 @@ impl<K, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
         self.0.limit()
     }
 
-    /// Empty the set, every slot it took freed ([`BoundedMap::clear`]).
+    /// Empty the set ([`BoundedMap::clear`]).
     pub fn clear(&mut self) {
         self.0.clear();
-    }
-
-    /// The key held in `slot`, or `None` where the slot holds none or a key
-    /// put after the one `slot` was read for ([`BoundedMap::at_slot`]).
-    pub fn at_slot(&self, slot: MapSlot) -> Option<&K> {
-        self.0.at_slot(slot).map(|(key, ())| key)
     }
 
     /// A copy of the set in the storage that holds its own slots, each key in
@@ -2181,12 +2387,12 @@ impl<K, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
     }
 
     /// The position of the first key, or `None` for an empty set.
-    pub fn first(&self) -> Option<MapCursor> {
+    pub fn first(&self) -> Option<MapCursor<S::Generation>> {
         self.0.first()
     }
 
     /// The position of the key after `at`, or `None` after the last.
-    pub fn next_after(&self, at: MapCursor) -> Option<MapCursor> {
+    pub fn next_after(&self, at: MapCursor<S::Generation>) -> Option<MapCursor<S::Generation>> {
         self.0.next_after(at)
     }
 
@@ -2195,7 +2401,7 @@ impl<K, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
     /// # Panics
     ///
     /// As [`BoundedMap::key_at`].
-    pub fn key_at(&self, at: MapCursor) -> &K {
+    pub fn key_at(&self, at: MapCursor<S::Generation>) -> &K {
         self.0.key_at(at)
     }
 }
@@ -2213,6 +2419,29 @@ impl<K: MapKey, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
         self.0.put(key, ())
     }
 
+    /// Take `key` out of the set, the others keeping their order.
+    pub fn remove<Q: MapKey + ?Sized>(&mut self, key: &Q) -> RemoveOutcome {
+        self.0.remove(key)
+    }
+
+    /// Key the set by `seed` from now on, its keys and their order as they
+    /// were ([`BoundedMap::reseed`]).
+    pub fn reseed(&mut self, seed: MapSeed) {
+        self.0.reseed(seed);
+    }
+}
+
+/// The slots of a set in storage whose slots keep a generation, as a map's
+/// (docs/adr/0154, D2).
+impl<K, const N: usize, S: MapStorage<Generation = u32>> BoundedSet<K, N, S> {
+    /// The key held in `slot`, or `None` where the slot holds none or a key
+    /// put after the one `slot` was read for ([`BoundedMap::at_slot`]).
+    pub fn at_slot(&self, slot: MapSlot) -> Option<&K> {
+        self.0.at_slot(slot).map(|(key, ())| key)
+    }
+}
+
+impl<K: MapKey, const N: usize, S: MapStorage<Generation = u32>> BoundedSet<K, N, S> {
     /// [`Self::put`], answering beside its outcome the slot the key is held in
     /// after it ([`BoundedMap::put_slot`]).
     pub fn put_slot(&mut self, key: K) -> (PutOutcome, Option<MapSlot>) {
@@ -2223,17 +2452,6 @@ impl<K: MapKey, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
     /// ([`BoundedMap::slot_of`]).
     pub fn slot_of<Q: MapKey + ?Sized>(&self, key: &Q) -> Option<MapSlot> {
         self.0.slot_of(key)
-    }
-
-    /// Take `key` out of the set, the others keeping their order.
-    pub fn remove<Q: MapKey + ?Sized>(&mut self, key: &Q) -> RemoveOutcome {
-        self.0.remove(key)
-    }
-
-    /// Key the set by `seed` from now on, its keys and their order as they
-    /// were ([`BoundedMap::reseed`]).
-    pub fn reseed(&mut self, seed: MapSeed) {
-        self.0.reseed(seed);
     }
 }
 
@@ -2602,12 +2820,9 @@ mod tests {
             let cursor = slot_of(&map, key).expect("held");
             assert_eq!(*map.value_at(cursor), key * 10);
         }
-        // The slot a remove gave back is the one the next put takes, its
-        // generation moved on (docs/adr/0154, D2).
+        // The slot a remove gave back is the one the next put takes.
         assert_eq!(map.put(100, 1), PutOutcome::Inserted);
-        let index = |at: Option<MapCursor>| at.map(|cursor| cursor.slot().index);
-        assert_eq!(index(slot_of(&map, 100)), index(before[6]));
-        assert_ne!(slot_of(&map, 100), before[6]);
+        assert_eq!(slot_of(&map, 100), before[6]);
     }
 
     /// A deterministic source of operations: xorshift64.
@@ -2721,9 +2936,10 @@ mod tests {
                 assert_eq!(map.get(&probe), held, "step {step}, key {probe}");
             }
             for (key, value) in &model {
-                let slot = map.slot_of(key).expect("a key the model holds");
-                assert!((slot.index as usize) < map.limit(), "step {step}");
-                assert_eq!(map.at_slot(slot), Some((key, value)), "step {step}");
+                let at = map.link_of(key).expect("a key the model holds");
+                assert!(slot_number(at) < map.limit(), "step {step}");
+                let held = map.slot(at).entry.as_ref().map(|(k, v)| (k, v));
+                assert_eq!(held, Some((key, value)), "step {step}");
             }
             assert!(map.index.tombstones() <= map.live, "step {step}");
         }
@@ -3207,7 +3423,8 @@ mod tests {
     {
         const BOUND: usize = 6;
         let placed = |map: &BoundedMap<u16, u32, BOUND, S>| {
-            let mut entries: heapless::Vec<(u16, u32, MapCursor), BOUND> = heapless::Vec::new();
+            let mut entries: heapless::Vec<(u16, u32, MapCursor<S::Generation>), BOUND> =
+                heapless::Vec::new();
             let mut at = map.first();
             while let Some(cursor) = at {
                 entries
@@ -3253,8 +3470,8 @@ mod tests {
         assert_eq!(map.put(7, 70), PutOutcome::Inserted);
         let last = placed(&map)
             .last()
-            .map(|(key, _, cursor)| (*key, cursor.slot().index));
-        assert_eq!(last, freed.map(|cursor| (7, cursor.slot().index)));
+            .map(|(key, _, cursor)| (*key, cursor.link));
+        assert_eq!(last, freed.map(|cursor| (7, cursor.link)));
     }
 
     /// docs/adr/0108, D12 items 2 and 3: a place at a key the map does not hold
@@ -3396,11 +3613,7 @@ mod tests {
             let value = (draw >> 32) as u32;
             match (draw >> 8) % 16 {
                 0..=7 => {
-                    assert_eq!(
-                        other.put_slot(key, value),
-                        inline.put_slot(key, value),
-                        "step {step}"
-                    );
+                    assert_eq!(other.put(key, value), inline.put(key, value), "step {step}");
                 }
                 8..=11 => {
                     assert_eq!(other.remove(&key), inline.remove(&key), "step {step}");
@@ -3422,12 +3635,12 @@ mod tests {
             assert!(other.iter().eq(inline.iter()), "step {step}");
             let mut at = (other.first(), inline.first());
             while let (Some(here), Some(there)) = at {
-                assert_eq!(here, there, "step {step}");
+                assert_eq!(here.link, there.link, "step {step}");
                 assert_eq!(other.key_at(here), inline.key_at(there), "step {step}");
                 assert_eq!(other.value_at(here), inline.value_at(there), "step {step}");
                 at = (other.next_after(here), inline.next_after(there));
             }
-            assert_eq!(at, (None, None), "step {step}");
+            assert!(at.0.is_none() && at.1.is_none(), "step {step}");
             for probe in 0..9u16 {
                 assert_eq!(
                     other.get(&probe),
@@ -3435,8 +3648,8 @@ mod tests {
                     "step {step}, key {probe}"
                 );
                 assert_eq!(
-                    other.slot_of(&probe),
-                    inline.slot_of(&probe),
+                    other.link_of(&probe),
+                    inline.link_of(&probe),
                     "step {step}, key {probe}"
                 );
             }
@@ -3504,8 +3717,8 @@ mod tests {
         assert_eq!(core::mem::size_of::<Scan>(), 0);
         assert_eq!(core::mem::size_of_val(&map.index), 0);
         assert!(
-            core::mem::size_of::<Slot<u64, u32, ()>>()
-                < core::mem::size_of::<Slot<u64, u32, u64>>()
+            core::mem::size_of::<Slot<u64, u32, (), ()>>()
+                < core::mem::size_of::<Slot<u64, u32, u64, ()>>()
         );
         assert!(
             core::mem::size_of::<BoundedMap<u64, u32, 4, Linear>>()
@@ -3603,7 +3816,7 @@ mod tests {
         let mut copy: BoundedMap<u16, u32, ANSWER_BOUND, Linear> = lent.to_owned_storage();
         assert!(copy == lent && copy == inline);
         for (key, _) in inline.iter() {
-            assert_eq!(copy.slot_of(key), lent.slot_of(key), "key {key}");
+            assert_eq!(copy.link_of(key), lent.link_of(key), "key {key}");
         }
         copy.clear();
         assert!(lent == inline);
@@ -3618,7 +3831,7 @@ mod tests {
         let mut copy: BoundedMap<u16, u32, ANSWER_BOUND, Inline> = indexed.to_owned_storage();
         assert!(copy == indexed && copy == inline);
         for (key, _) in inline.iter() {
-            assert_eq!(copy.slot_of(key), indexed.slot_of(key), "key {key}");
+            assert_eq!(copy.link_of(key), indexed.link_of(key), "key {key}");
             assert_eq!(copy.get(key), indexed.get(key), "key {key}");
         }
         copy.clear();
@@ -3647,7 +3860,7 @@ mod tests {
 
     /// The puts of `a_lent_map_holds_as_many_entries_as_it_was_lent` on `map`,
     /// empty, bounded by 8 and lent 3 slots.
-    fn holds_its_limit<S: MapStorage>(mut map: BoundedMap<u32, u32, 8, S>) {
+    fn holds_its_limit<S: MapStorage<Generation = u32>>(mut map: BoundedMap<u32, u32, 8, S>) {
         assert_eq!(map.limit(), 3);
         assert_eq!(BoundedMap::<u32, u32, 8, S>::CAPACITY, 8);
         for key in 0..3u32 {
@@ -3716,7 +3929,7 @@ mod tests {
 
     /// The operations of `a_map_lent_no_slot_borrows_no_byte_and_holds_nothing`
     /// on `map`, lent no slot.
-    fn holds_nothing<S: MapStorage>(map: &mut BoundedMap<u64, u64, 4096, S>) {
+    fn holds_nothing<S: MapStorage<Generation = u32>>(map: &mut BoundedMap<u64, u64, 4096, S>) {
         assert_eq!(map.limit(), 0);
         assert_eq!(map.put_slot(1, 1), (PutOutcome::Full, None));
         assert_eq!(map.get(&1u64), None);
@@ -3799,10 +4012,6 @@ mod tests {
     /// stands in. In every storage.
     #[test]
     fn an_entry_keeps_its_slot_until_it_is_removed() {
-        stays_in_its_slot(BoundedMap::<u32, u32, 6, Inline>::with_seed(SEED));
-        #[cfg(feature = "alloc")]
-        stays_in_its_slot(BoundedMap::<u32, u32, 6, Heap>::with_seed(SEED));
-        stays_in_its_slot(BoundedMap::<u32, u32, 6, Linear>::new());
         let mut slots: [LentSlot<u32, u32>; 6] = lent_run();
         stays_in_its_slot(
             BoundedMap::<u32, u32, 6, Lent<'_>>::over(SEED, &mut slots)
@@ -3818,7 +4027,7 @@ mod tests {
 
     /// The operations of `an_entry_keeps_its_slot_until_it_is_removed` on
     /// `map`, empty.
-    fn stays_in_its_slot<S: MapStorage>(mut map: BoundedMap<u32, u32, 6, S>) {
+    fn stays_in_its_slot<S: MapStorage<Generation = u32>>(mut map: BoundedMap<u32, u32, 6, S>) {
         let (outcome, kept) = map.put_slot(7, 70);
         assert_eq!(outcome, PutOutcome::Inserted);
         let kept = kept.expect("an empty map takes a key");
@@ -3859,10 +4068,6 @@ mod tests {
     /// slot the map took reads nothing. In every storage.
     #[test]
     fn a_slot_taken_again_does_not_answer_its_old_number() {
-        answers_none_to_an_old_number(BoundedMap::<u32, u32, 4, Inline>::with_seed(SEED));
-        #[cfg(feature = "alloc")]
-        answers_none_to_an_old_number(BoundedMap::<u32, u32, 4, Heap>::with_seed(SEED));
-        answers_none_to_an_old_number(BoundedMap::<u32, u32, 4, Linear>::new());
         let mut slots: [LentSlot<u32, u32>; 4] = lent_run();
         answers_none_to_an_old_number(
             BoundedMap::<u32, u32, 4, Lent<'_>>::over(SEED, &mut slots)
@@ -3878,7 +4083,9 @@ mod tests {
 
     /// The operations of `a_slot_taken_again_does_not_answer_its_old_number`
     /// on `map`, empty.
-    fn answers_none_to_an_old_number<S: MapStorage>(mut map: BoundedMap<u32, u32, 4, S>) {
+    fn answers_none_to_an_old_number<S: MapStorage<Generation = u32>>(
+        mut map: BoundedMap<u32, u32, 4, S>,
+    ) {
         let first = map.put_slot(1, 10).1.expect("room");
         let second = map.put_slot(2, 20).1.expect("room");
         assert_eq!(map.remove(&1u32), RemoveOutcome::Removed);
@@ -3889,7 +4096,7 @@ mod tests {
         assert_eq!(map.at_slot(first), None);
         assert_eq!(map.at_slot(again), Some((&3, &30)));
         assert_eq!(map.at_slot(second), Some((&2, &20)));
-        assert_eq!(map.first().map(MapCursor::slot), Some(second));
+        assert_eq!(map.first().map(MapCursor::<u32>::slot), Some(second));
         map.clear();
         assert_eq!(map.at_slot(second), None);
         assert_eq!(map.at_slot(again), None);
@@ -3920,7 +4127,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "a map position names no entry")]
     fn a_position_read_before_its_slot_was_taken_again_names_no_entry() {
-        let mut map = BoundedMap::<u32, u32, 2, Linear>::new();
+        let mut slots: [LentSlot<u32, u32>; 2] = lent_run();
+        let mut map =
+            BoundedMap::<u32, u32, 2, Lent<'_>>::over(SEED, &mut slots).expect("within the bound");
         assert_eq!(map.put(1, 10), PutOutcome::Inserted);
         let stale = map.first().expect("an entry");
         assert_eq!(map.remove(&1u32), RemoveOutcome::Removed);
@@ -3928,11 +4137,13 @@ mod tests {
         let _ = map.key_at(stale);
     }
 
-    /// docs/adr/0154, D2 and D3: a copy holds each entry at the slot it held, so
-    /// a [`MapSlot`] read from the map reads the same entry in the copy and a
-    /// position read from one is a position of the other; the slot a remove
-    /// freed is still the one the copy's next put takes, and the copy is the
-    /// copy's own.
+    /// docs/adr/0154, D3: a clone of a map that holds its own slots is the
+    /// copy it always was, its slots and its index copied as they stand, a
+    /// tombstone a remove left included, so a position read from one is a
+    /// position of the other and the slot a remove freed is the one the copy's
+    /// next put takes; the copy is its own. A map whose host lent its slots is
+    /// copied into its owned storage with each entry at the same number, and
+    /// the slot its remove freed is the one that copy's next put takes too.
     #[test]
     fn a_copy_holds_each_entry_at_the_slot_it_held() {
         let mut map = BoundedMap::<u32, u32, 4, Inline>::with_seed(SEED);
@@ -3940,17 +4151,89 @@ mod tests {
             assert_eq!(map.put(key, key * 10), PutOutcome::Inserted);
         }
         assert_eq!(map.remove(&1u32), RemoveOutcome::Removed);
+        assert_eq!(map.index.tombstones, 1);
         let mut copy = map.clone();
-        for key in [0u32, 2, 3] {
-            let slot = map.slot_of(&key).expect("held");
-            assert_eq!(copy.slot_of(&key), Some(slot), "key {key}");
-            assert_eq!(copy.at_slot(slot), map.at_slot(slot), "key {key}");
-        }
+        assert_eq!(copy.index, map.index, "the index as it stands");
+        assert_eq!(copy.slots.len(), map.slots.len());
+        assert_eq!(
+            (copy.head, copy.tail, copy.free),
+            (map.head, map.tail, map.free)
+        );
         assert_eq!(copy.first(), map.first());
-        let taken = copy.put_slot(9, 90).1.expect("a freed slot");
-        assert_eq!(taken.index, 1);
+        assert_eq!(copy.put(9, 90), PutOutcome::Inserted);
+        assert_eq!(copy.link_of(&9u32), Some(link_to(1)));
         assert_eq!(map.get(&9u32), None);
         assert_eq!(map.len(), 3);
+
+        let mut slots: [LentIndexedSlot<u32, u32>; 4] = indexed_run();
+        let mut cells = [LentCell::EMPTY; 8];
+        let mut lent =
+            BoundedMap::<u32, u32, 4, LentIndexed<'_>>::over(SEED, &mut slots, &mut cells)
+                .expect("as many slots as the bound");
+        for key in 0..4u32 {
+            assert_eq!(lent.put(key, key * 10), PutOutcome::Inserted);
+        }
+        assert_eq!(lent.remove(&1u32), RemoveOutcome::Removed);
+        let mut owned: BoundedMap<u32, u32, 4, Inline> = lent.to_owned_storage();
+        for key in [0u32, 2, 3] {
+            let slot = lent.slot_of(&key).expect("held");
+            assert_eq!(owned.link_of(&key), Some(slot.index + 1), "key {key}");
+            assert_eq!(owned.get(&key), Some(&(key * 10)), "key {key}");
+        }
+        assert_eq!(owned.put(9, 90), PutOutcome::Inserted);
+        assert_eq!(owned.link_of(&9u32), Some(link_to(1)));
+        assert_eq!(lent.get(&9u32), None);
+    }
+
+    /// The slot of a map in storage that holds its own slots laid out as it
+    /// was before any storage kept a generation (docs/adr/0154, D2): its entry,
+    /// its stamp and its two links, and nothing more.
+    #[allow(dead_code)]
+    struct SlotWithoutGeneration<K, V, H> {
+        entry: Option<(K, V)>,
+        stamp: H,
+        prev: u32,
+        next: u32,
+    }
+
+    /// docs/adr/0154, D2: a storage that names no slot to its host pays
+    /// nothing for the slots that do. The slot of an [`Inline`], [`Heap`] and
+    /// [`Linear`] map is as large as one with no generation, for keys and
+    /// values of several widths, a position of such a map is one `u32`, and
+    /// an inline map is as large as its slots and index with no generation
+    /// make it; a lent map's slot carries its generation, and its position
+    /// carries one too.
+    #[test]
+    fn a_storage_that_names_no_slot_pays_nothing_for_a_generation() {
+        fn same<K, V, H>() {
+            assert_eq!(
+                core::mem::size_of::<Slot<K, V, H, ()>>(),
+                core::mem::size_of::<SlotWithoutGeneration<K, V, H>>()
+            );
+            assert_eq!(
+                core::mem::align_of::<Slot<K, V, H, ()>>(),
+                core::mem::align_of::<SlotWithoutGeneration<K, V, H>>()
+            );
+        }
+        same::<u32, u32, u64>();
+        same::<u64, u64, u64>();
+        same::<u8, (), u64>();
+        same::<u16, u32, ()>();
+        same::<u64, u64, ()>();
+        same::<SceString<8>, u32, u64>();
+        assert_eq!(core::mem::size_of::<Slot<u64, u64, u64, ()>>(), 40);
+        assert_eq!(core::mem::size_of::<Slot<u32, u32, (), ()>>(), 20);
+        assert_eq!(
+            core::mem::size_of::<heapless::Vec<Slot<u64, u64, u64, ()>, 16>>(),
+            core::mem::size_of::<heapless::Vec<SlotWithoutGeneration<u64, u64, u64>, 16>>()
+        );
+        assert_eq!(core::mem::size_of::<MapCursor>(), 4);
+        assert_eq!(core::mem::size_of::<MapCursor<()>>(), 4);
+        assert_eq!(core::mem::size_of::<MapCursor<u32>>(), 8);
+        assert_eq!(
+            core::mem::size_of::<LentSlot<u32, u32>>(),
+            core::mem::size_of::<Slot<u32, u32, (), ()>>() + 4
+        );
     }
 
     /// docs/adr/0154, D1, what the `unsafe` of a lent run rests on: the map
@@ -3964,19 +4247,19 @@ mod tests {
     fn a_lent_map_reaches_only_the_run_it_was_lent() {
         assert_eq!(
             core::mem::size_of::<LentSlot<u64, u32>>(),
-            core::mem::size_of::<Slot<u64, u32, ()>>()
+            core::mem::size_of::<Slot<u64, u32, (), u32>>()
         );
         assert_eq!(
             core::mem::align_of::<LentSlot<u64, u32>>(),
-            core::mem::align_of::<Slot<u64, u32, ()>>()
+            core::mem::align_of::<Slot<u64, u32, (), u32>>()
         );
         assert_eq!(
             core::mem::size_of::<LentIndexedSlot<u8, u16>>(),
-            core::mem::size_of::<Slot<u8, u16, u64>>()
+            core::mem::size_of::<Slot<u8, u16, u64, u32>>()
         );
         assert_eq!(
             core::mem::align_of::<LentIndexedSlot<u8, u16>>(),
-            core::mem::align_of::<Slot<u8, u16, u64>>()
+            core::mem::align_of::<Slot<u8, u16, u64, u32>>()
         );
         assert_eq!(
             core::mem::size_of::<LentCell>(),
@@ -4104,7 +4387,13 @@ mod tests {
             .expect("as many slots as the bound");
         let mut inline = BoundedSet::<u8, 3, Inline>::with_seed(SEED);
         for key in [4u8, 1, 4, 7, 2, 1] {
-            assert_eq!(tags.put_slot(key), inline.put_slot(key), "key {key}");
+            let (outcome, slot) = tags.put_slot(key);
+            assert_eq!(outcome, inline.put(key), "key {key}");
+            assert_eq!(
+                slot.map(|slot| slot.index + 1),
+                inline.0.link_of(&key),
+                "key {key}"
+            );
         }
         assert_eq!(tags.remove(&4u8), inline.remove(&4u8));
         assert_eq!(tags.put(9), inline.put(9));
@@ -4114,7 +4403,7 @@ mod tests {
         assert_eq!(tags.at_slot(held), Some(&7));
         let copy: BoundedSet<u8, 3, Linear> = tags.to_owned_storage();
         assert!(copy == tags);
-        assert_eq!(copy.slot_of(&7u8), Some(held));
+        assert_eq!(copy.0.link_of(&7u8), Some(held.index + 1));
 
         let mut pair: [LentIndexedSlot<u8, ()>; 2] = indexed_run();
         let mut cells = [LentCell::EMPTY; 4];
