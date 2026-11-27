@@ -4,8 +4,9 @@
 //! A codec a build reads once per event, outside the hot closure of the roots
 //! it names, is read by the runtime's one walker over the table of its fields
 //! where every field is of a kind a row states (docs/adr/0155): its read is one
-//! call of `read_table`, and what it declares is what it declares with no codec
-//! named. No hot body calls the walker, and a build that names no hot root
+//! call of `read_table`, its write, where its encode refuses no value, one
+//! call of `write_table`, and what it declares is what it declares with no
+//! codec named. No hot body calls the walker, and a build that names no hot root
 //! prints no table, so no golden moves.
 
 use std::path::PathBuf;
@@ -150,6 +151,60 @@ fn no_hot_body_calls_the_walker_and_a_cold_codec_of_rows_is_one_call_of_it() {
                 "the cold {name} calls the walker other than once (views: {views}):\n{code}"
             );
         }
+        // docs/adr/0155 section 3: a cold table codec whose encode refuses no
+        // value is written by one call of the runtime's writer over the same
+        // table, made with the numbers its encode derives; the key expression,
+        // whose suffix is gated by an input its encode holds the value to, can
+        // refuse a value and keeps its write printed.
+        for (name, call, derives) in [
+            (
+                "codec_zenoh_msg_del",
+                "::sce_forge_runtime::codec::write_table(w, &CODEC_ZENOH_MSG_DEL_FIELDS, &[], \
+                 &CodecZenohMsgDelRows(src))",
+                &[
+                    "Derive { into: Bits::range(Source::Row(0), 5, 1), from: Derived::Present(1) },",
+                    "Derive { into: Bits::range(Source::Row(0), 7, 1), from: Derived::Present(2) },",
+                ][..],
+            ),
+            (
+                "codec_zenoh_query",
+                "::sce_forge_runtime::codec::write_table(w, &CODEC_ZENOH_QUERY_FIELDS, &[], \
+                 &CodecZenohQueryRows(src))",
+                &[
+                    "Derive { into: Bits::range(Source::Row(0), 5, 1), from: Derived::Present(1) },",
+                    "Derive { into: Bits::range(Source::Row(0), 6, 1), from: Derived::Present(3) },",
+                    "Derive { into: Bits::range(Source::Row(0), 7, 1), from: Derived::Present(4) },",
+                    "Derive { into: Bits::whole(Source::Row(2)), from: Derived::Count(3) },",
+                ][..],
+            ),
+        ] {
+            let code = rust_with(name, &named);
+            assert!(
+                code.contains(call),
+                "the cold {name} is not written by one call of the writer (views: {views}):\n{code}"
+            );
+            assert_eq!(
+                code.matches("write_table(").count(),
+                1,
+                "the cold {name} calls the writer other than once (views: {views}):\n{code}"
+            );
+            assert!(
+                code.contains("FieldTable::with_derived(ROWS, DERIVED)"),
+                "the table of the cold {name} is made with no derive (views: {views}):\n{code}"
+            );
+            for derive in derives {
+                assert!(
+                    code.contains(derive),
+                    "the table of the cold {name} has no `{derive}` (views: {views}):\n{code}"
+                );
+            }
+        }
+        let wireexpr = rust_with("codec_zenoh_wireexpr", &named);
+        assert!(
+            !wireexpr.contains("write_table(") && wireexpr.contains("FieldTable::new(ROWS)"),
+            "codec_zenoh_wireexpr can refuse a value and is written by the walker \
+             (views: {views}):\n{wireexpr}"
+        );
         assert_eq!(
             rust_with("codec_zenoh_request", &named),
             rust_with("codec_zenoh_request", &none),

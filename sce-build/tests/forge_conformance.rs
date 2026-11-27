@@ -4156,8 +4156,8 @@ fn a_set_with_hot_codecs_compiles_with_and_without_views() {
 /// A cold codec read by the walker over the table of its fields (docs/adr/0155)
 /// decodes what its printed read decodes and refuses what it refuses: the request
 /// family generated with the put named hot reads the delete, the query and the
-/// key expression by their tables, each frame decodes to the value whose encode
-/// is the frame again, and a frame past a bound, short or not UTF-8 is refused
+/// key expression by their tables and writes the delete and the query by them,
+/// each frame decodes to the value whose encode is the frame again, and a frame past a bound, short or not UTF-8 is refused
 /// as the printed read refuses it.
 #[test]
 fn a_cold_codec_read_by_its_table_decodes_and_writes_back_its_frames() {
@@ -4188,7 +4188,7 @@ mod tests {
 
     #[test]
     fn a_query_read_by_its_table_writes_its_frame_back() {
-        let frames: [&[u8]; 4] = [&[0x03], &[0x23, 0x01], &[0x43, 0x02, 0xAA, 0xBB], &[0x63, 0x07, 0x00]];
+        let frames: [&[u8]; 5] = [&[0x03], &[0x23, 0x01], &[0x43, 0x02, 0xAA, 0xBB], &[0x63, 0x07, 0x00], &[0x83, 0x01]];
         for frame in frames {
             let query = CodecZenohQuery::decode(&mut SceCursor::new(frame)).expect("decode");
             assert_eq!(query.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
@@ -4202,7 +4202,7 @@ mod tests {
 
     #[test]
     fn a_delete_read_by_its_table_writes_its_frame_back() {
-        let frames: [&[u8]; 2] = [&[0x02], &[0x42]];
+        let frames: [&[u8]; 5] = [&[0x02], &[0x42], &[0x22, 0x05, 0x01, 0xAB], &[0x82, 0x01], &[0xA2, 0x05, 0x01, 0xAB, 0x81, 0x01]];
         for frame in frames {
             let delete = CodecZenohMsgDel::decode(&mut SceCursor::new(frame)).expect("decode");
             assert_eq!(delete.encode_to_vec().written(), frame.to_vec(), "{frame:x?}");
@@ -4236,6 +4236,17 @@ mod tests {
                 .iter()
                 .any(|(_, code)| code.contains(&format!("::read_table(cursor, &{table}, "))),
             "no codec of the set is read by {table} with {} hot",
+            case.named
+        );
+    }
+    // The delete and the query refuse no value and are written by the one
+    // writer over the same tables, so each frame written back is the table's.
+    for table in ["CODEC_ZENOH_MSG_DEL_FIELDS", "CODEC_ZENOH_QUERY_FIELDS"] {
+        assert!(
+            files
+                .iter()
+                .any(|(_, code)| code.contains(&format!("::write_table(w, &{table}, "))),
+            "no codec of the set is written by {table} with {} hot",
             case.named
         );
     }

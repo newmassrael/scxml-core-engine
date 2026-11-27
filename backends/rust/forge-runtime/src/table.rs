@@ -422,15 +422,22 @@ fn read_row<'f>(
             count
         }
         Read::Body { inputs: wanted } => {
-            let mut handed = [0u64; ROW_INPUTS];
-            for (slot, bits) in handed.iter_mut().zip(wanted) {
-                *slot = bits.of(frame, inputs);
-            }
+            let handed = body_inputs(wanted, frame, inputs);
             let count = wanted.len().min(ROW_INPUTS);
             out.read(at, reader, &handed[..count]);
             0
         }
     }
+}
+
+/// The numbers a body row hands its read or its write: each range `wanted`
+/// names, over `frame` and the codec's `inputs`, the first [`ROW_INPUTS`].
+fn body_inputs(wanted: &[Bits], frame: &[u64; TABLE_ROWS], inputs: &[u64]) -> [u64; ROW_INPUTS] {
+    let mut handed = [0u64; ROW_INPUTS];
+    for (slot, bits) in handed.iter_mut().zip(wanted) {
+        *slot = bits.of(frame, inputs);
+    }
+    handed
 }
 
 /// An unsigned integer of `bytes` bytes, consumed; zero and `NeedMoreBytes`
@@ -491,10 +498,17 @@ pub trait TableSource<E: core::fmt::Debug> {
         0
     }
 
-    /// Write the field of the row `row` ([`Read::Body`]) into `sink`: the body,
-    /// the arm or the list, each by its own codec's write.
-    fn write(&self, row: usize, sink: &mut dyn SceSink<Error = E>) -> Result<(), E> {
-        let _ = (row, sink);
+    /// Write the field of the row `row` ([`Read::Body`]) into `sink`, handed
+    /// `inputs`: the body, the arm or the list, each by its own codec's write.
+    /// The inputs are the row's, read off the numbers the write derived, as
+    /// [`TableOut::read`] is handed them off the numbers the read read.
+    fn write(
+        &self,
+        row: usize,
+        sink: &mut dyn SceSink<Error = E>,
+        inputs: &[u64],
+    ) -> Result<(), E> {
+        let _ = (row, sink, inputs);
         Ok(())
     }
 }
@@ -618,7 +632,11 @@ pub fn write_table<E: core::fmt::Debug>(
                 );
                 sink.write_bytes(bytes)?;
             }
-            Read::Body { .. } => src.write(at, sink)?,
+            Read::Body { inputs: wanted } => {
+                let handed = body_inputs(wanted, &frame, inputs);
+                let count = wanted.len().min(ROW_INPUTS);
+                src.write(at, sink, &handed[..count])?;
+            }
         }
     }
     Ok(())
@@ -1156,8 +1174,23 @@ mod tests {
             }
         }
 
-        fn write(&self, row: usize, sink: &mut dyn SceSink<Error = E>) -> Result<(), E> {
+        fn write(
+            &self,
+            row: usize,
+            sink: &mut dyn SceSink<Error = E>,
+            inputs: &[u64],
+        ) -> Result<(), E> {
             assert_eq!(row, 4);
+            // The header's bits 5 and 6, which the value states, and its bit 0,
+            // which the count of the byte string derives: the bits of the
+            // header as written, not as the value holds it.
+            assert_eq!(
+                inputs,
+                &[
+                    u64::from(self.header >> 5) & 0x3,
+                    self.bytes.len() as u64 & 0x1
+                ]
+            );
             match self.body {
                 Some(byte) => sink.write_u8(byte),
                 None => Ok(()),

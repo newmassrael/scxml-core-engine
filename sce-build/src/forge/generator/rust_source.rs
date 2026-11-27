@@ -66,6 +66,21 @@ pub(super) struct Input<'a> {
     /// one, for the instructions and the call overhead they cost, at the price of
     /// text. Off, the output is as it was.
     pub(super) inline_encode: bool,
+    /// The table the codec is read by where it is cold (docs/adr/0155), which
+    /// its write is lowered over where every number its encode derives is a
+    /// derive of the table's rows; `None` for a codec read as printed.
+    pub(super) table: Option<&'a super::field_table::PrintedTable>,
+}
+
+/// The source interface of a codec, and what the generation of its table
+/// needs of it.
+pub(super) struct Rendered {
+    /// The text a codec file holds.
+    pub(super) text: String,
+    /// The numbers the encode derives, as derives of the rows of the codec's
+    /// table, where its write is the runtime's one writer over the table
+    /// (docs/adr/0155 section 3); empty where it is not, or derives none.
+    pub(super) derived: Vec<super::field_table::Derive>,
 }
 
 /// What a function of a codec that writes into the sink `sink` returns, with
@@ -1367,11 +1382,28 @@ fn body_equal(
 
 /// The source interface of a codec, as the text a codec file holds, or why the
 /// codec has none yet.
-pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
+pub(super) fn render(input: &Input<'_>) -> Result<Rendered, Unsupported> {
     let plan = Plan::of(input)?;
     let text = plan.text();
     plan.encode.totality.assert_all_written(&input.m.name);
-    Ok(text)
+    let derived = plan
+        .table_write
+        .as_ref()
+        .map(|write| write.derived.clone())
+        .unwrap_or_default();
+    Ok(Rendered { text, derived })
+}
+
+/// The write of a cold codec by the runtime's one writer over the table its
+/// read reads (docs/adr/0155 section 3).
+struct TableWrite {
+    /// The numbers the encode derives, as derives of the table's rows.
+    derived: Vec<super::field_table::Derive>,
+    /// The body of `write_source`: the one call of the writer.
+    call: String,
+    /// The adapter of a source the writer reads the rows through, and its
+    /// `TableSource`.
+    items: String,
 }
 
 /// The type a codec named `name` is written through: `{name}Wire`, which holds
@@ -1591,6 +1623,10 @@ struct Plan<'a> {
     /// they read, each of which is then a parameter of that function and not a
     /// read of the source. `None` while the source is read.
     envelope_reads: RefCell<Option<BTreeSet<String>>>,
+    /// The write of the codec by the runtime's one writer over its table,
+    /// where the codec is read by one ([`Input::table`]) and its write
+    /// lowers to it ([`Plan::lower_write`]); `None` where it is printed.
+    table_write: Option<TableWrite>,
 }
 
 /// Whether `m` has a source interface, given whether each codec it imports has
@@ -2027,12 +2063,19 @@ impl<'a> Plan<'a> {
                 .any(|i| i.alias == alias && i.kind == "codec" && i.codec_has_source)
         };
         check(input.m, &has_source)?;
-        Ok(Plan {
+        let mut plan = Plan {
             input,
             encode: EncodePlan::of(input.m, input.imports),
             trait_name: format!("{}Source", input.struct_name),
             envelope_reads: RefCell::new(None),
-        })
+            table_write: None,
+        };
+        // docs/adr/0155 section 3: a codec read by a table is written by the
+        // one writer over it where its write lowers to the table's rows, and
+        // printed where it does not.
+        let write = input.table.and_then(|table| plan.lower_write(table).ok());
+        plan.table_write = write;
+        Ok(plan)
     }
 
     /// Whether the encode can refuse a value (docs/adr/0065): it then returns
@@ -4726,9 +4769,16 @@ impl<'a> Plan<'a> {
     fn encode_impl(&self) -> String {
         // A codec whose writes before its variant's body are read off its
         // fields alone prints them as a function of their own (docs/adr/0126).
-        let (body, envelope) = match self.envelope_at() {
-            Some(at) => self.write_apart(at),
-            None => (self.write_body(), String::new()),
+        // A codec written by the runtime's one writer over its table holds the
+        // writer's call and, after its wire, the adapter the writer reads the
+        // value through (docs/adr/0155 section 3).
+        let (body, envelope, adapter) = match (&self.table_write, self.envelope_at()) {
+            (Some(table), _) => (table.call.clone(), String::new(), table.items.clone()),
+            (None, Some(at)) => {
+                let (body, envelope) = self.write_apart(at);
+                (body, envelope, String::new())
+            }
+            (None, None) => (self.write_body(), String::new(), String::new()),
         };
         let write = self.write_functions(&body);
         // A list or an embedded body is written by the codec it holds, which
@@ -4786,7 +4836,7 @@ impl<'a> Plan<'a> {
              {write}{envelope}\n\
              {count}\
              }}\n\
-             {measure}",
+             {measure}{adapter}",
             wire = wire_name(self.name()),
             name = self.name(),
             trait_name = self.trait_name,
@@ -4794,6 +4844,276 @@ impl<'a> Plan<'a> {
             inputs = self.input_functions(),
             tag_of = self.tag_of_function(),
         )
+    }
+
+    // ── the write over a table (docs/adr/0155 section 3) ────────────────
+
+    /// The adapter a source is read through by the runtime's one writer:
+    /// `{Codec}Rows`.
+    fn rows_name(&self) -> String {
+        format!("{}Rows", self.name())
+    }
+
+    /// The write of the codec by the runtime's one writer over `table`, the
+    /// table its read reads (docs/adr/0155 section 3), or why its write stays
+    /// printed.
+    ///
+    /// Only a codec whose encode refuses no value is written by the table: the
+    /// writer's one error is the sink's, so each byte string and text must be
+    /// held to its row's bound by its type, which is checked here, and no
+    /// refusal is left to the writer. Every number the encode derives is a
+    /// derive of a row ([`super::field_table::derives`]), a number the value
+    /// says is read off its accessor, and a body is written by the statement
+    /// the printed encode writes it by, handed the numbers its row hands.
+    fn lower_write(&self, table: &super::field_table::PrintedTable) -> Result<TableWrite, String> {
+        use super::field_table::{dispatch, DerivedFrom, Kind, Place};
+        if self.may_fail() {
+            return Err("the encode can refuse a value".to_string());
+        }
+        if !self.overridable().is_empty() {
+            return Err("a parent sets a flag of the codec".to_string());
+        }
+        if !self.encode.said.is_empty() || self.encode.given.len() != self.m().flag_inputs.len() {
+            return Err("the value says an input of the codec".to_string());
+        }
+        if !self.encode.roles.groups.is_empty() || self.m().variant.is_some() {
+            return Err("the codec holds a group or a variant".to_string());
+        }
+        if table.rows.len() != self.m().fields.len() {
+            return Err("a row is no field of the codec".to_string());
+        }
+        if !self
+            .encode
+            .program
+            .iter()
+            .all(|write| matches!(write, Write::Streamed { .. }))
+        {
+            return Err("the encode writes a positional layout".to_string());
+        }
+        let derived = super::field_table::derives(&self.encode, table)?;
+        // A row whose number is derived whole is written as derived, and
+        // read off no accessor.
+        let whole: BTreeSet<usize> = derived
+            .iter()
+            .filter_map(|derive| match derive.into.from {
+                Place::Row(row) if derive.into.width.is_none() => Some(row),
+                _ => None,
+            })
+            .collect();
+        let mut numbers = Vec::new();
+        let mut bytes = Vec::new();
+        let mut writes = Vec::new();
+        for (at, (row, field)) in table.rows.iter().zip(&self.m().fields).enumerate() {
+            let read = format!("self.0.{}()", self.accessor(field));
+            let optional = self.encode.presence(field).optional();
+            match &row.kind {
+                Kind::Uint { .. } | Kind::Zint { .. } => {
+                    if whole.contains(&at) {
+                        continue;
+                    }
+                    if !self.has_accessor(field) {
+                        return Err(format!(
+                            "field '{}' is a number the value does not say and the encode \
+                             does not derive whole",
+                            field.id
+                        ));
+                    }
+                    let value = if optional {
+                        format!("{read}.map_or(0, u64::from)")
+                    } else {
+                        format!("u64::from({read})")
+                    };
+                    numbers.push((at, format!("                {value}\n")));
+                }
+                Kind::Counted { text, max, .. } => {
+                    if !self.has_accessor(field) {
+                        return Err(format!(
+                            "field '{}' is bytes the value does not say",
+                            field.id
+                        ));
+                    }
+                    // The writer cannot refuse a count past the row's bound: the
+                    // type the value holds the field in holds it there.
+                    let most = encode_plan::byte_bound(field, &self.m().fields).most;
+                    if max.is_some_and(|max| !most.is_some_and(|most| most <= max)) {
+                        return Err(format!(
+                            "field '{}' is held by a type whose bound is not within its row's",
+                            field.id
+                        ));
+                    }
+                    let inner = if *text {
+                        "into_inner().as_bytes()"
+                    } else {
+                        "into_inner()"
+                    };
+                    let value = if optional {
+                        format!("{read}.map_or(&[][..], |_v| _v.{inner})")
+                    } else {
+                        format!("{read}.{inner}")
+                    };
+                    bytes.push((at, format!("                {value}\n")));
+                }
+                Kind::Body { handed, .. } => writes.push((at, self.body_write(field, handed)?)),
+            }
+        }
+        let mut present: Vec<(usize, String)> = Vec::new();
+        for derive in &derived {
+            let DerivedFrom::Present(at) = derive.from else {
+                continue;
+            };
+            let field = &self.m().fields[at];
+            if !self.has_accessor(field) || !self.encode.presence(field).optional() {
+                return Err(format!(
+                    "the presence of field '{}' is no accessor's of the value",
+                    field.id
+                ));
+            }
+            if present.iter().all(|(row, _)| *row != at) {
+                present.push((
+                    at,
+                    format!(
+                        "                self.0.{}().is_some()\n",
+                        self.accessor(field)
+                    ),
+                ));
+            }
+        }
+        present.sort_by_key(|(row, _)| *row);
+        let mut methods = Vec::new();
+        if !numbers.is_empty() {
+            methods.push(format!(
+                "    fn number(&self, row: usize) -> u64 {{\n{}    }}\n",
+                dispatch(&numbers, "0")
+            ));
+        }
+        if !present.is_empty() {
+            methods.push(format!(
+                "    fn present(&self, row: usize) -> bool {{\n{}    }}\n",
+                dispatch(&present, "true")
+            ));
+        }
+        if !bytes.is_empty() {
+            methods.push(format!(
+                "    fn bytes(&self, row: usize) -> &[u8] {{\n{}    }}\n",
+                dispatch(&bytes, "&[]")
+            ));
+        }
+        if !writes.is_empty() {
+            methods.push(format!(
+                "    fn write(&self, row: usize, sink: &mut dyn {RUNTIME_CODEC}::SceSink<Error = E>, inputs: &[u64]) -> Result<(), E> {{\n\
+                 \x20       let _ = inputs;\n\
+                 \x20       let src = self.0;\n\
+                 \x20       let w = &mut {RUNTIME_CODEC}::DynSink(sink);\n\
+                 {}\
+                 \x20       Ok(())\n\
+                 \x20   }}\n",
+                dispatch(&writes, "")
+            ));
+        }
+        let rows = self.rows_name();
+        let items = format!(
+            "\n/// A value of `{name}` as the rows of `{table}` say it, read through\n\
+             /// [`{trait_name}`] by the runtime's one writer (docs/adr/0155).\n\
+             struct {rows}<'s, S: ?Sized>(&'s S);\n\n\
+             impl<S: {trait_name} + ?Sized, E: ::core::fmt::Debug> {RUNTIME_CODEC}::TableSource<E> for {rows}<'_, S> {{\n{methods}}}\n",
+            name = self.name(),
+            table = table.name,
+            trait_name = self.trait_name,
+            methods = methods.join("\n"),
+        );
+        let call = format!(
+            "\x20       {RUNTIME_CODEC}::write_table(w, &{}, &[{}], &{rows}(src))\n",
+            table.name, table.inputs
+        );
+        Ok(TableWrite {
+            derived,
+            call,
+            items,
+        })
+    }
+
+    /// The write of the body `field`, a row of a table handed `handed`, as
+    /// the arm of the adapter's `write`: the statement the printed encode
+    /// writes it by, each number it reads bound from what the row is handed.
+    /// A statement that reads a number the encode derives and the row does
+    /// not hand, or an input the row does not hand, is no arm.
+    fn body_write(
+        &self,
+        field: &CodecField,
+        handed: &[super::field_table::Handed],
+    ) -> Result<String, String> {
+        use super::field_table::{handed_binding, mentions, Place};
+        let Some((guard, list)) = self.encode.program.iter().find_map(|write| match write {
+            Write::Streamed {
+                field: written,
+                guard,
+                list,
+            } if written.id == field.id => Some((*guard, list.as_ref())),
+            _ => None,
+        }) else {
+            return Err(format!(
+                "field '{}' is written by no write of its own",
+                field.id
+            ));
+        };
+        let mut derived = Derived::default();
+        let mut bindings: Vec<String> = Vec::new();
+        let mut inputs: BTreeSet<usize> = BTreeSet::new();
+        for (i, h) in handed.iter().enumerate() {
+            match h.from {
+                // The carrier the row hands, with the bits the write derived:
+                // the statement reads it as a field derived whole.
+                Place::Row(row) => {
+                    let carrier = &self.m().fields[row];
+                    let local = format!("_h_{}", self.accessor(carrier));
+                    bindings.push(handed_binding(i, &local, h.ty));
+                    derived.fields.insert(carrier.id.clone(), local);
+                }
+                Place::Input(input) => {
+                    inputs.insert(input);
+                    bindings.push(handed_binding(i, &h.local, h.ty));
+                    bindings.push(format!("let _ = {};", h.local));
+                }
+            }
+        }
+        let mut lines = Vec::new();
+        self.streamed(field, guard, list, &derived, &mut lines);
+        let statement = indent(&lines, 16);
+        for planned in &self.encode.derivations {
+            if matches!(planned.by, Derive::ChainContinuation) {
+                continue;
+            }
+            let id = match &planned.element {
+                ElementId::Field(id) | ElementId::Flag { field: id, .. } => id,
+                ElementId::Variant => continue,
+            };
+            if derived.fields.contains_key(id) {
+                continue;
+            }
+            let Some(read) = self.m().fields.iter().find(|f| &f.id == id) else {
+                continue;
+            };
+            if statement.contains(&format!("src.{}()", self.accessor(read))) {
+                return Err(format!(
+                    "field '{}' is written with '{id}', which the encode derives and its row \
+                     does not hand",
+                    field.id
+                ));
+            }
+        }
+        for (at, input) in self.m().flag_inputs.iter().enumerate() {
+            if !inputs.contains(&at) && mentions(&statement, &Self::input_name(input)) {
+                return Err(format!(
+                    "field '{}' is written with the input '{}', which its row does not hand",
+                    field.id, input.name
+                ));
+            }
+        }
+        // A chain whose entries end on a flag is written with its count.
+        if mentions(&statement, &self.count_local(field)) {
+            bindings.push(self.count_line(field));
+        }
+        Ok(format!("{}{statement}", indent(&bindings, 16)))
     }
 
     /// `write_source`: the wire without the guard a parent has already made. A
@@ -5497,20 +5817,24 @@ impl<'a> Plan<'a> {
     /// is not checked here and no list is refused.
     fn count_lists(&self, lines: &mut Vec<String>) {
         for field in &self.m().fields {
-            if !(field.is_repeat() || field.is_tlv_chain()) {
-                continue;
+            if field.is_repeat() || field.is_tlv_chain() {
+                lines.push(self.count_line(field));
             }
-            let read = self.read_src(field);
-            // A group's element is read from the arm the value holds, where it
-            // may be absent whether or not it is itself gated (`read_src`).
-            let count = if self.read_optional(field) {
-                format!("{read}.map_or(0, |_l| _l.len())")
-            } else {
-                format!("{read}.len()")
-            };
-            let local = self.count_local(field);
-            lines.push(format!("let {local}: usize = {count};"));
         }
+    }
+
+    /// The statement that counts the entries of the list `field` into its
+    /// local ([`Self::count_local`]), as its source counts them.
+    fn count_line(&self, field: &CodecField) -> String {
+        let read = self.read_src(field);
+        // A group's element is read from the arm the value holds, where it
+        // may be absent whether or not it is itself gated (`read_src`).
+        let count = if self.read_optional(field) {
+            format!("{read}.map_or(0, |_l| _l.len())")
+        } else {
+            format!("{read}.len()")
+        };
+        format!("let {}: usize = {count};", self.count_local(field))
     }
 
     /// How many bytes the embedded `body`, of the codec imported as `codec`,

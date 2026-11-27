@@ -16554,25 +16554,24 @@ fn render_codec(
     // their closure, is read once per event; where every field is of a kind a
     // row states, it is read by the runtime's one walker over a table of its
     // fields, and any other codec is printed as it is.
-    if matches!(lang, crate::generator::Language::Rust) && body_read.cold && needs_streaming_path {
+    // Its write is lowered over the same table with its source interface,
+    // below, and the table is printed with what that write derives.
+    let cold_table = if matches!(lang, crate::generator::Language::Rust)
+        && body_read.cold
+        && needs_streaming_path
+    {
         let struct_name = filters::to_pascal_case(m.name.clone());
-        if let Ok(table) = field_table::lower(&field_table::Input {
+        field_table::lower(&field_table::Input {
             m,
             stored: &stored,
             wire: &wire,
             struct_name: &struct_name,
             owned: codec_self_borrowed(m, imports),
-        }) {
-            ctx.insert(
-                "field_table".into(),
-                serde_json::json!({
-                    "name": table.name,
-                    "inputs": table.inputs,
-                    "items": table.items,
-                }),
-            );
-        }
-    }
+        })
+        .ok()
+    } else {
+        None
+    };
     ctx.insert("fields".into(), serde_json::json!(stored));
     ctx.insert("wire_fields".into(), serde_json::json!(wire));
     // docs/adr/0140: the same fields as the forms held in place of a hot body
@@ -17934,7 +17933,7 @@ fn render_codec(
         // generate is: its `encode` would have nothing to write it with.
         {
             let rust_struct_name = filters::to_pascal_case(m.name.clone());
-            let text = rust_source::render(&rust_source::Input {
+            let rendered = rust_source::render(&rust_source::Input {
                 m,
                 imports,
                 l: &l,
@@ -17945,6 +17944,7 @@ fn render_codec(
                     .then(|| rust_view::view_lifetime(codec_self_view_borrowed(m, imports))),
                 owned: self_borrowed,
                 inline_encode,
+                table: cold_table.as_ref(),
             })
             .map_err(|rust_source::Unsupported(why)| {
                 ForgeError::from(GenerateError::unsupported_at(
@@ -17955,7 +17955,19 @@ fn render_codec(
                     m.source_location.clone(),
                 ))
             })?;
-            ctx.insert("source_block".into(), text.into());
+            // docs/adr/0155: the table of a cold codec, made with the numbers
+            // its write derives where the runtime's one writer writes it.
+            if let Some(table) = &cold_table {
+                ctx.insert(
+                    "field_table".into(),
+                    serde_json::json!({
+                        "name": table.name,
+                        "inputs": table.inputs,
+                        "items": table.items(&rendered.derived),
+                    }),
+                );
+            }
+            ctx.insert("source_block".into(), rendered.text.into());
         }
         // docs/adr/0065: whether the encode can refuse a value, which decides
         // what every form's `encode` and `encode_to_vec` return. Read from the

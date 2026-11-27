@@ -22,6 +22,8 @@
 //! do not lower.
 
 use crate::filters;
+use crate::forge::codec_roles::ElementId;
+use crate::forge::encode_plan::{self, Absent, EncodePlan, Measured, Narrow, NumberInto, Offset};
 use crate::forge::model::{
     BitSize, CodecEncoding, CodecField, CodecModel, Endian, PresentIfPredicate, PresentIfScope,
     SceType,
@@ -58,13 +60,67 @@ pub(super) struct PrintedTable {
     /// The inputs `read_into` hands the walker, each a `u64` of an input of
     /// the codec, joined by commas.
     pub(super) inputs: String,
-    /// The module's items: the `static` and the value's `TableOut`.
-    pub(super) items: String,
+    /// The rows, one for each field of the codec in wire order: what the write
+    /// of the codec is lowered over ([`derives`]).
+    pub(super) rows: Vec<Row>,
+    /// The type name of the codec's value.
+    struct_name: String,
+    /// The value's `TableOut`, its stores by the index of each row.
+    stores: String,
+}
+
+impl PrintedTable {
+    /// The module's items: the `static` of the rows, with the numbers the
+    /// encode derives where the codec is written by the runtime's one writer
+    /// over its table (`derived`, docs/adr/0155 section 3), and the value's
+    /// stores. A table no write derives a number of is made with none.
+    pub(super) fn items(&self, derived: &[Derive]) -> String {
+        let rows_text: String = self
+            .rows
+            .iter()
+            .map(|row| format!("        {},\n", row.print()))
+            .collect();
+        let mut uses = vec!["FieldTable", "Gate", "Read", "Row"];
+        if !derived.is_empty() || self.rows.iter().any(Row::names_bits) {
+            uses.extend(["Bits", "Source"]);
+        }
+        let made = if derived.is_empty() {
+            "FieldTable::new(ROWS)"
+        } else {
+            uses.extend(["Derive", "Derived"]);
+            "FieldTable::with_derived(ROWS, DERIVED)"
+        };
+        uses.sort_unstable();
+        let derived_text = if derived.is_empty() {
+            String::new()
+        } else {
+            let lines: String = derived
+                .iter()
+                .map(|derive| format!("        {},\n", derive.print()))
+                .collect();
+            format!("    const DERIVED: &[Derive] = &[\n{lines}    ];\n")
+        };
+        format!(
+            "/// The fields of `{struct_name}` in wire order, read by the runtime's one\n\
+             /// walker: the codec is read once per event, not on the per-message path\n\
+             /// (docs/adr/0155).\n\
+             static {name}: {RUNTIME_CODEC}::FieldTable = {{\n\
+             \x20   use {RUNTIME_CODEC}::{{{uses}}};\n\
+             \x20   const ROWS: &[Row] = &[\n{rows_text}    ];\n\
+             {derived_text}\
+             \x20   {made}\n\
+             }};\n\n{stores}",
+            struct_name = self.struct_name,
+            name = self.name,
+            uses = uses.join(", "),
+            stores = self.stores,
+        )
+    }
 }
 
 /// Where the number a bit range reads is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Place {
+pub(super) enum Place {
     /// The number the row at this index read.
     Row(usize),
     /// The input of the codec at this index.
@@ -73,10 +129,10 @@ enum Place {
 
 /// A bit range of a number: the whole number where `width` is `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Bits {
-    from: Place,
-    shift: u32,
-    width: Option<u32>,
+pub(super) struct Bits {
+    pub(super) from: Place,
+    pub(super) shift: u32,
+    pub(super) width: Option<u32>,
 }
 
 impl Bits {
@@ -102,7 +158,7 @@ impl Bits {
 
 /// Whether a row is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Gate {
+pub(super) enum Gate {
     Always,
     Set(Bits),
     Clear(Bits),
@@ -120,18 +176,18 @@ impl Gate {
 
 /// A number a body's read is handed, by the name its statement reads it by.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Handed {
+pub(super) struct Handed {
     /// The local the statement names.
-    local: String,
+    pub(super) local: String,
     /// The Rust type of the local.
-    ty: &'static str,
+    pub(super) ty: &'static str,
     /// Where the number is.
-    from: Place,
+    pub(super) from: Place,
 }
 
 /// How a row's field is read.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Kind {
+pub(super) enum Kind {
     /// An unsigned integer of `bytes` bytes.
     Uint {
         bytes: u32,
@@ -157,9 +213,11 @@ enum Kind {
 
 /// One row of a table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Row {
-    kind: Kind,
-    gate: Gate,
+pub(super) struct Row {
+    /// How the row's field is read.
+    pub(super) kind: Kind,
+    /// Whether it is read.
+    pub(super) gate: Gate,
 }
 
 impl Row {
@@ -240,7 +298,7 @@ fn unsigned(ty: &SceType) -> Option<(&'static str, u32)> {
 
 /// Whether `text` names the local `name`: an identifier of its own, not a
 /// member after a `.`.
-fn mentions(text: &str, name: &str) -> bool {
+pub(super) fn mentions(text: &str, name: &str) -> bool {
     let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
     !name.is_empty()
         && text.match_indices(name).any(|(at, _)| {
@@ -510,11 +568,11 @@ pub(super) fn lower(input: &Input<'_>) -> Result<PrintedTable, String> {
         }
         rows.push(row);
     }
-    Ok(print(input, &rows, &said))
+    Ok(print(input, rows, &said))
 }
 
 /// `if row == N { .. }` where one row has a store, a `match` otherwise.
-fn dispatch(arms: &[(usize, String)], otherwise: &str) -> String {
+pub(super) fn dispatch(arms: &[(usize, String)], otherwise: &str) -> String {
     match arms {
         [(row, body)] if otherwise.is_empty() => {
             format!("        if row == {row} {{\n{body}        }}\n")
@@ -570,31 +628,12 @@ fn counted_store(codec: &str, f: &CodecField, said: &Said<'_>, value: &str) -> S
     out
 }
 
-/// The module's items and the walker's call of the table `rows`.
-fn print(input: &Input<'_>, rows: &[Row], said: &[Said<'_>]) -> PrintedTable {
+/// The table of the rows `rows` and the value's stores by their indexes.
+fn print(input: &Input<'_>, rows: Vec<Row>, said: &[Said<'_>]) -> PrintedTable {
     let m = input.m;
     let struct_name = input.struct_name;
     let name = format!("{}_FIELDS", to_upper_snake(&m.name));
-    let rows_text: String = rows
-        .iter()
-        .map(|row| format!("        {},\n", row.print()))
-        .collect();
-    let mut uses = vec!["FieldTable", "Gate", "Read", "Row"];
-    if rows.iter().any(Row::names_bits) {
-        uses.extend(["Bits", "Source"]);
-        uses.sort_unstable();
-    }
-    let mut items = format!(
-        "/// The fields of `{struct_name}` in wire order, read by the runtime's one\n\
-         /// walker: the codec is read once per event, not on the per-message path\n\
-         /// (docs/adr/0155).\n\
-         static {name}: {RUNTIME_CODEC}::FieldTable = {{\n\
-         \x20   use {RUNTIME_CODEC}::{{{}}};\n\
-         \x20   const ROWS: &[Row] = &[\n{rows_text}    ];\n\
-         \x20   FieldTable::new(ROWS)\n\
-         }};\n\n",
-        uses.join(", ")
-    );
+    let mut items = String::new();
     // The stores of each kind of row, by the row's index.
     let mut numbers = Vec::new();
     let mut counted = (Vec::new(), Vec::new());
@@ -628,19 +667,10 @@ fn print(input: &Input<'_>, rows: &[Row], said: &[Said<'_>]) -> PrintedTable {
             Kind::Body { statement, handed } => {
                 let mut body = String::new();
                 for (i, h) in handed.iter().enumerate() {
-                    let number = if i == 0 {
-                        "inputs.first().copied().unwrap_or(0)".to_string()
-                    } else {
-                        format!("inputs.get({i}).copied().unwrap_or(0)")
-                    };
-                    let number = if h.ty == "u64" {
-                        number
-                    } else {
-                        format!("{number} as {}", h.ty)
-                    };
                     body.push_str(&format!(
-                        "                let {}: {} = {number};\n                let _ = {};\n",
-                        h.local, h.ty, h.local
+                        "                {}\n                let _ = {};\n",
+                        handed_binding(i, &h.local, h.ty),
+                        h.local
                     ));
                 }
                 body.push_str(&format!("                {statement}\n"));
@@ -712,8 +742,185 @@ fn print(input: &Input<'_>, rows: &[Row], said: &[Said<'_>]) -> PrintedTable {
     PrintedTable {
         name,
         inputs,
-        items,
+        rows,
+        struct_name: struct_name.to_string(),
+        stores: items,
     }
+}
+
+/// `let {local}: {ty} = ..;`: the binding of the number at `i` among those a
+/// body row is handed (`inputs`), by the name its statement reads it by. The
+/// read of a body and its write bind them alike.
+pub(super) fn handed_binding(i: usize, local: &str, ty: &str) -> String {
+    let number = if i == 0 {
+        "inputs.first().copied().unwrap_or(0)".to_string()
+    } else {
+        format!("inputs.get({i}).copied().unwrap_or(0)")
+    };
+    let number = if ty == "u64" {
+        number
+    } else {
+        format!("{number} as {ty}")
+    };
+    format!("let {local}: {ty} = {number};")
+}
+
+/// What a number the encode derives is computed from, as the runtime's
+/// `Derived` says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DerivedFrom {
+    /// 1 where the field of this row is present, 0 where it is not.
+    Present(usize),
+    /// The count of bytes of the byte string or text of this row.
+    Count(usize),
+}
+
+/// A number the encode writes into the bits `into` of a row, computed by the
+/// runtime's writer from `from` (docs/adr/0155 section 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Derive {
+    /// The bits of the row the number is written into.
+    pub(super) into: Bits,
+    /// What it is computed from.
+    pub(super) from: DerivedFrom,
+}
+
+impl Derive {
+    fn print(self) -> String {
+        let from = match self.from {
+            DerivedFrom::Present(row) => format!("Derived::Present({row})"),
+            DerivedFrom::Count(row) => format!("Derived::Count({row})"),
+        };
+        format!("Derive {{ into: {}, from: {from} }}", self.into.print())
+    }
+}
+
+/// The numbers the encode of `plan` derives, each as a derive of a row of
+/// `table` the runtime's writer computes (docs/adr/0155 section 3), or why
+/// the codec keeps its write printed: a derivation no row states.
+///
+/// A flag set exactly where one field is present and the count of bytes of a
+/// byte string or a text a row counts are derives of rows; a count of a list's
+/// entries, the length of an embedded body, a flag a body or an arm says, the
+/// tag of a variant and the arms of a group are not. The end flag of a chain's
+/// entries is the chain's to set as it writes each, and no number of the
+/// codec's own. Every counted row must be counted by a derived count, or the
+/// value would state a count its bytes need not hold.
+pub(super) fn derives(plan: &EncodePlan<'_>, table: &PrintedTable) -> Result<Vec<Derive>, String> {
+    let m = plan.model;
+    let row_of = |id: &str, element: &str| {
+        m.fields
+            .iter()
+            .position(|f| f.id == id)
+            .filter(|&row| row < table.rows.len())
+            .ok_or_else(|| format!("'{element}' is derived from a field no row reads"))
+    };
+    let number = |row: usize, element: &str| match table.rows[row].kind {
+        Kind::Uint { .. } | Kind::Zint { .. } => Ok(()),
+        _ => Err(format!(
+            "'{element}' is derived into a field no number row reads"
+        )),
+    };
+    let mut derives: Vec<Derive> = Vec::new();
+    for planned in &plan.derivations {
+        let element = planned.element.to_string();
+        let derive = match (&planned.element, &planned.by) {
+            (_, encode_plan::Derive::ChainContinuation) => continue,
+            (ElementId::Flag { field, flag }, encode_plan::Derive::Presence(presence)) => {
+                let [(gated, when_clear)] = presence.of.as_slice() else {
+                    return Err(format!(
+                        "the flag '{element}' says the presence of several fields"
+                    ));
+                };
+                if *when_clear {
+                    return Err(format!(
+                        "the flag '{element}' is set where its field is absent"
+                    ));
+                }
+                let carrier = row_of(field, &element)?;
+                number(carrier, &element)?;
+                let def = m.fields[carrier]
+                    .flags
+                    .iter()
+                    .find(|def| def.name == *flag)
+                    .ok_or_else(|| format!("'{element}' is no flag of its carrier"))?;
+                Derive {
+                    into: Bits {
+                        from: Place::Row(carrier),
+                        shift: def.bit,
+                        width: Some(def.width),
+                    },
+                    from: DerivedFrom::Present(row_of(&gated.id, &element)?),
+                }
+            }
+            (ElementId::Field(_), encode_plan::Derive::Number(derived)) => {
+                let [measure] = derived.measures.as_slice() else {
+                    return Err(format!("'{element}' is derived from several measures"));
+                };
+                let Measured::Bytes {
+                    field: content,
+                    offset: Offset::None,
+                } = &measure.of
+                else {
+                    return Err(format!(
+                        "'{element}' is derived from a measure no row states"
+                    ));
+                };
+                let NumberInto::Field {
+                    field: into,
+                    narrow,
+                    absent,
+                } = &derived.into
+                else {
+                    return Err(format!("'{element}' is derived into a flag"));
+                };
+                if *narrow == Narrow::Checked {
+                    return Err(format!(
+                        "'{element}' may not hold the count it is derived from"
+                    ));
+                }
+                if !matches!(absent, Absent::Never | Absent::Zero) {
+                    return Err(format!(
+                        "'{element}' holds what the value states where its content is absent"
+                    ));
+                }
+                let count = row_of(&into.id, &element)?;
+                number(count, &element)?;
+                let counted = row_of(&content.id, &element)?;
+                if !matches!(table.rows[counted].kind, Kind::Counted { len, .. } if len == count) {
+                    return Err(format!(
+                        "'{element}' counts a field its row is not counted by"
+                    ));
+                }
+                Derive {
+                    into: Bits::whole(Place::Row(count)),
+                    from: DerivedFrom::Count(counted),
+                }
+            }
+            _ => {
+                return Err(format!("'{element}' is derived as the number of no row"));
+            }
+        };
+        if derives.iter().any(|other| other.into == derive.into) {
+            return Err(format!("'{element}' is derived twice"));
+        }
+        derives.push(derive);
+    }
+    for (at, row) in table.rows.iter().enumerate() {
+        if let Kind::Counted { len, .. } = row.kind {
+            let counted = Derive {
+                into: Bits::whole(Place::Row(len)),
+                from: DerivedFrom::Count(at),
+            };
+            if !derives.contains(&counted) {
+                return Err(format!(
+                    "field '{}' is counted by a number the value states",
+                    m.fields[at].id
+                ));
+            }
+        }
+    }
+    Ok(derives)
 }
 
 #[cfg(test)]
@@ -805,9 +1012,9 @@ mod tests {
              for CodecZenohWireexprIn<S> {",
         ] {
             assert!(
-                table.items.contains(printed),
+                table.items(&[]).contains(printed),
                 "the table of codec_zenoh_wireexpr has no `{printed}`:\n{}",
-                table.items
+                table.items(&[])
             );
         }
     }
@@ -845,16 +1052,16 @@ mod tests {
             chain,
         ] {
             assert!(
-                table.items.contains(printed),
+                table.items(&[]).contains(printed),
                 "the table of codec_zenoh_msg_del has no `{printed}`:\n{}",
-                table.items
+                table.items(&[])
             );
         }
         assert!(
-            !table.items.contains("fn absent("),
+            !table.items(&[]).contains("fn absent("),
             "codec_zenoh_msg_del gates its bodies in their statements, and has an absent \
              store:\n{}",
-            table.items
+            table.items(&[])
         );
     }
 
@@ -908,6 +1115,106 @@ mod tests {
         ];
         let why = lowered(&m, &wire).expect_err("a body names a gated number");
         assert!(why.contains("consolidation"), "{why}");
+    }
+
+    /// The context of each field of `codec_present_if_string`: a carrier, and
+    /// the count and the text it gates.
+    fn present_if_string_wire() -> [serde_json::Value; 3] {
+        [
+            context(&[
+                ("id", "carrier"),
+                (
+                    "present_if_decode_stmt",
+                    "let carrier = { let raw = cursor.take_array::<1>(); raw[0] };",
+                ),
+            ]),
+            context(&[
+                ("id", "text_len"),
+                (
+                    "present_if_decode_stmt",
+                    "let text_len = if (carrier & 0x01u8) != 0 { Some(0) } else { None };",
+                ),
+            ]),
+            context(&[
+                ("id", "text"),
+                ("present_if_decode_stmt", "let text = None;"),
+                ("bounded_rebind", "let text = text;"),
+            ]),
+        ]
+    }
+
+    /// The flag a gated text is announced by and the count of its bytes are
+    /// derives of the rows the text is read by, and the table is made with them
+    /// where its write is the writer's.
+    #[test]
+    fn a_presence_flag_and_a_count_are_derives_of_rows() {
+        let m = codec("codec_present_if_string");
+        let table = lowered(&m, &present_if_string_wire())
+            .unwrap_or_else(|why| panic!("not a table: {why}"));
+        let plan = EncodePlan::of(&m, &[]);
+        let derived =
+            derives(&plan, &table).unwrap_or_else(|why| panic!("no derive of rows: {why}"));
+        let flag = Derive {
+            into: Bits {
+                from: Place::Row(0),
+                shift: 0,
+                width: Some(1),
+            },
+            from: DerivedFrom::Present(2),
+        };
+        let count = Derive {
+            into: Bits::whole(Place::Row(1)),
+            from: DerivedFrom::Count(2),
+        };
+        assert_eq!(derived.len(), 2, "{derived:?}");
+        assert!(derived.contains(&flag), "{derived:?}");
+        assert!(derived.contains(&count), "{derived:?}");
+        let items = table.items(&derived);
+        for printed in [
+            "use ::sce_forge_runtime::codec::{Bits, Derive, Derived, FieldTable, Gate, Read, \
+             Row, Source};",
+            "    const DERIVED: &[Derive] = &[\n",
+            "Derive { into: Bits::range(Source::Row(0), 0, 1), from: Derived::Present(2) },",
+            "Derive { into: Bits::whole(Source::Row(1)), from: Derived::Count(2) },",
+            "    FieldTable::with_derived(ROWS, DERIVED)\n",
+        ] {
+            assert!(
+                items.contains(printed),
+                "the table of codec_present_if_string has no `{printed}`:\n{items}"
+            );
+        }
+        let read_only = table.items(&[]);
+        assert!(
+            read_only.contains("    FieldTable::new(ROWS)\n") && !read_only.contains("DERIVED"),
+            "a table no write derives a number of is made with none:\n{read_only}"
+        );
+    }
+
+    /// A flag set where its field is absent is no derive the writer computes:
+    /// the write of the codec stays printed.
+    #[test]
+    fn a_flag_set_where_its_field_is_absent_is_no_derive() {
+        let m = codec("codec_present_if_negation");
+        let wire = [
+            context(&[
+                ("id", "flags"),
+                (
+                    "present_if_decode_stmt",
+                    "let flags = { let raw = cursor.take_array::<1>(); raw[0] };",
+                ),
+            ]),
+            context(&[
+                ("id", "seq"),
+                (
+                    "present_if_decode_stmt",
+                    "let seq = if (flags & 0x01u8) == 0 { Some(0) } else { None };",
+                ),
+            ]),
+        ];
+        let table = lowered(&m, &wire).unwrap_or_else(|why| panic!("not a table: {why}"));
+        let why = derives(&EncodePlan::of(&m, &[]), &table)
+            .expect_err("a flag set where its field is absent is no derive");
+        assert!(why.contains("absent"), "{why}");
     }
 
     /// A local is named where it stands alone, not as a member or a part of
