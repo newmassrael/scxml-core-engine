@@ -936,7 +936,11 @@ fn an_own_event_is_invoked_before_the_drain_it_makes() {
         before_own_push(Box::new(move || {
             let post = std::thread::scope(|scope| {
                 scope
-                    .spawn(|| record_post(&clock, 0, 1, Door::Handle, || inbox.post(posted(1))))
+                    .spawn(|| {
+                        record_post(&clock, 0, 1, Door::Handle, || {
+                            delivery(inbox.post(posted(1)))
+                        })
+                    })
                     .join()
                     .expect("the posting thread")
             });
