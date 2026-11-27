@@ -10,8 +10,9 @@
 # member of a shorter descriptor (`request.new` as `request`) or as the wildcard
 # member (`other.thing`, for a document that listens with `event="*"`), and neither
 # member is called what the host sent. `Engine._route_to_child` hands the child the
-# event's `EventMetadata.name` when it has one and the member's name when it has
-# not; `backends/python/tests/integration/static_datamodel/
+# name `Engine._taken_name` answers: the event's `EventMetadata.name` when it has
+# one and the member's name when it has not;
+# `backends/python/tests/integration/static_datamodel/
 # test_an_autoforwarded_copy_keeps_the_arrival_name.py` reads what the policy is
 # asked to forward for both.
 #
@@ -33,6 +34,6 @@ mutation_oracles backends/python/tests/integration/static_datamodel/test_an_auto
 
 mutation_case "the copy is forwarded under the name of the member, not the name it arrived under" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "        name = evt.metadata.name or self._policy.get_event_name(evt.event)\n",
-     "        name = self._policy.get_event_name(evt.event)\n")
+     "        return evt.metadata.name or self._policy.get_event_name(evt.event)\n",
+     "        return self._policy.get_event_name(evt.event)\n")
 PY

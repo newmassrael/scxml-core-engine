@@ -110,6 +110,12 @@ status=0
 # `testprofile/` is the eleventh: it holds the test profile's runtime
 # (`sce_runtime.testprofile`, docs/SCE_TEST_PROFILE.md §12.2) to the cases of
 # the Rust one, over components written by hand, which no document drives.
+#
+# `trace_port/` is the twelfth: it holds the runtime's trace port to the run
+# trace format (docs/adr/0115, D4 and D8) over no document, and the runs of the
+# W3C documents `docs/formal` has models of, which it drives from the machines
+# the generation above writes, to the recorded runs `docs/formal/traces.json`
+# declares. It is no fixture stem either.
 sce_gate_tested --log "$LOG/pytest.log" \
     -- env PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     "$SCE_GATE_PYTHON" -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
@@ -117,7 +123,7 @@ sce_gate_tested --log "$LOG/pytest.log" \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
         backends/python/tests/scheduler/ backends/python/tests/io_processors/ \
-        backends/python/tests/testprofile/ \
+        backends/python/tests/testprofile/ backends/python/tests/trace_port/ \
         --no-header -v || status=$?
 
 # pytest's summary line is the count. A collection error exits non-zero with

@@ -115,6 +115,7 @@ from .saved_state import StateRefusal
 from .scheduler import ScheduledRoute, Scheduler
 from .script_session import ScriptSessionFailure, ScriptSessionUnavailable
 from .session_id import draw as _draw_session_id
+from .trace_port import Recorder, StepKind, TracePort
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -346,6 +347,10 @@ class Engine(Generic[S, E]):
         self._host: _MicrostepHost[S, E] = _MicrostepHost(self)
         # A read-only tap on the run (`set_observer`); None unless a caller asked.
         self._observer: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        # docs/adr/0115, D4 and D8: the trace port a test set
+        # (`set_trace_port`), told each step of Appendix D the run takes; None
+        # unless one was set, and then no step is opened and nothing is kept.
+        self._trace: Optional[Recorder] = None
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         # docs/adr/0084 — what other threads post, held until the owner's next
@@ -610,10 +615,18 @@ class Engine(Generic[S, E]):
         # between WITHOUT their defaults (test388), and the other regions of a
         # `<parallel>` on the way get theirs (test413) — both are what
         # computeEntrySet does with a target list, not cases of their own.
+        #
+        # docs/adr/0115, D4: the entry into the initial configuration is the
+        # run's first step.
+        trace = self._trace
+        if trace is not None:
+            trace.begin(StepKind.START)
         enter_states(
             self._host,
             [EntryTransition(None, tuple(self._policy.get_document_initial_targets()))],
         )
+        if trace is not None:
+            self._trace_end(trace)
         # §scxml-D-mainEventLoop — hand over to the outer loop. The macrostep
         # completes on eventless transitions and internal events, then any
         # `<invoke>` deferred during onentry runs, and only then is anything
@@ -3111,7 +3124,14 @@ class Engine(Generic[S, E]):
             taken = self._admit(self._internal_queue.popleft())
             if taken is None:
                 continue
+            # docs/adr/0115, D4: the event taken off the internal queue is a
+            # step, with the microstep it selects or none.
+            trace = self._trace
+            if trace is not None:
+                trace.begin(StepKind.INTERNAL, self._taken_name(taken[0]))
             self._answer_internal(taken[0])
+            if trace is not None:
+                self._trace_end(trace)
 
     def _admit(
         self, evt: EventWithMetadata[E]
@@ -3237,37 +3257,46 @@ class Engine(Generic[S, E]):
             self._last_discarded_event = evt.event
             return
         evt, in_place = taken
+        # docs/adr/0115, D4: the event taken off the external queue is a step,
+        # with the microstep it selects or none. An `error.execution` a door
+        # took in a refused delivery's place is that step's event, named by its
+        # own name.
+        trace = self._trace
+        if trace is not None:
+            trace.begin(StepKind.EXTERNAL, self._taken_name(evt))
         if in_place:
             self._answer_internal(evt)
-            return
-        # §scxml-6.5 — `<finalize>` runs before transition selection for
-        # events originating from invoked children, so the finalize body can
-        # write child-derived values back into the parent datamodel that
-        # subsequent guards then read.
-        #
-        # `_event` is bound here once, for both the finalize body and the
-        # transition selection after it: §scxml-5.10 binds it when the
-        # event is selected for processing, and `<finalize>` writes the
-        # datamodel, not `_event`. The typed payload was lifted once, at the
-        # door, whatever binds `_event` after it.
-        already_bound = bool(evt.metadata.invoke_id)
-        if already_bound:
-            self._bind_current_event(evt)
-            self._policy.execute_finalize_for_child_event(evt, self)
-        # §scxml-6.4.1 — autoforward into every active child marked
-        # `autoforward="true"`, before transition selection, so the child
-        # observes the event in the same iteration the parent does.
-        self._route_to_child(evt)
-        # §scxml-3.1.2 — discarding an event no transition matched is the
-        # rule; being unable to say so is not part of the rule. The host
-        # that queued this event is the one party that cannot see the
-        # outcome (a discard leaves the configuration exactly as a self
-        # transition does) and the party that got the event wrong.
-        # Counted for the external queue only: an internal `<raise>` that
-        # matches nothing has both its ends inside the document.
-        if not self._dispatch(evt, already_bound=already_bound):
-            self._discarded_external_events += 1
-            self._last_discarded_event = evt.event
+        else:
+            # §scxml-6.5 — `<finalize>` runs before transition selection for
+            # events originating from invoked children, so the finalize body can
+            # write child-derived values back into the parent datamodel that
+            # subsequent guards then read.
+            #
+            # `_event` is bound here once, for both the finalize body and the
+            # transition selection after it: §scxml-5.10 binds it when the
+            # event is selected for processing, and `<finalize>` writes the
+            # datamodel, not `_event`. The typed payload was lifted once, at the
+            # door, whatever binds `_event` after it.
+            already_bound = bool(evt.metadata.invoke_id)
+            if already_bound:
+                self._bind_current_event(evt)
+                self._policy.execute_finalize_for_child_event(evt, self)
+            # §scxml-6.4.1 — autoforward into every active child marked
+            # `autoforward="true"`, before transition selection, so the child
+            # observes the event in the same iteration the parent does.
+            self._route_to_child(evt)
+            # §scxml-3.1.2 — discarding an event no transition matched is the
+            # rule; being unable to say so is not part of the rule. The host
+            # that queued this event is the one party that cannot see the
+            # outcome (a discard leaves the configuration exactly as a self
+            # transition does) and the party that got the event wrong.
+            # Counted for the external queue only: an internal `<raise>` that
+            # matches nothing has both its ends inside the document.
+            if not self._dispatch(evt, already_bound=already_bound):
+                self._discarded_external_events += 1
+                self._last_discarded_event = evt.event
+        if trace is not None:
+            self._trace_end(trace)
 
     def _record_truncated_macrostep(self) -> None:
         """Publish a macrostep this engine stopped short, from whichever branch
@@ -3319,7 +3348,13 @@ class Engine(Generic[S, E]):
                 # stable one and only this counter says so.
                 self._record_truncated_macrostep()
                 return
+            # docs/adr/0115, D4: a microstep on eventless transitions is a step.
+            trace = self._trace
+            if trace is not None:
+                trace.begin(StepKind.EVENTLESS)
             self._take_microstep(transitions)
+            if trace is not None:
+                self._trace_end(trace)
             self._macrostep_microsteps_taken += 1
 
     def _bind_current_event(self, evt: EventWithMetadata[E]) -> None:
@@ -3362,6 +3397,12 @@ class Engine(Generic[S, E]):
 
         The one place a selection is turned into a microstep, so a trace sees
         the eventless chain and the event-driven step alike and cannot miss one."""
+        trace = self._trace
+        if trace is not None:
+            # docs/adr/0115, D4: the rows the step being told takes, in
+            # selection order, by the pairs the observer is told.
+            for chosen in transitions:
+                trace.fired(self._policy.get_state_name(chosen.source), chosen.transition_index)
         if self._observer is not None:
             for chosen in transitions:
                 self._observe(
@@ -3410,6 +3451,51 @@ class Engine(Generic[S, E]):
         if self._observer is not None:
             self._observer(kind, fields)
 
+    def set_trace_port(self, port: TracePort) -> None:
+        """Tell `port` each step this engine takes from now on, as the run
+        trace format names the steps (docs/adr/0115, D4 and D8).
+
+        `port(step)` is called once each step of Appendix D is over, in the
+        order the run takes them, from inside the call that drove the engine
+        (`initialize`, `send_event`, `advance_time`, `stop` and their
+        siblings): the entry into the initial configuration, each microstep on
+        eventless transitions, each event taken off the internal or the external
+        queue with the microstep it selects (none when it selects nothing), and
+        the exit of the interpreter. Each `TraceStep` holds the transitions it
+        took, the states it exited and entered in order, and the configuration
+        it left, or, for the exit, the top-level `<final>` the run ended in.
+        The step is the port's to keep. `trace_port.RunTrace.push` is a port:
+        it keeps what it is told and writes the file `sce-codegen formal
+        traces` judges.
+
+        Like the observer, a port reads and is never asked anything, so a run
+        with one set is the run without, and it must not call back into the
+        engine. Setting a port replaces the one set before."""
+        self._trace = Recorder(port)
+
+    def clear_trace_port(self) -> None:
+        """Tell no trace port anything; the engine is then as it was before one
+        was set."""
+        self._trace = None
+
+    def _taken_name(self, evt: EventWithMetadata[E]) -> str:
+        """The name `_event.name` holds while `evt` is taken: the one it
+        arrived under, which is its member's own unless a door cut a longer one
+        back to it or delivered it as the wildcard member."""
+        return evt.metadata.name or self._policy.get_event_name(evt.event)
+
+    def _trace_end(self, trace: Recorder) -> None:
+        """The step `trace` is telling is over: tell its port, with the
+        configuration the step left in document order, or the top-level
+        `<final>` the run ended in (docs/adr/0115, D4)."""
+        policy = self._policy
+        configuration = [
+            policy.get_state_name(state)
+            for state in sorted(self._configuration, key=policy.get_document_order)
+        ]
+        ended = self._terminal_state
+        trace.end(configuration, None if ended is None else policy.get_state_name(ended))
+
     def _mark_root_final_if_top_level(self, final_state: S) -> None:
         """If a `<final>` at the top of the document is entered, the engine
         terminates (§scxml-D-enterStates: `running = false`). A `<final>`
@@ -3435,14 +3521,23 @@ class Engine(Generic[S, E]):
         ends because the run entered a top-level `<final>`, or the host stops
         a run that has not ended. The configuration it leaves is empty, so a
         second call exits nothing."""
+        # docs/adr/0115, D4: the exit is a step of the run once, while states are
+        # active. A later call, which exits nothing, is no step of Appendix D.
+        trace = self._trace if self._configuration else None
+        if trace is not None:
+            trace.begin(StepKind.STOP)
         # `configuration.toList().sort(exitOrder)` — reverse document order.
         for state in sorted(
             self._configuration, key=self._policy.get_document_order, reverse=True
         ):
+            if trace is not None:
+                trace.exited(self._policy.get_state_name(state))
             self._policy.execute_exit_actions(state, self)
             self._policy.cancel_invokes_for_state(state, self)
             self._configuration.remove(state)
         self._is_running = False
+        if trace is not None:
+            self._trace_end(trace)
 
     # ── Invoke drivers ─────────────────────────────────────────
 
@@ -3532,7 +3627,7 @@ class Engine(Generic[S, E]):
         # §scxml-5.10: under the name the event arrived under, which is the
         # member's own unless a door cut a longer one back to it or delivered it
         # as the wildcard member.
-        name = evt.metadata.name or self._policy.get_event_name(evt.event)
+        name = self._taken_name(evt)
         if not name:
             return
         # §scxml-6.4 requires an exact copy, so the whole metadata goes
@@ -3617,6 +3712,9 @@ class _MicrostepHost(Generic[S, E]):
         # macrostep, which is §scxml-D-exitStates' `statesToInvoke.delete(s)`.
         self._policy.cancel_invokes_for_state(state, engine)
         engine._configuration.remove(state)
+        # docs/adr/0115, D4: the step being told exits it, in this order.
+        if engine._trace is not None:
+            engine._trace.exited(self._policy.get_state_name(state))
         if engine._observer is not None:
             engine._observe("exit", state=self._policy.get_state_name(state))
 
@@ -3636,6 +3734,9 @@ class _MicrostepHost(Generic[S, E]):
         # §scxml-D-enterStates: into the configuration first, so the state's
         # own `<onentry>` already finds it there.
         engine._configuration.append(state)
+        # docs/adr/0115, D4: the step being told enters it, in this order.
+        if engine._trace is not None:
+            engine._trace.entered(self._policy.get_state_name(state))
         if engine._observer is not None:
             engine._observe("enter", state=self._policy.get_state_name(state))
         # §scxml-D-enterStates, §scxml-5.3: late binding initialises a
