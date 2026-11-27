@@ -14,7 +14,7 @@ this file says what is here and how to read it.
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
 | 4. A model generated from a document (D7, D8) | `AppendixD.tla`: Appendix D once, over a document's tables; `W3CTest388.tla`, `W3CTest570.tla`, `W3CTest403c.tla`: three documents of the W3C corpus, written by `sce-codegen model` | the semantics, the generator for the constructs these three use, and their models |
-| 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust lane (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust lane, for three documents; the C11 and C++ ports write the same format |
+| 5. A run read against a model (D4, D8) | `traces.json`: a run of each of the three W3C documents by the Rust lane and by the C11 lane (`traces/`), each a behaviour of its model, and an altered run per kind of step that must be refused where it was altered | the Rust and C11 lanes, for three documents; the C++ port writes the same format |
 | 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, the Rust engine's drain of its inbox refining `EngineInbox` (ADR 0147, D4), a target's outbound side and the edge's rate limits, by Verus | yes, for four modules |
 
 ## The models
@@ -131,8 +131,11 @@ accepts the run or names the first step no behaviour explains. The environment's
 delayed send that comes due, are not in a run and may come between any two steps. Every kind of step a run holds has an
 altered run, one field given another value, which must be refused at that step: a trace that says too little is
 accepted though the run was wrong. The Rust lane records the runs with
-`UPDATE_EXPECT=1 cargo test -p sce-rust-tests --test a_run_is_a_behaviour_of_its_model`, and the same test holds each
-run to its recorded file.
+`UPDATE_EXPECT=1 cargo test -p sce-rust-tests --test a_run_is_a_behaviour_of_its_model`, and the C11 lane with
+`UPDATE_EXPECT=1 ctest -R c11_a_run_of_test_` (the machine's trace port, `sce/trace_port.h`, on by `SCE_TRACE_PORT=1`);
+the same tests hold each run to its recorded file. A lane's run of a document is judged against the one model of that
+document, and these documents leave a run's steps no choice, so the two lanes' runs of one document differ only in their
+lane.
 
 ## What all of this stands on
 
