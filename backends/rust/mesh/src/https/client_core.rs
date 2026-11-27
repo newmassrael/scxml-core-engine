@@ -44,7 +44,7 @@ use super::signature::{
 use super::{
     is_epoch, join_sequence, read_retry_after, split_sequence, HttpsFailure, HttpsRequest,
     HttpsResponse, LinkEvent, RetryAfter, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER,
-    HOLD_HEADER,
+    HOLD_HEADER, IF_MATCH_HEADER,
 };
 use crate::reconnect::Backoff;
 
@@ -484,6 +484,7 @@ impl ClientCore {
                 target_uri: self.settings.target_uri.clone(),
                 ack: exchange.sent.mark.ack.to_string(),
                 nonce,
+                if_match: field_value(&request.headers, IF_MATCH_HEADER),
             });
         }
         if !self.settings.signs {
@@ -1230,6 +1231,7 @@ mod tests {
             target_uri: request.url.clone(),
             ack: field(ACK_HEADER),
             nonce: field(NONCE_HEADER),
+            if_match: None,
         };
         let digest = content_digest(body);
         let first = first.map(|first| first.to_string());
@@ -2011,6 +2013,7 @@ mod tests {
             target_uri: request.url.clone(),
             ack: field(ACK_HEADER),
             nonce: field(NONCE_HEADER),
+            if_match: None,
         };
         let digest = content_digest(&[]);
         let mut response = stale(value);

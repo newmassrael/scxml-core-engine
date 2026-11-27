@@ -83,6 +83,35 @@ pub const FIRST_HEADER: &str = "Sce-Mesh-First";
 /// its `Sce-Mesh-Ack` counts in, absent while the client has seen none.
 pub const EPOCH_HEADER: &str = "Sce-Mesh-Epoch";
 
+/// The request header naming the incarnation of an instance's membership an exchange is made
+/// under (docs/adr/0113, D4): the offer it confirms, or the member's own, as a strong entity tag
+/// (RFC 9110, sections 8.8.3 and 13.1.1; [`entity_tag`]). A join carries none.
+pub const IF_MATCH_HEADER: &str = "If-Match";
+
+/// The response header naming the incarnation a join was offered (docs/adr/0113, D4), as a strong
+/// entity tag ([`entity_tag`]).
+pub const ETAG_HEADER: &str = "ETag";
+
+/// The request header naming an instance's low-water mark (docs/adr/0113, D5): the lowest number
+/// of its incarnation whose answer it has not, in decimal. Carried with `If-Match`.
+pub const MARK_HEADER: &str = "Sce-Mesh-Mark";
+
+/// The incarnation `incarnation` as a strong entity tag (RFC 9110, section 8.8.3): its decimal
+/// digits in double quotes.
+pub fn entity_tag(incarnation: u64) -> String {
+    alloc::format!("\"{incarnation}\"")
+}
+
+/// The incarnation a strong entity tag of [`entity_tag`]'s form names; `None` for anything else,
+/// a weak tag, a list or `*` included.
+pub fn incarnation_of(tag: &str) -> Option<u64> {
+    let digits = tag.trim().strip_prefix('"')?.strip_suffix('"')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
 /// The authentication scheme of a bearer token (`Authorization: Bearer <token>`).
 pub const BEARER_SCHEME: &str = "Bearer";
 

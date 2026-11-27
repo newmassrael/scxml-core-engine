@@ -25,7 +25,11 @@
 //!
 //! What a signature covers is fixed by this profile and by what the message carries, never read
 //! from the message: a verifier builds the list it expects and refuses a signature that covers
-//! another. The structured fields (RFC 8941) are read and written here as far as the profile
+//! another. Both lists come from one table ([`TABLE`], docs/adr/0113 D4), a row for every field the
+//! binding defines and a party acts on, with the signature that covers it and when: the
+//! incarnation an exchange is made under (`If-Match`) and an instance's low-water mark
+//! (`Sce-Mesh-Mark`) in a request, the incarnation a join is offered (`ETag`) in a response, and
+//! the fence's `412` signed as a `200` is, over its status and the request it answers. The structured fields (RFC 8941) are read and written here as far as the profile
 //! needs, and the signature base is RFC 9421's, so that any implementation of the RFC makes and
 //! checks the same bytes (Appendix B.2.6 is held below).
 
@@ -44,7 +48,9 @@ use sce_rust_crypto::ed25519::{self, KeyPair, PUBLIC_KEY_BYTES};
 use sce_rust_crypto::random::RandomSource;
 
 use super::freshness::FRESH_HEADER;
-use super::{ACK_HEADER, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER};
+use super::{
+    ACK_HEADER, EPOCH_HEADER, ETAG_HEADER, FIRST_HEADER, HOLD_HEADER, IF_MATCH_HEADER, MARK_HEADER,
+};
 
 /// The field that names what a signature covers and how (RFC 9421 section 4.1).
 pub const SIGNATURE_INPUT_HEADER: &str = "Signature-Input";
@@ -604,68 +610,351 @@ pub struct Answered {
     pub ack: String,
     /// The request's `Sce-Mesh-Nonce`.
     pub nonce: String,
+    /// The request's `If-Match`, the incarnation of an instance's membership it was made under
+    /// (docs/adr/0113, D4), when it carried one.
+    pub if_match: Option<String>,
 }
 
-/// The components of the request a response answers, which every response signature covers
-/// last.
-fn answered_components() -> [Component; 4] {
-    [
-        Component::of_request("@method"),
-        Component::of_request("@target-uri"),
-        Component::of_request(ACK_HEADER),
-        Component::of_request(NONCE_HEADER),
-    ]
+// ── The one table of what is signed (SCE_MESH.md section 22.9; docs/adr/0113, D4) ──
+
+/// A field of the binding that a party acts on: each is a row of [`TABLE`], from which the signer
+/// and the verifier both build what a signature covers, and a party reads it through
+/// [`Field::read`], so that a field the table does not hold is never read and none is acted on
+/// unsigned. RFC 9421 section 7.2.1: a verifier trusts only what was signed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    /// `@method`, a derived component.
+    Method,
+    /// `@target-uri`, a derived component.
+    TargetUri,
+    /// `@status`, a derived component of a response.
+    Status,
+    /// `Content-Digest`: the body.
+    ContentDigest,
+    /// `Sce-Mesh-Ack`: what the client acknowledged of its mailbox.
+    Ack,
+    /// `Sce-Mesh-Epoch`: the incarnation of the mailbox an acknowledgement or a response counts in.
+    Epoch,
+    /// `Sce-Mesh-First`: the number of a response's first envelope.
+    First,
+    /// `Sce-Mesh-Fresh`: the value of the freshness step a request signs and an answer gives
+    /// (docs/adr/0117, D4).
+    Fresh,
+    /// `ETag`: the incarnation a join was offered (docs/adr/0113, D4).
+    ETag,
+    /// `Sce-Mesh-Hold-Ms`: how long a request asks to be held.
+    Hold,
+    /// `Sce-Mesh-Nonce`: what ties a response to the one request it answers.
+    Nonce,
+    /// `If-Match`: the incarnation an exchange is made under (docs/adr/0113, D4).
+    IfMatch,
+    /// `Sce-Mesh-Mark`: an instance's low-water mark (docs/adr/0113, D5).
+    Mark,
 }
 
-/// The components a response signature covers, given whether the response carries
-/// `Sce-Mesh-First` and `Sce-Mesh-Fresh`: what a signer signs and a verifier expects.
-fn response_components(has_first: bool, has_fresh: bool) -> Vec<Component> {
-    let mut covered = alloc::vec![
-        Component::of("@status"),
-        Component::of(CONTENT_DIGEST_HEADER),
-        Component::of(EPOCH_HEADER),
-    ];
-    if has_first {
-        covered.push(Component::of(FIRST_HEADER));
+impl Field {
+    /// Its component name (RFC 9421 section 2): the derived component's, or the field's name in
+    /// lower case.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Field::Method => "@method",
+            Field::TargetUri => "@target-uri",
+            Field::Status => "@status",
+            Field::ContentDigest => "content-digest",
+            Field::Ack => "sce-mesh-ack",
+            Field::Epoch => "sce-mesh-epoch",
+            Field::First => "sce-mesh-first",
+            Field::Fresh => "sce-mesh-fresh",
+            Field::ETag => "etag",
+            Field::Hold => "sce-mesh-hold-ms",
+            Field::Nonce => "sce-mesh-nonce",
+            Field::IfMatch => "if-match",
+            Field::Mark => "sce-mesh-mark",
+        }
     }
-    if has_fresh {
-        covered.push(Component::of(FRESH_HEADER));
+
+    /// The header that carries it, as the binding spells it; `None` for a derived component.
+    pub const fn header(self) -> Option<&'static str> {
+        match self {
+            Field::Method | Field::TargetUri | Field::Status => None,
+            Field::ContentDigest => Some(CONTENT_DIGEST_HEADER),
+            Field::Ack => Some(ACK_HEADER),
+            Field::Epoch => Some(EPOCH_HEADER),
+            Field::First => Some(FIRST_HEADER),
+            Field::Fresh => Some(FRESH_HEADER),
+            Field::ETag => Some(ETAG_HEADER),
+            Field::Hold => Some(HOLD_HEADER),
+            Field::Nonce => Some(NONCE_HEADER),
+            Field::IfMatch => Some(IF_MATCH_HEADER),
+            Field::Mark => Some(MARK_HEADER),
+        }
     }
-    covered.extend(answered_components());
-    covered
+
+    /// Its value among the fields `field` reads by name; `None` when the message does not carry
+    /// it, and for a derived component, which no header carries.
+    pub fn read(self, field: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.header().and_then(field)
+    }
 }
 
-/// The components a refusal for freshness covers (docs/adr/0117, D4): its status, its body's
-/// digest, the value it gives, and the request it answers.
-fn refusal_components() -> Vec<Component> {
-    let mut covered = alloc::vec![
-        Component::of("@status"),
-        Component::of(CONTENT_DIGEST_HEADER),
-        Component::of(FRESH_HEADER),
-    ];
-    covered.extend(answered_components());
-    covered
+/// Which message's signature covers a row of [`TABLE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signer {
+    /// A request's, under the `key` authenticator.
+    Request,
+    /// A response's, under `sign:`.
+    Response,
 }
 
-/// The components a request signature covers, given whether the request carries
-/// `Sce-Mesh-Epoch` and `Sce-Mesh-Fresh`.
-fn request_components(has_epoch: bool, has_fresh: bool) -> Vec<Component> {
-    let mut covered = alloc::vec![
-        Component::of("@method"),
-        Component::of("@target-uri"),
-        Component::of(CONTENT_DIGEST_HEADER),
-        Component::of(ACK_HEADER),
-    ];
-    if has_epoch {
-        covered.push(Component::of(EPOCH_HEADER));
+/// When a row of [`TABLE`] is covered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum When {
+    /// By every signature of its signer.
+    Always,
+    /// When the message (for a row of the request a response answers, that request) carries it.
+    Carried,
+    /// By a `200`'s signature: what only a `200` carries.
+    OnSuccess,
+}
+
+/// One row of [`TABLE`]: the field, the signature that covers it, whether it is read from the
+/// request a response answers (`;req`), and when it is covered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Row {
+    pub signer: Signer,
+    pub field: Field,
+    pub of_request: bool,
+    pub when: When,
+}
+
+/// Every field the binding defines and a party acts on, in the order each signature covers them
+/// (SCE_MESH.md section 22.9; docs/adr/0113, D4). A request is signed over its method, target,
+/// body, acknowledgement, numbering, hold and nonce, the value of the freshness step it carries
+/// (docs/adr/0117, D4), and the incarnation it is made under and the low-water mark it carries; an answer that changes what the client holds (`200`, and the
+/// fence's `412`) over its status, its body, what it numbers or offers, and the request it
+/// answers, the incarnation that request named included.
+pub const TABLE: &[Row] = &[
+    Row {
+        signer: Signer::Response,
+        field: Field::Status,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::ContentDigest,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::Epoch,
+        of_request: false,
+        when: When::OnSuccess,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::First,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::Fresh,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::ETag,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::Method,
+        of_request: true,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::TargetUri,
+        of_request: true,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::Ack,
+        of_request: true,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::Nonce,
+        of_request: true,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Response,
+        field: Field::IfMatch,
+        of_request: true,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Method,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::TargetUri,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::ContentDigest,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Ack,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Epoch,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Fresh,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Hold,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Nonce,
+        of_request: false,
+        when: When::Always,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::IfMatch,
+        of_request: false,
+        when: When::Carried,
+    },
+    Row {
+        signer: Signer::Request,
+        field: Field::Mark,
+        of_request: false,
+        when: When::Carried,
+    },
+];
+
+/// The statuses a response is signed with: the answers that change what the client holds
+/// (docs/adr/0113, D4). Any other is to a client that verifies no more than an exchange that
+/// failed at the transport.
+pub const SIGNED_STATUSES: [u16; 3] = [200, 401, 412];
+
+/// The components `signer`'s signature covers, in the table's order: a response's of `status`,
+/// and a request's with `status` `None`; `carried` says whether the message carries a field,
+/// or, of a row read from the request a response answers, whether that request does.
+fn components(
+    signer: Signer,
+    status: Option<u16>,
+    carried: &dyn Fn(Field, bool) -> bool,
+) -> Vec<Component> {
+    TABLE
+        .iter()
+        .filter(|row| row.signer == signer)
+        .filter(|row| match row.when {
+            When::Always => true,
+            When::Carried => carried(row.field, row.of_request),
+            When::OnSuccess => status == Some(200),
+        })
+        .map(|row| {
+            if row.of_request {
+                Component::of_request(row.field.name())
+            } else {
+                Component::of(row.field.name())
+            }
+        })
+        .collect()
+}
+
+/// The field of the table whose component name is `name`.
+fn field_named(name: &str) -> Option<Field> {
+    TABLE
+        .iter()
+        .map(|row| row.field)
+        .find(|field| field.name() == name)
+}
+
+/// The value of a component of the request `answered` sums up: `@method` and `@target-uri`
+/// derived, and the fields it carried.
+fn answered_value(answered: &Answered, field: Field) -> Option<String> {
+    match field {
+        Field::Method => Some("POST".to_string()),
+        Field::TargetUri => Some(answered.target_uri.clone()),
+        Field::Ack => Some(answered.ack.clone()),
+        Field::Nonce => Some(answered.nonce.clone()),
+        Field::IfMatch => answered.if_match.clone(),
+        _ => None,
     }
-    // docs/adr/0117, D4: the value of the freshness step the request signs, so that it can be
-    // neither changed nor taken off.
-    if has_fresh {
-        covered.push(Component::of(FRESH_HEADER));
-    }
-    covered.extend([Component::of(HOLD_HEADER), Component::of(NONCE_HEADER)]);
-    covered
+}
+
+/// The components a response of `status` covers, given what it carries (`field`) and the request
+/// it answers.
+fn response_components(
+    status: u16,
+    field: &dyn Fn(&str) -> Option<String>,
+    answered: &Answered,
+) -> Vec<Component> {
+    components(Signer::Response, Some(status), &|row, of_request| {
+        if of_request {
+            answered_value(answered, row).is_some()
+        } else {
+            row.read(field).is_some()
+        }
+    })
+}
+
+/// The components a request covers, given what it carries (`field`).
+fn request_components(field: &dyn Fn(&str) -> Option<String>) -> Vec<Component> {
+    components(Signer::Request, None, &|row, _| row.read(field).is_some())
+}
+
+/// The values of a response's `components`: its status, its fields as `field` reads them, and
+/// those of the request it answers. `None` when one is absent.
+fn response_values(
+    components: Vec<Component>,
+    status: u16,
+    field: &dyn Fn(&str) -> Option<String>,
+    answered: &Answered,
+) -> Option<Vec<(Component, String)>> {
+    components
+        .into_iter()
+        .map(|component| {
+            let named = field_named(&component.name)?;
+            let value = match (named, component.req) {
+                (Field::Status, false) => Some(status.to_string()),
+                (named, true) => answered_value(answered, named),
+                (named, false) => named.read(field),
+            }?;
+            Some((component, value))
+        })
+        .collect()
 }
 
 /// The two fields that carry a signature of `base` by `key` under [`LABEL`]: `Signature-Input`
@@ -833,24 +1122,21 @@ impl ResponseSigner {
         fresh: Option<&str>,
         answered: &Answered,
     ) -> [(String, String); 2] {
-        // §mesh-22.9: a `200` is signed over its status, its body's digest and its numbering, and
-        // over the request it answers, so that it answers that request alone; and over the value
-        // of the freshness step it gives (docs/adr/0117, D4), which changes what the client signs.
-        let mut covered = alloc::vec![
-            (Component::of("@status"), "200".to_string()),
+        let mut headers = alloc::vec![
             (
-                Component::of(CONTENT_DIGEST_HEADER),
+                CONTENT_DIGEST_HEADER.to_string(),
                 content_digest.to_string()
             ),
-            (Component::of(EPOCH_HEADER), epoch.to_string()),
+            (EPOCH_HEADER.to_string(), epoch.to_string()),
         ];
         if let Some(first) = first {
-            covered.push((Component::of(FIRST_HEADER), first.to_string()));
+            headers.push((FIRST_HEADER.to_string(), first.to_string()));
         }
         if let Some(fresh) = fresh {
-            covered.push((Component::of(FRESH_HEADER), fresh.to_string()));
+            headers.push((FRESH_HEADER.to_string(), fresh.to_string()));
         }
-        self.sign_answering(covered, answered)
+        self.sign_answer(200, &headers, answered)
+            .expect("a 200 carries every field its signature covers")
     }
 
     /// The `Signature-Input` and `Signature` of a `401` that refuses a request for its freshness
@@ -864,33 +1150,37 @@ impl ResponseSigner {
     ) -> [(String, String); 2] {
         // docs/adr/0117, D4: a refusal changes what the client signs, so it is signed as a `200`
         // is, over its status, its body's digest, the value it gives and the request it answers.
-        let covered = alloc::vec![
-            (Component::of("@status"), "401".to_string()),
+        let headers = alloc::vec![
             (
-                Component::of(CONTENT_DIGEST_HEADER),
+                CONTENT_DIGEST_HEADER.to_string(),
                 content_digest.to_string()
             ),
-            (Component::of(FRESH_HEADER), fresh.to_string()),
+            (FRESH_HEADER.to_string(), fresh.to_string()),
         ];
-        self.sign_answering(covered, answered)
+        self.sign_answer(401, &headers, answered)
+            .expect("a refusal carries every field its signature covers")
     }
 
-    /// The two fields of a signature over `covered` and then the components of the request it
-    /// answers.
-    fn sign_answering(
+    /// The `Signature-Input` and `Signature` of an answer of `status` whose fields are
+    /// `headers` (its `Content-Digest`, and what of [`TABLE`] it carries), answering
+    /// `answered`: the components are the table's, built from what the answer carries. `None`
+    /// for a status no answer is signed with ([`SIGNED_STATUSES`]), or an answer that lacks a
+    /// field its signature always covers.
+    pub fn sign_answer(
         &self,
-        mut covered: Vec<(Component, String)>,
+        status: u16,
+        headers: &[(String, String)],
         answered: &Answered,
-    ) -> [(String, String); 2] {
-        covered.extend([
-            (Component::of_request("@method"), "POST".to_string()),
-            (
-                Component::of_request("@target-uri"),
-                answered.target_uri.clone(),
-            ),
-            (Component::of_request(ACK_HEADER), answered.ack.clone()),
-            (Component::of_request(NONCE_HEADER), answered.nonce.clone()),
-        ]);
+    ) -> Option<[(String, String); 2]> {
+        // §mesh-22.9: an answer that changes what the client holds is signed over its status,
+        // its body's digest, what it numbers or offers, and the request it answers, so that it
+        // answers that request alone.
+        if !SIGNED_STATUSES.contains(&status) {
+            return None;
+        }
+        let field = |name: &str| field_value(headers, name);
+        let expected = response_components(status, &field, answered);
+        let covered = response_values(expected, status, &field, answered)?;
         let items: Vec<Item> = covered
             .iter()
             .map(|(component, _)| component.identifier())
@@ -900,17 +1190,18 @@ impl ResponseSigner {
             ("alg".to_string(), BareItem::String(ALGORITHM.to_string())),
             ("tag".to_string(), BareItem::String(TAG.to_string())),
         ];
-        signature_fields(
+        Some(signature_fields(
             &self.key,
             &covered,
             &serialize_inner_list(&items, &parameters),
-        )
+        ))
     }
 }
 
-/// Whether a response of `status` with the fields `field` reads and the body `body` is a `200`
-/// that a key of `trusted` signed as this profile signs one, answering `answered`; the
-/// signer is chosen by `keyid` alone (a trust set rotates keys by id).
+/// Whether a response of `status` with the fields `field` reads and the body `body` is an answer
+/// of a signed status ([`SIGNED_STATUSES`]) that a key of `trusted` signed as this profile signs
+/// one, answering `answered`; the signer is chosen by `keyid` alone (a trust set rotates keys by
+/// id).
 pub fn verify_response(
     trusted: &[TrustedKey],
     status: u16,
@@ -920,12 +1211,11 @@ pub fn verify_response(
 ) -> Result<(), Refusal> {
     // §mesh-22.9: the list a response's signature covers is the profile's, built here from what
     // the response carries and never read from it; a signature of any other list is refused.
-    if status != 200 {
+    // A `401` is signed only as the refusal of docs/adr/0117 D4, which `verify_refusal` reads.
+    if !SIGNED_STATUSES.contains(&status) || status == 401 {
         return Err(Refusal::Profile);
     }
-    let expected =
-        response_components(field(FIRST_HEADER).is_some(), field(FRESH_HEADER).is_some());
-    verify_answer(trusted, status, expected, field, body, answered)
+    verify_answer(trusted, status, field, body, answered)
 }
 
 /// Whether a response of `status` with the fields `field` reads and the body `body` is a `401`
@@ -943,16 +1233,15 @@ pub fn verify_refusal(
     if status != 401 || field(FRESH_HEADER).is_none() {
         return Err(Refusal::Profile);
     }
-    verify_answer(trusted, status, refusal_components(), field, body, answered)
+    verify_answer(trusted, status, field, body, answered)
 }
 
 /// Whether a response of `status` with the fields `field` reads and the body `body` carries a
-/// signature over exactly `expected`, by a key of `trusted` chosen by `keyid`, answering
-/// `answered`.
+/// signature over exactly what [`TABLE`] covers of what it carries, by a key of `trusted` chosen
+/// by `keyid`, answering `answered`.
 fn verify_answer(
     trusted: &[TrustedKey],
     status: u16,
-    expected: Vec<Component>,
     field: &dyn Fn(&str) -> Option<String>,
     body: &[u8],
     answered: &Answered,
@@ -962,6 +1251,7 @@ fn verify_answer(
         return Err(Refusal::Digest);
     }
     let carried = Carried::read(field)?;
+    let expected = response_components(status, field, answered);
     if !carried.covers(&expected) || !carried.parameters_are(&["keyid", "alg", "tag"]) {
         return Err(Refusal::Profile);
     }
@@ -970,37 +1260,7 @@ fn verify_answer(
         .iter()
         .find(|key| key.id == key_id)
         .ok_or(Refusal::UnknownKey)?;
-    let derived = |component: &Component| -> Option<String> {
-        match (component.name.as_str(), component.req) {
-            ("@status", false) => Some(status.to_string()),
-            ("@method", true) => Some("POST".to_string()),
-            ("@target-uri", true) => Some(answered.target_uri.clone()),
-            _ => None,
-        }
-    };
-    let request_field = |name: &str| -> Option<String> {
-        if name.eq_ignore_ascii_case(ACK_HEADER) {
-            Some(answered.ack.clone())
-        } else if name.eq_ignore_ascii_case(NONCE_HEADER) {
-            Some(answered.nonce.clone())
-        } else {
-            None
-        }
-    };
-    let covered: Option<Vec<(Component, String)>> = expected
-        .into_iter()
-        .map(|component| {
-            let value = if component.name.starts_with('@') {
-                derived(&component)
-            } else if component.req {
-                request_field(component.name.as_str())
-            } else {
-                field(component.name.as_str())
-            }?;
-            Some((component, value))
-        })
-        .collect();
-    let covered = covered.ok_or(Refusal::Profile)?;
+    let covered = response_values(expected, status, field, answered).ok_or(Refusal::Profile)?;
     if carried.verifies(&signer.public_key, &covered) {
         Ok(())
     } else {
@@ -1056,8 +1316,7 @@ impl RequestSigner {
         // §mesh-22.9: the `key` authenticator's request signature, over the request's method,
         // target, body digest, numbering, hold and nonce, made at `created`.
         let field = |name: &str| field_value(headers, name);
-        let expected =
-            request_components(field(EPOCH_HEADER).is_some(), field(FRESH_HEADER).is_some());
+        let expected = request_components(&field);
         let derived = |component: &Component| -> Option<String> {
             match component.name.as_str() {
                 "@method" => Some("POST".to_string()),
@@ -1102,8 +1361,7 @@ impl RequestSignature {
     /// and parameters.
     pub fn read(field: &dyn Fn(&str) -> Option<String>) -> Result<Self, Refusal> {
         let carried = Carried::read(field)?;
-        let expected =
-            request_components(field(EPOCH_HEADER).is_some(), field(FRESH_HEADER).is_some());
+        let expected = request_components(field);
         if !carried.covers(&expected)
             || !carried.parameters_are(&["created", "keyid", "alg", "tag"])
         {
@@ -1143,8 +1401,7 @@ impl RequestSignature {
         if now_s.abs_diff(self.created) > max_skew_s {
             return Err(Refusal::Skew);
         }
-        let expected =
-            request_components(field(EPOCH_HEADER).is_some(), field(FRESH_HEADER).is_some());
+        let expected = request_components(field);
         let derived = |component: &Component| -> Option<String> {
             match component.name.as_str() {
                 "@method" => Some("POST".to_string()),
@@ -1348,6 +1605,7 @@ mod tests {
             target_uri: "https://cal.example/sce-mesh/1/phone".to_string(),
             ack: "4".to_string(),
             nonce: "AAECAwQFBgcICQoLDA0ODw".to_string(),
+            if_match: None,
         }
     }
 
@@ -1469,7 +1727,7 @@ mod tests {
     /// that carries it. A request signs it, so it can be neither changed nor taken off; a `200`
     /// that gives it signs it; and a `401` that refuses for freshness is signed over its status,
     /// the value it gives and the request it answers, and verifies as a refusal alone. Red if
-    /// `request_components`, `response_components` or `refusal_components` leaves the value out.
+    /// [`TABLE`] leaves the value out of a request, a `200` or a refusal.
     #[test]
     fn a_value_of_the_freshness_step_is_signed_wherever_it_is_carried() {
         let signer = RequestSigner::new(client_key());
@@ -1646,5 +1904,180 @@ mod tests {
         let first_field = |name: &str| field_value(&first, name);
         let read = RequestSignature::read(&first_field).expect("without an incarnation");
         assert_eq!(read.verify(&offered, TARGET, &first_field, 7, 0), Ok(()));
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `OpenInstances_without_signed_mark`
+    /// and `OpenInstances_without_signed_incarnation`: a request made under an incarnation is
+    /// signed over the incarnation it names and the low-water mark it carries, so an intermediary
+    /// that changes either is refused. Red if `If-Match` or `Sce-Mesh-Mark` is not a row of the
+    /// request's signature.
+    #[test]
+    fn a_request_is_signed_over_its_incarnation_and_its_mark() {
+        let signer = RequestSigner::new(client_key());
+        let mut headers = request_headers(&[0x05], Some(EPOCH));
+        headers.push((IF_MATCH_HEADER.to_string(), super::super::entity_tag(7)));
+        headers.push((MARK_HEADER.to_string(), "3".to_string()));
+        headers.extend(signer.sign(TARGET, &headers, 1_000).expect("signed"));
+        let field = |name: &str| field_value(&headers, name);
+        let read = RequestSignature::read(&field).expect("the profile's signature");
+        let key = client_key().public_key();
+        assert_eq!(read.verify(&key, TARGET, &field, 1_000, 0), Ok(()));
+        for (name, forged) in [
+            (IF_MATCH_HEADER, super::super::entity_tag(8)),
+            (MARK_HEADER, "9".to_string()),
+        ] {
+            let mut changed = headers.clone();
+            changed
+                .iter_mut()
+                .find(|(header, _)| header == name)
+                .expect("carried")
+                .1 = forged;
+            let changed_field = |header: &str| field_value(&changed, header);
+            assert_eq!(
+                read.verify(&key, TARGET, &changed_field, 1_000, 0),
+                Err(Refusal::Signature),
+                "{name} changed"
+            );
+        }
+        let mut dropped = headers.clone();
+        dropped.retain(|(header, _)| header != MARK_HEADER);
+        let dropped_field = |header: &str| field_value(&dropped, header);
+        assert_eq!(
+            RequestSignature::read(&dropped_field).err(),
+            Some(Refusal::Profile),
+            "the signature covers a mark the request no longer carries"
+        );
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `OpenInstances_without_signed_fence`
+    /// and `OpenInstances_without_signed_offer`: the fence's `412` is signed over its status and
+    /// the request it answers, the incarnation that request named included, and a join's `200`
+    /// over the incarnation it offers; a forged fence, a fence of another incarnation and a
+    /// changed offer are refused, and no other status is taken as signed. Red if `412` is not a
+    /// signed status, or `If-Match;req` or `ETag` is not a row of the response's signature.
+    #[test]
+    fn the_fence_and_an_offer_are_signed_and_nothing_else_unsigned_is_taken() {
+        let (signer, trusted) = server();
+        let fenced = Answered {
+            if_match: Some(super::super::entity_tag(7)),
+            ..answered()
+        };
+        let digest = content_digest(&[]);
+        let mut fence = alloc::vec![(CONTENT_DIGEST_HEADER.to_string(), digest.clone())];
+        fence.extend(
+            signer
+                .sign_answer(412, &fence, &fenced)
+                .expect("a 412 is signed"),
+        );
+        let field = |name: &str| field_value(&fence, name);
+        assert_eq!(verify_response(&trusted, 412, &field, &[], &fenced), Ok(()));
+        let other = Answered {
+            if_match: Some(super::super::entity_tag(8)),
+            ..answered()
+        };
+        assert_eq!(
+            verify_response(&trusted, 412, &field, &[], &other),
+            Err(Refusal::Signature),
+            "a fence of one incarnation fences no other"
+        );
+        assert_eq!(
+            verify_response(&trusted, 200, &field, &[], &fenced),
+            Err(Refusal::Profile),
+            "a fence's signature is no 200's"
+        );
+        let forged = alloc::vec![(CONTENT_DIGEST_HEADER.to_string(), digest.clone())];
+        let forged_field = |name: &str| field_value(&forged, name);
+        assert_eq!(
+            verify_response(&trusted, 412, &forged_field, &[], &fenced),
+            Err(Refusal::Unsigned)
+        );
+        assert_eq!(signer.sign_answer(410, &fence, &fenced), None);
+        assert_eq!(
+            verify_response(&trusted, 410, &field, &[], &fenced),
+            Err(Refusal::Profile)
+        );
+
+        let mut offer = alloc::vec![
+            (CONTENT_DIGEST_HEADER.to_string(), digest),
+            (EPOCH_HEADER.to_string(), EPOCH.to_string()),
+            (ETAG_HEADER.to_string(), super::super::entity_tag(7)),
+        ];
+        offer.extend(
+            signer
+                .sign_answer(200, &offer, &answered())
+                .expect("signed"),
+        );
+        let offer_field = |name: &str| field_value(&offer, name);
+        assert_eq!(
+            verify_response(&trusted, 200, &offer_field, &[], &answered()),
+            Ok(())
+        );
+        let mut changed = offer.clone();
+        changed
+            .iter_mut()
+            .find(|(name, _)| name == ETAG_HEADER)
+            .expect("an offer")
+            .1 = super::super::entity_tag(9);
+        let changed_field = |name: &str| field_value(&changed, name);
+        assert_eq!(
+            verify_response(&trusted, 200, &changed_field, &[], &answered()),
+            Err(Refusal::Signature),
+            "an intermediary that offers another incarnation is refused"
+        );
+    }
+
+    /// docs/adr/0113, D4: every field a party reads is a row of the one table, and a request and
+    /// a response of a closed deployment are covered as they were before the table, so no
+    /// signature a client or a server of another language makes changes.
+    #[test]
+    fn the_table_covers_what_a_closed_deployment_signed_before() {
+        let names = |covered: Vec<Component>| -> Vec<(String, bool)> {
+            covered
+                .into_iter()
+                .map(|component| (component.name, component.req))
+                .collect()
+        };
+        let headers = request_headers(&[], Some(EPOCH));
+        let field = |name: &str| field_value(&headers, name);
+        assert_eq!(
+            names(request_components(&field)),
+            [
+                "@method",
+                "@target-uri",
+                "content-digest",
+                "sce-mesh-ack",
+                "sce-mesh-epoch",
+                "sce-mesh-hold-ms",
+                "sce-mesh-nonce"
+            ]
+            .map(|name| (name.to_string(), false))
+        );
+        let response = alloc::vec![
+            (CONTENT_DIGEST_HEADER.to_string(), content_digest(&[])),
+            (EPOCH_HEADER.to_string(), EPOCH.to_string()),
+        ];
+        let response_field = |name: &str| field_value(&response, name);
+        assert_eq!(
+            names(response_components(200, &response_field, &answered())),
+            [
+                ("@status", false),
+                ("content-digest", false),
+                ("sce-mesh-epoch", false),
+                ("@method", true),
+                ("@target-uri", true),
+                ("sce-mesh-ack", true),
+                ("sce-mesh-nonce", true),
+            ]
+            .map(|(name, req)| (name.to_string(), req))
+        );
+        for row in TABLE {
+            assert_eq!(field_named(row.field.name()), Some(row.field));
+            assert_eq!(
+                row.field.header().is_none(),
+                row.field.name().starts_with('@'),
+                "{:?}",
+                row.field
+            );
+        }
     }
 }

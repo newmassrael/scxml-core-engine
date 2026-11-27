@@ -80,7 +80,7 @@ use super::signature::{
 use super::{
     decode_install_secret, draw_epoch, install_digest, is_epoch, is_path_segment, split_sequence,
     LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER,
-    INSTALL_SCHEME, PATH_ROOT, VERSION,
+    IF_MATCH_HEADER, INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
 use crate::health::Health;
@@ -1659,6 +1659,7 @@ async fn exchange(
             target_uri: target.clone(),
             ack,
             nonce,
+            if_match: header_field(&request, IF_MATCH_HEADER),
         }),
         _ => None,
     };
@@ -3333,6 +3334,7 @@ mod tests {
             target_uri: normalize_target_uri(&request.url).expect("a URL"),
             ack: field(ACK_HEADER),
             nonce: field(NONCE_HEADER),
+            if_match: field_value(&request.headers, super::super::IF_MATCH_HEADER),
         }
     }
 

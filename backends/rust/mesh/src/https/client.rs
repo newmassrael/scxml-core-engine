@@ -1125,6 +1125,7 @@ mod tests {
                 target_uri: normalize_target_uri(&request.url).expect("a URL the client posts to"),
                 ack: header(ACK_HEADER),
                 nonce: header(NONCE_HEADER),
+                if_match: None,
             };
             let digest = content_digest(&body);
             let mut headers = alloc::vec![
