@@ -574,7 +574,7 @@ impl Inbox {
         }
     }
 
-    /// Put `input`, the envelope or followed journal entry [`slot::admit`]
+    /// Put `input`, the envelope or followed journal entry [`slot::admission`]
     /// admitted, `door` being the inbox's door after it.
     fn admitted(&mut self, door: Door, input: Input) {
         self.door = door;
@@ -1745,7 +1745,7 @@ where
 
     /// Put `input`, an envelope or an entry of a followed journal, in the inbox of the session
     /// `key` in `table`, the pool's table locked, which holds the session from now on if it did
-    /// not, as [`slot::admit`] admits it; answer the slot it was put in, or the bound it met with
+    /// not, as [`slot::admission`] admits it; answer the slot it was put in, or the bound it met with
     /// the input.
     fn post_in(
         &self,
@@ -1759,7 +1759,7 @@ where
             (table.len(), self.sessions.max_live, self.sessions.max_inbox);
         if let Some(slot) = table.get(key) {
             let mut inbox = hold(&slot.inbox);
-            return match slot::admit(stopping, Some(inbox.door), live, max_live, max_inbox) {
+            return match slot::admission(stopping, Some(inbox.door), live, max_live, max_inbox) {
                 Ok(door) => {
                     inbox.admitted(door, input);
                     Ok(Arc::clone(slot))
@@ -1767,7 +1767,7 @@ where
                 Err(full) => Err((input, full)),
             };
         }
-        match slot::admit(stopping, None, live, max_live, max_inbox) {
+        match slot::admission(stopping, None, live, max_live, max_inbox) {
             Ok(door) => {
                 let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
                 hold(&slot.inbox).admitted(door, input);

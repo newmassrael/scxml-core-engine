@@ -206,7 +206,7 @@ impl Door {
             },
         },
 ))]
-pub(crate) fn admit(
+pub(crate) fn admission(
     stopping: bool,
     door: Option<Door>,
     live: usize,
@@ -643,7 +643,7 @@ fn a_lost_lease_is_neither_written_nor_renewed(
 
 #[cfg(test)]
 mod tests {
-    use super::{admit, renewal_moment, room, Door, Full, KeyLease};
+    use super::{admission, renewal_moment, room, Door, Full, KeyLease};
 
     /// An inbox that took `envelopes` envelopes and `told` other inputs, under a bound none met.
     fn holding(envelopes: usize, told: usize) -> Door {
@@ -704,19 +704,19 @@ mod tests {
     #[test]
     fn an_admit_meets_the_stop_the_live_bound_and_the_inbox_bound_in_that_order() {
         assert_eq!(
-            admit(true, Some(Door::open()), 0, 1, 1),
+            admission(true, Some(Door::open()), 0, 1, 1),
             Err(Full::Stopping)
         );
-        assert_eq!(admit(true, None, 1, 1, 1), Err(Full::Stopping));
-        assert_eq!(admit(false, None, 1, 1, 1), Err(Full::Live));
-        assert_eq!(admit(false, None, 0, 1, 1), Ok(holding(1, 0)));
+        assert_eq!(admission(true, None, 1, 1, 1), Err(Full::Stopping));
+        assert_eq!(admission(false, None, 1, 1, 1), Err(Full::Live));
+        assert_eq!(admission(false, None, 0, 1, 1), Ok(holding(1, 0)));
         assert_eq!(
-            admit(false, Some(holding(1, 0)), 1, 1, 1),
+            admission(false, Some(holding(1, 0)), 1, 1, 1),
             Err(Full::Inbox),
             "a session at max_inbox took one more"
         );
         assert_eq!(
-            admit(false, Some(holding(0, 2)), 1, 1, 1),
+            admission(false, Some(holding(0, 2)), 1, 1, 1),
             Ok(holding(1, 2)),
             "the inputs the pool makes counted against max_inbox"
         );
@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn a_new_session_whose_inbox_takes_nothing_is_not_made() {
-        assert_eq!(admit(false, None, 0, 1, 0), Err(Full::Inbox));
+        assert_eq!(admission(false, None, 0, 1, 0), Err(Full::Inbox));
     }
 
     #[test]
