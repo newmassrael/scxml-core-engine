@@ -14,6 +14,8 @@
 //! - [`inductive`]: the inductive invariants a models manifest declares, and
 //!   their judgement for every length of execution (ADR 0115, D3).
 //! - [`proofs`]: the judge of a proofs manifest, by Verus (ADR 0115, D10 and D13).
+//! - [`isolation`]: the judge of what changes a check, commit by commit over
+//!   the ranges it is given (ADR 0115, D11).
 //! - [`document_model`]: the model of one document over Appendix D, which
 //!   `sce-codegen model` writes (ADR 0115, D7).
 //! - [`traces`]: the judge of a traces manifest, every recorded run of the code
@@ -25,6 +27,7 @@ pub mod apalache;
 pub mod document_model;
 pub mod error;
 pub mod inductive;
+pub mod isolation;
 pub mod models;
 pub mod proofs;
 pub mod tlc;

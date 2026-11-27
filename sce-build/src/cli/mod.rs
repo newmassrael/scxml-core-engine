@@ -16549,6 +16549,28 @@ enum FormalCommand {
         #[arg(long, default_value = "auto", value_parser = crate::formal::tlc::workers_spec)]
         workers: std::num::NonZeroUsize,
     },
+    /// Judge every commit of the ranges given: one that changes what a formal
+    /// check says changes nothing else but documents, and names its reason in
+    /// a bullet `- Spec: <why>` of its message (docs/adr/0115, D11).
+    ///
+    /// What a check says is read out of each commit's parent: a promise, a
+    /// property a holding run checks and what only it is made of, the checks
+    /// of a configuration, what the models and proofs manifests declare, and
+    /// the contracts of a proved file. A commit whose parent declares no check
+    /// is not judged. Refused with `formal/isolation` (exit 1); a range git
+    /// cannot read is no verdict (`cli/usage`, exit 20).
+    Isolation {
+        /// The commits to judge, each `<base>..<head>`; a commit two ranges
+        /// share is judged once.
+        #[arg(required = true, value_parser = crate::formal::isolation::range_spec)]
+        ranges: Vec<String>,
+        /// The models manifest, by its path in the repository.
+        #[arg(long, default_value = crate::formal::isolation::DEFAULT_MODELS)]
+        models: String,
+        /// The proofs manifest, by its path in the repository.
+        #[arg(long, default_value = crate::formal::isolation::DEFAULT_PROOFS)]
+        proofs: String,
+    },
     /// Print the tools the judges run, as `sce-build/src/formal/toolchain.json`
     /// pins them (`schemas/sce-formal-toolchain.v1.schema.json`).
     Toolchain,
@@ -16638,6 +16660,30 @@ fn cmd_formal(judge: FormalCommand) {
             };
             if let Err(err) = crate::formal::traces::check(&manifest, workers, &mut report) {
                 leave(err);
+            }
+        }
+        FormalCommand::Isolation {
+            ranges,
+            models: models_path,
+            proofs: proofs_path,
+        } => {
+            use crate::formal::isolation;
+            let mut out = |line: &str| out_line(line);
+            let mut detail = |text: &str| eprintln!("{text}");
+            let mut report = models::Report {
+                out: &mut out,
+                detail: &mut detail,
+            };
+            let declared = isolation::Declared {
+                models: models_path,
+                proofs: proofs_path,
+            };
+            match isolation::check(Path::new("."), &declared, &ranges, &mut report) {
+                Ok(()) => {}
+                Err(isolation::Failure::Refused(err)) => leave(err),
+                Err(isolation::Failure::Unreadable(detail)) => cli_exit(CliError::Usage {
+                    detail: format!("formal isolation: the range could not be read: {detail}"),
+                }),
             }
         }
         FormalCommand::Toolchain => out_line(toolchain::TOOLCHAIN_JSON.trim_end()),

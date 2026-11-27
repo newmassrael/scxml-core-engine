@@ -3129,6 +3129,11 @@ pub enum DiagnosticCode {
     /// no model of (docs/adr/0115, D7).
     #[serde(rename = "formal/no-translation")]
     FormalNoTranslation,
+    /// A commit that changes what a formal check says beside what the check
+    /// judges, or without naming its reason, which `sce-codegen formal
+    /// isolation` refuses (docs/adr/0115, D11).
+    #[serde(rename = "formal/isolation")]
+    FormalIsolation,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -4618,6 +4623,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         FormalVerdict,
         FormalToolUnavailable,
         FormalNoTranslation,
+        FormalIsolation,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4986,6 +4992,7 @@ impl DiagnosticCode {
             // ── Formal judges (docs/adr/0146) ───────────────────
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
             FormalNoTranslation => Some("ADR 0115 D7"),
+            FormalIsolation => Some("ADR 0115 D11"),
 
             // ── Forge XSD ────────────────────────────────────────
             XmlSchemaValidation => Some("SCE Forge XSD"),
@@ -6417,6 +6424,7 @@ impl DiagnosticCode {
             | FormalVerdict
             | FormalToolUnavailable
             | FormalNoTranslation
+            | FormalIsolation
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -7058,6 +7066,7 @@ impl DiagnosticCode {
             FormalVerdict => "formal/verdict",
             FormalToolUnavailable => "formal/tool-unavailable",
             FormalNoTranslation => "formal/no-translation",
+            FormalIsolation => "formal/isolation",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -21157,6 +21166,14 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:5ccc6b7cf6690d46","code":"formal/no-translation","stage":"formal","spec":"ADR 0115 D7","message":"test.scxml: no model is written, since 1 construct(s) have no translation into Appendix D: the <onentry> of state `s0`: <log>, which has no translation","actual":"test.scxml"}"#,
             ),
+            (
+                "formal/isolation",
+                FormalError::Isolation {
+                    range: "1a2b3c4d5e6..4d5e6f7a8b9".into(),
+                    commits: vec!["4d5e6f7a8b9 feat: Change a property with its model".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:5408a9f493fb1cfd","code":"formal/isolation","stage":"formal","spec":"ADR 0115 D11","message":"1a2b3c4d5e6..4d5e6f7a8b9: 1 commit(s) change what a check says otherwise than by itself and for a reason: 4d5e6f7a8b9 feat: Change a property with its model","actual":"1a2b3c4d5e6..4d5e6f7a8b9"}"#,
+            ),
         ]
     }
 
@@ -22633,6 +22650,9 @@ mod tests {
             // none is a choice among candidates the judge knows.
             | FormalDeclaration
             | FormalVerdict
+            // A refused commit is repaired by splitting it, or by naming its
+            // reason: no candidate list spells either.
+            | FormalIsolation
             | FormalToolUnavailable
             // The repair is a document without the constructs the refusal names,
             // or a translation of them in the generator: no candidate list.
@@ -23561,7 +23581,7 @@ mod tests {
                 | CliPseudoUnavailable
                 | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
                 | FormalDeclaration | FormalVerdict | FormalToolUnavailable
-                | FormalNoTranslation
+                | FormalNoTranslation | FormalIsolation
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployChildEntryShape | MeshDeployChildUnknownParent
@@ -23777,9 +23797,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            584,
+            585,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 584 distinct variants to match the DiagnosticCode \
+             expected 585 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24704,6 +24724,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // scenario of this harness raises its codes.
             | FormalDeclaration
             | FormalVerdict
+            // The judge of what changes a check reads commits: no statechart.
+            | FormalIsolation
             | FormalToolUnavailable
             // `sce-codegen model` reads a statechart, and its record names every
             // construct it refuses with the place of each in the text, in one

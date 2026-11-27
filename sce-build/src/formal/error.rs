@@ -44,6 +44,18 @@ pub enum FormalError {
     #[error("{tool} is not available: {detail}")]
     ToolUnavailable { tool: String, detail: String },
 
+    /// A commit changes what a formal check says beside what the check judges,
+    /// or without naming its reason (`formal/isolation`; docs/adr/0115, D11).
+    /// `range` is the ranges judged, and `commits` names each refused commit
+    /// with the subject of its message, oldest first.
+    #[error(
+        "{range}: {} commit(s) change what a check says otherwise than by itself and for a \
+         reason: {}",
+        commits.len(),
+        commits.join("; ")
+    )]
+    Isolation { range: String, commits: Vec<String> },
+
     /// A document carries constructs with no translation into its model over
     /// Appendix D (`formal/no-translation`; docs/adr/0115, D7), so
     /// `sce-codegen model` writes no model of it, never a model of part of it.
@@ -77,7 +89,9 @@ impl FormalError {
 impl ToDiagnostics for FormalError {
     fn exit_code(&self) -> i32 {
         match self {
-            FormalError::Declaration { .. } | FormalError::Verdict { .. } => Self::EXIT_ANSWER_NO,
+            FormalError::Declaration { .. }
+            | FormalError::Verdict { .. }
+            | FormalError::Isolation { .. } => Self::EXIT_ANSWER_NO,
             FormalError::ToolUnavailable { .. } => Self::EXIT_TOOL_UNAVAILABLE,
             FormalError::NoTranslation { .. } => Self::EXIT_NO_TRANSLATION,
         }
@@ -102,6 +116,11 @@ impl SingleDiagnostic for FormalError {
                 DiagnosticCode::FormalVerdict,
                 failures.clone(),
                 Some(manifest.clone()),
+            ),
+            FormalError::Isolation { range, commits } => (
+                DiagnosticCode::FormalIsolation,
+                commits.clone(),
+                Some(range.clone()),
             ),
             FormalError::ToolUnavailable { tool, detail } => (
                 DiagnosticCode::FormalToolUnavailable,

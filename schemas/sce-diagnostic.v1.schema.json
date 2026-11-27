@@ -416,6 +416,7 @@
         "formal/verdict",
         "formal/tool-unavailable",
         "formal/no-translation",
+        "formal/isolation",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",
