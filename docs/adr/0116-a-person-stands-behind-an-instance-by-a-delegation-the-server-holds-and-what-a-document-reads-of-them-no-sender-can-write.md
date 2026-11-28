@@ -8,9 +8,9 @@
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
   general; what is special to one application stays in the application.
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0116" line in the landing that moves it):
-  `SCE_MESH.md` §10.9 (a twelfth invariant), §16.7, §22.5 and §22.9; ADR 0113 (D1 left "who it acts for" to a record of
-  its own: this one); ADR 0114 (D1: what an entry records; D6: facts of authority); ADR 0109 (D14: what an audit row
-  records); `docs/SCE_ACCEPTED_SUBSET.md` §2.15 and the appendix; `docs/SCE_SERVER_DEPLOY.md`.
+  `SCE_MESH.md` §10.9 (a twelfth invariant), §14.4, §16.7, §22.5 and §22.9; ADR 0113 (D1 left "who it acts for" to a
+  record of its own: this one); ADR 0114 (D1: what an entry records; D6: facts of authority); ADR 0109 (D14: what an
+  audit row records); `docs/SCE_ACCEPTED_SUBSET.md` §2.15 and the appendix; `docs/SCE_SERVER_DEPLOY.md`.
 - Scope: the Rust host core, `https` under the `key` authenticator, `sce-static` documents. A machine that declares no
   principal is as it is.
 - Related: ADR 0113, ADR 0114, ADR 0115, ADR 0117.
@@ -208,7 +208,7 @@ Each step lands with a test that fails without it.
 4. (2026-11-28) `sce:principal`, `_x.principal`, `_x.quoted` and `sce:on-behalf`, with each refusal's
    appendix row (`validation/principal-record`, `validation/quote-refused`,
    `mesh/codegen-principal-unproved`; every backend but Rust by `generate/unsupported-feature`).
-5. What the journal and the audit log record (D7), and D5 over ADR 0114's followers.
+5. (2026-11-28) What the journal and the audit log record (D7), and D5 over ADR 0114's followers.
 
 Step 3 needs ADR 0113 step 4; step 5 needs ADR 0114 step 4.
 
@@ -244,8 +244,8 @@ Each decided by the record's own text and the source it cites, and written here 
 
 ## Decided while landing step 5
 
-D7 landed on 2026-11-28; D5 over ADR 0114's followers is the part of step 5 still to land, so the step is not dated.
-Each decision is the record's own text and the source it cites.
+D7 landed on 2026-11-28, and D5 over ADR 0114's followers the same day, which dates the step. Each decision is the
+record's own text and the source it cites.
 
 1. **Whose run a fact is.** A macrostep is made for the person the external event that began it was said for
    (`EngineState::acting`), so a fact said on an internal event the macrostep raised, which carries no `_x.principal`
@@ -268,12 +268,37 @@ Each decision is the record's own text and the source it cites.
    person (decision 5 of step 4), would run it for nobody (D6) and record its work as nobody's (D7), so the save
    refuses while one runs, as it does for a queued event of a person.
 
-For the rest of step 5, D5 over the followers, decided by the record's text and Zanzibar's consistency protocol
-(Pang et al. 2019, the zookie): a fact a follower session says records, beside its actor, the position of each
-journal it follows that its checkpoint holds (the decision's read set); a request carries a position in a field
-the deployment names, as `sessions.key_from` names the key, and the pool holds it in the session's inbox until its
-reader's mark (`JournalStore::keep_read`) has passed that position, refusing a position above the journal's horizon,
-which no answer told.
+D5 over the followers, decided by the record's text and Zanzibar's consistency protocol (Pang et al. 2019, the zookie:
+a check is evaluated at a snapshot at least as fresh as the one the content's zookie names):
+
+7. **What a decision records of what it read.** A fact a follower's session says records, beside its actor, the
+   position of each journal it follows that its checkpoint holds (`Fact::read`, `JournalEntry::read`; `SqliteStore`
+   layout 14, a row of `journal_reads` for each journal; inside the record under `Sealed`, docs/SCE_SEALED_RECORD.md
+   section 3): the decision's read set, as it stood when the run said the fact and not when its write was made, since
+   a session may take in an entry between the two. An observed fact read no journal of this server, and a store
+   refuses one that names a read (`ObservedRead`).
+8. **Where a request carries its position.** deploy.yaml's `sessions.position_from: data.<field>`, as
+   `sessions.key_from` names the key: only on a machine that follows journals, never the key's field, declared by at
+   least one request the machine serves, and a `uint64`, the type of every position, or an `optional<uint64>` in each
+   that declares it. Each refusal is `mesh/deploy-invalid-sessions`, the code of every refusal of `sessions:`, so the
+   step adds no code and no appendix row.
+9. **What the request waits for.** The mark the store keeps of the pool's reader (`JournalStore::keep_read`), as the
+   record says: every entry at or below it was taken in by a durable checkpoint of its session, so the request's
+   session holds every entry of its key at or below the position. Positions are one sequence of the journal (ADR 0114,
+   D3), so one position names a point of every journal the pool follows.
+10. **How it waits without holding what it waits for.** In its session's inbox, counted by `max_inbox` as any
+    envelope, with the session's later envelopes behind it, so a client's envelopes keep their order. The session's
+    other inputs, the entries the reader hands it among them, are taken past it, and an entry is handed to it past
+    `max_inbox` while one of its envelopes waits (the reader's window, `FOLLOW_WINDOW`, bounds those), since the mark
+    may wait for that very entry: a full inbox would otherwise wait for the mark, and the mark for the inbox.
+    `Pool::follow` answers the sessions whose requests the mark passed.
+11. **What is refused.** A position above the journal's horizon, which the pool reads from its store as the request
+    arrives: nothing at or below the horizon can still become visible, so no answer told a position above it, and the
+    reader would never pass it. It is answered `InvalidArgument`, as a request whose key cannot be read is, and so is
+    a field that holds no unsigned integer; a pool given no journal (`Pool::follow_from`) answers `InternalError`;
+    anything that is no request is told to the host (`PoolError::Unpositioned`).
+12. **A stop.** A stopping pool reads no further, so what still waits is answered `Unavailable` and carried again
+    (ADR 0109, D10), and the stop does not wait for it until its deadline.
 
 ## Open questions
 

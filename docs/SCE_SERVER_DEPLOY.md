@@ -12,7 +12,8 @@ a generated machine is served by SCE's adapter (section 1), and the upgrade in p
 
 Amended by ADR 0116 (`docs/adr/0116-a-person-stands-behind-an-instance-by-a-delegation-the-server-holds-and-what-a-document-reads-of-them-no-sender-can-write.md`):
 the store keeps who each fact of the journal was said for (layout 13, section 3), and the audit log who each entry a
-run appended was made for (D7); and what each fact was decided having read (layout 14, section 3; D5).
+run appended was made for (D7); and what each fact was decided having read (layout 14, section 3; D5), and a follower
+holds a request until it has read as far as the request asks (`sessions.position_from`, section 2.2; D5).
 
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 and brought to every step of it that landed by its step 15:
@@ -273,6 +274,7 @@ sessions:
   max_live: <integer>               # optional, 100000: sessions held in memory at most
   max_inbox: <integer>              # optional, 64: envelopes waiting in one session's inbox
   commit_delay_us: <integer>        # optional, 0: how long a commit waits for more writes
+  position_from: data.<field>       # optional: where a request carries a position of what it follows
 ```
 
 `key_from` and `idle_ms` are required when the block is present, and neither has a default; `max_live` and
@@ -285,6 +287,18 @@ machine handles must declare as a `string[N]` of at most 256 bytes or as an inte
 (`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with `ordering:
 required` and no binding with `delivery: causal` (`mesh/deploy-invalid-sessions`). Only the Rust host core serves it;
 every other backend refuses it (`mesh/codegen-keyed-pool-unsupported`).
+
+`position_from` (ADR 0116, D5) is for a machine that follows journals (`follows:`): it names the field of a request's
+data that carries a position of them, which an earlier answer told the client, a `uint64` or an `optional<uint64>` in
+every `service.request.*` that declares it and declared by at least one. The pool holds such a request in its
+session's inbox until the mark the store keeps of its reader (`JournalStore::keep_read`) has passed the position, so
+the request is decided on every entry at or below it; `Pool::follow` answers the sessions whose requests the mark
+passed, which the program's loop runs as it runs every key `follow` answers. A request waits no longer than the reader
+takes to reach its position: a follower whose reader waits at an entry (one of a key another process serves, until
+that process has taken it in) holds every request past that entry with it. A position above the journal's horizon is answered `InvalidArgument`, and a stop
+answers what still waits `Unavailable`. A `position_from` that is no `data.<field>`, that names the key's field, or that
+stands on a machine that follows nothing is refused as `mesh/deploy-invalid-sessions`, and so is a field no request
+declares as a position.
 
 `idle_ms` is how long a session stays in memory after its last event. A session is dropped only when it also holds
 nothing pending (section 9), so `idle_ms` bounds the memory of quiet sessions and nothing else.

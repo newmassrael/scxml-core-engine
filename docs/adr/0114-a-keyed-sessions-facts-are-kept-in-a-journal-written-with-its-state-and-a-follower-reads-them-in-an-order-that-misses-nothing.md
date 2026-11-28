@@ -12,7 +12,10 @@
 - Amended by: ADR 0116 (D1 and D7): an entry records who its fact was said for, the instance and the person of the
   delegation the run that said it was made under (`Fact::actor`, `JournalEntry::actor`; `SqliteStore` layout 13,
   inside the record under `Sealed`), which the host core writes and no document does; an observed fact names no one.
-  (D6, ADR 0116 D5): groups, roles and relations are facts of an observed stream, which a deciding machine follows.
+  (D6, ADR 0116 D5): groups, roles and relations are facts of an observed stream, which a deciding machine follows; a
+  fact a follower's session says records how far it had read each journal it follows (`Fact::read`, `SqliteStore`
+  layout 14, inside the record under `Sealed`), and a request that carries a position of them waits in its session's
+  inbox until the reader's mark has passed it (D4, `sessions.position_from`).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is

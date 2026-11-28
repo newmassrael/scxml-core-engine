@@ -1578,7 +1578,13 @@ checked by value and by side (`mesh/topology-invalid-binding-field`).
 SCE_MESH.md sections 14.4 and 22 give their meaning and defaults. A
 machine's `sessions:` also takes `commit_delay_us` (amended by ADR 0109,
 decision D15): how long the pool's committer waits before it takes a
-batch, default 0, at most 100000 (`mesh/deploy-invalid-sessions`).
+batch, default 0, at most 100000 (`mesh/deploy-invalid-sessions`). A
+machine that follows journals takes `position_from` too (amended by
+ADR 0116, decision D5): `data.<field>`, a field other than the key's
+that a request declares as a `uint64` or an `optional<uint64>`, the
+position of the journals the pool follows its session must have read
+before it takes the request (`mesh/deploy-invalid-sessions`).
+SCE_MESH.md section 14.4 gives its meaning.
 
 What proves an `https` exchange end to end is declared by keys of the
 binding too (amended by ADR 0109, decision D9): the accepting side takes
