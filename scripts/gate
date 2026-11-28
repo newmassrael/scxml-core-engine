@@ -203,14 +203,23 @@ if [[ -n "$AT_WANT" ]]; then
         printf 'gate: --at takes a full commit id, got %q\n' "$AT_WANT" >&2
         exit 2
     fi
-    AT_HAVE="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+    at_error="$(mktemp)"
+    AT_HAVE="$(git rev-parse --verify 'HEAD^{commit}' 2>"$at_error" || true)"
     if [[ "$AT_HAVE" != "$AT_WANT" ]]; then
         printf '\nERROR gate: the plan was made for commit %s and this checkout is at %s.\n' \
             "$AT_WANT" "${AT_HAVE:-no commit}" >&2
+        # Why git found no commit, when it found none: a borrowed object store
+        # or a repository whose owner the user here is not, which a gate run in
+        # an image is the first to meet.
+        if [[ -z "$AT_HAVE" && -s "$at_error" ]]; then
+            sed 's/^/  git: /' "$at_error" >&2
+        fi
+        rm -f "$at_error"
         printf 'The gate reads HEAD, so a verdict here would be about another commit;\n' >&2
         printf 'nothing runs and nothing is claimed about the tree.\n' >&2
         exit 3
     fi
+    rm -f "$at_error"
 fi
 
 # ── A change set named by commits rather than by a file ────────────────
