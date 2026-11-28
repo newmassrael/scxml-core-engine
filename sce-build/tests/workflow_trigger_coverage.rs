@@ -406,6 +406,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // wherever it is written, so a filter over today's fixtures names the
     // documents already known to agree.
     "the_class_walker_runs_as_the_general_interpreter_does",
+    // Asks `git ls-files` for every decision record under `docs/adr/` and
+    // refuses a number two records carry or a title that reads another
+    // number. The record that breaks it is the next one written, and no lane
+    // that runs `sce-build`'s suites names `docs/adr/**` in its filter: the
+    // two records that shared 0146 and the two that shared 0148 each landed
+    // on a push that started no lane reading the directory.
+    "an_adr_is_titled_by_a_number_no_other_adr_has",
     "workflow_trigger_coverage",
 ];
 
