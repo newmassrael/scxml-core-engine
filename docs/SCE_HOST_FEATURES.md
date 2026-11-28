@@ -1500,9 +1500,11 @@ Failure codes: `unavailable` (the store could not be read) and
 fewer entries).
 
 Refusal (`invalid_argument`): an empty `stream` or one past its bound, a `key` on
-an observed stream or none on a machine's, a number that is none, a `limit` of 0
-or past `journal_page` (64, which `--limit` moves), and an `as_of_position`
-above the journal's horizon, which no read answered.
+an observed stream, a number that is none, a `limit` of 0 or past `journal_page`
+(64, which `--limit` moves), and an `as_of_position` above the journal's horizon,
+which no read answered. A machine's stream is read under the empty `key` too: the
+stream of the one session of a pool that keeps one (`sessions: { key_from: none }`,
+docs/adr/0114, D4).
 
 **What a page is.** The entries of the stream at or below the position
 `as_of_position` whose fact holds from `valid_ms` or before, ordered by when each

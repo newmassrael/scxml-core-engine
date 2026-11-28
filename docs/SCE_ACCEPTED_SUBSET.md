@@ -1668,18 +1668,23 @@ target it cannot address.
 - Amended by: ADR 0114 (D1, D2, D4 and D6, steps 3 and 4 of its order of work):
   `journal:`, `follows:` and `streams:`, with their refusals, and what a session
   of a machine that follows a journal is handed.
+- Amended by: ADR 0114 (D4, amended 2026-11-28): `sessions: { key_from: none }`,
+  a follower that keeps one session.
 
 The event journal (docs/adr/0114) is declared by three keys. A machine takes
 `journal: true` (D1): its sessions keep a journal of the facts their document
 says with `<send type="sce:journal">` (§2.15). A machine takes `follows:`, a
 list of names (D4): each a machine of the deployment that keeps a journal, or
 an observed stream, whose entries the pool delivers in order to the session
-`sessions.key_from` names for each. The deployment takes `streams:` (D6),
+`sessions.key_from` names for each, or, when `key_from` is `none`, to the one
+session the pool keeps, whose key is the empty key and which every input the pool
+takes is for (D4, amended 2026-11-28). The deployment takes `streams:` (D6),
 observed streams by name, each with `schemas:`, the paths of the event schema
 documents its entries are records of. Refused, as
 `mesh/deploy-invalid-journal`: `journal: true` or `follows:` on a machine
 that declares no `sessions:`; `follows:` on a pool whose `key_from` is
-`client`, since an entry comes on no client's link; a machine that follows
+`client`, since an entry comes on no client's link (one whose `key_from` is
+`none` is accepted); a machine that follows
 itself, whose own entries would take effect twice; a name followed twice, one
 that is neither a machine nor a stream, a machine that keeps no journal, and a
 machine of another device, whose journal is in a store no process of this one
@@ -1703,13 +1708,18 @@ stream's schemas, each of which must be an event schema,
 `mesh/topology-receiver-source-parse` otherwise) key its sessions as its requests
 do, each schema the document imports declaring the `key_from` field as a key
 (`mesh/deploy-sessions-key-not-in-request`), so a pool that serves no request
-and follows a journal is a view of it.
+and follows a journal is a view of it. A pool whose `key_from` is `none` reads no
+field of them, and a followed entry whose schema its document does not import is
+refused (`mesh/deploy-invalid-sessions`), since nothing says the record it is read
+by.
 
 The Rust host core hands each entry of a followed journal, in the order of its
-positions, to the session its `key_from` field names, as an external event of the
+positions, to the session its `key_from` field names, or to the one session of a
+pool whose `key_from` is `none`, as an external event of the
 entry's event whose data is the entry's record; its `_event.origintype` is
-`sce:journal` and its `_event.origin` is `journal://<machine>/<key>/<position>`,
-or `journal://<stream>/<position>` for an observed stream. The session keeps the
+`sce:journal` and its `_event.origin` is `journal://<machine>/<key>/<position>`
+(`journal://<machine>//<position>` for the one session of a machine that keeps
+one, its key empty), or `journal://<stream>/<position>` for an observed stream. The session keeps the
 position it took in of each journal in its checkpoint and drops a repeat, so each
 entry takes effect once (SCE_MESH.md §14.4, "Keyed session pool"). A follower
 and the machines it follows keep their sessions in one store, a session being its

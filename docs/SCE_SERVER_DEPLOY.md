@@ -269,7 +269,7 @@ A machine entry declares (SCE_MESH.md section 14, schema; section 14.4, "Keyed s
 
 ```yaml
 sessions:
-  key_from: data.<field> | client   # where an envelope's key is read
+  key_from: data.<field> | client | none  # where an envelope's key is read; none: one session
   idle_ms: <integer>                # an idle session is saved and dropped after this
   max_live: <integer>               # optional, 100000: sessions held in memory at most
   max_inbox: <integer>              # optional, 64: envelopes waiting in one session's inbox
@@ -279,12 +279,15 @@ sessions:
 
 `key_from` and `idle_ms` are required when the block is present, and neither has a default; `max_live` and
 `max_inbox` are at least 1 (ADR 0109, D1); `commit_delay_us` is at most 100000 (ADR 0109, D15; section 3.1). A
-`key_from` that is neither form below, an `idle_ms` past what a Mesh core counts to, a `max_live` or `max_inbox` of 0,
+`key_from` that is none of the forms below, an `idle_ms` past what a Mesh core counts to, a `max_live` or `max_inbox` of 0,
 and a `commit_delay_us` past its bound are each refused as `mesh/deploy-invalid-sessions`, with the reason.
 `key_from: client` keys a session by the name the client posts under, so one client is one session; `key_from:
 data.<field>` keys it by a field of the request's data, which the event schema of every `service.request.*` the
 machine handles must declare as a `string[N]` of at most 256 bytes or as an integer
-(`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with `ordering:
+(`mesh/deploy-sessions-key-not-in-request`); `key_from: none` reads no key: the pool keeps one session, whose key
+is the empty key, and every input it takes is that session's, a request a client sends and an entry of each journal
+and observed stream it follows alike, so a read model of the whole deployment needs no field shared by the entries it
+follows (docs/adr/0114, D4, amended 2026-11-28). The block stands beside no `server:` block, no binding with `ordering:
 required` and no binding with `delivery: causal` (`mesh/deploy-invalid-sessions`). Only the Rust host core serves it;
 every other backend refuses it (`mesh/codegen-keyed-pool-unsupported`).
 
