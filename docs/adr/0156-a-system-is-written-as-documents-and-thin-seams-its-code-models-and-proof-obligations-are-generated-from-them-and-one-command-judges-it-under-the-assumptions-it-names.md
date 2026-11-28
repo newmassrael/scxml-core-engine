@@ -5,6 +5,10 @@
   its academic foundations, ultimate and general: the record is accepted, and the installation of the tools is
   approved). The tools that sentence approves, and what each is for, are D13's. Pinning and installing them is
   another change's; this record names the decision only.
+- Amended 2026-11-28 by the owner: "에이전트가 만드는 시험에 flaky 가 많으니 제품 밖에도 북극성을 적용" (the tests
+  agents write are often flaky, so apply the north star outside the product too), relayed by the same consumer's
+  session with two needs, both general: a simulation host that runs generated machines from one seed (D15), and the
+  paths of a generated model exported as tests (D16). The Order of work places them.
 - Date: 2026-11-28
 - Requested by: the owner, relayed the same day by a session of a downstream consumer, which is the first reference
   case and not the scope. The owner's words: "sce와 얇은 seam을 이용해 만드는걸 산업표준으로 만들고 싶어, 증명도
@@ -17,12 +21,15 @@
   it):
   - ADR 0115: D3 (TLAPS approved, and candidates pruned to an inductive invariant, D9), D7 (the semantics a public
     surface, D2; the composition of a deployment, D8), D8 (each output's tables held to the model's, D11), D10 (a
-    seam's contract in the same expression language, D7), D15 (the paragraph "A bound is not an assumption", D5; a
+    seam's contract in the same expression language, D7; D8's converse, paths that cover the model and a run of none
+    refused, D16), D15 (the paragraph "A bound is not an assumption", D5; a
     refinement declared by the properties document, D6), "Questions decided at acceptance", 1 (D13);
   - ADR 0146, the formal judge: D3 (the toolchain gains the tools of D13 as their steps land) and D4 (a runner per
     tool);
   - ADR 0111, once its amendment of 2026-11-28 lands: `LinkChannel.tla` is written as a promise module with its
     refinement (D8);
+  - `backends/rust/world`: its virtual time, its seed and its counted guards become the Rust lane's simulation host
+    (D15);
   - `SCE_WIRE_CONTRACTS.md` (the surfaces of D2, D7, D10 and D12) and `docs/formal/README.md` (what is built).
 - Scope: this record states the goal, the status of each part of it, the order and the tools. It changes no code and
   no generated output. Each part lands by the record or the amendment its decision names, with a test that fails
@@ -107,6 +114,13 @@ running tools. This record is that place.
   detecting a tool's errors lowers its confidence level) and IEC 61508-3 7.4.4 are commonly read; this record did not
   read them (Sources).
 - **A standard is a specification that a second, independent implementation can be held to**, not a program.
+- **A test is a function of its script and its seed.** Every choice that is not the program's own (the time, the
+  order of messages and of threads, a loss) is drawn from one seed or given by a script, so a failing run is
+  reproduced by its seed, and a test that sometimes fails is a defect of its structure, not a rate to be lowered by
+  retries, longer timeouts or sleeps (deterministic simulation testing, as FoundationDB and TigerBeetle describe it).
+- **A test derived from the specification is sound**: it fails only where the implementation does not conform
+  (Tretmans 1996, checked by ADR 0115), and its expected values are the specification's, never a second statement of
+  them written by hand.
 
 ## Decision
 
@@ -315,12 +329,76 @@ compiler is below the seam and is a deployment's choice under its own licence (D
   with CompCert; Rust has no verified compiler, and a qualified one (Ferrocene) is qualified, not proved.
 - **Checkers.** TLC, Apalache, TLAPS's back ends, Verus, Kani, CBMC, Storm, Z3 and SCE's judges are trusted. A second
   encoding (ADR 0119 D4) and a second checker (D12) make their errors detectable; nothing makes them impossible.
+- **Simulation.** A run of D15's host shows what the code does under the behaviours a promise allows and a seed
+  chose, and D16's paths what it does on the behaviours chosen; neither shows that a real transport, scheduler or
+  clock keeps the promise, which its conformance kit, GenMC and the assumptions of D1 answer.
 - **Cost of the code.** A construct whose generated code is slower than hand code limits adoption and not proof; it
   is the business of the records that measure the generated code.
 - **Standardisation.** A tool from one repository is not a standard. A public specification, an implementation or a
   checker independent of SCE, a community that keeps it, and an authority that accepts its evidence are needed, and
   the last is a matter of years. This record decides what this repository can make true: a specification sufficient
   for an independent checker (D12), and the evidence an authority would read (D10, D11).
+
+### D15. A simulation host runs generated machines from one seed, behind seams that keep their contracts
+
+Added by the amendment of 2026-11-28.
+
+- **Status.** Part of it exists, for one lane and one kind of connector. `backends/rust/world` runs several generated
+  Rust machines on Mesh endpoints over a network it owns: every engine on `SceClock::Manual` and one shared clock that
+  only the world moves, every random choice (a delay, a loss, a duplicate, a reordering, an endpoint's ids and jitter)
+  drawn from one seed by SplitMix64, guards that count steps (`PUMP_LIMIT`, `SETTLE_TICKS`) and never wait, and a run
+  read back as the replay scenarios of every backend. Each lane has a manual clock (the Rust `SceClock::Manual`, C11's
+  `sce_clock_manual`, Go's `clock.go`), and the C11 tests link `no_wall_clock.c`, which ends a test whose machine
+  reads the wall clock. What is missing: the world runs every machine on one thread, so the door's interleavings (ADR
+  0084) are not among its choices, and the inbox histories of ADR 0147 come from stress runs of real threads, judged by
+  linearizability for whatever schedule occurred; there is no in-memory link of ADR 0111, whose transmit side has not
+  landed; a host invocation is completed by each test's own code; nothing holds a simulated seam to the contract of
+  the seam it stands for; and no lane but Rust has a host of this kind.
+- **Decision.**
+  - **One host per lane, for any deployment.** The simulation host is a product surface, generated or written once per
+    lane runtime, and runs the machines of any deployment a repository gives it. It owns the clock, which only it
+    moves, the in-memory implementation of every connector and seam the deployment uses (a link, ADR 0111, with its
+    lending and the drive's wait; the door, ADR 0084; a Mesh binding; a host invocation, completed by a script), and
+    the schedule: which machine or poster takes the next step, the order of each queue, and every loss, duplicate,
+    reordering and delay.
+  - **Its choices are exactly the promise's.** Each choice is one the connector's promise module allows (D2, D8) and
+    nothing else, so a simulated link loses only where its promise lets a link lose, and a run of the host is a
+    behaviour the composed model can take. The choices come from a seed, drawn as the world draws them now, or from a
+    script, which is how D16 replays a path of the model. A failing run prints its seed, and the seed reproduces it on
+    every run.
+  - **A guard is a count.** A test waits for a number of steps, deliveries or ticks, never for a duration, and a
+    machine in the host that reads the wall clock ends the test, as `no_wall_clock.c` makes it do in C11.
+  - **One body with D7.** A simulated seam is held to the contract of the seam it stands for by the same generated
+    harnesses (Kani, CBMC) and its runs by trace validation against the connector's promise (ADR 0115 D4), so what a
+    test learns in simulation is what the shipped seam is proved to do. A simulated seam that models less than the
+    engine relies on (a link with no wait at the drive) passes defects through, which this rule refuses.
+- **Record.** The seam-contract record of D7, which takes the simulation host as its second half, and amends
+  `backends/rust/world`, whose rules become the Rust lane's host. **Depends on** D7 (the contracts), D2 (the
+  connectors' promises the choices are drawn under) and, for the link, ADR 0111 steps 3 and 3a.
+
+### D16. The paths of a generated model are exported as tests, and a test that runs none fails
+
+Added by the amendment of 2026-11-28.
+
+- **Status.** The converse of ADR 0115 D8 is built for the behaviours a property picks: a violation and a witness
+  of ADR 0115 D15 are written as scenarios in the run trace format (`behaviour.rs`) and each of the seven lanes
+  replays them, judged step for step (`replay.rs`,
+  `sce-build/tests/a_scenario_is_the_run_of_every_lane.rs`). The behaviours drawn at random from the model that the
+  converse also names (TLC's simulation) are not built, no criterion chooses paths for what they cover, and nothing
+  refuses a test that replayed nothing.
+- **Decision.**
+  - **A test's expected values are the model's.** The generator chooses paths of a document's model (ADR 0115 D7) by a
+    stated criterion: every row of the transition table taken, and every clause of the promise a refinement declares
+    (D6) brought into play. It writes each in the run trace format with its inputs, as ADR 0115 D15's scenarios are, so
+    the same harness of each lane replays it and the same judge reads it. No expected value is written by hand.
+  - **What cannot be covered is named.** A row or a clause no path within the exploration reaches is listed with the
+    bound that cut it, as a verdict names a bound (ADR 0115 D15).
+  - **A test that runs zero paths fails**, as a check that cannot fail shows nothing (ADR 0115 D5): a suite whose
+    selection came back empty, or whose lane replayed none of it, is refused by name.
+  - **Where it runs.** A path of one machine runs on a lane's scenario harness as it is. A path of a deployment fixes
+    the choices of its connectors, and runs on this record's D15 host, given as a script.
+- **Amends** ADR 0115 D8 (its converse, "What is replayed"). **Depends on** D3 (what has no model has no paths), D6
+  (for the clauses) and, for a deployment, D15.
 
 ## Consequences
 
@@ -330,8 +408,10 @@ compiler is below the seam and is a deployment's choice under its own licence (D
 - The trusted base is the list of D14 and nothing else; a verdict that rests on more says so.
 - Three tools join the toolchain as their steps land (D13), each with its runner in the one judge and its runs that
   show it can refuse.
-- The generator gains outputs (obligations, harnesses, a matrix) to keep right, and D8, D11 and the judges are what keep
-  them so.
+- The generator gains outputs (obligations, harnesses, a matrix, paths) to keep right, and D8, D11 and the judges are
+  what keep them so.
+- A test of a generated machine is a function of its script and its seed (D15), and its expected values are the
+  model's (D16), so a test that sometimes fails points at a defect of the structure, which is fixed there.
 
 ## Alternatives rejected
 
@@ -347,6 +427,12 @@ compiler is below the seam and is a deployment's choice under its own licence (D
   writes the seam.
 - **A seam rule by convention.** Thinness that no program checks is the boundary the request says must be the
   machine's to keep.
+- **Lowering a flaky test's rate** by retries, longer timeouts or a sleep before a check. It hides the defect a
+  schedule exposed; a seed that reproduces it shows it (D15).
+- **A simulated seam written per test.** It models what its author thought of, and a seam that models less than the
+  engine relies on lets a defect through; D15 holds it to the shipped seam's contract.
+- **Expected values written by hand beside a model.** They are a second statement of the model, written by whoever
+  writes the test; D16 takes them from the model.
 - **Naming the first consumer's system as the scope.** The goal is any repository's (the owner's "범용적으로",
   generally); a consumer is a case that tests it.
 
@@ -359,6 +445,9 @@ share only ADR 0115 D10's expression language.
 2. (A) D2: the semantics registered, and the modules of the connectors as promises. A specification precedes what
    refines it, and every later step of A reads the model; it unblocks D3 to D10.
 3. (A) D3: the breadth of ADR 0115 D7 in its order. What has no model has no verdict of any later step.
+3a. (A) D16 for one machine at a time, as each document gains its model. It needs nothing but D3 and the harnesses
+   and judge that replay ADR 0115 D15's scenarios now, and it makes every expected value of a machine's tests
+   mechanical. The clauses of a promise join it with step 5, and a deployment's paths with step 10a.
 4. (A) D4: the obligations. They are mechanical once every bound is declared, which it is, and they are D5's types and
    D9's candidates.
 5. (A) D6: the refinement declared. It ties a document to the promise a user reads, which D8 composes by and D10 cites.
@@ -371,6 +460,10 @@ share only ADR 0115 D10's expression language.
 9. (B) D11: the tables of each output held to the model's. It needs only what exists, and closes the generator's part
    of the trusted base for the control of every machine.
 10. (B) D7: the seam contract, the harnesses and the thinness rule, after ADR 0115 D10's postcondition.
+10a. (B) D15, in the same record as D7: the host's rules (a clock only it moves, one seed, counted guards) on every
+   lane for the seams that exist (the clock, the door, a Mesh binding, a host invocation), starting from
+   `backends/rust/world`; then each simulated seam held to its contract as D7 gives the real one its own; the link's
+   once ADR 0111 steps 3 and 3a land. It makes a test's schedule mechanical, and is what D16 runs a deployment on.
 11. D10, then D12's corpus and the flips to `stable`, once the formats of the steps above have stopped moving.
 
 **Where this meets ADR 0111's order** (its order of work, with its amendment of 2026-11-28 on a branch):
@@ -380,6 +473,9 @@ share only ADR 0115 D10's expression language.
   is given its contract when D7 lands.
 - Its amendment writes the steps of `LinkChannel.tla` with step 3. D8 needs that module as the link's promise, with
   the implementation refining it; written so, the two orders agree, and written as a mechanism it is written twice.
+- Its steps 3 and 3a give the link a lending driver on the loopback fixtures of `tests/forge/conformance/link_events/`.
+  D15's in-memory link is that driver with its choices drawn from a seed, held to the same contract, and comes after
+  them; it reorders nothing of ADR 0111.
 - Its step 7 (the drive and the ask) changes ADR 0084's door, which ADR 0147 proved: `InboxService.tla` changes by a
   commit of its own (ADR 0115 D11), and the Verus proof of the Rust drain and the inbox histories follow. D8 reads the
   door as a connector, so step 7 comes before D8 treats it as one.
@@ -395,4 +491,5 @@ Systems*); Pnueli, Siegel and Singerman 1998; Hawblitzel et al., SOSP 2015; Fisc
 for this record, and to be checked before a step relies on them:** Necula, PLDI 2000 (translation validation for an
 optimising compiler); Wolper 1986 (data independence); Lazić, Newcomb and Roscoe 2003 (its thresholds); Ip and Dill
 1996 (symmetry); Emerson and Kahlon 2000 (cutoffs); Flanagan and Leino 2001 (Houdini); Clarke, Kroening and Lerda 2004
-(CBMC); the Kani documentation; DO-178C, DO-330, ISO 26262-8 and IEC 61508-3, which were not read for this record.
+(CBMC); the Kani documentation; what FoundationDB and TigerBeetle publish of their deterministic simulation
+testing; DO-178C, DO-330, ISO 26262-8 and IEC 61508-3, which were not read for this record.
