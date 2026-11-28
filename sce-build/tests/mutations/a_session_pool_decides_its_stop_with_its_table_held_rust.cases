@@ -8,9 +8,10 @@
 #
 # The oracle is the loom models of `backends/rust/mesh/src/pool.rs` (module
 # `pool::tests::loom_models`), which run a stop against a post, against the
-# wake of a session that came due, and against a tell to the sessions that bind
-# an instance, under every interleaving within three preemptions of the table,
-# the slots' `Arc` and locks and the stop's flags. The
+# wake of a session that came due, against a tell to the sessions that bind an
+# instance, and against an entry of a followed journal handed to its session,
+# under every interleaving within three preemptions of the table, the slots'
+# `Arc` and locks, the journals' reader's lock and the stop's flags. The
 # property is also the model `SessionPool`'s `StoppedClean`, whose part
 # `StopHoldsTable` a run of docs/formal takes out. Each case moves one read of
 # the stop back outside the table's lock, where it was before the fix:

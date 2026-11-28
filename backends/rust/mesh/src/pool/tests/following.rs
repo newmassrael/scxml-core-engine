@@ -159,7 +159,7 @@ fn views_machine(max_inbox: u32) -> Machine {
 
 /// A pool of the views as the process `owner` serves it, its sessions kept through the views'
 /// handle on `store`, reading the journal of `store`.
-fn views(
+pub(super) fn views(
     owner: &str,
     store: &MemoryStore,
     clock: &Clock,
@@ -182,7 +182,7 @@ fn views(
 }
 
 /// Make the tellers of `store` say `said`, each a room and a fact, in order.
-fn say(store: &MemoryStore, clock: &Clock, said: &[(&str, &str)]) {
+pub(super) fn say(store: &MemoryStore, clock: &Clock, said: &[(&str, &str)]) {
     let pool = tellers(Arc::new(store.of_machine("tellers")), clock);
     for (n, (room, fact)) in said.iter().enumerate() {
         let key = pool
@@ -209,7 +209,7 @@ fn follow_all(pool: &Pool<Viewers, Wire, Clock>) {
 
 /// What the durable checkpoint of the view of `room` holds: the facts it took, the origin of the
 /// first, and the position of the tellers' journal it took in.
-fn view_of(store: &MemoryStore, room: &str) -> (Vec<String>, String, Option<u64>) {
+pub(super) fn view_of(store: &MemoryStore, room: &str) -> (Vec<String>, String, Option<u64>) {
     let loaded = checkpoint::load(&store.of_machine("views"), room)
         .expect("read")
         .expect("a view saved");

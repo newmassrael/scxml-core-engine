@@ -104,8 +104,8 @@ sce_gate_tested --log "$pool_loom_log" -- cargo test --release -p sce-rust-mesh 
     --config 'build.rustflags=["--cfg","loom"]' \
     --lib pool::tests::loom_models \
     || sce_gate_fail "Rust session pool loom models"
-grep -q "test result: ok. 3 passed" "$pool_loom_log" \
-    || sce_gate_fail "Rust session pool loom models: the three models did not all run"
+grep -q "test result: ok. 4 passed" "$pool_loom_log" \
+    || sce_gate_fail "Rust session pool loom models: the four models did not all run"
 
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,
 # verification layer 5). Both need a nightly, and a floating `nightly` would

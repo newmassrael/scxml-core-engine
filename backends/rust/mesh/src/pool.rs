@@ -6759,7 +6759,8 @@ mod tests {
 
     /// The loom models of who holds the pool's locks, and when (docs/adr/0115, D13; the model
     /// `SessionPool`, docs/formal/SessionPool.tla): a stop racing a post, the wake of a session
-    /// that came due, and a tell to the sessions that bind an instance, under every
+    /// that came due, a tell to the sessions that bind an instance, and an entry of a followed
+    /// journal handed to the session its key names, under every
     /// interleaving, within three preemptions, of the locks, the flags and the slots' `Arc` of
     /// `sync`, which this build takes from loom. What each asserts
     /// holds under every schedule: once `Pool::stop` returned nothing more is admitted, every
@@ -6772,6 +6773,7 @@ mod tests {
     /// only inside a model.
     #[cfg(all(loom, test))]
     mod loom_models {
+        use super::following::{say, view_of, views};
         use super::*;
         use loom::thread;
 
@@ -6818,7 +6820,10 @@ mod tests {
 
         /// No session of `key` is in memory, and no slot the table holds has an input
         /// waiting: the stop left nothing behind it.
-        fn assert_nothing_left(pool: &Pool<Rooms, Wire, Clock>, key: &str) {
+        fn assert_nothing_left<F: SessionFactory<Wire, Clock>>(
+            pool: &Pool<F, Wire, Clock>,
+            key: &str,
+        ) {
             assert!(
                 !pool.is_live(key),
                 "a session was in memory after the stop returned"
@@ -6984,6 +6989,56 @@ mod tests {
                     told.is_empty(),
                     "the tell answered {told:?}, and the saved session binds the instance: {bound}"
                 );
+            });
+        }
+
+        /// An entry of the tellers' journal for r1, read by the views' reader (`Pool::follow`, the
+        /// post of `Pool::post_followed`), races a stop. Handed before the stop, it is taken in,
+        /// by the follower's run or the stop's drain, and the view the stop saves holds it and its
+        /// position; refused, no view is saved and the reader keeps no mark past it, so the
+        /// process that follows the journal next hands it again. Either way once, and a call of
+        /// `Pool::follow` after the stop returned hands nothing. Fails if a followed entry is
+        /// admitted without the stop read with the table held: it is then put in a slot made
+        /// after the stop drained and saved its sessions, and waits there after it returned.
+        #[test]
+        fn a_followed_entry_racing_a_stop_is_taken_before_it_or_handed_again() {
+            model(|| {
+                let (store, clock) = (MemoryStore::new(), Clock::new());
+                say(&store, &clock, &[("r1", "a")]);
+                let pool = loom::sync::Arc::new(views("p1", &store, &clock, 64));
+                let follower = {
+                    let pool = loom::sync::Arc::clone(&pool);
+                    thread::spawn(move || {
+                        for key in pool.follow() {
+                            pool.run(&key);
+                        }
+                    })
+                };
+                pool.stop(Instant::now() + Duration::from_secs(30));
+                assert!(
+                    pool.follow().is_empty(),
+                    "an entry was handed after the stop returned"
+                );
+                follower.join().expect("the follower");
+                assert_nothing_left(&pool, "r1");
+                let saved = checkpoint::load(&store.of_machine("views"), "r1").expect("read");
+                if saved.is_some() {
+                    assert_eq!(
+                        view_of(&store, "r1"),
+                        (
+                            vec!["a".to_string()],
+                            "journal://tellers/r1/1".to_string(),
+                            Some(1)
+                        ),
+                        "the view the stop saved did not take the entry in once"
+                    );
+                } else {
+                    assert_eq!(
+                        store.read_through("views").expect("the mark"),
+                        0,
+                        "the reader passed an entry no view took in"
+                    );
+                }
             });
         }
     }
