@@ -8,8 +8,8 @@ this file says what is here and how to read it.
 
 | Level (ADR 0115) | Here | Built |
 |---|---|---|
-| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`, `OrderService.tla`, `ReceiptService.tla`: what a user may rely on, no mechanism; `CheckpointService.tla`: two of them over one server, and what ties them | yes, for seven protocols and the composition of two |
-| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla`, `EngineInbox.tla`, `OrderingBuffer.tla`, `DurableReceipt.tla` and `CheckpointWrite.tla` | yes, for seven protocols and the composition of two |
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`, `InboxService.tla`, `OrderService.tla`, `ReceiptService.tla`, `ValueService.tla`: what a user may rely on, no mechanism; `CheckpointService.tla`: two of them over one server, and what ties them | yes, for eight protocols and the composition of two |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla`, `BrowserNode.tla`, `EngineInbox.tla`, `OrderingBuffer.tla`, `DurableReceipt.tla`, `Subscriptions.tla` and `CheckpointWrite.tla` | yes, for eight protocols and the composition of two |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | `inductive` of `models.json`: an inductive invariant per theorem, judged by Apalache at a configuration's parameters | for every length, at fixed sizes, for three theorems; for every size, none (below) |
@@ -34,6 +34,7 @@ this file says what is here and how to read it.
 | `OrderService`, `OrderingBuffer` | SCE_MESH.md section 10.6, the receive half's order of one sender's stream (`backends/rust/mesh/src/inbound.rs`): an envelope held ahead of its number, the release of what follows on, a gap told lost once it has waited, and a durable stream, which is anchored at its first number and never told a gap |
 | `OrderService`, `OrderingBuffer` | SCE_MESH.md section 10.6, the receive half's order of one sender's stream (`backends/rust/mesh/src/inbound.rs`): a stream expected from its first number whatever arrives first, an envelope held ahead of its number, the release of what follows on, a gap told lost once it has waited (the numbers before what a late listener heard first among them), and a durable stream, which is never told a gap |
 | `ReceiptService`, `DurableReceipt` | ADR 0045 and SCE_MESH.md section 10.11, the router's durable receipt (`backends/rust/mesh/src/router.rs`): an envelope held until a durable checkpoint holds it, kept and sent again until acknowledged, a repeat told by its number, an acknowledgement of what a durable checkpoint holds, and either machine stopped and restored |
+| `ValueService`, `Subscriptions` | ADR 0152, a client's subscription to a session's published values: a changelog of rows and removal markers written with the session's state, dropped by their time and their count, a floor past the markers kept, a generation per changelog started again, the cursors the client holds and every exchange names under its digest, a reset read in pages by a cursor (g, f, k) and caught up from its first page, a session's changes given as one unit, the client's rules for a unit and a page, what it holds and its cursors stored in one write, and the subscription ended with its incarnation |
 | `CheckpointService`, `CheckpointWrite` | ADR 0115 D12, the composition: `OpenInstances` and `EventJournal` over the one write in which a session's state, its outbox, its journal and a member's records are made durable together, and the time a lease is judged by |
 | `AppendixD`, `W3CTest388`, `W3CTest570`, `W3CTest403c` | ADR 0115 D7, the SCXML recommendation's Appendix D over a document's tables, and three documents of the W3C corpus over it: history recorded and restored, the done events of a parallel state's regions and of the state, the removal of conflicting transitions |
 
@@ -61,6 +62,37 @@ clock run ahead keeps the promise), and the one property of a deadline, `TakenWh
 A renewal, a lease given up and an owner that takes its own key again are steps of it, each guarded
 as the session store guards it (the store's `rules/lease.rs`, proved by Verus to refine
 `EventJournal`), and a run without each guard finds `TakenWhenDue` broken.
+
+`Subscriptions` is ADR 0152's protocol, written before its code (D10), and `ValueService` its promise: what a
+client holds of a value at a version is that value as published then (`Exact`); it never goes back within a
+generation (`Monotone`); the values of one session it holds are of one version (`OneState`); they move only to
+complete one or over versions at which the session changed (`Silent`); nothing is given under a subscription its
+incarnation did not make (`Authorized`); and, under the fairness of that client alone, the session publishes what it
+is asked and the client comes to hold every version at which the values changed (`Converges`). Each row of D10's
+table is a part with a run that takes it out, but the markers' time: dropping a marker by its time only raises the
+floor sooner, so taking it out leaves the floor lower and breaks nothing, and under the condition D10 states
+`Converges` under (each reset completes within `tombstone_retention_ms`, and the removals of that time are at
+most `tombstones`) a reset sees no floor pass its first page with the count alone either. What breaks a reset is
+removals past `tombstones` within it, with or without the time, and only a session that writes for ever shows it,
+which a model bounded in its versions does not have. The time is in the model as a step (`Lapse`) that drops any
+marker at any moment.
+
+Each holding run is small by its bounds, and none reaches all of them at once:
+
+| Run | Clients, values, keys | Versions, generations | Exchanges, repeats | Faults |
+|---|---|---|---|---|
+| `Subscriptions.cfg` | one client, one value of two keys (two pages) | 0..2, one generation | two in flight, no repeat | markers dropped by count (one kept) and by time |
+| `Subscriptions_faults.cfg` | one client, one value of one key | 0..2, started again once | one in flight, one answer delivered twice | every marker dropped at once; the client ends its incarnation, stops and loses its store once each |
+| `Subscriptions_two_values.cfg` | one client, two values of one key | 0..2, one generation | two in flight, no repeat | one marker kept per value |
+| `Subscriptions_live.cfg` | one client, one value of two keys | 0..1, one generation | two in flight, no repeat | every marker dropped at once; the client loses its store once |
+
+Not covered, as D10 says: the cost of what is owed and the pages' sizes (a page is one key here), the cryptography of
+the signature, and the grants of the blobs a row names (ADR 0153); and beside them a row whose bytes change while it
+stays (a row here is present or not), a change of one value alone of a session (the session is removed and started
+again whole), the numbers of subscriptions within an incarnation and a `ValueEnd` of a number used before, the
+mailbox that shares an exchange, the bounds `max_subscriptions` and `max_viewers`, and a view's value per viewer,
+of which one value stands for each. The holding live run has one client: what another client does reaches `Fair`
+only through a queue, which the run without `FromChangelog` shows with two.
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.

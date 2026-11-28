@@ -1756,6 +1756,158 @@
       "decision": "docs/adr/0152",
       "abstract": true,
       "runs": []
+    },
+    {
+      "module": "Subscriptions",
+      "decision": "docs/adr/0152",
+      "parts": {
+        "Markers": "TRUE",
+        "FloorCheck": "TRUE",
+        "WithState": "TRUE",
+        "Generation": "TRUE",
+        "Digest": "TRUE",
+        "ResetCursor": "TRUE",
+        "CatchUp": "TRUE",
+        "UnitRule": "TRUE",
+        "PageRule": "TRUE",
+        "OneUnit": "TRUE",
+        "OneWrite": "TRUE",
+        "FromChangelog": "TRUE",
+        "SkipUnchanged": "TRUE",
+        "EndWithIncarnation": "TRUE"
+      },
+      "promise": "Refines",
+      "refines": "ValueService",
+      "progress": [
+        "Converges"
+      ],
+      "runs": [
+        {
+          "config": "Subscriptions.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "Subscriptions_faults.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "Subscriptions_two_values.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "Subscriptions_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "Subscriptions_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "a session that writes, a server that answers and a client that keeps exchanging are what bring a client to each version; the promise is safety and needs none"
+        },
+        {
+          "config": "Subscriptions_without_markers.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "Markers",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_floor_check.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "FloorCheck",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_with_state.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "WithState",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_generation.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "Generation",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_digest.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "without": "Digest",
+          "promise": "kept",
+          "why": "the client takes a unit only from the version it holds, so a cursor an intermediary moved forward makes it hold nothing false; what it loses is the change it is never given, which is progress (Converges)"
+        },
+        {
+          "config": "Subscriptions_without_reset_cursor.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "without": "ResetCursor",
+          "promise": "kept",
+          "why": "a reset given again from its first page at each exchange makes the client hold nothing false; it never completes, which is progress (Converges)"
+        },
+        {
+          "config": "Subscriptions_without_catch_up.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "CatchUp",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_unit_rule.cfg",
+          "expect": "violates",
+          "property": "Monotone",
+          "without": "UnitRule",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_page_rule.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "PageRule",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_one_unit.cfg",
+          "expect": "violates",
+          "invariant": "OneState",
+          "without": "OneUnit",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_one_write.cfg",
+          "expect": "violates",
+          "invariant": "Exact",
+          "without": "OneWrite",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_from_changelog.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "without": "FromChangelog",
+          "promise": "kept",
+          "why": "a queue per subscription that refuses the write when full tells no client anything false; it stops the writer, and every client then waits on the one that does not read, which is progress (Converges)"
+        },
+        {
+          "config": "Subscriptions_without_skip_unchanged.cfg",
+          "expect": "violates",
+          "property": "Silent",
+          "without": "SkipUnchanged",
+          "promise": "broken"
+        },
+        {
+          "config": "Subscriptions_without_end_with_incarnation.cfg",
+          "expect": "violates",
+          "property": "Authorized",
+          "without": "EndWithIncarnation",
+          "promise": "broken"
+        }
+      ]
     }
   ]
 }
