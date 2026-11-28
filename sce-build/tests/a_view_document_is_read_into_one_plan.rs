@@ -330,6 +330,7 @@ fn the_relations_are_evaluated_in_strata_after_what_they_exclude() {
     assert_eq!(relations.strata[1], [id("project", "viewer")]);
     assert!(relations.strata[0].contains(&id("project", "banned")));
     assert!(relations.strata[0].contains(&id("group", "member")));
+    assert!(relations.strata[0].contains(&id("project", "approver")));
     assert_eq!(relations.tuples.record, "Tuple");
     assert_eq!(relations.size.to_string(), "tuples_max * tuples_max");
 }
@@ -346,7 +347,10 @@ fn the_plan_is_plain_data_that_reads_back() {
 #[test]
 fn a_result_keyed_by_a_column_the_build_does_not_infer_is_refused() {
     let (code, refusal) = refused("key_not_unique.scxml");
-    assert_eq!(code, DiagnosticCode::ViewResultKeyNotUnique);
+    assert!(
+        matches!(code, DiagnosticCode::ViewResultKeyNotUnique),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row("key_not_unique.scxml", "<sce:result"))
@@ -356,7 +360,10 @@ fn a_result_keyed_by_a_column_the_build_does_not_infer_is_refused() {
 #[test]
 fn a_cut_with_no_order_is_refused() {
     let (code, refusal) = refused("bound_without_order.scxml");
-    assert_eq!(code, DiagnosticCode::ViewBoundWithoutOrder);
+    assert!(
+        matches!(code, DiagnosticCode::ViewBoundWithoutOrder),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row("bound_without_order.scxml", "<sce:result"))
@@ -380,7 +387,7 @@ fn a_cut_that_reaches_every_row_needs_no_order() {
 #[test]
 fn a_cycle_of_views_is_refused_where_it_closes() {
     let (code, refusal) = refused("cycle_a.scxml");
-    assert_eq!(code, DiagnosticCode::ViewCycle);
+    assert!(matches!(code, DiagnosticCode::ViewCycle), "{code:?}");
     assert!(
         refusal.location.file.ends_with("cycle_b.scxml"),
         "{}",
@@ -403,7 +410,10 @@ fn a_cycle_of_views_is_refused_where_it_closes() {
 #[test]
 fn a_relation_that_depends_on_its_own_exclusion_is_refused() {
     let (code, refusal) = refused("access_excluding_itself.scxml");
-    assert_eq!(code, DiagnosticCode::ViewRelationCycleThroughExclusion);
+    assert!(
+        matches!(code, DiagnosticCode::ViewRelationCycleThroughExclusion),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row(
@@ -416,7 +426,10 @@ fn a_relation_that_depends_on_its_own_exclusion_is_refused() {
 #[test]
 fn a_table_that_says_nobody_may_read_it_is_refused() {
     let (code, refusal) = refused("table_without_visibility.scxml");
-    assert_eq!(code, DiagnosticCode::ViewTableWithoutVisibility);
+    assert!(
+        matches!(code, DiagnosticCode::ViewTableWithoutVisibility),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row(
@@ -429,13 +442,19 @@ fn a_table_that_says_nobody_may_read_it_is_refused() {
 #[test]
 fn a_view_with_no_viewer_names_no_relation_of_a_viewer() {
     let (code, _) = refused("viewer_mismatch_relation.scxml");
-    assert_eq!(code, DiagnosticCode::ViewViewerMismatch);
+    assert!(
+        matches!(code, DiagnosticCode::ViewViewerMismatch),
+        "{code:?}"
+    );
 }
 
 #[test]
 fn a_view_reads_no_view_of_another_viewer() {
     let (code, refusal) = refused("viewer_mismatch_view.scxml");
-    assert_eq!(code, DiagnosticCode::ViewViewerMismatch);
+    assert!(
+        matches!(code, DiagnosticCode::ViewViewerMismatch),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row(
@@ -448,7 +467,10 @@ fn a_view_reads_no_view_of_another_viewer() {
 #[test]
 fn an_expression_the_build_does_not_prove_total_is_refused() {
     let (code, refusal) = refused("expression_may_fail.scxml");
-    assert_eq!(code, DiagnosticCode::ViewExpressionMayFail);
+    assert!(
+        matches!(code, DiagnosticCode::ViewExpressionMayFail),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row("expression_may_fail.scxml", "<sce:where"))
@@ -458,7 +480,10 @@ fn an_expression_the_build_does_not_prove_total_is_refused() {
 #[test]
 fn a_count_its_field_may_not_hold_is_refused() {
     let (code, refusal) = refused("aggregate_may_overflow.scxml");
-    assert_eq!(code, DiagnosticCode::ViewAggregateMayOverflow);
+    assert!(
+        matches!(code, DiagnosticCode::ViewAggregateMayOverflow),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row("aggregate_may_overflow.scxml", "<sce:count"))
@@ -468,7 +493,10 @@ fn a_count_its_field_may_not_hold_is_refused() {
 #[test]
 fn a_sum_of_floating_numbers_is_refused() {
     let (code, refusal) = refused("floating_aggregate.scxml");
-    assert_eq!(code, DiagnosticCode::ViewFloatingAggregate);
+    assert!(
+        matches!(code, DiagnosticCode::ViewFloatingAggregate),
+        "{code:?}"
+    );
     assert_eq!(
         refusal.location.line,
         Some(row("floating_aggregate.scxml", "<sce:sum"))
@@ -495,10 +523,13 @@ fn a_count_takes_no_expression() {
     };
     match parse_forge_with_imports(&text, label) {
         Ok(_) => panic!("a count with an expression is read"),
-        Err(refusal) => assert_eq!(
-            refusal.error.to_diagnostics()[0].code,
-            DiagnosticCode::XmlSchemaValidation
-        ),
+        Err(refusal) => {
+            let code = refusal.error.to_diagnostics()[0].code;
+            assert!(
+                matches!(code, DiagnosticCode::XmlSchemaValidation),
+                "{code:?}"
+            );
+        }
     }
 }
 
@@ -514,10 +545,10 @@ fn every_backend_refuses_a_valid_view_by_name() {
                 Ok(_) => panic!("a view generated on {language:?}"),
                 Err(refusal) => refusal,
             };
-        assert_eq!(
-            refusal.to_diagnostics()[0].code,
-            DiagnosticCode::ViewBackendUnsupported,
-            "{language:?}: {}",
+        let code = refusal.to_diagnostics()[0].code;
+        assert!(
+            matches!(code, DiagnosticCode::ViewBackendUnsupported),
+            "{language:?}: {code:?}: {}",
             refusal.error
         );
     }

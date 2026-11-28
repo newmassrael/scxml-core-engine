@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The relations of the board of docs/adr/0151, D5: who may view a project is who
      edits it, a member of a group the tuples name, or a viewer of its parent,
-     unless the project bans them; groups nest. -->
+     unless the project bans them; groups nest. An approver both edits a project
+     and is named its approver. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -19,6 +20,12 @@
   </sce:relation>
   <sce:relation name="editor" object="project">
     <sce:direct subjects="group#member"/>
+  </sce:relation>
+  <sce:relation name="approver" object="project">
+    <sce:all>
+      <sce:computed relation="editor"/>
+      <sce:direct/>
+    </sce:all>
   </sce:relation>
   <sce:relation name="parent" object="project">
     <sce:direct/>
