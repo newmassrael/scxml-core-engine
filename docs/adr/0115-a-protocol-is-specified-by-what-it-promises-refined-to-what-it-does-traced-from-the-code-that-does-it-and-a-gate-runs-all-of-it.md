@@ -23,6 +23,9 @@
 - Amended by: ADR 0166 D7 (2026-11-29, accepted, not yet built): a document with type parameters has no model and no
   proof of its own; the generated model, a contract's proof (D10) and a proof obligation are of each instance, which
   is a written document to every level.
+- Amended by: ADR 0162 (2026-11-29): D15's "a real number" with no translation is a binary one; a decimal is
+  translated as its integer coefficient where its coefficients stay within TLC's integers, and refused by name
+  (`Construct::Decimal`) where they do not.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
