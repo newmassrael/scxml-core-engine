@@ -37,9 +37,10 @@
 - Related: ADR 0064 and ADR 0135 (Appendix D runs once over a document's tables), ADR 0084 (one door), ADR 0091
   (translation validation of an export), ADR 0110 (the C11 core), ADR 0111 (links), ADR 0115 (the levels), ADR 0118
   (cost), ADR 0119 (quantity), ADR 0146 (the formal judge), ADR 0147 (the door proved).
-- Two records carry the number 0146 (the formal judge; a bounded FIFO's full policy) and two carry 0148 (a reactive
-  turn; a message as a case of a union). This record names each of them by its subject where the number alone is
-  ambiguous. Renumbering is not this record's.
+- When this record was written two records carried the number 0146 (the formal judge; a bounded FIFO's full policy)
+  and two carried 0148 (a reactive turn; a message as a case of a union). On 2026-11-28 the formal judge and the
+  reactive turn kept their numbers, the bounded FIFO's full policy became ADR 0157 and the message as a case of a
+  union ADR 0158. The subjects this record names beside a number stay, as a reader's check.
 
 ## Context
 
@@ -307,7 +308,7 @@ on (ADR 0146, the formal judge, D3), in the change that builds its step, as ADR 
 | Apalache | 2026-11-27 (ADR 0115) | 0.63.0 | D9's step checks; ADR 0115 D3 |
 | Verus | 2026-11-23 (ADR 0115 D13) | yes, with its Rust release | ADR 0115 D10 and D13; D7's specification of a pure seam; D11's proof of the Rust walker |
 | Storm | 2026-11-28 (ADR 0119) | 2.0.0 | ADR 0119 |
-| TLAPS, with the back ends its release carries | 2026-11-28, by this record | not yet | D9: theorems for every size, the follower of ADR 0114 first; the candidates of ADR 0146 (the full policy), its order step 7 |
+| TLAPS, with the back ends its release carries | 2026-11-28, by this record | not yet | D9: theorems for every size, the follower of ADR 0114 first; the candidates of ADR 0157 (the full policy), its order step 7 |
 | Kani, with the Rust toolchain and CBMC it pins | 2026-11-28, by this record | not yet | D7: the harness of each Rust seam |
 | CBMC | 2026-11-28, by this record | not yet | D7: the harness of each C11 seam, the same contract |
 
