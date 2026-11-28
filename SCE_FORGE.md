@@ -228,6 +228,7 @@ Declared on the `<scxml>` root element. The entire file is a single kind. Produc
 <scxml sce:kind="observer">      <!-- Threshold monitoring with hysteresis -->
 <scxml sce:kind="properties">    <!-- What one machine promises (docs/adr/0115, D15) -->
 <scxml sce:kind="exploration">   <!-- The values a search of it is made over -->
+<scxml sce:kind="view">          <!-- A read model: a query over keyed tables, per viewer (docs/adr/0151) -->
 ```
 
 #### Inline Kind
@@ -2520,6 +2521,58 @@ A parameter, a local and a return may be a `map<K, T>` or a `set<K>` of the one 
 
 **Executed in the numerical conformance harness** on each backend `ALGORITHM_MAP_BACKENDS` lists and on the Interpreter (docs/adr/0108, "Order of work" step 7b): `take_generation`, and `any_above` (`sce-build/tests/fixtures/static_datamodel/algorithm_any_above.scxml`), which only reads the map it is lent. The manifest writes a map argument as `{"map": {"key": <part>, "value": <part>}, "capacity": N}`, with `"inout": true` where the algorithm writes it in place, each part an integer, a `bool` or `{"record": "<event-schema fixture>"}`, and `N` the bound of the map each harness builds; the oracle writes the map in its saved form (D8), the array of its entries in the map's order, each `[key, value]`, a 64-bit integer as the text of its digits, and states under `after` the map each `inout` slot is left holding. An answer of a union is written `{"union": "<union fixture>"}` and compared with the oracle's wire object. A backend that lowers no algorithm's map leaves such a fixture out of its harness by that list (`conformance::lang_supports_fixture`).
 
+### 4.13 view
+
+Amended by: ADR 0151 (D1, D2, D3, D5, D6, D8, D10 and D11; step 2 of its order of work): the kind, its reader, its plan and its refusals.
+
+A read model: a relational query over a machine's bounded keyed tables, read where the document is read into one typed plan, maintained by each change of the tables (ADR 0151 D4, a later step), and, for a view with a viewer, computed for each viewer only from the rows that viewer may read. A view is a document of its own and is not inline-eligible; a machine holds its value as a variable (ADR 0151 D9, a later step).
+
+```xml
+<scxml sce:kind="view" name="board">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="project.scxml" as="Project"/>
+  <sce:import kind="event-schema" src="person.scxml" as="Person"/>
+  <sce:import kind="event-schema" src="board_row.scxml" as="BoardRow"/>
+  <sce:import kind="event-schema" src="task_line.scxml" as="TaskLine"/>
+  <sce:import kind="view" src="access.scxml" as="Access"/>
+  <sce:viewer of="person"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]">
+    <sce:visible relations="Access" relation="viewer" object="row.project"/>
+  </sce:table>
+  <sce:table name="projects" type="map&lt;uint64, record:Project&gt;[projects_max=500]">
+    <sce:visible relations="Access" relation="viewer" object="key"/>
+  </sce:table>
+  <sce:table name="people" type="map&lt;uint64, record:Person&gt;[people_max=2000]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:join table="projects" as="p" on="p.key === t.row.project"/>
+    <sce:join table="people" as="a" on="a.key === t.row.assignee" kind="left"/>
+    <sce:where cond="t.row.open"/>
+    <sce:group by="p.key">
+      <sce:field name="project" expr="p.key"/>
+      <sce:field name="title" expr="p.row.title"/>
+      <sce:count name="open"/>
+      <sce:nest name="next" order="t.row.due asc" type="list&lt;record:TaskLine&gt;[per_project=5]">
+        <sce:field name="title" expr="t.row.title"/>
+        <sce:field name="assignee" expr="a.row.name"/>
+      </sce:nest>
+    </sce:group>
+    <sce:order by="open desc"/>
+  </sce:query>
+  <sce:result type="record:BoardRow" key="project" bound="board_rows=200"/>
+</scxml>
+```
+
+**The document.** At most one `<sce:viewer of>`, `person` or `instance`. One `<sce:table name>` per input table, of a `type` that is a `map<K, V>[B]` (a row is `key` and `row`) or a `set<K>[B]` (a row is `key`), or of another `view` it imports (a row is a record of that view's result, ADR 0151 D3). Each table of a type says who may read a row: `<sce:visible relations relation object>`, the relation a viewer must stand in to the object `object` names (an expression over the row's `key` and `row`), derived by the document of relations imported as `relations`; or `public="true"`. A table of a view reads that view's rows as its viewer reads them. Then one `<sce:query>` and one `<sce:result type key bound>`, or one `<sce:relation>` per relation (below).
+
+**The operators** (ADR 0151 D1), in the order they apply: one `<sce:from table as>`; any number of `<sce:join table as on kind>` (`inner`, the default, or `left`, whose right side's names are then each of an optional type) and `<sce:where cond>`; one `<sce:group by>`, whose `by` lists the expressions the rows are grouped by, of `<sce:field name expr>` (a value the `by` determines), `<sce:count name>`, `<sce:sum name expr>`, `<sce:min name expr>`, `<sce:max name expr>` and `<sce:nest name type order>` (a `list<record:R>[B]` of the group's rows, each of its `<sce:field>`s), or one `<sce:select>` of `<sce:field name expr>`; and at most one `<sce:order by>`, its keys separated by commas, each followed by `asc` or `desc`. Every expression is SCE's expression language (§3.4) over the names in scope, an equality written `===`, typed in a closed scope, and proven total by the rule of ADR 0133: a view has no `error.execution` to raise. The columns of the group or the select are the fields of the result's record, every one of them.
+
+**The plan** (`sce-build/src/forge/view`). The build reads the document, and every view it imports, into a `ViewPlan`: plain data, a list of operators each reading only operators before it, that the reference evaluator, the translator of the model and the lane's circuit each take whole. Each table is read by a scan, and the scan by the filter of its table alone, the semi-join with the objects the viewer may read its rows by (ADR 0151 D6); `ViewPlan::verify` refuses a plan in which any other operator reads a scan, so a plan that would read a row before its filter is not one the build makes. The key of each operator's rows is inferred by functional dependency (D2): a table's key; a join's pair of keys, or the left side's alone where the join equates the right side's key with a value of the left; the columns of a group that give its `by`. The result's order is the keys written, completed by the result's key, and a nest's by the key of the rows it holds, so no two rows are tied; the result and a nest are cut by their order at their bound. Every count of rows is a term of the bounds the document names (D8): a join on a key holds its left side's rows, any other join their product, and the plan states each part of what the view holds between two changes as such a term.
+
+**A document of relations** (ADR 0151 D5) reads one `set<record:Tuple>[B]` whose record declares `object_type`, `object`, `relation`, `subject_type`, `subject` and `subject_relation` (a text, empty for a principal), and holds one `<sce:relation name object>` per relation, Zanzibar's namespace rewrites: its children `<sce:direct subjects>` (the subjects of its tuples, a set of principals expanded through the `object#relation` sets `subjects` names), `<sce:computed relation>` (another relation of the same object), `<sce:through relation then>` (the relation `then` of each object the tuples of `relation` name) and `<sce:all>` (an intersection) are united, less what one `<sce:but-not>` derives. The build reads them as rules of Datalog and evaluates them in strata, each after every relation it excludes.
+
+**Refusals** (ADR 0151 D11), each by its code: `view/result-key-not-unique` (a result key the build does not infer), `view/bound-without-order` (a bound the rows may reach and no order), `view/cycle` (a view that reads itself), `view/relation-cycle-through-exclusion`, `view/table-without-visibility`, `view/viewer-mismatch` (a view with no viewer that names a relation, or that reads a view with one; a view that reads a view of another viewer), `view/expression-may-fail`, `view/aggregate-may-overflow` (a count or a sum its field's type may not hold, from the column's type and the group's largest count) and `view/floating-aggregate` (a sum, a minimum, a maximum or an order over a floating type). Rust is the lane (ADR 0151 D10); until its operators land in `sce_forge_runtime::view`, and on every other backend and the Interpreter, a valid view is refused by name (`view/backend-unsupported`). `sce-build/tests/a_view_document_is_read_into_one_plan.rs` holds the board above read into one plan, each refusal, and a plan with its filter after a join refused by `verify`.
+
 ---
 
 ## 5. Kind Composition
@@ -3155,7 +3208,7 @@ Integration with SCE Mesh distributed runtime and tooling.
 ## 8. Kind Summary
 
 For an author choosing a kind, the table below is not the place to look:
-it covers the first eleven kinds and describes their implementation. The
+it covers the first eleven kinds and the view, and describes their implementation. The
 author-facing catalog of every kind — what each is for, the evidence a
 specification offers for it, what separates it from its neighbours, and an
 example document the product accepts — is `sce-codegen kinds`
@@ -3177,6 +3230,7 @@ MCP's `scxml_kinds`.
 | interpolation | None | `sce_forge_runtime::interpolation` | Document | 2 fixtures | Done |
 | timer | Internal (timers) | `sce_forge_runtime::ITimer` HAL | Document | — (platform mock out of scope for numerical harness) | Done (product golden only) |
 | observer | Internal (hysteresis flags) | `sce_forge_runtime::observer` | Document | 1 fixture | Done |
+| view | Derived (each operator's integrated state, rebuilt on restore, never saved) | `sce_forge_runtime::view` | Document | — (the reference evaluator is a later step of ADR 0151) | Read and planned; refused by name on every backend until the Rust lane lands (ADR 0151 D10) |
 
 Cross-language numerical conformance counts refer to the `tests/forge/conformance/fixtures.json` catalog; each fixture runs against every language harness via the shared oracle in `numerical_reference.json` (§6.6). Product-golden counts (§9) are larger because they include per-language exact-text comparisons and the cross-file composition fixtures not yet exposed to the numerical harness.
 
