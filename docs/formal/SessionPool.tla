@@ -739,9 +739,10 @@ InOrder ==
             /\ InSeq(applied[k][j], lin[k])
             /\ Pos(lin[k], applied[k][i]) < Pos(lin[k], applied[k][j])
 
-\* No inbox holds more than max_inbox, and the table no more sessions than max_live.
+\* No inbox holds more than max_inbox envelopes and entries, which a tell is not counted among,
+\* and the table no more sessions than max_live.
 Bounded ==
-    /\ \A s \in Slots : Len(inbox[s]) <= MaxInbox
+    /\ \A s \in Slots : Cardinality({i \in DOMAIN inbox[s] : inbox[s][i] \in Inputs}) <= MaxInbox
     /\ Cardinality(Held) <= MaxLive
 
 \* Once the stop has ended, every envelope the pool took was applied or answered.
