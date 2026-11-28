@@ -11469,6 +11469,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
         #expect(rejectCursor.remaining == 4, "codec_present_if_string reject 0: the refused decode moved the cursor")
     }
+    do {
+        var rejectCursor = SceCursor([1, 3, 237, 160, 128])
+        #expect(throws: CodecError.invalidUtf8, "codec_present_if_string reject 1: the three text bytes ED A0 80 are the surrogate U+D800, which UTF-8 does not spell") {
+            try CodecPresentIfString.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 5, "codec_present_if_string reject 1: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_present_if_tail
