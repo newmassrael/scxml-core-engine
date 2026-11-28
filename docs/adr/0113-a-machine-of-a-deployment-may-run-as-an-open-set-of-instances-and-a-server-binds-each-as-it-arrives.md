@@ -4,8 +4,8 @@
   amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
   by the owner: what is signed (D4), the judgement as a condition of the write (D5), and an offer that waits for a proof
   (D4, ADR 0116). Amended 2026-11-27: a `sce-static` document's route over the instances of an open machine (D2).
-  Steps 3 to 6 of the order of work landed (2026-11-22 to 2026-11-28); one refusal of step 3 and a client's restore of
-  its own stay open, each stated there.
+  Steps 3 to 6 of the order of work landed (2026-11-22 to 2026-11-28); one refusal of step 3 stays open, stated there.
+  An instance's restore from a checkpoint of its own, left open by step 5, was decided on 2026-11-28 and is told there.
 - Amended by: ADR 0116 (D1, D6 and D7): who an incarnation acts for, the "for whom" D1 left to a record of its own, is
   a delegation the membership holds from the confirmation that bound it to the incarnation's end, ended by D5's
   condition of the write and the fence as every incarnation is; a fact a session says and an audit entry a run appends
@@ -222,7 +222,8 @@ mark per member cannot serve several sessions was read from RIFL, not run: no co
 
 The model is bounded: it does not cover the outbox direction (ADR 0109 D10), more than two requests in flight, or the
 cryptography of an authenticator. Its messages are the parties' own: on a link an intermediary reads, that stands on
-what §22.9 signs (D4), and each of the four parts signed is taken out in a run of its own.
+what §22.9 signs (D4), and each of the four parts signed is taken out in a run of its own. A crash of an instance is one
+with or without a checkpoint of its own: `CCrash` is also the restore step 5 decided, and covers it unchanged.
 
 ### Not in scope
 
@@ -282,9 +283,39 @@ What step 5 decided while it landed, each by the record's sources:
   (`Router::speak_as_instance`), since the server holds the pair to the link (invariant 11).
 - **An outbox per instance ends with its membership** as `retain_ms` ends an entry: what it owes is told to its
   senders as row 15 and the outbox is closed (D4, "what is forgotten together is dropped together").
-- **Left open**, stated so: an instance's host that restores its router from a checkpoint of its own carries no
-  incarnation across the restore. Its client joins anew, and what the restored router held under the incarnation
-  before is not ended as a fence ends it (the model's `CCrash` keeps nothing of its own).
+- **A restore is a recovery, and a recovery ends the incarnation it holds** (decided 2026-11-28, where this list had
+  left it open). An instance's host that restores its router from a checkpoint of its own never speaks again under the
+  incarnation the checkpoint's contents were said under: an incarnation is drawn once and never given again across a
+  start (the model's own assumption; the fencing token of Gray and Cheriton 1989 and Kleppmann 2016), and the
+  instance's client, which keeps nothing across its process, joins anew. Before it does, the restore ends what the
+  checkpoint holds exactly as a fence ends it (`Router::restore`, beside `Router::peer_fenced`). A request leaves only
+  once a durable checkpoint holds it (the write-ahead rule), so every envelope the checkpoint holds for the server,
+  unreleased, waiting for the link, held for an acknowledgement or waiting out its backoff, may have left, under that
+  incarnation or one the lost process took after the seal. The checkpoint names each request waiting on the server by
+  its wire `invoke_id` (a peer's `waiting`, written only by an instance), and each ends as an unknown outcome, row 20
+  with that `invoke_id`; each other envelope is row 20 with its `envelope_id`; durable receipt holds none of them, and
+  none is carried under the next incarnation, where the server would take it as a request of its own. A request the
+  checkpoint does not hold never left: the restored machine makes it, if at all, after the restore, numbered past the
+  numbers the checkpoint gave (its `nextseq`) and carried under the next incarnation, whose completion records are
+  its own. A host restores from its latest durable checkpoint only, the precondition `Endpoint::restore` states:
+  stable storage, whose retrieve returns the last store (Cachin, Guerraoui and Rodrigues, *Introduction to Reliable
+  and Secure Distributed Programming*, 2nd ed. 2011, section 2.2.4, crash-recovery). Exactly once across the restore
+  is not promised: an at-most-once call reports an outcome it cannot know after a crash (Birrell and Nelson 1984), and
+  the document decides whether to ask again (the end-to-end argument, D4).
+
+  The checkpoint does not name the incarnation's number, and need not. The router never holds it (the client does,
+  and tells its host only a fence), and a restore cannot be judged by it: a checkpoint sealed while the instance still
+  joins names none, yet what it holds may leave once it is durable, under the incarnation taken after the seal. What
+  the restore needs of the incarnation is that it ended, which is true of every one the lost process held, and of its
+  numbers which requests they named that still wait, which the checkpoint names. So the rule is the router's: one that
+  speaks as an instance (`Router::speak_as_instance`) binds only servers of its membership, and ends all it holds for
+  them; one that does not refuses a checkpoint that names waiting requests.
+
+  The model covers the restore as it stands (D8): `CCrash` forgets the incarnation, keeps `cnext` and `slot`, and
+  turns every waiting request into unknown, which is the restore in the run where every request the checkpoint holds
+  was sent before the crash. A request the restore ends as unknown that never left (the checkpoint was sealed while the
+  instance had no incarnation) is a weaker report and never an effect, so `AtMostOnce`, `Answered` and `Ends` are
+  what TLC checked. The action is unchanged, only its comment, and no new run is needed.
 
 ## Open questions
 
