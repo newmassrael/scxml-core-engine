@@ -2,6 +2,9 @@
 
 - Status: Accepted (2026-10-31), on the owner's instruction to optimise the footprint structurally
   until no optimisation point is left, and a downstream consumer's request.
+- Amended by: ADR 0167 (accepted 2026-11-29), decision 2: under `sce-static` an `<sce:action>`'s failed argument and a
+  `<send>`'s failed `<param>` each raise one `error.execution` and end their block, and the message is not sent
+  (§scxml-4.9, §scxml-6.2), so a loop's count of such errors falls from its passes times its actions to one.
 - Amends: the per-document event-queue capacity (`<scxml sce:capacity>`, SCE Protocol-Synthesis
   RFC §synth-5-L item C3), ADR 0068 (the queues hold event numbers).
 - Evidence: the consumer's T2G client image, where each queue of a document that declares no

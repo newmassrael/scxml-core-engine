@@ -10,6 +10,9 @@
   session with two needs, both general: a simulation host that runs generated machines from one seed (D15), and the
   paths of a generated model exported as tests (D16). The Order of work places them.
 - Date: 2026-11-28
+- Amended by: ADR 0167 (accepted 2026-11-29), D3: the list gains, before the finite domains, the step that has the
+  model read a `sce-static` document, lifting `Construct::Datamodel`; ADR 0167's model of an event's data, a branch, a
+  loop and a host call depends on it.
 - Requested by: the owner, relayed the same day by a session of a downstream consumer, which is the first reference
   case and not the scope. The owner's words: "sce와 얇은 seam을 이용해 만드는걸 산업표준으로 만들고 싶어, 증명도
   최대한 쉽고 기계적으로 될수있게해야해" (I want building with SCE and thin seams to become an industry standard, and
