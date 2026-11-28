@@ -840,13 +840,26 @@ gate_in_container() {
             git_stores+=("$git_value")
         done <"$objects/info/alternates"
     fi
-    for store in ${git_stores[@]+"${git_stores[@]}"}; do
-        store="$(readlink -f "$store")" || continue
-        [[ -d "$store" ]] || continue
+    # A borrowed store can borrow in turn (git follows alternates five deep),
+    # so each store's own alternates join the walk, once each.
+    local -A git_seen=()
+    local i=0 next
+    while (( i < ${#git_stores[@]} )); do
+        store="$(readlink -f "${git_stores[i]}")" || { i=$((i + 1)); continue; }
+        i=$((i + 1))
+        [[ -d "$store" && -z "${git_seen[$store]:-}" ]] || continue
+        git_seen[$store]=1
         case "$store/" in
             "$REPO_ROOT"/*|"$common"/*) ;;
             *) mounts+=(-v "$store:$store:ro") ;;
         esac
+        if [[ -f "$store/info/alternates" ]]; then
+            while IFS= read -r next; do
+                [[ -n "$next" && "$next" != \#* ]] || continue
+                [[ "$next" == /* ]] || next="$store/$next"
+                git_stores+=("$next")
+            done <"$store/info/alternates"
+        fi
     done
     # `target` is often a link into a build cache outside the checkout: the
     # image's own cache is mounted where the link points, so the link resolves
