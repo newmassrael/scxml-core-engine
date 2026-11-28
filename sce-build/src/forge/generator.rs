@@ -1411,7 +1411,8 @@ impl ImportContext {
 /// §4.12): a leaf is, and a function that calls another generated function is
 /// left to the compiler. Hinting a caller and its callees alike lets every crate
 /// that calls the caller copy both, and a large caller grows the code the hint
-/// was meant to shrink.
+/// was meant to shrink. A leaf another document of its set calls is left to the
+/// compiler too ([`crate::forge::set_calls`]).
 fn calls_no_generated_function<'a>(
     reads: impl IntoIterator<Item = &'a str>,
     imports: &[ImportContext],
@@ -2482,13 +2483,13 @@ pub fn generate_cpp_with_imports_and_externs(
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
         ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::Cpp)?
+            render_transform(&env, m, imports, crate::generator::Language::Cpp, options)?
         }
         ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::Cpp)?
+            render_lookup(&env, m, imports, crate::generator::Language::Cpp, options)?
         }
         ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::Cpp)?
+            render_condition(&env, m, imports, crate::generator::Language::Cpp, options)?
         }
         ForgeDocument::Codec(m) => render_codec(
             &env,
@@ -2656,6 +2657,7 @@ fn render_transform(
     m: &TransformModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
     let l = LangCtx::new(lang, imports);
@@ -2730,6 +2732,16 @@ fn render_transform(
     // sibling, a read lowered to a call of the sibling's function (below),
     // and calls no function an import generates. An expression that does
     // not parse was refused before rendering, and is no leaf here.
+    //
+    // ... and when no document of its set calls it: the output a caller of
+    // the document calls it by is the first ([`StatelessFunction::of`]), and
+    // where a document of the set calls the document, that caller is in the
+    // set's crate, which inlines a leaf it sees with no hint.
+    let called_output = m
+        .outputs
+        .first()
+        .filter(|_| options.set_calls.calls(&m.name))
+        .map(|out| out.id.as_str());
     let output_is_leaf = |out: &ForgeField| -> bool {
         let text = out.expr.as_deref().unwrap_or("0");
         let Some(Ok(reads)) = crate::forge::previous_value::reads(text) else {
@@ -2897,7 +2909,10 @@ fn render_transform(
             obj.insert("params".into(), params.into());
             obj.insert("unread".into(), unread.into());
             obj.insert("expr".into(), expr_val.into());
-            obj.insert("inline_hint".into(), output_is_leaf(out).into());
+            obj.insert(
+                "inline_hint".into(),
+                (output_is_leaf(out) && called_output != Some(out.id.as_str())).into(),
+            );
             if matches!(lang, Language::Go) {
                 obj.insert("orig_name".into(), out.id.clone().into());
             }
@@ -3232,6 +3247,7 @@ fn render_lookup(
     m: &LookupModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
     let l = LangCtx::new(lang, imports);
@@ -3433,6 +3449,13 @@ fn render_lookup(
     ctx.insert("default_value".into(), default_value.into());
     ctx.insert("default_literal".into(), default_literal.into());
     ctx.insert("output_is_string".into(), output_is_string.into());
+    // A lookup's function calls no function a document generates, and is
+    // hinted inline in Rust where no document of its set calls it
+    // (SCE_FORGE.md §4.12).
+    ctx.insert(
+        "inline_hint".into(),
+        (!options.set_calls.calls(&m.name)).into(),
+    );
     // A Swift table of names declares a nested enum, a case for each name with the name
     // as its raw value.
     let swift_variants: Vec<serde_json::Value> = if matches!(lang, Language::Swift) {
@@ -11345,6 +11368,7 @@ fn render_condition(
     m: &ConditionModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(lang, imports);
 
@@ -11383,15 +11407,16 @@ fn render_condition(
         .into(),
     );
     ctx.insert("expr".into(), expr_val.into());
-    // A condition that calls no function a document generates is hinted
-    // inline in Rust (SCE_FORGE.md §4.12).
+    // A condition that calls no function a document generates, and that no
+    // document of its set calls, is hinted inline in Rust (SCE_FORGE.md
+    // §4.12).
     ctx.insert(
         "inline_hint".into(),
-        expr::read_identifiers(site.source)
-            .is_ok_and(|names| {
+        (!options.set_calls.calls(&m.name)
+            && expr::read_identifiers(site.source).is_ok_and(|names| {
                 calls_no_generated_function(names.iter().map(String::as_str), imports)
-            })
-            .into(),
+            }))
+        .into(),
     );
     l.insert_imports(&mut ctx, imports);
 
@@ -30346,15 +30371,27 @@ pub fn generate_kotlin_with_imports(
             "ForgeDocument::Statechart never reaches forge codegen — \
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
-        ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::Kotlin)?
-        }
-        ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::Kotlin)?
-        }
-        ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::Kotlin)?
-        }
+        ForgeDocument::Transform(m) => render_transform(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            options,
+        )?,
+        ForgeDocument::Lookup(m) => render_lookup(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            options,
+        )?,
+        ForgeDocument::Condition(m) => render_condition(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            options,
+        )?,
         ForgeDocument::Codec(m) => render_codec(
             &env,
             m,
@@ -30595,13 +30632,13 @@ pub fn generate_rust_with_imports_and_externs(
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
         ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::Rust)?
+            render_transform(&env, m, imports, crate::generator::Language::Rust, options)?
         }
         ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::Rust)?
+            render_lookup(&env, m, imports, crate::generator::Language::Rust, options)?
         }
         ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::Rust)?
+            render_condition(&env, m, imports, crate::generator::Language::Rust, options)?
         }
         ForgeDocument::Codec(m) => render_codec(
             &env,
@@ -35137,13 +35174,13 @@ pub fn generate_go_with_imports(
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
         ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::Go)?
+            render_transform(&env, m, imports, crate::generator::Language::Go, options)?
         }
         ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::Go)?
+            render_lookup(&env, m, imports, crate::generator::Language::Go, options)?
         }
         ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::Go)?
+            render_condition(&env, m, imports, crate::generator::Language::Go, options)?
         }
         ForgeDocument::Codec(m) => render_codec(
             &env,
@@ -35423,15 +35460,27 @@ pub fn generate_python_with_imports(
             "ForgeDocument::Statechart never reaches forge codegen — \
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
-        ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::Python)?
-        }
-        ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::Python)?
-        }
-        ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::Python)?
-        }
+        ForgeDocument::Transform(m) => render_transform(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            options,
+        )?,
+        ForgeDocument::Lookup(m) => render_lookup(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            options,
+        )?,
+        ForgeDocument::Condition(m) => render_condition(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            options,
+        )?,
         ForgeDocument::Codec(m) => render_codec(
             &env,
             m,
@@ -35814,11 +35863,15 @@ pub fn generate_swift_with_imports(
             render_event_schema(&env, m, imports, Language::Swift, options)?
         }
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, Language::Swift, options)?
+        }
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift, options)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, Language::Swift)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, Language::Swift, options)?
+        }
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
         ForgeDocument::Codec(m) => swift_codec::render(&env, m, imports)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
@@ -36723,13 +36776,13 @@ pub fn generate_c11_with_imports_and_externs(
              SCXML pipeline owns statechart emit (see `classify_document`)"
         ),
         ForgeDocument::Transform(m) => {
-            render_transform(&env, m, imports, crate::generator::Language::C11)?
+            render_transform(&env, m, imports, crate::generator::Language::C11, options)?
         }
         ForgeDocument::Condition(m) => {
-            render_condition(&env, m, imports, crate::generator::Language::C11)?
+            render_condition(&env, m, imports, crate::generator::Language::C11, options)?
         }
         ForgeDocument::Lookup(m) => {
-            render_lookup(&env, m, imports, crate::generator::Language::C11)?
+            render_lookup(&env, m, imports, crate::generator::Language::C11, options)?
         }
         ForgeDocument::Codec(m) => render_codec(
             &env,
@@ -52027,16 +52080,16 @@ fn render_algorithm(
     // (`namespace` / `package`) come from `base_context` and are unaffected.
     ctx.insert("primary_symbol".into(), primary_symbol.into());
     // A leaf, a function that calls no algorithm or other function a document
-    // generates, is hinted inline in Rust (SCE_FORGE.md §4.12). A body whose
-    // expression does not parse (`None`) was refused where it was lowered.
+    // generates, is hinted inline in Rust where no document of its set calls
+    // it (SCE_FORGE.md §4.12). A body whose expression does not parse (`None`)
+    // was refused where it was lowered.
     ctx.insert(
         "inline_hint".into(),
-        body_reads
-            .as_ref()
-            .is_some_and(|reads| {
+        (!options.set_calls.calls(&m.name)
+            && body_reads.as_ref().is_some_and(|reads| {
                 calls_no_generated_function(reads.iter().map(String::as_str), imports)
-            })
-            .into(),
+            }))
+        .into(),
     );
     // The bound of each map a Rust algorithm is lent, which its caller's
     // variable states (docs/adr/0108, D5); nothing for any other algorithm.

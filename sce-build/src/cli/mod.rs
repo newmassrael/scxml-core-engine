@@ -29,6 +29,7 @@ use crate::filters;
 use crate::forge::body_reads::{BodyReadSites, HotCodecs, InlineDecode};
 use crate::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use crate::forge::error::{ForgeError, Located, RelatedRole};
+use crate::forge::set_calls::SetCalls;
 use crate::forge::shared_tables::SharedTables;
 use crate::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
@@ -7791,6 +7792,13 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             Err(refusal) => error_format.emit_and_exit(&refusal, "Forge codegen error: "),
         }
     };
+    // SCE_FORGE.md §4.12: the functions of the set a document of it calls,
+    // read from the walk that found the set; only a Rust template reads it.
+    let calls = if matches!(lang, Language::Rust) {
+        SetCalls::of_units(&units)
+    } else {
+        SetCalls::default()
+    };
     // docs/adr/0155 section 4: where the build names its hot roots, the cold
     // codecs of a Rust set whose tables are the same rows name one table. The
     // set is generated once more, in memory and as each of its documents is
@@ -7803,6 +7811,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             sites: sites.clone(),
             hot: hot.clone(),
             tables: SharedTables::default(),
+            calls: calls.clone(),
         };
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         let compiled: Vec<(String, crate::ForgeCompileOptions)> = units
@@ -7823,7 +7832,12 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     } else {
         SharedTables::default()
     };
-    let body_reads = SetBodyReads { sites, hot, tables };
+    let body_reads = SetBodyReads {
+        sites,
+        hot,
+        tables,
+        calls,
+    };
 
     let root = PathBuf::from(&args.output_dir);
     let mut set = GenerateReport {
@@ -7897,9 +7911,10 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
 /// What the set a document is generated in says of the reads of its codecs'
 /// bodies: the sites of the set that read each body (docs/adr/0137), and the
 /// codecs whose reads the build names as on its hot path, each checked to be a
-/// codec of the set (`--inline-decode-for`, docs/adr/0139). The default is a
-/// document generated alone, a set of one: no body of it read by a site of the
-/// set, and no codec named.
+/// codec of the set (`--inline-decode-for`, docs/adr/0139); and the functions
+/// of the set a document of it calls. The default is a document generated
+/// alone, a set of one: no body of it read by a site of the set, no codec
+/// named, and no function called.
 #[derive(Debug, Clone, Default)]
 struct SetBodyReads {
     sites: BodyReadSites,
@@ -7908,6 +7923,10 @@ struct SetBodyReads {
     /// (docs/adr/0155 section 4): read from the set where the build names its
     /// hot roots, and each codec's own otherwise.
     tables: SharedTables,
+    /// The documents of the set whose function another document of it calls
+    /// (SCE_FORGE.md §4.12): read from the walk that found the set, for a
+    /// Rust set, and none for a document generated alone.
+    calls: SetCalls,
 }
 
 /// The arguments of the generation of `unit`, one document of the set a
@@ -7982,6 +8001,7 @@ fn forge_compile_options(
         inline_decode,
         body_reads: set.sites.clone(),
         shared_tables: set.tables.clone(),
+        set_calls: set.calls.clone(),
         // The digest every file of this run is headed by, which a schema
         // unit's payload schema names (docs/adr/0087, section 1.1).
         source_hash: Some(source_hash),

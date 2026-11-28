@@ -4744,6 +4744,16 @@ pub struct ForgeCompileOptions {
     /// every document of the set is generated with the same value. Empty (the
     /// default) writes each cold codec's table in its own module.
     pub shared_tables: forge::shared_tables::SharedTables,
+    /// Rust only: the documents of the generated set whose function another
+    /// document of the set calls, found by
+    /// [`forge::set_calls::SetCalls::of_units`] from the walk that finds the
+    /// set: a leaf of those carries no `#[inline]`, and a leaf no document of
+    /// the set calls, an entry point of the set, keeps it (SCE_FORGE.md §4.12).
+    ///
+    /// Like [`Self::body_reads`] it is a property of a SET, and every document
+    /// of the set is generated with the same value. Empty (the default) is a
+    /// document generated alone, whose every leaf keeps the hint.
+    pub set_calls: forge::set_calls::SetCalls,
     /// Rust only: how a set whose build names its hot roots
     /// ([`Self::inline_decode`]) generates the codecs outside their closure
     /// (docs/adr/0155 section 1): by the tables of their fields (the default),
@@ -6675,6 +6685,20 @@ fn compile_document_set(
             options.target_machine.as_deref(),
         )?)
     };
+    // SCE_FORGE.md §4.12: the functions of the set a document of it calls,
+    // read from the walk `generate --with-imports` makes over the set, where
+    // the caller handed no answer of its own. Only a Rust template reads it.
+    let set_calls_override = (matches!(language, generator::Language::Rust)
+        && options.set_calls.is_empty())
+    .then(|| {
+        let members: Vec<String> = scxml_files
+            .iter()
+            .chain(forge_files)
+            .map(|path| path.display().to_string())
+            .collect();
+        forge::set_calls::SetCalls::of_documents(&members, &options.include_dirs)
+    })
+    .filter(|calls| !calls.is_empty());
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
         || !element_type_cpp_printed.is_empty()
@@ -6683,7 +6707,8 @@ fn compile_document_set(
         || !element_type_c11_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
-        || broadcast_log_resolutions_override.is_some();
+        || broadcast_log_resolutions_override.is_some()
+        || set_calls_override.is_some();
     let bc_options_override = if !needs_override {
         None
     } else {
@@ -6714,6 +6739,9 @@ fn compile_document_set(
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);
+        }
+        if let Some(calls) = set_calls_override {
+            overridden.set_calls = calls;
         }
         Some(overridden)
     };

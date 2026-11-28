@@ -25,8 +25,11 @@ pub enum {{ enum_name }} {
 {# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
    function carries it on a leaf (algorithm.rs.jinja2 says why). A lookup's
    function is always a leaf: its body is a `match` or the runtime's lookup,
-   and calls no function a document generates. #}
+   and calls no function a document generates. `inline_hint` is false where
+   a document of its set calls it, as for any leaf. #}
+{% if inline_hint %}
 #[inline]
+{% endif %}
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Option<{{ enum_name }}>{% else %}{{ enum_name }}{% endif %} {
     match {{ input_id }} {
 {% for group in entries_by_value %}
@@ -44,14 +47,19 @@ const VALUES: [{{ value_type }}; {{ n }}] = [{{ values_literal | join(", ") }}];
 {# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
    function carries it on a leaf (algorithm.rs.jinja2 says why). A lookup's
    function is always a leaf: its body is a `match` or the runtime's lookup,
-   and calls no function a document generates. #}
+   and calls no function a document generates. `inline_hint` is false where
+   a document of its set calls it, as for any leaf. #}
 {% if on_miss_error %}
+{% if inline_hint %}
 #[inline]
+{% endif %}
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> Option<{{ value_type }}> {
     sce_lookup(&KEYS, &VALUES, {{ input_id }})
 }
 {% else %}
+{% if inline_hint %}
 #[inline]
+{% endif %}
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ value_type }} {
     sce_lookup(&KEYS, &VALUES, {{ input_id }}).unwrap_or({{ default_literal }})
 }

@@ -19,18 +19,21 @@
 {% endif %}
 
 {# `#[inline]` is the hint C11's `static inline` and C++'s `inline` give the
-   same function, and only a hint: it lets a caller in another crate, or in
-   another codegen unit of this one, inline the function, and leaves whether to
-   the compiler. Without it a `pub fn` is compiled once, kept as a symbol, and
-   called, however small it is (a `match` over a closed enum, a host calling it
-   from one place). It is not `#[inline(always)]`: a body the compiler judges
-   too large stays a call.
+   same function, and only a hint: it lets a caller in another crate inline the
+   function, and leaves whether to the compiler. Without it a `pub fn` is
+   compiled once, kept as a symbol, and called from another crate however small
+   it is (a `match` over a closed enum, a host calling it from one place). It is
+   not `#[inline(always)]`: a body the compiler judges too large stays a call.
    Only a leaf carries it: `inline_hint` is false for a function that calls an
    algorithm or another function a document generates (the generator's
    `calls_no_generated_function`). Hinting a caller and its callees alike lets
    every crate that calls the caller copy both, and a large caller grows the
-   code the hint was meant to shrink; the callees keep the hint, and whether
-   the caller is inlined is the compiler's own judgement. #}
+   code the hint was meant to shrink; whether the caller is inlined is the
+   compiler's own judgement.
+   Nor does a leaf another document of its set calls (`set_calls`): that caller
+   is in the set's crate, which inlines a leaf it sees with no hint, and the
+   hint there only moved the caller's register allocation. A leaf no document
+   of the set calls, an entry point of the set, keeps it. #}
 {{ consts_prelude }}#[allow(clippy::all)]
 #[allow(unused_assignments)]
 {% if inline_hint %}

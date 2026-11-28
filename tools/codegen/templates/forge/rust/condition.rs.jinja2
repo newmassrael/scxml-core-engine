@@ -26,7 +26,8 @@
 )]
 {# `#[inline]`: the hint C11's `static inline` gives, on a leaf, as an
    algorithm's function carries it (algorithm.rs.jinja2 says why). A condition
-   that calls an imported function is no leaf. #}
+   that calls an imported function is no leaf, and one a document of its set
+   calls carries no hint. #}
 {% if inline_hint %}
 #[inline]
 {% endif %}

@@ -3026,7 +3026,16 @@ fn forge_views_of_the_codecs_the_parents_use_rust() {
 /// The Rust text of the document `name` of `tests/forge/resources/` under
 /// `options`.
 fn render_rust_with(name: &str, options: &sce_build::ForgeCompileOptions) -> String {
-    let scxml_path = resource_dir().join(format!("{name}.scxml"));
+    render_rust_in(&resource_dir(), name, options)
+}
+
+/// [`render_rust_with`] of the document `name` in the directory `dir`.
+fn render_rust_in(
+    dir: &std::path::Path,
+    name: &str,
+    options: &sce_build::ForgeCompileOptions,
+) -> String {
+    let scxml_path = dir.join(format!("{name}.scxml"));
     let content = std::fs::read_to_string(&scxml_path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
     sce_build::compile_forge_with_imports(
@@ -12543,6 +12552,114 @@ fn forge_rust_pure_kind_functions_are_inline() {
         Some("#[inline]"),
         "a condition that calls a transform is hinted inline:\n{condition}"
     );
+}
+
+/// In a set generated together, a leaf another document of the set calls
+/// carries no `#[inline]`, and a leaf no document of the set calls, an entry
+/// point of the set, keeps it, as every leaf of a document generated alone does
+/// (above): the set is built as one crate, whose compiler inlines a leaf into
+/// its caller with no hint, and the hint is for a caller in another crate
+/// (SCE_FORGE.md §4.12). The set is the one `generate --with-imports` walks
+/// from the documents it is named ([`sce_build::import_closure::walk`]), and
+/// what it calls is read from that walk
+/// ([`sce_build::forge::set_calls::SetCalls::of_units`]):
+///
+/// - `algorithm_checked_call` calls the leaf `algorithm_checked_arith` it
+///   imports, and is no leaf itself;
+/// - three validators call the lookup, the condition and the transform of one
+///   output each imports;
+/// - the statechart `static_forge_calls` calls the condition `forge_call_high`
+///   it imports, from a guard;
+/// - `algorithm_crc16`, `lookup_engine_status`, `condition_range` and both
+///   outputs of `transform_multi_output` are leaves no document of the set
+///   calls.
+#[test]
+fn forge_rust_a_leaf_its_set_calls_is_not_inline() {
+    use sce_build::forge::set_calls::SetCalls;
+    use sce_build::import_closure::{walk, WalkOptions};
+
+    let resources = resource_dir();
+    let statecharts = project_root().join("sce-build/tests/fixtures/static_datamodel");
+    let named: Vec<String> = [
+        "algorithm_checked_call",
+        "algorithm_crc16",
+        "crossfile_validator_lookup",
+        "lookup_engine_status",
+        "crossfile_validator_condition",
+        "condition_range",
+        "crossfile_validator_transform",
+        "transform_multi_output",
+    ]
+    .iter()
+    .map(|document| resources.join(format!("{document}.scxml")))
+    .chain(std::iter::once(
+        statecharts.join("static_forge_calls.scxml"),
+    ))
+    .map(|path| path.display().to_string())
+    .collect();
+    let units = walk(&named, WalkOptions::default())
+        .unwrap_or_else(|refusal| panic!("the set is refused: {}", refusal.error));
+    let calls = SetCalls::of_units(&units);
+    let options = sce_build::ForgeCompileOptions {
+        set_calls: calls.clone(),
+        ..Default::default()
+    };
+
+    let hinted_in_set = |dir: &std::path::Path, document: &str, function: &str| -> bool {
+        let text = render_rust_in(dir, document, &options);
+        rust_line_before_fn(document, &text, function) == Some("#[inline]")
+    };
+    for (document, function, hinted) in [
+        ("algorithm_checked_arith", "algorithm_checked_arith", false),
+        ("algorithm_checked_call", "algorithm_checked_call", false),
+        ("algorithm_crc16", "algorithm_crc16", true),
+        ("lookup_severity_default", "lookup_severity", false),
+        ("lookup_engine_status", "lookup_status", true),
+        ("condition_threshold", "condition_threshold", false),
+        ("condition_range", "condition_range", true),
+        ("transform_temperature", "compute_temperature", false),
+        ("transform_multi_output", "compute_fahrenheit", true),
+        ("transform_multi_output", "compute_kelvin", true),
+    ] {
+        assert_eq!(
+            hinted_in_set(resources.as_path(), document, function),
+            hinted,
+            "{document}: `{function}` is hinted inline only where no document of its set \
+             calls it ({hinted}):\n{}",
+            render_rust_in(&resources, document, &options)
+        );
+    }
+    assert!(
+        !hinted_in_set(statecharts.as_path(), "forge_call_high", "forge_call_high"),
+        "a condition a statechart of the set calls is hinted inline:\n{}",
+        render_rust_in(&statecharts, "forge_call_high", &options)
+    );
+
+    // What the walk reads of each unit: a function an import of the set names
+    // is called, and a document no import names, a statechart and a validator
+    // (which a caller reaches through an instance) are not.
+    for (stem, called) in [
+        ("algorithm_checked_arith", true),
+        ("lookup_severity_default", true),
+        ("condition_threshold", true),
+        ("transform_temperature", true),
+        ("forge_call_high", true),
+        ("algorithm_checked_call", false),
+        ("algorithm_crc16", false),
+        ("lookup_engine_status", false),
+        ("transform_multi_output", false),
+        ("static_forge_calls", false),
+        ("forge_call_range", false),
+    ] {
+        let unit = units
+            .iter()
+            .find(|unit| {
+                let file = std::path::Path::new(&unit.document).file_stem();
+                file == Some(std::ffi::OsStr::new(stem))
+            })
+            .unwrap_or_else(|| panic!("the set holds no {stem}"));
+        assert_eq!(calls.calls(&unit.name), called, "{stem} ({})", unit.name);
+    }
 }
 
 // ── Codec (Rust) ─────────────────────────────────────────────

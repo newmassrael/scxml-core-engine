@@ -40,7 +40,9 @@
 {# `#[inline]`: the hint C11's `static inline` gives, on a leaf, as an
    algorithm's function carries it (algorithm.rs.jinja2 says why). An output
    that reads a sibling calls the sibling's function, and one that calls an
-   imported function calls that one, so neither is a leaf. #}
+   imported function calls that one, so neither is a leaf. The output a caller
+   calls the document by, the first, carries no hint where a document of its
+   set calls it. #}
 {% if func.inline_hint %}
 #[inline]
 {% endif %}

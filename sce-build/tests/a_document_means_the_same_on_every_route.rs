@@ -8,6 +8,11 @@
 // refusing it while the other accepts it, or the two printing it apart, would
 // give one document two meanings.
 //
+// What a set says of itself is the one thing it adds, and it moves no
+// meaning: which functions another document of the set calls (SCE_FORGE.md
+// §4.12) decides only whether a Rust function a document of the set calls is
+// hinted `#[inline]`, which the documents compared below are not.
+//
 // Measured 2026-11-23 before the element of a collection was read at its
 // import: an algorithm that walks a bounded collection typed each item from
 // the element's schema only when a document set held the element document

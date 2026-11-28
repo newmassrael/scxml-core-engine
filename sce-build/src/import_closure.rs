@@ -46,7 +46,9 @@ use crate::forge::error::{
     ForgeError, ImportError, Located, RelatedRole, RelatedSite, SourceLocation, ValidationError,
     XmlError,
 };
+use crate::forge::generator::StatelessFunction;
 use crate::forge::import_source::{element_src, ImportSource};
+use crate::forge::model::ForgeDocument;
 use crate::forge::stdlib;
 use crate::generator::Language;
 use crate::DocumentLabel;
@@ -102,6 +104,17 @@ pub struct Unit {
     /// generation as much as the document is, which a depfile and an input
     /// closure (ADR 0094) name.
     pub reads: Vec<PathBuf>,
+    /// Whether an `<sce:import>` of a document the run reads names it: a
+    /// unit of the run, or a standard statechart one of them starts in-line.
+    /// The tree the run writes then holds a caller of what it generates
+    /// ([`crate::forge::set_calls`]).
+    pub imported: bool,
+    /// Whether a caller reaches it by one free function
+    /// ([`crate::forge::generator::StatelessFunction`]): an algorithm, a
+    /// transform, a condition, a lookup or an interpolation. `false` for a
+    /// statechart, and for a kind reached through an instance or that
+    /// declares a type.
+    pub callable: bool,
 }
 
 impl Unit {
@@ -185,6 +198,9 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
         .collect();
     let mut seen: BTreeSet<(String, Option<String>)> = BTreeSet::new();
     let mut units: Vec<Unit> = Vec::new();
+    // Every document an `<sce:import>` of a document read here names, by
+    // identity: what a unit's `imported` answers.
+    let mut imported: BTreeSet<String> = BTreeSet::new();
     while let Some(next) = pending.pop_front() {
         let identity = stdlib::identity(Path::new(&next.document));
         // A child is generated into its parent's package, so one document is
@@ -201,7 +217,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             .map_err(refused)?;
         let text = loaded.text();
         let label = DocumentLabel::for_input_path(&next.document);
-        let (kind, name, references) = match crate::classify_document(text) {
+        let (kind, name, callable, references) = match crate::classify_document(text) {
             crate::Pipeline::Forge => {
                 let parsed = crate::forge::parser::parse_forge_with_imports(text, label)
                     .map_err(|error| refused(loaded.positions.authored(error)))?
@@ -228,9 +244,12 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                     })
                     .chain(element_references(text))
                     .collect();
+                let callable = !matches!(parsed.document, ForgeDocument::Statechart(_))
+                    && StatelessFunction::of(&parsed.document).is_some();
                 (
                     UnitKind::Forge,
                     parsed.document.name().to_string(),
+                    callable,
                     references,
                 )
             }
@@ -239,6 +258,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             crate::Pipeline::Scxml => (
                 UnitKind::Statechart,
                 crate::model::statechart_machine_name(label.identifier),
+                false,
                 statechart_references(text),
             ),
         };
@@ -283,7 +303,9 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                             .into(),
                         ));
                     }
-                    (as_generated(&source.path), PendingRole::Imported)
+                    let document = as_generated(&source.path);
+                    imported.insert(stdlib::identity(Path::new(&document)));
+                    (document, PendingRole::Imported)
                 }
                 // The element a collection, a queue or a log holds is a unit of
                 // its own, which the holder's generated code names by package.
@@ -378,7 +400,12 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             role,
             reached_from: next.reached_from,
             reads: loaded.deps,
+            imported: false,
+            callable,
         });
+    }
+    for unit in &mut units {
+        unit.imported = imported.contains(&unit.identity);
     }
     let started: BTreeSet<String> = units
         .iter()
