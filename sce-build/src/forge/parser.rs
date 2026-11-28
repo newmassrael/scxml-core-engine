@@ -3985,6 +3985,19 @@ fn read_view_table(node: &roxmltree::Node, doc: &str) -> Result<ViewTable, Locat
             relations: required_text(visible, "<sce:visible>", "relations", doc)?,
             relation: required_text(visible, "<sce:visible>", "relation", doc)?,
             object: required_text(visible, "<sce:visible>", "object", doc)?,
+            at: match visible.attribute("at").map(str::trim) {
+                Some("") => {
+                    return Err(located(
+                        visible,
+                        doc,
+                        ValidationError::EmptyValue {
+                            element: "<sce:visible>".into(),
+                            attr: "at".into(),
+                        },
+                    ))
+                }
+                other => other.map(str::to_string),
+            },
         }),
         (false, None) => None,
     };
@@ -4268,48 +4281,63 @@ fn read_view_fields(
     Ok(fields)
 }
 
-/// `<sce:nest name type order>`: a `list<record:R>[B]` of the group's rows, each
-/// of its fields.
+/// `<sce:nest name row order bound>`: the group's rows, each a record of `row`
+/// of its fields, in its order, cut at its bound (docs/adr/0151, D1 and D2).
 fn read_view_nest(
     node: &roxmltree::Node,
     name: String,
     doc: &str,
 ) -> Result<ViewNest, Located<ForgeError>> {
     const ELEMENT: &str = "<sce:nest>";
-    let text = required_text(node, ELEMENT, "type", doc)?;
-    let ty = read_written_type(node, doc, ELEMENT, "type", &text, OptionalElems::OrRecord)?
-        .resolve_limits(&mut crate::limits::resolve)
-        .bounded()
-        .map_err(|refusal| type_rule_refusal(node, doc, ELEMENT, "type", &text, &refusal))?;
-    if !matches!(&ty, ValueType::List { elem, .. } if matches!(**elem, ValueType::Record { .. })) {
+    let text = required_text(node, ELEMENT, "row", doc)?;
+    let WrittenType::Record { alias: row } =
+        read_written_type(node, doc, ELEMENT, "row", &text, OptionalElems::OrRecord)?
+    else {
         return Err(located(
             node,
             doc,
             ValidationError::AttributeRuleViolated {
                 element: ELEMENT.into(),
-                attr: "type".into(),
+                attr: "row".into(),
                 value: text,
-                rule: "a nest is a list<record:R>[B]: one record per row of its group, cut by \
-                       its order at its bound"
+                rule: "a row of a nest is a record of an imported event schema, record:<alias>"
                     .into(),
             },
         ));
-    }
+    };
+    let bound_text = required_text(node, ELEMENT, "bound", doc)?;
+    let Some(bound) = read_view_bound(&bound_text) else {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: ELEMENT.into(),
+                attr: "bound".into(),
+                value: bound_text,
+                rule: "a bound is a count from 1 to 4294967295, or name=count, a count a build \
+                       may move by its name (docs/adr/0050)"
+                    .into(),
+            },
+        ));
+    };
     let order = match node.attribute("order") {
         Some(written) => read_view_order(node, ELEMENT, "order", written, doc)?,
         None => Vec::new(),
     };
     Ok(ViewNest {
         name,
-        ty,
+        row,
+        bound,
         order,
         fields: read_view_fields(node, ELEMENT, doc)?,
         line: Some(row_of(node)),
     })
 }
 
-/// The keys an order attribute lists: expressions separated by commas, each
-/// followed by `asc` or `desc` or by neither, which is ascending.
+/// The keys an order attribute lists, separated by commas: each an expression,
+/// then `asc` or `desc` or neither, which is ascending, then `absent first` or
+/// `absent last` or neither, which leaves an absent value before every present
+/// one (docs/adr/0151, D2).
 fn read_view_order(
     node: &roxmltree::Node,
     element: &str,
@@ -4319,10 +4347,19 @@ fn read_view_order(
 ) -> Result<Vec<ViewOrderKey>, Located<ForgeError>> {
     let mut keys: Vec<ViewOrderKey> = Vec::new();
     for item in split_view_list(written) {
-        let (expr, descending) = match item.rsplit_once(char::is_whitespace) {
+        let ends_term = |rest: &&str| rest.ends_with(char::is_whitespace);
+        let (rest, absent) = if let Some(rest) = item.strip_suffix("absent first").filter(ends_term)
+        {
+            (rest.trim_end(), Some(AbsentPlace::First))
+        } else if let Some(rest) = item.strip_suffix("absent last").filter(ends_term) {
+            (rest.trim_end(), Some(AbsentPlace::Last))
+        } else {
+            (item.as_str(), None)
+        };
+        let (expr, descending) = match rest.rsplit_once(char::is_whitespace) {
             Some((expr, "desc")) => (expr.trim(), true),
             Some((expr, "asc")) => (expr.trim(), false),
-            _ => (item.as_str(), false),
+            _ => (rest, false),
         };
         if expr.is_empty() {
             return Err(located(
@@ -4332,7 +4369,8 @@ fn read_view_order(
                     element: element.into(),
                     attr: attr.into(),
                     value: written.to_string(),
-                    rule: "each key of an order is an expression, then asc or desc or neither"
+                    rule: "each key of an order is an expression, then asc or desc or neither, \
+                           then absent first or absent last or neither"
                         .into(),
                 },
             ));
@@ -4340,6 +4378,7 @@ fn read_view_order(
         keys.push(ViewOrderKey {
             expr: expr.to_string(),
             descending,
+            absent,
         });
     }
     if keys.is_empty() {

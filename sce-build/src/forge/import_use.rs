@@ -645,11 +645,15 @@ impl Names<'_> {
                         ViewTableSource::View(alias) => self.name(alias),
                     }
                     if let Some(ViewVisibility::Relation {
-                        relations, object, ..
+                        relations,
+                        object,
+                        at,
+                        ..
                     }) = &table.visibility
                     {
                         self.name(relations);
                         self.expr(object, None)?;
+                        self.opt_expr(at.as_deref(), None)?;
                     }
                 }
                 let ViewBody::Query(query) = &m.body else {
@@ -675,7 +679,7 @@ impl Names<'_> {
                                 | ViewGroupOutput::Max(field) => self.expr(&field.expr, None)?,
                                 ViewGroupOutput::Count { .. } => {}
                                 ViewGroupOutput::Nest(nest) => {
-                                    self.value_type_aliases(&nest.ty);
+                                    self.name(&nest.row);
                                     for field in &nest.fields {
                                         self.expr(&field.expr, None)?;
                                     }

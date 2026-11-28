@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D2: the tasks by who they are assigned to, ascending, the
+     tasks nobody is assigned last: an absent value is first under asc unless
+     the order says absent last, as this one does. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="absent_last">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="person.scxml" as="Person"/>
+  <sce:import kind="event-schema" src="assigned_task.scxml" as="AssignedTask"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:table name="people" type="map&lt;uint64, record:Person&gt;[people_max=2000]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:join table="people" as="a" on="a.key === t.row.assignee" kind="left"/>
+    <sce:select>
+      <sce:field name="task" expr="t.key"/>
+      <sce:field name="assignee" expr="a.row.name"/>
+    </sce:select>
+    <sce:order by="assignee asc absent last"/>
+  </sce:query>
+  <sce:result type="record:AssignedTask" key="task" bound="assigned=100"/>
+</scxml>

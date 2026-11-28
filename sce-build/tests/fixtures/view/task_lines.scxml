@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The value of the nest of the board (docs/adr/0151, D2): the first of a
+     project's open tasks in their order, at most per_project of them, and
+     the count of them all. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="task_lines"
+       sce:event-name="board.task_lines">
+  <sce:import kind="event-schema" src="task_line.scxml" as="TaskLine"/>
+  <datamodel>
+    <data id="rows" sce:type="list&lt;record:TaskLine&gt;[per_project=5]" sce:direction="in"/>
+    <data id="total" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

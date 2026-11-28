@@ -13,8 +13,25 @@
 //! The one rule every plan keeps is the filter's (D6): a table is read by a
 //! scan, a scan is read by the filter of its table alone, and the filter is
 //! the semi-join of the scan's rows with the objects the viewer may read them
-//! by, so no operator reads a row its viewer may not. [`ViewPlan::verify`] holds a
-//! plan to it, a plan made by the build and one read from anywhere else alike.
+//! by, so no operator reads a row its viewer may not.
+//!
+//! A plan of a view with a viewer is lifted over every viewer at once (D6): the
+//! filter joins each table's rows with the table of viewers, so every operator
+//! after it carries the viewer as the column [`VIEWER`]. A join of two
+//! relations that carry it joins on equal viewers as well as on its own columns,
+//! and every group, order, nest and the result have it as the first column of
+//! their key: no operator meets the rows one viewer may read with the rows
+//! another may. Every size of an operator is a term per viewer; the part it is of
+//! the state is that term times `max_viewers` (D8).
+//!
+//! The order is the one total comparison of D2 for every type: an integer by its
+//! number, `false` before `true`, a floating number by IEEE 754-2019 totalOrder,
+//! a text by its code points and bytes as unsigned bytes (a prefix first), an
+//! enum by its declared order, a record by its fields in order, a list by its
+//! elements, and an absent value where each key's `absent_first` puts it.
+//!
+//! [`ViewPlan::verify`] holds a plan to the filter's rule and the viewer's, a plan
+//! made by the build and one read from anywhere else alike.
 
 use std::collections::BTreeMap;
 
@@ -24,6 +41,10 @@ use crate::forge::model::{RelationRewrite, ViewJoinKind, ViewerOf};
 
 /// The position of an operator in [`QueryPlan::operators`].
 pub type OperatorId = usize;
+
+/// The column a lifted plan carries the viewer in (D6). A name no author writes:
+/// a system name begins with `_`, as `_event` and `_x` do.
+pub const VIEWER: &str = "_viewer";
 
 /// The plan of one view document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +85,10 @@ pub enum PlanBody {
 /// The operators of a query, the last of them its value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryPlan {
+    /// Whether it is lifted over a table of viewers: the view has a viewer
+    /// (D6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lifted: bool,
     pub tables: Vec<PlanTable>,
     /// Each reads only operators before it.
     pub operators: Vec<PlanNode>,
@@ -111,11 +136,16 @@ pub enum PlanVisibility {
     /// the type `object_type` that `object` names, the relation derived by the
     /// document of relations read under the alias `relations`. `object` reads
     /// the row's `key` and `row`.
+    /// `at`, where the table names one, is the position of the relations'
+    /// stream the row's writer read: a row whose `at` is above the position the
+    /// relations were followed to is visible to no viewer (D6, D9).
     Relation {
         relations: String,
         relation: String,
         object_type: String,
         object: PlanExpr,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<PlanExpr>,
     },
 }
 
@@ -130,8 +160,12 @@ pub struct PlanNode {
     /// dependency (D2); empty where the build infers none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub key: Vec<String>,
-    /// The most rows it gives.
+    /// The most rows it gives, for one viewer where the plan is lifted.
     pub size: SizeTerm,
+    /// Whether its rows carry the viewer, as [`VIEWER`] (D6): every operator
+    /// from a filter on, where the plan is lifted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub carries_viewer: bool,
 }
 
 /// A column: a name and its type, as the type grammar spells it.
@@ -170,13 +204,16 @@ pub enum Operator {
     /// The pairs of rows `on` holds of; a left join keeps a left row no right
     /// row matches, its right side absent. `by_right_key` says `on` equates the
     /// right side's key with a value of the left side, so a left row meets at
-    /// most one right row.
+    /// most one right row. `on_viewers` says it joins on equal viewers as well,
+    /// which a join of two relations that carry the viewer does (D6).
     Join {
         left: OperatorId,
         right: OperatorId,
         kind: ViewJoinKind,
         on: PlanExpr,
         by_right_key: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        on_viewers: bool,
     },
     /// The rows `cond` holds of.
     Where { input: OperatorId, cond: PlanExpr },
@@ -234,7 +271,7 @@ pub enum PlanAggregate {
     Count {
         name: String,
     },
-    Sum(PlanField),
+    Sum(PlanSum),
     Min(PlanField),
     Max(PlanField),
     /// The group's rows, each as a record, in their total order, cut at the
@@ -242,24 +279,57 @@ pub enum PlanAggregate {
     Nest(PlanNest),
 }
 
-/// The rows of a group as a list.
+/// A sum of a group, and what it is kept in (D1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSum {
+    pub name: String,
+    pub expr: PlanExpr,
+    pub accumulator: Accumulator,
+}
+
+/// What a sum is kept in between two changes, so that it is a function of the
+/// group's rows, maintained or recomputed (docs/adr/0151, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "accumulator", rename_all = "kebab-case")]
+pub enum Accumulator {
+    /// An integer of `bits` bits, signed or not, that holds every sum the group's
+    /// largest count of the column's values reaches.
+    Integer { signed: bool, bits: u32 },
+    /// A long accumulator (Kulisch and Miranker 1981): a fixed-point register of
+    /// `bits` bits that holds every sum of the group's largest count of finite
+    /// values of the column's IEEE 754 binary format exactly, its infinities and
+    /// NaNs counted beside it, and rounded once, to nearest with ties to even,
+    /// into a floating number of `format` bits when it is read.
+    Floating { bits: u32, format: u8 },
+}
+
+/// The rows of a group, as the record the build generates for a nest (D2):
+/// `rows`, the first of them in the order, at most the bound, each a record of
+/// `record`, and `total`, the count of them all, an unsigned integer of
+/// `total_bits` bits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanNest {
     pub name: String,
-    /// The alias of the record each element is.
+    /// The alias of the record each row is.
     pub record: String,
     pub fields: Vec<PlanField>,
-    /// The order written, completed by the key of the rows the group holds.
+    /// The viewer first where the plan is lifted, then the order written, then
+    /// the key of the rows the group holds.
     pub order: Vec<PlanOrderKey>,
     pub bound: PlanBound,
+    pub total_bits: u8,
 }
 
-/// One key of a total order.
+/// One key of a total order, by the comparison of D2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanOrderKey {
     pub expr: PlanExpr,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub descending: bool,
+    /// Whether an absent value is before every present one in the order as it
+    /// is read, `desc` applied: `absent first` or `absent last` where written,
+    /// and otherwise first under `asc` and last under `desc` (D2).
+    pub absent_first: bool,
     /// Appended by the build from the key, so no two rows are tied (D2).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub from_key: bool,
@@ -284,19 +354,37 @@ impl PlanBound {
     }
 }
 
-/// The result of a query: its record, its key and its bound.
+/// The result of a query: its record, its key as the document names it, its
+/// bound, and the width of its `total`, an unsigned integer of `total_bits`
+/// bits that holds the largest count the plan's terms allow (D2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanResult {
     pub record: String,
     pub key: Vec<String>,
     pub bound: PlanBound,
+    pub total_bits: u8,
 }
 
-/// A part of what a view holds between two changes, and its most rows.
+/// A part of what a view holds between two changes, and its most rows: `size`,
+/// or `size` for each viewer kept, at most `max_viewers` of them, where
+/// `per_viewer` says so (D8).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatePart {
     pub part: String,
     pub size: SizeTerm,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub per_viewer: bool,
+}
+
+/// The fewest bits of an unsigned integer of 8, 16, 32 or 64 bits that holds
+/// `most`: the width of a count the build proves (D2).
+pub fn count_bits(most: u128) -> u8 {
+    match most {
+        0..=0xff => 8,
+        0x100..=0xffff => 16,
+        0x1_0000..=0xffff_ffff => 32,
+        _ => 64,
+    }
 }
 
 /// A count of rows as a term of the named bounds (D8): what a deployment that
@@ -430,6 +518,23 @@ pub enum PlanDefect {
     OutputNotACutOfAnOrder { at: OperatorId },
     #[error("the order the output cuts does not end with the result's key column '{column}'")]
     OrderNotTotal { column: String },
+    #[error(
+        "operator {at} gives rows after a filter and does not carry the viewer, in a plan \
+         lifted over its viewers (docs/adr/0151, D6)"
+    )]
+    ViewerNotCarried { at: OperatorId },
+    #[error("operator {at} carries a viewer in a plan of a view with none")]
+    ViewerInAnUnliftedPlan { at: OperatorId },
+    #[error(
+        "operator {at} joins two relations that carry a viewer on its own columns alone: it \
+         meets the rows one viewer may read with the rows another may (docs/adr/0151, D6)"
+    )]
+    JoinAcrossViewers { at: OperatorId },
+    #[error(
+        "operator {at} groups, orders, nests or cuts rows that carry a viewer with no viewer as \
+         the first column of its key (docs/adr/0151, D6)"
+    )]
+    KeyWithoutViewer { at: OperatorId },
     #[error("the plan of the view read as '{alias}': {defect}")]
     InRead {
         alias: String,
@@ -441,8 +546,11 @@ impl ViewPlan {
     /// Hold the plan, and every plan it reads, to the rules every plan the
     /// build makes keeps: each operator reads only operators before it; each
     /// scan is read by the filter of its table and by nothing else, and each
-    /// filter reads a scan of its table (D6); and the output is the cut of an
-    /// order that holds the result's key (D2).
+    /// filter reads a scan of its table (D6); where the plan is lifted, every
+    /// operator from a filter on carries the viewer, every join of two that carry
+    /// it is on equal viewers, and every group, order, nest and cut has it first in
+    /// its key (D6); and the output is the cut of an order that holds the result's
+    /// key (D2).
     pub fn verify(&self) -> Result<(), PlanDefect> {
         for read in &self.reads {
             read.plan.verify().map_err(|defect| PlanDefect::InRead {
@@ -526,6 +634,7 @@ impl QueryPlan {
                 _ => {}
             }
         }
+        self.verify_viewers()?;
         let order = match self.operators.get(self.output).map(|node| &node.op) {
             Some(Operator::Cut { input, .. }) => match &self.operators[*input].op {
                 Operator::Order { by, .. } => by,
@@ -542,6 +651,58 @@ impl QueryPlan {
             return Err(PlanDefect::OrderNotTotal {
                 column: column.clone(),
             });
+        }
+        Ok(())
+    }
+
+    /// The viewer's rules of a lifted plan (D6), and that a plan of a view with
+    /// no viewer carries none.
+    fn verify_viewers(&self) -> Result<(), PlanDefect> {
+        fn first_is_viewer(key: &[String]) -> bool {
+            key.first().is_some_and(|k| k == VIEWER)
+        }
+        fn ordered_by_viewer(by: &[PlanOrderKey]) -> bool {
+            by.first().is_some_and(|k| k.expr.text == VIEWER)
+        }
+        for (at, node) in self.operators.iter().enumerate() {
+            let scan = matches!(node.op, Operator::Scan { .. });
+            if !self.lifted {
+                if node.carries_viewer {
+                    return Err(PlanDefect::ViewerInAnUnliftedPlan { at });
+                }
+                continue;
+            }
+            if !scan && !node.carries_viewer {
+                return Err(PlanDefect::ViewerNotCarried { at });
+            }
+            let keyed = match &node.op {
+                Operator::Join {
+                    left,
+                    right,
+                    on_viewers,
+                    ..
+                } => {
+                    let both = self.operators[*left].carries_viewer
+                        && self.operators[*right].carries_viewer;
+                    if both && !*on_viewers {
+                        return Err(PlanDefect::JoinAcrossViewers { at });
+                    }
+                    true
+                }
+                Operator::Group { outputs, .. } => {
+                    let nests_by_viewer = outputs.iter().all(|output| match output {
+                        PlanAggregate::Nest(nest) => ordered_by_viewer(&nest.order),
+                        _ => true,
+                    });
+                    first_is_viewer(&node.key) && nests_by_viewer
+                }
+                Operator::Order { by, .. } => first_is_viewer(&node.key) && ordered_by_viewer(by),
+                Operator::Cut { .. } => first_is_viewer(&node.key),
+                _ => true,
+            };
+            if !keyed {
+                return Err(PlanDefect::KeyWithoutViewer { at });
+            }
         }
         Ok(())
     }

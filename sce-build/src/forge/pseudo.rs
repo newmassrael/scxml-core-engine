@@ -330,6 +330,10 @@ use std::fmt::Write as _;
 
 use crate::comment_text;
 use crate::forge::model::{
+    AbsentPlace, RelationRewrite, RewriteTerm, ViewBody, ViewGroupOutput, ViewJoinKind, ViewModel,
+    ViewOrderKey, ViewOutputField, ViewQuery, ViewShape, ViewStep, ViewTableSource, ViewVisibility,
+};
+use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy, BitSize,
     BoundedCollectionModel, BroadcastLogModel, BufferPoolModel, BufferPoolVariant, CachePolicy,
     CapacitySource, CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant,
@@ -344,10 +348,6 @@ use crate::forge::model::{
 };
 use crate::forge::model::{ExplorationModel, PropertiesModel, Property, PropertyForm};
 use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
-use crate::forge::model::{
-    RelationRewrite, RewriteTerm, ViewBody, ViewGroupOutput, ViewJoinKind, ViewModel, ViewOrderKey,
-    ViewOutputField, ViewQuery, ViewShape, ViewStep, ViewTableSource, ViewVisibility,
-};
 use crate::forge::model::{
     TestCaseModel, TestConfigurationModel, TestMatcher, TestMatcherForm, TestPortTypeModel,
     TestSuiteModel, TestTemplateModel, TestValue,
@@ -2331,12 +2331,18 @@ fn render_view(m: &ViewModel) -> Vec<Node> {
                     relations,
                     relation,
                     object,
-                }) => out.line(&format!(
-                    "visible {} {} object {}",
-                    text(relations),
-                    text(relation),
-                    text(object)
-                )),
+                    at,
+                }) => {
+                    out.line(&format!(
+                        "visible {} {} object {}",
+                        text(relations),
+                        text(relation),
+                        text(object)
+                    ));
+                    if let Some(at) = at {
+                        out.nested(|out| out.line(&format!("at {}", text(at))));
+                    }
+                }
                 None => {}
             });
         }
@@ -2403,9 +2409,10 @@ fn render_view_query(out: &mut Out<'_>, query: &ViewQuery) {
                         ViewGroupOutput::Max(f) => field(out, "max", f),
                         ViewGroupOutput::Nest(nest) => {
                             out.line(&format!(
-                                "nest {} {}",
+                                "nest {} record:{} bound {}",
                                 text(&nest.name),
-                                text(&nest.ty.to_string())
+                                text(&nest.row),
+                                nest.bound
                             ));
                             out.nested(|out| {
                                 if !nest.order.is_empty() {
@@ -2444,11 +2451,13 @@ fn render_view_query(out: &mut Out<'_>, query: &ViewQuery) {
 fn order_keys(keys: &[ViewOrderKey]) -> String {
     keys.iter()
         .map(|key| {
-            if key.descending {
-                format!("{} desc", key.expr)
-            } else {
-                key.expr.clone()
-            }
+            let direction = if key.descending { " desc" } else { "" };
+            let absent = match key.absent {
+                Some(AbsentPlace::First) => " absent first",
+                Some(AbsentPlace::Last) => " absent last",
+                None => "",
+            };
+            format!("{}{direction}{absent}", key.expr)
         })
         .collect::<Vec<_>>()
         .join(", ")

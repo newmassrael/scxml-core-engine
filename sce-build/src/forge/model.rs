@@ -256,7 +256,7 @@ pub enum ForgeKind {
     /// the build makes before anything runs, its key inferred, its order total
     /// and every table read through the filter of the viewer's relations (D6);
     /// or a document of relations, the rewrites a viewer's relations are
-    /// derived by (D5). Rust is its lane (D10); until the lane lands, and on
+    /// derived by (D5). Rust is its lane (D11); until the lane lands, and on
     /// every other backend, generation refuses it by name
     /// (`view/backend-unsupported`).
     View,
@@ -8025,11 +8025,11 @@ pub struct ExplorationModel {
 /// Schema (per `<scxml sce:kind="view">` body): at most one `<sce:viewer of>`
 /// (D6); one `<sce:table name>` per input table, of a `type` (a `map<K, V>[B]` or a
 /// `set<K>[B]`) or of another `view` (D3), each saying who may read a row by one
-/// `<sce:visible relations relation object>` or `public="true"`; then either one
+/// `<sce:visible relations relation object at>` or `public="true"`; then either one
 /// `<sce:query>` and one `<sce:result>`, or one `<sce:relation>` per derived relation. The
 /// parser holds the document to its shape; what needs the documents it imports
 /// (the keys, the total order, the filter of each table, the bounds and the
-/// refusals of D11) is judged where its plan is made ([`crate::forge::view`]).
+/// refusals of D12) is judged where its plan is made ([`crate::forge::view`]).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ViewModel {
@@ -8130,14 +8130,17 @@ pub enum ViewTableSource {
 pub enum ViewVisibility {
     /// `public="true"`: every viewer may read it all.
     Public,
-    /// `<sce:visible relations relation object>`: a row may be read by the
+    /// `<sce:visible relations relation object at>`: a row may be read by the
     /// viewers that stand in `relation` to the object `object` names, the relation
     /// derived by the document of relations imported as `relations`. `object` is
-    /// an expression over the row's `key` and `row`.
+    /// an expression over the row's `key` and `row`; `at`, where written, the
+    /// position of the relations' stream the row's writer read (D6, D9).
     Relation {
         relations: String,
         relation: String,
         object: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<String>,
     },
 }
 
@@ -8263,7 +8266,8 @@ pub enum ViewGroupOutput {
     Min(ViewOutputField),
     /// `<sce:max name expr>`.
     Max(ViewOutputField),
-    /// `<sce:nest name type order>`: the group's rows as a list.
+    /// `<sce:nest name row order bound>`: the group's rows, cut by their order,
+    /// and the count of them all.
     Nest(ViewNest),
 }
 
@@ -8318,14 +8322,15 @@ pub struct ViewSelect {
     pub line: Option<u32>,
 }
 
-/// `<sce:nest name type order>` and its fields.
+/// `<sce:nest name row order bound>` and its fields.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ViewNest {
     pub name: String,
-    /// The list it is, `list<record:R>[B]`: its bound cuts it by its order (D2).
-    #[serde(rename = "type")]
-    pub ty: crate::forge::value_type::ValueType,
+    /// The alias of the event schema whose record each of its rows is.
+    pub row: String,
+    /// The most rows it holds, cut by its order (D2), by name (D8).
+    pub bound: crate::forge::value_type::Bound,
     /// The order its rows are held in, as written; the build completes it by
     /// the key of the rows it holds (D2).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -8335,13 +8340,28 @@ pub struct ViewNest {
     pub line: Option<u32>,
 }
 
-/// One key of an order: an expression, ascending unless `desc` is written.
+/// One key of an order: an expression, ascending unless `desc` is written,
+/// and where an absent value stands when `absent first` or `absent last` says
+/// so (docs/adr/0151, D2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ViewOrderKey {
     pub expr: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub descending: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub absent: Option<AbsentPlace>,
+}
+
+/// Where an order term puts an absent value (docs/adr/0151, D2; SQL's `NULLS
+/// FIRST` and `NULLS LAST`). Unwritten, an absent value is before every present
+/// one, so first under `asc` and last under `desc`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum AbsentPlace {
+    First,
+    Last,
 }
 
 /// `<sce:result type key bound>` (docs/adr/0151, D2).

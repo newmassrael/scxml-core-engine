@@ -2,8 +2,9 @@
 <!-- docs/adr/0151, D1: minimal view document for the forge_ast_export
      round-trip drift guard: a viewer, a table filtered by a relation, a
      public table and a table of another view, a join of each kind, a where,
-     a group of every column and an order, the smallest shape that carries
-     every field of a query. -->
+     a group of every column, a nest with its row record and bound, and an
+     order with an absent term, the smallest shape that carries every field of
+     a query. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -17,7 +18,7 @@
   <sce:import kind="view" src="lanes.scxml" as="Lanes"/>
   <sce:viewer of="person"/>
   <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=100]">
-    <sce:visible relations="Access" relation="viewer" object="row.project"/>
+    <sce:visible relations="Access" relation="viewer" object="row.project" at="row.relations_at"/>
   </sce:table>
   <sce:table name="people" type="map&lt;uint64, record:Person&gt;[people_max=50]" public="true"/>
   <sce:table name="lanes" view="Lanes"/>
@@ -32,7 +33,7 @@
       <sce:sum name="points" expr="t.row.points"/>
       <sce:min name="first" expr="t.row.due"/>
       <sce:max name="last" expr="t.row.due"/>
-      <sce:nest name="next" type="list&lt;record:Line&gt;[per_project=5]" order="t.row.due asc">
+      <sce:nest name="next" row="record:Line" order="a.row.name asc absent last, t.row.due" bound="per_project=5">
         <sce:field name="title" expr="t.row.title"/>
       </sce:nest>
     </sce:group>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A task by its key, and the name of who it is assigned to, absent where
+     nobody is. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="assigned_task"
+       sce:event-name="board.assigned_task">
+  <datamodel>
+    <data id="task" sce:type="uint64" sce:direction="in"/>
+    <data id="assignee" sce:type="optional&lt;string[64]&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A project and the hours spent on its tasks, a floating number. -->
+<!-- A project, the hours spent on its tasks summed, a floating number, and the
+     fewest and the most hours spent on one of them. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -9,5 +10,7 @@
   <datamodel>
     <data id="project" sce:type="uint64" sce:direction="in"/>
     <data id="hours" sce:type="float64" sce:direction="in"/>
+    <data id="fewest" sce:type="float32" sce:direction="in"/>
+    <data id="most" sce:type="float32" sce:direction="in"/>
   </datamodel>
 </scxml>

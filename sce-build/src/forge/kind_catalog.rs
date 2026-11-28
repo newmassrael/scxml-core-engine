@@ -1108,12 +1108,14 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             notes: &[
                 "at most one <sce:viewer of=\"person|instance\">; one <sce:table name type|view> \
-                 per table, each with one <sce:visible relations relation object> or \
+                 per table, each with one <sce:visible relations relation object at> or \
                  public=\"true\"",
                 "one <sce:query>: <sce:from table as>, then <sce:join table as on kind> and \
                  <sce:where cond> in order, then one <sce:group by> (field, count, sum, min, \
-                 max, nest) or <sce:select>, then at most one <sce:order by>; and one \
-                 <sce:result type key bound>",
+                 max, nest name row order bound) or <sce:select>, then at most one \
+                 <sce:order by>, each key asc or desc and, where it may be absent, \
+                 absent first or absent last; \
+                 and one <sce:result type key bound>",
                 "a document of relations holds one set of relation tuples and one \
                  <sce:relation name object> per relation, its children <sce:direct subjects>, \
                  <sce:computed relation>, <sce:through relation then>, <sce:all> and \

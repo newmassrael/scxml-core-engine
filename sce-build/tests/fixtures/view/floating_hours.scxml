@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- docs/adr/0151, D1: the hours of a project summed, floating numbers whose sum
-     depends on the order they are added in: refused (view/floating-aggregate). -->
+<!-- docs/adr/0151, D1 and D2: the hours of each project's tasks summed, and the
+     fewest and the most of them, the projects with the most hours first. A
+     floating sum is kept exactly in a long accumulator and rounded once into
+     its float64 field; a minimum, a maximum and an order compare floating
+     numbers by IEEE 754-2019 totalOrder. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="view"
-       name="floating_aggregate">
+       name="floating_hours">
   <sce:import kind="event-schema" src="task.scxml" as="Task"/>
   <sce:import kind="event-schema" src="hours_row.scxml" as="HoursRow"/>
   <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
@@ -14,8 +17,10 @@
     <sce:group by="t.row.project">
       <sce:field name="project" expr="t.row.project"/>
       <sce:sum name="hours" expr="t.row.hours"/>
+      <sce:min name="fewest" expr="t.row.hours"/>
+      <sce:max name="most" expr="t.row.hours"/>
     </sce:group>
-    <sce:order by="project"/>
+    <sce:order by="hours desc"/>
   </sce:query>
   <sce:result type="record:HoursRow" key="project" bound="rows=100"/>
 </scxml>

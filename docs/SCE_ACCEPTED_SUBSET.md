@@ -540,19 +540,24 @@ forms have a translation into the machine's model, are the judge's
 (`sce-codegen formal properties`).
 
 `view` is a read model (docs/adr/0151, D1). Amended by: ADR 0151 (D1, D2, D3, D5, D6,
-D8 and D11, step 2 of its order of work): a view document holds at most one
+D8 and D12, step 2 of its order of work): a view document holds at most one
 `<sce:viewer of>`, `person` or `instance`; one `<sce:table name>` per input table, of a
 `type` that is a `map<K, V>[B]` or a `set<K>[B]`, or of another `view` it imports,
-each saying who may read a row by one `<sce:visible relations relation object>` or
-`public="true"`; and then one `<sce:query>` and one `<sce:result type key bound>`, or one
-`<sce:relation name object>` per relation of a document of relations. A query is one
+each saying who may read a row by one `<sce:visible relations relation object at>`
+(`at`, where written, the row's unsigned field that holds the position of the relations'
+stream its writer read) or `public="true"`; and then one `<sce:query>` and one
+`<sce:result type key bound>`, or one `<sce:relation name object>` per relation of a
+document of relations. A query is one
 `<sce:from table as>`, then `<sce:join table as on kind>` (`inner`, or `left`, whose
 right side is of an optional type) and `<sce:where cond>` in the order they apply, then
 one `<sce:group by>` of `<sce:field>`, `<sce:count>`, `<sce:sum>`, `<sce:min>`,
-`<sce:max>` and `<sce:nest name type order>` columns, or one `<sce:select>` of
+`<sce:max>` and `<sce:nest name row order bound>` columns, or one `<sce:select>` of
 `<sce:field name expr>`, then at most one `<sce:order by>`, its keys each followed by
-`asc` or `desc`. A relation's rewrite is united from `<sce:direct subjects>`,
-`<sce:computed relation>`, `<sce:through relation then>` and `<sce:all>` terms, less what
+`asc` or `desc` or neither and, on a key that may be absent, by `absent first` or
+`absent last`. A nest's column is a record that declares exactly `rows`, a list of the
+nest's row record at its bound, and `total`, an unsigned integer. A relation's rewrite is
+united from `<sce:direct subjects>`, `<sce:computed relation>`,
+`<sce:through relation then>` and `<sce:all>` terms, less what
 one `<sce:but-not>` derives; `subjects` names the sets of principals
 (`object#relation`) a tuple's subject is expanded through. The document of relations
 reads one `set<record:Tuple>[B]` whose record declares `object_type`, `object_id`,
@@ -561,18 +566,23 @@ principal. The parser
 refuses a shape the document breaks alone with the `validation/*` codes those shapes take
 everywhere. The build then reads the document, and every view it imports, into one
 plan (`sce-build/src/forge/view`): each table read first by the filter of its viewer's
-relation; the key of each operator's rows inferred by functional dependency; the order
-completed by the result's key; every count of rows a term of the named bounds. It
+relation; for a view with a viewer, lifted over every viewer, each join of two relations
+that carry the viewer on equal viewers and each group, order, nest and the result keyed
+by the viewer first; the key of each operator's rows inferred by functional dependency;
+every order by the one total comparison each type has (a floating number by IEEE
+754-2019 totalOrder, a text by its code points, an absent value first under `asc`)
+and completed by the result's key; a floating sum kept in a long accumulator and rounded
+once; every count of rows a term of the named bounds. It
 refuses a result whose key it does not infer (`view/result-key-not-unique`), a result or
 a nest whose bound may be reached and which states no order (`view/bound-without-order`),
 a view that reads itself (`view/cycle`), a relation that depends on its own exclusion
 (`view/relation-cycle-through-exclusion`), a table of a type that says nobody may read it
 (`view/table-without-visibility`), a view that reads what its viewer may not
 (`view/viewer-mismatch`), an expression it does not prove total, by the rule of
-docs/adr/0133 (`view/expression-may-fail`), a count or a sum its field's type may not
-hold (`view/aggregate-may-overflow`), and a sum, a minimum, a maximum or an order over a
-floating type (`view/floating-aggregate`). Rust is the lane (D10); until its operators
-land, and on every other backend, generation refuses a valid view by name
+docs/adr/0133 (`view/expression-may-fail`), and a count, an integer sum or a nest's
+`total` its field's type may not hold (`view/aggregate-may-overflow`). Rust is the lane
+(D11); until its operators land, and on every other backend, generation refuses a valid
+view by name
 (`view/backend-unsupported`).
 
 The six `test-` kinds are the test profile (docs/adr/0091; their forms are

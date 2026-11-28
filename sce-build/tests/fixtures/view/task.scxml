@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A task of the board example of docs/adr/0151, D1: the project it is of, who it is assigned to, whether it is open, when it is due, its title, its points and the hours spent on it. -->
+<!-- A task of the board example of docs/adr/0151, D1: the project it is of, who it is assigned to, whether it is open, when it is due, its title, its points, the hours spent on it, and the position of the relations its writer read (D6). -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -14,5 +14,6 @@
     <data id="title" sce:type="string[64]" sce:direction="in"/>
     <data id="points" sce:type="uint16" sce:direction="in"/>
     <data id="hours" sce:type="float32" sce:direction="in"/>
+    <data id="relations_at" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>

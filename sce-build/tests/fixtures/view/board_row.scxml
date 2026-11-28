@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A row of the board of docs/adr/0151, D1: a project, its title, its open tasks counted and the next five of them. -->
+<!-- A row of the board of docs/adr/0151, D1: a project, its title, its open tasks counted and the next five of them with the count of them all (docs/adr/0151, D2). -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="board_row"
        sce:event-name="board.row">
-  <sce:import kind="event-schema" src="task_line.scxml" as="TaskLine"/>
+  <sce:import kind="event-schema" src="task_lines.scxml" as="TaskLines"/>
   <datamodel>
     <data id="project" sce:type="uint64" sce:direction="in"/>
     <data id="title" sce:type="string[64]" sce:direction="in"/>
     <data id="open" sce:type="uint32" sce:direction="in"/>
-    <data id="next" sce:type="list&lt;record:TaskLine&gt;[per_project=5]" sce:direction="in"/>
+    <data id="next" sce:type="record:TaskLines" sce:direction="in"/>
   </datamodel>
 </scxml>

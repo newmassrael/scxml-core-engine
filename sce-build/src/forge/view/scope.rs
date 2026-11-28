@@ -352,15 +352,6 @@ fn int_range(signed: bool, bits: u8) -> (i128, i128) {
     }
 }
 
-/// Whether a value of `ty` is a floating number, through an optional value.
-pub(super) fn floating(ty: InferredType) -> bool {
-    ty.is_float_like()
-        || matches!(
-            ty,
-            InferredType::Optional(OptionalElem::Number(NumericBaseType::Float { .. }))
-        )
-}
-
 /// Why storing the value `judged` in a place of `place` may fail, where it may:
 /// an integer the place's type does not hold every value of, or a text longer
 /// than the place's bound or of no bound the build proves (docs/adr/0133, D1

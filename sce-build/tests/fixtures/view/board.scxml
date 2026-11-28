@@ -2,8 +2,9 @@
 <!-- The board of docs/adr/0151, D1: for each person, one row per project the
      person may view, its title, its open tasks counted and the next five by due
      date with who each is assigned to, the projects with the most open tasks
-     first. The row's key is the project's, given as a column of its own, and
-     an equality is written ===, as every expression of SCE writes it. -->
+     first. The row's key is the project's, given as a column of its own; each
+     task and project names the position of the relations it was written under;
+     and an equality is written ===, as every expression of SCE writes it. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -17,10 +18,10 @@
   <sce:import kind="view" src="access.scxml" as="Access"/>
   <sce:viewer of="person"/>
   <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]">
-    <sce:visible relations="Access" relation="viewer" object="row.project"/>
+    <sce:visible relations="Access" relation="viewer" object="row.project" at="row.relations_at"/>
   </sce:table>
   <sce:table name="projects" type="map&lt;uint64, record:Project&gt;[projects_max=500]">
-    <sce:visible relations="Access" relation="viewer" object="key"/>
+    <sce:visible relations="Access" relation="viewer" object="key" at="row.relations_at"/>
   </sce:table>
   <sce:table name="people" type="map&lt;uint64, record:Person&gt;[people_max=2000]" public="true"/>
   <sce:query>
@@ -32,7 +33,7 @@
       <sce:field name="project" expr="p.key"/>
       <sce:field name="title" expr="p.row.title"/>
       <sce:count name="open"/>
-      <sce:nest name="next" order="t.row.due asc" type="list&lt;record:TaskLine&gt;[per_project=5]">
+      <sce:nest name="next" row="record:TaskLine" order="t.row.due asc" bound="per_project=5">
         <sce:field name="title" expr="t.row.title"/>
         <sce:field name="assignee" expr="a.row.name"/>
       </sce:nest>

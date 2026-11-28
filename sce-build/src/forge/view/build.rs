@@ -16,19 +16,21 @@
 use std::collections::BTreeMap;
 
 use super::plan::{
-    Operator, OperatorId, PlanAggregate, PlanBound, PlanColumn, PlanExpr, PlanField, PlanNest,
-    PlanNode, PlanOrderKey, PlanResult, PlanTable, PlanVisibility, QueryPlan, RelationsPlan,
-    SizeTerm, StatePart, TableSource,
+    count_bits, Accumulator, Operator, OperatorId, PlanAggregate, PlanBound, PlanColumn, PlanExpr,
+    PlanField, PlanNest, PlanNode, PlanOrderKey, PlanResult, PlanSum, PlanTable, PlanVisibility,
+    QueryPlan, RelationsPlan, SizeTerm, StatePart, TableSource, VIEWER,
 };
 use super::scope::{self, Judged, RowType, Scope};
 use super::Read;
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::expr::{self, BinOp, Expected, ExprKind, TypedExpr};
 use crate::forge::model::{
-    ForgeKind, ViewGroup, ViewGroupOutput, ViewJoinKind, ViewModel, ViewNest, ViewOrderKey,
-    ViewOutputField, ViewQuery, ViewShape, ViewStep, ViewTable, ViewTableSource, ViewVisibility,
+    AbsentPlace, ForgeKind, SceType, ViewGroup, ViewGroupOutput, ViewJoinKind, ViewModel, ViewNest,
+    ViewOrderKey, ViewOutputField, ViewQuery, ViewShape, ViewStep, ViewTable, ViewTableSource,
+    ViewVisibility,
 };
-use crate::forge::types::InferredType;
+use crate::forge::quantity::NumericBaseType;
+use crate::forge::types::{InferredType, OptionalElem};
 use crate::forge::value_type::{ScopedRecord, TypeScope, ValueType};
 
 /// What the rows of a table are, as the query reads them.
@@ -54,6 +56,8 @@ struct Binding {
 /// The operators of one query, as they are made.
 struct Build<'a> {
     view: &'a ViewModel,
+    /// Whether the plan is lifted over the table of viewers (D6).
+    lifted: bool,
     reads: &'a [Read],
     types: &'a TypeScope,
     document: &'a str,
@@ -78,6 +82,7 @@ pub(super) fn query(
 ) -> Result<QueryPlan, Located<ForgeError>> {
     let mut build = Build {
         view,
+        lifted: view.viewer.is_some(),
         reads,
         types,
         document,
@@ -163,14 +168,9 @@ pub(super) fn query(
     for (name, ty) in &result.fields {
         scope.column(name, ty, &result.scope);
     }
-    let mut by: Vec<PlanOrderKey> = Vec::new();
+    let mut by: Vec<PlanOrderKey> = build.viewer_order_key().into_iter().collect();
     for key in &query.order {
-        build.order_key(&scope, key, "the order of the result by", query.order_line)?;
-        by.push(PlanOrderKey {
-            expr: PlanExpr::new(&key.expr),
-            descending: key.descending,
-            from_key: false,
-        });
+        by.push(build.order_key(&scope, key, query.order_line)?);
     }
     let columns: Vec<String> = build.operators[projected]
         .columns
@@ -193,6 +193,7 @@ pub(super) fn query(
             by.push(PlanOrderKey {
                 expr: PlanExpr::new(name),
                 descending: false,
+                absent_first: true,
                 from_key: true,
             });
         }
@@ -226,19 +227,24 @@ pub(super) fn query(
         ));
     }
     let projected_columns = build.operators[projected].columns.clone();
+    let result_key = build.lifted_key(query.result.key.clone());
+    // `total` counts the rows before the cut (D2), so its width is proven from
+    // their term (D8).
+    let total_bits = count_bits(size.most());
     let ordered = build.push(
         Operator::Order {
             input: projected,
             by,
         },
         projected_columns.clone(),
-        query.result.key.clone(),
+        result_key.clone(),
         size.clone(),
     );
     let cut_size = SizeTerm::Min(vec![SizeTerm::Bound(bound.clone()), size]);
     build.state.push(StatePart {
         part: "result".into(),
         size: cut_size.clone(),
+        per_viewer: build.lifted,
     });
     let output = build.push(
         Operator::Cut {
@@ -246,10 +252,11 @@ pub(super) fn query(
             bound: bound.clone(),
         },
         projected_columns,
-        query.result.key.clone(),
+        result_key,
         cut_size,
     );
     Ok(QueryPlan {
+        lifted: build.lifted,
         tables: build.tables,
         operators: build.operators,
         output,
@@ -257,6 +264,7 @@ pub(super) fn query(
             record: query.result.record.clone(),
             key: query.result.key.clone(),
             bound,
+            total_bits,
         },
         state: build.state,
     })
@@ -268,7 +276,10 @@ impl Build<'_> {
         Located::new(error.into(), self.document, line, None)
     }
 
-    /// Push an operator and hand back where it stands.
+    /// Push an operator and hand back where it stands. Where the plan is lifted,
+    /// every operator but a scan carries the viewer (D6): a filter joins its
+    /// table's rows with the table of viewers, and every other operator reads
+    /// what a filter gave.
     fn push(
         &mut self,
         op: Operator,
@@ -276,13 +287,59 @@ impl Build<'_> {
         key: Vec<String>,
         size: SizeTerm,
     ) -> OperatorId {
+        let carries_viewer = self.lifted && !matches!(op, Operator::Scan { .. });
+        let has_viewer = columns.first().is_some_and(|c| c.name == VIEWER);
+        let columns = if carries_viewer && !has_viewer {
+            self.viewer_column().into_iter().chain(columns).collect()
+        } else {
+            columns
+        };
         self.operators.push(PlanNode {
             op,
             columns,
             key,
             size,
+            carries_viewer,
         });
         self.operators.len() - 1
+    }
+
+    /// The column a lifted plan carries the viewer in, where it is lifted.
+    fn viewer_column(&self) -> Option<PlanColumn> {
+        self.view.viewer.as_ref().map(|viewer| PlanColumn {
+            name: VIEWER.to_string(),
+            ty: format!("viewer:{}", viewer.of.as_attr()),
+        })
+    }
+
+    /// `key` with the viewer as its first column, where the plan is lifted
+    /// (D6).
+    fn lifted_key(&self, key: Vec<String>) -> Vec<String> {
+        if self.lifted {
+            std::iter::once(VIEWER.to_string()).chain(key).collect()
+        } else {
+            key
+        }
+    }
+
+    /// The key of the rows at `at` without the viewer: what functional
+    /// dependency is inferred over (D2).
+    fn own_key(&self, at: OperatorId) -> Vec<String> {
+        let key = &self.operators[at].key;
+        match key.split_first() {
+            Some((first, rest)) if self.lifted && first == VIEWER => rest.to_vec(),
+            _ => key.clone(),
+        }
+    }
+
+    /// The first key of every order of a lifted plan: the viewer (D6).
+    fn viewer_order_key(&self) -> Option<PlanOrderKey> {
+        self.lifted.then(|| PlanOrderKey {
+            expr: PlanExpr::new(VIEWER),
+            descending: false,
+            absent_first: true,
+            from_key: true,
+        })
     }
 
     /// The view read under `alias`, where the document imports one.
@@ -390,9 +447,10 @@ impl Build<'_> {
                     relations,
                     relation,
                     object,
+                    at,
                 }),
                 _,
-            ) => self.relation_filter(table, &rows, relations, relation, object)?,
+            ) => self.relation_filter(table, &rows, relations, relation, object, at.as_deref())?,
             (Some(ViewVisibility::Public), None) => PlanVisibility::Public,
             (Some(ViewVisibility::Public), Some(_)) => {
                 return Err(self.at(
@@ -422,6 +480,7 @@ impl Build<'_> {
         self.state.push(StatePart {
             part: format!("table {}", table.name),
             size: size.clone(),
+            per_viewer: false,
         });
         self.tables.push(PlanTable {
             name: table.name.clone(),
@@ -487,6 +546,7 @@ impl Build<'_> {
         relations: &str,
         relation: &str,
         object: &str,
+        at: Option<&str>,
     ) -> Result<PlanVisibility, Located<ForgeError>> {
         let documents: Vec<String> = self
             .reads
@@ -568,11 +628,44 @@ impl Build<'_> {
                 table.line,
             ));
         }
+        // `at` is the position of the relations' stream the row's writer read
+        // (D6, D9): a position, which is an unsigned integer, read of the row.
+        let at = match at {
+            None => None,
+            Some(at) => {
+                let judged = self.judge(
+                    &scope,
+                    at,
+                    Expected::Hint(InferredType::Unknown),
+                    table.line,
+                )?;
+                self.total(&judged, at, table.line)?;
+                if !matches!(scope::value_range(judged.tree.ty), Some((0, _)))
+                    || judged.tree.ty.is_optional()
+                {
+                    return Err(self.at(
+                        ValidationError::AttributeRuleViolated {
+                            element: "<sce:visible>".into(),
+                            attr: "at".into(),
+                            value: at.to_string(),
+                            rule: format!(
+                                "the position of the relations' stream a row was written under \
+                                 is an unsigned integer the row holds, and this is {}",
+                                judged.tree.ty.describe()
+                            ),
+                        },
+                        table.line,
+                    ));
+                }
+                Some(PlanExpr::new(at))
+            }
+        };
         Ok(PlanVisibility::Relation {
             relations: relations.to_string(),
             relation: relation.to_string(),
             object_type,
             object: PlanExpr::new(object),
+            at,
         })
     }
 
@@ -616,13 +709,14 @@ impl Build<'_> {
             key.clone(),
             size.clone(),
         );
+        let filter_key = self.lifted_key(key);
         let filter = self.push(
             Operator::Filter {
                 input: scan,
                 table: table.to_string(),
             },
             columns,
-            key,
+            filter_key,
             size,
         );
         self.bindings.push(Binding {
@@ -726,9 +820,11 @@ impl Build<'_> {
                 binding.optional = true;
             }
         }
-        let right_key = self.operators[right].key.clone();
-        let left_node = &self.operators[left];
-        let (left_key, left_size) = (left_node.key.clone(), left_node.size.clone());
+        // The key is inferred over each side's own columns, and carries the
+        // viewer first where the plan is lifted (D6).
+        let right_key = self.own_key(right);
+        let left_key = self.own_key(left);
+        let left_size = self.operators[left].size.clone();
         let right_size = self.operators[right].size.clone();
         let equated = match right_key.as_slice() {
             [key] => equated_with(&judged.tree, key, &join.alias),
@@ -740,11 +836,15 @@ impl Build<'_> {
                 self.equal.push((key.clone(), left_value.clone()));
             }
         }
-        let key = if by_right_key {
+        let key = self.lifted_key(if by_right_key {
             left_key
         } else {
             left_key.into_iter().chain(right_key).collect()
-        };
+        });
+        // Two relations that each carry the viewer are joined on equal viewers
+        // as well as on `on` (D6).
+        let on_viewers =
+            self.operators[left].carries_viewer && self.operators[right].carries_viewer;
         let size = match (by_right_key, join.kind) {
             (true, _) => left_size.clone(),
             (false, ViewJoinKind::Inner) => {
@@ -758,6 +858,7 @@ impl Build<'_> {
         self.state.push(StatePart {
             part: format!("join {}", join.alias),
             size: SizeTerm::Sum(vec![left_size, right_size]),
+            per_viewer: self.lifted,
         });
         let columns = self.binding_columns();
         Ok(self.push(
@@ -767,6 +868,7 @@ impl Build<'_> {
                 kind: join.kind,
                 on: PlanExpr::new(&join.on),
                 by_right_key,
+                on_viewers,
             },
             columns,
             key,
@@ -811,7 +913,7 @@ impl Build<'_> {
     ) -> Result<(OperatorId, Vec<String>), Located<ForgeError>> {
         let scope = self.rows_scope();
         let input_size = self.operators[input].size.clone();
-        let input_key = self.operators[input].key.clone();
+        let input_key = self.own_key(input);
         let mut by_paths: Vec<Option<String>> = Vec::new();
         for by in &group.by {
             let judged = self.judge(
@@ -904,42 +1006,22 @@ impl Build<'_> {
                         line,
                     )?;
                     self.total(&judged, &field.expr, line)?;
-                    if scope::floating(judged.tree.ty) {
-                        return Err(self.floating("the sum of", &field.expr, line));
-                    }
-                    let Some(range) = scope::value_range(judged.tree.ty) else {
-                        return Err(self.at(
-                            ValidationError::AttributeRuleViolated {
-                                element: "<sce:sum>".into(),
-                                attr: "expr".into(),
-                                value: field.expr.clone(),
-                                rule: format!(
-                                    "a sum is of integers, and this is {}",
-                                    judged.tree.ty.describe()
-                                ),
-                            },
-                            line,
-                        ));
-                    };
-                    self.held_count("sum", name, place, &input_size, range, line)?;
-                    PlanAggregate::Sum(plan_field(field))
+                    let accumulator = self.sum(name, field, &judged, place, &input_size, line)?;
+                    PlanAggregate::Sum(PlanSum {
+                        name: name.to_string(),
+                        expr: PlanExpr::new(&field.expr),
+                        accumulator,
+                    })
                 }
                 ViewGroupOutput::Min(field) | ViewGroupOutput::Max(field) => {
+                    // A minimum and a maximum compare by the one total comparison
+                    // of D2, which every type has, a floating one by totalOrder.
                     let judged = self.judge(
                         &scope,
                         &field.expr,
                         Expected::Hint(InferredType::Unknown),
                         line,
                     )?;
-                    let what = if matches!(output, ViewGroupOutput::Min(_)) {
-                        "the minimum of"
-                    } else {
-                        "the maximum of"
-                    };
-                    if scope::floating(judged.tree.ty) {
-                        return Err(self.floating(what, &field.expr, line));
-                    }
-                    self.orderable(&judged, &field.expr, line)?;
                     self.stored(&judged, &field.expr, place, line)?;
                     if matches!(output, ViewGroupOutput::Min(_)) {
                         PlanAggregate::Min(plan_field(field))
@@ -947,9 +1029,14 @@ impl Build<'_> {
                         PlanAggregate::Max(plan_field(field))
                     }
                 }
-                ViewGroupOutput::Nest(nest) => {
-                    PlanAggregate::Nest(self.nest(&scope, nest, place, &input_size, &input_key)?)
-                }
+                ViewGroupOutput::Nest(nest) => PlanAggregate::Nest(self.nest(
+                    &scope,
+                    nest,
+                    place,
+                    result,
+                    &input_size,
+                    &input_key,
+                )?),
             };
             outputs.push(aggregate);
             columns.push(PlanColumn {
@@ -965,7 +1052,9 @@ impl Build<'_> {
         self.state.push(StatePart {
             part: "group".into(),
             size: input_size.clone(),
+            per_viewer: self.lifted,
         });
+        let lifted = self.lifted_key(key.clone());
         let at = self.push(
             Operator::Group {
                 input,
@@ -973,14 +1062,67 @@ impl Build<'_> {
                 outputs,
             },
             columns,
-            key.clone(),
+            lifted,
             input_size,
         );
         Ok((at, key))
     }
 
+    /// What the sum `field`, of the value `judged` over up to `rows` rows and held
+    /// in `place`, is kept in (D1): an integer sum in an integer `place` holds every
+    /// sum it may reach, and a floating sum is kept exactly in a long accumulator
+    /// and rounded once into a floating `place`.
+    fn sum(
+        &self,
+        name: &str,
+        field: &ViewOutputField,
+        judged: &Judged,
+        place: &ValueType,
+        rows: &SizeTerm,
+        line: Option<u32>,
+    ) -> Result<Accumulator, Located<ForgeError>> {
+        if let Some(format) = float_bits(judged.tree.ty) {
+            let Some(rounds_to) = float_place_bits(place) else {
+                return Err(self.at(
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:sum>".into(),
+                        attr: "name".into(),
+                        value: name.to_string(),
+                        rule: format!(
+                            "a sum of floating numbers is rounded once into a field of a \
+                             floating type, and this one is {place}"
+                        ),
+                    },
+                    line,
+                ));
+            };
+            return Ok(Accumulator::Floating {
+                bits: long_accumulator_bits(format, rows.most()),
+                format: rounds_to,
+            });
+        }
+        let Some(range) = scope::value_range(judged.tree.ty) else {
+            return Err(self.at(
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:sum>".into(),
+                    attr: "expr".into(),
+                    value: field.expr.clone(),
+                    rule: format!(
+                        "a sum is of numbers, and this is {}",
+                        judged.tree.ty.describe()
+                    ),
+                },
+                line,
+            ));
+        };
+        let (least, most) = self.held_count("sum", name, place, rows, range, line)?;
+        let (signed, bits) = int_bits(least, most);
+        Ok(Accumulator::Integer { signed, bits })
+    }
+
     /// Refuse a count or a sum held in `place` that may not hold it: up to
-    /// `rows` rows, each of a value in `range` (a count's each 1).
+    /// `rows` rows, each of a value in `range` (a count's each 1). The least
+    /// and the most it may reach otherwise.
     fn held_count(
         &self,
         aggregate: &str,
@@ -989,7 +1131,7 @@ impl Build<'_> {
         rows: &SizeTerm,
         (low, high): (i128, i128),
         line: Option<u32>,
-    ) -> Result<(), Located<ForgeError>> {
+    ) -> Result<(i128, i128), Located<ForgeError>> {
         let Some((place_low, place_high)) = scope::place_range(place) else {
             return Err(self.at(
                 ValidationError::AttributeRuleViolated {
@@ -1023,57 +1165,19 @@ impl Build<'_> {
                 line,
             ));
         }
-        Ok(())
+        Ok((least, most))
     }
 
-    /// The refusal of an aggregate or an order over a floating type.
-    fn floating(&self, what: &str, text: &str, line: Option<u32>) -> Located<ForgeError> {
-        self.at(
-            ValidationError::ViewFloatingAggregate {
-                view: self.view.name.clone(),
-                what: what.to_string(),
-                expr: text.trim().to_string(),
-            },
-            line,
-        )
-    }
-
-    /// Refuse a value no order is defined on: a list or a record.
-    fn orderable(
-        &self,
-        judged: &Judged,
-        text: &str,
-        line: Option<u32>,
-    ) -> Result<(), Located<ForgeError>> {
-        if matches!(
-            judged.tree.ty,
-            InferredType::List(_) | InferredType::ListBuffer(_) | InferredType::Record(_)
-        ) {
-            return Err(self.at(
-                ValidationError::AttributeRuleViolated {
-                    element: "<sce:query>".into(),
-                    attr: "order".into(),
-                    value: text.trim().to_string(),
-                    rule: format!(
-                        "an order and a minimum or a maximum are over a number, a text, a value of \
-                         an enum or a boolean, and this is {}",
-                        judged.tree.ty.describe()
-                    ),
-                },
-                line,
-            ));
-        }
-        Ok(())
-    }
-
-    /// One key of an order, typed in `scope` and held to D1 and D2.
+    /// One key of an order, typed in `scope` and held to D1, by the one total
+    /// comparison of D2 every type has: its absent value first under `asc` and
+    /// last under `desc`, unless `absent first` or `absent last` says where,
+    /// which only a key that may be absent says.
     fn order_key(
         &self,
         scope: &Scope,
         key: &ViewOrderKey,
-        what: &str,
         line: Option<u32>,
-    ) -> Result<(), Located<ForgeError>> {
+    ) -> Result<PlanOrderKey, Located<ForgeError>> {
         let judged = self.judge(
             scope,
             &key.expr,
@@ -1081,47 +1185,126 @@ impl Build<'_> {
             line,
         )?;
         self.total(&judged, &key.expr, line)?;
-        if scope::floating(judged.tree.ty) {
-            return Err(self.floating(what, &key.expr, line));
+        let may_be_absent = judged.tree.ty.is_optional() || judged.tree.ty == InferredType::Null;
+        if key.absent.is_some() && !may_be_absent {
+            return Err(self.at(
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:order>".into(),
+                    attr: "by".into(),
+                    value: key.expr.clone(),
+                    rule: format!(
+                        "absent first and absent last place an absent value, and `{}` is {}, \
+                         which is never absent",
+                        key.expr,
+                        judged.tree.ty.describe()
+                    ),
+                },
+                line,
+            ));
         }
-        self.orderable(&judged, &key.expr, line)
+        let absent_first = match key.absent {
+            Some(AbsentPlace::First) => true,
+            Some(AbsentPlace::Last) => false,
+            None => !key.descending,
+        };
+        Ok(PlanOrderKey {
+            expr: PlanExpr::new(&key.expr),
+            descending: key.descending,
+            absent_first,
+            from_key: false,
+        })
     }
 
-    /// Plan a nest of a group: its record's fields from the group's rows, in
-    /// its order completed by the key of those rows, cut at its bound (D2).
+    /// Plan a nest of a group: its row record's fields from the group's rows,
+    /// in the viewer's place first where the plan is lifted, then its order,
+    /// completed by the key of those rows, cut at its bound, and its `total`
+    /// (D1, D2). `place` is the field of the result's record that holds it: a
+    /// record of the result's own scope that declares `rows`, a list of the
+    /// nest's row record at its bound, and `total`, an unsigned integer that
+    /// holds the group's largest count, the record the build generates for a
+    /// nest.
     fn nest(
         &self,
         scope: &Scope,
         nest: &ViewNest,
         place: &ValueType,
+        result: &ScopedRecord,
         rows: &SizeTerm,
         rows_key: &[String],
     ) -> Result<PlanNest, Located<ForgeError>> {
-        if *place != nest.ty {
-            return Err(self.at(
+        let refuse = |rule: String| {
+            self.at(
                 ValidationError::AttributeRuleViolated {
                     element: "<sce:nest>".into(),
-                    attr: "type".into(),
-                    value: nest.ty.to_string(),
-                    rule: format!(
-                        "the result's record declares '{}' as {place}, the type the nest is",
-                        nest.name
-                    ),
+                    attr: "row".into(),
+                    value: format!("record:{}", nest.row),
+                    rule,
                 },
                 nest.line,
-            ));
+            )
+        };
+        let generated = format!(
+            "a record of two fields, rows, a list<record:{}>{}, and total, an unsigned integer",
+            nest.row, nest.bound
+        );
+        let held = match place {
+            ValueType::Record { alias } => result.scope.records.get(alias),
+            _ => None,
+        };
+        let Some(held) = held else {
+            return Err(refuse(format!(
+                "the result's record declares '{}' as {place}, and a nest is {generated}",
+                nest.name
+            )));
+        };
+        let rows_type = field_type(held, "rows");
+        let total_type = field_type(held, "total");
+        let rows_fit = matches!(
+            rows_type,
+            Some(ValueType::List { elem, max })
+                if *max == nest.bound
+                    && matches!(elem.as_ref(), ValueType::Record { alias } if *alias == nest.row)
+        );
+        if held.fields.len() != 2 || !rows_fit || total_type.is_none() {
+            return Err(refuse(format!(
+                "the result's record declares '{}' as the record '{}', and a nest is {generated}",
+                nest.name, held.name
+            )));
         }
-        let ValueType::List { elem, max } = &nest.ty else {
-            unreachable!("the parser holds a nest to a list of records");
-        };
-        let ValueType::Record { alias } = elem.as_ref() else {
-            unreachable!("the parser holds a nest to a list of records");
-        };
-        let Some(record) = self.types.records.get(alias) else {
+        let total_bits = count_bits(rows.most());
+        if let Some(total_type) = total_type {
+            // An unsigned integer, never absent: a nest of no row counts 0.
+            let present = !matches!(total_type, ValueType::Optional { .. });
+            match scope::place_range(total_type).filter(|_| present) {
+                Some((0, high)) => {
+                    let most = i128::try_from(rows.most()).unwrap_or(i128::MAX);
+                    if most > high {
+                        return Err(self.at(
+                            ValidationError::ViewAggregateMayOverflow {
+                                view: self.view.name.clone(),
+                                aggregate: "total".into(),
+                                column: format!("{}.total", nest.name),
+                                ty: total_type.to_string(),
+                                most: format!("{most}, over {rows} rows"),
+                            },
+                            nest.line,
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(refuse(format!(
+                        "the total of the nest '{}' counts its group's rows and is an unsigned \
+                         integer, and the record declares it {total_type}",
+                        nest.name
+                    )))
+                }
+            }
+        }
+        let Some(record) = self.types.records.get(&nest.row) else {
             return Err(self.at(
                 ValidationError::InvalidReference {
                     kind: ForgeKind::View,
-                    name: alias.clone(),
+                    name: nest.row.clone(),
                     what: "record of an event schema this document imports".into(),
                     available: self.types.records.keys().cloned().collect(),
                 },
@@ -1137,7 +1320,7 @@ impl Build<'_> {
                         attr: "name".into(),
                         value: field.name.clone(),
                         rule: format!(
-                            "a field of a nest is a field of its record '{}', which declares {}",
+                            "a field of a nest is a field of its row record '{}', which declares {}",
                             record.name,
                             field_names(record)
                         ),
@@ -1159,38 +1342,24 @@ impl Build<'_> {
             .iter()
             .find(|(name, _)| !nest.fields.iter().any(|f| f.name == *name))
         {
-            return Err(self.at(
-                ValidationError::AttributeRuleViolated {
-                    element: "<sce:nest>".into(),
-                    attr: "type".into(),
-                    value: nest.ty.to_string(),
-                    rule: format!(
-                        "the record '{}' declares the field '{missing}', which no field of the \
-                         nest gives",
-                        record.name
-                    ),
-                },
-                nest.line,
-            ));
+            return Err(refuse(format!(
+                "the record '{}' declares the field '{missing}', which no field of the nest gives",
+                record.name
+            )));
         }
-        let what = format!("the order of the nest '{}' by", nest.name);
-        let mut order: Vec<PlanOrderKey> = Vec::new();
+        let mut order: Vec<PlanOrderKey> = self.viewer_order_key().into_iter().collect();
         for key in &nest.order {
-            self.order_key(scope, key, &what, nest.line)?;
-            order.push(PlanOrderKey {
-                expr: PlanExpr::new(&key.expr),
-                descending: key.descending,
-                from_key: false,
-            });
+            order.push(self.order_key(scope, key, nest.line)?);
         }
         for key in rows_key {
             order.push(PlanOrderKey {
                 expr: PlanExpr::new(key),
                 descending: false,
+                absent_first: true,
                 from_key: true,
             });
         }
-        let bound = PlanBound::of(max);
+        let bound = PlanBound::of(&nest.bound);
         if nest.order.is_empty() && u128::from(bound.max) < rows.most() {
             return Err(self.at(
                 ValidationError::ViewBoundWithoutOrder {
@@ -1204,10 +1373,11 @@ impl Build<'_> {
         }
         Ok(PlanNest {
             name: nest.name.clone(),
-            record: alias.clone(),
+            record: nest.row.clone(),
             fields,
             order,
             bound,
+            total_bits,
         })
     }
 
@@ -1220,7 +1390,7 @@ impl Build<'_> {
         result: &ScopedRecord,
     ) -> Result<(OperatorId, Vec<String>), Located<ForgeError>> {
         let scope = self.rows_scope();
-        let input_key = self.operators[input].key.clone();
+        let input_key = self.own_key(input);
         let size = self.operators[input].size.clone();
         let mut key_for: Vec<Option<String>> = vec![None; input_key.len()];
         let mut fields: Vec<PlanField> = Vec::new();
@@ -1268,12 +1438,8 @@ impl Build<'_> {
         } else {
             Vec::new()
         };
-        let at = self.push(
-            Operator::Select { input, fields },
-            columns,
-            key.clone(),
-            size,
-        );
+        let lifted = self.lifted_key(key.clone());
+        let at = self.push(Operator::Select { input, fields }, columns, lifted, size);
         Ok((at, key))
     }
 }
@@ -1415,6 +1581,55 @@ fn reads_alias(tree: &TypedExpr, alias: &str) -> bool {
             .children()
             .into_iter()
             .any(|child| reads_alias(child, alias))
+}
+
+/// The width of a floating place, through an optional value.
+fn float_place_bits(ty: &ValueType) -> Option<u8> {
+    match ty {
+        ValueType::Optional { elem } => float_place_bits(elem),
+        ValueType::Scalar(SceType::Float32) => Some(32),
+        ValueType::Scalar(SceType::Float64) => Some(64),
+        _ => None,
+    }
+}
+
+/// The width of a floating value, through an optional value.
+fn float_bits(ty: InferredType) -> Option<u8> {
+    match ty {
+        InferredType::Float { bits }
+        | InferredType::Optional(OptionalElem::Number(NumericBaseType::Float { bits })) => {
+            Some(bits)
+        }
+        InferredType::UntypedFloat => Some(64),
+        _ => None,
+    }
+}
+
+/// The bits of a long accumulator (Kulisch and Miranker 1981) that holds the
+/// exact sum of up to `rows` finite values of the IEEE 754 binary format of
+/// `format` bits: every bit from the least of a subnormal to the most of the
+/// largest finite value, as many more as the count of terms may carry, and a
+/// sign.
+fn long_accumulator_bits(format: u8, rows: u128) -> u32 {
+    // The exponent range and the precision of binary32 and binary64.
+    let (max_exponent, min_exponent, precision): (i32, i32, i32) = match format {
+        32 => (127, -126, 24),
+        _ => (1023, -1022, 53),
+    };
+    let span = (max_exponent + 1) - (min_exponent - precision + 1);
+    let carry = 128 - rows.leading_zeros();
+    u32::try_from(span).unwrap_or(u32::MAX) + carry + 1
+}
+
+/// Whether an integer that holds every value from `least` to `most` is signed,
+/// and the fewest bits of one.
+fn int_bits(least: i128, most: i128) -> (bool, u32) {
+    if least >= 0 {
+        (false, (128 - most.leading_zeros()).max(1))
+    } else {
+        let magnitude = most.max(-(least + 1));
+        (true, 128 - magnitude.leading_zeros() + 1)
+    }
 }
 
 /// The plan of a document of relations a read view is.

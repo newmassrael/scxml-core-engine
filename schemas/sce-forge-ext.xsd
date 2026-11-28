@@ -1053,6 +1053,7 @@
             <xs:attribute name="relations" type="xs:string"/>
             <xs:attribute name="relation" type="xs:string"/>
             <xs:attribute name="object" type="xs:string"/>
+            <xs:attribute name="at" type="xs:string"/>
           </xs:complexType>
         </xs:element>
       </xs:sequence>
@@ -1115,8 +1116,9 @@
                   <xs:complexContent>
                     <xs:extension base="sce:viewFieldsType">
                       <xs:attribute name="name" type="xs:string"/>
-                      <xs:attribute name="type" type="xs:string"/>
+                      <xs:attribute name="row" type="xs:string"/>
                       <xs:attribute name="order" type="xs:string"/>
+                      <xs:attribute name="bound" type="xs:string"/>
                     </xs:extension>
                   </xs:complexContent>
                 </xs:complexType>

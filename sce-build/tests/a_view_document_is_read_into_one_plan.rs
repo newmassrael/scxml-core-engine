@@ -3,11 +3,13 @@
 
 //! The `view` kind (docs/adr/0151, step 2 of its order of work): a view document
 //! and the views it imports are read into one plan, each table read first by
-//! the filter of its viewer's relation (D6), the key of each operator's rows
-//! inferred (D2), the order completed by the result's key (D2), each count of
-//! rows a term of the named bounds (D8); each refusal of D11 is refused by its
-//! code; a plan that reads a table before its filter is one the build does not
-//! make; and every backend refuses a valid view by name (D10).
+//! the filter of its viewer's relation (D6), the plan lifted over every viewer
+//! (D6), the key of each operator's rows inferred (D2), the order total by the
+//! one comparison of D2 and completed by the result's key, each count of rows a
+//! term of the named bounds (D8); each refusal of D12 the document alone
+//! decides is refused by its code; a plan that reads a table before its filter,
+//! and one that joins the rows of two viewers, are plans the build does not
+//! make; and every backend refuses a valid view by name (D11).
 //!
 //! The documents are under `sce-build/tests/fixtures/view/`: the board of D1, its
 //! relations, the records they read, and one document per refusal.
@@ -20,8 +22,8 @@ use sce_build::forge::model::{ViewJoinKind, ViewerOf};
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::forge::view;
 use sce_build::forge::view::plan::{
-    Operator, PlanAggregate, PlanBody, PlanDefect, PlanVisibility, QueryPlan, RelationId, SizeTerm,
-    ViewPlan,
+    Accumulator, Operator, PlanAggregate, PlanBody, PlanDefect, PlanOrderKey, PlanVisibility,
+    QueryPlan, RelationId, SizeTerm, ViewPlan, VIEWER,
 };
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
@@ -37,6 +39,12 @@ fn fixture(name: &str) -> PathBuf {
 fn read(name: &str) -> Result<ViewPlan, Located<ForgeError>> {
     let path = fixture(name);
     let text = std::fs::read_to_string(&path).expect("the fixture reads");
+    read_text(&text, &path)
+}
+
+/// The plan of `text`, read as the document at `path` is: its imports from
+/// the directory `path` is in.
+fn read_text(text: &str, path: &Path) -> Result<ViewPlan, Located<ForgeError>> {
     let identifier = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -47,13 +55,22 @@ fn read(name: &str) -> Result<ViewPlan, Located<ForgeError>> {
         identifier: &identifier,
         diagnostic_label: &document,
     };
-    let parsed = parse_forge_with_imports(&text, label)?.expect("a view is a forge document");
+    let parsed = parse_forge_with_imports(text, label)?.expect("a view is a forge document");
     let dir = path.parent().expect("a fixture is in a directory");
     view::plan(&parsed, dir, &document).map(|plan| plan.expect("a view document has a plan"))
 }
 
 fn planned(name: &str) -> ViewPlan {
     read(name).unwrap_or_else(|e| panic!("{name} is read into a plan: {e:?}"))
+}
+
+/// The order the output of `plan` cuts.
+fn result_order(plan: &ViewPlan) -> &[PlanOrderKey] {
+    let query = query(plan);
+    match &query.operators[query.operators.len() - 2].op {
+        Operator::Order { by, .. } => by,
+        other => panic!("the output cuts an order, not {other:?}"),
+    }
 }
 
 /// The code the fixture `name` is refused by, and the refusal.
@@ -110,11 +127,16 @@ fn the_board_of_d1_is_read_into_one_plan() {
             relation,
             object_type,
             object,
+            at,
         } => {
             assert_eq!(relations, "Access");
             assert_eq!(relation, "viewer");
             assert_eq!(object_type, "project");
             assert_eq!(object.text, "row.project");
+            assert_eq!(
+                at.as_ref().map(|at| at.text.as_str()),
+                Some("row.relations_at")
+            );
         }
         other => panic!("tasks are read through the viewer's relation, not {other:?}"),
     }
@@ -149,36 +171,49 @@ fn the_board_of_d1_is_read_into_one_plan() {
     );
     assert_eq!(query.output, query.operators.len() - 1);
 
+    // The plan is lifted over its viewers: every operator from a filter on
+    // carries the viewer (D6).
+    assert!(query.lifted);
+    for (at, node) in query.operators.iter().enumerate() {
+        let scan = matches!(node.op, Operator::Scan { .. });
+        assert_eq!(node.carries_viewer, !scan, "operator {at}: {:?}", node.op);
+    }
+
     // Both joins are on the right side's key, so the rows keep the key of the
-    // tasks, and the second keeps a task no person is assigned (D2).
+    // tasks, and the second keeps a task no person is assigned (D2); each joins
+    // two relations that carry the viewer, so on equal viewers too (D6).
     let at = joins(query);
     for (join, kind) in at.iter().zip([ViewJoinKind::Inner, ViewJoinKind::Left]) {
         match &query.operators[*join].op {
             Operator::Join {
                 kind: written,
                 by_right_key,
+                on_viewers,
                 ..
             } => {
                 assert_eq!(*written, kind);
                 assert!(*by_right_key, "join {join} is on the right side's key");
+                assert!(*on_viewers, "join {join} is on equal viewers");
             }
             other => panic!("{other:?}"),
         }
-        assert_eq!(query.operators[*join].key, ["t.key"]);
+        assert_eq!(query.operators[*join].key, [VIEWER, "t.key"]);
     }
 
-    // The group gives the result's key, the project, and its columns.
+    // The group gives the result's key, the project, after the viewer, and
+    // its columns.
     let group = &query.operators[9];
-    assert_eq!(group.key, ["project"]);
+    assert_eq!(group.key, [VIEWER, "project"]);
     let Operator::Group { outputs, by, .. } = &group.op else {
         panic!("{:?}", group.op);
     };
     assert_eq!(by[0].text, "p.key");
     let columns: Vec<&str> = group.columns.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(columns, ["project", "title", "open", "next"]);
+    assert_eq!(columns, [VIEWER, "project", "title", "open", "next"]);
     assert!(matches!(&outputs[2], PlanAggregate::Count { name } if name == "open"));
     assert_eq!(query.result.record, "BoardRow");
     assert_eq!(query.result.key, ["project"]);
+    assert_eq!(query.operators[query.output].key, [VIEWER, "project"]);
 
     // A view reads the document of relations it filters by, planned.
     assert_eq!(plan.reads.len(), 1);
@@ -242,6 +277,39 @@ fn a_plan_that_reads_a_table_before_its_filter_is_not_one_the_build_makes() {
 }
 
 #[test]
+fn a_plan_that_joins_the_rows_of_two_viewers_is_not_one_the_build_makes() {
+    let plan = planned("board.scxml");
+    let mut crossed = plan.clone();
+    let PlanBody::Query(query) = &mut crossed.body else {
+        panic!("the board is a query");
+    };
+    // The first join on its own columns alone: a task one viewer may read meets
+    // a project another may (D6).
+    let first_join = joins(query)[0];
+    if let Operator::Join { on_viewers, .. } = &mut query.operators[first_join].op {
+        *on_viewers = false;
+    }
+    assert_eq!(
+        crossed.verify(),
+        Err(PlanDefect::JoinAcrossViewers { at: first_join })
+    );
+    assert_eq!(plan.verify(), Ok(()));
+}
+
+#[test]
+fn a_plan_that_groups_the_rows_of_every_viewer_together_is_not_one_the_build_makes() {
+    let plan = planned("board.scxml");
+    let mut merged = plan.clone();
+    let PlanBody::Query(query) = &mut merged.body else {
+        panic!("the board is a query");
+    };
+    // The group keyed by the project alone: one row of a project for every
+    // viewer at once (D6).
+    query.operators[9].key.retain(|column| column != VIEWER);
+    assert_eq!(merged.verify(), Err(PlanDefect::KeyWithoutViewer { at: 9 }));
+}
+
+#[test]
 fn the_order_is_total_and_a_nest_is_held_in_its_order_and_cut() {
     let plan = planned("board.scxml");
     let query = query(&plan);
@@ -252,7 +320,14 @@ fn the_order_is_total_and_a_nest_is_held_in_its_order_and_cut() {
         .iter()
         .map(|k| (k.expr.text.as_str(), k.descending, k.from_key))
         .collect();
-    assert_eq!(keys, [("open", true, false), ("project", false, true)]);
+    assert_eq!(
+        keys,
+        [
+            (VIEWER, false, true),
+            ("open", true, false),
+            ("project", false, true)
+        ]
+    );
 
     let Operator::Group { outputs, .. } = &query.operators[9].op else {
         panic!("the group");
@@ -267,10 +342,17 @@ fn the_order_is_total_and_a_nest_is_held_in_its_order_and_cut() {
         .iter()
         .map(|k| (k.expr.text.as_str(), k.from_key))
         .collect();
-    assert_eq!(order, [("t.row.due", false), ("t.key", true)]);
+    assert_eq!(
+        order,
+        [(VIEWER, true), ("t.row.due", false), ("t.key", true)]
+    );
     assert_eq!(nest.bound.name.as_deref(), Some("per_project"));
     assert_eq!(nest.bound.max, 5);
     assert_eq!(nest.record, "TaskLine");
+    // A nest's total counts a group's rows, at most the tasks' 10 000, and the
+    // result's the groups', at most the same: each in 16 bits (D2).
+    assert_eq!(nest.total_bits, 16);
+    assert_eq!(query.result.total_bits, 16);
 }
 
 #[test]
@@ -287,6 +369,16 @@ fn every_count_of_rows_is_a_term_of_the_named_bounds() {
     assert_eq!(query.operators[9].size.most(), 10_000);
     assert_eq!(query.operators[query.output].size.most(), 200);
     let parts: Vec<&str> = query.state.iter().map(|p| p.part.as_str()).collect();
+    // A table is the machine's, once; every other part is held for each viewer
+    // kept (D8).
+    for part in &query.state {
+        assert_eq!(
+            part.per_viewer,
+            !part.part.starts_with("table "),
+            "{}",
+            part.part
+        );
+    }
     for part in [
         "table tasks",
         "table projects",
@@ -491,15 +583,80 @@ fn a_count_its_field_may_not_hold_is_refused() {
 }
 
 #[test]
-fn a_sum_of_floating_numbers_is_refused() {
-    let (code, refusal) = refused("floating_aggregate.scxml");
+fn a_floating_sum_is_kept_in_a_long_accumulator_and_floating_numbers_are_ordered() {
+    let plan = planned("floating_hours.scxml");
+    let query = query(&plan);
+    assert!(!query.lifted);
+    let group = query
+        .operators
+        .iter()
+        .find_map(|node| match &node.op {
+            Operator::Group { outputs, .. } => Some(outputs),
+            _ => None,
+        })
+        .expect("the hours are grouped by project");
+    let PlanAggregate::Sum(sum) = &group[1] else {
+        panic!("the hours are summed: {:?}", group[1]);
+    };
+    assert_eq!(sum.name, "hours");
+    // binary32: 277 bits from the least subnormal to the most of the largest
+    // finite value, 14 more for the carries of 10 000 terms, and a sign; read
+    // as the float64 of its field (D1).
+    assert_eq!(
+        sum.accumulator,
+        Accumulator::Floating {
+            bits: 292,
+            format: 64
+        }
+    );
+    assert!(matches!(&group[2], PlanAggregate::Min(field) if field.name == "fewest"));
+    assert!(matches!(&group[3], PlanAggregate::Max(field) if field.name == "most"));
+    let keys: Vec<(&str, bool, bool)> = result_order(&plan)
+        .iter()
+        .map(|k| (k.expr.text.as_str(), k.descending, k.from_key))
+        .collect();
+    assert_eq!(keys, [("hours", true, false), ("project", false, true)]);
+}
+
+#[test]
+fn an_absent_value_is_first_under_asc_unless_the_order_says_otherwise() {
+    let plan = planned("absent_last.scxml");
+    let keys: Vec<(&str, bool, bool)> = result_order(&plan)
+        .iter()
+        .map(|k| (k.expr.text.as_str(), k.descending, k.absent_first))
+        .collect();
+    // `absent last` on the assignee; the key appended keeps the default of asc.
+    assert_eq!(keys, [("assignee", false, false), ("task", false, true)]);
+
+    // Unwritten, an absent value is first under asc and last under desc (D2).
+    for (written, absent_first) in [("assignee asc", true), ("assignee desc", false)] {
+        let text = std::fs::read_to_string(fixture("absent_last.scxml"))
+            .expect("the fixture reads")
+            .replace("assignee asc absent last", written);
+        assert!(
+            text.contains(&format!("by=\"{written}\"")),
+            "the order was rewritten"
+        );
+        let plan = read_text(&text, &fixture("absent_last.scxml"))
+            .unwrap_or_else(|e| panic!("{written} is read into a plan: {e:?}"));
+        assert_eq!(
+            result_order(&plan)[0].absent_first,
+            absent_first,
+            "{written}"
+        );
+    }
+}
+
+#[test]
+fn an_absent_term_on_a_value_never_absent_is_refused() {
+    let (code, refusal) = refused("absent_on_a_value_never_absent.scxml");
     assert!(
-        matches!(code, DiagnosticCode::ViewFloatingAggregate),
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
         "{code:?}"
     );
     assert_eq!(
         refusal.location.line,
-        Some(row("floating_aggregate.scxml", "<sce:sum"))
+        Some(row("absent_on_a_value_never_absent.scxml", "<sce:order"))
     );
 }
 
