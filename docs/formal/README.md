@@ -182,7 +182,8 @@ TLC reads that module from the pinned Apalache. Each constant and variable carri
 checks every model as `models.json` declares it, with the TLC the judge pins by digest
 (`sce-build/src/formal/toolchain.json`, printed by `sce-codegen formal toolchain`), run on the Java runtime pinned with it
 (Eclipse Temurin's JRE 21, run by its path and never a `java` a search path finds). `sce-codegen formal install` fetches
-the pinned tools and admits each by its digest, the runtime with TLC or Apalache; a judge never fetches. Exit 1 (`formal/declaration`,
+the pinned tools and admits each by its digest, the runtime with TLC or Apalache; a judge never fetches. `--tool` names
+one; TLAPS, Kani and CBMC are pinned for the judges ADR 0156 plans (D13), which no gate runs yet. Exit 1 (`formal/declaration`,
 `formal/verdict`) is a verdict about the models; exit 15 (`formal/tool-unavailable`) is "could not run". The judge is
 one command of the code generator (docs/adr/0146), which another repository runs on its own manifest at the revision it
 pins, as this one does; `sce-build/tests/fixtures/formal_consumer` is a manifest shaped like a consumer's, judged by the

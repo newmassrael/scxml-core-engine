@@ -16,6 +16,11 @@
   `sce-build/src/formal/install_tool.sh`, compiled into the binary with them. A build machine's declaration installs
   a tool from the files it names, and `formal install` needs the whole workspace to be built, so the declaration runs
   the script from the tree and `formal install` runs the copy it carries.
+- Amended 2026-11-28 by the owner: TLAPS, Kani with the Rust release it was built against, and CBMC join the toolchain
+  of D3, approved that day with ADR 0156 (D13): TLAPS for the theorems of arithmetic whose size is essential, Kani and
+  CBMC for the harnesses generated from the contracts of a Rust and of a C11 seam. They are pinned and installed, and
+  `bx.toml` declares them for the judges ADR 0156 plans; no judge runs them yet, and each runner joins D4 with its
+  step.
 - Date: 2026-11-26
 - Also amends `SCE_ERROR_CONTRACT.md` (the stage `formal`, its three codes, and the exit status 15) and
   `docs/SCE_ACCEPTED_SUBSET.md` (its appendix of codes).
@@ -118,8 +123,7 @@ the gates to the command. No revision has two judges that answer.
 
 `sce-build/src/formal/toolchain.json` pins TLC, Verus and the Rust release Verus runs on, Apalache, and the Java
 runtime TLC and Apalache run on: version, URL and sha256 of each. Apalache joined it on 2026-11-27 with ADR 0115 D3,
-by the owner's approval; Storm joins it when
-ADR 0119 brings it, with the owner's approval. The file
+by the owner's approval; Storm joined it on 2026-11-28 with ADR 0119 D3, by the owner's approval. The file
 is compiled into the binary, so a binary of a revision knows its pins without a tree; it sits among the module's
 sources, since it is one of them. `formal toolchain` prints
 them. `bx.toml`, the workflows and `gate_registry.py` read this file, not a manifest. A manifest that names a tool
@@ -132,6 +136,18 @@ x64. `formal install` installs it with TLC or Apalache, at `~/.local/jre/<versio
 `bin/java`, and Apalache's launcher, which runs the `java` its search path finds first, is given a search path led by
 that runtime's `bin` and `JAVA_HOME` naming it. A runtime that is not there, or that cannot load the tool, is
 `formal/tool-unavailable` (exit 15), never a verdict.
+
+TLAPS, Kani and CBMC joined it on 2026-11-28 with ADR 0156 (D13), by the owner's approval (amended 2026-11-28). TLAPS
+1.5.0 is the last stable release; its `1.6.0-pre` is a rolling pre-release whose asset is replaced, as TLC's `v1.8.0`
+is. Its pin is the release's installer, a program that carries the tree it unpacks: `formal install` runs it as its
+authors run it, which builds Isabelle's heaps and checks an example proof, and then names the heaps relative to
+Isabelle's own directory, so the installation is whole where it is moved. Kani's pin names the bundle and the dated
+nightly the bundle was built against, which the bundle's `rust-toolchain-version` names and the installer holds it to.
+The nightly is installed as Verus's release is (`scripts/install_rust.sh`), and the bundle is unpacked beside a link to
+it, as `cargo kani setup --use-local-toolchain` would make, so nothing reaches rustup or fetches when Kani runs. CBMC
+is pinned apart from the CBMC Kani's bundle carries, which is built for Kani: the two are two programs, and a C11
+harness is judged by the one its pin names. The three are declared to `bx.toml` for runs that no command line holds yet
+(`needed_by`), so no machine is asked for them before a judge runs them.
 
 The transport is `curl`. The digest admits the bytes, as D3's source says. The fetching, the admission and the
 unpacking are written once, in `install_tool.sh` beside the pins and compiled in with them: `formal install` runs
