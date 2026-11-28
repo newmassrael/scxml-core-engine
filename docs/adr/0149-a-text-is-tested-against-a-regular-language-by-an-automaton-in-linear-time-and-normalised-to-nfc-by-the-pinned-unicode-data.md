@@ -221,6 +221,17 @@ literal. No element declares one.
 - **A lane joins** by printing a build-time automaton and its walk, which is data any backend can print, and by the
   simulation and the normalisation with its runtime, in the change that lands its tests.
 
+### D6a. The generated model reads the three functions as functions it does not interpret
+
+ADR 0156 holds every lane's code to a model generated from the same documents. A model does not run an automaton or
+a normaliser: it reads `matches`, `search`, `nfc` and `is_nfc` as uninterpreted functions (Burch and Dill,
+"Automatic Verification of Pipelined Microprocessor Control", CAV 1994), constrained only by what this record makes
+true of every input: each is total over a `string` (D8) and deterministic for one pin (D4); `nfc(nfc(t)) = nfc(t)`
+and `is_nfc(t)` holds exactly when `nfc(t) = t` (UAX #15); `nfc(t)` is at most three times as long as `t` in
+code units (the Unicode Stability Policy); `search(t, r)` holds whenever `matches(t, r)` does. A property the
+model proves therefore holds for every regular expression and every text, and a property that needs one function's
+value at one input is not one the model claims. D7's tests hold the code to the functions themselves.
+
 ### D7. Linear time is a tested property
 
 - **Steps are counted.** Under a test feature the walk and the simulation count what they do. A family of regular

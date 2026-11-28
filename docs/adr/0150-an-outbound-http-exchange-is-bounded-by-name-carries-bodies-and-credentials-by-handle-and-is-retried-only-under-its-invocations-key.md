@@ -519,9 +519,9 @@ Decided, each with its reason; the acceptance kept each, amended where "Amended 
 
 - RFC 9110, HTTP Semantics (sections 9.2.1, 9.2.2, 10.2.3, 15.5.2, 15.5.9, 15.6.3 to 15.6.5); RFC 6585 section 4.
 - J. Jena and S. Dalal, "The Idempotency-Key HTTP Header Field", Internet-Draft
-  `draft-ietf-httpapi-idempotency-key-header`, IETF HTTPAPI working group, work in progress. This record follows the
-  revision current on 2026-11-28, the day of its acceptance; the landing of step 5 writes that revision's number and
-  date here and in SCE_HOST_FEATURES.md. A later revision is taken by a record that amends this one.
+  `draft-ietf-httpapi-idempotency-key-header-07`, IETF HTTPAPI working group, 2025-10-15, work in progress (RFC 2026
+  section 2.2); the IETF Datatracker marks it expired on 2026-04-18 with no later revision. This record follows
+  revision 07; a later revision, or an RFC, is taken by a record that amends this one.
 - RFC 9651, Structured Field Values for HTTP.
 - RFC 6749, The OAuth 2.0 Authorization Framework (sections 2.3, 4.4 and 6); RFC 6750, Bearer Token Usage (section
   3.1); RFC 8707, Resource Indicators for OAuth 2.0; RFC 9700, Best Current Practice for OAuth 2.0 Security (sections
