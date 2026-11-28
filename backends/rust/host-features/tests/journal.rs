@@ -13,7 +13,7 @@ use sce_rust_host_features::{
     HttpRequest, HttpResponse, Invocation, JournalStore, MemoryStore, Outcome, Params,
     ReferenceHost, ScriptedClock, Transport, TransportFailure,
 };
-use sce_rust_session_store::{Fact, FactData};
+use sce_rust_session_store::{Fact, FactData, Journal, SessionStore, Write};
 use serde_json::Value;
 
 struct Unreachable;
@@ -162,9 +162,8 @@ fn a_reading_is_pages_of_one_moment_in_the_order_facts_hold() {
     assert_eq!(rest[0]["origin"], "c");
 }
 
-/// The host refuses what is no read: a key on an observed stream, none on a
-/// machine's, a limit of 0 or past `journal_page`, a number that is none, and a
-/// position above the horizon.
+/// The host refuses what is no read: a key on an observed stream, a limit of 0 or
+/// past `journal_page`, a number that is none, and a position above the horizon.
 #[test]
 fn a_request_that_is_no_read_is_refused() {
     let mut host = host(journal());
@@ -172,11 +171,50 @@ fn a_request_that_is_no_read_is_refused() {
     let mut keyed = read("0", ("0", "0"), "1");
     keyed.insert("key".to_string(), "k".to_string());
     assert!(refused(start(&mut host, &keyed)));
-    let mut session = read("0", ("0", "0"), "1");
-    session.insert("observed".to_string(), "false".to_string());
-    assert!(refused(start(&mut host, &session)));
     assert!(refused(start(&mut host, &read("0", ("0", "0"), "0"))));
     assert!(refused(start(&mut host, &read("0", ("0", "0"), "65"))));
     assert!(refused(start(&mut host, &read("x", ("0", "0"), "1"))));
     assert!(refused(start(&mut host, &read("99", ("0", "0"), "1"))));
+}
+
+/// docs/adr/0114, D4: a machine's stream is read under the empty key, the stream of
+/// the one session of a pool that keeps one (`sessions: { key_from: none }`),
+/// whose key no envelope gives. Red if the host refuses a machine's stream for its
+/// empty key.
+#[test]
+fn the_stream_of_a_pools_one_session_is_read_under_the_empty_key() {
+    let store = Arc::new(MemoryStore::new());
+    let ledger = store.of_machine("ledger");
+    let lease = ledger
+        .acquire("", "p1", 10_000, 1_000)
+        .expect("the one session's lease");
+    let facts = [Fact {
+        schema: "ledger.kept",
+        revision: 1,
+        data: FactData::Bytes(b"kept"),
+        valid_ms: None,
+        actor: None,
+        read: &[],
+    }];
+    ledger
+        .write(
+            "",
+            &Write {
+                journal: Some(Journal {
+                    machine: "ledger",
+                    facts: &facts,
+                }),
+                now_ms: 1_000,
+                ..Write::put(b"state", None, 0, lease.fence)
+            },
+        )
+        .expect("the one session's fact");
+    let mut host = host(store);
+    let mut session = read("0", ("0", "0"), "1");
+    session.insert("stream".to_string(), "ledger".to_string());
+    session.insert("observed".to_string(), "false".to_string());
+    let (answer, entries) = page(start(&mut host, &session));
+    assert_eq!(answer["error"], "");
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["schema"], "ledger.kept");
 }

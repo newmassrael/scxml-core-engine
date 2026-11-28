@@ -44,8 +44,10 @@ struct Read<'a> {
 }
 
 /// The read `params` makes, or `None` when the host refuses it: a stream empty or
-/// past its bound, a key on an observed stream or none on a machine's, a number
-/// that is none, or a limit of 0 or past `journal_page`.
+/// past its bound, a key on an observed stream, a number that is none, or a limit
+/// of 0 or past `journal_page`. A machine's stream may be read under the empty
+/// key: the stream of the one session of a pool that keeps one (deploy.yaml
+/// `sessions: { key_from: none }`, docs/adr/0114, D4).
 fn request<'a>(params: &'a Params, bounds: &NamedBounds) -> Option<Read<'a>> {
     fn text<'p>(params: &'p Params, name: &str) -> &'p str {
         params.get(name).map(String::as_str).unwrap_or("")
@@ -60,7 +62,7 @@ fn request<'a>(params: &'a Params, bounds: &NamedBounds) -> Option<Read<'a>> {
     if stream.is_empty() || stream.len() > STREAM_MAX || key.len() > KEY_MAX {
         return None;
     }
-    if observed != key.is_empty() {
+    if observed && !key.is_empty() {
         return None;
     }
     let as_of_position = text(params, "as_of_position").parse::<u64>().ok()?;
