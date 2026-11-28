@@ -250,8 +250,12 @@ CFenced(m) ==
     /\ cinc' = [cinc EXCEPT ![m.i] = 0]
     /\ UNCHANGED <<srv, cjn, cwait, cnext, slot, got, net, cnt>>
 
-\* An instance that keeps nothing of its own forgets its incarnation, its numbers and what it
-\* waits on; its identity and its credential stay.
+\* An instance crashes, with or without a checkpoint of its own: it forgets its incarnation and
+\* never speaks under it again, every request it waits on has an unknown outcome, and a request it
+\* never numbered stays new, to be numbered under the next incarnation; its identity and its
+\* credential stay. A restore from its own checkpoint is this step (docs/adr/0113, D4), in the
+\* run where every request the checkpoint holds was sent before the crash: each may have left once
+\* the checkpoint was durable, and one the checkpoint does not hold never left.
 CCrash(i) ==
     /\ nCli < MaxCliCrash /\ nCli' = nCli + 1
     /\ status' = [status EXCEPT ![i] = Unknown(i)]
