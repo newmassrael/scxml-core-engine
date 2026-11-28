@@ -2208,5 +2208,40 @@ name = "an_enum_field_of_a_typed_host_request"
 path = "tests/an_enum_field_of_a_typed_host_request.rs"
 required-features = ["cli"]
 
+# Spawns `sce-codegen` to generate a document that reads `_x.principal`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_document_reads_the_person_an_instance_acts_for"
+path = "tests/a_document_reads_the_person_an_instance_acts_for.rs"
+required-features = ["cli"]
+
+# Spawns `sce-codegen` on a send whose literal param is typed by its schema's
+# field, so it carries the `cli` gate.
+[[test]]
+name = "a_literal_param_takes_the_type_of_its_schemas_field"
+path = "tests/a_literal_param_takes_the_type_of_its_schemas_field.rs"
+required-features = ["cli"]
+
+# Spawns `sce-codegen` to generate a machine that reads a page of its journal,
+# so it carries the `cli` gate.
+[[test]]
+name = "a_session_reads_a_page_of_its_journal"
+path = "tests/a_session_reads_a_page_of_its_journal.rs"
+required-features = ["cli"]
+
+# Spawns `sce-codegen` to generate a machine that says a fact into its journal,
+# so it carries the `cli` gate.
+[[test]]
+name = "a_session_says_a_fact_into_its_journal"
+path = "tests/a_session_says_a_fact_into_its_journal.rs"
+required-features = ["cli"]
+
+# Spawns `sce-codegen` to write the documents the formal judge checks, so it
+# carries the `cli` gate.
+[[test]]
+name = "formal_judge"
+path = "tests/formal_judge.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
