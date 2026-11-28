@@ -3441,8 +3441,15 @@ impl<P: StatePolicy> EngineState<P> {
     /// owner (ARCHITECTURE.md "Engine Threading", item 3). The parent drives
     /// the child, so the child applies what it was posted at its own
     /// boundaries, the next of which the parent's next drive reaches.
+    ///
+    /// The tree holds a second session from here on, so its directory opens
+    /// here if it was not open, naming this session's own inbox if it has made
+    /// one (docs/adr/0084, "Decided while making a tree of one session cost
+    /// nothing for a directory"): a tree no session is handed to keeps none.
     #[cfg(feature = "std")]
     pub fn share_tree_inboxes_with<Q: StatePolicy>(&self, child: &mut Engine<Q>) {
+        self.tree_inboxes
+            .open_with(self.inbox.get().and_then(crate::inbox::SessionInbox::owned));
         child.adopt_tree_inboxes(&self.tree_inboxes);
     }
 

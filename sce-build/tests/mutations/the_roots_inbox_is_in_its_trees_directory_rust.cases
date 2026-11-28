@@ -1,35 +1,53 @@
 # Mutation cases for docs/adr/0084, D2 as amended at step 10, on the Rust
 # runtime's `std` profile: the tree keeps a directory from the id of each of its
 # sessions to that session's inbox, the root's as well as each child's
-# (docs/adr/0147, D2).
+# (docs/adr/0147, D2), and, by the section "Decided while making a tree of one
+# session cost nothing for a directory", opens it only when a second session
+# joins the tree.
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/the_roots_inbox_is_in_its_trees_directory_rust.cases`.
 #
-# The test posts an ending naming the root through a child's handle, which the
-# directory must take for the root, and posts it again once the root's engine is
-# gone, which the directory must refuse as naming a session the tree does not
-# hold. The mutants take one decision away each:
+# The integration tests post an ending naming the root through a child's handle,
+# which the directory must take for the root, whether the root made its inbox
+# after it handed its tree on or before, and post it again once the root's engine
+# is gone, which the directory must refuse as naming a session the tree does not
+# hold. The unit tests (`inbox::tests`) hold a tree of one session to no
+# directory. The mutants take one decision away each:
 #
-#   an inbox made in a tree does not enter its directory (the root, which no
-#   parent adopts, is then never in it);
-#   an inbox whose engine is gone stays in the directory.
+#   an inbox made in a tree whose directory is open does not enter it;
+#   the session that opens its tree's directory is not entered in it;
+#   a post through the directory naming a session whose engine is gone is
+#   refused as a gone engine, not as a session the tree does not hold;
+#   a tree of one session opens its directory.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-runtime --test an_inbox_takes_posts_from_any_thread
+mutation_tests -p sce-rust-runtime --lib --test an_inbox_takes_posts_from_any_thread
 mutation_targets backends/rust/runtime/src/inbox.rs
-mutation_oracles backends/rust/runtime/tests/an_inbox_takes_posts_from_any_thread.rs
+mutation_oracles backends/rust/runtime/tests/an_inbox_takes_posts_from_any_thread.rs backends/rust/runtime/src/inbox.rs
 
-mutation_case "Rust makes an inbox in a tree without entering it in the directory" <<'PY'
+mutation_case "Rust makes an inbox in a joined tree without entering it in the directory" <<'PY'
 edit("backends/rust/runtime/src/inbox.rs",
-     "        tree.enter(&shared);\n        Self { shared, receiver }\n",
+     "        if let Some(directory) = tree.directory() {\n            directory.enter(&shared);\n        }\n        Self { shared, receiver }\n",
      "        Self { shared, receiver }\n")
 PY
 
-mutation_case "Rust leaves an inbox in the directory once its engine is gone" <<'PY'
+mutation_case "Rust opens a tree's directory without the inbox of the session that opens it" <<'PY'
 edit("backends/rust/runtime/src/inbox.rs",
-     "        self.shared.tree().leave_if_named(&self.shared);\n",
-     "        let _ = self.shared.tree();\n")
+     "        if let (true, Some(own)) = (opened, own) {\n            directory.enter(&own.shared);\n        }\n",
+     "        let _ = (directory, opened, own);\n")
+PY
+
+mutation_case "Rust answers a post naming a session whose engine is gone as a gone engine" <<'PY'
+edit("backends/rust/runtime/src/inbox.rs",
+     "                .map_err(|held| (TreeRefusal::UnknownSession, held)),\n",
+     "                .map_err(|held| (TreeRefusal::EngineGone, held)),\n")
+PY
+
+mutation_case "Rust opens the directory of a tree of one session" <<'PY'
+edit("backends/rust/runtime/src/inbox.rs",
+     "        if let Some(directory) = tree.directory() {\n            directory.enter(&shared);\n        }\n",
+     "        tree.open().0.enter(&shared);\n")
 PY

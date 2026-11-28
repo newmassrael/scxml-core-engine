@@ -19,7 +19,10 @@
 //     the input back and counts the refusal, and the engine it is attached to
 //     applies what it took;
 //   * an engine holds one inbox, its own or a bounded one, and refuses the
-//     other.
+//     other;
+//   * a tree names each of its sessions' inboxes, the root's among them, once a
+//     second session joins it, and an inbox whose engine is gone no longer; a
+//     tree of one session refuses a post naming another session.
 //
 // The machine: one state, `s`, whose two targetless transitions take `ping` and
 // `pong` and record, in order, the name of each event they took, and the
@@ -505,33 +508,88 @@ fn the_roots_inbox_is_in_its_trees_directory_while_its_engine_lives() {
     root.share_tree_inboxes_with(&mut child);
     let _root_inbox = root.inbox();
     let child_inbox = child.inbox();
-    let ending = || {
-        InboxInput::host_invoke_ending(
-            Some("root"),
-            HostInvokeEnding {
-                processor_type: "x-sce-host",
-                invoke_id: "job",
-                token: 1,
-                done: true,
-                data: "",
-                origin: None,
-            },
-        )
-    };
-    let taken = child_inbox.post(ending());
+    let taken = child_inbox.post(ending_naming("root"));
     assert!(
         taken.is_ok(),
         "an ending naming the root, posted through its child's handle, was answered {taken:?}"
     );
 
     drop(root);
-    match child_inbox.post(ending()) {
+    match child_inbox.post(ending_naming("root")) {
         Err(InboxRefusal::UnknownSession(_)) => {}
         other => panic!(
             "an ending naming a root whose engine is gone, posted through its child's handle, \
              was answered {other:?}"
         ),
     }
+}
+
+// docs/adr/0084, "Decided while making a tree of one session cost nothing for a
+// directory": the directory opens when the root hands its tree to a child, and
+// names the root's inbox made before then. Once the root's engine is gone, with
+// no handle left to its inbox, a post naming it is refused as naming a session
+// the tree does not hold.
+#[test]
+fn the_roots_inbox_made_before_its_tree_was_handed_on_is_in_the_directory() {
+    let _posting = posting();
+    let root = Engine::new(InboxPolicy::named("root"));
+    drop(root.inbox());
+    let mut child = Engine::new(InboxPolicy::named("child"));
+    root.share_tree_inboxes_with(&mut child);
+    let child_inbox = child.inbox();
+    let taken = child_inbox.post(ending_naming("root"));
+    assert!(
+        taken.is_ok(),
+        "an ending naming the root, whose inbox was made before the tree was handed to its \
+         child, posted through the child's handle, was answered {taken:?}"
+    );
+
+    drop(root);
+    match child_inbox.post(ending_naming("root")) {
+        Err(InboxRefusal::UnknownSession(_)) => {}
+        other => panic!(
+            "an ending naming a root whose engine and handles are gone, posted through its \
+             child's handle, was answered {other:?}"
+        ),
+    }
+}
+
+// A tree no second session joined keeps no directory: an ending naming the
+// session itself is its own and taken, and one naming any other session is
+// refused as naming a session the tree does not hold.
+#[test]
+fn a_tree_of_one_session_takes_its_own_ending_and_refuses_another_sessions() {
+    let _posting = posting();
+    let engine = Engine::new(InboxPolicy::named("root"));
+    let inbox = engine.inbox();
+    let taken = inbox.post(ending_naming("root"));
+    assert!(
+        taken.is_ok(),
+        "an ending naming the one session of a tree, posted through its handle, was answered \
+         {taken:?}"
+    );
+    match inbox.post(ending_naming("elsewhere")) {
+        Err(InboxRefusal::UnknownSession(_)) => {}
+        other => panic!(
+            "an ending naming a session a tree of one session does not hold was answered \
+             {other:?}"
+        ),
+    }
+}
+
+/// An ending of the invocation `job`, naming the session `session_id`.
+fn ending_naming(session_id: &str) -> InboxInput<Ev> {
+    InboxInput::host_invoke_ending(
+        Some(session_id),
+        HostInvokeEnding {
+            processor_type: "x-sce-host",
+            invoke_id: "job",
+            token: 1,
+            done: true,
+            data: "",
+            origin: None,
+        },
+    )
 }
 
 /// Two inputs, so the third post finds it full.
