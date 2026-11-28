@@ -36,6 +36,11 @@
   What it still needs is recorded under "Landing order", item 8, and
   what was decided while landing it under "Decided while landing item 8".
 - Date: 2026-11-04
+- Amended by: ADR 0163 (2026-11-29, accepted, not yet built), D8 and D12: section 2.1 item 5 ends, after "then the
+  fields", with the refusal of the type at the least byte offset (a missing field at the offset of its object's closing
+  `}`, a refusal inside a span a reader keeps for a later tag at its own offset), the reader keeping the least and not
+  the first it finds; section 2.1 gives `<sce:lift>` a text codec and a place; section 2.3 gains codes 17 to 21; section
+  2.4's record gains `offset` in its second revision; section 2.5's Rust reader becomes the generated JSON codec.
 - Amends:
   - ADR 0086 section 4.2: a refused delivery keeps its sentence, whose path that section calls a JSON Pointer; it is
     RFC 6901's reference tokens joined by `/` without the leading `/` the RFC requires. The sentence keeps that

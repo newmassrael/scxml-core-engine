@@ -11,6 +11,11 @@
   names. `Inductive.tla` is read by both checkers as D17's modules are: its folds over `Apalache.tla`, its types
   annotated, and its `RECURSIVE` reference kept to a configuration TLC alone runs.
 - Date: 2026-11-28 (proposed); 2026-11-29 (accepted).
+- Amended by: ADR 0163 (2026-11-29, accepted, not yet built), D5, D8, D13 and D14: D4's Rust streaming reader of an
+  inductive type is the inductive arm of the JSON codec's binder, and T1b's decode half is discharged for JSON by ADR
+  0163's T4, so Rust holds one streaming reader of a typed JSON value; a grammar rule may reach itself through a member
+  of an inductive document, a guarded cycle under its node bound; D12's Rust lane loses the separate reader, which ADR
+  0163's step 9 removes.
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
   Rust by default; its contract is general; what is special to one application stays in the application. At the
