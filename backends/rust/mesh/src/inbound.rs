@@ -1425,6 +1425,7 @@ mod tests {
             }],
             replies: Vec::new(),
             durable: false,
+            records: None,
         };
 
         let mut far = core();
