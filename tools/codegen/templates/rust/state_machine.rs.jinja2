@@ -1879,12 +1879,18 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // default). Inert under std (`VecDeque`), so this one emission compiles on
     // both runtime profiles. The queue holds events as numbers and only the
     // payloads as this machine's type (docs/adr/0068).
-{% if static_principal %}
+{% if holds_principal %}
     // docs/adr/0116, D3: an event an instance sent waits here with the person
-    // it was said for, which the document reads as `_x.principal`.
+    // it was said for.
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { {% if model.event_queue_capacity %}EVENT_QUEUE_CAPACITY{% else %}sce_rust_runtime::MAX_EVENT_QUEUE_DEPTH{% endif %} }, Self::Principal>;
+{% if static_principal %}
     // docs/adr/0116, D3 and D7: the document reads a person, so its events and
     // its runs hold the one they are said for.
+{% else %}
+    // docs/adr/0116, D7 and D10: the deployment proves a person to the machine,
+    // so its events and its runs hold the one they are said for, and who did
+    // what is recorded; the document reads none (D3).
+{% endif %}
     type Principal = Option<Box<::sce_rust_runtime::Principal>>;
 {% else %}
 {% if model.event_queue_capacity %}
@@ -1892,8 +1898,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% else %}
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 {% endif %}
-    // docs/adr/0116: the document reads no person, so its events and its runs
-    // hold a slot of no size, and no field, copy or drop of a person.
+    // docs/adr/0116: the document reads no person and no deployment proves one
+    // to the machine, so its events and its runs hold a slot of no size, and no
+    // field, copy or drop of a person.
     type Principal = ::sce_rust_runtime::NoPrincipal;
 {% endif %}
 

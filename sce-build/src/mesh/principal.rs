@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Where a machine that reads the person an instance acts for may be bound (docs/adr/0116,
-//! D10): a document that declares `<scxml sce:principal>` reads the person of an event an
-//! instance of an open machine sent, and is bound to at least one open machine, each binding
-//! of one proving a person as D2 has it.
+//! Where a deployment proves to a machine the person an instance acts for (docs/adr/0116,
+//! D10): it binds the machine to at least one open machine, each binding of one proving a
+//! person as D2 has it. One predicate ([`proof_of_person`]) decides two things. A document
+//! that declares `<scxml sce:principal>` reads the person of an event an instance of an open
+//! machine sent, and is bound nowhere a person is not proved ([`check_bound`]). And a machine
+//! holds the person its events and runs are said for wherever one is proved to it, whether or
+//! not its document reads one ([`proves_person`]), so that who did what is recorded by the
+//! platform (D7), and holds none anywhere else, where no person can be told to it.
 //!
 //! * **Under the `key` authenticator.** A proof of a person is bound to the key the
 //!   instance's exchanges are signed by (its challenge names the key's thumbprint); every
@@ -33,10 +37,9 @@ use crate::model::SCXMLModel;
 const DEFAULT_AUTHENTICATOR: &str = "bearer";
 
 /// Refuse `machine`, whose document is `model`, as [`CodegenError::PrincipalUnproved`] when
-/// it reads the person an instance acts for and `deploy` binds it where no person is proved:
-/// to no open machine, or on a binding of one that is not under the `key` authenticator,
-/// that names no `sign:` (or whose instances' binding names no `verify:`), or that does not
-/// receive durably. Bindings are judged in target order, so the refusal names the first.
+/// it reads the person an instance acts for and `deploy` does not prove one to it
+/// ([`proof_of_person`]), naming why. A machine whose document reads none is not judged: where
+/// no person is proved to it, it holds none ([`proves_person`]).
 pub fn check_bound(
     machine: &str,
     model: &SCXMLModel,
@@ -45,10 +48,26 @@ pub fn check_bound(
     if model.principal.is_none() {
         return Ok(());
     }
-    let refuse = |reason: String| CodegenError::PrincipalUnproved {
+    proof_of_person(machine, deploy).map_err(|reason| CodegenError::PrincipalUnproved {
         machine: machine.to_string(),
         reason,
-    };
+    })
+}
+
+/// Whether `deploy` proves to `machine` the person an instance acts for (docs/adr/0116,
+/// D10): the predicate [`proof_of_person`] answers, without its reason. The Rust generation
+/// holds the person in the machine's type where it does (`StatePolicy::Principal`), and
+/// holds none where it does not.
+pub fn proves_person(machine: &str, deploy: &DeployConfig) -> bool {
+    proof_of_person(machine, deploy).is_ok()
+}
+
+/// `Ok` when `deploy` proves to `machine` the person an instance acts for (docs/adr/0116,
+/// D10), and why not otherwise: it binds the machine to no open machine, or binds it to one
+/// on a binding that is not under the `key` authenticator, that names no `sign:` (or whose
+/// instances' binding names no `verify:`), or that does not receive durably. Bindings are
+/// judged in target order, so the reason names the first.
+pub fn proof_of_person(machine: &str, deploy: &DeployConfig) -> Result<(), String> {
     let entry = deploy
         .topology
         .values()
@@ -64,11 +83,11 @@ pub fn check_bound(
         .unwrap_or_default();
     bindings.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
     if bindings.is_empty() {
-        return Err(refuse(
+        return Err(
             "it is bound to no instance of an open machine (`instances: open`), whose events \
              alone are said for a person"
                 .to_string(),
-        ));
+        );
     }
     for (target, binding) in bindings {
         let at = format!("its binding '{}'", target.as_str());
@@ -78,16 +97,16 @@ pub fn check_bound(
             .and_then(|a| a.as_str())
             .unwrap_or(DEFAULT_AUTHENTICATOR);
         if authenticator != "key" {
-            return Err(refuse(format!(
+            return Err(format!(
                 "{at} is under the `{authenticator}` authenticator, which proves no key a proof \
                  of a person is bound to"
-            )));
+            ));
         }
         if !binding.extra.contains_key("sign") {
-            return Err(refuse(format!(
+            return Err(format!(
                 "{at} names no `sign:`, so no key of the server's signs the answer to the \
                  exchange that carries a proof"
-            )));
+            ));
         }
         let verified = deploy
             .topology
@@ -100,18 +119,18 @@ pub fn check_bound(
             })
             .is_some_and(|(_, back)| back.extra.contains_key("verify"));
         if !verified {
-            return Err(refuse(format!(
+            return Err(format!(
                 "the binding of '{}' to it names no `verify:`, so an instance verifies no answer \
                  of the server's",
                 target.name()
-            )));
+            ));
         }
         if binding.receipt != ReceiptMode::Durable {
-            return Err(refuse(format!(
+            return Err(format!(
                 "{at} does not receive under `receipt: durable`, and an event is told the person \
                  of the incarnation it was taken in under, which only an instance's completion \
                  records judge (docs/adr/0113, D5)"
-            )));
+            ));
         }
     }
     Ok(())
@@ -173,8 +192,8 @@ topology:
 
     /// docs/adr/0116, D10: a machine that reads a person is bound to an open machine under
     /// the `key` authenticator, with `sign:` and `verify:`, receiving durably; each one
-    /// missing is refused by name, and a machine that reads none is not judged. Red if
-    /// `check_bound` takes any of the four.
+    /// missing is refused by name and proves no person, and a machine that reads none is not
+    /// judged. Red if `proof_of_person` takes any of the four.
     #[test]
     fn a_machine_that_reads_a_person_is_bound_where_one_is_proved() {
         let deploy = parse_deploy_str(&joined(PROVED, VERIFIED)).expect("a deployment");
@@ -202,6 +221,40 @@ topology:
         ] {
             let reason = refusal(rooms_binding, phone_binding);
             assert!(reason.contains(needle), "{needle}: {reason}");
+            let deploy = parse_deploy_str(&joined(rooms_binding, phone_binding))
+                .expect("a deployment the parser takes");
+            assert!(!proves_person("rooms", &deploy), "{needle}");
+        }
+    }
+
+    /// docs/adr/0116, D7 and D10: one predicate decides both where a document that reads a
+    /// person may be bound and where a machine holds the person its events are said for, so
+    /// the two never part; it asks nothing of the document, and the refusal is asked of a
+    /// document that reads a person alone. Red if `proves_person` judges other bindings than
+    /// `check_bound` refuses, or if `check_bound` refuses a document that reads none.
+    #[test]
+    fn one_predicate_decides_the_refusal_and_where_a_person_is_held() {
+        let proved = parse_deploy_str(&joined(PROVED, VERIFIED)).expect("a deployment");
+        assert!(proves_person("rooms", &proved));
+        assert!(
+            !proves_person("phone", &proved),
+            "the open machine is bound to no open machine"
+        );
+        let unproved = parse_deploy_str(&joined(
+            ", authenticator: key, fresh_ms: 60000, sign: rooms-key",
+            VERIFIED,
+        ))
+        .expect("a deployment");
+        assert!(!proves_person("rooms", &unproved));
+        assert!(
+            check_bound("rooms", &SCXMLModel::default(), &unproved).is_ok(),
+            "a document that reads no person is not refused where none is proved"
+        );
+        match check_bound("rooms", &reading_a_person(), &unproved) {
+            Err(CodegenError::PrincipalUnproved { reason, .. }) => {
+                assert_eq!(Err(reason), proof_of_person("rooms", &unproved));
+            }
+            other => panic!("expected PrincipalUnproved, got {other:?}"),
         }
     }
 }

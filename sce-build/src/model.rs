@@ -4784,6 +4784,18 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub principal: Option<String>,
 
+    /// The deployment this machine is generated under proves to it the person an
+    /// instance of an open machine acts for (docs/adr/0116, D10: under the `key`
+    /// authenticator, with `sign:` and `verify:`, receiving durably;
+    /// `crate::mesh::principal::proves_person`). Its events and runs then hold the
+    /// person they are said for, so that who did what is recorded by the platform
+    /// (D7) whether or not the document reads a person; what the document reads stays
+    /// [`Self::principal`]'s (D3). Set by `crate::apply_deploy_model_mutations`, never
+    /// by parsing, and `false` with no deployment. Not serialized: a fact of the
+    /// deployment, not of the document the AST export describes.
+    #[serde(skip)]
+    pub principal_proved: bool,
+
     /// `<scxml sce:transition-table="emit">`: the generated machine carries
     /// its own transitions as constant data (`docs/SCE_TRANSITION_TABLE.md`,
     /// [`EmittedTransitionTable`]). A fact of the document and not of the

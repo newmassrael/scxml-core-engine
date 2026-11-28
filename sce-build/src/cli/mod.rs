@@ -2200,7 +2200,9 @@ struct GenerateArgs {
     no_format: bool,
     /// Path to deploy.yaml for SCE Mesh transport codegen.
     /// When provided, generates transport routing code alongside
-    /// the state machine code. SM output remains identical.
+    /// the state machine code, which the deployment shapes where it
+    /// binds the machine (`apply_deploy_model_mutations`): its
+    /// partition, its queue's capacity, and the person it holds.
     #[arg(long)]
     deploy: Option<String>,
     /// Emit only the mesh transport — skip the state-machine backend code

@@ -2215,6 +2215,13 @@ name = "a_document_reads_the_person_an_instance_acts_for"
 path = "tests/a_document_reads_the_person_an_instance_acts_for.rs"
 required-features = ["cli"]
 
+# Spawns `sce-codegen` to generate a machine under a deployment that proves a
+# person to it, so it carries the `cli` gate.
+[[test]]
+name = "a_machine_holds_the_person_where_a_deployment_proves_one"
+path = "tests/a_machine_holds_the_person_where_a_deployment_proves_one.rs"
+required-features = ["cli"]
+
 # Spawns `sce-codegen` on a send whose literal param is typed by its schema's
 # field, so it carries the `cli` gate.
 [[test]]

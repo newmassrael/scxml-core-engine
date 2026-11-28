@@ -10976,7 +10976,8 @@ pub fn apply_deploy_model_mutations(
     // Read after the injectors, not before: they are what reject a
     // malformed deploy, and reporting facts off a file that is about to
     // be refused would surface a declaration from a build that never
-    // happened. Reached only on the success path for that reason.
+    // happened. Reached only on the success path for that reason. The
+    // person a deployment proves to the machine is read from it too.
     //
     // This is a fourth parse of the same file — each injector already
     // does its own. All four parse the same bytes into the same type, so
@@ -10987,6 +10988,12 @@ pub fn apply_deploy_model_mutations(
         stage: DeployMutationStage::ServerModel,
         source: source.into(),
     })?;
+    // docs/adr/0116, D7 and D10: the machine holds the person its events and
+    // runs are said for wherever the deployment proves one to it, by the one
+    // predicate the refusal of D10 is decided by; what the document reads is
+    // not changed (D3).
+    model.principal_proved =
+        mesh::principal::proves_person(&cfg.machine_key_for(&model.name), &cfg);
     Ok(DeployFacts {
         static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
     })
