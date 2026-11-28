@@ -4,6 +4,8 @@
   joins (D2), a revocation is held by the write (D6), and an event of an ended delegation is refused (D6). Its model
   (D9) was written and checked before any code.
 - Date: 2026-11-22
+- Amended (2026-11-28): decision 3 of "Decided while making a person cost nothing where none is read", as first
+  written, contradicted D7 and is replaced; decisions 1, 2, 4 and 5 stand.
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
   general; what is special to one application stays in the application.
@@ -314,17 +316,45 @@ and Evolution of C++*, 1994, section 4.5: what you do not use, you do not pay fo
    `sce:principal`, and `NoPrincipal`, a type of no size that needs no drop, for every other (`PrincipalSlot`). A
    type per machine and not a feature of the build: features are unified over a build, so one machine that reads a
    person would make every machine beside it pay (the Cargo Book, "Features", feature unification); a type parameter of
-   no size costs nothing where it is unused (the Rustonomicon, "Exotically Sized Types").
+   no size costs nothing where it is unused (the Rustonomicon, "Exotically Sized Types"). Which machine holds which
+   is decision 3, as replaced on 2026-11-28: a machine whose document declares none holds `Option<Box<Principal>>`
+   too where its deployment proves a person to it.
 2. **The person rides beside the event, not in `_event`.** D3 makes `_x.principal` the platform's variable and no
    field of `_event`, so `EventMetadata` holds no person. An event an instance sent waits on the external queue with
    its person beside it, as a typed payload does (ADR 0068); the internal queue, whose events are the machine's own and
    said for nobody, holds none. An autoforwarded copy (D4) is a copy of `_event`, so a child is told it as said for
    nobody by construction, and no copy of the metadata is made to leave the person out.
-3. **A machine that declares no principal is told no person.** The edge tells a person through
-   `EngineState::raise_external_by_name_for`, in the slot the machine holds (`PrincipalSlot::told`), which for a
-   machine whose document reads none is nothing: its journal entries and the host-run invocations it starts name
-   nobody. A deployment that records who did what in a machine (D7) declares `sce:principal` on its document, and so
-   holds the machine to a binding that proves a person (D10).
+3. **A machine holds the person wherever one can be proved to it** (replaced on 2026-11-28). As first written, this
+   decision told a machine whose document declares no `sce:principal` no person, so that its journal entries and the
+   host-run invocations it starts named nobody, and asked a deployment that wants D7 to declare `sce:principal` on
+   the document. That contradicted D7, accepted with the record: the pool writes who did it, and "a document neither
+   writes nor leaves them out". Under the first text a document left the person out by declaring nothing, silently,
+   and a person the edge had proved was dropped. Accountability, that an action is traced to the individual
+   responsible for it, is the platform's (the TCSEC, DoD 5200.28-STD, 1985, its accountability requirement), and is
+   decided where the person is authenticated, at the boundary that holds the delegation (Lampson et al. 1992), not by
+   the document. The scope's "a machine that declares no principal is as it is" is read of what the machine reads
+   and does (D3), not of what the platform records of it (D7).
+   - `StatePolicy::Principal` is `Option<Box<Principal>>` for a machine whose document reads a person (D3), and for
+     one its deployment binds where a person is proved, by D10's predicate: bound to an open machine's instances,
+     under the `key` authenticator, with `sign:` and `verify:`, receiving durably (decision 4 of step 4). The edge
+     tells such a machine the person (`PrincipalSlot::told`), and its journal entries and the host-run invocations
+     it starts are recorded as made for the person the macrostep acts for, whatever its document reads.
+   - Everywhere else it is `NoPrincipal`. No person can be told there, so nobody is the truth and nothing is lost,
+     and the measurement above stands: a machine no deployment binds so, and one generated with no deployment, pays
+     nothing (Stroustrup 1994, section 4.5: what you do not use you do not pay for; a deployment that proves a person
+     uses it, by D7).
+   - One predicate decides both, `mesh::principal::proof_of_person`: the refusal of D10 asks it (`check_bound`),
+     and so does the slot (`proves_person`, which `apply_deploy_model_mutations` marks on the model and the Rust
+     generation reads). A document that reads a person is bound nowhere its machine would hold none.
+   - The slot lets the document read nothing more. What it reads is D3's, by its declaration: a machine that holds a
+     person and reads none keeps the default `StatePolicy::admit_principal`, which takes the person into nothing,
+     and a read of `_x.principal` a document does not declare is refused under a binding that proves a person as it
+     is under none.
+   - What holding a person costs a machine holds for this one too: an event of a person not yet run holds the save
+     (D6, decision 5 of step 4), and a `no_std` Rust build, which holds no person, is refused by name where its
+     deployment proves one (`generate/unsupported-feature`).
+
+   `sce-build/tests/a_machine_holds_the_person_where_a_deployment_proves_one.rs` holds it.
 4. **A host-run invocation is lent the person for its start.** A request holds no person: an invoker a host registers
    with `EngineState::register_invoker_for` is handed the person beside the start, a borrow for the call, and the
    engine keeps only that there was one, which holds the save (decision 6 of step 5). A request that held the person
@@ -355,4 +385,7 @@ privilege); OpenID Connect Back-Channel Logout 1.0 (what it is for). WebAuthn Le
 the client data's `challenge` is the one it gave, and its `origin`). None was read through. **Not reached:** Hardy 1988,
 for the confused deputy, cited for what is generally reported of it; and, for the decisions that make a person cost
 nothing where none is read (2026-11-28), Stroustrup 1994 (section 4.5), the Cargo Book's account of feature
-unification and the Rustonomicon's of zero-sized types, each cited for what is generally reported of it.
+unification and the Rustonomicon's of zero-sized types, each cited for what is generally reported of it; and, for
+decision 3 of those as replaced (2026-11-28), the Department of Defense's *Trusted Computer System Evaluation
+Criteria* (DoD 5200.28-STD, 1985), cited for its accountability requirement (that actions be traceable to the
+individual responsible) as it is generally reported.

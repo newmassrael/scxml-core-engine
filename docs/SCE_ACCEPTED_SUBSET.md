@@ -1649,7 +1649,12 @@ authenticator (every other proves no key a proof of a person is bound to), with 
 the server's side and `verify:` on the instances', and under `receipt: durable` (an event
 is told the person of the incarnation it was taken in under, which only an instance's
 completion records judge, docs/adr/0113, D5); each missing is refused naming the binding
-(`mesh/codegen-principal-unproved`).
+(`mesh/codegen-principal-unproved`). The same predicate says where a machine holds the person
+its events and runs are said for: one bound where a person is proved holds it whether or not
+its document reads one, and its journal entries and host-run invocations are recorded as made
+for that person (docs/adr/0116, D7 and decision 3 of "Decided while making a person cost
+nothing where none is read"); a `no_std` Rust build of it is refused by name
+(`generate/unsupported-feature`).
 
 An open machine declares the terms a server holds its instances to,
 `members: { lease_ms, provisional_ms, max_instances }` (docs/adr/0113, D4
@@ -7359,6 +7364,9 @@ the rules, and `a_deployment_value_is_no_line_of_the_saved_shape` the shape.
   events included), by the Rust host core and never by the document; an audit entry
   that names `sce:principal` itself is refused. A page of `sce-host-journal-read`
   names no person: a document reads a person only of the event it is processing.
+- Amended by: ADR 0116 (decision 3 of "Decided while making a person cost nothing
+  where none is read", as replaced on 2026-11-28): a machine holds the person wherever
+  one can be proved to it, whatever its document reads, so the platform records them.
 
 `<scxml sce:principal="Person">` names an imported event
 schema the document reads the person an instance of an open machine acts for as, and the
@@ -7391,14 +7399,20 @@ every event. Nothing passes on by itself: a child an `<invoke autoforward="true"
 the event to is told it as said for nobody, the copy being the event's and the person no
 field of `_event`. The Rust host core holds the person beside the event, in the slot the
 machine's policy names (`StatePolicy::Principal`, which the edge fills with
-`Endpoint::receive_member_for`), and a machine whose document declares no `sce:principal`
-holds a slot of no size; a saved state and a checkpoint hold none,
+`Endpoint::receive_member_for`), wherever one can be proved to it: a machine whose document
+declares `sce:principal`, and one whose document declares none where its deployment binds it
+where a person is proved (§2.8), which is told the person and reads none, its acts recorded
+as that person's (D7).
+Every other machine, one generated with no deployment among them, holds a slot of no size,
+since no person can be told to it. A saved state and a checkpoint hold none,
 so a machine whose queue holds an event of a person it has not run refuses to save
 (D6: it is never run as nobody's). A `no_std` Rust build and every other backend refuse the
 document by name (`generate/unsupported-feature`), and so does the Interpreter's
 lowering. Where the machine is generated with its deployment it is held to a binding that
 proves a person (§2.8, `mesh/codegen-principal-unproved`).
-`sce-build/tests/a_document_reads_the_person_an_instance_acts_for.rs` holds the rules, and
+`sce-build/tests/a_document_reads_the_person_an_instance_acts_for.rs` holds the rules,
+`sce-build/tests/a_machine_holds_the_person_where_a_deployment_proves_one.rs` the slot a
+deployment gives, and
 `backends/rust/tests/tests/a_static_server_reads_the_person_an_instance_acts_for.rs` runs the
 machine.
 
