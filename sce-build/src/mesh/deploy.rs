@@ -8847,6 +8847,21 @@ impl DeployConfig {
         }
         None
     }
+
+    /// The key of the machine a statechart whose parse names it `machine` is
+    /// generated as: `machine` where this deployment declares a machine of that
+    /// name, else the machine whose `source:` is the document
+    /// ([`Self::find_machine_name_by_source`]), else `machine` itself, which then
+    /// names none of this deployment's. The one resolution every deploy-derived
+    /// step of a machine's generation reads its entry by, so no two steps judge
+    /// different entries of one machine.
+    pub fn machine_key_for(&self, machine: &str) -> String {
+        if self.device_for_machine(machine).is_some() {
+            return machine.to_string();
+        }
+        self.find_machine_name_by_source(machine)
+            .unwrap_or_else(|| machine.to_string())
+    }
 }
 
 // ── Cross-machine EventSchema validation ───────────────────────
@@ -9360,6 +9375,26 @@ topology:
             Some("qnx-aarch64")
         );
         assert!(cfg.device_for_machine("unknown").is_none());
+    }
+
+    /// A statechart is generated as the machine its parse names where the
+    /// deployment declares one by that name, else as the machine whose `source:`
+    /// is its file, else under its own name. Red if `machine_key_for` prefers
+    /// the source over a declared name, or loses either fallback.
+    #[test]
+    fn a_document_is_generated_as_the_machine_its_name_or_its_source_names() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+      motor: { source: motor_someip_multi.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert_eq!(cfg.machine_key_for("brake"), "brake");
+        assert_eq!(cfg.machine_key_for("motor_someip_multi"), "motor");
+        assert_eq!(cfg.machine_key_for("lone"), "lone");
     }
 
     // ── deny_unknown_fields ──────────────────────────────────
