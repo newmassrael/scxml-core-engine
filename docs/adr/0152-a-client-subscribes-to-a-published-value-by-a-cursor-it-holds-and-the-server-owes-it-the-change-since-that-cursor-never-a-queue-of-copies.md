@@ -265,8 +265,10 @@ in.
 The client core (ADR 0117 D1) takes what a response owes it by one rule each, because two exchanges are in flight
 (§22.3) and the network repeats, delays and reorders:
 
-- **A unit** (`ValueChange`) is applied only when, for each value it moves, its `from` is at or below the version the
-  client holds of that value and that version is below its `to`; a value whose pages are all in holds its first page's
+- **A unit** (`ValueChange`) is applied only when, for each value it moves, its `from` equals the version the client
+  holds of that value and that version is at or below its `to` (amended 2026-11-28, while the model was written: a
+  `from` below the version held would carry the client over versions at which nothing changed, against `Silent`, and
+  a version held equal to `to` is the unit that completes a reset whose pages were all read at its version); a value whose pages are all in holds its first page's
   version. Otherwise the unit is dropped whole, and the cursors the client names next are owed it again. Since the
   client holds the values of one session at one version (D4), the rule takes or drops a unit as one.
 - **A page** (`ValueReset`) is taken only when it continues the cursor the client holds now: a first page when that
@@ -315,15 +317,17 @@ connection-oriented transports (patterns 4 to 6 and 9) are as they are.
 `docs/formal/ValueService.tla` states the promise:
 
 - `Converges`: the session publishes every version it is asked to, whatever any client does; and for every version
-  `v` of a value published while a client is subscribed to it, a client that keeps
+  `v` at which a value changed while a client is subscribed to it (a version at which nothing changed is never given,
+  by `Silent`, so it cannot be owed), a client that keeps
   exchanging comes to hold the value at `v` or at a later version, or is told that the subscription ended, whatever
   the other clients do (under fairness of that client alone), as long as each reset it is given completes within
   `tombstone_retention_ms` and the value's removals within that time are at most `tombstones` (D2).
 - `Exact`: what a client holds of a value at a version is the value published at that version.
 - `Monotone`: within one generation a client's version of a value never goes back.
 - `OneState`: the values of one session a client holds whole are of one version of that session.
-- `Silent`: a client moves only to a version at which the value's bytes changed, so a change that leaves a viewer's
-  value as it was gives that viewer nothing. (Stated per version: a client whose cursor is before a change and before
+- `Silent`: a client's values of one session move only to complete a reset or over versions at which the session's
+  values changed, so a change that leaves a viewer's value as it was gives that viewer nothing. It is stated per
+  session, since D4 moves every whole value of the session with one unit. (Stated per version: a client whose cursor is before a change and before
   the change that undoes it is owed both rows by D3, and is given bytes equal to what it held at a version that moved.)
 - `Authorized`: nothing is delivered for a subscription after its incarnation ended, nor to a viewer its audience no
   longer admits (D9).
@@ -339,7 +343,6 @@ make TLC find:
 |---|---|
 | the removal markers | a client that holds a row that was removed (`Exact`) |
 | the floor's check | the same, after the marker was dropped |
-| the markers' time (markers bounded by their count alone) | a value that removes keys while a client reads its pages: the floor passes the first page every time, and the reset never completes (`Converges`) |
 | the changelog written with the state | after a crash, a client that holds a version whose rows the server no longer has (`Exact`) |
 | the generation | after a changelog is started again, a cursor read in another numbering (`Exact`) |
 | the request's digest over the cursors, or the response's `content-digest;req` | a cursor moved forward, and a change never delivered (`Converges`) |
@@ -354,7 +357,11 @@ make TLC find:
 | the subscriptions ended with their incarnation | a change delivered to an incarnation that ended, or to a person whose delegation ended (`Authorized`) |
 
 The model is bounded: it does not cover the cost of what is owed, the pages' sizes, the cryptography of the signature,
-or the grants of the blobs a row names, which are ADR 0153's.
+or the grants of the blobs a row names, which are ADR 0153's. Nor does it take out the markers' time: dropping a marker
+by its time only raises the floor sooner, and what stops a reset (removals past `tombstones` while it is read) needs a
+session that writes without end, which a model bounded in versions has not; the time is kept in the model as a step
+(`Lapse`) that may drop any marker at any moment. Its rows are present or absent, a whole session restarts and not one
+value, and subscription numbers within an incarnation are not modelled.
 
 **The code is held to the model** (ADR 0115 D2, D4 and D13). The server's due set, what a response carries, the units
 and the reset's pages are traced from the runs of the server suite and checked as behaviours of `Subscriptions.tla`;
@@ -498,6 +505,9 @@ was decided by the main session as stated.
     that stops the writer would leave it true; the judge is `sce-codegen formal models`.
 16. D10 and steps 5 and 6, by the owner: the code is held to the model by traces of the server suite and by a Verus
     contract on the client core.
+17. D7, D10, in the writing of the model (2026-11-28; `docs/formal/Subscriptions.tla`, its 19 runs as predicted):
+    the unit's rule is `from` equal to the version held, at or below `to`; `Silent` is stated per session; `Converges`
+    is owed the versions at which a value changed; the markers' time is no part a bounded model can take out.
 
 ## Sources
 
