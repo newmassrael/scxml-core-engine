@@ -30,6 +30,11 @@
 - Amended by: ADR 0162 (2026-11-29): D15's "a real number" with no translation is a binary one; a decimal is
   translated as its integer coefficient where its coefficients stay within TLC's integers, and refused by name
   (`Construct::Decimal`) where they do not.
+- Amended by: ADR 0156 D17 (2026-11-29): D7's generator translates a `sce-static` document's typed values (integers
+  of every width, enums, records, unions, optional values, lists, texts as code points, byte strings, maps in put
+  order, sets), its checked expressions, its statements, its events' data and its host calls, whose answers the
+  exploration names (D15); D8's runs carry the datamodel at every step; and TLC's 32-bit integers are a bound named
+  `integer-range`, with Apalache judging each width's whole range.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey

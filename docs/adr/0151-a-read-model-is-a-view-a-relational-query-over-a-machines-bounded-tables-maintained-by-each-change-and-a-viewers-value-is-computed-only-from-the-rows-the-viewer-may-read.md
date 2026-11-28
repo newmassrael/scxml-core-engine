@@ -8,6 +8,10 @@
   the one crate the theorem is proved of, and the order of work puts the theorems and the model before the operators
   ("Amended on acceptance", 12 to 15).
 - Landed: nothing. No step of "Order of work" is built, and no model or test of it has been run.
+- Amended 2026-11-29 (ADR 0156 D17): D7's model per document, the `<sce:noninterference>` statements judged on its
+  self-composition, and step 4 of "Order of work" rest on the translation of the `sce-static` data model, which ADR
+  0156 D17 decides and its order steps 2a to 2c schedule; no step scheduled it before. Step 4 comes after them, and
+  `docs/formal/Compare.tla`, D2's comparison in TLA+, is one of D17's modules.
 - Date: 2026-11-27 (proposed); 2026-11-28 (accepted).
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
@@ -663,6 +667,8 @@ Each step lands with a test that fails without it.
    groups of 10 000 tuples).
 9. The documents named in "Amends".
 
+Step 4 needs ADR 0156's order steps 2a to 2c (D17, amended 2026-11-29): without them a machine that holds a view
+has a typed datamodel the model generator refuses whole.
 Step 6 needs nothing of ADR 0114's follower; a read model that follows (D9) uses ADR 0114 step 4, which has landed,
 and a viewer that is a person needs ADR 0116 step 4.
 

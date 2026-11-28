@@ -9,6 +9,13 @@
   agents write are often flaky, so apply the north star outside the product too), relayed by the same consumer's
   session with two needs, both general: a simulation host that runs generated machines from one seed (D15), and the
   paths of a generated model exported as tests (D16). The Order of work places them.
+- Amended (2026-11-29): the `sce-static` data model is translated (D17, and order steps 2a to 2c). Four independent
+  reviews found that ADR 0151 D7 (a model per document, `<sce:noninterference>`), accepted, and the proposed ADR 0162
+  (a decimal), ADR 0164 (recursive types), ADR 0165 (graphs) and ADR 0167 (a value as an internal event's data, an
+  effect per element) each rely on a model of `sce-static` documents that no record and no step scheduled, while the
+  model generator refuses every such document whole. D17 decides the translation, and the order places it before every
+  step that reads such a model. Written under the owner's standing rule (the most long-term correct structure,
+  textbook in its foundations, cost ignored).
 - Date: 2026-11-28
 - Amended by: ADR 0167 (accepted 2026-11-29), D3: the list gains, before the finite domains, the step that has the
   model read a `sce-static` document, lifting `Construct::Datamodel`; ADR 0167's model of an event's data, a branch, a
@@ -33,13 +40,20 @@
     refinement (D8);
   - `backends/rust/world`: its virtual time, its seed and its counted guards become the Rust lane's simulation host
     (D15);
-  - `SCE_WIRE_CONTRACTS.md` (the surfaces of D2, D7, D10 and D12) and `docs/formal/README.md` (what is built).
+  - `SCE_WIRE_CONTRACTS.md` (the surfaces of D2, D7, D10 and D12) and `docs/formal/README.md` (what is built);
+  - by D17 (2026-11-29): ADR 0115 D7 (a document's typed values, its events' data and its host calls), D8 (a run
+    carries its datamodel at every step) and D15 (an exploration names a text's values and a host's answers; the bound
+    `integer-range`); ADR 0119 D2 (what the second encoding holds); ADR 0151 D7 (its model per document rests on
+    D17); `docs/formal/AppendixD.tla` (an event carries its data, `Execute` reads the configuration, an effect carries
+    its host calls); the run trace's row of `SCE_WIRE_CONTRACTS.md` (its version moves).
 - Scope: this record states the goal, the status of each part of it, the order and the tools. It changes no code and
   no generated output. Each part lands by the record or the amendment its decision names, with a test that fails
   without it.
 - Related: ADR 0064 and ADR 0135 (Appendix D runs once over a document's tables), ADR 0084 (one door), ADR 0091
   (translation validation of an export), ADR 0110 (the C11 core), ADR 0111 (links), ADR 0115 (the levels), ADR 0118
-  (cost), ADR 0119 (quantity), ADR 0146 (the formal judge), ADR 0147 (the door proved).
+  (cost), ADR 0119 (quantity), ADR 0146 (the formal judge), ADR 0147 (the door proved); for D17, ADR 0055 (optional
+  values), ADR 0092 (unions), ADR 0108 (a map's order), ADR 0133 (a statement total where the build proves it) and ADR
+  0151 (a view, and the one comparison of every type).
 - When this record was written two records carried the number 0146 (the formal judge; a bounded FIFO's full policy)
   and two carried 0148 (a reactive turn; a message as a case of a union). On 2026-11-28 the formal judge and the
   reactive turn kept their numbers, the bounded FIFO's full policy became ADR 0157 and the message as a case of a
@@ -173,7 +187,10 @@ the first reference case.
 - **Decision.** ADR 0115 D7 as written, in this order: the finite domains an exploration names for a string or a
   number; `<invoke>` and `<donedata>`; `Refuses_C` and `StoreRefuses_{C,n}`; the promise modules of the connectors
   (D2); the faults of a channel; the composition of a deployment (D8 changes how it is judged).
-- **No new record**: ADR 0115 D7 and its order step 4. **Depends on** D2.
+- **Amended 2026-11-29.** Before the first item of that order stands D17, the typed values of a `sce-static`
+  document, which every later item reads; "the finite domains an exploration names for a string or a number" is
+  D17's, for a text and an integer of any width.
+- **No new record**: ADR 0115 D7 and its order step 4. **Depends on** D2, and from 2026-11-29 on D17.
 
 ### D4. The proof obligations of a document are generated
 
@@ -404,6 +421,211 @@ Added by the amendment of 2026-11-28.
 - **Amends** ADR 0115 D8 (its converse, "What is replayed"). **Depends on** D3 (what has no model has no paths), D6
   (for the clauses) and, for a deployment, D15.
 
+### D17. The `sce-static` data model is translated
+
+Added by the amendment of 2026-11-29.
+
+- **Status.** `sce-codegen model` writes a module for a document whose `<data>` start as integers and booleans, and
+  refuses every `sce-static` document whole before it reads a construct of it (`whole_document`,
+  `Construct::Datamodel("sce-static")`, `sce-build/src/formal/document_model.rs`). Its terms are integers, booleans
+  and event names (`Ty`); a literal past `LARGEST_INTEGER` (`i32::MAX`, the largest integer TLC holds) is refused; its
+  blocks are an `<assign>` of a whole variable, a `<raise>` and a `<send>` with no data to the session's own queue; and
+  the events of `AppendixD.tla` carry names and no data. A lane's run trace carries no value of the datamodel
+  (`sce-build/src/run_trace.rs`, version 1), so D8 judges a run's control and none of its data. ADR 0115 D7 names the
+  generator's input as a `sce-static` document with its typed variables, its `<sce:call>` and its algorithm bodies;
+  D3 here orders breadth after that and never names the typed values themselves, so the records that read such a
+  model (ADR 0151 D7; the proposed ADR 0162, 0164, 0165 and 0167) wait for a step that did not exist.
+- **Decision.** The model of a `sce-static` document holds every value its `<data>`, its events' data and its
+  algorithms' slots may hold, one canonical form per kind; computes every expression and statement as every lane
+  computes it, failures included; and refuses by name what it does not translate. A document so refused has no model,
+  never a model of part of it (ADR 0115 D7). The parts follow.
+
+**The values.** Each kind has one form, so two values of the model are equal exactly when the lanes' values are, and
+one predicate, which is the kind's part of D4's `TypeOK` and its bound invariant.
+
+| Kind | In TLA+ | Its predicate | Why this form |
+|---|---|---|---|
+| an integer of any width, `int8` to `uint64` | an integer | in the width's range | a lane computes the mathematical integer and refuses what leaves the width (SCE_FORGE.md section 3.4.1), so the model holds the number, never a wrapped one |
+| `bool` | `TRUE`, `FALSE` | `BOOLEAN` | |
+| a value of an enum | the variant's name, a string; the enum's declared order a sequence of its names | one of its names | a variant is compared by equality, and by its declared order where ADR 0151 D2 orders it |
+| a record of an event schema | a record of the schema's fields | each field of its type | |
+| a union (ADR 0092) | a variant, written with Apalache's `Variants` module (`Variant`, `VariantTag`, `VariantGetUnsafe`), whose definitions TLC evaluates as the records they are | its tag one of the union's cases, its value that case's record | Apalache types a variant; a record with a field per case would type no union |
+| an optional value (ADR 0055) | a variant of two cases, `None` with no value and `Some` with the value | absent, or `Some` of a value of `T` | the sum `none \| some(T)` that ADR 0151 D2 orders |
+| a list `list<T>[B]` | a sequence | its elements of `T`, its length at most `B` | |
+| a text `string[N]` | a sequence of Unicode scalar values, as integers | each a scalar value, its UTF-8 length (`Utf8Length`) at most `N` | the bound counts UTF-8 bytes on every lane (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "String variables") and a comparison is by code point (ADR 0151 D2); TLC holds a TLA+ string as an atom with no code points, and could measure neither |
+| a byte string `bytes[N]` | a sequence of integers in `0..255` | its length at most `N` | |
+| a map `map<K, V>[B]` | a sequence of pairs `<<k, v>>`, in the order their keys were first put (ADR 0108 D2) | no two keys equal, at most `B` pairs, keys of `K`, values of `V` | a walk, the saved form and the snapshot read that order on every lane, so a model that forgot it would accept a run walked in another |
+| a set `set<K>[B]` | a sequence of keys in the order they were first put | as a map's keys | a set is a map whose entries carry no value (ADR 0108 D1) |
+| a map of maps, lists or records that hold a list (ADR 0108 D12) | the forms above, composed | each level its own predicate | |
+
+- **Two maps are never compared** (ADR 0108 D2), so the order a map holds is observed only through a walk. A record
+  that reads a map by its contents (a view, a graph, an order of keys) reads it through `docs/formal/Compare.tla`,
+  ADR 0151 D2's one total comparison of every type written once, which takes a map as its entries in the order of
+  their keys and never in the order they were put.
+- **A text that is only copied and compared** keeps this form here. Whether a few symbolic values may stand for all of
+  its values is D5's question, decided by the generator from the document's text, and not this decision's.
+- **Integers past TLC's range.** TLC holds an integer in 32 bits; Apalache's integers are its solver's, unbounded. The
+  model is written over the integers, one text for both checkers:
+  - TLC computes no value outside its range. `Checked.tla` tests each operation's operands against TLC's range before
+    it computes, as it tests the result against the width's, and a step that would compute past it is not taken: TLC
+    records the bound `integer-range` as *reached*, by name, as ADR 0115 D15 records every bound that refuses a step
+    the document would take. Its verdict on such a document is *holds within*: never a wrapped value, never an
+    `error.execution` the lanes would not raise, and never an error of TLC that ends the search. A width whose limit
+    passes TLC's range is not compared with it under TLC, since every value TLC holds is inside it already.
+  - A literal TLC cannot write (a `uint64` constant past `i32::MAX`) refuses TLC's run of the module by name, naming
+    the literal; the model itself is not refused.
+  - Apalache judges the same module with no cut, so its verdicts, and D9's, are of each width's whole range. It is the
+    route to a verdict on a value TLC cannot hold, and a lane's run that holds such a value is read against the model
+    by Apalache, one step check per recorded step, with `docs/formal/traces.json` saying which checker read it.
+
+**The expressions** are the forge expressions docs/SCE_ACCEPTED_SUBSET.md section 2.15 admits, typed by the one scope
+every lane reads (`crate::forge::type_ctx::StaticScope`) and written by the one translation (`Term`, which gains the
+kinds above), which prints TLA+ for this module and JANI for ADR 0119's:
+
+- literals of every kind above; a read of a variable, of a field at any depth, of an element (`xs[i]`), of a map's
+  value (`m[k]`, `m[k].f`), `len` (a text's in UTF-8 bytes, a byte string's in bytes, a list's and a map's in
+  entries), `has`, the payload (`_event.data.f`), a variant of an enum, a union's tag and a field its tests prove, and
+  `In(id)`, in a condition and in executable content alike (`Execute` is handed the configuration, below);
+- `+ - * / %` and unary `-` at the width SCE_FORGE.md section 3.4 types them at, with section 3.4.1's results: a
+  quotient truncated toward zero and a remainder of the dividend's sign, written once over TLA+'s `\div` and `%`,
+  which round toward minus infinity; the eight wrapping and saturating names of section 3.4.2; the bitwise operations
+  and the shifts at the width section 3.4.1 gives them, defined arithmetically by a fold over the width's bits, since
+  TLA+ has none; the comparisons; `===` and `!==` as equality of canonical forms; `&&`, `||` and `? :`, each
+  evaluating only the side that is reached; a text joined to a text or to an integer's decimal digits; and the other
+  names of the expression vocabulary (docs/SCE_ACCEPTED_SUBSET.md section 3.4.1);
+- **each checked as the lanes check it** (ADR 0133). An expression's value is a value or a failure, named as every
+  lane names it (`overflow`, `divide-by-zero`, `out-of-range`, `capacity-exceeded`, `precondition`). A failure ends
+  the computation where it occurs, and what the statement around it then does is section 2.15's rule ("Integer
+  operations", "List variables"), written once in `Effects.tla`: an `<assign>`, a `<log>`, an `<sce:append>` or a host
+  action whose expression fails does nothing, a condition that fails is false, `error.execution` is raised on the
+  internal queue where the document declares it, and the block ends at the element that raised. The model writes
+  every operation checked, those the build proves total included, and for each statement the build classifies as
+  total (`Action::native_fails`, ADR 0133 D2) states the obligation that it never fails, beside D4's: TLC judges the
+  interval analysis on every state it explores, and a failure the build said could not occur is a defect of the
+  analysis, reported with the run that reaches it.
+
+**The statements.**
+
+- `<assign location>` into a variable or a place below it (a record's field at any depth, a union's field written in
+  place, ADR 0133 D1), checked as a store is (an integer into a narrower width, a text past its bound).
+- `<if>`, `<elseif>` and `<else>` as a chain of conditions in document order.
+- `<foreach>` over a list, a map or a set: a fold over the copy the loop began with, in its order (put order for a map
+  or a set), binding the item, the key (`sce:key`) and the index, a `uint32`; each pass's effect is composed onto the
+  one before, its writes in sequence and its events and calls appended, so a loop's model is its sequence of effects.
+- `<sce:append>` and `<sce:clear>` of a list, an append to a full list failing `capacity-exceeded`; `<sce:put>`,
+  `<sce:remove>` and `<sce:clear>` of a map or a set, at a nested target too (ADR 0108 D12), each an operator of
+  `Map.tla`: a put inserts its key last or replaces its value where it stands, and answers `inserted`, `replaced` or
+  `full`; a remove answers `removed` or `absent`; the answer is written to the `outcome` variable as the variant of
+  `sce:std/collection/put_outcome.scxml` or `remove_outcome.scxml`; a put with no `outcome` that finds its map full
+  fails, and so does a nested target whose outer key is absent (`out-of-range`).
+- `<raise>`; a `<send>` to the session's own external queue or to `#_internal`, with its `<param>`s and its
+  `namelist` as the event's data, a record of the fields its schema declares; a `<log>`, computed for its failure and
+  shown to no one.
+- **An event is a name and its data.** An entry of either queue is a record of the event's name and its data. An event
+  from outside takes its data from the values the exploration names for its schema's fields (ADR 0115 D7 and D15); an
+  event the document raises or sends carries what its parameters computed; `<raise>`'s data, and those of an event
+  whose schema declares no field, are the empty record.
+
+**Host calls.**
+
+- A `<sce:action>` is an output. A block's effect gains the sequence of the calls it makes, each the action's name and
+  its arguments, in the order run; a step's calls are what a lane's run reports, and D8 compares them call by call.
+- **Its answer is the environment's.** Whether the host performed the operation (docs/SCE_ACCEPTED_SUBSET.md section
+  2.11), and the value of an operation that answers one (ADR 0109 D5 and D6), are choices of the environment, drawn
+  from the answers the exploration names for that operation (ADR 0115 D15). An answer that the operation was not
+  performed raises `error.execution`, as every lane raises it. That a host performs its duties is an assumption,
+  named with every verdict (D1, item 4; ADR 0038's `performs`).
+- A host operation whose answers the exploration does not name is refused by name (ADR 0115 D15), and the document has
+  no model.
+
+**Algorithms.** An algorithm a document calls (`<sce:call>`, or a call in an expression) is translated once, into a
+module named by it, as an operator from its arguments to its value or, where it declares `may-fail`, its failure. Its
+body is written by the statements above and its own (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`,
+`<sce:foreach>`, `<sce:require>`, `<sce:return>`, an `inout` map, ADR 0108 D6), and every document that calls it
+extends that module. A `<sce:while>` is a recursive operator, which TLC evaluates. Apalache takes no recursive
+operator, and reads a loop only as a fold of the length its `<sce:decreases>` measure gives (ADR 0115 D10); an
+Apalache run of a document that calls a loop with no measure is refused by name, and TLC's stands.
+
+**The modules written once**, beside `docs/formal/AppendixD.tla`, each citing the text it formalises and the only
+definition the generator reads. They are part of D2's surface: D2 registers them with `AppendixD.tla`, and where they
+land first, the step that lands D2 registers them.
+
+| Module | Holds |
+|---|---|
+| `AppendixD.tla`, amended by a commit of its own (ADR 0115 D11) | an event as a record of its name and its data; `Execute` handed the configuration at the moment the block runs, as `In()` reads it there; an `Effect` that carries its host calls |
+| `docs/formal/Values.tla` | each kind's form and predicate: the widths' ranges, a text and its `Utf8Length`, a byte string, a bounded sequence, a variant |
+| `docs/formal/Checked.tla` | every operation of SCE_FORGE.md sections 3.4.1 and 3.4.2, each answering a value or the name of a failure, with TLC's range cut as above |
+| `docs/formal/Map.tla` | a map and a set in put order: `Has`, `Get`, `Put` and its outcome, `Remove` and its outcome, `Clear`, `Len` and the walk; the module of a map that ADR 0165 (graphs, proposed) D9 waits for |
+| `docs/formal/Compare.tla` | ADR 0151 D2's one total comparison of every type, read by ADR 0151 D7 and by every record that orders values; built by whichever of order step 2a here and ADR 0165's step 2 lands first, the other citing it |
+| `docs/formal/Effects.tla` | a block as the composition of its statements' effects, section 2.15's rule of a failure, the fold of a `<foreach>`, a write at a place, a call appended |
+
+Each has its laws checked by TLC over small domains, and parts taken out that TLC must find (ADR 0115 D5): a `Put`
+that appends a present key again, a quotient rounded toward minus infinity, a text's bound counted in code points, a
+walk in the order of the keys, an addition that wraps, a comparison decided by the last field.
+
+**What each document generates.**
+
+- `<machine>.tla`, as now (its tables, `Data0`, `Guard`, `Execute`), with each variable's type as a predicate of
+  `Values.tla`, the declared order of each enum it imports, its events' schemas, each condition and block over the
+  modules above, and the obligation of each statement the build classifies as total.
+- `<algorithm>.tla`, once per algorithm a document set reaches, shared by every document that calls it.
+- `<machine>.cfg`, from the exploration (ADR 0115 D15), which names each field's values (an integer's within its
+  width, a text's as texts read into code points, a record's, a union's and a list's built from them), each host
+  operation's answers and the counts. A value the field's type does not hold is refused, as ADR 0115 D7 refuses one.
+- **The second encoding** (ADR 0119 D2) holds what JANI's core holds: a bounded integer of its width's range, a
+  boolean, and an enum as the position of its variant. A document whose data hold another kind has a TLA+ model and
+  no JANI model, refused for JANI by the name of the kind, until an amendment of ADR 0119 writes the others through
+  JANI's `arrays` and `datatypes` extensions; ADR 0119 D4's checks are of the documents both encodings hold.
+
+**The formal level.** TLC checks the translation's agreement with the lanes through D8's replay: translation
+validation of each output, never a proof of the generator (D11).
+
+- **A run carries its data.** The run trace gains, at every step, the datamodel after it in the saved form every lane
+  already writes (a map as the array of its entries in put order, ADR 0108 D8; a 64-bit integer as the text of its
+  digits), the data of the event the step took, and the host calls it made with the answers given. It is a new
+  `TRACE_FORMAT_VERSION`, written by each lane's trace port. The judge reads each value into its canonical form,
+  holds it equal to the model's at every step, and refuses a run whose datamodel the model does not reach, naming the
+  first variable that differs.
+- **Each module can refuse a run.** Fixture documents are entered in `docs/formal/models.json` with a run that holds,
+  and in `docs/formal/traces.json` with every lane's runs of their scenarios, and each part taken out of a module
+  makes a lane's recorded run refused: of `static_overflow.scxml`, an addition that wraps; of
+  `static_wrapping_counter.scxml`, a wrapping addition that fails; of `static_string_capacity.scxml`, a bound counted
+  in code points; of `map_faces.scxml`, a walk in the order of the keys and a put that appends a present key; of
+  `static_host_call.scxml`, a call dropped.
+- **The verdicts** are ADR 0115 D15's: *holds within* the exploration's bounds, `integer-range` among them where TLC
+  cut a width; for every length, Apalache's (D9).
+
+**What is refused, by name, and what lifts it.**
+
+| Refusal | Of | Lifted by |
+|---|---|---|
+| `Construct::Real`, new | a `float32` or `float64` value or operation | no record: neither checker holds a binary floating number, ADR 0115 D15 refuses a real by name, and a model of IEEE 754 arithmetic would be a decision of its own; an exact number is the decimal of ADR 0162 (proposed) |
+| `Construct::Decimal`, new | a decimal | ADR 0162 (a decimal, proposed), its step 9 |
+| `Construct::Inductive`, new | a value of a recursive type | ADR 0164 (recursive types, proposed), its step 5 |
+| `Construct::View`, new | a variable that holds a view's value | ADR 0151, its step 4 |
+| `Construct::Action`, naming the statement | a graph statement | ADR 0165 (graphs, proposed), its step 7 |
+| `Construct::HostAnswer`, new | a host operation whose answers the exploration does not name | the exploration that names them |
+| `Construct::Invoke`, `Construct::DoneData`, and `Construct::Send` for a target other than the session's own queues | a child session, its done data, a send to another session | D3, its second item, and for a send between machines D3's composition of a deployment |
+| `Construct::OnSample` | a link's sample | the link's promise module (D2, D8; ADR 0111's amendment) |
+| `Construct::Send` for a `delayexpr`, an `idlocation` or a `sendidexpr`, and `Construct::Action` for `<cancel>` | a computed delay, a send's id and its cancellation | ADR 0115 D7 and D15 (time as a variable of the model, and the cancellation of a delayed send); `AppendixD.tla` makes a delayed send due at any moment and cancels none, and no step of this order schedules time yet |
+| `Construct::Send` for an `eventexpr`, a `typeexpr` or a `<content>` | a computed name or type, a body as content | no record |
+| `Construct::Action` for a native `<script>` block | code of a backend's language | none: native code has no model; what it does belongs in a host action or in a seam with a contract (D7) |
+| `Construct::LateBinding` | `binding="late"` | no record: `AppendixD.tla` binds early |
+| `Construct::FeatureConditions`, `Construct::TestComponent` | a product line, a test component | none, by design: a variant is projected to a plain document first, and a test component is judged by its profile (ADR 0091) |
+| `Construct::Datamodel` | a data model other than `null`, `ecmascript` (whose integers and booleans stay as they are) and `sce-static` | no record |
+| `Construct::Unspellable`, `Construct::Name`, `Construct::DottedStateId`, `Construct::EventName` | an id or a name TLA+ cannot spell | none; a text value is a sequence of code points and no longer meets `Unspellable` |
+
+Lifted by this decision: `Construct::Datamodel("sce-static")`; `Construct::StateDatamodel`, since under early binding
+every `<data>` is bound when the session starts, in document order, wherever it is written; `Construct::Send` for a
+`<param>`, a `namelist` and the target `#_internal`; and `In()` in executable content. Each new arm joins the closed
+list of `Construct` with its message, and a construct that is neither translated nor named stays refused as an action
+or an expression with no translation.
+
+- **Amends** ADR 0115 D7, D8 and D15 and ADR 0119 D2 (header, "Amends"), and is what ADR 0151 D7's model per document
+  rests on. **Depends on** nothing but `AppendixD.tla`. Every step that reads a model of a `sce-static` document
+  depends on it: D3's later items, D4, D5, D6 and D16 for such a document, ADR 0151's step 4, and the steps the
+  proposed ADR 0162, 0164, 0165 and 0167 give their models.
+
 ## Consequences
 
 - Every formal record names the part of D1 it serves, and a request for proof is answered by the step of the order it
@@ -416,6 +638,9 @@ Added by the amendment of 2026-11-28.
   what keep them so.
 - A test of a generated machine is a function of its script and its seed (D15), and its expected values are the
   model's (D16), so a test that sometimes fails points at a defect of the structure, which is fixed there.
+- (2026-11-29) A `sce-static` document, the class every lane generates, has a model and its runs are read against
+  it value by value (D17), so a property of its data, and every record that reads its model, can be judged; what is
+  refused is refused by name, with the record that lifts it.
 
 ## Alternatives rejected
 
@@ -439,6 +664,13 @@ Added by the amendment of 2026-11-28.
   writes the test; D16 takes them from the model.
 - **Naming the first consumer's system as the scope.** The goal is any repository's (the owner's "범용적으로",
   generally); a consumer is a case that tests it.
+- **(2026-11-29) A text as a TLA+ string.** TLC holds a string as an atom: it has no length in UTF-8 bytes and no
+  code points, so neither a text's bound nor ADR 0151 D2's comparison could be stated (D17).
+- **(2026-11-29) A map as a function from its keys.** It forgets the order a walk reads on every lane (ADR 0108 D2),
+  and a model that forgot it would accept a run walked in another order (D17).
+- **(2026-11-29) Refusing a document whose integers pass TLC's range.** Every `uint64` and `int64` variable would
+  refuse its document though most never leave 32 bits; D17 cuts the step TLC cannot compute, names the bound, and
+  leaves the whole range to Apalache.
 
 ## Order of work
 
@@ -448,6 +680,22 @@ share only ADR 0115 D10's expression language.
 1. This record.
 2. (A) D2: the semantics registered, and the modules of the connectors as promises. A specification precedes what
    refines it, and every later step of A reads the model; it unblocks D3 to D10.
+2a. (A) D17's modules, amended 2026-11-29: `Values.tla`, `Checked.tla`, `Map.tla`, `Compare.tla` and `Effects.tla`,
+   each entered in `docs/formal/models.json` with its laws checked by TLC and each part D17 names taken out, which TLC
+   must find; and `AppendixD.tla` amended by a commit of its own (an event with its data, `Execute` with the
+   configuration, an effect with its calls), under which `W3CTest388`, `W3CTest570` and `W3CTest403c` still hold and
+   their recorded runs are still accepted. It needs nothing of step 2 and may land before it. Red without it: the
+   modules do not exist.
+2b. (A) D17's translation in `sce-codegen model`: the values, the expressions checked, the statements, the host calls,
+   the algorithms, the second encoding's refusal by kind, and every refusal of D17's table by name, held by the tests
+   of `sce-build/src/formal/document_model.rs`, one per kind, per statement and per refusal. Red without it: a
+   `sce-static` document is refused as `Construct::Datamodel("sce-static")`.
+2c. (A) D17's replay: the run trace's new version, written by the trace port of each of the seven lanes; the judge
+   that holds every step's datamodel to the model's; the fixtures D17 names entered in `docs/formal/models.json` and
+   `docs/formal/traces.json`, each part taken out refusing a recorded run. Red without it: a lane whose datamodel
+   differs from the model's is accepted. Every later step that reads a model of a `sce-static` document comes after
+   2c: step 3's later items, 3a, 4, 5 and 6 for such a document, ADR 0151's step 4, and the model steps of the
+   proposed ADR 0162 (step 9), 0164 (step 5), 0165 (step 7) and 0167 (step 5).
 3. (A) D3: the breadth of ADR 0115 D7 in its order. What has no model has no verdict of any later step.
 3a. (A) D16 for one machine at a time, as each document gains its model. It needs nothing but D3 and the harnesses
    and judge that replay ADR 0115 D15's scenarios now, and it makes every expected value of a machine's tests
