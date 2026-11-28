@@ -93,17 +93,29 @@ use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};
     /// The transmit path (RFC §synth-5-C): encode `event`'s value with the
     /// codec its `<sce:outbound>` row names into
 {% if events.tx_pool %}
+{% if events.tx_pool.lends %}
     /// a slot of `tx_pool` lent at the pool's slot length, hand the bytes to
     /// the driver, and return the slot: the driver has copied them by the time
     /// `tx` returns (`Link::tx`), so the slot is free again whether or not
-    /// they were sent. The pool is shared (docs/adr/0111 D4), so a send takes
-    /// it by `&`.
+    /// they were sent. The pool lends at run time (docs/adr/0111 D4), so a
+    /// send takes it by `&`.
     pub fn send(&mut self, tx_pool: &{{ events.tx_pool.rust_type }}, event: &{{ owner }}Outbound{% if events.outbound_borrowed %}<'_>{% endif %}) -> Result<(), {{ owner }}SendError> {
         // A lending of the pool's own slot length with no headroom is refused
         // only when every slot is out: the length and the headroom fit.
         let mut slot = tx_pool
             .pool_acquire_for_encode(tx_pool.slot_len(), 0)
             .map_err(|_| {{ owner }}SendError::PoolExhausted)?;
+{% else %}
+    /// a slot of `tx_pool`, hand the bytes to the driver, and return the
+    /// slot: the driver has copied them by the time `tx` returns
+    /// (`Link::tx`), so the slot is free again whether or not they were sent.
+    /// The pool keeps a state per slot and lends each whole (docs/adr/0111
+    /// D4), so a send takes it by `&mut`.
+    pub fn send(&mut self, tx_pool: &mut {{ events.tx_pool.rust_type }}, event: &{{ owner }}Outbound{% if events.outbound_borrowed %}<'_>{% endif %}) -> Result<(), {{ owner }}SendError> {
+        let mut slot = tx_pool
+            .pool_acquire_for_encode()
+            .ok_or({{ owner }}SendError::PoolExhausted)?;
+{% endif %}
         let encoded = {
             let mut sink = SliceSink::new(&mut slot.write(tx_pool)[..]);
             let written = match event {

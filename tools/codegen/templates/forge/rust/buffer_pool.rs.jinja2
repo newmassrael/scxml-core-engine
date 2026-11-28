@@ -33,16 +33,21 @@
 // no unwrap, expect or panic. A consumer denies `clippy::indexing_slicing`,
 // `clippy::arithmetic_side_effects` and the rest of the panic-free lint
 // set on the crate that holds this file, and a pool sits on the DMA path,
-// where a panic is a stopped device. The book is reached through
+// where a panic is a stopped device. Slot tables are reached through
 // `SlotNo`, a type with no value out of range, rather than through a
 // `usize` and a bounds check.
 //
-// docs/adr/0111 D4: the pool is lent. It lends a run-time count of slots
-// of a run-time length under the build bounds, over storage it owns or the
-// caller holds, with a headroom in front of a frame, names a lent slot by a
-// generational `SlotIndex` that crosses an interface, takes `&self` for
-// every transition over a book whose words `<sce:sharing>` chooses, and
-// lends a received slot to the events its frame raised.
+// docs/adr/0111 D4: a pool may be lent. A pool over storage the caller holds
+// (`over`) always is, and so is the pool over its own storage when the document
+// declares `<sce:lending>run-time</sce:lending>` or `<sce:sharing>shared`: it
+// lends a run-time count of slots of a run-time length under the build bounds,
+// with a headroom in front of a frame, names a lent slot by a generational
+// `SlotIndex` that crosses an interface, takes `&self` for every transition
+// over a book whose words `<sce:sharing>` chooses, and lends a received slot
+// to the events of its frame. A pool over its own storage in a document that
+// declares neither lends every slot whole: it is the slots' bytes and one state
+// byte per slot, its handle is the slot's number, and its transitions take
+// `&mut self`, so it pays for none of that (`Storage`).
 
 #![allow(clippy::all)]
 #![allow(unused_imports)]
@@ -51,14 +56,15 @@
 
 use core::marker::PhantomData;
 
-/// The most slots a pool of this type lends (`<sce:slot-count>`): the
-/// bound `B` the book is reserved for at build (docs/adr/0111 D4). A pool
-/// is made with a run-time count up to it.
+/// Number of slots (`<sce:slot-count>`): every slot of a pool that lends them
+/// whole, and the bound `B` a lending pool reserves its book for at build
+/// (docs/adr/0111 D4), which is made with a run-time count up to it.
 pub const SLOT_COUNT: usize = {{ slot_count }};
 
-/// The longest slot a pool of this type lends (`<sce:slot-size>`): the
-/// bound `S`. A pool over the caller's storage is cut into slots of a
-/// run-time length up to it, and each lending names a length up to that.
+/// Bytes per slot (`<sce:slot-size>`): the length of every slot of a pool
+/// that lends them whole, and the bound `S` of a lending pool, whose storage
+/// is cut into slots of a run-time length up to it and whose lendings each name
+/// a length up to that.
 pub const SLOT_SIZE: usize = {{ slot_size }};
 
 /// SRAM region name (`<sce:section>`), round-tripped so downstream
@@ -68,9 +74,9 @@ pub const SLOT_SIZE: usize = {{ slot_size }};
 /// constant is not a hook for doing so. The C11 emit places its
 /// storage with `__attribute__((section))` because storage there is a
 /// file-static array of bytes and nothing else; the Rust pool that owns
-/// its storage holds it inline alongside its book, and the region the
+/// its storage holds it inline alongside its states, and the region the
 /// sidecar linker fragment declares is `(NOLOAD)` — nothing initialises
-/// it. Putting that whole struct there would leave the book reading
+/// it. Putting that whole struct there would leave the states reading
 /// whatever SRAM held at reset.
 ///
 /// A deployment that needs the slots in this region places a static of
@@ -99,6 +105,11 @@ pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 /// book of plain cells moved by whoever holds the drive, or `shared`, a
 /// book of atomics that a driver context moves too.
 pub const SHARING: &'static str = "{{ sharing }}";
+
+/// What a lending of the pool names at run time (`<sce:lending>`,
+/// docs/adr/0111 D4): `fixed`, every slot lent whole, or `run-time`, a
+/// run-time count and length and an index across an interface.
+pub const LENDING: &'static str = "{{ lending }}";
 
 {%- if needs_clean_extern or needs_invalidate_extern %}
 
@@ -451,17 +462,35 @@ pub trait Held {
 /// state's handle is invalidated by Rust's move semantics) and
 /// return the new state's handle when the author retains it.
 ///
+/// `G` is what the handle carries of its slot's lending (docs/adr/0111 D4,
+/// `Storage::Generation`): `u32`, the generation of the lending, for a
+/// slot of a pool that lends at run time, and `()` for one of a pool that
+/// lends every slot whole, whose handle is then the slot's number and no
+/// larger. The default is the handle of the pool over its own storage
+/// (`{{ "u32" if lends else "()" }}` in this document).
+///
 /// Silently dropping a `Slot<CpuMut>` or `Slot<CpuRef>` leaks the
 /// underlying slot — the `#[must_use]` attribute makes rustc warn
 /// when this happens at the lexical level.
 #[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §synth-5-E lines 1162-1164"]
-pub struct Slot<S> {
+pub struct Slot<S, G = {% if lends %}u32{% else %}(){% endif %}> {
     no: SlotNo,
-    generation: u32,
+    generation: G,
     _state: PhantomData<fn() -> S>,
 }
+{% if not lends %}
 
-impl<S> Slot<S> {
+impl<S> Slot<S, ()> {
+    /// Pool index of this slot. Read-only; useful for tracing and
+    /// for writing a peripheral's DMA descriptor (e.g., for
+    /// `Slot<DmaArmedRx>`).
+    pub fn idx(&self) -> usize {
+        self.no.index()
+    }
+}
+{% endif %}
+
+impl<S> Slot<S, u32> {
     /// This slot's name across an interface: its number and the generation
     /// of this lending (docs/adr/0111 D4). Useful for tracing and for a
     /// peripheral's descriptor; reading it gives nothing up, which
@@ -474,7 +503,7 @@ impl<S> Slot<S> {
     }
 }
 
-impl<S: Held> Slot<S> {
+impl<S: Held> Slot<S, u32> {
     /// Give the handle up for its index, which can cross a trait object or a
     /// C ABI where the handle cannot. [`{{ pascal_name }}::reclaim`] with the index
     /// rebuilds the handle, once; until then the slot stays in its state and
@@ -614,6 +643,20 @@ impl SlotNo {
 {% endfor %}
         }
     }
+
+    /// This slot's entry in a per-slot table, for writing.
+    fn of_mut<T>(self, table: &mut [T; SLOT_COUNT]) -> &mut T {
+        let [
+{% for i in slot_indices %}
+            t{{ i }},
+{% endfor %}
+        ] = table;
+        match self {
+{% for i in slot_indices %}
+            Self::S{{ i }} => t{{ i }},
+{% endfor %}
+        }
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -650,8 +693,23 @@ const _: () = assert!(
      silently occupies more SRAM than the author budgeted",
 );
 
-/// Where a pool's slots lie: slot `n` starts `n * stride()` bytes after
-/// `base()`.
+/// What a pool keeps of its slots beside their bytes, by the storage it holds
+/// them in (docs/adr/0111 D4), as a map's storage decides what its slots keep
+/// (docs/adr/0154): the book of every slot's lending for a pool that lends at
+/// run time, and one state per slot for one that lends every slot whole, which
+/// then pays for no book, no generation and no run-time count or length.
+pub trait Storage {
+    /// The pool's record of its slots: [`Book`], or `[SlotState; SLOT_COUNT]`.
+    type Book;
+    /// What a handle carries of its slot's lending: `u32`, the lending's
+    /// generation, where a slot crosses an interface by its index, and `()`
+    /// where it never does, so the handle is the slot's number alone.
+    type Generation: Copy + Eq + core::fmt::Debug;
+}
+
+/// Storage a pool lends at run time (docs/adr/0111 D4): slot `n` starts
+/// `n * stride()` bytes after `base()`, and the pool keeps the book of its
+/// lendings.
 ///
 /// # Safety
 ///
@@ -668,8 +726,15 @@ pub unsafe trait SlotStore {
     fn stride(&self) -> usize;
 }
 
+impl<T: SlotStore> Storage for T {
+    type Book = Book;
+    type Generation = u32;
+}
+{% if lends %}
+
 /// Storage the pool owns: `SLOT_COUNT` slots of `SLOT_SIZE` bytes, zero until
-/// a slot is written.
+/// a slot is written. The document lends at run time (`<sce:lending>` or
+/// `<sce:sharing>`, docs/adr/0111 D4), so the pool over it keeps the book.
 pub struct Owned(core::cell::UnsafeCell<[SlotBytes; SLOT_COUNT]>);
 
 impl Owned {
@@ -693,10 +758,24 @@ unsafe impl SlotStore for Owned {
         SLOT_SIZE
     }
 }
+{% else %}
+
+/// Storage the pool owns: `SLOT_COUNT` slots of `SLOT_SIZE` bytes, zero until
+/// a slot is written. The document lends every slot whole (docs/adr/0111 D4),
+/// so the pool over it keeps one state byte per slot and a handle is the slot's
+/// number: the layout, and the code, of a pool before the book.
+#[repr(transparent)]
+pub struct Owned([SlotBytes; SLOT_COUNT]);
+
+impl Storage for Owned {
+    type Book = [SlotState; SLOT_COUNT];
+    type Generation = ();
+}
+{% endif %}
 
 /// Storage the caller holds (ADR 0082), cut into slots of the length
 /// [`{{ pascal_name }}::over`] was given. The pool holds the span's unique borrow for
-/// `'a`.
+/// `'a` and keeps the book of its lendings.
 pub struct Over<'a> {
     base: core::ptr::NonNull<u8>,
     stride: usize,
@@ -720,27 +799,13 @@ unsafe impl SlotStore for Over<'_> {
 // another thread as the `&mut [u8]` it was made from may.
 unsafe impl Send for Over<'_> {}
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Pool struct — the book of every slot the type can hold, and its storage
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-/// Generated buffer-pool. Each slot's lifecycle state is tracked in the
-/// book; the phantom-typed `Slot<S>` API guarantees that at compile time,
-/// author code can only invoke the FSM transitions declared in spec
-/// §synth-5-E lines 1141-1156. Calling, e.g., `pool_return` on a
-/// `Slot<DmaArmedRx>` is a type error caught by rustc rather than a
-/// runtime check.
-///
-/// Every transition takes `&self` (docs/adr/0111 D4): the book is
-/// interior-mutable, so the link that holds an armed slot and the session that
-/// opens another share the pool. `SLOT_COUNT` and `SLOT_SIZE` are the bounds the
-/// type reserves; the pool lends `count()` slots of at most `slot_len()` bytes,
-/// each fixed when it is made.
-#[repr(C)]
-pub struct {{ pascal_name }}<St = Owned> {
-    /// One line per slot the type can hold. The pool's own, whatever its
-    /// storage.
-    book: [Entry; SLOT_COUNT],
+/// The book of a pool that lends at run time (docs/adr/0111 D4): one line per
+/// slot the type can hold, the pool's own whatever its storage, and the
+/// counters of what it refused. All zero for the pool of every slot with no
+/// slot out.
+pub struct Book {
+    /// One line per slot of the bound.
+    entries: [Entry; SLOT_COUNT],
     /// `SLOT_COUNT` less the run-time count: the slots this pool does not lend.
     /// Kept this way round so the pool of every slot is all zero.
     withheld: u32,
@@ -748,8 +813,46 @@ pub struct {{ pascal_name }}<St = Owned> {
     violations: Word,
     /// Takes refused for a prefix wider than the slot's headroom.
     refused_prefixes: Word,
-    /// The slots' bytes.
+}
+
+impl Book {
+    /// The book of a pool that withholds `withheld` slots, with no slot out.
+    const fn new(withheld: u32) -> Self {
+        Self {
+            entries: [const { Entry::new() }; SLOT_COUNT],
+            withheld,
+            violations: Word::new(0),
+            refused_prefixes: Word::new(0),
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Pool struct — the slots' storage, and what it keeps of them
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Generated buffer-pool. Each slot's lifecycle state is tracked in
+/// `book`; the phantom-typed `Slot<S>` API guarantees that at compile time,
+/// author code can only invoke the FSM transitions declared in spec
+/// §synth-5-E lines 1141-1156. Calling, e.g., `pool_return` on a
+/// `Slot<DmaArmedRx>` is a type error caught by rustc rather than a
+/// runtime check.
+///
+/// What `book` is follows the storage (`Storage`, docs/adr/0111 D4). A pool
+/// that lends at run time keeps the book of its lendings, and every transition
+/// takes `&self`: the book is interior-mutable, so the link that holds an
+/// armed slot and the session that opens another share the pool; `SLOT_COUNT`
+/// and `SLOT_SIZE` are the bounds the type reserves, and the pool lends
+/// `count()` slots of at most `slot_len()` bytes, each fixed when it is
+/// made. A pool over its own storage in a document that lends every slot whole
+/// keeps one state byte per slot, and its transitions take `&mut self`.
+#[repr(C)]
+pub struct {{ pascal_name }}<St: Storage = Owned> {
+    /// The slots' bytes. First, so a pool that keeps a state per slot lies as
+    /// one did before the book: the slots, then their states.
     store: St,
+    /// What the pool keeps of its slots.
+    book: St::Book,
 }
 {% if shared %}
 
@@ -765,18 +868,393 @@ impl Default for {{ pascal_name }} {
         Self::new()
     }
 }
+{% if not lends %}
 
-impl {{ pascal_name }} {
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// The pool over its own storage, lending every slot whole (docs/adr/0111
+// D4): one state byte per slot, the slot's number for a handle, `&mut self`
+// for a transition, and no length to check, the build's being every slot's.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl {{ pascal_name }}<Owned> {
+    /// Construct an empty pool — every slot starts on the freelist. A
+    /// `const fn`, and every byte of the value is zero (state `free` is 0),
+    /// so a `static` holding it lies in `.bss`.
+    pub const fn new() -> Self {
+        Self {
+            store: Owned([SlotBytes([0u8; SLOT_SIZE]); SLOT_COUNT]),
+            book: [SlotState::Free; SLOT_COUNT],
+        }
+    }
+
+    /// Acquire a free slot for CPU-side encoding. Spec §synth-5-E line
+    /// 1141: `free → cpu-mut`. Returns `None` when every slot is in
+    /// use, preserving the α-era full-pool semantics.
+    pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>> {
+        for (idx, st) in SlotNo::ALL.iter().copied().zip(self.book.iter_mut()) {
+            if *st == SlotState::Free {
+                *st = SlotState::CpuMut;
+                return Some(Slot { no: idx, generation: (), _state: PhantomData });
+            }
+        }
+        None
+    }
+
+    /// Arm a free slot for peripheral RX. Spec §synth-5-E line 1146:
+    /// `free → dma-armed-rx`. C5: pre-arm
+    /// `sce_dcache_invalidate_by_addr` is emitted here when
+    /// `cache-policy: maintain && platform.has_speculative_prefetch`
+    /// per spec lines 1189-1198 — evicts any cache lines the CPU's
+    /// prefetcher / speculative load may have populated for this
+    /// slot region while it sat on the freelist. Without the
+    /// pre-arm invalidate, those stale lines would shadow DMA
+    /// writes even after the post-RX invalidate (RFC §synth-5-E lines
+    /// 1199-1212).
+    pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
+        for (idx, st) in SlotNo::ALL.iter().copied().zip(self.book.iter_mut()) {
+            if *st == SlotState::Free {
+                {% if edge_cache["link_arm_rx"].invalidate %}
+                // C5 pre-arm cache-invalidate (spec lines 1189-1198).
+                unsafe {
+                    sce_dcache_invalidate_by_addr(
+                        idx.of_mut(&mut self.store.0).0.as_mut_ptr() as *mut core::ffi::c_void,
+                        SLOT_SIZE,
+                    );
+                }
+                {% endif %}
+                *st = SlotState::DmaArmedRx;
+                return Some(Slot { no: idx, generation: (), _state: PhantomData });
+            }
+        }
+        None
+    }
+
+    /// Inspect a slot's current lifecycle state. Out-of-range index
+    /// is `None` so debug introspection cannot panic.
+    pub fn slot_state(&self, idx: usize) -> Option<SlotState> {
+        SlotNo::from_index(idx).map(|slot| *slot.of(&self.book))
+    }
+
+    /// The slot `idx` names, when it names one and that slot is in
+    /// `state`. The one place an index-keyed edge or accessor turns the
+    /// `usize` it was handed into a slot, so each reads the state once
+    /// and every later table access is by `SlotNo`.
+    fn slot_in(&self, idx: usize, state: SlotState) -> Option<SlotNo> {
+        SlotNo::from_index(idx).filter(|slot| *slot.of(&self.book) == state)
+    }
+
+    /// Which slot a buffer address names, if any.
+    ///
+    /// The return leg of address publication. Peripheral completion
+    /// callbacks conventionally hand back the buffer address they were
+    /// given (`rx_frame_cb(addr, len)`), while every edge back into
+    /// the pool is keyed by slot index. Without this the driver keeps
+    /// a shadow table of a layout the pool already knows, and a slip
+    /// in that table advances the wrong slot.
+    ///
+    /// Only an exact slot base resolves. An interior or foreign
+    /// pointer is `None` rather than being rounded down to the slot
+    /// containing it: a completion naming an address the pool never
+    /// published is a driver bug, and rounding would turn it into a
+    /// plausible-looking index.
+    ///
+    /// Checked arithmetic throughout, because the consumer denies
+    /// `clippy::arithmetic_side_effects`: an address below the table is
+    /// the subtraction's `None`, and the remainder and quotient divide
+    /// by the stride, `size_of::<SlotBytes>()`, which is `slot-size`
+    /// and positive by the parser. `is_multiple_of` would say the
+    /// remainder test in one call, but the generated Rust compiles on
+    /// Rust 1.81, which does not have it.
+    pub fn slot_index_of_ptr(&self, ptr: *const u8) -> Option<usize> {
+        let base = self.store.0.as_ptr() as usize;
+        let stride = core::mem::size_of::<SlotBytes>();
+        let offset = (ptr as usize).checked_sub(base)?;
+        if offset.checked_rem(stride)? != 0 {
+            return None;
+        }
+        let idx = offset.checked_div(stride)?;
+        SlotNo::from_index(idx).map(SlotNo::index)
+    }
+{% for a in addresses %}{% if not a.holdable %}
+
+    /// Address of a slot in `{{ a.state_spec }}`, for the descriptor
+    /// the bus master reads it from.
+    ///
+    /// `{{ a.state_spec }}` hands out no handle — the caller reached it
+    /// through `{{ a.arm_op }}`, which consumed one — so the slot is
+    /// named by index, the same key the completion signal carries.
+    /// `None` unless the slot really is in `{{ a.state_spec }}`, so an
+    /// address cannot be lifted out of a slot some other owner holds.
+    ///
+    /// Returning a raw pointer rather than a slice is the point. A
+    /// `&{% if a.device_writes %}mut {% endif %}[u8]` handed out here would be a live Rust reference to
+    /// memory a peripheral is about to {% if a.device_writes %}write{% else %}read{% endif %}, which is the aliasing
+    /// the DMA states exist to deny; a raw pointer carries the address
+    /// and no promise about the memory. Obtaining one is safe because
+    /// nothing can be read or written through it without an `unsafe`
+    /// block at the point of use, which is where the contract actually
+    /// binds: the pointer is valid only while the slot stays in
+    /// `{{ a.state_spec }}`, and{% if a.device_writes %} the CPU must not read through it
+    /// before the completion edge{% else %} the CPU must not write through it while
+    /// the transfer runs{% endif %}.
+    pub fn {{ a.op_name }}(&{% if a.device_writes %}mut {% endif %}self, idx: usize) -> Option<*{% if a.device_writes %}mut{% else %}const{% endif %} u8> {
+        let slot = self.slot_in(idx, SlotState::{{ a.state_pascal }})?;
+        Some(slot.{% if a.device_writes %}of_mut(&mut self.store.0).0.as_mut_ptr(){% else %}of(&self.store.0).0.as_ptr(){% endif %})
+    }
+{% endif %}{% endfor %}
+
+    /// Number of slots currently on the freelist.
+    pub fn free_count(&self) -> usize {
+        self.book.iter().filter(|s| **s == SlotState::Free).count()
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot<CpuMut> — the FSM edges leaving cpu-mut that author code can
+// directly invoke: `cpu-mut → dma-armed-tx` (link_arm_tx) and
+// `cpu-mut → free` (pool_return / abort encode error path).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl Slot<CpuMut, ()> {
+    /// Hand the slot off to the link's TX path. Spec §synth-5-E line 1142:
+    /// `cpu-mut → dma-armed-tx`. Consumes the handle — the slot
+    /// progresses through `DmaArmedTx → DmaBusyTx → Free` via DMA
+    /// controller and TX-complete IRQ; author code cannot observe
+    /// these intermediate states. C5: when `cache-policy: maintain`,
+    /// emits `sce_dcache_clean_by_addr` before the state transition
+    /// (spec lines 1186-1188) so the DMA controller reads the
+    /// latest CPU writes from main memory.
+    pub fn link_arm_tx(self, pool: &mut {{ pascal_name }}) {
+        {% if edge_cache["link_arm_tx"].clean %}
+        // C5 cache-clean before TX descriptor publish (spec lines 1186-1188).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                self.no.of(&pool.store.0).0.as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+        {% endif %}
+        *self.no.of_mut(&mut pool.book) = SlotState::DmaArmedTx;
+    }
+
+    /// Return the slot to the freelist. Spec §synth-5-E line 1155:
+    /// `cpu-mut → free` ("abort encode" error path) and the
+    /// `cpu-mut|cpu-ref → free` author-visible API on lines
+    /// 1232-1237. Consumes the handle.
+    pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
+        *self.no.of_mut(&mut pool.book) = SlotState::Free;
+    }
+
+    /// Read-only borrow of the slot's bytes.
+    pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
+        &self.no.of(&pool.store.0).0
+    }
+
+    /// Mutable borrow of the slot's bytes.
+    pub fn write<'a>(&'a mut self, pool: &'a mut {{ pascal_name }}) -> &'a mut [u8; SLOT_SIZE] {
+        &mut self.no.of_mut(&mut pool.store.0).0
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot<CpuRef> — the FSM edge leaving cpu-ref that author code
+// directly invokes: `cpu-ref → free` (pool_return). The
+// `cpu-ref → cpu-mut` in-place mutate edge (spec line 1153) requires
+// cache-clean pinning on the next hand-off (line 1154) and is
+// intentionally not emitted until a consumer needs in-place mutation.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl Slot<CpuRef, ()> {
+    /// Return the slot to the freelist. Spec §synth-5-E line 1152:
+    /// `cpu-ref → free` ("handler complete; pool_return(slot)").
+    /// Consumes the handle.
+    pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
+        *self.no.of_mut(&mut pool.book) = SlotState::Free;
+    }
+
+    /// Read-only borrow of the slot's bytes — `cpu-ref` is a shared
+    /// CPU-read state per spec line 1135.
+    pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
+        &self.no.of(&pool.store.0).0
+    }
+}
+
+{% for a in addresses %}{% if a.holdable %}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Address publication for `{{ a.state_spec }}` — where the slot passes
+// into a bus master's hands and therefore has to be findable by it.
+//
+// The states that can produce an address through the CPU accessors
+// are `cpu-mut` and `cpu-ref`, and those are exactly the two no bus
+// master owns. Without this the arm edges hand back a handle that
+// names a slot the peripheral is about to use and no way to say
+// where it is.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl Slot<{{ a.state_pascal }}, ()> {
+    /// Address of this slot, for the descriptor the bus master reads
+    /// it from. Spec §synth-5-E lines 1024-1073 (the slot table is
+    /// DMA-aligned so that this address is one a peripheral accepts).
+    ///
+    /// Borrows rather than consumes: publishing the address is not a
+    /// transition. The caller writes it into the peripheral's
+    /// descriptor and then advances the slot with `{{ a.advance_op }}`,
+    /// which is where the state actually changes.
+    ///
+    /// Returning a raw pointer rather than a slice is the point. A
+    /// `&{% if a.device_writes %}mut {% endif %}[u8]` handed out here would be a live Rust reference to
+    /// memory the peripheral is about to {% if a.device_writes %}write{% else %}read{% endif %}, which is the aliasing
+    /// `{{ a.state_spec }}` exists to deny; a raw pointer carries the
+    /// address and no promise about the memory. Obtaining one is safe
+    /// because nothing can be read or written through it without an
+    /// `unsafe` block at the point of use, which is where the contract
+    /// binds: valid only while the slot stays in `{{ a.state_spec }}`,
+    /// and{% if a.device_writes %} the CPU must not read through it before the completion
+    /// edge{% else %} the CPU must not write through it while the transfer runs{% endif %}.
+    ///
+    /// Takes `&{% if a.device_writes %}mut {% endif %}{{ pascal_name }}`{% if a.device_writes %} because a pointer valid for writes
+    /// has to be derived from a mutable borrow{% else %} — the peripheral only reads,
+    /// so a shared borrow carries all the provenance needed{% endif %}.
+    pub fn {{ a.op_name }}(&self, pool: &{% if a.device_writes %}mut {% endif %}{{ pascal_name }}) -> *{% if a.device_writes %}mut{% else %}const{% endif %} u8 {
+        self.no.{% if a.device_writes %}of_mut(&mut pool.store.0).0.as_mut_ptr(){% else %}of(&pool.store.0).0.as_ptr(){% endif %}
+    }
+}
+
+{% endif %}{% endfor %}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Runtime seam — the six FSM edges the DMA controller, the
+// peripheral, and the completion IRQs own (spec §synth-5-E lines
+// 1144, 1145, 1149, 1150, 1153, 1156).
+//
+// These are not part of the author-visible API on spec lines
+// 1232-1237, but they are emitted, because leaving them out does not
+// make them unreachable — it makes the pool a one-way sink.
+// `pool_acquire_for_encode` and `link_arm_rx` hand slots out;
+// `dma-busy-tx → free` and `dma-busy-rx → cpu-ref` are the only
+// edges that hand them back, and both live here. Without this block
+// a slot armed for DMA never returns to the freelist and the pool
+// drains permanently.
+//
+// Two shapes, decided by whether the edge's source state is one the
+// API can hand back as a `Slot<S>`:
+//
+//   * source is holdable — the caller has the handle, so the method
+//     consumes it and Rust's move semantics invalidate the old state.
+//   * source is DMA-owned — no handle exists by construction. The
+//     completion signal carries a channel/descriptor index and
+//     nothing else, so the pool method takes `idx` and mints the
+//     resulting handle.
+//
+// Every one is `unsafe`, and that is a real contract rather than a
+// naming convention: calling one before the hardware event it names
+// hands out a view of memory the peripheral is still writing.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl {{ pascal_name }}<Owned> {
+{% for t in seam %}
+{% if not t.from_holdable %}
+    /// `{{ t.from_spec }} → {{ t.to_spec }}` — {{ t.trigger }}.
+    /// Spec §synth-5-E line {{ t.spec_line }}.
+    ///
+    /// Runtime-owned edge. `{{ t.from_spec }}` hands out no handle, so
+    /// the slot is named by index — which is what the completion
+    /// signal actually carries.
+    ///
+    /// Refuses a slot that is not in `{{ t.from_spec }}`, so a spurious
+    /// or replayed interrupt cannot advance an unrelated slot.
+    ///
+    /// # Safety
+    /// The caller must have observed {{ t.trigger }} for this slot.
+    /// Calling it early publishes memory the peripheral still owns.
+    pub unsafe fn {{ t.op_name }}(&mut self, idx: usize) -> {% if t.to_holdable %}Option<Slot<{{ t.to_pascal }}>>{% else %}bool{% endif %} {
+{% if t.to_holdable %}
+        let slot = self.slot_in(idx, SlotState::{{ t.from_pascal }})?;
+{% else %}
+        let Some(slot) = self.slot_in(idx, SlotState::{{ t.from_pascal }}) else {
+            return false;
+        };
+{% endif %}
+{% if t.cache_clean %}
+        // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                slot.of(&self.store.0).0.as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+{% if t.cache_invalidate %}
+        // C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}) —
+        // evicts the stale lines the CPU holds for a region the DMA
+        // has just rewritten.
+        unsafe {
+            sce_dcache_invalidate_by_addr(
+                slot.of_mut(&mut self.store.0).0.as_mut_ptr() as *mut core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+        *slot.of_mut(&mut self.book) = SlotState::{{ t.to_pascal }};
+{% if t.to_holdable %}
+        Some(Slot { no: slot, generation: (), _state: PhantomData })
+{% else %}
+        true
+{% endif %}
+    }
+
+{% endif %}
+{% endfor %}
+}
+{% for t in seam %}
+{% if t.from_holdable %}
+
+impl Slot<{{ t.from_pascal }}, ()> {
+    /// `{{ t.from_spec }} → {{ t.to_spec }}` — {{ t.trigger }}.
+    /// Spec §synth-5-E line {{ t.spec_line }}.
+    ///
+    /// Runtime-owned edge. Consumes the handle, so the
+    /// `{{ t.from_spec }}` view cannot outlive the transition.
+    ///
+    /// # Safety
+    /// The caller must have observed {{ t.trigger }} for this slot.
+    /// Calling it early publishes memory the peripheral still owns.
+    pub unsafe fn {{ t.op_name }}(self, pool: &mut {{ pascal_name }}){% if t.to_holdable %} -> Slot<{{ t.to_pascal }}>{% endif %} {
+{% if t.cache_clean %}
+        // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                self.no.of(&pool.store.0).0.as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+{% if t.cache_invalidate %}
+        // C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_invalidate_by_addr(
+                self.no.of_mut(&mut pool.store.0).0.as_mut_ptr() as *mut core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+        *self.no.of_mut(&mut pool.book) = SlotState::{{ t.to_pascal }};
+{% if t.to_holdable %}
+        Slot { no: self.no, generation: (), _state: PhantomData }
+{% endif %}
+    }
+}
+{% endif %}
+{% endfor %}
+{% else %}
+
+impl {{ pascal_name }}<Owned> {
     /// The pool of all `SLOT_COUNT` slots over storage it owns, with no slot
     /// out. A `const fn`, and every byte of the value is zero (state `free`
     /// is 0, every generation 0), so a `static` holding it lies in `.bss`.
     pub const fn new() -> Self {
         Self {
-            book: [const { Entry::new() }; SLOT_COUNT],
-            withheld: 0,
-            violations: Word::new(0),
-            refused_prefixes: Word::new(0),
             store: Owned::new(),
+            book: Book::new(0),
         }
     }
 
@@ -785,10 +1263,11 @@ impl {{ pascal_name }} {
     pub fn with_count(count: usize) -> Result<Self, PoolRefused> {
         let withheld = withheld_for(count)?;
         let mut pool = Self::new();
-        pool.withheld = withheld;
+        pool.book.withheld = withheld;
         Ok(pool)
     }
 }
+{% endif %}
 
 impl<'a> {{ pascal_name }}<Over<'a>> {
     /// A pool over storage the caller holds (ADR 0082): `bytes` cut into `count`
@@ -810,15 +1289,12 @@ impl<'a> {{ pascal_name }}<Over<'a>> {
             return Err(PoolRefused::Misaligned);
         }
         Ok(Self {
-            book: [const { Entry::new() }; SLOT_COUNT],
-            withheld,
-            violations: Word::new(0),
-            refused_prefixes: Word::new(0),
             store: Over {
                 base: core::ptr::NonNull::from(bytes).cast::<u8>(),
                 stride: len,
                 _span: PhantomData,
             },
+            book: Book::new(withheld),
         })
     }
 }
@@ -838,7 +1314,7 @@ fn withheld_for(count: usize) -> Result<u32, PoolRefused> {
 impl<St: SlotStore> {{ pascal_name }}<St> {
     /// How many slots this pool lends: its run-time count.
     pub fn count(&self) -> usize {
-        SLOT_COUNT.saturating_sub(self.withheld as usize)
+        SLOT_COUNT.saturating_sub(self.book.withheld as usize)
     }
 
     /// The length of each slot: `SLOT_SIZE` for the pool's own storage, the
@@ -851,17 +1327,17 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     /// How many stale, forged or misplaced indices the pool has refused
     /// (`pool/ownership-violation`).
     pub fn ownership_violations(&self) -> u32 {
-        word_load(&self.violations)
+        word_load(&self.book.violations)
     }
 
     /// How many takes the pool refused for a prefix wider than the slot's
     /// headroom.
     pub fn refused_prefixes(&self) -> u32 {
-        word_load(&self.refused_prefixes)
+        word_load(&self.book.refused_prefixes)
     }
 
     fn entry(&self, no: SlotNo) -> &Entry {
-        no.of(&self.book)
+        no.of(&self.book.entries)
     }
 
     /// The slots this pool counts, in table order.
@@ -882,7 +1358,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     }
 
     /// A handle on a slot this context has just moved into its state.
-    fn mint<S>(&self, no: SlotNo) -> Slot<S> {
+    fn mint<S>(&self, no: SlotNo) -> Slot<S, u32> {
         Slot {
             no,
             generation: word_load(&self.entry(no).generation),
@@ -891,7 +1367,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     }
 
     fn violation(&self) {
-        word_bump(&self.violations);
+        word_bump(&self.book.violations);
     }
 
     /// The slot `index` names when the pool counts it, its generation is the
@@ -963,7 +1439,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     /// prefix a link writes when it takes the slot (docs/adr/0111 D4): what
     /// [`Slot::write`] hands out starts after them. Refused when every slot
     /// the pool counts is out, or when the length or the headroom does not fit.
-    pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut>, LendRefused> {
+    pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut, u32>, LendRefused> {
         let no = self.lend(SlotState::CpuMut, len, headroom)?;
         Ok(self.mint(no))
     }
@@ -978,7 +1454,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     /// pre-arm invalidate, those stale lines would shadow DMA
     /// writes even after the post-RX invalidate (RFC §synth-5-E lines
     /// 1199-1212).
-    pub fn link_arm_rx(&self, len: usize) -> Result<Slot<DmaArmedRx>, LendRefused> {
+    pub fn link_arm_rx(&self, len: usize) -> Result<Slot<DmaArmedRx, u32>, LendRefused> {
         let no = self.lend(SlotState::DmaArmedRx, len, 0)?;
 {% if edge_cache["link_arm_rx"].invalidate %}
         // C5 pre-arm cache-invalidate (spec lines 1189-1198).
@@ -997,7 +1473,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     /// generation, given up in state `S`. A stale or forged index, or one
     /// whose handle was already rebuilt, yields nothing and is counted as an
     /// ownership violation (`pool/ownership-violation`).
-    pub fn reclaim<S: Held>(&self, index: SlotIndex) -> Option<Slot<S>> {
+    pub fn reclaim<S: Held>(&self, index: SlotIndex) -> Option<Slot<S, u32>> {
         let parked = S::STATE.bits() | PARKED;
         let Some(no) = self.named(index, parked) else {
             self.violation();
@@ -1122,7 +1598,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
             return Err(TakeRefused::Stale);
         }
         if too_wide {
-            word_bump(&self.refused_prefixes);
+            word_bump(&self.book.refused_prefixes);
             self.free(no);
             return Err(TakeRefused::PrefixTooWide);
         }
@@ -1230,7 +1706,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
 // `cpu-mut → free` (pool_return / abort encode error path).
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-impl Slot<CpuMut> {
+impl Slot<CpuMut, u32> {
     /// Hand the slot off to the link's TX path. Spec §synth-5-E line 1142:
     /// `cpu-mut → dma-armed-tx`. `frame` is how many bytes of the frame's room
     /// ([`Slot::write`]) the holder wrote; a frame larger than the room is
@@ -1295,7 +1771,7 @@ impl Slot<CpuMut> {
 // received frame to the events it raised (docs/adr/0111 D4).
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-impl Slot<CpuRef> {
+impl Slot<CpuRef, u32> {
     /// Return the slot to the freelist. Spec §synth-5-E line 1152:
     /// `cpu-ref → free` ("handler complete; pool_return(slot)").
     /// Consumes the handle.
@@ -1340,7 +1816,7 @@ impl Slot<CpuRef> {
 // where it is.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-impl Slot<{{ a.state_pascal }}> {
+impl Slot<{{ a.state_pascal }}, u32> {
     /// Address of this slot, for the descriptor the bus master reads
     /// it from. Spec §synth-5-E lines 1024-1073 (the slot table is
     /// DMA-aligned so that this address is one a peripheral accepts).
@@ -1413,7 +1889,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
     /// # Safety
     /// The caller must have observed {{ t.trigger }} for this slot.
     /// Calling it early publishes memory the peripheral still owns.
-    pub unsafe fn {{ t.op_name }}(&self, idx: usize) -> {% if t.to_holdable %}Option<Slot<{{ t.to_pascal }}>>{% else %}bool{% endif %} {
+    pub unsafe fn {{ t.op_name }}(&self, idx: usize) -> {% if t.to_holdable %}Option<Slot<{{ t.to_pascal }}, u32>>{% else %}bool{% endif %} {
         let from = SlotState::{{ t.from_pascal }}.bits();
 {% if t.to_holdable %}
         let slot = self.live_no(idx)?;
@@ -1465,7 +1941,7 @@ impl<St: SlotStore> {{ pascal_name }}<St> {
 {% for t in seam %}
 {% if t.from_holdable %}
 
-impl Slot<{{ t.from_pascal }}> {
+impl Slot<{{ t.from_pascal }}, u32> {
     /// `{{ t.from_spec }} → {{ t.to_spec }}` — {{ t.trigger }}.
     /// Spec §synth-5-E line {{ t.spec_line }}.
     ///
@@ -1475,7 +1951,7 @@ impl Slot<{{ t.from_pascal }}> {
     /// # Safety
     /// The caller must have observed {{ t.trigger }} for this slot.
     /// Calling it early publishes memory the peripheral still owns.
-    pub unsafe fn {{ t.op_name }}(self, pool: &{{ pascal_name }}<impl SlotStore>){% if t.to_holdable %} -> Slot<{{ t.to_pascal }}>{% endif %} {
+    pub unsafe fn {{ t.op_name }}(self, pool: &{{ pascal_name }}<impl SlotStore>){% if t.to_holdable %} -> Slot<{{ t.to_pascal }}, u32>{% endif %} {
 {% if t.cache_clean %}
         // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
         unsafe {
@@ -1527,6 +2003,87 @@ mod generated_tests {
     }
 
     #[test]
+    fn a_pool_over_caller_storage_cuts_it_into_the_slots_it_was_given() {
+        let count = SLOT_COUNT.min(2);
+        let mut arena = Arena::new();
+        let base = arena.0.as_ptr() as usize;
+        {
+            let pool = {{ pascal_name }}::over(&mut arena.0, count, ALIGNMENT as usize)
+                .ok()
+                .expect("an aligned span of the count times the length");
+            assert_eq!(pool.count(), count);
+            assert_eq!(pool.slot_len(), ALIGNMENT as usize);
+            let mut slots = Vec::new();
+            for n in 0..count {
+                let mut slot = pool
+                    .pool_acquire_for_encode(ALIGNMENT as usize, 0)
+                    .expect("a slot of the span");
+                let bytes = slot.write(&pool);
+                assert_eq!(bytes.len(), ALIGNMENT as usize);
+                assert_eq!(
+                    bytes.as_ptr() as usize,
+                    base + n * ALIGNMENT as usize,
+                    "slot {n} starts its length after the one before",
+                );
+                bytes[0] = n as u8 + 1;
+                slots.push(slot);
+            }
+            assert_eq!(
+                pool.pool_acquire_for_encode(ALIGNMENT as usize, 0).err(),
+                Some(LendRefused::Exhausted)
+            );
+            assert_eq!(
+                pool.pool_acquire_for_encode(ALIGNMENT as usize + 1, 0).err(),
+                Some(LendRefused::Length),
+                "a lending past the length the span was cut into",
+            );
+            for slot in slots {
+                slot.pool_return(&pool);
+            }
+        }
+        assert_eq!(arena.0[0], 1, "the pool wrote the caller's bytes");
+    }
+
+    #[test]
+    fn a_pool_over_a_short_or_misaligned_span_is_refused() {
+        let mut arena = Arena::new();
+        let count = SLOT_COUNT.min(2);
+        let len = ALIGNMENT as usize;
+        assert_eq!(
+            {{ pascal_name }}::over(&mut arena.0[..count * len - 1], count, len).err(),
+            Some(PoolRefused::Short)
+        );
+        assert_eq!(
+            {{ pascal_name }}::over(&mut arena.0, 0, len).err(),
+            Some(PoolRefused::Count)
+        );
+        assert_eq!(
+            {{ pascal_name }}::over(&mut arena.0, SLOT_COUNT + 1, len).err(),
+            Some(PoolRefused::Count)
+        );
+        assert_eq!(
+            {{ pascal_name }}::over(&mut arena.0, count, 0).err(),
+            Some(PoolRefused::Length)
+        );
+        assert_eq!(
+            {{ pascal_name }}::over(&mut arena.0, count, SLOT_SIZE + ALIGNMENT as usize).err(),
+            Some(PoolRefused::Length)
+        );
+        if ALIGNMENT > 1 {
+            assert_eq!(
+                {{ pascal_name }}::over(&mut arena.0, count, len + 1).err(),
+                Some(PoolRefused::Length),
+                "a length that puts the second slot off the alignment",
+            );
+            assert_eq!(
+                {{ pascal_name }}::over(&mut arena.0[1..], 1, len).err(),
+                Some(PoolRefused::Misaligned)
+            );
+        }
+    }
+
+{% if lends %}
+    #[test]
     fn pool_starts_with_all_slots_free() {
         let pool = {{ pascal_name }}::new();
         assert_eq!(pool.count(), SLOT_COUNT);
@@ -1540,7 +2097,7 @@ mod generated_tests {
     fn an_empty_pool_is_all_zero() {
         const EMPTY: {{ pascal_name }} = {{ pascal_name }}::new();
         let pool = EMPTY;
-        for entry in pool.book.iter() {
+        for entry in pool.book.entries.iter() {
             for word in [
                 &entry.state,
                 &entry.generation,
@@ -1552,9 +2109,9 @@ mod generated_tests {
                 assert_eq!(word_load(word), 0);
             }
         }
-        assert_eq!(pool.withheld, 0);
-        assert_eq!(word_load(&pool.violations), 0);
-        assert_eq!(word_load(&pool.refused_prefixes), 0);
+        assert_eq!(pool.book.withheld, 0);
+        assert_eq!(word_load(&pool.book.violations), 0);
+        assert_eq!(word_load(&pool.book.refused_prefixes), 0);
         // SAFETY: nothing else reaches the pool's storage in this test.
         let storage = unsafe { &*pool.store.0.get() };
         assert!(storage.iter().all(|slot| slot.0.iter().all(|b| *b == 0)));
@@ -1694,86 +2251,6 @@ mod generated_tests {
         let mut slot = pool.pool_acquire_for_encode(1, 0).expect("one byte");
         assert_eq!(slot.write(&pool).len(), 1, "the slot is as long as the lending named");
         slot.pool_return(&pool);
-    }
-
-    #[test]
-    fn a_pool_over_caller_storage_cuts_it_into_the_slots_it_was_given() {
-        let count = SLOT_COUNT.min(2);
-        let mut arena = Arena::new();
-        let base = arena.0.as_ptr() as usize;
-        {
-            let pool = {{ pascal_name }}::over(&mut arena.0, count, ALIGNMENT as usize)
-                .ok()
-                .expect("an aligned span of the count times the length");
-            assert_eq!(pool.count(), count);
-            assert_eq!(pool.slot_len(), ALIGNMENT as usize);
-            let mut slots = Vec::new();
-            for n in 0..count {
-                let mut slot = pool
-                    .pool_acquire_for_encode(ALIGNMENT as usize, 0)
-                    .expect("a slot of the span");
-                let bytes = slot.write(&pool);
-                assert_eq!(bytes.len(), ALIGNMENT as usize);
-                assert_eq!(
-                    bytes.as_ptr() as usize,
-                    base + n * ALIGNMENT as usize,
-                    "slot {n} starts its length after the one before",
-                );
-                bytes[0] = n as u8 + 1;
-                slots.push(slot);
-            }
-            assert_eq!(
-                pool.pool_acquire_for_encode(ALIGNMENT as usize, 0).err(),
-                Some(LendRefused::Exhausted)
-            );
-            assert_eq!(
-                pool.pool_acquire_for_encode(ALIGNMENT as usize + 1, 0).err(),
-                Some(LendRefused::Length),
-                "a lending past the length the span was cut into",
-            );
-            for slot in slots {
-                slot.pool_return(&pool);
-            }
-        }
-        assert_eq!(arena.0[0], 1, "the pool wrote the caller's bytes");
-    }
-
-    #[test]
-    fn a_pool_over_a_short_or_misaligned_span_is_refused() {
-        let mut arena = Arena::new();
-        let count = SLOT_COUNT.min(2);
-        let len = ALIGNMENT as usize;
-        assert_eq!(
-            {{ pascal_name }}::over(&mut arena.0[..count * len - 1], count, len).err(),
-            Some(PoolRefused::Short)
-        );
-        assert_eq!(
-            {{ pascal_name }}::over(&mut arena.0, 0, len).err(),
-            Some(PoolRefused::Count)
-        );
-        assert_eq!(
-            {{ pascal_name }}::over(&mut arena.0, SLOT_COUNT + 1, len).err(),
-            Some(PoolRefused::Count)
-        );
-        assert_eq!(
-            {{ pascal_name }}::over(&mut arena.0, count, 0).err(),
-            Some(PoolRefused::Length)
-        );
-        assert_eq!(
-            {{ pascal_name }}::over(&mut arena.0, count, SLOT_SIZE + ALIGNMENT as usize).err(),
-            Some(PoolRefused::Length)
-        );
-        if ALIGNMENT > 1 {
-            assert_eq!(
-                {{ pascal_name }}::over(&mut arena.0, count, len + 1).err(),
-                Some(PoolRefused::Length),
-                "a length that puts the second slot off the alignment",
-            );
-            assert_eq!(
-                {{ pascal_name }}::over(&mut arena.0[1..], 1, len).err(),
-                Some(PoolRefused::Misaligned)
-            );
-        }
     }
 
     // ── SlotIndex and reclaim (docs/adr/0111 D4) ──────────────────
@@ -2174,4 +2651,398 @@ mod generated_tests {
         assert!(unsafe { pool.rx_complete(SLOT_COUNT) }.is_none(), "out of range");
         slot.pool_return(&pool);
     }
+{% else %}
+    #[test]
+    fn pool_starts_with_all_slots_free() {
+        let pool = {{ pascal_name }}::new();
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn acquire_promotes_free_to_cpu_mut() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut));
+        assert_eq!(pool.free_count(), SLOT_COUNT - 1);
+        slot.pool_return(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::Free));
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn arm_rx_promotes_free_to_dma_armed_rx() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.link_arm_rx().expect("free slot available");
+        let idx = slot.idx();
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedRx));
+    }
+
+    #[test]
+    fn link_arm_tx_promotes_cpu_mut_to_dma_armed_tx_and_consumes_handle() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedTx));
+        // The slot handle is moved here; the next line would be
+        // a compile error if uncommented:
+        //   slot.pool_return(&mut pool);
+    }
+
+    #[test]
+    fn full_pool_returns_none_from_acquire() {
+        let mut pool = {{ pascal_name }}::new();
+        let mut held: Vec<Slot<CpuMut>> = Vec::new();
+        for _ in 0..SLOT_COUNT {
+            held.push(pool.pool_acquire_for_encode().expect("slot available"));
+        }
+        assert!(pool.pool_acquire_for_encode().is_none(), "pool exhausted");
+        for s in held {
+            s.pool_return(&mut pool);
+        }
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn cpu_mut_read_and_write_do_not_change_state() {
+        let mut pool = {{ pascal_name }}::new();
+        let mut slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        {
+            let bytes = slot.write(&mut pool);
+            bytes[0] = 0xAB;
+        }
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut));
+        assert_eq!(slot.read(&pool)[0], 0xAB);
+        slot.pool_return(&mut pool);
+    }
+
+    #[test]
+    fn slot_state_out_of_range_returns_none() {
+        let pool = {{ pascal_name }}::new();
+        assert!(pool.slot_state(SLOT_COUNT).is_none());
+        assert!(pool.slot_state(usize::MAX).is_none());
+    }
+
+    // ── Lifecycle closure ────────────────────────────────────────
+    // A slot armed for DMA has to come back. These walk the two arms
+    // end to end and assert the pool is whole again afterwards, which
+    // is exactly what fails when the runtime seam is missing: arming
+    // is author-callable, but `dma-busy-tx → free` and
+    // `dma-busy-rx → cpu-ref` are the only edges that return a slot,
+    // and both are runtime-owned. Without them the pool drains once
+    // and never refills.
+
+    #[test]
+    fn tx_arm_returns_the_slot_to_the_freelist() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedTx));
+        // SAFETY: no DMA controller here; this test *is* the driver.
+        assert!(unsafe { pool.dma_start_tx(idx) });
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaBusyTx));
+        assert!(unsafe { pool.tx_complete(idx) });
+        assert_eq!(pool.free_count(), SLOT_COUNT, "TX arm must not leak the slot");
+    }
+
+    #[test]
+    fn rx_arm_returns_the_slot_to_the_freelist() {
+        let mut pool = {{ pascal_name }}::new();
+        let armed = pool.link_arm_rx().expect("free slot available");
+        let idx = armed.idx();
+        // SAFETY: standing in for the peripheral and its completion IRQ.
+        unsafe { armed.dma_start_rx(&mut pool) };
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaBusyRx));
+        let readable = unsafe { pool.rx_complete(idx) }.expect("rx completion yields cpu-ref");
+        assert_eq!(readable.idx(), idx);
+        assert_eq!(readable.read(&pool).len(), SLOT_SIZE);
+        readable.pool_return(&mut pool);
+        assert_eq!(pool.free_count(), SLOT_COUNT, "RX arm must not leak the slot");
+    }
+
+    #[test]
+    fn the_whole_ring_can_be_armed_and_drained_repeatedly() {
+        let mut pool = {{ pascal_name }}::new();
+        for _round in 0..3 {
+            let mut armed = Vec::new();
+            for _ in 0..SLOT_COUNT {
+                let slot = pool.link_arm_rx().expect("free slot available");
+                armed.push(slot.idx());
+                // SAFETY: see above.
+                unsafe { slot.dma_start_rx(&mut pool) };
+            }
+            assert_eq!(pool.free_count(), 0, "ring fully armed");
+            for idx in armed {
+                unsafe { pool.rx_complete(idx) }
+                    .expect("rx completion yields cpu-ref")
+                    .pool_return(&mut pool);
+            }
+            assert_eq!(pool.free_count(), SLOT_COUNT, "ring fully recovered");
+        }
+    }
+
+    #[test]
+    fn un_arm_recovers_a_slot_whose_dma_never_started() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        // SAFETY: the error path — the driver knows the DMA never started.
+        let recovered = unsafe { pool.un_arm_tx(idx) }.expect("un-arm yields cpu-mut");
+        recovered.pool_return(&mut pool);
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    // ── Address publication ──────────────────────────────────────
+    // The lifecycle tests above walk the states; these check the slot
+    // can be handed to the bus master that is supposed to fill or
+    // drain it. Standing in for the peripheral means touching the
+    // slot through the published address only — a test that reached
+    // for `read` / `write` instead would be exercising the CPU
+    // accessors and would pass with no address accessor at all.
+
+    #[test]
+    fn every_slot_starts_on_the_declared_dma_boundary() {
+        let pool = {{ pascal_name }}::new();
+        // Slot 0 rides the containing allocation's alignment, which
+        // the type carries; the later slots are the ones a
+        // slot-size-shaped stride would push off the boundary.
+        for idx in 0..SLOT_COUNT {
+            let addr = &pool.store.0[idx] as *const SlotBytes as usize;
+            assert_eq!(
+                addr % ALIGNMENT as usize,
+                0,
+                "slot {idx} starts {} bytes past the {ALIGNMENT}-byte boundary the pool declares",
+                addr % ALIGNMENT as usize,
+            );
+        }
+        assert_eq!(
+            core::mem::align_of::<{{ pascal_name }}>(),
+            ALIGNMENT as usize,
+            "the pool type must carry the declared alignment so any placement of it is aligned",
+        );
+    }
+
+    #[test]
+    fn an_armed_rx_slot_can_be_filled_through_its_published_address() {
+        let mut pool = {{ pascal_name }}::new();
+        let armed = pool.link_arm_rx().expect("free slot available");
+        let idx = armed.idx();
+        let buf = armed.dma_armed_rx_ptr(&mut pool);
+        assert_eq!(
+            buf as usize % ALIGNMENT as usize,
+            0,
+            "a published address must satisfy the pool's DMA alignment",
+        );
+        assert_eq!(
+            pool.slot_index_of_ptr(buf),
+            Some(idx),
+            "the address the driver publishes must name the slot it came from",
+        );
+        // SAFETY: standing in for the MAC. The slot is armed, this
+        // test is the only writer, and nothing reads it until the
+        // completion edge below.
+        unsafe {
+            for i in 0..SLOT_SIZE {
+                buf.add(i).write((i % 251) as u8);
+            }
+            armed.dma_start_rx(&mut pool);
+        }
+        // SAFETY: standing in for the RX-complete IRQ.
+        let filled = unsafe { pool.rx_complete(idx) }.expect("rx completion yields cpu-ref");
+        let bytes = filled.read(&pool);
+        for i in 0..SLOT_SIZE {
+            assert_eq!(
+                bytes[i],
+                (i % 251) as u8,
+                "byte {i} the peripheral wrote must be the byte the CPU reads back",
+            );
+        }
+        filled.pool_return(&mut pool);
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn an_armed_tx_slot_can_be_drained_through_its_published_address() {
+        let mut pool = {{ pascal_name }}::new();
+        let mut slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        for (i, b) in slot.write(&mut pool).iter_mut().enumerate() {
+            *b = (i % 241) as u8;
+        }
+        slot.link_arm_tx(&mut pool);
+        let buf = pool
+            .dma_armed_tx_ptr(idx)
+            .expect("an armed TX slot publishes its address");
+        assert_eq!(buf as usize % ALIGNMENT as usize, 0);
+        assert_eq!(pool.slot_index_of_ptr(buf), Some(idx));
+        // SAFETY: standing in for the DMA controller reading the
+        // descriptor it was pointed at. Read-only, and the slot is
+        // armed for TX for the duration.
+        unsafe {
+            for i in 0..SLOT_SIZE {
+                assert_eq!(
+                    buf.add(i).read(),
+                    (i % 241) as u8,
+                    "byte {i} the bus master reads must be the byte the CPU encoded",
+                );
+            }
+            assert!(pool.dma_start_tx(idx));
+            assert!(pool.tx_complete(idx));
+        }
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    /// An address is published only while the slot is in the state
+    /// that owes one. Lifting one out of a slot in any other state
+    /// would hand a bus master a buffer some other owner is using.
+    #[test]
+    fn the_tx_address_is_refused_outside_the_armed_state() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        assert!(
+            pool.dma_armed_tx_ptr(idx).is_none(),
+            "cpu-mut is not dma-armed-tx",
+        );
+        slot.link_arm_tx(&mut pool);
+        assert!(pool.dma_armed_tx_ptr(idx).is_some(), "armed slot publishes");
+        // SAFETY: this test is the driver.
+        unsafe {
+            assert!(pool.dma_start_tx(idx));
+            assert!(
+                pool.dma_armed_tx_ptr(idx).is_none(),
+                "dma-busy-tx already holds the address; re-publishing names live memory",
+            );
+            assert!(pool.tx_complete(idx));
+        }
+        assert!(
+            pool.dma_armed_tx_ptr(idx).is_none(),
+            "a free slot publishes no address",
+        );
+        assert!(pool.dma_armed_tx_ptr(SLOT_COUNT).is_none(), "out of range");
+    }
+
+    /// The reverse map resolves exactly the addresses the pool
+    /// published and nothing else — an interior or foreign pointer is
+    /// a driver bug, and rounding it to the containing slot would
+    /// hide one.
+    #[test]
+    fn slot_index_of_ptr_round_trips_slot_bases_and_refuses_the_rest() {
+        let pool = {{ pascal_name }}::new();
+        for idx in 0..SLOT_COUNT {
+            let base = &pool.store.0[idx] as *const SlotBytes as *const u8;
+            assert_eq!(pool.slot_index_of_ptr(base), Some(idx));
+        }
+        if SLOT_SIZE > 1 {
+            // SAFETY: one past the base of slot 0, still inside the pool.
+            let interior = unsafe { (&pool.store.0[0] as *const SlotBytes as *const u8).add(1) };
+            assert!(
+                pool.slot_index_of_ptr(interior).is_none(),
+                "an interior pointer names no slot base",
+            );
+        }
+        // SAFETY: one slot past the end of the table — an address the
+        // pool never published.
+        let past_end =
+            unsafe { (&pool.store.0[0] as *const SlotBytes as *const u8).add(SLOT_SIZE * SLOT_COUNT) };
+        assert!(pool.slot_index_of_ptr(past_end).is_none(), "past the table");
+        // Below the table. Deterministic, unlike borrowing the address
+        // of some unrelated local, which could land inside the pool's
+        // range by accident and make this check pass for the wrong
+        // reason on one run and fail on the next.
+        let below = (pool.store.0.as_ptr() as usize - 1) as *const u8;
+        assert!(pool.slot_index_of_ptr(below).is_none(), "below the table");
+        assert_eq!(pool.free_count(), SLOT_COUNT, "no slot was disturbed");
+    }
+
+    /// A spurious or replayed interrupt must not advance a slot that
+    /// is in some other state. The index-keyed seam has no handle to
+    /// tag-check, so this state check is the only thing standing
+    /// between a stray IRQ and a slot handed to two owners.
+    #[test]
+    fn the_seam_refuses_a_slot_in_the_wrong_state() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        // SAFETY: deliberately calling on a cpu-mut slot; the point is
+        // that it is refused rather than acted on.
+        assert!(!unsafe { pool.dma_start_tx(idx) }, "cpu-mut is not dma-armed-tx");
+        assert!(!unsafe { pool.tx_complete(idx) }, "cpu-mut is not dma-busy-tx");
+        assert!(unsafe { pool.rx_complete(idx) }.is_none(), "cpu-mut is not dma-busy-rx");
+        assert!(unsafe { pool.un_arm_tx(idx) }.is_none(), "cpu-mut is not dma-armed-tx");
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut), "state untouched");
+        assert!(unsafe { pool.rx_complete(SLOT_COUNT) }.is_none(), "out of range");
+        slot.pool_return(&mut pool);
+    }
+    // ── A pool that lends every slot whole (docs/adr/0111 D4) ──────────
+    // Its storage keeps one state byte per slot and its handle is the slot's
+    // number: the book, the generation and the run-time count and length are
+    // a lending pool's alone, so this pool pays for none of them.
+
+    #[test]
+    fn a_pool_that_lends_every_slot_whole_keeps_one_state_byte_per_slot() {
+        assert_eq!(core::mem::size_of::<SlotState>(), 1);
+        assert_eq!(
+            core::mem::size_of::<<Owned as Storage>::Book>(),
+            SLOT_COUNT,
+            "one state byte per slot, and no book",
+        );
+        let unpadded = SLOT_COUNT * SLOT_SIZE + SLOT_COUNT;
+        let padded = unpadded.div_ceil(ALIGNMENT as usize) * ALIGNMENT as usize;
+        assert_eq!(
+            core::mem::size_of::<{{ pascal_name }}>(),
+            padded,
+            "the slots and their states, padded to the alignment, and nothing else",
+        );
+    }
+
+    #[test]
+    fn a_handle_of_a_pool_that_lends_every_slot_whole_is_the_slots_number() {
+        assert_eq!(core::mem::size_of::<<Owned as Storage>::Generation>(), 0);
+        assert_eq!(
+            core::mem::size_of::<Slot<CpuMut>>(),
+            core::mem::size_of::<SlotNo>(),
+            "a handle carries no generation",
+        );
+        assert!(
+            core::mem::size_of::<Slot<CpuMut, u32>>() > core::mem::size_of::<Slot<CpuMut>>(),
+            "the generation is the lending pool's handle's alone",
+        );
+    }
+
+    #[test]
+    fn an_empty_pool_that_lends_every_slot_whole_is_a_const_value_all_free() {
+        const EMPTY: {{ pascal_name }} = {{ pascal_name }}::new();
+        let pool = EMPTY;
+        assert!(pool.book.iter().all(|state| *state == SlotState::Free));
+        assert!(pool.store.0.iter().all(|slot| slot.0.iter().all(|b| *b == 0)));
+        assert_eq!(SlotState::Free as u8, 0, "so the empty pool is all zero bytes");
+    }
+
+    /// The pool over the caller's storage lends by index beside the one that
+    /// lends its own slots whole.
+    #[test]
+    fn a_pool_over_caller_storage_names_its_slots_by_generation() {
+        let mut arena = Arena::new();
+        let len = ALIGNMENT as usize;
+        let pool = {{ pascal_name }}::over(&mut arena.0, 1, len)
+            .ok()
+            .expect("one slot of the alignment");
+        let slot = pool.pool_acquire_for_encode(len, 0).expect("the slot");
+        let old = slot.index();
+        slot.pool_return(&pool);
+        let slot = pool.pool_acquire_for_encode(len, 0).expect("the slot again");
+        let index = slot.into_index(&pool);
+        assert_ne!(index.generation, old.generation, "a later lending of the slot");
+        assert!(pool.reclaim::<CpuMut>(old).is_none(), "the earlier lending's index");
+        assert_eq!(pool.ownership_violations(), 1);
+        let back: Slot<CpuMut, u32> = pool.reclaim(index).expect("the current index");
+        back.pool_return(&pool);
+        assert_eq!(pool.free_count(), 1);
+    }
+{% endif %}
 }

@@ -87,6 +87,11 @@ pub(super) struct LinkTxPool {
     upper: String,
     /// The `#include` of the C11 pool header.
     c_include: String,
+    /// The pool keeps the book of its lendings (docs/adr/0111 D4): a send
+    /// takes it by `&` (Rust) and lends a slot of the pool's slot length,
+    /// where one that keeps a state per slot is taken by `&mut` and lends a
+    /// slot whole.
+    lends: bool,
 }
 
 /// What a link's typed receive and transmit paths are generated from.
@@ -334,16 +339,22 @@ fn takes_caller_inputs(codec: &ImportContext, direction: Direction) -> Option<St
 
 /// The pool `pool` names: by its import when the link imports it (the import's
 /// document name is the pool's), by its own name when the build lists it.
+///
+/// Whether it lends (docs/adr/0111 D4) is read from the imported document. A
+/// pool the link names without importing it is one this generation cannot
+/// read, and is taken as a document that says nothing about its lending: one
+/// that keeps a state per slot.
 fn tx_pool_of(
     pool: &str,
     imports: &[ImportContext],
     lang: Language,
     options: &crate::ForgeCompileOptions,
 ) -> LinkTxPool {
-    let name = imports
+    let imported = imports
         .iter()
-        .find(|imp| imp.alias == pool && imp.kind == "buffer-pool")
-        .map_or(pool, |imp| imp.document_name.as_str());
+        .find(|imp| imp.alias == pool && imp.kind == "buffer-pool");
+    let name = imported.map_or(pool, |imp| imp.document_name.as_str());
+    let lends = imported.is_some_and(|imp| imp.buffer_pool_lends);
     let identity = super::forge_import_identity(name, &lang, true, options);
     LinkTxPool {
         rust_type: format!("super::{}::{}", identity.namespace, identity.type_name),
@@ -353,6 +364,7 @@ fn tx_pool_of(
             "#include \"{}.h\"",
             filters::to_snake_case(name.to_string())
         ),
+        lends,
     }
 }
 

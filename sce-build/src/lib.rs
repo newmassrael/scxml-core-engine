@@ -8068,6 +8068,9 @@ fn validate_and_enrich_imports(
             // slice without re-walking the imports.
             if let forge::model::ForgeDocument::BufferPool(pm) = &doc {
                 ctx.buffer_pool_slot_size = Some(pm.slot_size);
+                // docs/adr/0111 D4: how a link that encodes into the pool
+                // takes it and lends a slot of it.
+                ctx.buffer_pool_lends = pm.lends();
             }
             // RFC §synth-5-P Migration: a worker's inbox is a queue it
             // imports, and the queue must be single-consumer. The worker
@@ -16007,36 +16010,31 @@ topology:
             body.contains("pub struct RxPoolSram1"),
             "must emit pascal-cased struct; full source:\n{body}",
         );
-        // γ: phantom-typed API replaces the α bare-`usize` surface; docs/adr/0111
-        // D4: every transition takes `&self` and each lending names its length.
+        // γ: phantom-typed API replaces the α bare-`usize` surface. The
+        // document declares no lending (docs/adr/0111 D4), so the pool over its
+        // own storage lends every slot whole: the surface it had before the book.
         assert!(
-            body.contains(
-                "pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut>, LendRefused>"
-            ),
+            body.contains("pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>>"),
             "must emit phantom-typed acquire surface (spec §5.E line 1233); full source:\n{body}",
         );
         assert!(
-            body.contains(
-                "pub fn link_arm_rx(&self, len: usize) -> Result<Slot<DmaArmedRx>, LendRefused>"
-            ),
+            body.contains("pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>>"),
             "must emit phantom-typed RX-arm surface (spec §5.E line 1236); full source:\n{body}",
         );
         assert!(
-            body.contains("impl Slot<CpuMut>"),
+            body.contains("impl Slot<CpuMut, ()>"),
             "must emit Slot<CpuMut> impl block; full source:\n{body}",
         );
         assert!(
-            body.contains(
-                "pub fn link_arm_tx(self, pool: &RxPoolSram1<impl SlotStore>, frame: usize) -> Result<SlotIndex, Self>"
-            ),
+            body.contains("pub fn link_arm_tx(self, pool: &mut RxPoolSram1)"),
             "must emit consuming link_arm_tx on Slot<CpuMut>; full source:\n{body}",
         );
         assert!(
-            body.contains("pub fn pool_return(self, pool: &RxPoolSram1<impl SlotStore>)"),
+            body.contains("pub fn pool_return(self, pool: &mut RxPoolSram1)"),
             "must emit consuming pool_return on Slot<CpuMut> (spec §5.E line 1234); full source:\n{body}",
         );
         assert!(
-            body.contains("impl Slot<CpuRef>"),
+            body.contains("impl Slot<CpuRef, ()>"),
             "must emit Slot<CpuRef> impl block; full source:\n{body}",
         );
         assert!(
@@ -16052,21 +16050,38 @@ topology:
             "the slot type must carry the declared alignment, so that every slot starts \
              on the DMA boundary rather than only the first; full source:\n{body}",
         );
-        assert!(
-            body.contains("book: [const { Entry::new() }; SLOT_COUNT]"),
-            "the book holds one all-zero entry per slot of the bound; full source:\n{body}",
-        );
-        // docs/adr/0111 D4: the lent pool. An empty pool is a `const fn`'s
-        // value, a pool is made over the caller's storage with a run-time count
-        // and length, a lent slot is named across an interface by a
-        // generational index, and an owner's book is plain cells.
+        // docs/adr/0111 D4: the pool over its own storage lends every slot
+        // whole, so it keeps one state per slot, the layout it had before the
+        // book, and its handle carries no generation.
         for needle in [
             "pub const fn new() -> Self",
-            "pub fn with_count(count: usize) -> Result<Self, PoolRefused>",
+            "pub const LENDING: &'static str = \"fixed\";",
+            "pub struct Owned([SlotBytes; SLOT_COUNT]);",
+            "type Book = [SlotState; SLOT_COUNT];",
+            "type Generation = ();",
+            "pub struct Slot<S, G = ()> {",
+            "book: [SlotState::Free; SLOT_COUNT],",
+        ] {
+            assert!(
+                body.contains(needle),
+                "must emit `{needle}`; full source:\n{body}",
+            );
+        }
+        assert!(
+            !body.contains("pub fn with_count("),
+            "a pool that lends every slot whole has no run-time count; full source:\n{body}",
+        );
+        // The pool over the caller's storage lends at run time whatever the
+        // document says: it is made with a run-time count and length, a lent
+        // slot is named across an interface by a generational index, and an
+        // owner's book is plain cells.
+        for needle in [
             "pub fn over(bytes: &'a mut [u8], count: usize, len: usize) -> Result<Self, PoolRefused>",
+            "pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut, u32>, LendRefused>",
+            "pub fn link_arm_tx(self, pool: &RxPoolSram1<impl SlotStore>, frame: usize) -> Result<SlotIndex, Self>",
             "pub struct SlotIndex {",
             "pub fn into_index(self, pool: &RxPoolSram1<impl SlotStore>) -> SlotIndex",
-            "pub fn reclaim<S: Held>(&self, index: SlotIndex) -> Option<Slot<S>>",
+            "pub fn reclaim<S: Held>(&self, index: SlotIndex) -> Option<Slot<S, u32>>",
             "pub unsafe fn take_prefixed(&self, index: SlotIndex, prefix: &[u8]) -> Result<Span, TakeRefused>",
             "pub fn release(&self, index: SlotIndex) -> bool",
             "pub const SHARING: &'static str = \"owner\";",
@@ -16081,6 +16096,55 @@ topology:
             !body.contains("unsafe impl<St: SlotStore + Send> Sync"),
             "an owner's pool is not shared between threads; full source:\n{body}",
         );
+    }
+
+    /// docs/adr/0111 D4: a pool that declares `<sce:lending>run-time</sce:lending>`
+    /// lends its own storage at run time too: the pool over it keeps the book,
+    /// is made with a run-time count, and its handle carries the generation.
+    #[test]
+    fn a_run_time_buffer_pool_keeps_a_book_over_its_own_storage() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_lent" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:lending>run-time</sce:lending>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_lent",
+            diagnostic_label: "rx_pool_lent.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("a run-time pool generates");
+        let (_, body) = &out.files[0];
+        for needle in [
+            "pub const LENDING: &'static str = \"run-time\";",
+            "pub struct Owned(core::cell::UnsafeCell<[SlotBytes; SLOT_COUNT]>);",
+            "unsafe impl SlotStore for Owned {",
+            "pub struct Slot<S, G = u32> {",
+            "book: Book::new(0),",
+            "pub fn with_count(count: usize) -> Result<Self, PoolRefused>",
+            "pub fn pool_acquire_for_encode(&self, len: usize, headroom: usize) -> Result<Slot<CpuMut, u32>, LendRefused>",
+        ] {
+            assert!(
+                body.contains(needle),
+                "a run-time pool must emit `{needle}`; full source:\n{body}",
+            );
+        }
+        for needle in [
+            "pub struct Owned([SlotBytes; SLOT_COUNT]);",
+            "pub fn pool_acquire_for_encode(&mut self)",
+            "impl<S> Slot<S, ()> {",
+        ] {
+            assert!(
+                !body.contains(needle),
+                "a run-time pool keeps no state per slot: `{needle}`; full source:\n{body}",
+            );
+        }
     }
 
     /// docs/adr/0111 D4: a pool that a driver context moves too declares
@@ -16141,9 +16205,12 @@ topology:
     /// none is the same shape as a gate that never fires.
     #[test]
     fn buffer_pool_rust_emitted_module_compiles_and_its_tests_pass() {
-        // The owner's pool with cache maintenance, and a shared pool
-        // (docs/adr/0111 D4), whose book is atomic words: the two books the
-        // template writes.
+        // The owner's pool with cache maintenance, which lends every slot
+        // whole and keeps one state per slot; an owner's pool that lends at run
+        // time, whose book is plain cells; and a shared pool, whose book is
+        // atomic words (docs/adr/0111 D4): the three records the template
+        // writes. Each with the least count of the generated tests its record
+        // has, counted off the template's `mod generated_tests`.
         let documents = [
             (
                 "rx_pool_sram1",
@@ -16158,6 +16225,22 @@ topology:
   <sce:dma-channel>DW0_CH3</sce:dma-channel>
   <sce:cache-policy>maintain</sce:cache-policy>
 </scxml>"##,
+                23usize,
+            ),
+            (
+                "rx_pool_lent",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_lent" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>maintain</sce:cache-policy>
+  <sce:lending>run-time</sce:lending>
+</scxml>"##,
+                30,
             ),
             (
                 "tx_pool_shared",
@@ -16172,9 +16255,10 @@ topology:
   <sce:cache-policy>none</sce:cache-policy>
   <sce:sharing>shared</sce:sharing>
 </scxml>"##,
+                30,
             ),
         ];
-        for (name, scxml) in documents {
+        for (name, scxml, least) in documents {
             let label = DocumentLabel {
                 identifier: name,
                 diagnostic_label: "generated_pool.scxml",
@@ -16252,7 +16336,7 @@ topology:
                 .and_then(|n| n.parse::<usize>().ok())
                 .unwrap_or_else(|| panic!("could not read the test count from:\n{stdout}"));
             assert!(
-                ran_count >= 30,
+                ran_count >= least,
                 "{name}: only {ran_count} generated tests ran; the emitted `mod generated_tests` \
                  has lost cases or stopped being collected.\n{stdout}",
             );
@@ -16373,6 +16457,21 @@ topology:
   <sce:alignment>16</sce:alignment>
   <sce:dma-channel>DW0_CH3</sce:dma-channel>
   <sce:cache-policy>maintain</sce:cache-policy>",
+                ),
+            ),
+            // docs/adr/0111 D4: an owner's pool that lends its own storage at
+            // run time keeps a book of plain cells over it, where the plain
+            // pool keeps one state per slot.
+            (
+                "pool_lent",
+                document(
+                    "pool_lent",
+                    "  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>maintain</sce:cache-policy>
+  <sce:lending>run-time</sce:lending>",
                 ),
             ),
             // docs/adr/0111 D4: a shared pool's book is atomic words, a
@@ -16964,49 +17063,55 @@ topology:
              the runtime header's seven-state FSM + tag-checked handle + \
              typestate family reach consumer builds; full header:\n{header}",
         );
-        assert!(
-            header.contains("static rx_pool_sram1_book_t rx_pool_sram1_book;"),
-            "the book is a static with no initializer, all zero when no slot is out \
-             (docs/adr/0111 D4); full header:\n{header}",
-        );
-        // γ: tag-checked author API per spec §synth-5-E lines 1232-1242;
-        // docs/adr/0111 D4: each lending names its length.
+        // docs/adr/0111 D4: the document declares no lending and no sharing,
+        // so the pool keeps one state per slot and lends each whole: the
+        // layout and the functions of a pool before the book.
         assert!(
             header.contains(
-                "static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(size_t len, size_t headroom)"
+                "static sce_slot_state_t rx_pool_sram1_slot_states[8] = { SCE_SLOT_FREE };"
             ),
+            "a pool that lends every slot whole keeps one state per slot; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_LENDS 0"),
+            "the header says it keeps no book; full header:\n{header}",
+        );
+        // γ: tag-checked author API per spec §synth-5-E lines 1232-1242.
+        assert!(
+            header.contains("static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(void)"),
             "must emit pool_acquire_for_encode tag-checked surface (spec §5.E line 1233); full header:\n{header}",
         );
         assert!(
-            header.contains("static inline sce_slot_handle_t rx_pool_sram1_link_arm_rx(size_t len)"),
+            header.contains("static inline sce_slot_handle_t rx_pool_sram1_link_arm_rx(void)"),
             "must emit link_arm_rx tag-checked surface (spec §5.E line 1236); full header:\n{header}",
         );
         assert!(
             header.contains(
-                "static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle, size_t frame)"
+                "static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle)"
             ),
             "must emit tag-checked link_arm_tx (spec §5.E line 1235); full header:\n{header}",
         );
-        // docs/adr/0111 D4: a pool over the caller's storage, a run-time
-        // count, and a slot index that crosses an interface.
+        // None of the lending pool's record or functions: no book, no
+        // generation, no run-time count or length, no index.
         for needle in [
-            "static inline bool rx_pool_sram1_init(size_t count)",
-            "static inline bool rx_pool_sram1_init_over(uint8_t *bytes, size_t len, size_t count, size_t slot_len)",
-            "} rx_pool_sram1_slot_index_t;",
-            "static inline rx_pool_sram1_slot_index_t rx_pool_sram1_into_index(sce_slot_handle_t *handle)",
-            "static inline sce_slot_handle_t rx_pool_sram1_reclaim(rx_pool_sram1_slot_index_t index, sce_slot_state_t state)",
-            "#define RX_POOL_SRAM1_SHARING \"owner\"",
-            "#ifndef RX_POOL_SRAM1_CALLER_STORAGE",
+            "_book_t",
+            "_entry_t",
+            "generation",
+            "_init(",
+            "_init_over(",
+            "_slot_index_t",
+            "_into_index(",
+            "_reclaim(",
+            "_take_prefixed(",
+            "_slot_len(",
+            "_CALLER_STORAGE",
+            "_sce_critical_enter",
         ] {
             assert!(
-                header.contains(needle),
-                "must emit `{needle}`; full header:\n{header}",
+                !header.contains(needle),
+                "a pool that lends every slot whole must not emit `{needle}`; full header:\n{header}",
             );
         }
-        assert!(
-            !header.contains("_sce_critical_enter"),
-            "an owner's pool declares no critical section; full header:\n{header}",
-        );
         assert!(
             header.contains(
                 "static inline bool rx_pool_sram1_pool_return(sce_slot_handle_t *handle)"
@@ -17092,6 +17197,7 @@ topology:
   <sce:alignment>16</sce:alignment>
   <sce:dma-channel>DW0_CH3</sce:dma-channel>
   <sce:cache-policy>maintain</sce:cache-policy>
+  <sce:lending>run-time</sce:lending>
 </scxml>"##;
         let label = DocumentLabel {
             identifier: "rx_pool_sram1",
@@ -17414,6 +17520,338 @@ int main(void) {
         }
     }
 
+    /// docs/adr/0111 D4: the header of a pool that lends every slot whole
+    /// keeps the calls of a pool before the book, so a driver written against
+    /// them compiles and runs unchanged: the same driver as before the book,
+    /// through the same compile as `buffer_pool_c11_emitted_header_compiles_under_gcc`.
+    ///
+    /// The emitted C11 buffer-pool
+    /// header must compile end-to-end as a real C source — byte
+    /// assertions alone do not prove the tag-checked handle API is
+    /// well-formed (per `feedback_byte_goldens_not_compile.md`).
+    /// Drives the generator output through `gcc -c -std=c11
+    /// -Wall -Wextra -Werror` so that any drift in the enum
+    /// initializer, struct layout, or `static inline` signatures
+    /// surfaces here rather than at integration time. The
+    /// `__attribute__((section, aligned))` storage variable is
+    /// MCU-firmware-targeted; the host gcc compile validates only
+    /// the C-language well-formedness, not the linker placement
+    /// (the sidecar `.ld` fragment carries that contract). The host
+    /// build is permitted to drop the section attribute via
+    /// `-D__attribute__(x)=` so unused-static warnings do not gate
+    /// the test.
+    #[test]
+    fn buffer_pool_c11_fixed_header_compiles_under_gcc_with_the_calls_before_the_book() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+        let header = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1.h")
+            .map(|(_, body)| body.as_str())
+            .expect("header file must be `rx_pool_sram1.h`");
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-buffer-pool-fixed-cc-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let header_path = tmp.join("rx_pool_sram1.h");
+        std::fs::write(&header_path, header).expect("write generated header");
+        // The header is `static`-only; #include it from a tiny
+        // translation unit so the compile drives every static
+        // function. `__used__` would suppress unused warnings on a
+        // hypothetical extension, but here we just call each
+        // entry point so the storage / state arrays count as used.
+        let driver_path = tmp.join("driver.c");
+        std::fs::write(
+            &driver_path,
+            r#"#include "rx_pool_sram1.h"
+
+/* C5: cache-policy: maintain emits sce_dcache_*_by_addr calls in
+ * link_arm_tx + link_arm_rx. Provide host-side no-op stubs so the
+ * gcc link finds the symbols. On bare-metal targets these come from
+ * sce_intrinsics_runtime, as for the lending pool's driver above. */
+void sce_dcache_clean_by_addr(const void *start, size_t len) {
+    (void)start; (void)len;
+}
+void sce_dcache_invalidate_by_addr(void *start, size_t len) {
+    (void)start; (void)len;
+}
+
+int main(void) {
+    sce_slot_handle_t h = rx_pool_sram1_pool_acquire_for_encode();
+    if (h.state == SCE_SLOT_INVALID) return 1;
+    uint8_t *w = rx_pool_sram1_slot_write(&h);
+    if (w == NULL) return 2;
+    w[0] = 0xAB;
+    if (!rx_pool_sram1_pool_return(&h)) return 3;
+
+    sce_slot_handle_t r = rx_pool_sram1_link_arm_rx();
+    if (r.state != SCE_SLOT_DMA_ARMED_RX) return 4;
+    /* Reading or writing a dma-armed-rx slot must be rejected
+     * by the runtime tag check. */
+    if (rx_pool_sram1_slot_read(&r) != NULL) return 5;
+    if (rx_pool_sram1_slot_write(&r) != NULL) return 6;
+
+    /* link_arm_tx on a non-cpu-mut handle is rejected. */
+    if (rx_pool_sram1_link_arm_tx(&r)) return 7;
+
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT - 1) return 8;
+
+    /* Runtime seam: the slot armed above is still out of the pool.
+       Drive it home through the peripheral-start and RX-completion
+       edges the driver owns (spec lines 1149-1150). Before the seam
+       was emitted this was impossible and the loop below would spin
+       the pool down to zero and stay there. */
+    if (!rx_pool_sram1_dma_start_rx(&r)) return 9;
+    if (r.state != SCE_SLOT_INVALID) return 10;
+    sce_slot_handle_t done = rx_pool_sram1_rx_complete(0);
+    if (done.state != SCE_SLOT_CPU_REF) return 11;
+    if (rx_pool_sram1_slot_read(&done) == NULL) return 12;
+    if (rx_pool_sram1_slot_write(&done) != NULL) return 13;
+    if (!rx_pool_sram1_pool_return(&done)) return 14;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 15;
+
+    /* TX arm closes too: cpu-mut -> dma-armed-tx -> dma-busy-tx -> free. */
+    sce_slot_handle_t t = rx_pool_sram1_pool_acquire_for_encode();
+    if (t.state != SCE_SLOT_CPU_MUT) return 16;
+    size_t ti = t.idx;
+    if (!rx_pool_sram1_link_arm_tx(&t)) return 17;
+    if (t.state != SCE_SLOT_DMA_ARMED_TX) return 18;
+    if (rx_pool_sram1_slot_read(&t) != NULL) return 19;
+    if (!rx_pool_sram1_dma_start_tx(ti)) return 20;
+    if (!rx_pool_sram1_tx_complete(ti)) return 21;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 22;
+
+    /* A stray interrupt naming a slot in some other state is refused
+       rather than acted on — the index-keyed seam has no handle tag to
+       lean on, so this check is the whole defence. */
+    if (rx_pool_sram1_tx_complete(0)) return 23;
+    if (rx_pool_sram1_rx_complete(RX_POOL_SRAM1_SLOT_COUNT).state != SCE_SLOT_INVALID) return 24;
+    if (rx_pool_sram1_un_arm_tx(0).state != SCE_SLOT_INVALID) return 25;
+
+    /* Address publication. The lifecycle above walks the states; this
+       hands the slot to the bus master that is supposed to fill or
+       drain it, which is what the states are for. Touching the slot
+       only through the published address is the point: reaching for
+       slot_read / slot_write instead would exercise the CPU accessors
+       and pass with no address accessor emitted at all. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+        if ((uintptr_t)rx_pool_sram1_storage[i].bytes % RX_POOL_SRAM1_ALIGNMENT) return 32;
+    }
+
+    sce_slot_handle_t ar = rx_pool_sram1_link_arm_rx();
+    if (ar.state != SCE_SLOT_DMA_ARMED_RX) return 33;
+    size_t ari = ar.idx;
+    uint8_t *rxbuf = rx_pool_sram1_dma_armed_rx_ptr(&ar);
+    if (rxbuf == NULL) return 34;
+    if ((uintptr_t)rxbuf % RX_POOL_SRAM1_ALIGNMENT) return 35;
+    if (rx_pool_sram1_slot_index_of_ptr(rxbuf) != ari) return 36;
+    /* Standing in for the MAC writing the buffer it was pointed at. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        rxbuf[i] = (uint8_t)(i % 251u);
+    }
+    if (!rx_pool_sram1_dma_start_rx(&ar)) return 37;
+    /* dma-busy-rx already holds the address; re-publishing it would
+       name memory the peripheral is mid-transfer on. */
+    if (rx_pool_sram1_dma_armed_rx_ptr(&ar) != NULL) return 38;
+    sce_slot_handle_t filled = rx_pool_sram1_rx_complete(ari);
+    if (filled.state != SCE_SLOT_CPU_REF) return 39;
+    const uint8_t *readback = rx_pool_sram1_slot_read(&filled);
+    if (readback == NULL) return 40;
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        if (readback[i] != (uint8_t)(i % 251u)) return 41;
+    }
+    if (!rx_pool_sram1_pool_return(&filled)) return 42;
+
+    sce_slot_handle_t at = rx_pool_sram1_pool_acquire_for_encode();
+    if (at.state != SCE_SLOT_CPU_MUT) return 43;
+    size_t ati = at.idx;
+    uint8_t *enc = rx_pool_sram1_slot_write(&at);
+    if (enc == NULL) return 44;
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        enc[i] = (uint8_t)(i % 241u);
+    }
+    /* A slot the CPU still owns publishes no bus address. */
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 45;
+    if (!rx_pool_sram1_link_arm_tx(&at)) return 46;
+    const uint8_t *txbuf = rx_pool_sram1_dma_armed_tx_ptr(ati);
+    if (txbuf == NULL) return 47;
+    if (rx_pool_sram1_slot_index_of_ptr(txbuf) != ati) return 48;
+    /* Standing in for the DMA controller draining the descriptor. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        if (txbuf[i] != (uint8_t)(i % 241u)) return 49;
+    }
+    if (!rx_pool_sram1_dma_start_tx(ati)) return 50;
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 51;
+    if (!rx_pool_sram1_tx_complete(ati)) return 52;
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 53;
+    if (rx_pool_sram1_dma_armed_tx_ptr(RX_POOL_SRAM1_SLOT_COUNT) != NULL) return 54;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 55;
+
+    /* The reverse map resolves exactly what the pool published.
+       An interior pointer names no slot base, and rounding one down
+       would turn a driver bug into a plausible-looking index. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+        if (rx_pool_sram1_slot_index_of_ptr(rx_pool_sram1_storage[i].bytes) != i) return 56;
+    }
+    if (rx_pool_sram1_slot_index_of_ptr(rx_pool_sram1_storage[0].bytes + 1) != SIZE_MAX) return 57;
+    if (rx_pool_sram1_slot_index_of_ptr(NULL) != SIZE_MAX) return 58;
+    /* One past the table, and one byte below it. Both deterministic,
+       unlike the address of some unrelated object, which could land
+       inside the pool's range and pass for the wrong reason. */
+    if (rx_pool_sram1_slot_index_of_ptr(
+            (const void *)((uintptr_t)rx_pool_sram1_storage
+                           + sizeof(rx_pool_sram1_storage))) != SIZE_MAX) return 59;
+    if (rx_pool_sram1_slot_index_of_ptr(
+            (const void *)((uintptr_t)rx_pool_sram1_storage - 1u)) != SIZE_MAX) return 60;
+
+    /* Whole ring, twice: arming every slot must remain recoverable. */
+    for (int round = 0; round < 2; ++round) {
+        for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+            sce_slot_handle_t a = rx_pool_sram1_link_arm_rx();
+            if (a.state != SCE_SLOT_DMA_ARMED_RX) return 26;
+            if (!rx_pool_sram1_dma_start_rx(&a)) return 27;
+        }
+        if (rx_pool_sram1_free_count() != 0) return 28;
+        for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+            sce_slot_handle_t c = rx_pool_sram1_rx_complete(i);
+            if (c.state != SCE_SLOT_CPU_REF) return 29;
+            if (!rx_pool_sram1_pool_return(&c)) return 30;
+        }
+        if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 31;
+    }
+    return 0;
+}
+"#,
+        )
+        .expect("write driver.c");
+
+        let exec_path = tmp.join("driver");
+        // sample.h integration: the generated pool header pulls in
+        // `<sce/sample.h>` from `backends/c/runtime/include/`, so the host
+        // gcc compile must see that include path alongside the temp
+        // dir holding the generated header.
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
+        let status = std::process::Command::new("gcc")
+            .arg("-std=c11")
+            .arg("-Wall")
+            .arg("-Wextra")
+            // The generated header places a `static` storage
+            // variable in a section that does not exist on the host
+            // toolchain (`.sram1_rx_pool_sram1`). Stripping the
+            // attribute keeps the host gcc compile honest about the
+            // C-level API surface; the linker placement contract is
+            // pinned by the sidecar `.ld` fragment golden test. The
+            // same suppression neutralises the `SCE_CONSUMABLE`
+            // whole-struct attribute on `sce_sample_t` from
+            // `<sce/sample.h>` — the typestate family is silently-
+            // inert on host gcc, as for the lending pool's header above.
+            .arg("-D__attribute__(x)=")
+            .arg("-I")
+            .arg(&tmp)
+            .arg("-I")
+            .arg(&runtime_include)
+            .arg(&driver_path)
+            .arg("-o")
+            .arg(&exec_path)
+            .output()
+            .expect("gcc must be on PATH for the build environment");
+
+        if !status.status.success() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            panic!(
+                "generated C header must compile under gcc.\nstdout:\n{}\nstderr:\n{}\n--- header ---\n{}",
+                String::from_utf8_lossy(&status.stdout),
+                String::from_utf8_lossy(&status.stderr),
+                header,
+            );
+        }
+        // Run the driver — every tag-check and state transition we
+        // assert through it is a runtime check on the emitted code.
+        let run = std::process::Command::new(&exec_path)
+            .output()
+            .expect("driver binary must execute");
+        assert!(
+            run.status.success(),
+            "driver run failed: status={:?}, stderr={}",
+            run.status.code(),
+            String::from_utf8_lossy(&run.stderr),
+        );
+
+        // The same driver as C++. The header wraps its declarations in
+        // `extern "C"`, and that wrapper is a claim: the pool an MCU
+        // compiles as C11 is consumable from a C++ application on the
+        // AP side. `extern "C"` only fixes linkage — one C-only
+        // keyword anywhere voids the claim for the whole file with a
+        // parse error, which is why the alignment specifier goes
+        // through `SCE_ALIGNAS` / `SCE_ALIGNOF` rather than
+        // `_Alignas` / `_Alignof`. Nothing checked that until this
+        // arm: `c11_cxx_consumption` covers other kinds, not the pool.
+        if let Some(cxx) = crate::toolchain::locate("g++") {
+            let cxx_src = tmp.join("driver.cpp");
+            std::fs::copy(&driver_path, &cxx_src).expect("copy driver for the C++ arm");
+            let cxx_exec = tmp.join("driver_cxx");
+            let cxx_status = std::process::Command::new(&cxx)
+                .arg("-std=c++17")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-D__attribute__(x)=")
+                .arg("-I")
+                .arg(&tmp)
+                .arg("-I")
+                .arg(&runtime_include)
+                .arg(&cxx_src)
+                .arg("-o")
+                .arg(&cxx_exec)
+                .output()
+                .expect("g++ must be runnable once located");
+            if !cxx_status.status.success() {
+                let _ = std::fs::remove_dir_all(&tmp);
+                panic!(
+                    "generated C header must also compile as C++.\nstdout:\n{}\nstderr:\n{}\n--- header ---\n{}",
+                    String::from_utf8_lossy(&cxx_status.stdout),
+                    String::from_utf8_lossy(&cxx_status.stderr),
+                    header,
+                );
+            }
+            let cxx_run = std::process::Command::new(&cxx_exec)
+                .output()
+                .expect("C++ driver binary must execute");
+            let cxx_code = cxx_run.status.code();
+            let cxx_err = String::from_utf8_lossy(&cxx_run.stderr).into_owned();
+            let _ = std::fs::remove_dir_all(&tmp);
+            assert!(
+                cxx_run.status.success(),
+                "C++ driver run failed: status={cxx_code:?}, stderr={cxx_err}",
+            );
+        } else {
+            crate::toolchain::skipped(
+                "buffer_pool_c11_fixed_header_compiles_under_gcc_with_the_calls_before_the_book: g++ not on PATH, \
+                 C++ consumption arm skipped",
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E: region-size check on
     /// [`compile_forge_with_deploy`]. After section validation passes
     /// (the prerequisite gate), the storage footprint must fit the
@@ -17658,7 +18096,7 @@ __attribute__((section(".after_pool"), used)) uint8_t author_buf[4];
 volatile uint8_t *sce_test_sink;
 
 void _start(void) {
-    sce_slot_handle_t h = odd_pool_pool_acquire_for_encode(ODD_POOL_SLOT_SIZE, 0);
+    sce_slot_handle_t h = odd_pool_pool_acquire_for_encode();
     sce_test_sink = odd_pool_slot_write(&h);
     sce_test_sink = spliced_buf;
 }

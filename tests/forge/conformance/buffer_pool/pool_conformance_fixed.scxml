@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A pool that lends every slot whole: it says nothing of its lending or its
+  sharing, so it keeps one state byte per slot beside its slots, its handle is
+  the slot's number, and it carries no book, no generation and no run-time
+  count or length (docs/adr/0111 D4). The scenarios of pool_contract.json are
+  a lending pool's and do not run against it; the Rust and the C11 arm hold it
+  to the layout and the calls of a pool before the book. Four slots of 64 bytes,
+  on a 16-byte boundary, CPU-managed, so no cache maintenance is generated.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="pool_conformance_fixed" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>

@@ -56,7 +56,7 @@ static int failures = 0;
 static void acquire_return_round_trip(void) {
     CHECK(buffer_pool_ast_export_min_free_count() == POOL_SLOTS, "a fresh pool must report every slot free");
 
-    sce_slot_handle_t h = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+    sce_slot_handle_t h = buffer_pool_ast_export_min_pool_acquire_for_encode();
     CHECK(h.state == SCE_SLOT_CPU_MUT, "acquire_for_encode must hand back a CPU-mutable handle");
     CHECK(h.idx < POOL_SLOTS, "the handle must index a real slot");
     CHECK(buffer_pool_ast_export_min_free_count() == POOL_SLOTS - 1u,
@@ -72,8 +72,8 @@ static void acquire_return_round_trip(void) {
 /// Bytes written through the pool come back byte-identical, and land in
 /// the slot the handle names rather than a neighbour.
 static void payload_survives_the_round_trip(void) {
-    sce_slot_handle_t a = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
-    sce_slot_handle_t b = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+    sce_slot_handle_t a = buffer_pool_ast_export_min_pool_acquire_for_encode();
+    sce_slot_handle_t b = buffer_pool_ast_export_min_pool_acquire_for_encode();
     CHECK(a.idx != b.idx, "two live handles must not name the same slot");
 
     uint8_t *wa = buffer_pool_ast_export_min_slot_write(&a);
@@ -104,12 +104,12 @@ static void payload_survives_the_round_trip(void) {
 static void exhaustion_yields_invalid_handle(void) {
     sce_slot_handle_t held[POOL_SLOTS];
     for (size_t i = 0; i < POOL_SLOTS; ++i) {
-        held[i] = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+        held[i] = buffer_pool_ast_export_min_pool_acquire_for_encode();
         CHECK(held[i].state == SCE_SLOT_CPU_MUT, "every slot up to capacity must be acquirable");
     }
     CHECK(buffer_pool_ast_export_min_free_count() == 0u, "a fully acquired pool has no free slots");
 
-    sce_slot_handle_t overflow = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+    sce_slot_handle_t overflow = buffer_pool_ast_export_min_pool_acquire_for_encode();
     CHECK(overflow.state == SCE_SLOT_INVALID, "acquiring past capacity must fail rather than alias a live slot");
 
     for (size_t i = 0; i < POOL_SLOTS; ++i) {
@@ -128,7 +128,7 @@ static void exhaustion_yields_invalid_handle(void) {
 /// deleting the tag check alone leaves this function green, because the
 /// index check catches the same call.
 static void returned_handle_is_rejected_without_side_effects(void) {
-    sce_slot_handle_t h = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+    sce_slot_handle_t h = buffer_pool_ast_export_min_pool_acquire_for_encode();
     CHECK(buffer_pool_ast_export_min_pool_return(&h), "first return must succeed");
 
     const size_t free_after_return = buffer_pool_ast_export_min_free_count();
@@ -155,7 +155,7 @@ static void returned_handle_is_rejected_without_side_effects(void) {
 ///     code is the contract violation `slot_read` / `slot_write` exist
 ///     to prevent.
 static void stale_and_forged_handles_are_rejected(void) {
-    sce_slot_handle_t live = buffer_pool_ast_export_min_pool_acquire_for_encode(POOL_SLOT_BYTES, 0);
+    sce_slot_handle_t live = buffer_pool_ast_export_min_pool_acquire_for_encode();
     const sce_slot_handle_t stale = live; /* copy taken while owned */
     CHECK(buffer_pool_ast_export_min_pool_return(&live), "the live handle must return cleanly");
 
@@ -189,7 +189,7 @@ static void stale_and_forged_handles_are_rejected(void) {
 static void dma_armed_slot_cannot_be_returned(void) {
     const size_t free_before = buffer_pool_ast_export_min_free_count();
 
-    sce_slot_handle_t armed = buffer_pool_ast_export_min_link_arm_rx(POOL_SLOT_BYTES);
+    sce_slot_handle_t armed = buffer_pool_ast_export_min_link_arm_rx();
     CHECK(armed.state == SCE_SLOT_DMA_ARMED_RX, "link_arm_rx must arm a slot for peripheral RX");
     CHECK(buffer_pool_ast_export_min_slot_state(armed.idx) == SCE_SLOT_DMA_ARMED_RX,
           "the pool's state table must agree, so the table comparison cannot be what rejects");

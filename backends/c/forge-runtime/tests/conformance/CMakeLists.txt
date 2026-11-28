@@ -1010,13 +1010,16 @@ add_test(NAME link_events_c COMMAND link_events_test_c)
 # (backends/rust/forge-conformance/tests/forge_buffer_pool.rs) generates too,
 # and pool_contract.json beside them is written here as C, as the queue
 # contract is above. The shared pool moves its book through the sce_atomic_*
-# intrinsics, so the test links the host's.
+# intrinsics, so the test links the host's. The pool of the contract's
+# `fixed_pools` lends every slot whole and runs no scenario; the test holds it
+# to the layout and the calls of a pool before the book.
 set(BUFFER_POOL_DIR "${REPO_ROOT}/tests/forge/conformance/buffer_pool")
 set(BUFFER_POOL_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/buffer_pool_headers")
 file(MAKE_DIRECTORY "${BUFFER_POOL_C_GENERATED_DIR}")
 sce_codegen_generation(_BUFFER_POOL_C
     DOCUMENTS "${BUFFER_POOL_DIR}/pool_conformance_owner.scxml"
               "${BUFFER_POOL_DIR}/pool_conformance_shared.scxml"
+              "${BUFFER_POOL_DIR}/pool_conformance_fixed.scxml"
     OUTPUT_DIR "${BUFFER_POOL_C_GENERATED_DIR}"
     LANGUAGE c11
     COMMENT "Generating the C11 pools of the buffer-pool lending contract")
@@ -1033,6 +1036,12 @@ endif()
 string(JSON _pool_scenario_count LENGTH "${_pool_contract}" scenarios)
 if(_pool_scenario_count EQUAL 0)
     message(FATAL_ERROR "a pool contract with no scenarios checks nothing")
+endif()
+string(JSON _pool_fixed_count LENGTH "${_pool_contract}" fixed_pools)
+string(JSON _pool_fixed GET "${_pool_contract}" fixed_pools 0)
+if(NOT _pool_fixed_count EQUAL 1 OR NOT _pool_fixed STREQUAL "pool_conformance_fixed")
+    message(FATAL_ERROR "this arm holds pool_conformance_fixed to the layout before the book, "
+                        "and the contract's fixed_pools names something else")
 endif()
 
 # A number a step or a scenario may leave out, which is then zero.

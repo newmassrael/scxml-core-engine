@@ -14,6 +14,10 @@
  * are distinct singletons with distinct names, and a runner of one cannot be
  * handed the other. The shared pool moves its book through the sce_atomic_*
  * intrinsics, which sce_atomic_host.c supplies on the host.
+ *
+ * The contract is a lending pool's. The pool the contract names in
+ * `fixed_pools` lends every slot whole and runs none of it; it is held here to
+ * the layout and the calls of a pool before the book (docs/adr/0111 D4).
  */
 
 #include <stdbool.h>
@@ -21,8 +25,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "pool_conformance_fixed.h"
 #include "pool_conformance_owner.h"
 #include "pool_conformance_shared.h"
+
+/* The contract's pools keep the book of their lendings; the fixed one keeps
+ * one state per slot and nothing else, no book and no generation. */
+#if POOL_CONFORMANCE_OWNER_LENDS != 1 || POOL_CONFORMANCE_SHARED_LENDS != 1
+#error "every pool the contract runs against lends at run time"
+#endif
+#if POOL_CONFORMANCE_FIXED_LENDS != 0
+#error "the fixed pool lends every slot whole"
+#endif
+SCE_STATIC_ASSERT(sizeof(pool_conformance_fixed_slot_states) ==
+                      POOL_CONFORMANCE_FIXED_SLOT_COUNT * sizeof(sce_slot_state_t),
+                  "a pool that lends every slot whole keeps one state per slot");
 
 enum {
     OP_COUNT,
@@ -117,7 +134,41 @@ static SCE_ALIGNAS(16) uint8_t arena[272];
 #undef POOL_PREFIX
 #undef POOL_UPPER
 
+/* docs/adr/0111 D4: the pool that lends every slot whole keeps the calls it
+ * had before the book: a lending names no length, a frame is armed whole, and
+ * the seam is keyed by the slot's position. */
+static void fixed_pool_keeps_the_calls_before_the_book(void) {
+    const char *id = "fixed_pool_keeps_the_calls_before_the_book";
+    sce_slot_handle_t h = pool_conformance_fixed_pool_acquire_for_encode();
+    uint8_t *w;
+    size_t ti = h.idx;
+    sce_slot_handle_t r;
+    size_t ri;
+    sce_slot_handle_t done;
+
+    CHECK(h.state == SCE_SLOT_CPU_MUT, id, 0u);
+    w = pool_conformance_fixed_slot_write(&h);
+    CHECK(w != NULL, id, 1u);
+    if (w != NULL) {
+        w[0] = 0xA1;
+        w[POOL_CONFORMANCE_FIXED_SLOT_SIZE - 1u] = 0xA2;
+    }
+    CHECK(pool_conformance_fixed_link_arm_tx(&h), id, 2u);
+    CHECK(pool_conformance_fixed_dma_start_tx(ti), id, 3u);
+    CHECK(pool_conformance_fixed_tx_complete(ti), id, 4u);
+
+    r = pool_conformance_fixed_link_arm_rx();
+    CHECK(r.state == SCE_SLOT_DMA_ARMED_RX, id, 5u);
+    ri = r.idx;
+    CHECK(pool_conformance_fixed_dma_start_rx(&r), id, 6u);
+    done = pool_conformance_fixed_rx_complete(ri);
+    CHECK(done.state == SCE_SLOT_CPU_REF, id, 7u);
+    CHECK(pool_conformance_fixed_pool_return(&done), id, 8u);
+    CHECK(pool_conformance_fixed_free_count() == POOL_CONFORMANCE_FIXED_SLOT_COUNT, id, 9u);
+}
+
 int main(void) {
+    fixed_pool_keeps_the_calls_before_the_book();
     if (g_pool_scenario_count == 0u) {
         fprintf(stderr, "buffer_pool: a contract with no scenarios checks nothing\n");
         return 1;
@@ -130,6 +181,7 @@ int main(void) {
         fprintf(stderr, "buffer_pool: %d check(s) failed\n", failures);
         return 1;
     }
-    printf("buffer_pool: %zu scenarios held for both pools\n", g_pool_scenario_count);
+    printf("buffer_pool: %zu scenarios held for both lending pools, and the fixed pool kept its calls\n",
+           g_pool_scenario_count);
     return 0;
 }

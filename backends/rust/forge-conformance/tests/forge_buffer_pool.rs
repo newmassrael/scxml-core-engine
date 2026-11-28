@@ -10,6 +10,11 @@
 //! contract: the run-time count and length, the caller's storage, the
 //! generational index and its reclaim, the headroom and the prefixed take, and
 //! a received slot lent to the events of its frame.
+//!
+//! The contract is a lending pool's. The pool of `fixed_pools` lends every slot
+//! whole (docs/adr/0111 D4) and runs none of it; it is held here to the layout
+//! and the calls of a pool before the book: one state byte per slot, a handle
+//! that is the slot's number, and transitions that take `&mut`.
 
 mod pools {
     // The generated modules open with `#![allow(...)]`, which `build.rs` strips
@@ -22,6 +27,10 @@ mod pools {
     #[allow(clippy::all, unused_imports, unused_variables, dead_code)]
     pub mod shared {
         include!(concat!(env!("OUT_DIR"), "/pool_conformance_shared.rs"));
+    }
+    #[allow(clippy::all, unused_imports, unused_variables, dead_code)]
+    pub mod fixed {
+        include!(concat!(env!("OUT_DIR"), "/pool_conformance_fixed.rs"));
     }
 }
 
@@ -421,6 +430,17 @@ fn scenarios() -> Vec<Value> {
         ["pool_conformance_owner", "pool_conformance_shared"],
         "the pools this arm generates are the pools the contract names"
     );
+    let fixed: Vec<&str> = field(&contract, "fixed_pools", "the contract")
+        .as_array()
+        .expect("\"fixed_pools\" is a list")
+        .iter()
+        .map(|p| p.as_str().expect("a pool is named"))
+        .collect();
+    assert_eq!(
+        fixed,
+        ["pool_conformance_fixed"],
+        "the pool this arm holds to the layout before the book is the one the contract names"
+    );
     let scenarios = field(&contract, "scenarios", "the contract")
         .as_array()
         .expect("\"scenarios\" is a list")
@@ -444,6 +464,93 @@ fn every_scenario_holds_for_the_shared_pool() {
     for scenario in scenarios() {
         shared_runner::run(&scenario);
     }
+}
+
+/// docs/adr/0111 D4: a pool that lends every slot whole is its slots and one
+/// state byte per slot, padded to its alignment, and nothing else: four slots
+/// of 64 bytes and four state bytes on a 16-byte boundary are 272 bytes. A
+/// lending pool over its own storage of the same bounds keeps a book beside
+/// them, which is what this one does not pay for.
+#[test]
+fn a_pool_that_lends_every_slot_whole_is_its_slots_and_one_state_byte_each() {
+    use pools::fixed::{PoolConformanceFixed, SLOT_COUNT, SLOT_SIZE};
+    assert_eq!(SLOT_COUNT, 4);
+    assert_eq!(SLOT_SIZE, 64);
+    assert_eq!(core::mem::size_of::<pools::fixed::SlotState>(), 1);
+    assert_eq!(core::mem::size_of::<PoolConformanceFixed>(), 272);
+    assert!(
+        core::mem::size_of::<pools::owner::PoolConformanceOwner>()
+            > core::mem::size_of::<PoolConformanceFixed>(),
+        "the lending pool's book is what the fixed one does not pay for"
+    );
+}
+
+/// docs/adr/0111 D4: a handle of a pool that lends every slot whole is the
+/// slot's number, as wide as a `usize`; a lending pool's handle carries the
+/// generation of its lending besides.
+#[test]
+fn a_handle_of_a_pool_that_lends_every_slot_whole_carries_no_generation() {
+    use pools::fixed::{CpuMut, Slot};
+    assert_eq!(
+        core::mem::size_of::<Slot<CpuMut>>(),
+        core::mem::size_of::<usize>()
+    );
+    assert!(
+        core::mem::size_of::<pools::owner::Slot<pools::owner::CpuMut>>()
+            > core::mem::size_of::<Slot<CpuMut>>(),
+        "the generation is a lending pool's handle's alone"
+    );
+}
+
+/// docs/adr/0111 D4: the pool that lends every slot whole keeps the calls it
+/// had before the book: a lending names no length, a transition takes the pool
+/// by `&mut`, and the seam is keyed by the slot's position.
+#[test]
+fn a_pool_that_lends_every_slot_whole_keeps_the_calls_it_had_before_the_book() {
+    use pools::fixed::{PoolConformanceFixed, SlotState, SLOT_COUNT, SLOT_SIZE};
+    let mut pool = PoolConformanceFixed::new();
+    assert_eq!(pool.free_count(), SLOT_COUNT);
+
+    let mut slot = pool
+        .pool_acquire_for_encode()
+        .expect("a fresh pool lends a slot");
+    let idx = slot.idx();
+    assert_eq!(
+        slot.write(&mut pool).len(),
+        SLOT_SIZE,
+        "a slot is lent whole"
+    );
+    slot.write(&mut pool)[..3].copy_from_slice(&[0xA1, 0xA2, 0xA3]);
+    assert_eq!(&slot.read(&pool)[..3], &[0xA1, 0xA2, 0xA3]);
+    slot.link_arm_tx(&mut pool);
+    assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedTx));
+    // SAFETY: this test is the driver: nothing reads the slot until it is
+    // complete.
+    unsafe {
+        assert!(pool.dma_start_tx(idx));
+        assert!(pool.tx_complete(idx));
+    }
+    assert_eq!(pool.free_count(), SLOT_COUNT);
+
+    let armed = pool.link_arm_rx().expect("a slot to receive into");
+    let idx = armed.idx();
+    // SAFETY: standing in for the peripheral and its completion IRQ.
+    unsafe { armed.dma_start_rx(&mut pool) };
+    let frame = unsafe { pool.rx_complete(idx) }.expect("the completion yields the frame");
+    assert_eq!(frame.read(&pool).len(), SLOT_SIZE);
+    frame.pool_return(&mut pool);
+
+    let held: Vec<_> = (0..SLOT_COUNT)
+        .map(|_| pool.pool_acquire_for_encode().expect("every slot is lent"))
+        .collect();
+    assert!(
+        pool.pool_acquire_for_encode().is_none(),
+        "an exhausted pool lends nothing"
+    );
+    for slot in held {
+        slot.pool_return(&mut pool);
+    }
+    assert_eq!(pool.free_count(), SLOT_COUNT);
 }
 
 /// docs/adr/0111 D4: a shared pool is `Sync` and an owner's is not, which is what

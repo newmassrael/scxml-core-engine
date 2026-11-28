@@ -280,6 +280,11 @@ pub struct PoolFnContract {
     pub params: &'static [ParamContract],
     /// Whether the function returns null on a tag-check failure.
     pub may_return_null: bool,
+    /// Whether only a pool that keeps the book of its lendings declares the
+    /// function (docs/adr/0111 D4): one a lent slot crosses an interface by.
+    /// A pool that keeps one state per slot declares none of them, and its
+    /// header owes their annotations nothing.
+    pub lends_only: bool,
 }
 
 /// Analyzer-layer contracts for the tag-checked per-pool author API
@@ -341,7 +346,10 @@ pub struct PoolFnContract {
 pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
     // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle, size_t frame)` —
     // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`). `frame` is a
-    // scalar, the bytes of the frame the holder wrote (docs/adr/0111 D4).
+    // scalar, the bytes of the frame the holder wrote (docs/adr/0111 D4). A
+    // pool that keeps one state per slot declares the one-parameter form,
+    // `_link_arm_tx(sce_slot_handle_t *handle)`, which the same annotation
+    // describes: neither renderer reads the arity.
     PoolFnContract {
         suffix: "_link_arm_tx",
         arity: 2,
@@ -351,6 +359,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: false,
     },
     // `bool <pool>_pool_return(sce_slot_handle_t *handle)` —
     // spec §synth-5-E lines 1152, 1155.
@@ -363,6 +372,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: false,
     },
     // `const uint8_t *<pool>_slot_read(const sce_slot_handle_t *handle)`
     // — returns NULL when the handle's tag is not a CPU-visible state.
@@ -375,6 +385,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
+        lends_only: false,
     },
     // `uint8_t *<pool>_slot_write(sce_slot_handle_t *handle)` —
     // returns NULL unless the handle's tag is `cpu-mut`.
@@ -387,6 +398,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
+        lends_only: false,
     },
     // `bool <pool>_dma_start_rx(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1149 (`dma-armed-rx -> dma-busy-rx`). Leaves a holdable
@@ -400,6 +412,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: false,
     },
     // `uint8_t *<pool>_dma_armed_rx_ptr(const sce_slot_handle_t *handle)`
     // — publishes the slot's address for the peripheral's descriptor.
@@ -413,6 +426,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
+        lends_only: false,
     },
     // `bool <pool>_mutate_in_place(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1153 (`cpu-ref -> cpu-mut`). Leaves a holdable
@@ -426,6 +440,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: false,
     },
     // `<pool>_slot_index_t <pool>_into_index(sce_slot_handle_t *handle)` —
     // docs/adr/0111 D4: the handle is given up for the index that crosses an
@@ -440,6 +455,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: true,
     },
     // `<pool>_slot_index_t <pool>_lend(sce_slot_handle_t *handle, uint32_t holds)`
     // — docs/adr/0111 D4: a received frame's handle is given up to the events
@@ -453,6 +469,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+        lends_only: true,
     },
 ];
 
@@ -868,6 +885,19 @@ mod tests {
                  render inout(1); got:\n{rendered}"
             );
         }
+    }
+
+    /// A pool that keeps one state per slot declares no function a lent slot
+    /// crosses an interface by (docs/adr/0111 D4); every other function both
+    /// headers declare, so its annotation is owed by both.
+    #[test]
+    fn only_the_index_functions_are_owed_by_a_lending_pool_alone() {
+        let lends_only: Vec<&str> = POOL_CONTRACTS
+            .iter()
+            .filter(|c| c.lends_only)
+            .map(|c| c.suffix)
+            .collect();
+        assert_eq!(lends_only, ["_into_index", "_lend"]);
     }
 
     /// Pool names flow into the rendered text, so a pool named such

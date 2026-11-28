@@ -507,15 +507,20 @@ fn main() {
     // Step 10: the buffer-pool kind's lending contract (docs/adr/0111 D4). An
     // owner's pool and a shared one, whose books differ in every transition;
     // `forge_buffer_pool.rs` runs `pool_contract.json` beside them against
-    // each. The documents and the contract are shared with the C11 arm, in
-    // `tests/forge/conformance/buffer_pool/`.
+    // each, and holds the pool that lends every slot whole to the layout of a
+    // pool before the book. The documents and the contract are shared with
+    // the C11 arm, in `tests/forge/conformance/buffer_pool/`.
     let pool_fixtures = Path::new(&manifest_dir)
         .join("../../../tests/forge/conformance/buffer_pool")
         .canonicalize()
         .expect("canonicalize tests/forge/conformance/buffer_pool");
     println!("cargo:rerun-if-changed={}", pool_fixtures.display());
     generate_stripped_fixtures(
-        &["pool_conformance_owner", "pool_conformance_shared"],
+        &[
+            "pool_conformance_owner",
+            "pool_conformance_shared",
+            "pool_conformance_fixed",
+        ],
         &pool_fixtures,
         &out_dir,
         &options,

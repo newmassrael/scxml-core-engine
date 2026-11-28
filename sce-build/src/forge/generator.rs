@@ -736,6 +736,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub buffer_pool_slot_size: Option<u32>,
 
+    /// For buffer-pool imports: whether the imported pool keeps the book of
+    /// its lendings ([`BufferPoolModel::lends`], docs/adr/0111 D4), which
+    /// decides how a link that encodes into it takes it and lends a slot of
+    /// it. `false` for every other import and for a buffer-pool import whose
+    /// model failed to parse during enrichment.
+    ///
+    /// [`BufferPoolModel::lends`]: crate::forge::model::BufferPoolModel::lends
+    #[serde(skip)]
+    pub buffer_pool_lends: bool,
+
     /// For queue imports: whether the imported document declares `consumers`
     /// `many`, captured at enrichment time from the parsed `QueueModel`.
     /// Consumed by the worker's inbox check
@@ -1863,6 +1873,7 @@ fn resolve_single_import(
         codec_parts_of: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
+        buffer_pool_lends: false,
         queue_consumers_many: false,
         bc_element_snake: None,
         bc_element: None,
@@ -31384,6 +31395,11 @@ fn render_buffer_pool_rust(
         // cells for `owner` and atomics for `shared`.
         sharing => m.sharing.as_str(),
         shared => m.sharing == crate::forge::model::PoolSharing::Shared,
+        // Whether the pool's own storage keeps the book of its lendings
+        // (`<sce:lending>run-time` or `shared`, docs/adr/0111 D4), or one
+        // state per slot, the layout and the code a pool had before the book.
+        lending => m.lending.as_str(),
+        lends => m.lends(),
         // C5 cache-maintenance: template emits cache_clean +
         // (conditionally) cache_invalidate when cache_policy=maintain.
         cache_maintain => cache_maintain,
@@ -34691,6 +34707,10 @@ fn render_buffer_pool_c(
         // `<sce:sharing>` (docs/adr/0111 D4), as for the Rust book.
         sharing => m.sharing.as_str(),
         shared => m.sharing == crate::forge::model::PoolSharing::Shared,
+        // Whether the pool keeps the book of its lendings or one state per
+        // slot (docs/adr/0111 D4), as for the Rust pool's own storage.
+        lending => m.lending.as_str(),
+        lends => m.lends(),
         analyzer => analyzer,
         // C5 cache-maintenance gating; mirror of Rust template
         // context shape so per-backend template authors can reach for
@@ -34716,7 +34736,7 @@ fn render_buffer_pool_c(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
-    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, &rendered)?;
+    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, m.lends(), &rendered)?;
     if variant_reassembly {
         check_reassembly_peer_id_zid_invariant_c11(&m.name, &snake_name, &rendered)?;
     }
@@ -34736,9 +34756,16 @@ fn render_buffer_pool_c(
 fn check_analyzer_annotations_emitted_c11(
     pool_name: &str,
     snake_name: &str,
+    lends: bool,
     rendered: &str,
 ) -> Result<(), ForgeError> {
-    for contract in crate::forge::ownership_contract::POOL_CONTRACTS.iter() {
+    // A pool that keeps one state per slot declares none of the functions a
+    // lent slot crosses an interface by (docs/adr/0111 D4), so it owes none
+    // of their annotations.
+    for contract in crate::forge::ownership_contract::POOL_CONTRACTS
+        .iter()
+        .filter(|contract| lends || !contract.lends_only)
+    {
         for line in contract.rendered_lines(snake_name) {
             if !rendered.contains(&line) {
                 return Err(ForgeError::from(GenerateError::TemplateRender(format!(
@@ -54216,6 +54243,7 @@ mod tests {
             codec_parts_of: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
+            buffer_pool_lends: false,
             queue_consumers_many: false,
             bc_element_snake: None,
             bc_element: None,
@@ -55154,6 +55182,7 @@ mod tests {
                 codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
+                buffer_pool_lends: false,
                 queue_consumers_many: false,
                 bc_element_snake: None,
                 bc_element: None,
@@ -55235,6 +55264,7 @@ mod tests {
                 codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
+                buffer_pool_lends: false,
                 queue_consumers_many: false,
                 bc_element_snake: None,
                 bc_element: None,
