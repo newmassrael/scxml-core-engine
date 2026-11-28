@@ -33,7 +33,7 @@
 - Related: ADR 0050 and ADR 0086 (a bound by name, part of a type), ADR 0055 (optional types), ADR 0092 (a field of
   several record shapes), ADR 0101 (one deterministic CBOR form per type), ADR 0108 (a table by key), ADR 0113 (an
   instance), ADR 0114 (the journal and its followers), ADR 0116 (a person, and relations as facts), ADR 0118 (cost
-  from the plan), ADR 0133 (totality where the build proves it), ADR 0146 (a bounded FIFO's declared full policy),
+  from the plan), ADR 0133 (totality where the build proves it), ADR 0157 (a bounded FIFO's declared full policy),
   ADR 0152 (a client's subscription to the value this record publishes).
 
 ## Context
@@ -381,7 +381,7 @@ statement of a view's value alone: what else leaves the machine is held by D10.
 - **The table of viewers is bounded by `max_viewers`**, the bound ADR 0152 D8 names, with no default, written by the
   deployment and moved by name. A viewer asked for past it is refused, with the bound as the reason, and a kept
   viewer is never evicted to make room: a full table of viewers answers full, as a full map does (ADR 0108 D4), and
-  its policy is the one ADR 0146 D1 calls `refuse`, under which the one refused loses nothing that was kept.
+  its policy is the one ADR 0157 D1 calls `refuse`, under which the one refused loses nothing that was kept.
 - **Every other size is a term of those names**, computed from the plan (ADR 0118 D3): a join's state is its sides'
   bounds, its output at most their product or, on a key, the left side's bound; a derived relation's fixed point at
   most its objects' bound times its subjects'; `total`, at most the term of the relation before the cut. Over a view
@@ -485,6 +485,17 @@ statement of a view's value alone: what else leaves the machine is held by D10.
 - **The kit checks it as well.** By self-composition, as D7 is checked: two runs of a certified machine from one
   state, whose filtered tables differ in rows a random change moved, give the same bytes at every point where a value
   leaves the machine, on every lane.
+
+### D10a. A blob a view's value names reaches a viewer under the viewer's own grant
+
+A row of a view's value may hold a `record:BlobRef` (ADR 0153). The value reaches a viewer only through a published
+value (ADR 0152), whose changelog is a holder of grants and translates each reference to the subscriber's own handle
+when it delivers (ADR 0152 D2, ADR 0153 D3 and D4, both as accepted on 2026-11-28). A viewer therefore never reads
+another holder's handle, and the blob lives while a changelog row or a viewer's grant names it. A view's state itself
+holds no grant: it is derived (D4), and what it names is held by the tables it is derived from.
+
+ADR 0118 is Proposed. D8's terms are stated in its vocabulary and are checked by it once it is accepted; until then
+`view/` bounds are checked by D8's own names alone, and no saved form is measured, since a view saves none (D4).
 
 ### D11. One reference evaluator, and the lanes
 
