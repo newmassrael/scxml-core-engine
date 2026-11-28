@@ -417,9 +417,13 @@ fn path_within(from: usize, to: usize, edges: &[Edge], component: &[usize]) -> V
     while !frontier.is_empty() && !seen.contains(&to) {
         let mut next: Vec<usize> = Vec::new();
         for at in frontier {
-            for edge in edges.iter().filter(|e| {
-                e.from == at && component[e.to] == component[from] && !seen.contains(&e.to)
-            }) {
+            for edge in edges
+                .iter()
+                .filter(|e| e.from == at && component[e.to] == component[from])
+            {
+                if seen.contains(&edge.to) {
+                    continue;
+                }
                 seen.push(edge.to);
                 came_from.insert(edge.to, at);
                 next.push(edge.to);
