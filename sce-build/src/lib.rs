@@ -11034,13 +11034,7 @@ pub fn inject_partition_context_for(
     // post-merge plan instead of the author's (possibly violating)
     // original.
     let resolved = mesh::resolve_deploy_config(deploy_dir, &deploy_cfg)?;
-    let resolved_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
-        model.name.clone()
-    } else {
-        deploy_cfg
-            .find_machine_name_by_source(&model.name)
-            .unwrap_or_else(|| model.name.clone())
-    };
+    let resolved_name = deploy_cfg.machine_key_for(&model.name);
     let present = mesh::partitions::is_machine_partition_listed(&deploy_cfg, &resolved_name);
     model.partition_context_present = present;
     model.partition_parallel_roles.clear();
@@ -11828,13 +11822,7 @@ pub fn inject_server_model_mutations(
 ) -> Result<Vec<String>, mesh::error::MeshError> {
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
-    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
-        model.name.clone()
-    } else {
-        deploy_cfg
-            .find_machine_name_by_source(&model.name)
-            .unwrap_or_else(|| model.name.clone())
-    };
+    let effective_machine_name = deploy_cfg.machine_key_for(&model.name);
 
     let server_config = deploy_cfg
         .device_for_machine(&effective_machine_name)
@@ -11901,13 +11889,7 @@ pub fn populate_event_queue_capacity_from_deploy(
     }
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
-    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
-        model.name.clone()
-    } else {
-        deploy_cfg
-            .find_machine_name_by_source(&model.name)
-            .unwrap_or_else(|| model.name.clone())
-    };
+    let effective_machine_name = deploy_cfg.machine_key_for(&model.name);
 
     let capacity = deploy_cfg
         .device_for_machine(&effective_machine_name)
@@ -11994,17 +11976,8 @@ pub fn compile_mesh_transport(
     // Machine lookup uses model.name first (file stem), falling back to
     // source filename matching when the deploy.yaml key uses the SCXML
     // name attribute (e.g., deploy.yaml has "motor:" but the file stem
-    // is "motor_someip_multi").
-    // Machine lookup: try model.name (file stem) first, fall back to
-    // source filename when the deploy.yaml key uses the SCXML name
-    // attribute (e.g., deploy.yaml "motor:" but file stem "motor_someip_multi").
-    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
-        model.name.clone()
-    } else {
-        deploy_cfg
-            .find_machine_name_by_source(&model.name)
-            .unwrap_or_else(|| model.name.clone())
-    };
+    // is "motor_someip_multi"): `DeployConfig::machine_key_for`.
+    let effective_machine_name = deploy_cfg.machine_key_for(&model.name);
 
     let server_config = deploy_cfg
         .device_for_machine(&effective_machine_name)
