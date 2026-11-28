@@ -540,6 +540,7 @@ mod tests {
         assert_eq!(alloc::format!("{key:?}"), "Key(..)");
     }
 
+    #[cfg(feature = "https")]
     #[test]
     fn two_installation_secrets_drawn_are_two() {
         let a = draw_install_secret().unwrap();
@@ -549,6 +550,7 @@ mod tests {
         assert_eq!(install_digest(&a), install_digest(&a));
     }
 
+    #[cfg(feature = "https")]
     #[test]
     fn two_epochs_drawn_are_two_and_each_names_an_incarnation() {
         let a = draw_epoch().unwrap();

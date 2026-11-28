@@ -217,6 +217,13 @@ mod tests {
             alloc::format!("{:?}", freshness()),
             "Freshness { step_ms: 60000, .. }"
         );
+    }
+
+    /// Two steps drawn from the operating system's random source have two keys. Red if `draw`
+    /// returns a fixed key. A browser node draws no step, so the check needs the server's build.
+    #[cfg(feature = "https")]
+    #[test]
+    fn two_steps_drawn_have_two_keys() {
         let drawn = Freshness::draw(Duration::from_secs(1)).expect("a key");
         assert_ne!(
             drawn,
