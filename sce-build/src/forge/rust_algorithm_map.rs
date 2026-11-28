@@ -730,18 +730,23 @@ fn written_outcome(
 /// `<sce:put>` of `key`, and `value` for a map, into the map spelled `map`:
 /// the outcome written where the statement names one, and otherwise
 /// `full` statement (the return of `capacity-exceeded`) run where the map is
-/// full.
+/// full. Through the local `through` that holds what a search of the map at
+/// the key made once before found, where there is one (docs/adr/0161, D3), the
+/// put searches nothing itself.
 pub(crate) fn put(
     pad: &str,
     map: &str,
     key: &str,
     value: Option<&str>,
+    through: Option<&str>,
     outcome: Option<&Outcome<'_>>,
     full: &str,
 ) -> String {
-    let call = match value {
-        Some(value) => format!("{map}.put({key}, {value})"),
-        None => format!("{map}.put({key})"),
+    let call = match (through, value) {
+        (Some(found), Some(value)) => format!("{map}.put_found(&mut {found}, {key}, {value})"),
+        (Some(found), None) => format!("{map}.put_found(&mut {found}, {key})"),
+        (None, Some(value)) => format!("{map}.put({key}, {value})"),
+        (None, None) => format!("{map}.put({key})"),
     };
     match outcome {
         Some(outcome) => written_outcome(
@@ -756,6 +761,18 @@ pub(crate) fn put(
              {pad}}}\n"
         ),
     }
+}
+
+/// The search of the map spelled `map` for the key `probe` (spelled as the
+/// probe a remove looks a key up by), made once into the local `local`
+/// before the statement that first makes it (docs/adr/0161, D3); `mut` where
+/// a put goes through it.
+pub(crate) fn find(pad: &str, local: &str, written: bool, map: &str, probe: &str) -> String {
+    let binding = if written { "let mut" } else { "let" };
+    format!(
+        "{pad}{binding} {local} = {map}.find(&{probe});
+"
+    )
 }
 
 /// `<sce:remove>` of `key` from the map spelled `map`: the outcome written
@@ -924,16 +941,43 @@ mod tests {
             variants: &variants,
         };
         assert_eq!(
-            put("", "m", "k", Some("v"), Some(&outcome), "return Err(e);"),
+            put(
+                "",
+                "m",
+                "k",
+                Some("v"),
+                None,
+                Some(&outcome),
+                "return Err(e);"
+            ),
             "stored = match m.put(k, v) { ::sce_portable_bytes::PutOutcome::Inserted => \
              E::Inserted, ::sce_portable_bytes::PutOutcome::Replaced => E::Replaced, \
              ::sce_portable_bytes::PutOutcome::Full => E::Full };\n"
         );
         assert_eq!(
-            put("", "m", "k", None, None, "return Err(e);"),
+            put("", "m", "k", None, None, None, "return Err(e);"),
             "if m.put(k) == ::sce_portable_bytes::PutOutcome::Full {\n    return Err(e);\n}\n"
         );
         assert_eq!(remove("", "m", "k", None), "let _ = m.remove(&k);\n");
+    }
+
+    /// docs/adr/0161, D3: a search made once binds what it found, `mut` where a
+    /// put goes through it, and a put through it searches nothing itself.
+    #[test]
+    fn a_put_through_a_search_made_once_searches_nothing() {
+        assert_eq!(
+            find("", "sce_found_0", true, "m", "k"),
+            "let mut sce_found_0 = m.find(&k);\n"
+        );
+        assert_eq!(
+            find("", "sce_found_1", false, "m", "k"),
+            "let sce_found_1 = m.find(&k);\n"
+        );
+        assert_eq!(
+            put("", "m", "k", Some("v"), Some("sce_found_0"), None, "return Err(e);"),
+            "if m.put_found(&mut sce_found_0, k, v) == ::sce_portable_bytes::PutOutcome::Full {\n    \
+             return Err(e);\n}\n"
+        );
     }
 
     /// docs/adr/0108, D1, D4 "Storage" and D5: a text or a byte string part of

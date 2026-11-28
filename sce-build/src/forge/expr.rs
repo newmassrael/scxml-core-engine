@@ -8308,6 +8308,19 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         &expr.kind,
         ExprKind::Call { args, .. } if args.first().is_some_and(|map| rust_lends_keyed(map, ctx))
     );
+    // docs/adr/0161, D3: `has(m, k)` of a search the algorithm made once before
+    // the statement reads what it found.
+    if matches!(builtin, Some((KeyedBuiltin::Has, _))) {
+        let searched = match &expr.kind {
+            ExprKind::Call { args, .. } if args.len() == 2 => ctx.found_search(&args[0], &args[1]),
+            _ => None,
+        };
+        if let Some(local) = searched {
+            let reads = ctx.rust_algorithm_map_reads().unwrap_or(RUST_MAP_READS);
+            expr.kind = ExprKind::Raw(format!("{reads}::found_holds(&{local})"));
+            return;
+        }
+    }
     for child in expr.children_mut() {
         lower_keyed_reads_for_rust(child, ctx);
     }
@@ -8479,6 +8492,12 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     } else {
         function
     };
+    // docs/adr/0161, D3: a search the algorithm made once before the statement
+    // is read through the local that holds what it found, not made again.
+    let searched = match &node.kind {
+        ExprKind::Index { object, index } => ctx.found_search(object, index).map(str::to_string),
+        _ => None,
+    };
     let ExprKind::Index { object, index } = std::mem::replace(&mut node.kind, ExprKind::NullLit)
     else {
         return false;
@@ -8491,7 +8510,13 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     if !rust_keyed_value(&mut map, ctx, "value") {
         wrap_in_call(&mut map, "&", map_ty);
     }
-    wrap_in_call(&mut key, "&", key_ty);
+    let (through, key) = match searched {
+        Some(local) => ("found_", TypedExpr::new(ExprKind::Raw(format!("&{local}")))),
+        None => {
+            wrap_in_call(&mut key, "&", key_ty);
+            ("", key)
+        }
+    };
     let algorithm_reads = ctx.rust_algorithm_map_reads();
     let reads = algorithm_reads.unwrap_or(RUST_MAP_READS);
     // An algorithm's body that hands on no failure reads the key the build
@@ -8503,7 +8528,9 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
             _ => "held_cloned",
         };
         node.kind = ExprKind::Call {
-            callee: Box::new(TypedExpr::new(ExprKind::Raw(format!("{reads}::{proven}")))),
+            callee: Box::new(TypedExpr::new(ExprKind::Raw(format!(
+                "{reads}::{through}{proven}"
+            )))),
             args: vec![map, key],
             params: Vec::new(),
             fails: false,
@@ -8514,7 +8541,7 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     }
     let lookup = TypedExpr::new(ExprKind::Call {
         callee: Box::new(TypedExpr::new(ExprKind::Raw(format!(
-            "{reads}::{function}"
+            "{reads}::{through}{function}"
         )))),
         args: vec![map, key],
         params: Vec::new(),

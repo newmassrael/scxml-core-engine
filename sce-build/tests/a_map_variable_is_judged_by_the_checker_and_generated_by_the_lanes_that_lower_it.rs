@@ -3064,8 +3064,10 @@ const TAKE_DOCUMENTS: [&str; 5] = [
 /// key in the type its unit declares; `has` and the value at the peer's key are
 /// the reads of the leaf crate, the value read where the build proved the key
 /// held, since the algorithm declares no `may-fail` and has no failure to hand
-/// on; and the put is the map's own. Read off the syntax tree of the generated
-/// function.
+/// on; and the put is the map's own. The table is searched for the peer once
+/// (docs/adr/0161): the test, the read and the put that follow it on every path
+/// read and write through what the search found. Read off the syntax tree of
+/// the generated function.
 #[test]
 fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
     let documents = static_documents(&TAKE_DOCUMENTS);
@@ -3093,12 +3095,22 @@ fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
     let mut called = Called::default();
     syn::visit::Visit::visit_item_fn(&mut called, take);
     for read in [
-        ":: sce_portable_bytes :: map :: holds",
-        ":: sce_portable_bytes :: map :: held_cloned",
+        ":: sce_portable_bytes :: map :: found_holds",
+        ":: sce_portable_bytes :: map :: found_held_cloned",
     ] {
         assert!(
             called.0.iter().any(|path| path == read),
             "no `{read}` in {:?}",
+            called.0
+        );
+    }
+    for searched_again in [
+        ":: sce_portable_bytes :: map :: holds",
+        ":: sce_portable_bytes :: map :: held_cloned",
+    ] {
+        assert!(
+            !called.0.iter().any(|path| path == searched_again),
+            "`{searched_again}` searches the table again: {:?}",
             called.0
         );
     }
@@ -3109,12 +3121,18 @@ fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
     );
     let mut methods = MethodCalls::default();
     syn::visit::Visit::visit_item_fn(&mut methods, take);
+    assert_eq!(
+        methods.receivers_of("find"),
+        ["resets"],
+        "the table is searched for the peer once: {:?}",
+        methods.0
+    );
     assert!(
         methods
             .0
             .iter()
-            .any(|(receiver, method)| receiver == "resets" && method == "put"),
-        "the table is put into where it is lent: {:?}",
+            .any(|(receiver, method)| receiver == "resets" && method == "put_found"),
+        "the table is put into where it is lent, through the search: {:?}",
         methods.0
     );
     // The enum the document names only as the tag of the union locals it

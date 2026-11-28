@@ -65,8 +65,8 @@ pub mod map;
 pub use map::Heap;
 pub use map::{
     BoundedMap, BoundedSet, DefaultMapStorage, FieldAtoms, FromSeed, Inline, KeyAtom, LendRefused,
-    Lent, LentCell, LentIndexed, LentIndexedSlot, LentSlot, Linear, MapCursor, MapKey, MapSeed,
-    MapSeeds, MapSlot, MapStorage, PutOutcome, RemoveOutcome,
+    Lent, LentCell, LentIndexed, LentIndexedSlot, LentSlot, Linear, MapCursor, MapFound, MapKey,
+    MapSeed, MapSeeds, MapSlot, MapStorage, PutOutcome, RemoveOutcome,
 };
 
 /// Returned by `from_slice` / `push` / `extend_from_slice` when a copy would

@@ -350,6 +350,23 @@ impl Writes {
             })
     }
 
+    /// Whether what was collected may write `location` (`zid`, `peer.zid`) or
+    /// anything it is part of or that is part of it, or anything at all: what
+    /// ends a search at a key (docs/adr/0161, D1).
+    pub fn touches(&self, location: &str) -> bool {
+        let location = location.trim();
+        let within = |outer: &str, inner: &str| {
+            inner
+                .strip_prefix(outer)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+        };
+        self.anything
+            || self
+                .paths
+                .iter()
+                .any(|path| within(path, location) || within(location, path))
+    }
+
     fn collect<S: Statement>(&mut self, statement: &S) {
         statement.writes(self);
         for block in statement.blocks() {

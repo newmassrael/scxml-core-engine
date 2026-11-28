@@ -1705,6 +1705,42 @@ impl MapCursor<u32> {
     }
 }
 
+/// What a search of a map for a key found ([`BoundedMap::find`],
+/// docs/adr/0161, D2): the position of the key's entry, or the key absent with
+/// the stamp an insert of it keeps. It holds no borrow of the map, so the code
+/// between a search and what is done through it may read the map; what it
+/// names stays true while nothing removes from the map, clears it or puts
+/// another key into it, which the generator that keeps one proves
+/// (docs/adr/0161, D1).
+///
+/// `G` is the generation the map's slots keep and `H` the stamp each slot
+/// keeps of its key (`MapStorage::Generation`, `MapStorage::Stamp`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapFound<G, H>(Found<G, H>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Found<G, H> {
+    /// The key's entry is at this position.
+    At(MapCursor<G>),
+    /// The key is absent; an insert of it keeps this stamp.
+    Vacant(H),
+}
+
+impl<G: Copy, H> MapFound<G, H> {
+    /// Whether the search found the key held.
+    pub fn is_found(&self) -> bool {
+        matches!(self.0, Found::At(_))
+    }
+
+    /// The position of the key's entry, or `None` where it is absent.
+    pub fn position(&self) -> Option<MapCursor<G>> {
+        match self.0 {
+            Found::At(at) => Some(at),
+            Found::Vacant(_) => None,
+        }
+    }
+}
+
 /// A map of at most `N` entries, each a key of `K` and a value of `V`, no two
 /// keys alike, in the order each key was first put (docs/adr/0108): the value
 /// of a `map<K, V>[N]`, its slots and its index kept in the storage `S`
@@ -2035,6 +2071,77 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
             }
             Lookup::Absent(stamp) => stamp,
         };
+        self.insert_absent(key, value, stamp)
+    }
+
+    /// Search the map for `key` once (docs/adr/0161, D2): the position of its
+    /// entry, or its absence with the stamp an insert of it keeps, which
+    /// [`Self::value_found`] and [`Self::put_found`] act through without
+    /// searching again.
+    pub fn find<Q: MapKey + ?Sized>(&self, key: &Q) -> MapFound<S::Generation, S::Stamp> {
+        match self
+            .index
+            .find(&self.seed, self.slots.taken(), self.head, key)
+        {
+            Lookup::Found { slot, .. } => MapFound(Found::At(self.cursor(slot))),
+            Lookup::Absent(stamp) => MapFound(Found::Vacant(stamp)),
+        }
+    }
+
+    /// The value at the key `found` was searched for, or `None` where it was
+    /// absent.
+    ///
+    /// # Panics
+    ///
+    /// Where the position `found` names holds no entry, as [`Self::value_at`].
+    pub fn value_found(&self, found: &MapFound<S::Generation, S::Stamp>) -> Option<&V> {
+        found.position().map(|at| self.value_at(at))
+    }
+
+    /// [`Self::put`] at the key `found` was searched for, with no search of
+    /// its own (docs/adr/0161, D2): the value written where the entry stands
+    /// ([`PutOutcome::Replaced`]), or the key inserted under the stamp the
+    /// search kept ([`PutOutcome::Inserted`], or [`PutOutcome::Full`] at the
+    /// limit, the map as it was). Afterwards `found` names the key's entry.
+    ///
+    /// `found` is the map's search for `key` with nothing between that removed
+    /// from the map, cleared it or put another key into it, which a debug build
+    /// asserts.
+    pub fn put_found(
+        &mut self,
+        found: &mut MapFound<S::Generation, S::Stamp>,
+        key: K,
+        value: V,
+    ) -> PutOutcome {
+        match found.0 {
+            Found::At(at) => {
+                debug_assert!(
+                    same_key(self.key_at(at), &key),
+                    "a put through a search names the key it searched for"
+                );
+                if let Some(entry) = self.slot_mut(at.link).entry.as_mut() {
+                    entry.1 = value;
+                }
+                PutOutcome::Replaced
+            }
+            Found::Vacant(stamp) => {
+                debug_assert!(
+                    self.link_of(&key).is_none(),
+                    "a put through a search that found the key absent finds it absent"
+                );
+                let (outcome, at) = self.insert_absent(key, value, stamp);
+                if let Some(at) = at {
+                    *found = MapFound(Found::At(self.cursor(at)));
+                }
+                outcome
+            }
+        }
+    }
+
+    /// Insert `key`, which the map does not hold, under `stamp`, its hash
+    /// where the map keeps an index: last in the order while the map holds
+    /// fewer entries than its limit, answering the link to its slot.
+    fn insert_absent(&mut self, key: K, value: V, stamp: S::Stamp) -> (PutOutcome, Option<u32>) {
         let live = self.len();
         let limit = self.limit();
         if live >= limit {
@@ -2446,6 +2553,21 @@ impl<K: MapKey, const N: usize, S: MapStorage> BoundedSet<K, N, S> {
         self.0.remove(key)
     }
 
+    /// Search the set for `key` once ([`BoundedMap::find`]).
+    pub fn find<Q: MapKey + ?Sized>(&self, key: &Q) -> MapFound<S::Generation, S::Stamp> {
+        self.0.find(key)
+    }
+
+    /// [`Self::put`] of the key `found` was searched for, with no search of
+    /// its own ([`BoundedMap::put_found`]).
+    pub fn put_found(
+        &mut self,
+        found: &mut MapFound<S::Generation, S::Stamp>,
+        key: K,
+    ) -> PutOutcome {
+        self.0.put_found(found, key, ())
+    }
+
     /// Key the set by `seed` from now on, its keys and their order as they
     /// were ([`BoundedMap::reseed`]).
     pub fn reseed(&mut self, seed: MapSeed) {
@@ -2685,6 +2807,63 @@ pub fn held_cloned<K: MapKey, V: Clone, Q: MapKey + ?Sized, const N: usize, S: M
     held(map, key).clone()
 }
 
+// ── what an expression reads through a search ───────────────────────────────
+//
+// The search of a map for a key an algorithm makes once, where it would make
+// it again with nothing between that can move the key's entry, is the map's
+// own `find` (docs/adr/0161); the reads below act through what it found.
+
+/// `has(m, k)` through the search `found` of `m` for `k` ([`holds`]).
+pub fn found_holds<G: Copy, H>(found: &MapFound<G, H>) -> bool {
+    found.is_found()
+}
+
+/// `m[k].field` through the search `found` of `map` for `k` ([`value`]).
+pub fn found_value<'m, K: MapKey, V, const N: usize, S: MapStorage>(
+    map: &'m BoundedMap<K, V, N, S>,
+    found: &MapFound<S::Generation, S::Stamp>,
+) -> Option<&'m V> {
+    map.value_found(found)
+}
+
+/// `m[k]` through the search `found` of `map` for `k` ([`value_cloned`]).
+pub fn found_value_cloned<K: MapKey, V: Clone, const N: usize, S: MapStorage>(
+    map: &BoundedMap<K, V, N, S>,
+    found: &MapFound<S::Generation, S::Stamp>,
+) -> Option<V> {
+    map.value_found(found).cloned()
+}
+
+/// `m[k].field` where the build proved `k` held, through the search `found`
+/// of `map` for it ([`held`]).
+///
+/// # Panics
+///
+/// Where `found` found the key absent, which the proof the build made rules
+/// out.
+pub fn found_held<'m, K: MapKey, V, const N: usize, S: MapStorage>(
+    map: &'m BoundedMap<K, V, N, S>,
+    found: &MapFound<S::Generation, S::Stamp>,
+) -> &'m V {
+    match map.value_found(found) {
+        Some(value) => value,
+        None => panic!("a key the build proved held is absent from the map"),
+    }
+}
+
+/// `m[k]` where the build proved `k` held, through the search `found` of
+/// `map` for it ([`held_cloned`]).
+///
+/// # Panics
+///
+/// As [`found_held`].
+pub fn found_held_cloned<K: MapKey, V: Clone, const N: usize, S: MapStorage>(
+    map: &BoundedMap<K, V, N, S>,
+    found: &MapFound<S::Generation, S::Stamp>,
+) -> V {
+    found_held(map, found).clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::storage::{CellStore, Scan};
@@ -2779,6 +2958,71 @@ mod tests {
         sip.write(&3u64.to_le_bytes());
         sip.write(b"red");
         assert_eq!(hash_of(&SEED, "red"), sip.finish());
+    }
+
+    /// docs/adr/0161, D2: a put through a search answers as a put does, with
+    /// no search of its own: an absent key is inserted under the stamp the
+    /// search kept and the search then names its entry, a present one takes
+    /// the value where it stands, a put of another key between leaves the
+    /// position, and a full map refuses the insert and stays as it was.
+    fn puts_through_a_search<S: MapStorage>(map: &mut BoundedMap<u32, u32, 3, S>) {
+        let mut one = map.find(&1u32);
+        assert!(!one.is_found());
+        assert_eq!(map.value_found(&one), None);
+        assert_eq!(map.put_found(&mut one, 1, 10), PutOutcome::Inserted);
+        assert!(one.is_found());
+        assert_eq!(map.value_found(&one), Some(&10));
+        assert_eq!(map.put_found(&mut one, 1, 11), PutOutcome::Replaced);
+        assert_eq!(map.put(2, 20), PutOutcome::Inserted);
+        assert_eq!(map.value_found(&one), Some(&11));
+        assert_eq!(map.find(&2u8).position(), map.find(&2u32).position());
+        let mut three = map.find(&3u32);
+        assert_eq!(map.put_found(&mut three, 3, 30), PutOutcome::Inserted);
+        let mut four = map.find(&4u32);
+        assert_eq!(map.put_found(&mut four, 4, 40), PutOutcome::Full);
+        assert!(!four.is_found());
+        assert!(map
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .eq([(1, 11), (2, 20), (3, 30)]));
+        assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn a_put_through_a_search_answers_as_a_put() {
+        puts_through_a_search(&mut BoundedMap::<u32, u32, 3, Inline>::with_seed(SEED));
+        puts_through_a_search(&mut BoundedMap::<u32, u32, 3, Linear>::with_seed(SEED));
+        let mut slots: [LentSlot<u32, u32>; 3] = core::array::from_fn(|_| LentSlot::empty());
+        let mut lent =
+            BoundedMap::<u32, u32, 3, Lent<'_>>::over(SEED, &mut slots).expect("3 slots");
+        puts_through_a_search(&mut lent);
+        let mut slots: [LentIndexedSlot<u32, u32>; 3] =
+            core::array::from_fn(|_| LentIndexedSlot::empty());
+        let mut cells = [LentCell::EMPTY; 6];
+        let mut indexed =
+            BoundedMap::<u32, u32, 3, LentIndexed<'_>>::over(SEED, &mut slots, &mut cells)
+                .expect("3 slots");
+        puts_through_a_search(&mut indexed);
+
+        let mut set = BoundedSet::<u32, 2, Linear>::with_seed(SEED);
+        let mut seven = set.find(&7u32);
+        assert!(!seven.is_found());
+        assert_eq!(set.put_found(&mut seven, 7), PutOutcome::Inserted);
+        assert!(seven.is_found() && set.contains_key(&7u32));
+        assert_eq!(set.put_found(&mut seven, 7), PutOutcome::Replaced);
+        assert_eq!(set.len(), 1);
+    }
+
+    /// docs/adr/0161, D2: a debug build refuses a put through a search that a
+    /// put of the same key since has made stale.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "a put through a search that found the key absent finds it absent")]
+    fn a_stale_search_is_refused_where_it_is_used() {
+        let mut map = BoundedMap::<u32, u32, 3, Inline>::with_seed(SEED);
+        let mut stale = map.find(&1u32);
+        assert_eq!(map.put(1, 10), PutOutcome::Inserted);
+        let _ = map.put_found(&mut stale, 1, 11);
     }
 
     /// A record's atom is read only below its atoms.

@@ -1648,6 +1648,12 @@ pub struct TypeCtx<'a> {
     /// optional `x` only where `x` is one of them. Empty wherever no walker of
     /// a body has proven one, so a read there is refused.
     pub proven: crate::forge::narrowing::Facts,
+    /// The searches of a map an algorithm made once before the statement the
+    /// expression is read in (docs/adr/0161, D1), each to the local that holds
+    /// what it found: a read of `has(m, k)`, `m[k]` or `m[k].field` that is
+    /// one of them reads through that local instead of searching again. Empty
+    /// wherever no lane keeps a search, so every read searches as it did.
+    pub(crate) found: std::collections::BTreeMap<crate::forge::map_searches::Search, String>,
     /// Each name that holds a value of the one value type (docs/adr/0086,
     /// section 6.2) — a `sce-static` statechart's variable, the payload of the
     /// event a transition is on (`_event.data`), the item of a `<foreach>` — with
@@ -1903,6 +1909,7 @@ impl<'a> TypeCtx<'a> {
             limits: HashMap::new(),
             crossings: HashMap::new(),
             proven: crate::forge::narrowing::Facts::none(),
+            found: std::collections::BTreeMap::new(),
             values: HashMap::new(),
             value_scope: None,
             held_lists: HashMap::new(),
@@ -1958,6 +1965,32 @@ impl<'a> TypeCtx<'a> {
         let mut ctx = self.clone();
         ctx.proven = facts;
         ctx
+    }
+
+    /// This context with `found` the searches made once before the statement
+    /// an expression of it is read in ([`TypeCtx::found`]).
+    pub(crate) fn finding(
+        &self,
+        found: std::collections::BTreeMap<crate::forge::map_searches::Search, String>,
+    ) -> TypeCtx<'a> {
+        let mut ctx = self.clone();
+        ctx.found = found;
+        ctx
+    }
+
+    /// The local that holds what a search of the map `map` at the key `key`
+    /// found, where the search was made once before the expression is read
+    /// ([`TypeCtx::found`]).
+    pub(crate) fn found_search(
+        &self,
+        map: &crate::forge::expr::TypedExpr,
+        key: &crate::forge::expr::TypedExpr,
+    ) -> Option<&str> {
+        if self.found.is_empty() {
+            return None;
+        }
+        let search = crate::forge::map_searches::search_of(map, key, &|_| true)?;
+        self.found.get(&search).map(String::as_str)
     }
 
     /// Declare `path`, a `"<record>.<field>"`, a record's text field. See

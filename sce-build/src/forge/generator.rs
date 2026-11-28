@@ -44959,6 +44959,12 @@ fn lower_algorithm_body(
     let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
     let reads = crate::forge::algorithm_reads::names_read(stmts);
+    // docs/adr/0161, D3: a Rust body makes once a search of a map it would make
+    // again with nothing between that can move the key's entry.
+    let searches = cfg
+        .maps
+        .and_then(HeldMaps::rust)
+        .map(|maps| crate::forge::map_searches::SearchPlan::of(stmts, &|name| maps.holds(name)));
     let ctx = AlgorithmLowerCtx {
         lang: cfg.lang,
         type_ctx: cfg.type_ctx,
@@ -44976,6 +44982,7 @@ fn lower_algorithm_body(
         absences: cfg.absences,
         channel: cfg.channel,
         unions: cfg.unions,
+        searches: searches.as_ref().filter(|plan| !plan.is_empty()),
         maps: cfg.maps,
     };
     lower_algorithm_block(
@@ -45084,6 +45091,7 @@ fn collect_algorithm_assigned_roots(
 /// position-tracking parameters (`pad`, `indent`) vary per recursion
 /// and stay as direct args; `out: &mut String` is the sink so it also
 /// stays an explicit arg.
+#[derive(Clone, Copy)]
 struct AlgorithmLowerCtx<'a> {
     lang: crate::generator::Language,
     type_ctx: &'a crate::forge::types::TypeCtx<'a>,
@@ -45127,6 +45135,10 @@ struct AlgorithmLowerCtx<'a> {
     /// The unions the body's parameters and locals hold (docs/adr/0092,
     /// Landing order step 5): what a union local's case is read from.
     unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
+    /// The searches of a map the body makes once (docs/adr/0161), on a lane
+    /// that keeps what a search found; `None` on every other lane, where every
+    /// read of a map searches it.
+    searches: Option<&'a crate::forge::map_searches::SearchPlan>,
     /// Where the body holds its maps, on the lane that lowers it
     /// ([`HeldMaps`]); `None` in a body that holds none and calls no algorithm
     /// that takes a seed.
@@ -45348,6 +45360,37 @@ fn lower_algorithm_stmt_and_check(
     proven: &crate::forge::narrowing::Facts,
     out: &mut String,
 ) -> Result<(), ForgeError> {
+    // docs/adr/0161, D3: the searches made once before the statement, and its
+    // own expressions read through those available to it, and through no other.
+    let finding;
+    let searching;
+    let ctx = match ctx.searches {
+        Some(plan) => {
+            for opened in plan.opened_before(s) {
+                lower_rust_map_stmt(
+                    RustMapItem::Search(opened),
+                    ctx,
+                    ctx.type_ctx,
+                    pad,
+                    indent,
+                    proven,
+                    out,
+                )?;
+            }
+            let through = plan.through(s).cloned().unwrap_or_default();
+            if through == ctx.type_ctx.found {
+                ctx
+            } else {
+                finding = ctx.type_ctx.finding(through);
+                searching = AlgorithmLowerCtx {
+                    type_ctx: &finding,
+                    ..*ctx
+                };
+                &searching
+            }
+        }
+        None => ctx,
+    };
     let mut lowered = String::new();
     lower_algorithm_stmt(s, ctx, pad, indent, proven, &mut lowered)?;
     out.push_str(&declared_unread(s, ctx, pad, lowered));
@@ -45901,8 +45944,17 @@ fn lower_c11_map_walk(
 /// `capacity-exceeded` on a full map; a walk binds its item and its key each
 /// turn and copies the map only where its body writes it (D6 item 3).
 /// `type_ctx` is the body's context where `proven` holds.
+/// What [`lower_rust_map_stmt`] lowers: a statement of a map, or a search of a
+/// map made once before the statement that first makes it (docs/adr/0161, D3),
+/// whose key is spelled as the probe a remove looks a key up by.
+#[derive(Clone, Copy)]
+enum RustMapItem<'s> {
+    Statement(&'s AlgorithmStmt),
+    Search(&'s crate::forge::map_searches::Opened),
+}
+
 fn lower_rust_map_stmt(
-    s: &AlgorithmStmt,
+    item: RustMapItem<'_>,
     ctx: &AlgorithmLowerCtx<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     pad: &str,
@@ -46068,6 +46120,28 @@ fn lower_rust_map_stmt(
             .collect::<Result<Vec<String>, ForgeError>>()?;
         Ok(Some((l.local_id(outcome), variants)))
     };
+    let s = match item {
+        RustMapItem::Statement(s) => s,
+        // docs/adr/0161, D3: the search, made once, of the map at the key.
+        RustMapItem::Search(opened) => {
+            let held = held_map(&opened.search.map)?;
+            let probe = part(
+                &opened.search.key,
+                None,
+                &held.key,
+                held.key_bound.as_deref(),
+                false,
+            )?;
+            out.push_str(&rust_maps::find(
+                pad,
+                &opened.local,
+                opened.put_through,
+                &l.local_id(&opened.search.map),
+                &probe,
+            ));
+            return Ok(());
+        }
+    };
     match s {
         AlgorithmStmt::Put {
             target,
@@ -46123,11 +46197,20 @@ fn lower_rust_map_stmt(
                 place: place.as_str(),
                 variants: variants.as_slice(),
             });
+            // docs/adr/0161, D3: a put through the search made once before it.
+            let through = ctx
+                .searches
+                .and_then(|plan| plan.through(s))
+                .and_then(|through| {
+                    crate::forge::map_searches::put_search(s, &|held| maps.holds(held))
+                        .and_then(|search| through.get(&search))
+                });
             out.push_str(&rust_maps::put(
                 pad,
                 &l.local_id(name),
                 &key,
                 value.as_deref(),
+                through.map(String::as_str),
                 outcome.as_ref(),
                 &full,
             ));
@@ -46269,6 +46352,7 @@ fn lower_algorithm_stmt(
         absences,
         channel,
         unions,
+        searches: _,
         maps,
     } = ctx;
     // The statement's expressions are read where `proven` holds: a `.value` the
@@ -46329,7 +46413,15 @@ fn lower_algorithm_stmt(
         {
             match (maps.expect("guarded by the arm"), s) {
                 (HeldMaps::Rust(_), _) => {
-                    lower_rust_map_stmt(s, ctx, type_ctx, pad, indent, proven, out)?;
+                    lower_rust_map_stmt(
+                        RustMapItem::Statement(s),
+                        ctx,
+                        type_ctx,
+                        pad,
+                        indent,
+                        proven,
+                        out,
+                    )?;
                 }
                 (HeldMaps::C11(_), AlgorithmStmt::Foreach { .. }) => {
                     lower_c11_map_walk(s, ctx, type_ctx, pad, indent, proven, out)?;

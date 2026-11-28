@@ -59,6 +59,7 @@ pub mod kind_catalog;
 pub mod lift;
 pub mod limits;
 pub mod manifest;
+pub(crate) mod map_searches;
 pub mod model;
 pub mod model_answer;
 pub mod namespace;
