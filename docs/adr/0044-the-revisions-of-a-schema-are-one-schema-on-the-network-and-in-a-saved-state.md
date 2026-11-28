@@ -8,6 +8,11 @@
   it grows at the defaults of its later revisions at every depth on the Rust and C++ restores. The promise of this
   record, a record saved at an earlier revision read at a later one's defaults, holds for every record a state
   holds, composed or not (`docs/adr/0112-a-generated-machine-is-served-as-a-pools-session-by-sces-adapter-and-one-kit-holds-every-session-machine-to-the-pools-contract.md`).
+- Amended by: ADR 0166 D3 (2026-11-29, accepted, not yet built): an instance of a parametric schema is a record named
+  in a saved state by its family's event and its arguments; a revision of a generic is a revision of every instance,
+  keeps the generic's parameters, and adds a field whose type holds a parameter only where a reader takes its default
+  without a literal
+  (`docs/adr/0166-a-document-may-take-types-and-bounds-as-parameters-checked-once-under-their-classes-and-each-import-generates-the-document-its-arguments-make.md`).
 - Scope: `forge::schema_revision` (the rule), `mesh::deploy::validate_event_schemas_cross_machine`
   and `mesh/event-schema-mismatch`, `forge::static_lowering::saved_shape`, the Rust and Kotlin
   templates' save and restore, `sce_rust_runtime::saved_state`, `com.sce.runtime.SavedState`,

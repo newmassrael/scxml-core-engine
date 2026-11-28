@@ -57,6 +57,8 @@
   (section 5.1) are the map of one entry keyed by the case's variant name, whose value is the case's record or the
   empty map, as a CBOR codec writes it; amended before step 7, so no signed bytes moved. The JSON wire of section 2
   is unchanged.
+- Amended by: ADR 0166 D2 (2026-11-29, accepted, not yet built): a union's case may be a type parameter of class
+  `record`, or an instance of a parametric schema.
 - Scope:
   - the forge model and readers: the kind `union`, the element `<sce:case>`, the type `union:<alias>`
     (`TypeOf::Union` in `sce-build/src/forge/value_type.rs`), `schemas/sce-forge-ext.xsd`,

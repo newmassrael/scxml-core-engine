@@ -17,6 +17,9 @@
   key is a fixed-width integer, `bool`, an enum, a bounded text or byte string, or a record whose every field is
   a key (`validation/map-key-type`), whose bracket states no lower count, and which no event schema's field holds
   (`validation/map-in-wire-position`).
+- Amended by: ADR 0166 D2 and D3 (2026-11-29, accepted, not yet built): section 1's grammar gains `$P`, a document's
+  type parameter, and `[$N]`, a bound parameter; section 5.1's `fits` admits an instance only where the same generic
+  at equal canonical arguments is expected.
 - Amends:
   - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
     grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`
