@@ -16205,17 +16205,33 @@ topology:
             .find(|(n, _)| n == "tx_pool_shared.h")
             .map(|(_, body)| body.as_str())
             .expect("header file must be `tx_pool_shared.h`");
+        let over = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "tx_pool_shared_over.h")
+            .map(|(_, body)| body.as_str())
+            .expect("the lending form's header must be `tx_pool_shared_over.h`");
+        // The atomic book is the lending type's, so a shared pool's header, and
+        // only a shared one's, includes the lending form's header for it.
         for needle in [
+            "#include \"tx_pool_shared_over.h\"",
             "static tx_pool_shared_over_t tx_pool_shared_self = {",
             "static inline sce_slot_handle_t tx_pool_shared_pool_acquire_for_encode(void) {",
             "return tx_pool_shared_over_pool_acquire_for_encode(&tx_pool_shared_self, TX_POOL_SHARED_SLOT_SIZE, 0u);",
             "static inline bool tx_pool_shared_link_arm_tx(sce_slot_handle_t *handle) {",
-            "extern void _sce_critical_enter(void);",
-            "#define TX_POOL_SHARED_SHARING \"shared\"",
         ] {
             assert!(
                 header.contains(needle),
                 "a shared pool must emit `{needle}`; full header:\n{header}",
+            );
+        }
+        for needle in [
+            "extern void _sce_critical_enter(void);",
+            "#define TX_POOL_SHARED_SHARING \"shared\"",
+        ] {
+            assert!(
+                over.contains(needle),
+                "a shared pool's lending form must emit `{needle}`; full header:\n{over}",
             );
         }
         assert!(
@@ -16578,7 +16594,11 @@ topology:
         };
         let out = compile_forge_from_string(scxml, label, generator::Language::C11)
             .expect("buffer-pool must emit on c11");
-        assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment",);
+        assert_eq!(
+            out.files.len(),
+            3,
+            "c11 emits header, the lending form's header (docs/adr/0111 D4) + linker fragment",
+        );
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E: section-placement validation.
@@ -16964,14 +16984,21 @@ topology:
         };
         let out = compile_forge_from_string(scxml, label, generator::Language::C11)
             .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
-        // β emits a (.h, .ld) pair — header first, linker fragment
-        // second — per `render_buffer_pool_linker_fragment` push order
-        // in `generate_c11_with_imports`.
+        // β emits the header, the header of its lending form (docs/adr/0111
+        // D4) and the linker fragment, in that order: the lending form is
+        // pushed beside the header, the fragment after them in
+        // `generate_c11_with_imports`.
         assert_eq!(
-            out.files.len(),
-            2,
-            "buffer-pool c11 emits a (.h, .ld) pair; full file list:\n{:?}",
-            out.files.iter().map(|(n, _)| n).collect::<Vec<_>>(),
+            out.files
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "rx_pool_sram1.h",
+                "rx_pool_sram1_over.h",
+                "rx_pool_sram1_pool.ld"
+            ],
+            "buffer-pool c11 emits (.h, _over.h, .ld)",
         );
         let header = out
             .files
@@ -16979,6 +17006,12 @@ topology:
             .find(|(n, _)| n == "rx_pool_sram1.h")
             .map(|(_, body)| body.as_str())
             .expect("header file must be `rx_pool_sram1.h`");
+        let over = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1_over.h")
+            .map(|(_, body)| body.as_str())
+            .expect("the lending form's header must be `rx_pool_sram1_over.h`");
         let ld = out
             .files
             .iter()
@@ -17090,10 +17123,12 @@ topology:
                 "the pool over its own storage must not emit `{needle}`; full header:\n{header}",
             );
         }
-        // The lending pool, a type over storage the caller holds, beside it:
-        // a run-time count and length, and a slot index that crosses an
-        // interface.
+        // The lending pool, a type over storage the caller holds, in the
+        // header beside it: a run-time count and length, and a slot index
+        // that crosses an interface.
         for needle in [
+            "#include \"rx_pool_sram1.h\"",
+            "#ifndef SCE_FORGE_RX_POOL_SRAM1_OVER_H",
             "} rx_pool_sram1_over_t;",
             "static inline bool rx_pool_sram1_init_over(rx_pool_sram1_over_t *pool, uint8_t *bytes, size_t len, size_t count, size_t slot_len)",
             "static inline sce_slot_handle_t rx_pool_sram1_over_pool_acquire_for_encode(rx_pool_sram1_over_t *pool, size_t len, size_t headroom)",
@@ -17105,8 +17140,8 @@ topology:
             "#define RX_POOL_SRAM1_SHARING \"owner\"",
         ] {
             assert!(
-                header.contains(needle),
-                "must emit `{needle}`; full header:\n{header}",
+                over.contains(needle),
+                "the lending form's header must emit `{needle}`; full header:\n{over}",
             );
         }
         assert!(
@@ -17182,6 +17217,10 @@ topology:
     /// build is permitted to drop the section attribute via
     /// `-D__attribute__(x)=` so unused-static warnings do not gate
     /// the test.
+    ///
+    /// docs/adr/0111 D4: the lending form is `<pool>_over.h`, and the driver
+    /// includes it alone, as a program that lends does: the header must bring
+    /// in `<pool>.h` itself, under gcc and under g++.
     #[test]
     fn buffer_pool_c11_emitted_header_compiles_under_gcc() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -17204,9 +17243,9 @@ topology:
         let header = out
             .files
             .iter()
-            .find(|(n, _)| n == "rx_pool_sram1.h")
+            .find(|(n, _)| n == "rx_pool_sram1_over.h")
             .map(|(_, body)| body.as_str())
-            .expect("header file must be `rx_pool_sram1.h`");
+            .expect("the lending form's header must be `rx_pool_sram1_over.h`");
 
         let tmp = std::env::temp_dir().join(format!(
             "sce-build-buffer-pool-gamma-cc-{}",
@@ -17214,8 +17253,11 @@ topology:
         ));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("create tmp dir");
-        let header_path = tmp.join("rx_pool_sram1.h");
-        std::fs::write(&header_path, header).expect("write generated header");
+        // Both headers sit where the generation writes them; the driver
+        // names the lending form's alone.
+        for (name, body) in out.files.iter().filter(|(n, _)| n.ends_with(".h")) {
+            std::fs::write(tmp.join(name), body).expect("write generated header");
+        }
         // The header is `static`-only; #include it from a tiny
         // translation unit so the compile drives every static
         // function. `__used__` would suppress unused warnings on a
@@ -17224,7 +17266,7 @@ topology:
         let driver_path = tmp.join("driver.c");
         std::fs::write(
             &driver_path,
-            r#"#include "rx_pool_sram1.h"
+            r#"#include "rx_pool_sram1_over.h"
 
 /* C5: cache-policy: maintain emits sce_dcache_*_by_addr calls in
  * link_arm_tx + link_arm_rx. Provide host-side no-op stubs so the
@@ -17855,6 +17897,274 @@ int main(void) {
         }
     }
 
+    /// docs/adr/0111 D4: the header of a pool over its own storage that is not
+    /// `shared` is the header of a pool before the book. The lending form is
+    /// `<pool>_over.h`, which only a program that lends includes, so this
+    /// header includes what the header before the book included and declares
+    /// the macros and functions it declared: nothing of the lending form, in a
+    /// declaration or in a body. A program that lends nothing compiles none of
+    /// it, however its build counts what a header holds (a unit kept with
+    /// `-fkeep-inline-functions` counts every `static inline` it reads).
+    ///
+    /// `sce/text.h` reaches the unit through `sce/sample.h` (docs/adr/0110,
+    /// D1), as it did before the book; the pool's header names neither it nor
+    /// a `sce_text_*` function.
+    #[test]
+    fn an_owner_c11_pool_header_declares_what_it_did_before_the_book() {
+        /// The text of a C header with its comments blanked, its string and
+        /// character literals kept: what the compiler reads of it.
+        fn code_of(text: &str) -> String {
+            let mut code = String::with_capacity(text.len());
+            let mut chars = text.chars().peekable();
+            while let Some(c) = chars.next() {
+                match c {
+                    '/' if chars.peek() == Some(&'*') => {
+                        chars.next();
+                        let mut last = ' ';
+                        for c in chars.by_ref() {
+                            if c == '\n' {
+                                code.push('\n');
+                            }
+                            if last == '*' && c == '/' {
+                                break;
+                            }
+                            last = c;
+                        }
+                        code.push(' ');
+                    }
+                    '/' if chars.peek() == Some(&'/') => {
+                        for c in chars.by_ref() {
+                            if c == '\n' {
+                                code.push('\n');
+                                break;
+                            }
+                        }
+                    }
+                    '"' | '\'' => {
+                        code.push(c);
+                        while let Some(d) = chars.next() {
+                            code.push(d);
+                            if d == '\\' {
+                                if let Some(e) = chars.next() {
+                                    code.push(e);
+                                }
+                            } else if d == c || d == '\n' {
+                                break;
+                            }
+                        }
+                    }
+                    _ => code.push(c),
+                }
+            }
+            code
+        }
+
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+        let header = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1.h")
+            .map(|(_, body)| body.as_str())
+            .expect("header file must be `rx_pool_sram1.h`");
+        let code = code_of(header);
+
+        let includes: Vec<&str> = code
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("#include"))
+            .collect();
+        assert_eq!(
+            includes,
+            [
+                "#include <stdbool.h>",
+                "#include <stddef.h>",
+                "#include <stdint.h>",
+                "#include <sce/sample.h>",
+                "#include <sce/portability.h>",
+            ],
+            "the header of a pool that is not shared includes what it did before the book; \
+             full header:\n{header}",
+        );
+
+        let defines: std::collections::BTreeSet<&str> = code
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("#define "))
+            .filter_map(|rest| rest.split(|c: char| c == '(' || c.is_whitespace()).next())
+            .collect();
+        let expected_defines: std::collections::BTreeSet<&str> = [
+            "SCE_FORGE_RX_POOL_SRAM1_H",
+            "RX_POOL_SRAM1_SLOT_COUNT",
+            "RX_POOL_SRAM1_SLOT_SIZE",
+            "RX_POOL_SRAM1_SECTION",
+            "RX_POOL_SRAM1_ALIGNMENT",
+            "RX_POOL_SRAM1_DMA_CHANNEL",
+            "RX_POOL_SRAM1_CACHE_POLICY",
+            "RX_POOL_SRAM1_STATE_COUNT",
+            "RX_POOL_SRAM1_TRANSITION_COUNT",
+            "RX_POOL_SRAM1_INVALID_HANDLE",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            defines, expected_defines,
+            "the header of a pool that is not shared defines the macros it did before the \
+             book; full header:\n{header}",
+        );
+
+        let functions: std::collections::BTreeSet<&str> = code
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("static inline "))
+            .filter_map(|rest| rest.split('(').next())
+            .filter_map(|head| head.rsplit(|c: char| c.is_whitespace() || c == '*').next())
+            .collect();
+        let expected_functions: std::collections::BTreeSet<String> = [
+            "pool_acquire_for_encode",
+            "link_arm_rx",
+            "link_arm_tx",
+            "pool_return",
+            "slot_read",
+            "slot_write",
+            "dma_start_tx",
+            "tx_complete",
+            "dma_start_rx",
+            "rx_complete",
+            "mutate_in_place",
+            "un_arm_tx",
+            "dma_armed_rx_ptr",
+            "dma_armed_tx_ptr",
+            "slot_index_of_ptr",
+            "slot_state",
+            "free_count",
+        ]
+        .into_iter()
+        .map(|op| format!("rx_pool_sram1_{op}"))
+        .collect();
+        let expected_functions: std::collections::BTreeSet<&str> =
+            expected_functions.iter().map(String::as_str).collect();
+        assert_eq!(
+            functions, expected_functions,
+            "the header of a pool that is not shared declares the functions it did before \
+             the book; full header:\n{header}",
+        );
+
+        for needle in [
+            "_over",
+            "sce/text",
+            "sce_text",
+            "_word_",
+            "_slot_index_t",
+            "_span_t",
+            "_lend_refused_t",
+            "_entry_t",
+            "_SHARING",
+            "SCE_POOL_NO_CAS",
+            "_sce_critical_",
+            "sce_atomic_",
+        ] {
+            assert!(
+                !code.contains(needle),
+                "the header of a pool that is not shared names `{needle}`, which is the \
+                 lending form's; full header:\n{header}",
+            );
+        }
+    }
+
+    /// docs/adr/0111 D4: a `shared` pool's header includes the lending form's,
+    /// whose header includes the pool's, so the two compile in either order:
+    /// whichever a unit includes second finds the other's guard set. A pool
+    /// that is not shared is read the same way through the lending form's
+    /// header, which a program that lends includes beside the pool's.
+    #[test]
+    fn a_c11_pools_two_headers_compile_included_in_either_order() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
+        for (name, sharing) in [("tx_pool_shared", "shared"), ("tx_pool_owner", "owner")] {
+            let scxml = format!(
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="{name}" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:sharing>{sharing}</sce:sharing>
+</scxml>"##
+            );
+            let label = DocumentLabel {
+                identifier: name,
+                diagnostic_label: name,
+            };
+            let out = compile_forge_from_string(&scxml, label, generator::Language::C11)
+                .expect("a pool generates");
+            let tmp = std::env::temp_dir().join(format!(
+                "sce-build-buffer-pool-either-order-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).expect("create tmp dir");
+            for (file, body) in out.files.iter().filter(|(n, _)| n.ends_with(".h")) {
+                std::fs::write(tmp.join(file), body).expect("write generated header");
+            }
+            let pool_h = format!("{name}.h");
+            let over_h = format!("{name}_over.h");
+            for (first, second) in [(&pool_h, &over_h), (&over_h, &pool_h)] {
+                let unit = tmp.join("unit.c");
+                std::fs::write(
+                    &unit,
+                    format!(
+                        "#include \"{first}\"\n#include \"{second}\"\n\n\
+                         int main(void) {{\n    \
+                         sce_slot_handle_t h = {name}_pool_acquire_for_encode();\n    \
+                         {name}_over_t pool;\n    \
+                         (void)pool;\n    \
+                         return h.state == SCE_SLOT_INVALID;\n}}\n"
+                    ),
+                )
+                .expect("write the unit");
+                let compiled = std::process::Command::new("gcc")
+                    .arg("-std=c11")
+                    .arg("-fsyntax-only")
+                    .arg("-Wall")
+                    .arg("-Wextra")
+                    .arg("-D__attribute__(x)=")
+                    .arg("-I")
+                    .arg(&tmp)
+                    .arg("-I")
+                    .arg(&runtime_include)
+                    .arg(&unit)
+                    .output()
+                    .expect("gcc must be on PATH for the build environment");
+                if !compiled.status.success() {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    panic!(
+                        "a {sharing} pool's headers must compile with `{first}` included \
+                         before `{second}`.\nstderr:\n{}",
+                        String::from_utf8_lossy(&compiled.stderr),
+                    );
+                }
+            }
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E: region-size check on
     /// [`compile_forge_with_deploy`]. After section validation passes
     /// (the prerequisite gate), the storage footprint must fit the
@@ -17976,8 +18286,12 @@ topology:
             Some(&deploy),
             Some("mcu_node"),
         )
-        .expect("pool footprint fitting region must pass and emit c11 (.h, .ld) pair");
-        assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment");
+        .expect("pool footprint fitting region must pass and emit c11 (.h, _over.h, .ld)");
+        assert_eq!(
+            out.files.len(),
+            3,
+            "c11 emits header, the lending form's header (docs/adr/0111 D4) + linker fragment",
+        );
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E lines 1059-1064: the inter-pool

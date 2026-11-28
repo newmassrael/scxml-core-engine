@@ -72,14 +72,31 @@ const OUTBOUND_THROUGH_POOL: &str = r##"  <sce:import as="scout_tx_pool" src="sc
     <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
   </sce:events>"##;
 
+/// The one file a link writes when it sends through no pool's lending form.
 fn generate(body: &str, lang: Language) -> Result<String, ForgeError> {
+    let mut files = generate_files(body, lang)?;
+    assert_eq!(
+        files.len(),
+        1,
+        "a link emits one file: {:?}",
+        files.iter().map(|(name, _)| name).collect::<Vec<_>>()
+    );
+    Ok(files.remove(0).1)
+}
+
+/// Every file a link writes, by name.
+fn generate_files(body: &str, lang: Language) -> Result<Vec<(String, String)>, ForgeError> {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("scout_frame_codec.scxml"), FRAMER).expect("write framer");
     fs::write(dir.path().join("scout_tx_pool.scxml"), TX_POOL).expect("write pool");
     compile(&link(body), lang, dir.path())
 }
 
-fn compile(scxml: &str, lang: Language, base_dir: &Path) -> Result<String, ForgeError> {
+fn compile(
+    scxml: &str,
+    lang: Language,
+    base_dir: &Path,
+) -> Result<Vec<(String, String)>, ForgeError> {
     let out = compile_forge_with_imports(
         scxml,
         DocumentLabel::symmetric("udp_scout"),
@@ -88,8 +105,7 @@ fn compile(scxml: &str, lang: Language, base_dir: &Path) -> Result<String, Forge
         &ForgeCompileOptions::default(),
     )
     .map_err(|e| e.error)?;
-    assert_eq!(out.files.len(), 1, "a link emits one file");
-    Ok(out.files[0].1.clone())
+    Ok(out.files)
 }
 
 /// The line after the `when` row's comment opens with `opening` and reads the
@@ -283,32 +299,55 @@ fn c11_transmit_path_encodes_into_a_buffer_of_the_largest_encoding() {
 
 #[test]
 fn c11_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
-    let body =
-        generate(OUTBOUND_THROUGH_POOL, Language::C11).expect("c11 link with a transmit pool");
-    assert_has(&body, "#include \"scout_tx_pool.h\"");
+    let files = generate_files(OUTBOUND_THROUGH_POOL, Language::C11)
+        .expect("c11 link with a transmit pool");
+    assert_eq!(
+        files
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["udp_scout.h", "udp_scout_over.h"],
+        "a link that sends through a pool writes its header and the header of its sends \
+         into a pool of the pool's lending type",
+    );
+    let body = &files[0].1;
+    let over = &files[1].1;
+    // docs/adr/0111 D4: the link's own header includes the pool's header
+    // alone, so a program that lends nothing includes nothing of the lending
+    // form through the link.
+    assert_has(body, "#include \"scout_tx_pool.h\"");
+    for absent in ["scout_tx_pool_over", "_send_scout_query_send_over("] {
+        assert!(
+            !body.contains(absent),
+            "the link's own header must not name `{absent}`; full source:\n{body}"
+        );
+    }
     // docs/adr/0111 D4: the pool over the header's own storage lends a slot
     // whole, as a send did before the book.
-    assert_has(&body, "slot = scout_tx_pool_pool_acquire_for_encode();");
-    assert_has(&body, "result.pool_exhausted = true;");
+    assert_has(body, "slot = scout_tx_pool_pool_acquire_for_encode();");
+    assert_has(body, "result.pool_exhausted = true;");
     assert_has(
-        &body,
+        body,
         "scout_tx_pool_slot_write(&slot), SCOUT_TX_POOL_SLOT_SIZE, &length);",
     );
-    assert_has(&body, "(void)scout_tx_pool_pool_return(&slot);");
+    assert_has(body, "(void)scout_tx_pool_pool_return(&slot);");
     // A pool of the lending type over the caller's storage has a send of its
-    // own, chosen by the pool's type rather than a declaration.
+    // own, chosen by the pool's type rather than a declaration, in the header
+    // beside the link's, which includes the pool's lending form.
+    assert_has(over, "#include \"udp_scout.h\"");
+    assert_has(over, "#include \"scout_tx_pool_over.h\"");
     assert_has(
-        &body,
+        over,
         "static inline udp_scout_send_result_t udp_scout_link_send_scout_query_send_over(",
     );
-    assert_has(&body, " *self, scout_tx_pool_over_t *pool, const ");
+    assert_has(over, " *self, scout_tx_pool_over_t *pool, const ");
     assert_has(
-        &body,
+        over,
         "slot = scout_tx_pool_over_pool_acquire_for_encode(pool, scout_tx_pool_over_slot_len(pool), 0u);",
     );
     assert_has(
-        &body,
+        over,
         "scout_tx_pool_over_slot_capacity(pool, &slot), &length);",
     );
-    assert_has(&body, "(void)scout_tx_pool_over_pool_return(pool, &slot);");
+    assert_has(over, "(void)scout_tx_pool_over_pool_return(pool, &slot);");
 }

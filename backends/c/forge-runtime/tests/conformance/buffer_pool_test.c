@@ -16,9 +16,13 @@
  * intrinsics, which sce_atomic_host.c supplies on the host.
  *
  * The contract is the lending type's, `<pool>_over_t`: every scenario makes
- * one over a span of the arena (docs/adr/0111 D4). The pool over the header's
- * own storage runs none of it; each is held to the calls of a pool before the
- * book instead (`_run_owned`), and the owner's to one state per slot.
+ * one over a span of the arena (docs/adr/0111 D4). The lending type is
+ * declared in `<pool>_over.h`, which this test includes as a program that
+ * lends does; the owner's `<pool>.h` includes none of it, and the shared
+ * pool's includes it for the book its own storage is kept in. The pool over
+ * the header's own storage runs none of the scenarios; each is held to the
+ * calls of a pool before the book instead (`_run_owned`), and the owner's to
+ * one state per slot.
  */
 
 #include <stdbool.h>
@@ -27,7 +31,19 @@
 #include <stdio.h>
 
 #include "pool_conformance_owner.h"
+/* The header of a pool that is not shared includes nothing of its lending form. */
+#ifdef SCE_FORGE_POOL_CONFORMANCE_OWNER_OVER_H
+#error "pool_conformance_owner.h includes its lending form's header"
+#endif
+#include "pool_conformance_owner_over.h"
+
 #include "pool_conformance_shared.h"
+/* A shared pool's header includes its lending form's: its own storage is kept
+ * in the lending type, whose words are atomic. */
+#ifndef SCE_FORGE_POOL_CONFORMANCE_SHARED_OVER_H
+#error "pool_conformance_shared.h does not include its lending form's header"
+#endif
+#include "pool_conformance_shared_over.h"
 
 /* The owner's pool over its own storage keeps one state per slot, no book. */
 SCE_STATIC_ASSERT(sizeof(pool_conformance_owner_slot_states) ==

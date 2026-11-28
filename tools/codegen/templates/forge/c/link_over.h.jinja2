@@ -1,0 +1,74 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="link") */
+/* Runtime: sce_forge_runtime_c (header-only INTERFACE library) */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * The sends of the link `{{ name }}` into a slot of a pool of the transmit
+ * pool's lending type, `{{ events.tx_pool.prefix }}_over_t`, over storage the
+ * caller holds (docs/adr/0111 D4). A header of its own beside
+ * `{{ snake_name }}.h`, so that only a program that lends includes the pool's
+ * lending form: one that sends through the pool over the pool header's own
+ * storage includes `{{ snake_name }}.h` alone, which includes
+ * `{{ events.tx_pool.prefix }}.h` alone.
+ */
+
+#ifndef {{ over_guard }}
+#define {{ over_guard }}
+
+#include "{{ snake_name }}.h"
+{{ events.tx_pool.c_over_include }}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+{% macro over_sends(self_type, prefix, events, snake_name) %}
+{% for row in events.outbound %}
+
+/* The transmit path of `{{ row.event }}` into a slot of `pool`, a pool of the
+ * transmit pool's lending type over storage the caller holds: a lending of
+ * the pool's slot length with no headroom, refused only when every slot is
+ * out. The pool's type, not a declaration, chooses which path a host calls:
+ * `{{ prefix }}_send_{{ row.snake }}` sends through the pool over the pool
+ * header's own storage. */
+static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}_over(
+    {{ self_type }} *self, {{ events.tx_pool.prefix }}_over_t *pool, const {{ row.codec_type }} *value) {
+    {{ snake_name }}_send_result_t result;
+    size_t length = 0;
+    sce_slot_handle_t slot;
+    result.pool_exhausted = false;
+    result.codec_status = SCE_FORGE_CODEC_OK;
+    result.link_status = SCE_FORGE_LINK_OK;
+    slot = {{ events.tx_pool.prefix }}_over_pool_acquire_for_encode(pool, {{ events.tx_pool.prefix }}_over_slot_len(pool), 0u);
+    if (slot.state == SCE_SLOT_INVALID) {
+        result.pool_exhausted = true;
+        return result;
+    }
+    result.codec_status = {{ row.codec_prefix }}_encode_to_buf(
+        value, {{ events.tx_pool.prefix }}_over_slot_write(pool, &slot),
+        {{ events.tx_pool.prefix }}_over_slot_capacity(pool, &slot), &length);
+    if (result.codec_status == SCE_FORGE_CODEC_OK) {
+        sce_forge_link_tx_frame_t frame;
+        frame.data = {{ events.tx_pool.prefix }}_over_slot_read(pool, &slot);
+        frame.len = length;
+        result.link_status = self->driver.ops->tx(self->driver.self, frame);
+    }
+    (void){{ events.tx_pool.prefix }}_over_pool_return(pool, &slot);
+    return result;
+}
+{% endfor %}
+{% endmacro %}
+{{ over_sends(snake_name ~ "_link_t", snake_name ~ "_link", events, snake_name) }}
+{% if is_listener_with_sibling %}
+{{ over_sends(snake_name ~ "_established_session_t", snake_name ~ "_established_session", events, snake_name) }}
+{% endif %}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ over_guard }} */

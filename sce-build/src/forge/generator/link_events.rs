@@ -87,6 +87,10 @@ pub(super) struct LinkTxPool {
     upper: String,
     /// The `#include` of the C11 pool header.
     c_include: String,
+    /// The `#include` of the C11 header of the pool's lending form,
+    /// `<pool>_over.h` (docs/adr/0111 D4), which only the link's sends into a
+    /// pool of that type, `<link>_over.h`, include.
+    c_over_include: String,
     /// The Rust pool's module path (`super::scout_tx_pool`), whose `TxPool`
     /// a send takes the pool by: `&mut` the pool over its own storage, or `&`
     /// one that lends at run time (docs/adr/0111 D4). The storage's type
@@ -123,6 +127,15 @@ pub(super) struct LinkEvents {
     tx_bytes: u64,
     /// The pool the transmit path encodes into, when the link names one.
     tx_pool: Option<LinkTxPool>,
+}
+
+impl LinkEvents {
+    /// The transmit path encodes into a slot of a pool the link names, so a
+    /// C11 link has sends into a pool of that pool's lending type too
+    /// (docs/adr/0111 D4).
+    pub(super) fn sends_through_a_pool(&self) -> bool {
+        self.tx_pool.is_some()
+    }
 }
 
 /// Resolve the events of `m` for `lang`, or `None` for a link that declares no
@@ -357,6 +370,10 @@ fn tx_pool_of(
         upper: super::to_upper_snake(name),
         c_include: format!(
             "#include \"{}.h\"",
+            filters::to_snake_case(name.to_string())
+        ),
+        c_over_include: format!(
+            "#include \"{}_over.h\"",
             filters::to_snake_case(name.to_string())
         ),
     }

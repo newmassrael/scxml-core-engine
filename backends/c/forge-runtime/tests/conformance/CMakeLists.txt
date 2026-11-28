@@ -1011,8 +1011,10 @@ add_test(NAME link_events_c COMMAND link_events_test_c)
 # and pool_contract.json beside them is written here as C, as the queue
 # contract is above. The shared pool moves its book through the sce_atomic_*
 # intrinsics, so the test links the host's. Every scenario runs against a
-# pool's lending type, <pool>_over_t; the pool over each header's own storage
-# runs none and is held to the calls of a pool before the book.
+# pool's lending type, <pool>_over_t, which each generation declares in a
+# header of its own, <pool>_over.h, beside <pool>.h; the test includes both, as
+# a program that lends does. The pool over each header's own storage runs none
+# and is held to the calls of a pool before the book.
 set(BUFFER_POOL_DIR "${REPO_ROOT}/tests/forge/conformance/buffer_pool")
 set(BUFFER_POOL_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/buffer_pool_headers")
 file(MAKE_DIRECTORY "${BUFFER_POOL_C_GENERATED_DIR}")

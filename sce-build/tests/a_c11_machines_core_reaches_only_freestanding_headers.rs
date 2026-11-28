@@ -519,6 +519,21 @@ fn the_ownership_contract_reaches_only_freestanding_headers() {
          nothing of the ownership contract: {:?}",
         reached.resolved
     );
+    // The pool's lending form (docs/adr/0111 D4) is a header of its own, which
+    // includes the pool's: a program that lends reaches it instead.
+    let reached = hosted_reached("rx_pool_over.h", &pool_files);
+    assert!(
+        reached.violations.is_empty(),
+        "a buffer pool's lending form reaches what a freestanding implementation does not \
+         provide:\n{}",
+        reached.violations.join("\n")
+    );
+    assert!(
+        reached.resolved.contains("rx_pool.h") && reached.resolved.contains("sce/sample.h"),
+        "the walk of the lending form's header never read the pool's header and the \
+         ownership contract through it: {:?}",
+        reached.resolved
+    );
 
     let dir = tempfile::tempdir().expect("a document directory");
     let document = dir.path().join("watcher.scxml");

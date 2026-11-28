@@ -34522,21 +34522,30 @@ fn render_bounded_collection_python(
 /// shape is the canonical Linux-kernel separate-vtable
 /// pattern (`const sce_forge_link_ops_t *ops` + `void *self`) so the
 /// ops table can live in flash/ROM on MCU targets.
+///
+/// Returns the link's header and, for a link that sends through a transmit
+/// pool, the header of its sends into a pool of the pool's lending type,
+/// `<link>_over.h` (docs/adr/0111 D4), which includes `<pool>_over.h`: the
+/// link's own header includes the pool's header alone.
 fn render_link_c(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
     imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
-) -> Result<String, ForgeError> {
+) -> Result<(String, Option<GeneratedFile>), ForgeError> {
     let tmpl = env.get_template("link.h.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "link.h.jinja2 (c11): {e}"
         )))
     })?;
     let events = link_events::resolve(m, imports, crate::generator::Language::C11, options)?;
+    let sends_through_a_pool = events
+        .as_ref()
+        .is_some_and(link_events::LinkEvents::sends_through_a_pool);
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper_name);
+    let over_guard = format!("SCE_FORGE_{}_OVER_H", upper_name);
     // Item C10 listener-pair: orchestrator-resolved flag. Same shape as
     // the Rust backend; `None` collapses to `false`.
     let is_listener_with_sibling = options
@@ -34548,6 +34557,7 @@ fn render_link_c(
         snake_name => snake_name.clone(),
         upper_name => upper_name,
         guard => guard,
+        over_guard => over_guard,
         class => m.class.to_string(),
         framer => &m.framer,
         framer_snake => filters::to_snake_case(m.framer.clone()),
@@ -34566,7 +34576,7 @@ fn render_link_c(
         is_listener_with_sibling => is_listener_with_sibling,
         events => events,
     };
-    let rendered = tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(&ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "link.h.jinja2 (c11): {e}"
         )))
@@ -34574,7 +34584,20 @@ fn render_link_c(
     if is_listener_with_sibling {
         check_listener_sibling_emitted_c(&m.name, &snake_name, &rendered)?;
     }
-    Ok(rendered)
+    if !sends_through_a_pool {
+        return Ok((rendered, None));
+    }
+    let over_tmpl = env.get_template("link_over.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "link_over.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    let over = over_tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "link_over.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    Ok((rendered, Some((format!("{snake_name}_over.h"), over))))
 }
 
 /// Item C10 codegen self-check for the §synth-5-C listener-pair Sibling
@@ -34647,6 +34670,9 @@ fn render_worker_c_header(
     })
 }
 
+/// A file a render writes beside the document's own: its name and its text.
+type GeneratedFile = (String, String);
+
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
 /// (SCE Protocol-Synthesis RFC §synth-5-E, items B7 + C5). Mirrors `render_buffer_pool_rust`
 /// but emits a header that places the slot storage table in the
@@ -34657,12 +34683,18 @@ fn render_worker_c_header(
 /// C5 wires §synth-5-I cache-maintenance intrinsic calls into the FSM
 /// edges per spec lines 1182-1197 with the same gating semantics as
 /// the Rust template.
+///
+/// Returns the pool's header and, beside it, the header of its lending form,
+/// `<pool>_over.h` (docs/adr/0111 D4): `<pool>_over_t` over storage the
+/// caller holds, rendered from the same context so the two cannot disagree
+/// about the pool. Only a program that lends includes it; a `shared` pool's
+/// header includes it too, since its own storage is kept in that type.
 fn render_buffer_pool_c(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
-) -> Result<String, ForgeError> {
+) -> Result<(String, GeneratedFile), ForgeError> {
     let tmpl = env.get_template("buffer_pool.h.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
@@ -34671,6 +34703,7 @@ fn render_buffer_pool_c(
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper_name);
+    let over_guard = format!("SCE_FORGE_{}_OVER_H", upper_name);
     // C5: deploy-aware cache-maintenance gating; mirror the Rust
     // template's `has_speculative_prefetch` derivation.
     let has_speculative_prefetch = options
@@ -34726,6 +34759,7 @@ fn render_buffer_pool_c(
         snake_name => snake_name.clone(),
         upper_name => upper_name.clone(),
         guard => guard,
+        over_guard => over_guard,
         slot_count => m.slot_count,
         slot_size => m.slot_size,
         section => &m.section,
@@ -34757,16 +34791,48 @@ fn render_buffer_pool_c(
         reassembly_timeout_ms => reassembly_timeout_ms,
         per_peer_quota => per_peer_quota,
     };
-    let rendered = tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(&ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
-    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, &rendered)?;
+    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, &rendered, PoolHeaderC11::Own)?;
     if variant_reassembly {
         check_reassembly_peer_id_zid_invariant_c11(&m.name, &snake_name, &rendered)?;
     }
-    Ok(rendered)
+    let over_tmpl = env.get_template("buffer_pool_over.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "buffer_pool_over.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    let over = over_tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "buffer_pool_over.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, &over, PoolHeaderC11::Over)?;
+    Ok((rendered, (format!("{snake_name}_over.h"), over)))
+}
+
+/// Which of a C11 buffer pool's two headers a check reads (docs/adr/0111 D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PoolHeaderC11 {
+    /// `<pool>.h`: the pool over the header's own storage, whose functions are
+    /// `<pool><suffix>`.
+    Own,
+    /// `<pool>_over.h`: the lending type, `<pool>_over_t`, whose functions are
+    /// `<pool>_over<suffix>`.
+    Over,
+}
+
+impl PoolHeaderC11 {
+    /// The template the header is rendered from.
+    fn template(self) -> &'static str {
+        match self {
+            Self::Own => "buffer_pool.h.jinja2",
+            Self::Over => "buffer_pool_over.h.jinja2",
+        }
+    }
 }
 
 /// Codegen self-check for the analyzer-layer annotations
@@ -34783,34 +34849,35 @@ fn check_analyzer_annotations_emitted_c11(
     pool_name: &str,
     snake_name: &str,
     rendered: &str,
+    header: PoolHeaderC11,
 ) -> Result<(), ForgeError> {
     // docs/adr/0111 D4: the lending pool, `<pool>_over_t`, declares every
-    // function, and the pool over the header's own storage every one but those
-    // a lent slot crosses an interface by.
+    // function in `<pool>_over.h`, and the pool over the header's own storage
+    // every one but those a lent slot crosses an interface by in `<pool>.h`.
     for contract in crate::forge::ownership_contract::POOL_CONTRACTS.iter() {
-        let owned = (!contract.over_only).then(|| {
-            (
+        let (name, key, lines) = match header {
+            PoolHeaderC11::Own if contract.over_only => continue,
+            PoolHeaderC11::Own => (
                 contract.qualified_name(snake_name),
                 contract.suffix.to_string(),
                 contract.rendered_lines(snake_name),
-            )
-        });
-        let over = (
-            contract.qualified_name_over(snake_name),
-            format!("_over{}", contract.suffix),
-            contract.rendered_lines_over(snake_name),
-        );
-        for (name, key, lines) in owned.into_iter().chain(std::iter::once(over)) {
-            for line in lines {
-                if !rendered.contains(&line) {
-                    return Err(ForgeError::from(GenerateError::TemplateRender(format!(
-                        "buffer_pool.h.jinja2 (c11): pool `{pool_name}` rendered without \
-                         the analyzer-layer annotation for `{name}`:\n  {line}\n\
-                         The template must emit `analyzer[\"{key}\"]` immediately above that \
-                         declaration; without it, non-Clang toolchains lose the \
-                         ownership contract entirely (RFC §synth-5-E lines 1349-1365).",
-                    ))));
-                }
+            ),
+            PoolHeaderC11::Over => (
+                contract.qualified_name_over(snake_name),
+                format!("_over{}", contract.suffix),
+                contract.rendered_lines_over(snake_name),
+            ),
+        };
+        for line in lines {
+            if !rendered.contains(&line) {
+                return Err(ForgeError::from(GenerateError::TemplateRender(format!(
+                    "{template} (c11): pool `{pool_name}` rendered without \
+                     the analyzer-layer annotation for `{name}`:\n  {line}\n\
+                     The template must emit `analyzer[\"{key}\"]` immediately above that \
+                     declaration; without it, non-Clang toolchains lose the \
+                     ownership contract entirely (RFC §synth-5-E lines 1349-1365).",
+                    template = header.template(),
+                ))));
             }
         }
     }
@@ -36764,6 +36831,10 @@ pub fn generate_c11_with_imports_and_externs(
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
+    // docs/adr/0111 D4: the header of a lending form, written beside the
+    // document's own (`<pool>_over.h`, `<link>_over.h`), so that only a
+    // program that lends includes it.
+    let mut lent_form: Option<GeneratedFile> = None;
     let code = match doc {
         // Statechart documents flow through the SCXML pipeline
         // (`classify_document` routes `sce:kind="statechart"` to
@@ -36822,13 +36893,21 @@ pub fn generate_c11_with_imports_and_externs(
         // `backends/c/forge-runtime/include/sce/forge/link.h`. Item C10
         // threads the orchestrator-resolved listener-pair flag for
         // Sibling EstablishedSession emission.
-        ForgeDocument::Link(m) => render_link_c(&env, m, imports, options)?,
+        ForgeDocument::Link(m) => {
+            let (header, over) = render_link_c(&env, m, imports, options)?;
+            lent_form = over;
+            header
+        }
         // RFC §synth-5-E item B7: c11 parity for the rust slot table.
         // Emits a `__attribute__((section, aligned))` storage
         // table + occupancy bitmap + acquire/release surface; the
         // sidecar linker fragment is appended to `files` after this
         // match per §synth-5-E lines 1031-1086.
-        ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports, options)?,
+        ForgeDocument::BufferPool(m) => {
+            let (header, over) = render_buffer_pool_c(&env, m, imports, options)?;
+            lent_form = Some(over);
+            header
+        }
         // RFC §synth-5-D Worker item C2: SPSC inbox ring buffer + opaque
         // producer/consumer handles. Ordering choice from
         // `<sce:inbox ordering>` selects the §synth-5-I baseline atomic
@@ -36888,6 +36967,7 @@ pub fn generate_c11_with_imports_and_externs(
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
+    files.extend(lent_form);
     // RFC §synth-5-B item B2 test-vector: sidecar `<fixture>_test.h` emits
     // alongside the algorithm header when `<sce:test-vector>` rows
     // are declared. The C11 conformance harness conditionally
