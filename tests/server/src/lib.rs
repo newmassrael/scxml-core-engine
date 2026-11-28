@@ -51,6 +51,10 @@
 //! * `a_follower_of_many_sessions_killed_repeats_and_misses_nothing` (docs/adr/0114, D4): a view
 //!   of many ledgers' sessions, killed again and again while it follows their journal; each view
 //!   ends holding its key's tags in the journal's order, each once.
+//! * `a_request_to_a_follower_is_answered_on_what_it_asks_it_to_have_read` (docs/adr/0116, D5):
+//!   a view asked, for each key, how many tags it holds, each request carrying the position of the
+//!   key's last tag, before it has read the journal and across kills; each answer counts every tag
+//!   its request asked it to have read, and a position above the journal's horizon is refused.
 //!
 //! This library is what they share:
 //!
