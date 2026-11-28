@@ -795,6 +795,42 @@ gate_in_container() {
         "$REPO_ROOT"/*) ;;
         *) mounts+=(-v "$common:$common") ;;
     esac
+    # The git the gate runs inside sees the repository this run sees. A
+    # checkout can borrow objects from another store (`objects/info/alternates`,
+    # or GIT_ALTERNATE_OBJECT_DIRECTORIES as a bx copy of the tree does), and
+    # can be named by GIT_DIR and its kin rather than found by walking up; a
+    # container started without those finds the files and no commit, and a gate
+    # that reads HEAD (`--at`) then ends 3, could not run, on every machine
+    # (embed-manifest-stamp, 2026-11-28). Each variable that is set goes in, and
+    # each object directory any of them or the alternates file names is mounted
+    # read-only at its own path.
+    local git_name git_value git_dir store
+    local -a git_stores=()
+    for git_name in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE \
+            GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES; do
+        git_value="${!git_name:-}"
+        [[ -n "$git_value" ]] || continue
+        handed+=(-e "$git_name")
+        case "$git_name" in
+            GIT_OBJECT_DIRECTORY) git_stores+=("$git_value") ;;
+            GIT_ALTERNATE_OBJECT_DIRECTORIES)
+                IFS=: read -r -a git_dir <<<"$git_value"
+                git_stores+=("${git_dir[@]}") ;;
+        esac
+    done
+    store="$(git rev-parse --path-format=absolute --git-path objects/info/alternates)"
+    if [[ -f "$store" ]]; then
+        while IFS= read -r git_value; do
+            [[ -n "$git_value" && "$git_value" != \#* ]] && git_stores+=("$git_value")
+        done <"$store"
+    fi
+    for store in ${git_stores[@]+"${git_stores[@]}"}; do
+        [[ "$store" == /* && -d "$store" ]] || continue
+        case "$store/" in
+            "$REPO_ROOT"/*|"$common"/*) ;;
+            *) mounts+=(-v "$store:$store:ro") ;;
+        esac
+    done
     # `target` is often a link into a build cache outside the checkout: the
     # image's own cache is mounted where the link points, so the link resolves
     # to it inside. A checkout with no `target` gets the directory here, made
