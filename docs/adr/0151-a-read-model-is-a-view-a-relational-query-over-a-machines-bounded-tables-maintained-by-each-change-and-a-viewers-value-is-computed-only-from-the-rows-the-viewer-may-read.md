@@ -1,7 +1,10 @@
 # ADR 0151 — A read model is a view: a relational query over a machine's bounded tables, maintained by each change, and a viewer's value is computed only from the rows the viewer may read
 
-- Status: Proposed (2026-11-27), for the owner's acceptance. Nothing of it is built, and no model or test of it has
-  been run.
+- Status: Accepted (2026-11-28, by the owner), as amended at its review the same day: D7 is judged at the levels of
+  ADR 0115 (a theorem for every size, a model per document, and the kit), D9 names the read model of a whole
+  deployment (ADR 0114 D4 as amended), D10's reference evaluator is the one crate the theorem is proved of, and the
+  order of work puts the theorem and the model before the operators. The passages its sources were cited for were
+  checked at acceptance (Sources). Nothing of it is built.
 - Date: 2026-11-27
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
@@ -13,7 +16,9 @@
   - ADR 0114, "Not in scope": "relational queries over a journal (a kind of its own)" is this record;
   - ADR 0108 D2: a map's order is the order its keys were put, and no operator of a view reads it (D2);
   - ADR 0118 D3: a view's state is one more part of a machine's state bound (D8);
-  - ADR 0115 D15: a property of two runs, which D7 states and the kit checks.
+  - ADR 0115 D7 (a view is translated as its relational meaning, so a machine that holds one has a model) and D15 (the
+    one property of two runs it admits, a view's noninterference, judged on the self-composed model: the record of its
+    own D15 waits for), D7 here.
 - Scope: `sce-build` (the kind, its plan, its checks and its reference evaluator) and the Rust lane, native and
   `wasm32-unknown-unknown`. Every other backend, and the Interpreter, refuses the kind by name (D10).
 - Related: ADR 0050 and ADR 0086 (a bound by name, part of a type), ADR 0101 (one deterministic CBOR form per type),
@@ -132,7 +137,7 @@ a type the build proves wide enough from the column's type and the group's large
 maximum or an order over a floating type is refused: the sum of floating numbers depends on the order of its
 additions, and an incremental sum and a recomputed one would differ in their bytes.
 
-**Admission** (`SCE_FORGE.md` §10), to be added there as an application when this record is accepted:
+**Admission** (`SCE_FORGE.md` §10, where it is recorded as an application):
 
 | Axis | Pass/Fail | Reason |
 |---|---|---|
@@ -248,17 +253,41 @@ of an object `v` stands in no relation to, or a tuple whose change moves none of
 leaves `v`'s value byte-identical, and so publishes nothing new to `v` (ADR 0152 D2 sends nothing for a value
 whose bytes did not change).
 
-It follows from three facts, each checked on its own:
+It follows from three facts:
 
 1. **The plan is `Q'` after the filter** (D6), and `Q'` is a function of its input whose result's order is total
-   (D2): checked where the document is read, as a rule of the build.
-2. **The maintained value equals the plan's function** after every change (D4): checked by the reference evaluator
-   (D10) against the runtime on random tables and random changes.
+   (D2): a rule of the build, where the document is read.
+2. **The maintained value equals the plan's function** after every change (D4).
 3. **One value has one form of bytes** (ADR 0101).
 
-The kit also checks the statement directly, by self-composition: for random contents and a random viewer, it makes a
-random change outside the viewer's relations (and confirms, by the reference evaluator, that `Vis` did not move),
-and requires the viewer's bytes before and after to be equal, on the reference evaluator and on every lane.
+Each is judged at the levels of ADR 0115, and none rests on a random test alone.
+
+- **Two theorems, for every size** (ADR 0115 D3 and D13), proved in Verus and named in `docs/formal/README.md` with
+  what each takes as given:
+  - *T1, the plans are noninterfering*: for every plan the build can make, its value over `D` is a function of
+    `Vis(v, D)`. It is proved once, by induction on the plan, over the specification functions of the reference
+    evaluator (D10): each operator is a function of its inputs, and every input of a plan whose tables are each read
+    through its filter is a function of `Vis`. It is the soundness of a typing of information flow, the form in which
+    Volpano, Smith and Irvine proved theirs, here for a language with no loops and no state.
+  - *T2, maintenance is exact*: each operator of the Rust runtime (D4) takes its integrated state and a delta to the
+    delta of its specification (`D . Q . I` of that operator), and a circuit is their composition (the chain rule).
+    Each operator carries the contract and its proof (ADR 0115 D13); DBSP's own theory was checked in Lean by its
+    authors, and this proves the code that runs.
+- **A model per document** (ADR 0115 D7 and D8). `sce-codegen model` translates a view as its relational meaning:
+  each operator of the plan is a TLA+ operator over finite sets and functions (a join a set comprehension, a group a
+  function of its key, an order a sequence sorted by its total order). A machine that holds a view therefore has a
+  model, the view's value in each observation is the plan's function of the tables there, and D8's replay holds every
+  lane's maintained value to that recomputed one at every observation of every scenario.
+- **The statement, per document** (ADR 0115 D15). A properties document may declare
+  `<sce:noninterference view="..."/>`. TLC judges it on the self-composition of the machine's model (Barthe,
+  D'Argenio and Rezk 2004): two copies take the same events, except that each may take a change of its own that moves
+  none of the viewer's relations, and the invariant of the product is that where the two copies' `Vis` are equal, so
+  are the viewer's two values. It is the one property of two runs ADR 0115 D15 admits, and every other stays refused
+  there. Its verdict is *holds within* the exploration's bounds; T1 is what says it for every size. A configuration
+  that moves the filter after the first join must make TLC find a pair of runs that breaks it, as ADR 0115 D5 asks of
+  every part.
+- **The kit** (D10) replays generated cases on every lane against the reference evaluator and checks the statement on
+  random contents. It tests the lanes, and judges nothing the levels above judge.
 
 **What it does not say.** It is of values, not of time: a change outside a viewer's relations costs the server work,
 and may move the moment the viewer's next value is computed. Goguen and Meseguer's statement is of what an observer
@@ -289,6 +318,9 @@ part of the machine's state bound, so nothing a view holds is unbounded and ever
   of the types the view declares. A variable held to the facts (`sce:from="journal"`, ADR 0114 D1) may be one, so a
   read model is the session ADR 0114 names: it follows journals and observed streams, folds them into its tables, and
   declares views over them.
+- **The read model of a whole deployment is one session.** A machine whose views fold journals and streams that share
+  no field keeps one session (`sessions: { key_from: none }`, ADR 0114 D4 as amended 2026-11-28), its tables are the
+  deployment's, and its viewers, not its sessions, separate what each person reads.
 - **Its value is never assigned**: an `<assign>`, a put, an algorithm's `location` naming it is refused
   (`view/assigned`). It is the query of the bound tables wherever it is read.
 - **A view without a viewer** is a value the machine's expressions read and its snapshot carries, as any published
@@ -304,9 +336,11 @@ part of the machine's state bound, so nothing a view holds is unbounded and ever
 
 ### D10. One reference evaluator, and the lanes
 
-- **The reference evaluator is the plan's.** `sce-build` evaluates the plan of a view on tables given in the
-  language-neutral value form of the conformance cases (`tests/forge/conformance`), from scratch and naively: every
-  join a nested loop, every group a full pass, every order a sort. It is the specification a runtime is held to, as
+- **The reference evaluator is the plan's, and is one crate.** `sce-view-reference` evaluates the plan of a view on
+  tables given in the language-neutral value form of the conformance cases (`tests/forge/conformance`), from scratch
+  and naively: every join a nested loop, every group a full pass, every order a sort. Its functions are proved to
+  compute the specification functions T1 is stated over (D7; ADR 0115 D13), and `sce-build` and the kit evaluate by
+  it, so the evaluator a lane is held to is the one the theorem is of. It is the specification a runtime is held to, as
   ADR 0118 D1 holds every backend's bytes to a fold over the encode plan. Its surface is a command,
   `sce-codegen view eval <document> <tables>`.
 - **The cases are generated, with their seeds.** `tests/forge/conformance/gen_cases.py` writes random tables and
@@ -370,29 +404,33 @@ Each step lands with a test that fails without it.
    `sce-build/tests/a_view_document_is_read_into_one_plan.rs`. Red without it: `sce:kind="view"` is an unknown
    kind. Each refusal has a case that must be refused by its code, and the case that puts the filter after a join must
    be one the build cannot make.
-3. The reference evaluator and its command, and the generator of cases:
-   `sce-build/tests/a_view_is_answered_by_its_plan.rs` (laws the evaluator must keep: a join is the filtered product,
-   a count is the rows of its group, the order is total, a cut keeps `total`) and
-   `sce-build/tests/a_change_outside_a_viewers_relations_leaves_its_value_byte_identical.rs` (D7 by self-composition
-   on the reference). A mutation casefile,
-   `sce-build/tests/mutations/a_view_reads_a_table_only_through_its_filter.cases`, moves the filter after the first
-   join and must turn the second test red.
-4. The Rust operators and the generated circuit, held to the reference:
+3. The reference evaluator, `sce-view-reference`, with its specification functions and T1 proved in Verus, and its
+   command and the generator of cases: `sce-build/tests/a_view_is_answered_by_its_plan.rs` (laws the evaluator must
+   keep: a join is the filtered product, a count is the rows of its group, the order is total, a cut keeps `total`)
+   and `sce-build/tests/a_change_outside_a_viewers_relations_leaves_its_value_byte_identical.rs`. A mutation
+   casefile, `sce-build/tests/mutations/a_view_reads_a_table_only_through_its_filter.cases`, moves the filter after
+   the first join and must turn the second test red, and the proof of T1 must fail on it.
+4. The model: `sce-codegen model` of a view, and `<sce:noninterference>` in ADR 0115 D15's properties document,
+   judged on the self-composed model. Example documents are entered in `docs/formal/models.json` with a run that holds
+   and a configuration that moves the filter after the first join, which TLC must find. Red without it: a machine that
+   holds a view has no translation, and `sce-codegen model` refuses it by name.
+5. The Rust operators and the generated circuit, each operator with its T2 contract proved, and held to the reference:
    `backends/rust/forge-conformance/tests/forge_view.rs` with
    `a_maintained_view_equals_its_reference_after_every_change` (10 000 rows, two joins, a group and an order, random
    changes from recorded seeds), `a_changed_row_costs_work_in_proportion_to_the_change` (the `ViewWork` of one
    changed task equal at 10 000 and at 20 000 rows, its project of the same size in both; red for a circuit that
    recomputes) and
    `a_change_outside_a_viewers_relations_publishes_the_same_bytes`.
-5. The machine: `sce:view`, its bindings, its refusals, the snapshot, `view_<name>` and the rebuild on restore:
+6. The machine: `sce:view`, its bindings, its refusals, the snapshot, `view_<name>` and the rebuild on restore:
    `backends/rust/scenarios/tests/view.rs` (`a_restored_view_equals_the_one_before_it_was_saved`,
-   `a_view_read_in_a_macrostep_sees_the_puts_before_it`), run native and on `wasm32-unknown-unknown`.
-6. Relations (D5): the rewrites, nested groups, exclusion, and the refusal of a cycle through it, held to the
-   reference with the cases of step 4.
-7. The documents named in "Amends".
+   `a_view_read_in_a_macrostep_sees_the_puts_before_it`), run native and on `wasm32-unknown-unknown`, and its
+   scenarios replayed against its model (ADR 0115 D8).
+7. Relations (D5): the rewrites, nested groups, exclusion, and the refusal of a cycle through it, held to the
+   reference with the cases of step 5, translated as a least fixed point by strata, and T1 carried over the strata.
+8. The documents named in "Amends".
 
-Step 5 needs nothing of ADR 0114's follower; a read model that follows (D9) needs ADR 0114 step 4, and a viewer that
-is a person needs ADR 0116 step 4.
+Step 6 needs nothing of ADR 0114's follower; a read model that follows (D9) needs ADR 0114 step 4 and its amendment of
+2026-11-28, and a viewer that is a person needs ADR 0116 step 4.
 
 ## Open questions
 
@@ -407,6 +445,9 @@ Decided as recommended, for the owner's acceptance, each with its reason.
 4. A viewer with no relations is given an empty value (`rows` empty, `total` 0), not a refusal: a refusal would
    tell the viewer that it has none, which the empty value also says and no more.
 5. The operators' state is not saved (D4).
+6. D7 is judged by a theorem for every size and a model per document, not by the kit alone: a random test samples
+   what a theorem states of every input, and the model is what ADR 0115 D8 holds every lane to (the owner, at
+   acceptance, 2026-11-28).
 
 ## Sources
 
@@ -418,7 +459,9 @@ Walker 1988 (stratified negation); Pang et al. 2019 (Zanzibar, USENIX ATC); Fong
 control, CODASPY); Goguen and Meseguer 1982 (security policies and security models, IEEE S&P); Denning 1976 (a lattice
 model of secure information flow); Volpano, Smith and Irvine 1996 (a sound type system for secure flow analysis);
 Terauchi and Aiken 2005 (secure information flow as a safety problem); Barthe, D'Argenio and Rezk 2004 (secure
-information flow by self-composition); Clarkson and Schneider 2010 (hyperproperties). They are cited from the texts as
-known and were not read again for this record; the passages D4, D5 and D7 rest on (DBSP's incremental join and
-aggregate, Zanzibar's rewrites, Goguen and Meseguer's statement) are to be checked against the texts before it is
-accepted.
+information flow by self-composition); Clarkson and Schneider 2010 (hyperproperties); Lattuada et al. 2023 (Verus,
+OOPSLA). Checked at acceptance (2026-11-28): DBSP defines a query's incremental form as `D . Q . I`, its correctness
+proofs rest on the join's bilinearity, and its theory was checked in Lean (Chajed's formalization); in D4's rule for a
+join, `a` and `b` are the tables before the change. Zanzibar's rewrites are `_this`, the computed userset and the tuple
+to userset, combined by union, intersection and exclusion. Goguen and Meseguer's statement is of what one group of users
+can see being unaffected by what another does with its commands. The others are cited from the texts as known.

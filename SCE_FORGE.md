@@ -3314,6 +3314,18 @@ The request, from the owner, was a test profile whose documents have TTCN-3's se
 
 Passed 3-of-3 axes; admitted. Three alternatives were ruled out (ADR 0091, alternatives A to G): TTCN-3 as an eighth backend, which would make a test a program of one language rather than a document; tests written directly in TTCN-3 outside SCE, which would leave SCE's own runtimes untested by them; and the present conventions (native conditions, verdicts in `<donedata>`), which no tool other than SCE can execute. The kinds carry the prefix `test-` so that their names cannot collide with `timer`, `text-template` or `<sce:template>` (ADR 0091 answer 5).
 
+### Application: 2026-11-28 `view` (a relational query over a machine's bounded tables, maintained by each change)
+
+The request, from a downstream consumer, was read models: tables a server keeps, joined, grouped and ordered, published per person, with what each person is shown computed only from rows that person may read. The design is ADR 0151, accepted by the owner on 2026-11-28.
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | PASS | Deterministic data and executable state: a view is a function of bounded keyed tables, its result a typed value whose bytes are one deterministic CBOR form (ADR 0101), equal on every lane and equal whether maintained or recomputed |
+| Futamura projection compatibility | PASS | The tables' types and bounds, the operators, the keys, the order, the relations and the result's type are build-time; only the rows are runtime. The plan is compiled to one maintenance circuit per view, and nothing is interpreted at run time |
+| Cross-domain reuse | PASS | GUI and scene state (a list a screen shows, grouped and ordered, per person), game networking (a player's area of interest is a viewer's relations; a leaderboard is a group and an order), network protocols (a routing or interest table joined with its peers), embedded telemetry and sensor pipelines (aggregates over a table of readings, maintained per reading), build and CI systems (the status of each target joined with its dependencies) |
+
+Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission: an `algorithm` per query, which has no plan the build can read, so neither incremental maintenance nor the viewer's noninterference can be had of it; and a flag on `bounded-collection`, whose slot table addressed by handles is not a relation. The viewer filter is part of the kind and not a second facility beside it (ADR 0151 D6), and a query written at run time is refused by the second axis.
+
 ### When admission is borderline
 
 If a candidate fails one axis but passes two, the candidate is rejected from the Forge catalog and reconsidered as either:

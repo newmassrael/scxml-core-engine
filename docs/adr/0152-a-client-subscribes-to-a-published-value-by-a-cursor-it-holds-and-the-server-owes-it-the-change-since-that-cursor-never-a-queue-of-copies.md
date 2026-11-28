@@ -1,8 +1,10 @@
 # ADR 0152 — A client subscribes to a published value by a cursor it holds, and the server owes it the change since that cursor, never a queue of copies
 
-- Status: Proposed (2026-11-27), for the owner's acceptance. Nothing of it is built; its model (D10) is to be written
-  and checked before any code, and the table of what each part taken out must make TLC find is a prediction until it
-  is.
+- Status: Accepted (2026-11-28, by the owner), as amended at its review the same day: D1 (a subscription to a machine
+  that keeps one session names no key), D9 (which machine keeps no session store, stated), D10 (`Authorized`, and the
+  code held to the model by traces and by the client core's contract). The passages its sources were cited for were
+  checked at acceptance (Sources). Nothing of it is built; its model (D10) is to be written and checked before any
+  code, and the table of what each part taken out must make TLC find is a prediction until it is.
 - Date: 2026-11-27
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -93,7 +95,8 @@ a published variable (`sce:direction="out"`) or a view's variable (ADR 0151 D9),
 
 A value with no `subscribable:` entry is subscribed by no one. The deployment names machines and never a client: the
 subscribers are the instances of ADR 0113, whose names the build cannot know. A subscription names the machine, the
-key of the session (as `key_from` reads it) and the value.
+key of the session (as `key_from` reads it; none for a machine that keeps one session, `key_from: none`, ADR 0114 D4)
+and the value.
 
 ### D2. A value has a generation, versions and a changelog of keyed rows
 
@@ -212,8 +215,8 @@ every exchange that delivers it, so a delegation that ended (ADR 0116 D6) delive
 incarnation, and the subscriptions with it.
 
 Rust, as the server and as the dialing side, native and in the browser through the client core. `subscribable:` on a
-machine of another backend, on a transport other than `https`, or on a machine whose sessions no session store keeps
-(a keyed pool, ADR 0107), and an audience that names a machine that is not open, are refused by name where the
+machine of another backend, on a transport other than `https`, or on a machine that is no keyed pool (ADR 0107), whose
+sessions no session store keeps and whose values therefore have no changelog, and an audience that names a machine that is not open, are refused by name where the
 deployment is read; the subscriptions of the connection-oriented transports (patterns 4 to 6 and 9)
 are as they are.
 
@@ -223,7 +226,8 @@ are as they are.
 each value it subscribes to, whatever the other clients do (`Converges`, under fairness of that client alone); what
 a client holds at a version is the value published at that version (`Exact`); within one generation a client's
 version never goes back (`Monotone`); a client is given nothing for a version whose bytes equal what it holds
-(`Silent`). `docs/formal/Subscriptions.tla` refines it: a server that writes versions, crashes, drops markers past
+(`Silent`); nothing is delivered for a subscription after its incarnation ended, nor to a viewer its audience no longer
+admits (`Authorized`). `docs/formal/Subscriptions.tla` refines it: a server that writes versions, crashes, drops markers past
 its floor and starts a changelog again; clients that subscribe, go absent, read slowly, lose their store and stop; a
 network that loses, repeats, delays and reorders; and an intermediary that changes what is not signed. It is checked by
 `scripts/formal/check.sh` before any code. What each part taken out must make TLC find:
@@ -239,9 +243,15 @@ network that loses, repeats, delays and reorders; and an intermediary that chang
 | the value and its cursor in one stored write | after a client stops, a cursor past what it holds (`Exact`) |
 | delivery from the changelog (a queue per client instead, bounded) | a client that never reads stops the writer, and the others (`Converges`) |
 | nothing written for unchanged bytes | a change outside a viewer's relations delivered to it (`Silent`) |
+| the subscriptions ended with their incarnation | a change delivered to an incarnation that ended, or to a person whose delegation ended (`Authorized`) |
 
 The model is bounded: it does not cover the cost of what is owed, the pages' sizes, or the cryptography of the
 signature.
+
+**The code is held to the model** (ADR 0115 D2, D4 and D13). The server's due set, what a response carries and the
+reset's pages are traced from the runs of the server suite and checked as behaviours of `Subscriptions.tla`; the client
+core's taking in of a page or a change (D7) carries a Verus contract, as the `https` client core of ADR 0117 does:
+within a generation its cursor never goes back, and what it holds at a version is what it was given for that version.
 
 ## Not in scope
 
@@ -293,13 +303,13 @@ Each step lands with a test that fails without it.
 4. The build: `subscribable:`, its audiences, the bounds of D8, the four patterns in the envelope's document, and
    each refusal with its appendix row. Red without it: `subscribable:` is an unknown key.
 5. The server: the subscription records in the membership's store, the due set, what a response carries, the reset's
-   pages. It needs ADR 0113 step 4. In the server suite
+   pages, and their traces checked against the model (D10). It needs ADR 0113 step 4. In the server suite
    (`backends/rust/mesh/tests/a_value_reaches_every_subscriber_and_waits_for_none.rs`): 200 instances never listed,
    each subscribed to 5 values; one change reaches every one of them within the hold; one client that reads its
    response one byte at a time and one that stops polling leave the others' delivery and the session's write times
    within the bounds measured without them; the server killed between any two writes, and every client resuming
    without a reset; a client absent past its floor given one reset and then its changes.
-6. The client core and the native shell (D7), and the machine's events (D6); then the browser shell, with ADR 0117
+6. The client core with its contract proved, and the native shell (D7), and the machine's events (D6); then the browser shell, with ADR 0117
    step 4.
 7. The documents named in "Amends".
 
@@ -326,5 +336,7 @@ Lindsay, Pirahesh and Schwarz 1992 (ARIES; fuzzy checkpoints); Saltzer, Reed and
 Saltzer and Schroeder 1975 (fail-safe defaults); the OMG DDS specification (`KEEP_LAST` and `TRANSIENT_LOCAL`, as
 `SCE_MESH.md` §8.2 states them); the Apache Kafka documentation (log compaction, and the retention of a removal's
 marker); the Kubernetes API concepts (list and watch by resource version, and the answer to a version too old). They
-are cited from the texts as known and were not read again for this record; the documentation of Kafka and Kubernetes is
-cited for practice and not as a foundation, and each passage is to be checked before the record is accepted.
+are cited from the texts as known. The documentation of Kafka and Kubernetes is cited for practice and not as a
+foundation; both passages were checked at acceptance (2026-11-28): Kafka keeps a removal's marker for
+`delete.retention.ms`, and a consumer that reaches the head of the log within it sees every removal; a Kubernetes watch
+from a version older than the history kept is answered `410 Gone`, and the client lists again.

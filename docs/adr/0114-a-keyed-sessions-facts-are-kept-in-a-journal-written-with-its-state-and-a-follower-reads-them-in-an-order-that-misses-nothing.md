@@ -3,7 +3,8 @@
 - Status: Accepted (2026-11-22, by the owner). Its model (D7) was written and checked before any code. Amended
   2026-11-22 by the owner: D1 (how an entry is typed, what its send does, deciding and applying, a variable held to the
   facts) and D4 (a machine does not follow itself). Amended on landing step 4 (2026-11-27): D2 (a session's row is the
-  machine and the key) and D4 (the reader's mark, the order of a key's entries, a follower that does not end).
+  machine and the key) and D4 (the reader's mark, the order of a key's entries, a follower that does not end). Amended
+  2026-11-28 by the owner, at a consumer's request: D4 (a follower that keeps one session, `key_from: none`).
 - Landed (2026-11-28): every step of "Order of work". The store (step 2) is `sce-rust-session-store`'s
   `JournalStore` in `MemoryStore` and `SqliteStore`, sealed by `sce-rust-crypto`'s `Sealed`; the build (step 3) is
   `sce-build`'s; the pool's writes and its follower (step 4) are `sce-rust-mesh`'s `pool` and `pool::follow`; and each
@@ -150,6 +151,23 @@ its record, no key) is told to the host and passed. A follower's document declar
 end would start its key's session anew and take effect twice. The build tells the pool the record each followed kind of
 entry is read by (`Sessions::follows`), and an entry's data is that record's deterministic CBOR read into the event's
 data, as the event of a fact the session said itself carries it.
+
+**Amended 2026-11-28 by the owner: a follower that keeps one session.** A keyed pool may declare
+`sessions: { key_from: none }`: it keeps one session, and every input it takes is that session's, an entry of each
+journal and observed stream it follows and a request a client sends alike. The read model of a whole deployment is such
+a session (ADR 0151 D9): it follows journals and streams whose entries share no field, and a field of one value added
+to every fact only so that it could be routed would make the facts carry the shape of the deployment that reads them.
+- **Its key is the empty key.** A key read from an envelope is never empty (the pool refuses one, `bounded_key`), so
+  the empty key is one no other source gives, and on a machine whose key comes from nothing no other source is read.
+  Its row is the machine and that key (D2), and the origin of an entry of its own journal is
+  `journal://<machine>//<position>`, the key an empty segment (RFC 3986 §3.3 allows one).
+- **Its positions are the follower's.** It keeps one position for each journal and stream it follows, in its
+  checkpoint, written with what the entry did, and the reader's rules above hold of it with one key. A request under
+  `position_from:` waits in its inbox as in any session's.
+- **What is refused is what already was.** `sessions:` is refused on an open machine (ADR 0113 D1), whose instances
+  are several masters of one key; `key_from` names one source, so no machine reads a key from an envelope beside it.
+- **It is the case the model checks.** The model's follower (D7) is one session that takes in every entry of the
+  journal; the dispatch by a key field that the model leaves out is not used by it.
 
 ### D5. Two times, and reading as of
 
