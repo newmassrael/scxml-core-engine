@@ -17,6 +17,9 @@
 - Amended 2026-11-27 by the owner: Apalache is approved as D3's tool, the dependency the first question decided at
   acceptance left to the owner's approval when its step came. It is pinned by the judge with TLC and Verus (ADR 0146,
   D3). TLAPS is not approved, and D3 decides per theorem whether it would be worth its upkeep.
+- Amended by: ADR 0162 (2026-11-29): D15's "a real number" with no translation is a binary one; a decimal is
+  translated as its integer coefficient where its coefficients stay within TLC's integers, and refused by name
+  (`Construct::Decimal`) where they do not.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
