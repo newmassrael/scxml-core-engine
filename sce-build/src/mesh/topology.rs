@@ -4967,6 +4967,11 @@ pub struct KeyedPool {
     /// The record of each kind of entry those journals make, by the event its
     /// schema declares: what the pool reads an entry's data by.
     pub followed: Vec<FollowedRecord>,
+    /// deploy.yaml's `sessions.position_from` (docs/adr/0116, D5): the field
+    /// of a request's data that carries a position of the journals the pool
+    /// follows, a `uint64` or an `optional<uint64>` in every request that
+    /// declares it; `None` for a pool whose requests carry none.
+    pub position_field: Option<String>,
 }
 
 /// One kind of entry a keyed pool follows (docs/adr/0114, D4): the event its
@@ -5025,7 +5030,24 @@ pub fn resolve_keyed_pool_following(
             machine: machine.to_string(),
             reason,
         })?;
+    let position = sessions
+        .position_field()
+        .map_err(|reason| DeployError::InvalidSessions {
+            machine: machine.to_string(),
+            reason,
+        })?;
     let field = match source {
+        // docs/adr/0116, D5: a position is one of the journals the pool follows, and a pool keyed
+        // by its clients' names follows none (`validate_journal`).
+        SessionKeySource::Client if position.is_some() => {
+            return Err(DeployError::InvalidSessions {
+                machine: machine.to_string(),
+                reason: "`position_from` names where a request carries a position of the \
+                         journals the pool follows, and a pool keyed by its clients' names \
+                         follows none"
+                    .to_string(),
+            })
+        }
         SessionKeySource::Client => {
             return Ok(KeyedPool {
                 key_field: None,
@@ -5036,6 +5058,7 @@ pub fn resolve_keyed_pool_following(
                 commit_delay_us: sessions.commit_delay_us,
                 follows: Vec::new(),
                 followed: Vec::new(),
+                position_field: None,
             })
         }
         SessionKeySource::Field(field) => field,
@@ -5058,6 +5081,9 @@ pub fn resolve_keyed_pool_following(
                     .is_some_and(|suffix| !suffix.is_empty())
         })
         .collect();
+    // docs/adr/0116, D5: the requests the machine serves, whose position field is read, and not
+    // the followed entries, which a request carries no position of.
+    let served = requests.clone();
     requests.extend(followed.iter().cloned());
     if requests.is_empty() {
         return Err(refuse(SessionKeyFault::NoRequest));
@@ -5097,6 +5123,9 @@ pub fn resolve_keyed_pool_following(
             }
         }
     }
+    let position_field = position
+        .map(|position| position_in_requests(machine, &position, &served, model).map(|()| position))
+        .transpose()?;
     Ok(KeyedPool {
         key_field: Some(field),
         max_key_bytes,
@@ -5106,7 +5135,60 @@ pub fn resolve_keyed_pool_following(
         commit_delay_us: sessions.commit_delay_us,
         follows: Vec::new(),
         followed: records,
+        position_field,
     })
+}
+
+/// Refuse, as [`DeployError::InvalidSessions`], the field `position` that
+/// `sessions.position_from` names (docs/adr/0116, D5) unless a request `served`
+/// declares it and every one that declares it holds a position of a journal in
+/// it: a `uint64`, the type of every position, or an `optional<uint64>` for a
+/// request that may carry none. A request that does not declare it carries no
+/// position and waits for nothing.
+///
+/// [`DeployError::InvalidSessions`]: crate::mesh::error::DeployError::InvalidSessions
+fn position_in_requests(
+    machine: &str,
+    position: &str,
+    served: &BTreeSet<String>,
+    model: &SCXMLModel,
+) -> Result<(), crate::mesh::error::DeployError> {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::TypeOf;
+    let refuse = |reason: String| crate::mesh::error::DeployError::InvalidSessions {
+        machine: machine.to_string(),
+        reason,
+    };
+    let mut declared_by = 0_usize;
+    for event in served {
+        let Some(declared) = model
+            .imported_event_schemas
+            .get(event)
+            .and_then(|schema| schema.fields.iter().find(|f| f.id == position))
+        else {
+            continue;
+        };
+        let holds_a_position = match &declared.sce_type {
+            TypeOf::Scalar(SceType::Uint64) => true,
+            TypeOf::Optional { elem } => matches!(**elem, TypeOf::Scalar(SceType::Uint64)),
+            _ => false,
+        };
+        if !holds_a_position {
+            return Err(refuse(format!(
+                "`position_from` names the field '{position}', which '{event}' declares as \
+                 `{}`, and a position of a journal is a `uint64` or an `optional<uint64>`",
+                declared.sce_type
+            )));
+        }
+        declared_by += 1;
+    }
+    if declared_by == 0 {
+        return Err(refuse(format!(
+            "`position_from` names the field '{position}', which no request the machine serves \
+             declares, so no request carries a position"
+        )));
+    }
+    Ok(())
 }
 
 /// The most bytes a key read from a value of `sce_type` holds: a text's
@@ -8381,6 +8463,7 @@ topology:
             max_live: 500,
             max_inbox: 8,
             commit_delay_us: 250,
+            position_from: None,
         }
     }
 
@@ -8410,6 +8493,7 @@ topology:
                 commit_delay_us: 250,
                 follows: Vec::new(),
                 followed: Vec::new(),
+                position_field: None,
             }
         );
         let model = rooms_with(
@@ -8435,6 +8519,7 @@ topology:
                 commit_delay_us: 250,
                 follows: Vec::new(),
                 followed: Vec::new(),
+                position_field: None,
             }
         );
     }
@@ -8524,5 +8609,69 @@ topology:
             resolve_keyed_pool("rooms", &sessions("room"), &serves_none),
             Err(DeployError::InvalidSessions { .. })
         ));
+    }
+
+    /// docs/adr/0116, D5: a pool's position field is read from the requests it
+    /// serves that declare it, a `uint64` or an `optional<uint64>` in each, and
+    /// a request that does not declare it carries none. Refused when no request
+    /// declares it, when one declares it of another type, and on a pool keyed by
+    /// its clients' names. Red if the field is not carried to the peer table or
+    /// its type is not read.
+    #[test]
+    fn a_position_field_is_a_position_in_every_request_that_declares_it() {
+        use crate::forge::model::SceType;
+        use crate::mesh::error::DeployError;
+        let positioned = |key_from: &str| crate::mesh::deploy::SessionsConfig {
+            position_from: Some("data.after".to_string()),
+            ..sessions(key_from)
+        };
+        let room = || schema_field("room", text(12));
+        let model = rooms_with(
+            Some(vec![room(), schema_field("after", scalar(SceType::Uint64))]),
+            Some(vec![room()]),
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &positioned("data.room"), &model)
+                .expect("a position of one request")
+                .position_field,
+            Some("after".to_string())
+        );
+        let model = rooms_with(
+            Some(vec![
+                room(),
+                schema_field(
+                    "after",
+                    crate::forge::value_type::TypeOf::Optional {
+                        elem: Box::new(scalar(SceType::Uint64)),
+                    },
+                ),
+            ]),
+            Some(vec![room(), schema_field("after", scalar(SceType::Uint64))]),
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &positioned("data.room"), &model)
+                .expect("a position, or none, of every request")
+                .position_field,
+            Some("after".to_string())
+        );
+        let refused = |model: &SCXMLModel, key_from: &str| match resolve_keyed_pool(
+            "rooms",
+            &positioned(key_from),
+            model,
+        ) {
+            Err(DeployError::InvalidSessions { machine, reason }) => {
+                assert_eq!(machine, "rooms");
+                reason
+            }
+            other => panic!("expected InvalidSessions, got {other:?}"),
+        };
+        let unpositioned = rooms_with(Some(vec![room()]), Some(vec![room()]));
+        assert!(refused(&unpositioned, "data.room").contains("which no request the machine serves"));
+        let narrow = rooms_with(
+            Some(vec![room(), schema_field("after", scalar(SceType::Uint32))]),
+            Some(vec![room()]),
+        );
+        assert!(refused(&narrow, "data.room").contains("which 'service.request.join' declares as"));
+        assert!(refused(&unpositioned, "client").contains("keyed by its clients' names"));
     }
 }

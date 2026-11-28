@@ -239,6 +239,13 @@ pub struct Sessions {
     /// entries the pool takes in, each delivered to the session its key field
     /// names ([`crate::pool::Pool::follow`]).
     pub follows: Follows,
+    /// deploy.yaml's `sessions.position_from` (docs/adr/0116, D5): the
+    /// top-level field of a request's data that may carry a position of the
+    /// journals the pool follows, which an earlier answer told. The pool holds
+    /// a request that carries one in its session's inbox until its reader has
+    /// taken in every entry at or below it ([`crate::pool::Pool::follow`]).
+    /// `None` for a pool whose requests carry none.
+    pub position_from: Option<&'static str>,
 }
 
 /// The journals a keyed pool follows (deploy.yaml's `follows:`, docs/adr/0114,

@@ -555,6 +555,90 @@ fn a_follower_is_told_the_record_each_entry_it_follows_is_read_by() {
         peers.contains("follows: sce_rust_mesh::peers::Follows::NONE,"),
         "a pool that follows nothing:\n{peers}"
     );
+    // docs/adr/0116, D5: a pool whose deployment names no position field is told none.
+    assert!(
+        peers.contains("position_from: None,"),
+        "a pool whose requests carry no position:\n{peers}"
+    );
+}
+
+/// The request a follower serves: the room it is of, and `after`, of `after_type`, the position
+/// of the journal it follows that an earlier answer told.
+fn ask_schema(after_type: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="ask" sce:event-name="service.request.ask">
+  <datamodel>
+    <data id="room" sce:type="string[16]" sce:direction="in"/>
+    <data id="after" sce:type="{after_type}" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// A follower of the rooms that serves the request of [`ask_schema`] as well.
+fn asking() -> String {
+    let asking = statechart("sce-static", "")
+        .replace(
+            r#"  <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>"#,
+            r#"  <sce:import kind="event-schema" src="room_booked.scxml" as="RoomBooked"/>
+  <sce:import kind="event-schema" src="ask.scxml" as="Ask"/>"#,
+        )
+        .replace(
+            r#"    <transition event="book" type="internal">"#,
+            r#"    <transition event="service.request.ask" type="internal"/>
+    <transition event="book" type="internal">"#,
+        );
+    assert_ne!(
+        asking,
+        statechart("sce-static", ""),
+        "the follower serves a request"
+    );
+    asking
+}
+
+/// docs/adr/0116, D5: a follower's peer table names the field of its requests that carries a
+/// position of the journals it follows, when its deployment names one, read against the requests
+/// that declare it; a field of another type than a position's is refused where the machine is
+/// generated. Red if the template writes no position field, or the build does not read the
+/// request's type.
+#[test]
+fn a_follower_is_told_where_a_request_carries_a_position() {
+    let rooms = statechart("sce-static", SAYS);
+    let follows = pooled("        follows: [rooms]\n");
+    let positioned = follows.replace(
+        "      probe:\n        source: probe.scxml\n        sessions: { key_from: data.room, idle_ms: 1000 }\n",
+        "      probe:\n        source: probe.scxml\n        sessions: { key_from: data.room, idle_ms: 1000, \
+         position_from: data.after }\n",
+    );
+    assert_ne!(positioned, follows, "the follower names its position field");
+    let ask = ask_schema("uint64");
+    let (ok, out, peers) = generate_deployed_peers(
+        &asking(),
+        &positioned,
+        &[("rooms.scxml", rooms.as_str()), ("ask.scxml", ask.as_str())],
+    );
+    assert!(ok, "the follower is generated:\n{out}");
+    assert!(
+        peers.contains("position_from: Some(\"after\"),"),
+        "the position field reaches the peer table:\n{peers}"
+    );
+    let narrow = ask_schema("uint32");
+    let (ok, out, _) = generate_deployed_peers(
+        &asking(),
+        &positioned,
+        &[
+            ("rooms.scxml", rooms.as_str()),
+            ("ask.scxml", narrow.as_str()),
+        ],
+    );
+    assert!(
+        !ok && out.contains("\"code\":\"mesh/deploy-invalid-sessions\"")
+            && out.contains("a position of a journal is a `uint64`"),
+        "a position field of another type is refused:\n{out}"
+    );
 }
 
 /// docs/adr/0114, D4: a session keeps the position it took in of each journal it

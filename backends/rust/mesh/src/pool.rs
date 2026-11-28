@@ -3770,6 +3770,7 @@ mod tests {
         max_inbox: 64,
         commit_delay_us: 0,
         follows: crate::peers::Follows::NONE,
+        position_from: None,
     };
 
     /// [`ROOMS`] holding at most `max_live` sessions in memory and

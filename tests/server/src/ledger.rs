@@ -237,6 +237,7 @@ pub fn pooled(
             max_inbox: 64,
             commit_delay_us: 0,
             follows: Follows::NONE,
+            position_from: None,
         }),
     }
 }

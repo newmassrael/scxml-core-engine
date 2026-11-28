@@ -2519,6 +2519,7 @@ pub const MAX_SESSION_KEY_BYTES: u32 = 256;
 ///   max_live: 100000         # optional: sessions held in memory at most
 ///   max_inbox: 64            # optional: inputs waiting in one session's inbox
 ///   commit_delay_us: 0       # optional: how long a commit waits for more writes
+///   position_from: data.after  # optional: where a request carries a journal's position
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2546,6 +2547,15 @@ pub struct SessionsConfig {
     /// arrived while the one before it was written. At most [`MAX_COMMIT_DELAY_US`].
     #[serde(default)]
     pub commit_delay_us: u64,
+    /// Where a request carries a position of the journals the pool follows (docs/adr/0116, D5):
+    /// `data.<field>`, a top-level field of its data, a `uint64` or an `optional<uint64>` in
+    /// each request that declares it, which an earlier answer told. The pool holds a request that
+    /// carries a position in its session's inbox until its reader has taken in every entry at or
+    /// below it, so that a decision is not made on what the session read before it (Pang et al.
+    /// 2019, the zookie). Absent for a pool that holds no request; only on a machine that follows
+    /// journals (`follows:`).
+    #[serde(default)]
+    pub position_from: Option<String>,
 }
 
 /// The longest `sessions.commit_delay_us` may be (docs/adr/0109, D15): a tenth of a second,
@@ -2576,6 +2586,17 @@ pub enum SessionKeySource {
     Client,
 }
 
+/// The field `text` names when it is `data.` followed by a field name: a letter or `_`, then
+/// letters, digits or `_`.
+fn data_field(text: &str) -> Option<String> {
+    let field = text.strip_prefix("data.")?;
+    let mut chars = field.chars();
+    let leads = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+    (leads && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')).then(|| field.to_string())
+}
+
 impl SessionsConfig {
     /// What `key_from` names, or why it names nothing: it is neither `client`
     /// nor `data.` followed by a field name (a letter or `_`, then letters,
@@ -2585,13 +2606,8 @@ impl SessionsConfig {
         if self.key_from == "client" {
             return Ok(SessionKeySource::Client);
         }
-        let field = self.key_from.strip_prefix("data.").unwrap_or_default();
-        let mut chars = field.chars();
-        let leads = chars
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
-        if leads && chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            return Ok(SessionKeySource::Field(field.to_string()));
+        if let Some(field) = data_field(&self.key_from) {
+            return Ok(SessionKeySource::Field(field));
         }
         Err(format!(
             "`key_from` is '{}', which is neither `client` nor `data.<field>` naming one \
@@ -2600,11 +2616,41 @@ impl SessionsConfig {
         ))
     }
 
+    /// The field `position_from` names (docs/adr/0116, D5), `None` when the section names none,
+    /// or why it names nothing: it is not `data.` followed by a field name. The reason is the one
+    /// [`DeployError::InvalidSessions`] carries.
+    pub fn position_field(&self) -> Result<Option<String>, String> {
+        let Some(position_from) = &self.position_from else {
+            return Ok(None);
+        };
+        data_field(position_from).map(Some).ok_or_else(|| {
+            format!(
+                "`position_from` is '{position_from}', which is not `data.<field>` naming one \
+                 top-level field of a request's data (a letter or `_`, then letters, digits or `_`)"
+            )
+        })
+    }
+
     /// Why the section cannot be served, read off the section alone; the
     /// caller wraps it into [`DeployError::InvalidSessions`].
     fn validation_error(&self) -> Option<String> {
-        if let Err(reason) = self.key_source() {
-            return Some(reason);
+        let key = match self.key_source() {
+            Ok(key) => key,
+            Err(reason) => return Some(reason),
+        };
+        let position = match self.position_field() {
+            Ok(position) => position,
+            Err(reason) => return Some(reason),
+        };
+        if let Some(position) = position
+            .as_ref()
+            .filter(|position| matches!(&key, SessionKeySource::Field(key) if key == *position))
+        {
+            return Some(format!(
+                "`position_from` names the field '{position}', which `key_from` names too: a \
+                 request's key names its session and its position how far that session must have \
+                 read, two values"
+            ));
         }
         if self.idle_ms > MAX_MESH_MILLIS {
             return Some(format!(
@@ -7548,6 +7594,16 @@ fn validate_sessions(cfg: &DeployConfig) -> Result<(), DeployError> {
         if let Some(reason) = sessions.validation_error() {
             return refuse(reason);
         }
+        // docs/adr/0116, D5: a position is one of the journals the pool follows, which a reader
+        // of them passes; a pool that follows none would hold such a request for ever.
+        if sessions.position_from.is_some() && machine_cfg.follows.is_empty() {
+            return refuse(
+                "`position_from` names where a request carries a position of the journals the \
+                 pool follows, and the machine follows none (`follows:`), so no reader of a \
+                 journal ever passes it"
+                    .to_string(),
+            );
+        }
         if let Some(server) = &machine_cfg.server {
             return refuse(format!(
                 "the machine also declares a `server:` block on transport '{}', which serves it \
@@ -9820,6 +9876,75 @@ topology:
             )),
             Err(DeployError::Yaml { .. })
         ));
+    }
+
+    /// docs/adr/0116, D5: `sessions.position_from` names the field of a request's data that
+    /// carries a position of the journals the pool follows; absent, it names none. It is refused
+    /// when it is no `data.<field>`, when it names the key's field, and on a machine that follows
+    /// no journal, whose reader would never pass a position.
+    #[test]
+    fn a_followers_position_field_is_read_and_refused_where_it_cannot_be_kept() {
+        let follower = |sessions: &str| {
+            format!(
+                r#"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: {{ key_from: data.room, idle_ms: 1000 }}
+        journal: true
+      view:
+        source: view.scxml
+        sessions: {sessions}
+        follows: [rooms]
+"#
+            )
+        };
+        let position_of = |sessions: &str| {
+            parse_deploy_str(&follower(sessions))
+                .expect("parse")
+                .topology["cloud"]
+                .machines["view"]
+                .sessions
+                .clone()
+                .expect("declared")
+                .position_field()
+        };
+        assert_eq!(
+            position_of("{ key_from: data.room, idle_ms: 1000, position_from: data.after }"),
+            Ok(Some("after".to_string()))
+        );
+        assert_eq!(
+            position_of("{ key_from: data.room, idle_ms: 1000 }"),
+            Ok(None)
+        );
+        for (yaml, said) in [
+            (
+                follower("{ key_from: data.room, idle_ms: 1000, position_from: after }"),
+                "which is not `data.<field>`",
+            ),
+            (
+                follower("{ key_from: data.room, idle_ms: 1000, position_from: data.room }"),
+                "which `key_from` names too",
+            ),
+            (
+                keyed(
+                    "{ key_from: data.room, idle_ms: 1000, position_from: data.after }",
+                    "",
+                    "",
+                ),
+                "the machine follows none",
+            ),
+        ] {
+            match parse_deploy_str(&yaml) {
+                Err(DeployError::InvalidSessions { reason, .. }) => {
+                    assert!(reason.contains(said), "{said}: {reason}");
+                }
+                other => panic!("expected InvalidSessions for `{said}`, got {other:?}"),
+            }
+        }
     }
 
     /// A server `rooms` and its client `phone` joined over `https`, each with

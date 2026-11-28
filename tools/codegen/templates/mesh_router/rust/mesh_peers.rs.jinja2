@@ -190,6 +190,14 @@ pub const MACHINE: Machine = Machine {
 {%- else %}
         follows: sce_rust_mesh::peers::Follows::NONE,
 {%- endif %}
+{#- deploy.yaml `sessions.position_from` (docs/adr/0116, D5): the field of a
+    request's data that carries a position of the journals the pool follows, as
+    `topology::resolve_keyed_pool_following` read it against the document. -#}
+{%- if sessions.position_field is not none %}
+        position_from: Some("{{ sessions.position_field | escape_rust }}"),
+{%- else %}
+        position_from: None,
+{%- endif %}
     }),
 {%- else %}
     sessions: None,
