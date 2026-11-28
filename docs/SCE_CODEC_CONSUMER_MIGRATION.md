@@ -4381,3 +4381,21 @@ buffer pool regenerates it, and one that drives a generated pool by hand changes
   `<link>_send_<row>_over(self, &pool, value)` into a `<pool>_over_t`. The second is `<link>_over.h`'s, which includes
   `<link>.h` and `<pool>_over.h`: `<link>.h` includes `<pool>.h` alone, so a program that sends through the static
   pool includes nothing of the lending form; one that sends through a `<pool>_over_t` adds `#include "<link>_over.h"`.
+
+  `<link>_send_<row>_over(self, &pool, value)` into a `<pool>_over_t`.
+
+## A Rust tree of one session keeps no inbox directory (ADR 0084, amended 2026-11-28)
+
+Landing: the commits that add this section. No committed generated tree changes, and no template does.
+
+- **Nothing to change.** No signature, trait item or generated line changes: a hand-written `StatePolicy` gains no
+  associated type, and a host that builds a tree by hand keeps calling `EngineState::share_tree_inboxes_with` (or
+  `Engine::adopt_tree_inboxes`), which is now what opens the tree's directory.
+- **What a post is answered stays as it was.** An ending posted through a handle and naming a session other than the
+  handle's own is refused as `InboxRefusal::UnknownSession` in a tree no second session joined, as the directory
+  refused it; one naming a session whose engine is gone is refused as `UnknownSession` whether a handle to that
+  session's inbox is still held or not.
+- **What a build of documents that start no child session links.** No directory, no hash map in an engine's tree, and
+  no drop of an engine's own inbox that reaches its tree: a release library of such machines is smaller than at the
+  landing before (about 2.2 KB in the measurement ADR 0084 records), and making an engine no longer draws the hash
+  map's random keys.

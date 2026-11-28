@@ -244,7 +244,9 @@ host is the arrangement measured above to fail.
     and applied, and it leaves the directory. On the Interpreter `endHostInvokeIn` asks the directory;
   - Rust: `TreeInboxes` (`inbox.rs`); `held_child_endings` and the lent-policy bookkeeping are gone. A `BoundedInbox`
     answers a post that names a session when it is posted, by the id its engine had when it was attached; `no_std`
-    has no child sessions, so its directory holds only the root;
+    has no child sessions, so its directory holds only the root. The `std` directory opens when a second session
+    joins the tree, and a tree of one session keeps none (amended 2026-11-28, "Decided while making a tree of one
+    session cost nothing for a directory" below);
   - C11: one directory slot per child slot, holding the session id the slot runs, read under a sequence stamp (rows
     64 and 32) or with interrupts masked (row 0), so a post never waits. C11 never closes an inbox, so a child
     leaves the directory and then what its inbox holds is applied;
@@ -510,6 +512,51 @@ check, since the exit cancelled its invocation), and a later post is refused and
 
 Each step lands with its tests and is pushed under the repository's push rule. A step that finds the rule wrong for a
 runtime stops and amends this ADR rather than working around it.
+
+## Decided while making a tree of one session cost nothing for a directory
+
+Measured on 2026-11-28: a release C-ABI library built from documents that start no child session, and whose host
+never posts an input naming a session, was about 2.2 KB larger once the root's inbox entered its tree's directory
+(D2 as amended at step 10, as Rust built it on 2026-11-27). Every engine's drop of its own inbox looked the inbox up in
+the directory to leave it, which linked the directory's lookup, its removal and the hashing of a session id into
+every machine. The directory is read by one kind of post alone, one that names a session other than the one whose
+handle it goes through, and such a post finds a session only in a tree of more than one. Each decision below makes a
+tree of one session pay nothing for the directory, by the zero-overhead principle ADR 0116 followed for a person
+(Stroustrup, *The Design and Evolution of C++*, 1994, section 4.5: what you do not use, you do not pay for). It is
+the Rust `std` profile's; what a post is answered does not change on any runtime.
+
+1. **Whether a tree needs a directory is the tree's, not a machine's.** A tree holds a second session when a parent
+   hands it to a child it starts or resumes (`EngineState::share_tree_inboxes_with`, which the generated code of a
+   document with an `<invoke type="scxml">` calls, as does a host that builds a tree by hand), or when a host has a
+   session join it (`Engine::adopt_tree_inboxes`). A child's document cannot tell that it is a child: its machine is
+   generated from its own document, alone, and its parent names it by its module. A type per machine, as
+   `StatePolicy::Principal` is (ADR 0116), would have to name the directory for every machine that may be invoked,
+   which is every machine; a Cargo feature is unified over a build (the Cargo Book, "Features", feature
+   unification), so one document with a child would make every machine beside it pay. Neither makes a tree of one
+   session cost nothing, so neither is used.
+2. **The directory opens when a second session joins the tree, and never before.** `TreeInboxes` holds it as a trait
+   object in a cell that stays empty until `share_tree_inboxes_with` or a join opens it. The session that opens it
+   is entered then, if it has made its inbox, and every inbox made in the tree or joining it later is entered when
+   it is. The code that enters, looks up and removes a session is reached only through the object made there, so a
+   program that never hands a tree on links none of it: rustc puts each function in a section of its own and asks the
+   linker to drop the sections nothing reaches. A tree of one session answers a post that names another session as
+   its directory would, refused as naming a session the tree does not hold (`InboxRefusal::UnknownSession`), and one
+   that names its own session is taken as before. Nor does it make a hash map, so making an engine no longer draws
+   the hash map's random keys.
+3. **The directory names an inbox without holding it, so an inbox has no drop of its own.** The directory held each
+   inbox and each inbox held its tree, so an inbox left the directory in its drop in order to be freed. The directory
+   now holds a weak reference: an inbox is freed with its engine and its last handle, whether it left or not. A post
+   through the directory naming a session whose engine is gone finds nothing to upgrade, or finds the owner's half of
+   the channel gone, and is refused as naming a session the tree does not hold, as it was when the drop removed the
+   inbox. The engine's drop of its inbox drops the inbox's two fields and reaches no tree.
+
+What a tree of more than one session does is D2 as amended at step 10, unchanged. ADR 0147's history test
+(`backends/rust/tests/tests/an_inbox_history_of_every_run_is_linearizable_to_its_promise.rs`) runs a tree of two
+sessions, whose directory opens when the root hands its tree to the child, before either runs and before any post, so
+it holds what `docs/formal/EngineInbox.tla` assumes of `directory`: it starts as both sessions, a session leaves it
+when its run ends (`Engine::leave_tree_inboxes`), and a post through it naming a session it does not hold, ended or
+never held, is refused as unknown. The model has no tree of one session and no engine that is gone without its run
+ending; the first is answered as its directory would answer it, and the second as a session that left.
 
 ## Open questions
 
