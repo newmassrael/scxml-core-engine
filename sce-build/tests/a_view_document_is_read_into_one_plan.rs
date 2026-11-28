@@ -475,6 +475,33 @@ fn a_sum_of_floating_numbers_is_refused() {
     );
 }
 
+/// A count is the rows of its group and reads no expression: the grammar
+/// refuses one written on it rather than leave it unread.
+#[test]
+fn a_count_takes_no_expression() {
+    let text = std::fs::read_to_string(fixture("aggregate_may_overflow.scxml"))
+        .expect("the fixture reads")
+        .replace(
+            "<sce:count name=\"open\"/>",
+            "<sce:count name=\"open\" expr=\"t.row.points\"/>",
+        );
+    assert!(
+        text.contains("expr=\"t.row.points\""),
+        "the count was rewritten"
+    );
+    let label = DocumentLabel {
+        identifier: "count_with_an_expression",
+        diagnostic_label: "count_with_an_expression.scxml",
+    };
+    match parse_forge_with_imports(&text, label) {
+        Ok(_) => panic!("a count with an expression is read"),
+        Err(refusal) => assert_eq!(
+            refusal.error.to_diagnostics()[0].code,
+            DiagnosticCode::XmlSchemaValidation
+        ),
+    }
+}
+
 #[test]
 fn every_backend_refuses_a_valid_view_by_name() {
     let options = ForgeCompileOptions {

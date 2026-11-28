@@ -1102,7 +1102,11 @@
           <xs:complexType>
             <xs:choice minOccurs="0" maxOccurs="unbounded">
               <xs:element name="field" type="sce:viewFieldType"/>
-              <xs:element name="count" type="sce:viewFieldType"/>
+              <xs:element name="count">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="sum" type="sce:viewFieldType"/>
               <xs:element name="min" type="sce:viewFieldType"/>
               <xs:element name="max" type="sce:viewFieldType"/>
