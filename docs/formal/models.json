@@ -1393,11 +1393,13 @@
         },
         {
           "config": "SessionPool_followed.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 63379
         },
         {
           "config": "SessionPool_followed_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 63379
         },
         {
           "config": "SessionPool_followed_live_without_fairness.cfg",
