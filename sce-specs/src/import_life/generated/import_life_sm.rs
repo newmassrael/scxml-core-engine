@@ -1014,6 +1014,9 @@ impl StatePolicy for ImportLifePolicy {
     // both runtime profiles. The queue holds events as numbers and only the
     // payloads as this machine's type (docs/adr/0068).
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    // docs/adr/0116: the document reads no person, so its events and its runs
+    // hold a slot of no size, and no field, copy or drop of a person.
+    type Principal = ::sce_rust_runtime::NoPrincipal;
 
     // W3C SCXML Appendix D internalQueue: only what this machine raises for
     // itself during a macrostep, so its no_std depth is the bound the
