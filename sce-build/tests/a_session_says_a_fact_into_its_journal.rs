@@ -562,6 +562,36 @@ fn a_follower_is_told_the_record_each_entry_it_follows_is_read_by() {
     );
 }
 
+/// docs/adr/0114, D4 (amended 2026-11-28): a follower whose `key_from` is `none` keeps one
+/// session, which takes every entry it follows, so it is generated without a key field read of
+/// the entries, and its peer table names no key and the record each entry is read by. Red if the
+/// deployment or the build refuses a follower that keeps one session, or the template writes
+/// another key source.
+#[test]
+fn a_follower_that_keeps_one_session_is_told_it_reads_no_key() {
+    let rooms = statechart("sce-static", SAYS);
+    let follows = pooled("        follows: [rooms]\n");
+    let one = follows.replace(
+        "      probe:\n        source: probe.scxml\n        sessions: { key_from: data.room, idle_ms: 1000 }\n",
+        "      probe:\n        source: probe.scxml\n        sessions: { key_from: none, idle_ms: 1000 }\n",
+    );
+    assert_ne!(one, follows, "the follower keeps one session");
+    let (ok, out, peers) = generate_deployed_peers(
+        &statechart("sce-static", ""),
+        &one,
+        &[("rooms.scxml", rooms.as_str())],
+    );
+    assert!(ok, "the follower is generated:\n{out}");
+    for expected in [
+        "key_from: sce_rust_mesh::peers::KeyFrom::One,",
+        "max_key_bytes: 0,",
+        "journals: &[\"rooms\"],",
+        "event: \"room.booked\",",
+    ] {
+        assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
+    }
+}
+
 /// The request a follower serves: the room it is of, and `after`, of `after_type`, the position
 /// of the journal it follows that an earlier answer told.
 fn ask_schema(after_type: &str) -> String {

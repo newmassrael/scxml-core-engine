@@ -12164,7 +12164,8 @@ pub fn compile_mesh_transport(
     // docs/adr/0114, D1 and D4: the document and the deployment agree about
     // the machine's journal before its pool is resolved, and a pool that
     // follows journals takes their entries in as it takes requests, each
-    // keyed by the field `key_from` names.
+    // keyed by the field `key_from` names, or each its one session's when
+    // `key_from` is `none`.
     let followed_events =
         mesh::topology::followed_entry_events(&effective_machine_name, &deploy_cfg, deploy_dir)?;
     mesh::topology::check_journal(

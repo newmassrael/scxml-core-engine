@@ -1232,6 +1232,26 @@ fn a_keyed_pool_reaches_the_rust_peer_table_and_no_other_core() {
         "{peers}"
     );
 
+    // docs/adr/0114, D4: a pool that keeps one session reads no key, and its one
+    // key, the empty key, holds no byte.
+    let (out, dir) = generate_rooms(
+        "mesh-keyed-pool-one",
+        "rust",
+        JOIN_SCHEMA,
+        "{ key_from: none, idle_ms: 30000 }",
+    );
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let peers = generated_file_under(dir.path(), "_mesh_peers.rs");
+    assert!(
+        peers.contains("key_from: sce_rust_mesh::peers::KeyFrom::One,")
+            && peers.contains("max_key_bytes: 0,"),
+        "{peers}"
+    );
+
     // Every other core refuses it rather than serve every key from one state.
     for language in ["cpp", "kotlin", "swift"] {
         let (out, _dir) = generate_rooms(

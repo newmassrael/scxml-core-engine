@@ -2514,7 +2514,7 @@ pub const MAX_SESSION_KEY_BYTES: u32 = 256;
 ///
 /// ```yaml
 /// sessions:
-///   key_from: data.room      # or `client`
+///   key_from: data.room      # or `client`, or `none` for one session
 ///   idle_ms: 60000
 ///   max_live: 100000         # optional: sessions held in memory at most
 ///   max_inbox: 64            # optional: inputs waiting in one session's inbox
@@ -2525,8 +2525,10 @@ pub const MAX_SESSION_KEY_BYTES: u32 = 256;
 #[serde(deny_unknown_fields)]
 pub struct SessionsConfig {
     /// Where the key of an envelope is read: `data.<field>`, a top-level
-    /// field of its data, which every request the machine serves carries; or
-    /// `client`, the name of the peer whose link it arrived on.
+    /// field of its data, which every request the machine serves carries;
+    /// `client`, the name of the peer whose link it arrived on; or `none`,
+    /// read from nowhere: the pool keeps one session, whose key is the empty
+    /// key, and every input it takes is that session's (docs/adr/0114, D4).
     pub key_from: String,
     /// How long a session that has had no event and holds nothing pending
     /// stays in memory before it is saved and dropped, in milliseconds.
@@ -2577,13 +2579,22 @@ fn default_sessions_max_inbox() -> u32 {
     DEFAULT_SESSIONS_MAX_INBOX
 }
 
-/// Where [`SessionsConfig::key_from`] reads a session's key.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Where [`SessionsConfig::key_from`] reads a session's key. Written for a
+/// template as `{"source": "field", "field": <name>}`, `{"source": "client"}`
+/// or `{"source": "one"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "source", content = "field", rename_all = "snake_case")]
 pub enum SessionKeySource {
     /// `data.<field>`: the top-level field of the envelope's data.
     Field(String),
     /// `client`: the name of the peer whose link the envelope arrived on.
     Client,
+    /// `none`: no key is read. The pool keeps one session, whose key is the
+    /// empty key, and every input it takes is that session's: an entry of each
+    /// journal and observed stream it follows, and a request a client sends
+    /// alike (docs/adr/0114, D4). A key read from an envelope is never empty,
+    /// so the empty key is one no other source gives.
+    One,
 }
 
 /// The field `text` names when it is `data.` followed by a field name: a letter or `_`, then
@@ -2598,20 +2609,23 @@ fn data_field(text: &str) -> Option<String> {
 }
 
 impl SessionsConfig {
-    /// What `key_from` names, or why it names nothing: it is neither `client`
-    /// nor `data.` followed by a field name (a letter or `_`, then letters,
-    /// digits or `_`). The reason is the one [`DeployError::InvalidSessions`]
-    /// carries.
+    /// What `key_from` names, or why it names nothing: it is none of `client`,
+    /// `none` and `data.` followed by a field name (a letter or `_`, then
+    /// letters, digits or `_`). The reason is the one
+    /// [`DeployError::InvalidSessions`] carries.
     pub fn key_source(&self) -> Result<SessionKeySource, String> {
-        if self.key_from == "client" {
-            return Ok(SessionKeySource::Client);
+        match self.key_from.as_str() {
+            "client" => return Ok(SessionKeySource::Client),
+            "none" => return Ok(SessionKeySource::One),
+            _ => {}
         }
         if let Some(field) = data_field(&self.key_from) {
             return Ok(SessionKeySource::Field(field));
         }
         Err(format!(
-            "`key_from` is '{}', which is neither `client` nor `data.<field>` naming one \
-             top-level field of a request's data (a letter or `_`, then letters, digits or `_`)",
+            "`key_from` is '{}', which is none of `client`, `none` (one session) and \
+             `data.<field>` naming one top-level field of a request's data (a letter or `_`, \
+             then letters, digits or `_`)",
             self.key_from
         ))
     }
@@ -3193,7 +3207,8 @@ pub struct MachineConfig {
     /// machine of the deployment that keeps one (`journal: true`), or an
     /// observed stream of [`DeployConfig::streams`]. The pool delivers each
     /// entry, in order, as an external event of the entry's name to the
-    /// session `sessions.key_from` names for it, and the session keeps the
+    /// session `sessions.key_from` names for it, the pool's one session when
+    /// it is `none`, and the session keeps the
     /// position it has taken in of each journal in its checkpoint. Checked by
     /// [`validate_journal`].
     #[serde(default)]
@@ -7854,7 +7869,8 @@ fn is_stream_name(name: &str) -> bool {
 ///   session (D1, D2);
 /// * `follows:` on a machine that is no keyed pool, or one whose
 ///   `sessions.key_from` is `client`: an entry is delivered to the session
-///   the key field of its data names, and it comes on no client's link (D4);
+///   the key field of its data names, or to the pool's one session when
+///   `key_from` is `none`, and it comes on no client's link (D4);
 /// * `follows:` naming the machine itself, whose own entries were taken as
 ///   they were said and would take effect twice (D4); a name twice; a machine
 ///   that keeps no journal; a name that is neither a machine of the
@@ -7960,12 +7976,14 @@ fn validate_journal(cfg: &DeployConfig) -> Result<(), DeployError> {
                     None,
                     "`sessions.key_from` is `client`, and an entry it follows comes on no \
                      client's link: name the field of the entries' data that keys the session \
-                     (`data.<field>`)"
+                     (`data.<field>`), or keep one session that takes every entry (`none`)"
                         .to_string(),
                 )
             }
-            // A key source that is neither was refused by `validate_sessions`.
-            Some(_) => {}
+            // docs/adr/0114, D4: a field of each entry's data names its session,
+            // or the pool keeps one session that takes them all. A key source
+            // that is none of these was refused by `validate_sessions`.
+            Some(Ok(SessionKeySource::Field(_) | SessionKeySource::One) | Err(_)) => {}
         }
         let mut seen = std::collections::BTreeSet::new();
         for followed in &machine.follows {
@@ -9786,6 +9804,15 @@ topology:
             .clone()
             .expect("declared");
         assert_eq!(sessions.key_source(), Ok(SessionKeySource::Client));
+
+        // docs/adr/0114, D4: `none` reads no key, and the pool keeps one session.
+        let cfg =
+            parse_deploy_str(&keyed("{ key_from: none, idle_ms: 1000 }", "", "")).expect("parse");
+        let sessions = cfg.topology["cloud"].machines["rooms"]
+            .sessions
+            .clone()
+            .expect("declared");
+        assert_eq!(sessions.key_source(), Ok(SessionKeySource::One));
     }
 
     /// A `sessions:` section is refused when its key source or idle time is
@@ -9800,25 +9827,25 @@ topology:
                 "{ key_from: room, idle_ms: 1 }",
                 "",
                 "",
-                "neither `client` nor",
+                "none of `client`, `none`",
             ),
             (
                 "{ key_from: data., idle_ms: 1 }",
                 "",
                 "",
-                "neither `client` nor",
+                "none of `client`, `none`",
             ),
             (
                 "{ key_from: data.1x, idle_ms: 1 }",
                 "",
                 "",
-                "neither `client` nor",
+                "none of `client`, `none`",
             ),
             (
                 "{ key_from: data.a.b, idle_ms: 1 }",
                 "",
                 "",
-                "neither `client` nor",
+                "none of `client`, `none`",
             ),
             (
                 "{ key_from: client, idle_ms: 9223372036854775808 }",
@@ -10577,8 +10604,9 @@ topology:
     }
 
     /// docs/adr/0114, D4: a followed entry goes to the session the field of
-    /// its data keys, so a follower is a keyed pool keyed by a field, never by
-    /// the client whose link an input came on.
+    /// its data keys, or to the pool's one session, so a follower is a keyed
+    /// pool keyed by a field or keeping one session, never by the client whose
+    /// link an input came on.
     #[test]
     fn a_follower_is_a_keyed_pool_keyed_by_a_field() {
         let unpooled = r#"
@@ -10613,6 +10641,35 @@ topology:
         assert!(
             reason.contains("`sessions.key_from` is `client`"),
             "{reason}"
+        );
+    }
+
+    /// docs/adr/0114, D4 (amended 2026-11-28): a follower whose `key_from` is
+    /// `none` keeps one session, which takes every entry of each journal and
+    /// observed stream it follows, so it reads no field of their data and is
+    /// accepted where one keyed by its clients' names is refused. Red if the
+    /// deployment refuses a follower that keeps one session.
+    #[test]
+    fn a_follower_that_keeps_one_session_is_accepted() {
+        let yaml = journaled(
+            "        journal: true\n",
+            "        follows: [rooms, directory]\n",
+            DIRECTORY,
+        )
+        .replace(
+            "view.scxml\n        sessions: { key_from: data.room",
+            "view.scxml\n        sessions: { key_from: none",
+        );
+        assert!(
+            yaml.contains("sessions: { key_from: none"),
+            "the follower keeps one session:\n{yaml}"
+        );
+        let cfg = parse_deploy_str(&yaml).expect("a follower that keeps one session");
+        let view = &cfg.topology["cloud"].machines["view"];
+        assert_eq!(view.follows, ["rooms", "directory"]);
+        assert_eq!(
+            view.sessions.as_ref().map(SessionsConfig::key_source),
+            Some(Ok(SessionKeySource::One))
         );
     }
 

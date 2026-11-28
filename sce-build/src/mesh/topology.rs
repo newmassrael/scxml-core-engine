@@ -4942,12 +4942,15 @@ pub fn check_sender_event_coverage(
 /// document: what a host core's peer table carries for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct KeyedPool {
-    /// The field of a request's data a session's key is read from, or `None`
-    /// when it is read from the client's name (`key_from: client`).
-    pub key_field: Option<String>,
+    /// Where a session's key is read: the field of a request's data
+    /// (`key_from: data.<field>`), the client's name (`key_from: client`), or
+    /// nowhere, for a pool that keeps one session (`key_from: none`,
+    /// docs/adr/0114, D4).
+    pub key_from: crate::mesh::deploy::SessionKeySource,
     /// The most bytes a key the pool reads can hold: the largest bound the
-    /// key field's type states across the requests the machine serves, or
-    /// [`MAX_SESSION_KEY_BYTES`] for a client's name.
+    /// key field's type states across the requests the machine serves,
+    /// [`MAX_SESSION_KEY_BYTES`] for a client's name, or `0` for the empty
+    /// key of a pool that keeps one session.
     ///
     /// [`MAX_SESSION_KEY_BYTES`]: crate::mesh::deploy::MAX_SESSION_KEY_BYTES
     pub max_key_bytes: u32,
@@ -4996,7 +4999,10 @@ pub struct FollowedRecord {
 /// a fraction or a flag, names no session, and is refused here rather than at
 /// the first request that arrives
 /// ([`DeployError::SessionKeyNotInRequest`]). A pool keyed by `client` reads
-/// nothing of the document.
+/// nothing of the document. A pool that keeps one session (`key_from: none`,
+/// docs/adr/0114, D4) reads no key, so it holds no request or followed entry to
+/// a field; it reads the records of the entries it follows, and the position
+/// field of the requests it serves, as a pool keyed by a field does.
 ///
 /// [`MAX_SESSION_KEY_BYTES`]: crate::mesh::deploy::MAX_SESSION_KEY_BYTES
 /// [`DeployError::SessionKeyNotInRequest`]: crate::mesh::error::DeployError::SessionKeyNotInRequest
@@ -5012,8 +5018,9 @@ pub fn resolve_keyed_pool(
 /// journals it follows (`follows:`, docs/adr/0114, D4), whose events are
 /// `followed`: each is delivered to the session the key field of its data
 /// names, so each is held to what a request is, its schema one the document
-/// imports and declaring the field as a key. A pool that follows a journal
-/// and serves no request is a view of what it follows.
+/// imports and declaring the field as a key; or, in a pool that keeps one
+/// session, to that session, its schema one the document imports. A pool that
+/// follows a journal and serves no request is a view of what it follows.
 pub fn resolve_keyed_pool_following(
     machine: &str,
     sessions: &crate::mesh::deploy::SessionsConfig,
@@ -5036,7 +5043,7 @@ pub fn resolve_keyed_pool_following(
             machine: machine.to_string(),
             reason,
         })?;
-    let field = match source {
+    let key_field = match source {
         // docs/adr/0116, D5: a position is one of the journals the pool follows, and a pool keyed
         // by its clients' names follows none (`validate_journal`).
         SessionKeySource::Client if position.is_some() => {
@@ -5050,7 +5057,7 @@ pub fn resolve_keyed_pool_following(
         }
         SessionKeySource::Client => {
             return Ok(KeyedPool {
-                key_field: None,
+                key_from: SessionKeySource::Client,
                 max_key_bytes: MAX_SESSION_KEY_BYTES,
                 idle_ms: sessions.idle_ms,
                 max_live: sessions.max_live,
@@ -5061,18 +5068,17 @@ pub fn resolve_keyed_pool_following(
                 position_field: None,
             })
         }
-        SessionKeySource::Field(field) => field,
-    };
-    let refuse = |fault: SessionKeyFault| DeployError::SessionKeyNotInRequest {
-        machine: machine.to_string(),
-        field: field.clone(),
-        fault,
+        // docs/adr/0114, D4: every input of a pool that keeps one session is that session's, so no
+        // field of a request or a followed entry is read as its key.
+        SessionKeySource::One => None,
+        SessionKeySource::Field(field) => Some(field),
     };
     // The requests the machine serves, each by its full name: a descriptor
     // that matches many (`service.request`, `service.request.*`) names no
     // one schema, and the requests it matches are named by their own
-    // transitions or by none.
-    let mut requests: BTreeSet<String> = collect_transition_events(model)
+    // transitions or by none. docs/adr/0116, D5: their position field is read,
+    // and not the followed entries', which a request carries no position of.
+    let served: BTreeSet<String> = collect_transition_events(model)
         .into_iter()
         .filter(|event| {
             !event.contains('*')
@@ -5081,15 +5087,90 @@ pub fn resolve_keyed_pool_following(
                     .is_some_and(|suffix| !suffix.is_empty())
         })
         .collect();
-    // docs/adr/0116, D5: the requests the machine serves, whose position field is read, and not
-    // the followed entries, which a request carries no position of.
-    let served = requests.clone();
-    requests.extend(followed.iter().cloned());
-    if requests.is_empty() {
+    let max_key_bytes = match &key_field {
+        Some(field) => key_field_bytes(
+            machine,
+            field,
+            served.iter().chain(followed.iter()).cloned().collect(),
+            model,
+        )?,
+        // The empty key, the one key of a pool that keeps one session.
+        None => 0,
+    };
+    // docs/adr/0114, D4: each followed entry is read by its record, which
+    // `check_journal` held to having a deterministic CBOR.
+    let mut records = Vec::with_capacity(followed.len());
+    for event in followed {
+        match crate::forge::journal::entry_record(model, event) {
+            Some(Ok(record)) => records.push(FollowedRecord {
+                event: event.clone(),
+                record,
+            }),
+            _ => {
+                return Err(match &key_field {
+                    Some(field) => DeployError::SessionKeyNotInRequest {
+                        machine: machine.to_string(),
+                        field: field.clone(),
+                        fault: SessionKeyFault::NoSchema {
+                            event: event.clone(),
+                        },
+                    },
+                    None => DeployError::InvalidSessions {
+                        machine: machine.to_string(),
+                        reason: format!(
+                            "`key_from` is `none`, and the machine follows entries of \
+                             '{event}', which no event schema the document imports declares, so \
+                             nothing says the record an entry of it is read by; import the \
+                             entry's schema"
+                        ),
+                    },
+                })
+            }
+        }
+    }
+    let position_field = position
+        .map(|position| position_in_requests(machine, &position, &served, model).map(|()| position))
+        .transpose()?;
+    Ok(KeyedPool {
+        key_from: key_field.map_or(SessionKeySource::One, SessionKeySource::Field),
+        max_key_bytes,
+        idle_ms: sessions.idle_ms,
+        max_live: sessions.max_live,
+        max_inbox: sessions.max_inbox,
+        commit_delay_us: sessions.commit_delay_us,
+        follows: Vec::new(),
+        followed: records,
+        position_field,
+    })
+}
+
+/// The most bytes the key field `field` of `machine`'s pool holds: the widest
+/// of its types across `keyed`, the requests the machine serves and the
+/// entries it follows, each of which carries the field as a key. Refused, as
+/// [`DeployError::SessionKeyNotInRequest`], when there is none of them, or one
+/// has no schema the document imports, declares no such field, declares it as
+/// no key, or as a text longer than [`MAX_SESSION_KEY_BYTES`].
+///
+/// [`DeployError::SessionKeyNotInRequest`]: crate::mesh::error::DeployError::SessionKeyNotInRequest
+/// [`MAX_SESSION_KEY_BYTES`]: crate::mesh::deploy::MAX_SESSION_KEY_BYTES
+fn key_field_bytes(
+    machine: &str,
+    field: &str,
+    keyed: BTreeSet<String>,
+    model: &SCXMLModel,
+) -> Result<u32, crate::mesh::error::DeployError> {
+    use crate::mesh::deploy::MAX_SESSION_KEY_BYTES;
+    use crate::mesh::error::{DeployError, SessionKeyFault};
+    let refuse = |fault: SessionKeyFault| DeployError::SessionKeyNotInRequest {
+        machine: machine.to_string(),
+        field: field.to_string(),
+        fault,
+    };
+    if keyed.is_empty() {
         return Err(refuse(SessionKeyFault::NoRequest));
     }
     let mut max_key_bytes = 0;
-    for event in requests {
+    for event in keyed {
         let Some(schema) = model.imported_event_schemas.get(&event) else {
             return Err(refuse(SessionKeyFault::NoSchema { event }));
         };
@@ -5107,36 +5188,7 @@ pub fn resolve_keyed_pool_following(
         }
         max_key_bytes = max_key_bytes.max(bytes);
     }
-    // docs/adr/0114, D4: each followed entry is read by its record, which
-    // `check_journal` held to having a deterministic CBOR.
-    let mut records = Vec::with_capacity(followed.len());
-    for event in followed {
-        match crate::forge::journal::entry_record(model, event) {
-            Some(Ok(record)) => records.push(FollowedRecord {
-                event: event.clone(),
-                record,
-            }),
-            _ => {
-                return Err(refuse(SessionKeyFault::NoSchema {
-                    event: event.clone(),
-                }))
-            }
-        }
-    }
-    let position_field = position
-        .map(|position| position_in_requests(machine, &position, &served, model).map(|()| position))
-        .transpose()?;
-    Ok(KeyedPool {
-        key_field: Some(field),
-        max_key_bytes,
-        idle_ms: sessions.idle_ms,
-        max_live: sessions.max_live,
-        max_inbox: sessions.max_inbox,
-        commit_delay_us: sessions.commit_delay_us,
-        follows: Vec::new(),
-        followed: records,
-        position_field,
-    })
+    Ok(max_key_bytes)
 }
 
 /// Refuse, as [`DeployError::InvalidSessions`], the field `position` that
@@ -8485,7 +8537,7 @@ topology:
             resolve_keyed_pool("rooms", &sessions("data.room"), &model)
                 .expect("a key of every request"),
             KeyedPool {
-                key_field: Some("room".to_string()),
+                key_from: crate::mesh::deploy::SessionKeySource::Field("room".to_string()),
                 max_key_bytes: 12,
                 idle_ms: 60_000,
                 max_live: 500,
@@ -8511,7 +8563,7 @@ topology:
             resolve_keyed_pool("rooms", &sessions("client"), &rooms_with(None, None))
                 .expect("a client's name"),
             KeyedPool {
-                key_field: None,
+                key_from: crate::mesh::deploy::SessionKeySource::Client,
                 max_key_bytes: crate::mesh::deploy::MAX_SESSION_KEY_BYTES,
                 idle_ms: 60_000,
                 max_live: 500,
@@ -8673,5 +8725,69 @@ topology:
         );
         assert!(refused(&narrow, "data.room").contains("which 'service.request.join' declares as"));
         assert!(refused(&unpositioned, "client").contains("keyed by its clients' names"));
+        // docs/adr/0114, D4: a pool that keeps one session reads the position field of the
+        // requests it serves as a pool keyed by a field does.
+        let model = rooms_with(
+            Some(vec![schema_field("after", scalar(SceType::Uint64))]),
+            None,
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &positioned("none"), &model)
+                .expect("a position of one request, and no key")
+                .position_field,
+            Some("after".to_string())
+        );
+        assert!(refused(&rooms_with(None, None), "none")
+            .contains("which no request the machine serves"));
+    }
+
+    /// docs/adr/0114, D4 (amended 2026-11-28): a pool whose `key_from` is `none` keeps one
+    /// session, whose key is the empty key, so it reads no field of a request or of a followed
+    /// entry: requests with no schema, and a document that serves none, are no refusal, and its
+    /// key holds no byte. An entry it follows whose schema the document does not import is
+    /// refused, since nothing says the record it is read by. Red if the pool is held to a key
+    /// field, or a followed entry is let through without its record.
+    #[test]
+    fn a_pool_that_keeps_one_session_reads_no_key() {
+        use crate::mesh::error::DeployError;
+        let one = KeyedPool {
+            key_from: crate::mesh::deploy::SessionKeySource::One,
+            max_key_bytes: 0,
+            idle_ms: 60_000,
+            max_live: 500,
+            max_inbox: 8,
+            commit_delay_us: 250,
+            follows: Vec::new(),
+            followed: Vec::new(),
+            position_field: None,
+        };
+        assert_eq!(
+            resolve_keyed_pool("rooms", &sessions("none"), &rooms_with(None, None))
+                .expect("requests with no schema, and no key read from them"),
+            one
+        );
+        let serves_none = parse_model(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="rooms" initial="open">
+    <state id="open"><transition event="ping" target="open"/></state>
+</scxml>"##,
+            "rooms",
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &sessions("none"), &serves_none)
+                .expect("a document that serves no request"),
+            one
+        );
+        let followed: BTreeSet<String> = ["room.booked".to_string()].into_iter().collect();
+        match resolve_keyed_pool_following("rooms", &sessions("none"), &serves_none, &followed) {
+            Err(DeployError::InvalidSessions { machine, reason }) => {
+                assert_eq!(machine, "rooms");
+                assert!(
+                    reason.contains("'room.booked', which no event schema the document imports"),
+                    "{reason}"
+                );
+            }
+            other => panic!("expected InvalidSessions, got {other:?}"),
+        }
     }
 }

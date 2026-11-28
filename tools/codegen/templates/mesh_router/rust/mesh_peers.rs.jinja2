@@ -162,10 +162,16 @@ pub const MACHINE: Machine = Machine {
     against the document. -#}
 {%- if sessions %}
     sessions: Some(sce_rust_mesh::peers::Sessions {
-{%- if sessions.key_field is not none %}
-        key_from: sce_rust_mesh::peers::KeyFrom::Field("{{ sessions.key_field | escape_rust }}"),
-{%- else %}
+{#- `topology::KeyedPool::key_from`, a `SessionKeySource` written as
+    `{"source": "field", "field": <name>}`, `{"source": "client"}` or
+    `{"source": "one"}`, the last a pool that keeps one session
+    (docs/adr/0114, D4). -#}
+{%- if sessions.key_from.source == "field" %}
+        key_from: sce_rust_mesh::peers::KeyFrom::Field("{{ sessions.key_from.field | escape_rust }}"),
+{%- elif sessions.key_from.source == "client" %}
         key_from: sce_rust_mesh::peers::KeyFrom::Client,
+{%- elif sessions.key_from.source == "one" %}
+        key_from: sce_rust_mesh::peers::KeyFrom::One,
 {%- endif %}
         max_key_bytes: {{ sessions.max_key_bytes }},
         idle_ms: {{ sessions.idle_ms }},
