@@ -45,8 +45,6 @@
     # queued behind the cargo package-cache lock, which is what makes
     # this the cleanest of the three retirements. 10 is the worse of the
     # last pair. Two pushes that day read 15s and 8s, straddling it.
-    "ci_only": "143s where the landing queue judges it, which the push budget "
-               "cannot hold beside the rest; w3c-tests.yml runs it after landing.",
     # 143s where the landing queue judges it: the median of its last ten
     # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
     # budget bounds ("The push budget" in gate_registry.py). It read

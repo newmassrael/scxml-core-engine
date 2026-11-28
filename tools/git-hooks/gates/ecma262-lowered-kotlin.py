@@ -19,8 +19,9 @@
     "workflows": ["ecma262-lowered-kotlin.yml"],
     "runner_workflow": True,
     "deps": ["codegen-build"],
-    # Was local, on the number below; `ci_only` since 2026-11-28, when the
-    # landing seat measured it at 187s (the `cost_s` comment). Unlike the C++ twin this gate
+    # Local: at 187s where the landing queue judges it (the `cost_s`
+    # comment) it fits the ceiling as the judgment's length on the build
+    # machines (docs/adr/0157). Unlike the C++ twin this gate
     # configures no second tree: it regenerates two machines into the
     # module's own Gradle build and runs 98 cases against them.
     #
@@ -57,8 +58,6 @@
     # its verdict is read from the run's output and Gradle answers an
     # unchanged test task UP-TO-DATE without producing any. So this is not
     # a cached green being timed.
-    "ci_only": "187s where the landing queue judges it, which the push budget "
-               "cannot hold beside the rest; ecma262-lowered-kotlin.yml runs it after landing.",
     # 187s where the landing queue judges it: the median of its last ten
     # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
     # budget bounds ("The push budget" in gate_registry.py). It read

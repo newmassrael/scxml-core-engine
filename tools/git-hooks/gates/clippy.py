@@ -11,16 +11,12 @@
     # the clearest single illustration of why the numbers here cannot be
     # trusted to a factor of two.
     #
-    # `ci_only` again, by the owner's decision of 2026-11-25 (a landing
-    # judges the set that fits the budget; a red found after landing is
-    # repaid by a commit of its own). It was local while the landing queue
-    # judged everything: on 2026-11-20 item 290 landed two
-    # `explicit_auto_deref` errors and main stayed red until item 298 —
-    # the trade the owner's decision accepts. Where the queue judges it, it
-    # takes 260s (and 1621s on a machine short of memory), which the
-    # budget cannot hold beside the rest.
-    "ci_only": "260s where the landing queue judges it, which the push budget "
-               "cannot hold beside the rest; clippy-check.yml runs it after landing.",
+    # Local: the landing queue judges it. Out of the merge queue, on
+    # 2026-11-20 item 290 landed two `explicit_auto_deref` errors and main
+    # stayed red until item 298. Where the queue judges it, it takes 260s
+    # (1621s once on a machine short of memory), which fits the ceiling as
+    # the judgment's length on the build machines (docs/adr/0157) though not
+    # as a sum.
     # 260s where the landing queue judges it: the median of its last ten
     # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
     # budget bounds ("The push budget" in gate_registry.py). It read

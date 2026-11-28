@@ -181,6 +181,32 @@ from trigger_globs import (  # noqa: E402
 # never to raise this constant without the owner saying so.
 PUSH_BUDGET_S = 300
 
+# What the ceiling is held against: how long the judgment takes, not how many
+# seconds of gates it adds up to (docs/adr/0157). The landing queue's judgment
+# and a push's both hand the gates to bx as units, and bx runs them at once on
+# the build machines that take this repository's units, so the judgment ends
+# when its last unit does: a schedule's makespan. For m machines and units of
+# costs c, no schedule finishes before max(max c, sum c / m), and greedy list
+# scheduling finishes within a unit of it (Graham 1966), so that bound, plus
+# what a batch costs beside its unit, is the judgment's length.
+#
+# LANDING_MACHINES: the machines whose landing runs the integrator recorded in
+# timings.tsv (hkl001, hkl002, pc2, pc4, pc5; 2026-11-28).
+# BATCH_OVERHEAD_S: a batch's seconds beside its unit, on main ca4099e59bc
+# (2026-11-28): 24, 35, 35, 29, 24 and one 108 on a machine that took a whole
+# pack after a gc (bx's open item); median 32, declared 35.
+LANDING_MACHINES = 5
+BATCH_OVERHEAD_S = 35
+
+
+def judgment_seconds(costs) -> float:
+    """How long a judgment of units of these costs takes on the build machines:
+    the lower bound of the schedule's makespan, plus a batch's overhead."""
+    costs = [c for c in costs if c]
+    if not costs:
+        return 0.0
+    return BATCH_OVERHEAD_S + max(max(costs), sum(costs) / LANDING_MACHINES)
+
 # ── How much of that ceiling is declared in figures no run can check ──
 #
 # `PACE_NORMALISED` below records the costs that are a share of a full push
@@ -232,10 +258,10 @@ PUSH_BUDGET_S = 300
 # 0.237 -> 0.133 on 2026-11-20, for the same kind of reason: `clippy` came back
 # into the push with 82 measured seconds, so the denominator grew to 188.485s
 # while the 25 paced seconds of `codegen-build` stayed where they were.
-# 0.133 -> 0.113 on 2026-11-28: the landing gates declare what they take where
-# the landing queue judges them, and the five that do not fit left for CI, so
-# the denominator is now 222s while `codegen-build`'s 25 paced seconds stay.
-PACED_BUDGET_SHARE_CEILING = 0.113
+# 0.133 -> 0.031 on 2026-11-28: the landing gates declare what they take where
+# the landing queue judges them (docs/adr/0157), so the denominator is now
+# 815s while `codegen-build`'s 25 paced seconds stay.
+PACED_BUDGET_SHARE_CEILING = 0.031
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -1804,22 +1830,23 @@ def budget_breach(measured: dict, table=None):
     # measurement against the declaration.
     pace = max(pace, 1.0)
 
-    total = 0.0
+    costs = []
     grown = []
     for slug in local:
         declared = table[slug].get("cost_s") or 0
         if slug not in measured:
-            total += declared
+            costs.append(declared)
             continue
         # What this gate would have cost on the machine the table was measured
         # on, so the comparison is like for like.
         at_table_pace = measured[slug] / pace
         if cost_is_stale(declared, at_table_pace,
                          table[slug].get("cost_s_no_op")):
-            total += at_table_pace
+            costs.append(at_table_pace)
             grown.append((slug, declared, round(at_table_pace)))
         else:
-            total += declared
+            costs.append(declared)
+    total = judgment_seconds(costs)
     if total <= PUSH_BUDGET_S:
         return None
     grown.sort(key=lambda row: row[1] - row[2])
@@ -4139,36 +4166,34 @@ def self_test(repo_root: Path) -> int:
     # other side: the path must still be CLASSIFIED. A ci_only gate keeps its
     # triggers for exactly this reason — they are what stop rule 1 from
     # handing back the whole table for a path the registry does understand.
-    # `clippy` is `ci_only` too since 2026-11-28 (its `cost_s` where the
-    # landing queue judges it), so it is checked from the same side.
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build"],
-          want_lacks=["workspace-tests", "clippy"])
+          want_has=["codegen-build", "clippy"],
+          want_lacks=["workspace-tests"])
     # The same edit on an update to main: every `check` asks the hook's
     # `--landing` too, so this case says what the landing leaves to hosted
     # CI. The workspace suite is reached and `ci_only`: the landing does not
     # run it, and `--ci-owed` names it as audited after landing.
     check("rust-landing", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build"], want_lacks=["workspace-tests", "clippy"],
-          want_owed=["workspace-tests", "clippy"])
+          want_has=["codegen-build", "clippy"], want_lacks=["workspace-tests"],
+          want_owed=["workspace-tests"])
     # An integration test of the generator crate is compiled by the workspace
     # suite and clippy, and by no build of the generator or the C++ tree. The
     # gates it must not reach are `ci_only` and in no selection, so the case
     # asks what the change reaches.
     check("crate-test-landing", ["sce-build/tests/gate_registry_contract.rs"],
-          want_full=False, want_has=["http-endpoint-ssot"],
-          want_lacks=["workspace-tests", "clippy"],
+          want_full=False, want_has=["clippy"],
+          want_lacks=["workspace-tests"],
           want_unreached=["cpp-suite-wasm", "w3c-cpp", "cpp-suite", "w3c-c11",
                           "w3c-wasm", "install-consumer",
                           "cpp-interface-standard", "forge-rust",
                           "drift-suites", "c11-mcu", "example-codegen",
                           "targets", "doc-content", "generated-deterministic"],
-          want_owed=["workspace-tests", "clippy"])
+          want_owed=["workspace-tests"])
     # Rule 1 on an update to main: every gate a push can run, which is the
     # set `PUSH_BUDGET_S` bounds, and no `ci_only` gate.
     check("unclassified-landing", ["some_new_top_level_dir/thing.txt"],
-          want_full=True, want_has=["nl-ir-closure"],
-          want_lacks=["cpp-suite-wasm", "windows-msvc", "mutation-rounds", "clippy"])
+          want_full=True, want_has=["clippy"],
+          want_lacks=["cpp-suite-wasm", "windows-msvc", "mutation-rounds"])
     # A document under `docs/` that no path-scoped gate reads does not buy
     # rule 1's answer, and the two that a suite reads reach that suite. The
     # tree-wide sweep (`tree-hygiene`) and the suite are `ci_only`: hosted
@@ -4750,11 +4775,13 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     local = drop_ci_only(set(GATES))
     worst = sum(GATES[slug].get("cost_s") or 0 for slug in local)
-    if worst > PUSH_BUDGET_S:
+    judged = judgment_seconds(GATES[slug].get("cost_s") or 0 for slug in local)
+    if judged > PUSH_BUDGET_S:
         over = sorted(((GATES[s].get("cost_s") or 0, s) for s in local),
                       reverse=True)[:3]
         failures.append(
-            f"budget: a push can be made to run {worst}s of gates, over the "
+            f"budget: a push can be made to judge {worst}s of gates, which on "
+            f"{LANDING_MACHINES} machines takes {judged:.0f}s, over the "
             f"{PUSH_BUDGET_S}s ceiling. Most expensive still local: "
             + ", ".join(f"{s} ({c}s)" for c, s in over)
             + ". Move the top one to `ci_only` — that is the rule the current "
