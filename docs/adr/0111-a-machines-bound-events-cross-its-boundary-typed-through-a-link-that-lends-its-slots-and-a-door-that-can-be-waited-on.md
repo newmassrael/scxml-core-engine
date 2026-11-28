@@ -305,6 +305,19 @@ unchanged. The generated Rust and C11 pools gain:
   hold count counts the events that hold it and the outputs that borrow from it (a subscriber's delivery handed out
   after the step, D5), and the slot returns when the count falls to zero: when the last event's macrostep has
   completed and every output that borrows it has been released by the host that ran it.
+- **A pool that does not lend pays for none of it.** A pool declares whether it lends at run time,
+  `<sce:lending>fixed</sce:lending>` (the default) or `run-time`; a `shared` pool lends whatever it declares, since
+  a state per slot cannot be shared. The book, the generation, the run-time count and length, the headroom, the
+  index and the lent holds are a lending pool's alone, by the rule ADR 0154 gave a map (`MapStorage::Generation` is
+  `u32` in lent storage and `()` in a map's own). An `owner` pool with a fixed count of slots over its own storage
+  that declares no lending keeps the layout and the code it had before the book: one state byte per slot beside the
+  slots, a handle that is the slot's number, a lending that names no length, and transitions that take `&mut`. In
+  Rust the storage decides it: `Storage` gives `Owned` the state array and `Generation = ()` in such a document,
+  and `Over<'a>` (and `Owned` in a lending document) the book and `Generation = u32`; `Slot<S, G>` carries `G`,
+  defaulting to the handle of the pool over its own storage, and `SlotIndex`, `into_index`, `reclaim` and the rest
+  are the lending pool's. In C11 the one static pool is the one or the other by the document (`<POOL>_LENDS`), and
+  the header of a pool that does not lend has no `_init`, `_init_over`, book, generation or index. A link that
+  encodes into a pool calls it the way the pool lends.
 
 The `queue` kind takes the run-time capacity by the same rule: `CAPACITY` is the bound, and a queue is constructed
 with `c <= CAPACITY`, refused otherwise. Its full policy is unchanged (U17 is a record of its own).
@@ -437,7 +450,12 @@ The supported way for a build outside this repository to generate code is the `s
    fixtures; the queue's run-time capacity. Landed with this step: the pool and its conformance contract,
    `tests/forge/conformance/buffer_pool/pool_contract.json`, which the Rust and C11 arms both run. The hold count of a
    slot lent to events and `take_prefixed` are the pool's; the receive coupling (step 5) and the take (step 3) drive
-   them. The queue's run-time capacity has not landed.
+   them. The queue's run-time capacity has not landed. Amended (2026-11-28): the first landing made every pool lend,
+   and a consumer measured what an MCU pool that lends nothing then paid (C11 at `-Os`: a pool's text from 820 to 2914
+   bytes, its state from a byte per slot to a 24-byte line; Rust: a 4-byte handle grew to 8 on a 32-bit target, and
+   every lending checked a run-time length and stored a book line). `<sce:lending>` now decides it: a pool that
+   declares neither `run-time` nor `shared` keeps the layout and the code it had before the book, and the contract
+   runs against the lending pools while each arm holds `pool_conformance_fixed` to that layout.
 3. The link's transmit side (D3): stages, open, append and arm with their outcomes, the take order, the lending
    `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures of
    `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link.

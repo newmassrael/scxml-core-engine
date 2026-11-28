@@ -930,6 +930,8 @@ fixed-buffer registration on linux per §5.C codegen contract).
 **Problem.** MCU zero-copy requires pool slots placed in specific SRAM sections aligned to DMA constraints.
 *Amended by: ADR 0111 (D4).* The pool is lent: a run-time count and length under these bounds, storage the caller
 holds, a headroom, a `SlotIndex` with `reclaim`, an `owner` or `shared` book (`<sce:sharing>`), a slot lent to events.
+A pool over its own storage lends so when it says `<sce:lending>run-time</sce:lending>` or `shared`; one that says
+neither lends every slot whole and keeps one state per slot, as before.
 
 **Proposal.** New `sce:kind="buffer-pool"` and field-level placement attributes.
 

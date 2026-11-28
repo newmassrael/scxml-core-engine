@@ -923,9 +923,10 @@ one row each and judge none of them.
 `<sce:slot-size>`, `<sce:section>`, `<sce:alignment>`, an optional
 `<sce:dma-channel>`, `<sce:cache-policy>`, an optional
 `<sce:variant>reassembly</sce:variant>` with its three fields, and an optional
-`<sce:sharing>`, `owner` (the default) or `shared`; any other sharing is refused
-by the grammar. Amended by: ADR 0111 (D4): the slot count and the slot size are
-the bounds the pool reserves at build. A pool is made with a run-time count up to
+`<sce:sharing>`, `owner` (the default) or `shared`, and an optional
+`<sce:lending>`, `fixed` (the default) or `run-time`; any other sharing or
+lending is refused by the grammar. Amended by: ADR 0111 (D4): the slot count and
+the slot size are the bounds the pool reserves at build. A pool is made with a run-time count up to
 the first, over its own storage or over a span the caller holds cut into slots of
 a run-time length up to the second (Rust `with_count` and `over`, C11
 `<pool>_init` and `<pool>_init_over`); each lending names its length and a
@@ -938,7 +939,12 @@ last holder. An `owner` pool's book is plain cells moved by whoever holds the
 drive; a `shared` one's is atomic words, each transition a compare-and-swap, or
 the deployment's critical section on a target with none (`critical-section` in
 Rust, `_sce_critical_enter` and `_sce_critical_exit` in C11). An empty pool is
-all zero.
+all zero. All of that is a lending pool's: a pool over the caller's storage, or
+one whose document says `run-time` or `shared`. An `owner` pool over its own
+storage whose document says neither lends every slot whole, the build's count
+of them, and keeps the layout and the functions it had before: one state per
+slot, a handle that is the slot's number, and no length, book, generation or
+index (Rust `Owned` with `Storage::Generation = ()`, C11 `<POOL>_LENDS` 0).
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and

@@ -4363,3 +4363,25 @@ buffer pool regenerates it, and one that drives a generated pool by hand changes
   the include drops the pool's own storage. A `shared` pool links the `sce_atomic_*` intrinsics, or
   `_sce_critical_enter` and `_sce_critical_exit` on a target with no compare-and-swap.
 - A link's generated `send` takes its transmit pool by `&` (Rust) and lends at the pool's slot length.
+- **What stays as it was: a pool that lends nothing.** The calls above are a lending pool's. A pool lends at run time
+  when its document says `<sce:lending>run-time</sce:lending>` (a new element, `fixed` by default) or
+  `<sce:sharing>shared</sce:sharing>`; an `owner` pool with a fixed count of slots over its own storage that says
+  neither has the layout and the function bodies it had before the book: one state byte per slot beside the
+  slots, a handle that is the slot's number, and no book, generation, run-time count or length. In Rust that is the
+  pool over `Owned`: `new()` (now a `const fn`), `pool_acquire_for_encode()` and `link_arm_rx()` answering
+  `Option`, `&mut` transitions, `Slot::idx()`, and `read`/`write` of `[u8; SLOT_SIZE]`; a call written before the
+  lending compiles unchanged. A pool over the caller's storage, `Pool::over`, lends at run time in any document. A
+  consumer that adopted the lent calls on a pool over its own storage adds `<sce:lending>run-time</sce:lending>` to the
+  pool's document, and its calls compile as they did.
+- **Rust.** `Slot` is `Slot<S, G>`: `G` is `u32`, the generation, for a slot of a lending pool and `()` for one of a
+  pool that lends nothing, and defaults to the handle of the pool over its own storage, so `Slot<CpuMut>` names it as
+  before in either document; a handle of `Pool::over` in a document that lends nothing is `Slot<CpuMut, u32>`.
+  `Pool<St = Owned>` is `Pool<St: Storage = Owned>`: `Storage` (implemented for every `SlotStore`) names what the
+  pool keeps, its `Book` and its `Generation`; a type that implements `SlotStore` needs nothing more. `LENDING`
+  round-trips `<sce:lending>`. A link's `send` takes a pool that lends nothing by `&mut` and lends a slot whole, as
+  before the lending.
+- **C11.** `<POOL>_LENDS` is 1 for a lending pool and 0 for one that lends nothing, and `<POOL>_LENDING` round-trips
+  `<sce:lending>`. A pool that lends nothing keeps `<pool>_slot_states` and the calls without a length,
+  `<pool>_pool_acquire_for_encode(void)`, `<pool>_link_arm_rx(void)` and `<pool>_link_arm_tx(&h)`, and declares no
+  `_init`, `_init_over`, `_slot_len`, `_slot_capacity` or index; a link's send encodes into `<POOL>_SLOT_SIZE` bytes
+  of it.
