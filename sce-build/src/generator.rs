@@ -3995,12 +3995,22 @@ fn render_rust(
     let static_lowering =
         crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name)?;
     // docs/adr/0116, D3: the person behind an instance rides an event's metadata, whose
-    // text fields a `no_std` runtime does not carry; such a machine is refused by name.
+    // text fields a `no_std` runtime does not carry; such a machine is refused by name,
+    // whether its document reads the person or its deployment proves one to it, whose
+    // acts are then recorded as that person's (D7).
     if options.no_std {
         if let Some(alias) = model_lowered.principal.as_deref() {
             return Err(GenerateError::unsupported(format!(
                 "`<scxml sce:principal=\"{alias}\">`: a no_std Rust machine holds no person an \
                  instance acts for, which an event carries as text (docs/adr/0116, D3)"
+            )));
+        }
+        if model_lowered.principal_proved {
+            return Err(GenerateError::unsupported(format!(
+                "machine '{}': its deployment proves to it the person an instance acts for, \
+                 whose acts it records as theirs, and a no_std Rust machine holds no person, \
+                 which an event carries as text (docs/adr/0116, D7 and D10)",
+                model.name
             )));
         }
     }
@@ -4218,6 +4228,10 @@ fn render_rust(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         // docs/adr/0116, D3: the person behind an instance the machine reads, if any.
         static_principal => minijinja::Value::from_serialize(&static_lowering.principal),
+        // docs/adr/0116, D3, D7 and D10: the machine holds the person its events and
+        // runs are said for where its document reads one or its deployment proves one
+        // to it, and a slot of no size everywhere else.
+        holds_principal => static_lowering.principal.is_some() || model_lowered.principal_proved,
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),

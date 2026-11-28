@@ -7,8 +7,12 @@
 // and for nobody in a macrostep begun by an event said for nobody; a document cannot write one,
 // since the entry and the request it makes hold no person. A saved state holds no person, so a
 // machine running an invocation started for one refuses the save. The machine is written by
-// hand, as one whose document reads a person is generated, so that what these cases read is the
-// runtime.
+// hand, so that what these cases read is the runtime, in the shape generated for a document that
+// declares no `sce:principal` and that a deployment binds where a person is proved (decision 3 of
+// "Decided while making a person cost nothing where none is read"): its runs hold the person and
+// its policy keeps the default `admit_principal`, so it reads none. The record is the platform's
+// whether or not the document reads the person; a machine whose document reads one differs only
+// by that door.
 //
 // The machine: one state, `s`, whose targetless transitions take `say` (a fact, and the internal
 // event `said`), `said` (a fact) and `ask` (a host-run invocation).
@@ -80,7 +84,8 @@ impl StatePolicy for Teller {
     // docs/adr/0116, D3: its external events carry the person each was said for.
     type ExternalQueue =
         sce_rust_runtime::EventQueue<Self::Payload, { MAX_EVENT_QUEUE_DEPTH }, Self::Principal>;
-    // As a machine whose document declares `sce:principal` holds a person.
+    // As every machine a deployment proves a person to holds one, its document reading one or
+    // not (docs/adr/0116, D10).
     type Principal = Option<Box<Principal>>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // No delayed send, no `<cancel>`, no `<donedata>`, and no deadline.
@@ -301,11 +306,12 @@ fn said(engine: &mut Engine<Teller>) -> Vec<(&'static str, Option<String>)> {
 }
 
 /// A fact said in a macrostep begun by an event said for a person is recorded as said for that
-/// person, the one said on the internal event the macrostep raised among them; one begun by an
-/// event said for nobody records nobody, though a person acted before it. Red if
-/// `record_journal_entry` records nobody, if the person is read from the event being processed
-/// (the internal `said` carries none), or if the person of an earlier macrostep is kept past an
-/// external event said for nobody.
+/// person, the one said on the internal event the macrostep raised among them, by a machine that
+/// reads no person (D7: the pool writes them, and a document neither writes nor leaves them
+/// out); one begun by an event said for nobody records nobody, though a person acted before it.
+/// Red if `record_journal_entry` records nobody, if the person is read from the event being
+/// processed (the internal `said` carries none), or if the person of an earlier macrostep is
+/// kept past an external event said for nobody.
 #[test]
 fn a_fact_is_recorded_as_said_for_the_person_the_macrostep_acts_for() {
     let (mut engine, _) = started();
