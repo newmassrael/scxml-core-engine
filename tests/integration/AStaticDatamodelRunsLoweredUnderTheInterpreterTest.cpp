@@ -1857,6 +1857,78 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
     engine_->destroySession(session);
 }
 
+// A text is a sequence of Unicode scalar values on every lane (docs/adr/0149, D8). This
+// engine holds a text as ECMAScript's UTF-16 code units, and a value reaches the library's
+// typed decode as the script engine read it, whose JSON reader keeps an escape of half of a
+// UTF-16 pair as that half alone: the decode refuses such a value as no text
+// (`wrongKind`), wherever a text stands, as it refuses a value that is not a text at all,
+// and reads a whole pair. No other lane holds such a value: each refuses the text that
+// carries it (tests/json_text/payload_refusal.json).
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHalfOfAPairAloneInATypedPayloadIsNoText) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "half_of_a_pair_alone";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    struct Case {
+        const char *what;
+        const char *read;     // an expression that reads the field `v` through the library
+        const char *pointer;  // the refusal's pointer; nullptr: read
+    };
+
+    const Case cases[] = {
+        {"U+D800 alone in a bounded text", "SceStatic.field({v: String.fromCharCode(0xD800)}, 'v', {string: 8})", "/v"},
+        {"U+DC00 alone in a text with no bound",
+         "SceStatic.field({v: 'a' + String.fromCharCode(0xDC00)}, 'v', 'string')", "/v"},
+        {"a first half at the end of a text",
+         "SceStatic.field({v: 'a' + String.fromCharCode(0xD83D)}, 'v', {string: 8})", "/v"},
+        {"two first halves", "SceStatic.field({v: String.fromCharCode(0xD800, 0xD800)}, 'v', {string: 8})", "/v"},
+        {"a second half before a first", "SceStatic.field({v: String.fromCharCode(0xDE00, 0xD83D)}, 'v', {string: 8})",
+         "/v"},
+        {"an enum's name", "SceStatic.field({v: 'low' + String.fromCharCode(0xD800)}, 'v', ['low', 'high'])", "/v"},
+        {"a text of a list",
+         "SceStatic.field({v: ['a', String.fromCharCode(0xD800)]}, 'v', {list: {string: 8}, max: 2})", "/v/1"},
+        {"a field of a record",
+         "SceStatic.field({v: {a: String.fromCharCode(0xD800)}}, 'v', {record: {a: {string: 8}}})", "/v/a"},
+        {"an optional text", "SceStatic.field({v: String.fromCharCode(0xD800)}, 'v', {optional: {string: 8}})", "/v"},
+        {"a union's tag",
+         "SceStatic.field({v: {kind: String.fromCharCode(0xD800)}}, 'v', {union: {tag: 'kind', cases: {dot: "
+         "null}}})",
+         "/v/kind"},
+        {"an escape the script engine's JSON reader kept alone",
+         "SceStatic.field(JSON.parse('{\"v\":\"' + String.fromCharCode(92) + 'ud800\"}'), 'v', {string: 8})", "/v"},
+        {"a whole pair", "SceStatic.field({v: String.fromCharCode(0xD83D, 0xDE00)}, 'v', {string: 8})", nullptr},
+    };
+    for (const Case &c : cases) {
+        const std::string program = std::string("(function () { try { ") + c.read +
+                                    "; return JSON.stringify({read: true}); } catch (e) { return "
+                                    "JSON.stringify({refusal: e.sceRefusal === undefined ? null : e.sceRefusal, "
+                                    "message: String(e.message)}); } })()";
+        const auto answered = engine_->evaluateExpression(session, program).get();
+        ASSERT_TRUE(answered.isSuccess()) << c.what << ": " << answered.getErrorMessage();
+        const auto got = nlohmann::json::parse(answered.getValue<std::string>(), nullptr, false);
+        ASSERT_TRUE(got.is_object()) << c.what << ": " << answered.getValue<std::string>();
+        if (c.pointer == nullptr) {
+            EXPECT_TRUE(got.contains("read")) << c.what << ": " << got.dump();
+            continue;
+        }
+        ASSERT_TRUE(got.contains("refusal") && got.at("refusal").is_object()) << c.what << ": " << got.dump();
+        const auto &refusal = got.at("refusal");
+        EXPECT_EQ(refusal.at("code"), "wrongKind") << c.what << ": " << got.dump();
+        EXPECT_EQ(refusal.at("pointer"), c.pointer) << c.what << ": " << got.dump();
+        EXPECT_TRUE(refusal.at("bound").is_null()) << c.what << ": " << got.dump();
+    }
+    engine_->destroySession(session);
+}
+
 // A union is read tag first and then the record of the case its tag names, from the same
 // object, and held as the wire's form: the case's fields beside its tag, a key or a `null`
 // the case does not declare left behind (docs/adr/0092, sections 4 and 7). Two cases that
@@ -2097,8 +2169,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadIsRea
 
 // A delivery outside its type is refused whole by the Interpreter too (docs/adr/0086,
 // sections 4.2 and 5.4): a list one past its bound at depth two, a text past its bound at
-// depth three and at the top level, a list a later revision added one past its bound, and
-// an integer past what the data model holds. Each is refused by the read of the whole data
+// depth three and at the top level, a text holding half of a UTF-16 pair alone, which the
+// script engine's JSON reader keeps from an escape and no lane holds as a text
+// (docs/adr/0149, D8), a list a later revision added one past its bound, and an integer
+// past what the data model holds. Each is refused by the read of the whole data
 // the lowering opens the transition with: none of the content runs, nothing of the delivery
 // is kept, and error.execution reaches the document once for each.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadOutsideItsTypeIsRefusedWhole) {
@@ -2113,6 +2187,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadOutsi
         {"`items/1/tags` holds five texts, past its four", composedBatch(5)},
         {"`items/0/tags/0` is nine bytes, past its eight", withFirst(full, "\"tag0\"", "\"ninebytes\"")},
         {"`note` is five bytes, past its four", withFirst(full, "\"note\":\"abcd\"", "\"note\":\"abcde\"")},
+        {"`note` holds U+D800 alone, which is no text", withFirst(full, "\"note\":\"abcd\"", "\"note\":\"\\ud800\"")},
         {"`late` holds three, past its two", withFirst(full, "\"late\":[5,6]", "\"late\":[5,6,7]")},
         {"`items/0/amount` is past 2^53 - 1",
          withFirst(full, "\"amount\":\"9007199254740991\"", "\"amount\":\"9007199254740993\"")},

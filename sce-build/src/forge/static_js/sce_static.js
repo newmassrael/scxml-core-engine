@@ -914,14 +914,41 @@
     fail('a value of type ' + String(type) + ' has no reader');
   }
 
+  /* Whether text is a sequence of Unicode scalar values: each half of a UTF-16
+     pair in it stands at once before or after its other half, so no unit is a
+     surrogate code point alone, which no UTF-8 spells. */
+  function scalarValues(text) {
+    for (var i = 0; i < text.length; i++) {
+      var unit = text.charCodeAt(i);
+      if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        return false;
+      }
+      if (unit >= 0xD800 && unit <= 0xDBFF) {
+        var next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+        if (next < 0xDC00 || next > 0xDFFF) {
+          return false;
+        }
+        i++;
+      }
+    }
+    return true;
+  }
+
   /* A text of an event's data, held to no bound: what a text field holds and
-     what an enum's variant is named by. A text holding U+0000 is refused, since
-     a backend that holds a text NUL-terminated would end it there, so no backend
-     holds one (docs/adr/0087, section 2.3); a byte string may hold the byte
-     zero. */
+     what an enum's variant is named by. A value that holds half of a UTF-16
+     pair alone is refused as no text, as a value that is not one is: a text
+     of the language is a sequence of Unicode scalar values on every backend
+     (docs/adr/0149, D8), and a value reaches here as the script engine read
+     it, whose JSON reader keeps an escape of half of a pair as that half. A
+     text holding U+0000 is refused, since a backend that holds a text
+     NUL-terminated would end it there, so no backend holds one (docs/adr/0087,
+     section 2.3); a byte string may hold the byte zero. */
   function text(value, where, pointer) {
     if (typeof value !== 'string') {
       refuse('wrongKind', pointer, where + 'is not a text');
+    }
+    if (!scalarValues(value)) {
+      refuse('wrongKind', pointer, where + 'holds half of a UTF-16 pair alone, so it is no text');
     }
     if (value.indexOf('\u0000') >= 0) {
       refuse('nulInText', pointer, where + 'carries U+0000, which no text holds');
