@@ -300,6 +300,39 @@ a check is evaluated at a snapshot at least as fresh as the one the content's zo
 12. **A stop.** A stopping pool reads no further, so what still waits is answered `Unavailable` and carried again
     (ADR 0109, D10), and the stop does not wait for it until its deadline.
 
+## Decided while making a person cost nothing where none is read
+
+Measured after step 5 (2026-11-28): a release C-ABI library built from documents that read no person was about 4 KB
+larger, in the copy and the drop of a boxed person, the copy of every event's metadata, and the main loop and run state
+of each machine. The scope of the record says that a machine that declares no principal is as it is; each decision
+below makes that hold of its code as well as of its behaviour, by the zero-overhead principle (Stroustrup, *The Design
+and Evolution of C++*, 1994, section 4.5: what you do not use, you do not pay for) and by the rule ADR 0154 followed
+(a generation in the lent store alone, `()` in an owned one).
+
+1. **The person is the machine's type.** `StatePolicy::Principal` names what an external event and the run it begins
+   hold of the person they are said for: `Option<Box<Principal>>` for a machine whose document declares
+   `sce:principal`, and `NoPrincipal`, a type of no size that needs no drop, for every other (`PrincipalSlot`). A
+   type per machine and not a feature of the build: features are unified over a build, so one machine that reads a
+   person would make every machine beside it pay (the Cargo Book, "Features", feature unification); a type parameter of
+   no size costs nothing where it is unused (the Rustonomicon, "Exotically Sized Types").
+2. **The person rides beside the event, not in `_event`.** D3 makes `_x.principal` the platform's variable and no
+   field of `_event`, so `EventMetadata` holds no person. An event an instance sent waits on the external queue with
+   its person beside it, as a typed payload does (ADR 0068); the internal queue, whose events are the machine's own and
+   said for nobody, holds none. An autoforwarded copy (D4) is a copy of `_event`, so a child is told it as said for
+   nobody by construction, and no copy of the metadata is made to leave the person out.
+3. **A machine that declares no principal is told no person.** The edge tells a person through
+   `EngineState::raise_external_by_name_for`, in the slot the machine holds (`PrincipalSlot::told`), which for a
+   machine whose document reads none is nothing: its journal entries and the host-run invocations it starts name
+   nobody. A deployment that records who did what in a machine (D7) declares `sce:principal` on its document, and so
+   holds the machine to a binding that proves a person (D10).
+4. **A host-run invocation is lent the person for its start.** A request holds no person: an invoker a host registers
+   with `EngineState::register_invoker_for` is handed the person beside the start, a borrow for the call, and the
+   engine keeps only that there was one, which holds the save (decision 6 of step 5). A request that held the person
+   would put its drop into the registry of running invocations of every machine.
+5. **A journal entry holds the person in the machine's type.** A document's send makes an entry said for nobody
+   (`JournalEntry<NoPrincipal>`), the engine keeps it with the run's slot, and a host takes the record of it, an
+   optional person, where it keeps it (`JournalEntry::into_record`, `ServedMachine::take_journal`).
+
 ## Open questions
 
 Decided with the acceptance, each as recommended and with its reason.
@@ -320,4 +353,6 @@ subject "locally unique and never reassigned" within its issuer; `aud`, `nonce`,
 session's value as the `nonce`); OWASP's Session Management Cheat Sheet (the session id renewed after a change of
 privilege); OpenID Connect Back-Channel Logout 1.0 (what it is for). WebAuthn Level 3 (the relying party verifies that
 the client data's `challenge` is the one it gave, and its `origin`). None was read through. **Not reached:** Hardy 1988,
-for the confused deputy, cited for what is generally reported of it.
+for the confused deputy, cited for what is generally reported of it; and, for the decisions that make a person cost
+nothing where none is read (2026-11-28), Stroustrup 1994 (section 4.5), the Cargo Book's account of feature
+unification and the Rustonomicon's of zero-sized types, each cited for what is generally reported of it.

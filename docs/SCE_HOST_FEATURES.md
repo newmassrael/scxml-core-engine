@@ -1451,8 +1451,8 @@ docs/SCE_AUDIT_LOG.md.
   said for, is written with the member `sce:principal`: the instance that acts
   for them and the person as the server's store holds the delegation, its
   subject written as a personal value is (docs/SCE_AUDIT_LOG.md section 2). The
-  Rust host core hands it to the host with the request
-  (`HostInvokeRequest::principal`, `ReferenceHost::start_for`); the document
+  Rust host core lends it to the invoker as it starts the invocation
+  (`EngineState::register_invoker_for`, `ReferenceHost::start_for`); the document
   writes none, and an entry that names the member is refused
   (`invalid_argument`). A saved state holds no person, so a machine running an
   invocation started for one is saved once it ends.

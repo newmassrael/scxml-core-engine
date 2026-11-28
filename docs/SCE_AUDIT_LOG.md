@@ -60,8 +60,8 @@ libraries spell apart (`1e+20` and `1e20`): an entry two hosts must agree on byt
 number, and a record of SCE's payload form writes a 64-bit integer as a text, which is.
 
 **Who an append was made for** (ADR 0116, D7). An append a host-run invocation makes in a run under a delegation,
-whose request names the person the run acts for (Rust: `HostInvokeRequest::principal`), is written with one member
-more, `sce:principal`, which no record a document declares can name: the object `{"instance", "issuer", "method",
+whose invoker is lent the person the run acts for (Rust: `EngineState::register_invoker_for`), is written with one
+member more, `sce:principal`, which no record a document declares can name: the object `{"instance", "issuer", "method",
 "proved_ms", "subject"}` of the instance that acts for the person and the person as the server's store holds the
 delegation, `proved_ms` as its decimal digits and `subject` written as a `personal` value is (its keyed digest
 with the prefix `sce-personal:`, or as it is in a stream that keeps personal values in the clear). The host writes

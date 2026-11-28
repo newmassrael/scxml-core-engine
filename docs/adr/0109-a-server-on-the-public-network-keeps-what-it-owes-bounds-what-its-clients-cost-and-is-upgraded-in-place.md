@@ -37,8 +37,8 @@
   session's record is bound to its machine as well as its key; `sce-rust-session-store`'s layout is 12.
 - Amended by: ADR 0116 (D7): an audit row (D14) appended by a host-run invocation started in a run made for a person
   carries the member `sce:principal`, the instance and the person, its subject written as a personal value is, which
-  the host writes from the request (`HostInvokeRequest::principal`) and no document writes
-  (docs/SCE_AUDIT_LOG.md section 2); the journal keeps who each fact was said for, from layout 13.
+  the host writes from the person the engine lends its invoker (`EngineState::register_invoker_for`) and no document
+  writes (docs/SCE_AUDIT_LOG.md section 2); the journal keeps who each fact was said for, from layout 13.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (the windows an endpoint keeps are bounded by its links, D1), §10.11 (`persistence:` and

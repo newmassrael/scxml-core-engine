@@ -7372,8 +7372,10 @@ a quote from, and until one does every quote is refused where it is written, as
 `validation/quote-refused` (Open question 2 of the record), and `_x.quoted` is absent on
 every event. Nothing passes on by itself: a child an `<invoke autoforward="true">` forwards
 the event to is told it as said for nobody, the copy being the event's and the person no
-field of `_event`. The Rust host core holds the person (`EventMetadata::principal`, which the
-edge stamps with `Endpoint::receive_member_for`); a saved state and a checkpoint hold none,
+field of `_event`. The Rust host core holds the person beside the event, in the slot the
+machine's policy names (`StatePolicy::Principal`, which the edge fills with
+`Endpoint::receive_member_for`), and a machine whose document declares no `sce:principal`
+holds a slot of no size; a saved state and a checkpoint hold none,
 so a machine whose queue holds an event of a person it has not run refuses to save
 (D6: it is never run as nobody's). A `no_std` Rust build and every other backend refuse the
 document by name (`generate/unsupported-feature`), and so does the Interpreter's
