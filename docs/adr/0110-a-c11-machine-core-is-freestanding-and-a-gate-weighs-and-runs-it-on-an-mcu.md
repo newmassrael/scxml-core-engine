@@ -47,7 +47,8 @@ its inbox and its timer queue. The core includes only the headers C11 requires o
 (`<stdint.h>`, `<stddef.h>`, `<stdbool.h>`, `<limits.h>`, `<float.h>`, `<stdarg.h>`, `<stdalign.h>`,
 `<stdnoreturn.h>`, `<iso646.h>`). It calls no library function but `memcpy`, `memset`, `memmove` and `memcmp`.
 GCC and Clang emit calls to those four even under `-ffreestanding`, so every C environment must supply them, and the
-runtime does not implement them a second time.
+runtime does not implement them a second time. (Amended 2026-11-28.) Their declarations are `sce/mem.h`'s, which
+`sce/text.h` includes and a header that needs no text routine includes alone, as `sce/sample.h` does.
 
 Every other string or number routine the core needs (a length, a comparison, a decimal text of an integer) is the
 runtime's own, in one header (`sce/text.h`), written once and used by every unit that needs it, the hosted ones
@@ -86,7 +87,8 @@ deployment does not link is never built in the first place.
      release build does, so it is not declared noreturn. A machine that takes a sample states the requirement
      `ownership`, which `sce_c_runtime_posix` implements in `backends/c/runtime/posix/ownership.c` (the
      violation to `stderr`, then `abort`); the `c11-mcu` gate's board defines it in `backends/c/mcu/seams.c`
-     (a line through the log seam, then exit status 4). The contract takes `memset` from `sce/text.h`.
+     (a line through the log seam, then exit status 4). The contract takes `memset` from `sce/mem.h` (it took it
+     from `sce/text.h`, which brought the text routines into every buffer pool's header).
 2. **Separate units.** A deployment that wants these compiles them beside the core and may use the hosted library
    there.
    - **Saved state:** `<machine>_saved.c` and the `saved_*.h` headers. The core declares the save and the restore,

@@ -100,13 +100,15 @@
 #include <stddef.h>
 #include <stdint.h>
 // `memset`, which backs the debug-poison fill, declared as a machine's
-// core declares it (docs/adr/0110, D1): `sce/text.h` declares the four
+// core declares it (docs/adr/0110, D1): `sce/mem.h` declares the four
 // memory functions in C and takes them from `<cstring>` in C++, so this
-// header reaches no hosted header. Included outside the `extern "C"`
-// block below, which it opens for itself, and unconditionally: gating it
-// on `SCE_DEBUG_OWNERSHIP` would put the `#include` after that macro's
-// definition, which lives further down.
-#include "sce/text.h"
+// header reaches no hosted header. `sce/mem.h` and not `sce/text.h`: the
+// contract needs `memset` alone, and every header that includes it (a
+// buffer pool's among them) would otherwise bring the text routines into
+// its units too. Included outside any `extern "C"` block, and
+// unconditionally: gating it on `SCE_DEBUG_OWNERSHIP` would put the
+// `#include` after that macro's definition, which lives further down.
+#include "sce/mem.h"
 
 // `SCE_STATIC_ASSERT`, used by the layout invariants at the bottom of
 // this file. Spelled through the macro rather than as `_Static_assert`

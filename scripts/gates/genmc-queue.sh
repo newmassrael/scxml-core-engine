@@ -98,7 +98,8 @@ sce_gate_on_exit genmc_cleanup
 # change of default is not a change of what is checked.
 GENMC_OPTIONS=(--rc11 "--unroll=$UNROLL" --disable-estimation --print-exec-graphs)
 # The C runtime's own include directory holds `sce/text.h`, which declares the
-# memory functions the queue copies with (docs/adr/0110, D1), and the inbox the
+# memory functions the queue copies with through `sce/mem.h` (docs/adr/0110,
+# D1), and the inbox the
 # inbox harnesses judge (`sce/inbox.h`, with `sce/types.h` and
 # `sce/portability.h`) and the token check they apply endings by
 # (`sce/host_processor.h`). The harness directory itself holds `inbox_tree.h`, which the inbox harnesses

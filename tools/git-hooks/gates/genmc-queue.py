@@ -34,6 +34,8 @@
     "extra": [
         "backends/c/forge-runtime/include/**",
         "backends/c/runtime/include/sce/text.h",
+        # The memory functions sce/text.h declares, in a header of their own.
+        "backends/c/runtime/include/sce/mem.h",
         # The C11 inbox with what it includes, and the token check, which
         # the inbox harnesses read (ADR 0147, D5).
         "backends/c/runtime/include/sce/inbox.h",

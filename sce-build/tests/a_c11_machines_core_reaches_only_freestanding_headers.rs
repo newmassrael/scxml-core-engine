@@ -487,13 +487,34 @@ const SAMPLING_MACHINE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "##;
 
+/// The walk from `header` read the memory functions' declarations (`sce/mem.h`)
+/// and never the text routines (`sce/text.h`), whose `static inline` bodies a
+/// buffer pool's header has no use for (docs/adr/0110, D1).
+fn assert_memory_without_text(header: &str, reached: &Reached) {
+    assert!(
+        reached.resolved.contains("sce/mem.h"),
+        "the walk of {header} never read `sce/mem.h`, so the ownership contract's \
+         `memset` is declared elsewhere: {:?}",
+        reached.resolved
+    );
+    assert!(
+        !reached.resolved.contains("sce/text.h"),
+        "{header} reaches `sce/text.h`, so every unit that includes it holds the text \
+         routines' bodies: {:?}",
+        reached.resolved
+    );
+}
+
 /// docs/adr/0110, D1 and D2: the ownership contract (`sce/sample.h`) reaches
 /// no hosted header from either side that includes it, a buffer pool's header
 /// and a machine that takes a sample. It included `<assert.h>`, `<stdlib.h>`
 /// and `<string.h>` for a trap `NDEBUG` chose between `assert` and `abort`;
 /// it declares a seam instead (`_sce_ownership_trap`), which the machine states
 /// it requires (`ownership`) so its build links the deployment's definition,
-/// and takes `memset` from `sce/text.h`.
+/// and takes `memset` from `sce/mem.h`, which declares the four memory
+/// functions and nothing else. A pool's header and its lending form's reach
+/// `sce/mem.h` and not `sce/text.h`: the text routines are `static inline`, and
+/// a unit that keeps every inline function it reads would hold them all.
 #[test]
 fn the_ownership_contract_reaches_only_freestanding_headers() {
     let pool = sce_build::compile_forge_from_string(
@@ -519,6 +540,7 @@ fn the_ownership_contract_reaches_only_freestanding_headers() {
          nothing of the ownership contract: {:?}",
         reached.resolved
     );
+    assert_memory_without_text("rx_pool.h", &reached);
     // The pool's lending form (docs/adr/0111 D4) is a header of its own, which
     // includes the pool's: a program that lends reaches it instead.
     let reached = hosted_reached("rx_pool_over.h", &pool_files);
@@ -534,6 +556,7 @@ fn the_ownership_contract_reaches_only_freestanding_headers() {
          ownership contract through it: {:?}",
         reached.resolved
     );
+    assert_memory_without_text("rx_pool_over.h", &reached);
 
     let dir = tempfile::tempdir().expect("a document directory");
     let document = dir.path().join("watcher.scxml");

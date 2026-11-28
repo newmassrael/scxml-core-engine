@@ -17906,9 +17906,10 @@ int main(void) {
     /// it, however its build counts what a header holds (a unit kept with
     /// `-fkeep-inline-functions` counts every `static inline` it reads).
     ///
-    /// `sce/text.h` reaches the unit through `sce/sample.h` (docs/adr/0110,
-    /// D1), as it did before the book; the pool's header names neither it nor
-    /// a `sce_text_*` function.
+    /// The pool's header names neither `sce/text.h` nor a `sce_text_*` function,
+    /// and reaches neither through what it includes: `sce/sample.h` takes
+    /// `memset` from `sce/mem.h`, which declares the memory functions alone
+    /// (docs/adr/0110, D1).
     #[test]
     fn an_owner_c11_pool_header_declares_what_it_did_before_the_book() {
         /// The text of a C header with its comments blanked, its string and
@@ -18083,6 +18084,42 @@ int main(void) {
                  lending form's; full header:\n{header}",
             );
         }
+
+        // What the header's runtime includes bring, followed through every
+        // `sce/` header they name in turn: the memory functions' declarations
+        // (`sce/mem.h`) and not the text routines (`sce/text.h`), whose
+        // `static inline` bodies the pool has no use for (docs/adr/0110, D1).
+        let runtime_include =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/c/runtime/include");
+        let mut reached: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut pending: Vec<String> = vec![header.to_string()];
+        while let Some(text) = pending.pop() {
+            for line in code_of(&text).lines() {
+                let Some(rest) = line.trim().strip_prefix("#include") else {
+                    continue;
+                };
+                let name = rest
+                    .trim()
+                    .trim_matches(|c| c == '<' || c == '>' || c == '"');
+                if !name.starts_with("sce/") || !reached.insert(name.to_string()) {
+                    continue;
+                }
+                let path = runtime_include.join(name);
+                let included = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                pending.push(included);
+            }
+        }
+        assert!(
+            reached.contains("sce/sample.h") && reached.contains("sce/mem.h"),
+            "the pool's header reaches the ownership contract and the memory functions' \
+             declarations through it: {reached:?}",
+        );
+        assert!(
+            !reached.contains("sce/text.h"),
+            "the pool's header reaches `sce/text.h`, whose text routines every unit that \
+             includes it would then hold: {reached:?}",
+        );
     }
 
     /// docs/adr/0111 D4: a `shared` pool's header includes the lending form's,

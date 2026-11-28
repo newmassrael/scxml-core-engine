@@ -13,13 +13,11 @@
  * needs one calls it from here, the hosted units included, so the runtime holds
  * one of each.
  *
- * The four memory functions are declared here rather than taken from
- * `<string.h>`, which is not a freestanding header. A declaration of a library
- * function without its header is one C allows (C11 7.1.4p2), and it is
- * compatible with the one a hosted unit's `<string.h>` makes. C++ has no such
- * allowance once the library's own declaration carries an exception
- * specification, so a C++ consumer takes them from `<cstring>`: a C++
- * translation unit is never a machine's core.
+ * The four memory functions are declared by `sce/mem.h`, which this header
+ * includes, rather than taken from `<string.h>`, which is not a freestanding
+ * header: a C unit gets the declarations a machine's core makes, a C++ one
+ * `<cstring>`. A header that needs a memory function and none of the
+ * routines here includes `sce/mem.h` alone.
  *
  * Integer digits are written by division of the width the value has, so a
  * 32-bit value never calls the 64-bit division a 32-bit target supplies in a
@@ -36,17 +34,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sce/mem.h"
+
 #if defined(__cplusplus)
-#include <cstring>
 extern "C" {
-#else
-/* Each name in parentheses, so a library that spells one of them as a
- * function-like macro (a fortified one may) declares the function and not the
- * macro's expansion. */
-void *(memcpy)(void *dst, const void *src, size_t n);
-void *(memmove)(void *dst, const void *src, size_t n);
-void *(memset)(void *dst, int value, size_t n);
-int(memcmp)(const void *a, const void *b, size_t n);
 #endif
 
 /* The bytes of the longest decimal text of a 64-bit integer, its sign and the
