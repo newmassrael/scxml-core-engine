@@ -11,6 +11,9 @@
 resolver = "2"
 members = [
     "backends/rust/portable-bytes",
+    # The regular expressions of docs/adr/0149: the reader of I-Regexp, the construction and the
+    # simulation, shared by the build and the machines.
+    "backends/rust/regexp",
     "backends/rust/runtime",
     "backends/rust/lua",
     "backends/rust/tests",

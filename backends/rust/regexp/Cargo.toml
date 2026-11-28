@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-regexp"
+version.workspace = true
+edition.workspace = true
+# `icu_properties` 2.2 declares 1.86; 1.87 is the release the workspace's packages above the
+# floor build with.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Regular expressions as I-Regexp (RFC 9485) writes them: read by its grammar, built into Thompson's automaton over code points, and matched in time linear in the text, with no heap"
+publish = false
+
+# One reader of the grammar and one construction for a regular expression written in a document
+# and one supplied at run time (docs/adr/0149, D3 and D4): the build reads its expressions through
+# this crate, and a machine tests its texts with it. `no_std` and no heap: the storage is the
+# caller's, sized by the bound of states and the bytes of the text.
+
+[lib]
+name = "sce_rust_regexp"
+path = "src/lib.rs"
+
+[dependencies]
+# The General_Category of a code point, from ICU4X's compiled data at the version
+# `unicode/pin.toml` names (docs/adr/0158, D6).
+icu_properties.workspace = true
+
+[dev-dependencies]
+# The oracle the language is held to (docs/adr/0149, D7): a matcher that is linear itself, given
+# RFC 9485's mapping of each expression. A test's only; never linked into a machine.
+regex = "1"
+
+[lints]
+workspace = true

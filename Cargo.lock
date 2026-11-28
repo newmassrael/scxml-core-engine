@@ -4181,6 +4181,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-regexp"
+version = "0.1.0"
+dependencies = [
+ "icu_properties",
+ "regex",
+]
+
+[[package]]
 name = "sce-rust-relay"
 version = "0.1.0"
 dependencies = [
