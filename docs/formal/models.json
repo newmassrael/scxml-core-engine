@@ -1328,10 +1328,15 @@
         "LiveLock": "TRUE",
         "BoundInbox": "TRUE",
         "BoundLive": "TRUE",
-        "StopHoldsTable": "TRUE"
+        "StopHoldsTable": "TRUE",
+        "BoundFollowed": "TRUE",
+        "FollowInOrder": "TRUE",
+        "FollowSameSlot": "TRUE",
+        "TellHoldsTable": "TRUE"
       },
       "progress": [
-        "Settled"
+        "Settled",
+        "FollowedSettled"
       ],
       "runs": [
         {
@@ -1384,6 +1389,50 @@
           "config": "SessionPool_without_stop_under_table.cfg",
           "expect": "violates",
           "invariant": "StoppedClean",
+          "without": "StopHoldsTable"
+        },
+        {
+          "config": "SessionPool_followed.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "SessionPool_followed_live.cfg",
+          "expect": "holds"
+        },
+        {
+          "config": "SessionPool_followed_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "FollowedSettled",
+          "against": "the fairness of LiveSpec"
+        },
+        {
+          "config": "SessionPool_followed_without_bound.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "BoundFollowed"
+        },
+        {
+          "config": "SessionPool_followed_without_order.cfg",
+          "expect": "violates",
+          "invariant": "FollowedInOrder",
+          "without": "FollowInOrder"
+        },
+        {
+          "config": "SessionPool_followed_without_same_slot.cfg",
+          "expect": "violates",
+          "invariant": "FollowedInOrder",
+          "without": "FollowSameSlot"
+        },
+        {
+          "config": "SessionPool_followed_without_tell_under_table.cfg",
+          "expect": "violates",
+          "invariant": "ToldInTable",
+          "without": "TellHoldsTable"
+        },
+        {
+          "config": "SessionPool_followed_without_stop_under_table.cfg",
+          "expect": "violates",
+          "invariant": "StoppedFollowed",
           "without": "StopHoldsTable"
         }
       ]
